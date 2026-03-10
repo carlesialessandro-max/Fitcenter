@@ -1,0 +1,10 @@
+{
+  "name": "fitcenter",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir vite-fitcenter dev",
+    "build": "pnpm --dir vite-fitcenter build",
+    "install:all": "pnpm install && pnpm --dir vite-fitcenter install"
+  }
+}
