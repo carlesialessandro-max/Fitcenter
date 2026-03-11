@@ -4,16 +4,16 @@ import { createRoot } from "react-dom/client"
 import "@workspace/ui/globals.css"
 import { App } from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
-import { ConsulenteProvider } from "@/contexts/ConsulenteContext"
+import { AuthProvider } from "@/contexts/AuthContext"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
-        <ConsulenteProvider>
-          <App />
-        </ConsulenteProvider>
+<AuthProvider>
+        <App />
+      </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>

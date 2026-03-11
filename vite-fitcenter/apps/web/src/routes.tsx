@@ -1,5 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom"
+import { AuthGuard, LoginRedirect } from "@/components/AuthGuard"
 import { AppLayout } from "@/layouts/AppLayout"
+import { Login } from "@/pages/Login"
 import { Dashboard } from "@/pages/Dashboard"
 import { LeadList } from "@/features/crm/LeadList"
 import { LeadDetail } from "@/features/crm/LeadDetail"
@@ -9,8 +11,20 @@ import { Clienti } from "@/pages/Clienti"
 
 export const router = createBrowserRouter([
   {
+    path: "/login",
+    element: (
+      <LoginRedirect>
+        <Login />
+      </LoginRedirect>
+    ),
+  },
+  {
     path: "/",
-    element: <AppLayout />,
+    element: (
+      <AuthGuard>
+        <AppLayout />
+      </AuthGuard>
+    ),
     children: [
       { index: true, element: <Dashboard /> },
       { path: "crm", element: <LeadList /> },

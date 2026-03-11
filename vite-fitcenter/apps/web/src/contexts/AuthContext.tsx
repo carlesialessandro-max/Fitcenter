@@ -1,0 +1,119 @@
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
+import { authApi, type User } from "@/api/auth"
+import { setAuthToken } from "@/api/client"
+
+const DEFAULT_CONSULENTI = ["Luca Ferrari", "Anna Bianchi"]
+
+export type Role = "admin" | "operatore"
+
+type AuthContextType = {
+  isAuthenticated: boolean
+  isLoading: boolean
+  user: User | null
+  login: (username: string, password: string) => Promise<void>
+  logout: () => Promise<void>
+  /** Per compatibilità: ruolo dell'utente loggato */
+  role: Role
+  /** Nome consulente (operatore) o undefined se admin */
+  consulenteNome: string
+  /** Per chiamate API: se operatore, passa questo; se admin, undefined */
+  consulenteFilter: string | undefined
+  consulenti: string[]
+}
+
+const defaultValue: AuthContextType = {
+  isAuthenticated: false,
+  isLoading: true,
+  user: null,
+  login: async () => {},
+  logout: async () => {},
+  role: "operatore",
+  consulenteNome: DEFAULT_CONSULENTI[0] ?? "",
+  consulenteFilter: undefined,
+  consulenti: DEFAULT_CONSULENTI,
+}
+
+const AuthContext = createContext<AuthContextType | null>(null)
+
+function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem("fitcenter-token")
+  } catch {
+    return null
+  }
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const restoreSession = useCallback(async () => {
+    const token = getStoredToken()
+    if (!token) {
+      setUser(null)
+      setIsLoading(false)
+      return
+    }
+    try {
+      const { user: u } = await authApi.me()
+      setUser(u)
+    } catch {
+      setUser(null)
+      setAuthToken(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    restoreSession()
+  }, [restoreSession])
+
+  const login = useCallback(async (username: string, password: string) => {
+    const { token, user: u } = await authApi.login(username, password)
+    setAuthToken(token)
+    setUser(u)
+  }, [])
+
+  const logout = useCallback(async () => {
+    await authApi.logout()
+    setUser(null)
+  }, [])
+
+  const role = user?.role ?? "operatore"
+  const consulenteNome = user?.consulenteNome ?? user?.nome ?? ""
+  const consulenteFilter = role === "admin" ? undefined : consulenteNome || undefined
+
+  return (
+    <AuthContext.Provider
+      value={{
+        isAuthenticated: !!user,
+        isLoading,
+        user,
+        login,
+        logout,
+        role,
+        consulenteNome,
+        consulenteFilter,
+        consulenti: DEFAULT_CONSULENTI,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth(): AuthContextType {
+  const ctx = useContext(AuthContext)
+  return ctx ?? defaultValue
+}
+
+/** Per compatibilità: chi effettua le chiamate (nome consulente) */
+export function useConsulente() {
+  const auth = useAuth()
+  return {
+    consulenteNome: auth.consulenteNome,
+    setConsulenteNome: () => {},
+    consulenti: auth.consulenti,
+  }
+}

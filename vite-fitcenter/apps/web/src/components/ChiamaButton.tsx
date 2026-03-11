@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useConsulente } from "@/contexts/ConsulenteContext"
+import { useConsulente } from "@/contexts/AuthContext"
 import { chiamateApi, type TipoContatto } from "@/api/chiamate"
 
 function normalizeTel(tel: string): string {

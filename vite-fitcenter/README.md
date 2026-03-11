@@ -9,24 +9,81 @@ Piattaforma web modulare per la gestione di un centro fitness (palestra, piscine
 - **Abbonamenti** – Abbonamenti attivi/scaduti, entrate e budget mese, tab Abbonamenti / Catalogo Piani / Andamento Vendite
 - **Clienti** – Anagrafica clienti, totale/attivi/inattivi, abbonamenti attivi per cliente
 
+## Lead e storico
+
+I **lead** restano tutti nello **storico** (store locale): non si importano dal gestionale. Le fonti sono:
+
+- **Sito web** – moduli di contatto
+- **Facebook Ads** – campagne
+- **Google Ads** – campagne
+- **Tour spontaneo** – inserimento manuale (solo per walk-in dal pulsante “Aggiungi lead (tour spontanei)”)
+
+In filtro “Tutte le fonti” non compaiono SQL Server né Amministratore (solo consulenti operativi).
+
+## Integrazione lead: Zapier, campagne FB/Google, email/SMS
+
+I lead da **sito**, **Facebook**, **Google** (e in futuro email/SMS) possono arrivare tramite **Zapier** (o Make, n8n, webhook custom) chiamando l’API.
+
+### Endpoint per creare un lead
+
+```http
+POST /api/leads
+Content-Type: application/json
+
+{
+  "nome": "Mario",
+  "cognome": "Rossi",
+  "email": "mario.rossi@email.it",
+  "telefono": "+39 333 1234567",
+  "fonte": "website",
+  "interesse": "palestra"
+}
+```
+
+- **fonte** obbligatorio: `"website"` | `"facebook"` | `"google"` (per Zapier/campagne; i tour spontanei usano `"tour_spontaneo"` e si inseriscono solo da interfaccia).
+- **interesse** opzionale: `"palestra"` | `"piscina"` | `"spa"` | `"corsi"` | `"full_premium"`.
+- **fonteDettaglio**, **note** opzionali.
+
+### Esempio Zapier
+
+1. Trigger: “Form Submit” (sito) / “Facebook Lead Ads” / “Google Ads – New Lead”.
+2. Action: “Webhooks by Zapier” → **POST** all’URL `https://tuo-dominio/api/leads` (o `http://localhost:3001/api/leads` in test).
+3. Body: mappa i campi del trigger su `nome`, `cognome`, `email`, `telefono`, `fonte` (es. `"website"` o `"facebook"` o `"google"`), eventualmente `interesse`.
+
+Per **email** o **SMS** puoi usare lo stesso endpoint: uno Zap che al ricevere l’email/SMS invia la POST con i dati estratti e `fonte` appropriato (es. un valore custom se in futuro lo supporti, oppure `"website"` come generico).
+
 ## Dati da SQL Server (gestionale)
 
-Configurando la **connection string** al database del gestionale, l’API legge tutti i dati da lì:
+Dal gestionale si leggono **solo**:
 
-- **Anagrafiche clienti** – tabella/vista (es. `Clienti`)
-- **Abbonamenti venduti** – tabella (es. `Abbonamenti`)
-- **Lead/CRM** – tabella (es. `Lead`)
-- **Budget mensile** – tabella (es. `BudgetMensile`)
+- **Anagrafiche clienti** – tabella (es. `Clienti`): nome, cognome, email, telefono, ecc.
+- **Abbonamenti** – tabella (es. `Abbonamenti`): tipologia, prezzo, scadenza, collegamento cliente.
 
-Se `SQL_CONNECTION_STRING` non è impostata, l’app usa **dati mock** in memoria (lead, clienti, abbonamenti, budget) per sviluppo e demo.
+**Non** si importano da SQL: Lead (arrivano da sito/FB/Google/Zapier), Budget (assegnato ogni mese dall’admin), Piani/Catalogo.
+
+Se `SQL_CONNECTION_STRING` non è impostata, l’app usa **dati mock** in memoria.
+
+### Autenticazione e permessi (come da team gestionale)
+
+Il database è su **Microsoft SQL Server**. Il team che gestisce il gestionale **non fornisce utenti o password SQL** (non svolgono amministrazione sull’infrastruttura). L’accesso avviene così:
+
+- **Autenticazione Windows**: potete accedere tramite autenticazione Windows e **creare in autonomia** l’utente (o account di servizio) necessario con **permessi di sola lettura** sul database.
+- **Supporto dati**: una volta connessi, la consultazione e l’estrazione dei dati è in autonomia; non viene fornito supporto sulla conformità dei dati letti.
+
+In pratica: eseguite l’API FitCenter con un **account Windows** (utente di dominio o account di servizio) a cui sia stato garantito accesso in **sola lettura** al database del gestionale. Nessun User Id / Password SQL da configurare se usate Windows Auth.
 
 ### Configurazione
 
 1. Copia `apps/api/.env.example` in `apps/api/.env`.
-2. Imposta `SQL_CONNECTION_STRING` con la connection string al tuo SQL Server (es. `Server=...;Database=...;User Id=...;Password=...;Encrypt=true;TrustServerCertificate=true`).
-3. Opzionale: imposta i nomi tabelle con `GESTIONALE_TABLE_CLIENTI`, `GESTIONALE_TABLE_ABBONAMENTI`, `GESTIONALE_TABLE_LEAD`, `GESTIONALE_TABLE_PIANI`, `GESTIONALE_TABLE_BUDGET` (default: Clienti, Abbonamenti, Lead, PianiAbbonamento, BudgetMensile).
-
-L’API mappa colonne italiane/inglesi (Id, Nome, Cognome, Email, Telefono, Fonte, Stato, Categoria, DataInizio, DataFine, ecc.) ai modelli dell’app.
+2. **Autenticazione Windows** (consigliata):
+   - Connection string con `Integrated Security=true`, es.:  
+     `Server=nomehost;Database=NomeDatabase;Integrated Security=true;Encrypt=true;TrustServerCertificate=true`
+   - Su **Windows**, per l’integrated security installa il driver opzionale:  
+     `pnpm add msnodesqlv8` (nella cartella `apps/api`).
+   - Esegui l’app con l’account Windows che ha accesso in sola lettura al DB.
+3. **Autenticazione SQL** (solo se avete un login SQL con sola lettura):  
+   `Server=host;Database=db;User Id=lettura;Password=***;Encrypt=true;TrustServerCertificate=true`
+4. Opzionale: `GESTIONALE_TABLE_CLIENTI`, `GESTIONALE_TABLE_ABBONAMENTI` per i nomi delle tabelle.
 
 ## Avvio in sviluppo
 

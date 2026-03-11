@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
-import { Button } from "@workspace/ui/components/button"
+import { useAuth } from "@/contexts/AuthContext"
+import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
 
 const CATEGORIE: CategoriaAbbonamento[] = ["palestra", "piscina", "spa", "corsi", "full_premium"]
@@ -21,27 +22,43 @@ const CAT_COLORS: Record<CategoriaAbbonamento, string> = {
 }
 
 export function Abbonamenti() {
-  const [tab, setTab] = useState<"abbonamenti" | "catalogo" | "andamento">("abbonamenti")
-  const [search, setSearch] = useState("")
-  const [statoFilter, setStatoFilter] = useState<string>("")
+  const { role, consulenteFilter } = useAuth()
+  const [tab, setTab] = useState<"abbonamenti" | "andamento">("abbonamenti")
 
   const { data: dashboard } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => dataApi.getDashboard(),
+    queryKey: ["dashboard", consulenteFilter],
+    queryFn: () => dataApi.getDashboard(consulenteFilter),
   })
   const { data: abbonamenti = [], isLoading, error } = useQuery({
-    queryKey: ["data", "abbonamenti"],
-    queryFn: () => dataApi.getAbbonamenti(),
+    queryKey: ["data", "abbonamenti", consulenteFilter],
+    queryFn: () => dataApi.getAbbonamenti(consulenteFilter),
+  })
+  const { data: clienti = [] } = useQuery({
+    queryKey: ["data", "clienti"],
+    queryFn: () => dataApi.getClienti(),
   })
 
-  const filtered = abbonamenti.filter((a) => {
-    const matchSearch =
-      !search ||
-      a.clienteNome.toLowerCase().includes(search.toLowerCase()) ||
-      a.pianoNome.toLowerCase().includes(search.toLowerCase())
-    const matchStato = !statoFilter || a.stato === statoFilter
-    return matchSearch && matchStato
-  })
+  const telefonoByClienteId = useMemo(() => {
+    const map = new Map<string, string>()
+    clienti.forEach((c) => map.set(c.id, c.telefono ?? ""))
+    return map
+  }, [clienti])
+
+  /** Solo abbonamenti attivi che scadono da oggi a 60 giorni, ordinati per data scadenza */
+  const listaAbbonamenti = useMemo(() => {
+    const oggi = new Date()
+    oggi.setHours(0, 0, 0, 0)
+    const tra60 = new Date(oggi)
+    tra60.setDate(tra60.getDate() + 60)
+    return abbonamenti
+      .filter((a) => {
+        if (a.stato !== "attivo") return false
+        const fine = new Date(a.dataFine)
+        fine.setHours(0, 0, 0, 0)
+        return fine >= oggi && fine <= tra60
+      })
+      .sort((a, b) => new Date(a.dataFine).getTime() - new Date(b.dataFine).getTime())
+  }, [abbonamenti])
 
   return (
     <div className="p-6">
@@ -50,10 +67,11 @@ export function Abbonamenti() {
           <h1 className="text-2xl font-semibold text-zinc-100">Abbonamenti & Vendite</h1>
           <p className="text-sm text-zinc-400">Gestione abbonamenti, vendite e budget</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline">Imposta Budget</Button>
-          <Button>Vendi Abbonamento</Button>
-        </div>
+        {role === "admin" && (
+          <a href="/" className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">
+            Imposta budget (Dashboard)
+          </a>
+        )}
       </div>
 
       {/* KPI */}
@@ -81,112 +99,91 @@ export function Abbonamenti() {
         </div>
       </div>
 
-      {/* Tab */}
+      {/* Tab: Abbonamenti e Andamento Vendite (no Catalogo Piani) */}
       <div className="mt-6 flex gap-2 border-b border-zinc-800">
-        {(["abbonamenti", "catalogo", "andamento"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              tab === t
-                ? "border-amber-500 text-amber-400"
-                : "border-transparent text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            {t === "abbonamenti" && "Abbonamenti"}
-            {t === "catalogo" && "Catalogo Piani"}
-            {t === "andamento" && "Andamento Vendite"}
-          </button>
-        ))}
+        <button
+          type="button"
+          onClick={() => setTab("abbonamenti")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "abbonamenti" ? "border-amber-500 text-amber-400" : "border-transparent text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          Abbonamenti
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("andamento")}
+          className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            tab === "andamento" ? "border-amber-500 text-amber-400" : "border-transparent text-zinc-400 hover:text-zinc-200"
+          }`}
+        >
+          Andamento Vendite
+        </button>
       </div>
 
       {tab === "abbonamenti" && (
-        <>
-          <div className="mt-4 flex flex-wrap gap-4">
-            <input
-              type="search"
-              placeholder="Cerca per piano, cliente, consulente..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="min-w-[240px] flex-1 rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none"
-            />
-            <select
-              value={statoFilter}
-              onChange={(e) => setStatoFilter(e.target.value)}
-              className="rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100"
-            >
-              <option value="">Tutti gli stati</option>
-              <option value="attivo">Attivo</option>
-              <option value="scaduto">Scaduto</option>
-            </select>
-          </div>
-          <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-800">
-            {isLoading && (
-              <div className="flex justify-center py-12 text-zinc-400">Caricamento...</div>
-            )}
-            {error && (
-              <div className="py-8 text-center text-red-400">{(error as Error).message}</div>
-            )}
-            {!isLoading && !error && (
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-zinc-800 bg-zinc-900/50">
-                  <tr>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Cliente</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Piano</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Categoria</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Prezzo</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Inizio</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Fine</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Stato</th>
-                    <th className="px-4 py-3 font-medium text-zinc-400">Consulente</th>
+      <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+        <h2 className="text-sm font-medium text-zinc-400">Abbonamenti</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Abbonamenti attivi in scadenza da oggi a 60 giorni, ordinati per data di scadenza
+        </p>
+        <div className="mt-4 overflow-x-auto">
+          {isLoading && (
+            <div className="flex justify-center py-12 text-zinc-400">Caricamento...</div>
+          )}
+          {error && (
+            <div className="py-8 text-center text-red-400">{(error as Error).message}</div>
+          )}
+          {!isLoading && !error && listaAbbonamenti.length === 0 && (
+            <p className="text-sm text-zinc-500">Nessun abbonamento in scadenza nei prossimi 60 giorni.</p>
+          )}
+          {!isLoading && !error && listaAbbonamenti.length > 0 && (
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-zinc-500">
+                  <th className="pb-2 pr-4 font-medium">Cliente</th>
+                  <th className="pb-2 pr-4 font-medium">Piano</th>
+                  <th className="pb-2 pr-4 font-medium">Categoria</th>
+                  <th className="pb-2 pr-4 font-medium">Prezzo</th>
+                  <th className="pb-2 pr-4 font-medium">Scadenza</th>
+                  <th className="pb-2 pr-4 font-medium">Consulente</th>
+                  <th className="pb-2 font-medium">Azioni</th>
+                </tr>
+              </thead>
+              <tbody className="text-zinc-300">
+                {listaAbbonamenti.map((a) => (
+                  <tr key={a.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
+                    <td className="py-2 pr-4 font-medium text-zinc-200">{a.clienteNome}</td>
+                    <td className="py-2 pr-4">{a.pianoNome}</td>
+                    <td className="py-2 pr-4">
+                      <span className={`inline-flex rounded border px-2 py-0.5 text-xs ${CAT_COLORS[a.categoria]}`}>
+                        {CAT_LABELS[a.categoria]}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4">€{a.prezzo.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 pr-4 text-amber-400">{new Date(a.dataFine).toLocaleDateString("it-IT")}</td>
+                    <td className="py-2 pr-4 text-zinc-400">{a.consulenteNome ?? "—"}</td>
+                    <td className="py-2">
+                      {telefonoByClienteId.get(a.clienteId) ? (
+                        <ChiamaButton
+                          telefono={telefonoByClienteId.get(a.clienteId)!}
+                          nomeContatto={a.clienteNome}
+                          tipo="cliente"
+                          clienteId={a.clienteId}
+                        />
+                      ) : (
+                        <span className="text-xs text-zinc-500">—</span>
+                      )}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-800">
-                  {filtered.map((a) => (
-                    <tr key={a.id} className="hover:bg-zinc-800/30">
-                      <td className="px-4 py-3 font-medium text-zinc-200">{a.clienteNome}</td>
-                      <td className="px-4 py-3 text-zinc-300">{a.pianoNome}</td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${CAT_COLORS[a.categoria]}`}
-                        >
-                          {CAT_LABELS[a.categoria]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-zinc-300">
-                        €{a.prezzo.toLocaleString("it-IT", { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500">
-                        {new Date(a.dataInizio).toLocaleDateString("it-IT")}
-                      </td>
-                      <td className="px-4 py-3 text-zinc-500">
-                        {new Date(a.dataFine).toLocaleDateString("it-IT")}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-md border px-2 py-0.5 text-xs font-medium ${
-                            a.stato === "attivo"
-                              ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-                              : "bg-red-500/20 text-red-400 border-red-500/30"
-                          }`}
-                        >
-                          {a.stato === "attivo" ? "Attivo" : "Scaduto"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-zinc-400">{a.consulenteNome ?? "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </>
-      )}
-      {tab === "catalogo" && (
-        <div className="mt-4 rounded-lg border border-zinc-800 p-6 text-center text-zinc-500">
-          Catalogo piani (in sviluppo)
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
+      </div>
       )}
+
       {tab === "andamento" && (
         <div className="mt-4 rounded-lg border border-zinc-800 p-6 text-center text-zinc-500">
           Andamento vendite (grafico in sviluppo)

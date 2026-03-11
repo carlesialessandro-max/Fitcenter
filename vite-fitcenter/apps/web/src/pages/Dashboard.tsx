@@ -1,4 +1,5 @@
-import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BarChart,
   Bar,
@@ -14,19 +15,79 @@ import {
 } from "recharts"
 import { dataApi } from "@/api/data"
 import { chiamateApi } from "@/api/chiamate"
+import { useAuth } from "@/contexts/AuthContext"
+import { DettaglioMeseModal } from "@/components/DettaglioMeseModal"
+import { DettaglioVenditePrimoPiano } from "@/components/DettaglioVenditePrimoPiano"
 
 const COLORS_FONTE = ["#3b82f6", "#22c55e", "#f97316"]
 const COLORS_CAT = ["#8b5cf6", "#06b6d4", "#ec4899", "#eab308", "#f97316"]
 
 export function Dashboard() {
+  const queryClient = useQueryClient()
+  const { role, consulenteFilter } = useAuth()
+  const [budgetModal, setBudgetModal] = useState(false)
+  const [dettaglioMese, setDettaglioMese] = useState<{ anno: number; mese: number; meseLabel: string } | null>(null)
+  const [storicoAnno, setStoricoAnno] = useState(new Date().getFullYear())
+  const [budgetAnno, setBudgetAnno] = useState(new Date().getFullYear())
+  const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
+  const [budgetVal, setBudgetVal] = useState(6000)
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => dataApi.getDashboard(),
+    queryKey: ["dashboard", consulenteFilter],
+    queryFn: () => dataApi.getDashboard(consulenteFilter),
+  })
+
+  const setBudgetMutation = useMutation({
+    mutationFn: () => dataApi.setBudget(budgetAnno, budgetMese, budgetVal),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] })
+      queryClient.invalidateQueries({ queryKey: ["budget"] })
+      setBudgetModal(false)
+    },
   })
   const { data: chiamateStats } = useQuery({
     queryKey: ["chiamate-stats"],
     queryFn: () => chiamateApi.getStats(),
   })
+
+  const { data: storicoData } = useQuery({
+    queryKey: ["vendite-storico", storicoAnno, consulenteFilter],
+    queryFn: () => dataApi.getVenditeStorico(storicoAnno, consulenteFilter),
+  })
+  const venditeStorico = storicoData?.venditePerMese ?? []
+
+  const { data: totaliAnniData } = useQuery({
+    queryKey: ["totali-anni"],
+    queryFn: () => dataApi.getTotaliAnni(),
+    enabled: role === "admin",
+  })
+  const totaliAnni = totaliAnniData?.totali ?? []
+
+  function downloadReportTotaliAnni() {
+    const header = "Anno;Vendite (€);Budget (€);% Raggiungimento\n"
+    const rows = totaliAnni.map((r) => `${r.anno};${r.vendite.toFixed(2)};${r.budget.toFixed(2)};${r.percentuale}`).join("\n")
+    const csv = "\uFEFF" + header + rows
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `report-totali-anni-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function downloadReportStoricoAnno() {
+    const header = "Mese;Anno;Vendite (€);Budget (€);% Raggiungimento\n"
+    const rows = venditeStorico.map((r) => `${r.mese};${r.anno};${r.vendite.toFixed(2)};${r.budget.toFixed(2)};${r.percentuale}`).join("\n")
+    const csv = "\uFEFF" + header + rows
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `report-storico-${storicoAnno}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   if (isLoading) {
     return (
@@ -51,13 +112,37 @@ export function Dashboard() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-zinc-100">
-        Panoramica del centro fitness
-      </h1>
-      <p className="mt-1 text-sm text-zinc-400">— {oggi}</p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-zinc-100">
+            {role === "admin" ? "Panoramica del centro fitness" : "Le tue vendite"}
+          </h1>
+          <p className="mt-1 text-sm text-zinc-400">— {oggi}</p>
+        </div>
+        {role === "admin" && (
+          <button
+            type="button"
+            onClick={() => setBudgetModal(true)}
+            className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400"
+          >
+            Imposta budget
+          </button>
+        )}
+      </div>
 
-      {/* KPI */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* Consulente: in primo piano due card (Giorno / Mese) con vendite e % obiettivo */}
+      {role === "operatore" && (
+        <div className="mt-6">
+          <DettaglioVenditePrimoPiano />
+        </div>
+      )}
+
+      {/* KPI: per operatore titolo "Riepilogo" per dare contesto */}
+      <div className="mt-8">
+        {role === "operatore" && (
+          <h2 className="mb-3 text-sm font-medium text-zinc-500">Riepilogo</h2>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Lead totali</p>
           <p className="mt-1 text-2xl font-semibold text-zinc-100">{data.leadTotali}</p>
@@ -69,7 +154,7 @@ export function Dashboard() {
           <p className="text-sm text-zinc-400">Abbonamenti attivi</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-400">{data.abbonamentiAttivi}</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {data.abbonamentiInScadenza} in scadenza
+            {data.abbonamentiInScadenza} (30 gg) — {data.abbonamentiInScadenza60 ?? 0} (60 gg)
           </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
@@ -89,10 +174,119 @@ export function Dashboard() {
           <p className="mt-1 text-2xl font-semibold text-cyan-400">{chiamateStats?.oggi ?? 0}</p>
           <p className="mt-0.5 text-xs text-zinc-500">oggi — {chiamateStats?.settimana ?? 0} questa settimana</p>
         </div>
+        </div>
       </div>
 
-      {/* Chiamate per consulente */}
-      {chiamateStats && chiamateStats.perConsulente.length > 0 && (
+      {/* Admin: totale per anno e generazione report */}
+      {role === "admin" && (
+        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="text-sm font-medium text-zinc-400">Totale per anno</h2>
+          <p className="mt-1 text-xs text-zinc-500">Riepilogo vendite e budget per anno. Usa i pulsanti sotto per generare report CSV.</p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-700 text-left text-zinc-500">
+                  <th className="pb-2 pr-4 font-medium">Anno</th>
+                  <th className="pb-2 pr-4 font-medium text-right">Vendite (€)</th>
+                  <th className="pb-2 pr-4 font-medium text-right">Budget (€)</th>
+                  <th className="pb-2 font-medium text-right">% raggiungimento</th>
+                </tr>
+              </thead>
+              <tbody className="text-zinc-300">
+                {totaliAnni.length === 0 && (
+                  <tr><td colSpan={4} className="py-3 text-zinc-500">Nessun dato anni disponibile.</td></tr>
+                )}
+                {totaliAnni.map((r) => (
+                  <tr key={r.anno} className="border-b border-zinc-800/50">
+                    <td className="py-2 pr-4 font-medium text-zinc-200">{r.anno}</td>
+                    <td className="py-2 pr-4 text-right">€{r.vendite.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 pr-4 text-right">€{r.budget.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
+                    <td className="py-2 text-right font-medium">{r.percentuale}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={downloadReportTotaliAnni}
+              disabled={totaliAnni.length === 0}
+              className="rounded-md border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              Scarica report totali anni (CSV)
+            </button>
+            <button
+              type="button"
+              onClick={downloadReportStoricoAnno}
+              disabled={venditeStorico.length === 0}
+              className="rounded-md border border-zinc-600 bg-zinc-800 px-4 py-2 text-sm text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              Scarica report storico {storicoAnno} (CSV)
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Admin: storico vendite per anno, tutti i mesi, tutte le consulenti; clic mese → dettaglio giorno/mese */}
+      {role === "admin" && (
+      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="text-sm font-medium text-zinc-400">Storico vendite e budget (tutti i mesi e consulenti)</h2>
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Anno
+            <select
+              value={storicoAnno}
+              onChange={(e) => setStoricoAnno(Number(e.target.value))}
+              className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+            >
+              {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-zinc-500">Clicca su un mese per il dettaglio giorno e mese</p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-zinc-700 text-left text-zinc-500">
+                <th className="pb-2 pr-4 font-medium">Mese</th>
+                <th className="pb-2 pr-4 font-medium text-right">Vendite</th>
+                <th className="pb-2 pr-4 font-medium text-right">Budget</th>
+                <th className="pb-2 font-medium text-right">% raggiungimento</th>
+              </tr>
+            </thead>
+            <tbody className="text-zinc-300">
+              {venditeStorico.map((row, i) => (
+                <tr
+                  key={i}
+                  onClick={() => setDettaglioMese({ anno: row.anno, mese: row.meseNum, meseLabel: `${row.mese} ${row.anno}` })}
+                  className="cursor-pointer border-b border-zinc-800/50 hover:bg-zinc-800/50"
+                >
+                  <td className="py-2 pr-4 font-medium text-amber-400/90">{row.mese}</td>
+                  <td className="py-2 pr-4 text-right">€{row.vendite.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 pr-4 text-right">€{row.budget.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 text-right font-medium">{row.percentuale}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
+
+      {dettaglioMese && (
+        <DettaglioMeseModal
+          anno={dettaglioMese.anno}
+          mese={dettaglioMese.mese}
+          meseLabel={dettaglioMese.meseLabel}
+          onClose={() => setDettaglioMese(null)}
+        />
+      )}
+
+      {/* Chiamate per consulente (solo admin) */}
+      {role === "admin" && chiamateStats && chiamateStats.perConsulente.length > 0 && (
         <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">Chiamate per consulente</h2>
           <div className="mt-3 overflow-x-auto">
@@ -197,16 +391,29 @@ export function Dashboard() {
         </div>
 
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-          <h2 className="text-sm font-medium text-zinc-400">Abbonamenti in scadenza (30 giorni)</h2>
+          <h2 className="text-sm font-medium text-zinc-400">In scadenza (30 giorni)</h2>
           <ul className="mt-3 space-y-2">
-            {data.abbonamentiInScadenzaLista.length === 0 ? (
-              <li className="text-sm text-zinc-500">Nessuno in scadenza</li>
+            {(data.abbonamentiInScadenzaLista ?? []).length === 0 ? (
+              <li className="text-sm text-zinc-500">Nessuno</li>
             ) : (
-              data.abbonamentiInScadenzaLista.map((item, i) => (
-                <li
-                  key={i}
-                  className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2 text-sm"
-                >
+              (data.abbonamentiInScadenzaLista ?? []).map((item, i) => (
+                <li key={i} className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2 text-sm">
+                  <span className="font-medium text-zinc-200">{item.clienteNome}</span>
+                  <span className="text-zinc-500">{item.piano}</span>
+                  <span className="text-amber-400">Scade: {formatDate(item.dataFine)}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="text-sm font-medium text-zinc-400">In scadenza (60 giorni)</h2>
+          <ul className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+            {(data.abbonamentiInScadenza60Lista ?? []).length === 0 ? (
+              <li className="text-sm text-zinc-500">Nessuno</li>
+            ) : (
+              (data.abbonamentiInScadenza60Lista ?? []).map((item, i) => (
+                <li key={i} className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2 text-sm">
                   <span className="font-medium text-zinc-200">{item.clienteNome}</span>
                   <span className="text-zinc-500">{item.piano}</span>
                   <span className="text-amber-400">Scade: {formatDate(item.dataFine)}</span>
@@ -216,6 +423,54 @@ export function Dashboard() {
           </ul>
         </div>
       </div>
+
+      {budgetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+            <h3 className="text-lg font-semibold text-zinc-100">Imposta budget mensile</h3>
+            <div className="mt-4 space-y-3">
+              <div>
+                <label className="block text-xs text-zinc-500">Anno</label>
+                <input
+                  type="number"
+                  value={budgetAnno}
+                  onChange={(e) => setBudgetAnno(Number(e.target.value))}
+                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500">Mese</label>
+                <select
+                  value={budgetMese}
+                  onChange={(e) => setBudgetMese(Number(e.target.value))}
+                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
+                >
+                  {["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"].map((nome, i) => (
+                    <option key={i} value={i + 1}>{nome}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-zinc-500">Budget (€)</label>
+                <input
+                  type="number"
+                  value={budgetVal}
+                  onChange={(e) => setBudgetVal(Number(e.target.value))}
+                  className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <button type="button" onClick={() => setBudgetModal(false)} className="rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Annulla
+              </button>
+              <button type="button" onClick={() => setBudgetMutation.mutate()} disabled={setBudgetMutation.isPending} className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400">
+                {setBudgetMutation.isPending ? "Salvataggio..." : "Salva"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

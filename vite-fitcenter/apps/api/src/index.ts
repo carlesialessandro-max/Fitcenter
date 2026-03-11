@@ -1,5 +1,6 @@
 import express from "express"
 import cors from "cors"
+import { authRouter } from "./routes/auth.js"
 import { leadsRouter } from "./routes/leads.js"
 import { dataRouter } from "./routes/data.js"
 import { chiamateRouter } from "./routes/chiamate.js"
@@ -9,6 +10,7 @@ const PORT = process.env.PORT ?? 3001
 
 app.use(cors({ origin: true }))
 app.use(express.json())
+app.use("/api", authRouter)
 app.use("/api", leadsRouter)
 app.use("/api", chiamateRouter)
 app.use("/api/data", dataRouter)

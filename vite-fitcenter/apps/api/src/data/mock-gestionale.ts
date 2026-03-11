@@ -27,33 +27,59 @@ export const mockBudget: BudgetMensile[] = [
 
 const mesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
 
-export function getMockDashboardStats(leadTotali: number, leadVinti: number, leadPersi: number): DashboardStats {
-  const entrateMese = 749.7
+export function getMockDashboardStats(
+  leadTotali: number,
+  leadVinti: number,
+  leadPersi: number,
+  consulente?: string
+): DashboardStats {
+  let abbonamenti = mockAbbonamenti
+  if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
+  const attivi = abbonamenti.filter((a) => a.stato === "attivo")
+  const in30 = new Date()
+  in30.setDate(in30.getDate() + 30)
+  const in60 = new Date()
+  in60.setDate(in60.getDate() + 60)
+  const inScadenza = attivi.filter((a) => new Date(a.dataFine) <= in30)
+  const inScadenza60 = attivi.filter((a) => new Date(a.dataFine) <= in60)
+  const entrateMese = abbonamenti
+    .filter((a) => {
+      const inizio = new Date(a.dataInizio)
+      const now = new Date()
+      return inizio.getFullYear() === now.getFullYear() && inizio.getMonth() + 1 === now.getMonth() + 1
+    })
+    .reduce((s, a) => s + a.prezzo, 0)
   const budgetMese = 6000
-  const attivi = mockAbbonamenti.filter((a) => a.stato === "attivo").length
-  const inScadenza = mockAbbonamenti.filter((a) => {
-    if (a.stato !== "attivo") return false
-    const fine = new Date(a.dataFine)
-    const in30 = new Date()
-    in30.setDate(in30.getDate() + 30)
-    return fine <= in30
+  const venditePerMese = mockBudget.slice(0, 12).map((b) => {
+    const vendite = abbonamenti
+      .filter((a) => {
+        const inizio = new Date(a.dataInizio)
+        return inizio.getFullYear() === b.anno && inizio.getMonth() + 1 === b.mese
+      })
+      .reduce((s, a) => s + a.prezzo, 0)
+    const pct = b.budget ? Math.round((vendite / b.budget) * 1000) / 10 : 0
+    return {
+      mese: mesi[b.mese - 1],
+      anno: b.anno,
+      meseNum: b.mese,
+      vendite,
+      budget: b.budget,
+      percentuale: pct,
+    }
   })
   return {
     leadTotali,
     leadVinti,
     leadPersi,
-    abbonamentiAttivi: attivi,
+    abbonamentiAttivi: attivi.length,
     abbonamentiInScadenza: inScadenza.length,
+    abbonamentiInScadenza60: inScadenza60.length,
     entrateMese,
     budgetMese,
     percentualeBudget: Math.round((entrateMese / budgetMese) * 1000) / 10,
     tassoConversione: leadTotali > 0 ? Math.round((leadVinti / leadTotali) * 1000) / 10 : 0,
     clientiAttivi: mockClienti.filter((c) => c.stato === "attivo").length,
-    venditePerMese: mockBudget.slice(0, 6).map((b) => ({
-      mese: mesi[b.mese - 1],
-      vendite: b.vendite ?? 0,
-      budget: b.budget,
-    })),
+    venditePerMese,
     leadPerFonte: [
       { fonte: "Sito Web", count: 4 },
       { fonte: "Google", count: 3 },
@@ -66,6 +92,11 @@ export function getMockDashboardStats(leadTotali: number, leadVinti: number, lea
       { categoria: "Palestra", count: 1 },
     ],
     abbonamentiInScadenzaLista: inScadenza.map((a) => ({
+      clienteNome: a.clienteNome,
+      piano: a.pianoNome.toLowerCase(),
+      dataFine: a.dataFine,
+    })),
+    abbonamentiInScadenza60Lista: inScadenza60.map((a) => ({
       clienteNome: a.clienteNome,
       piano: a.pianoNome.toLowerCase(),
       dataFine: a.dataFine,

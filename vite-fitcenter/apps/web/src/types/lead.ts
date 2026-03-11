@@ -1,9 +1,10 @@
-/** Fonti dei lead: moduli sito web, Facebook, Google, import da SQL Server */
+/** Fonti dei lead: sito web, Facebook, Google, tour spontanei (inserimento manuale). Da Zapier/automazioni: website, facebook, google. */
 export type LeadSource =
   | "website"
   | "facebook"
   | "google"
-  | "sql_server"
+  | "tour_spontaneo"
+  | "sql_server" /** @deprecated solo per storico, non più usato */
 
 export type LeadStatus =
   | "nuovo"
@@ -49,6 +50,7 @@ export interface LeadUpdate {
   stato?: LeadStatus
   interesse?: InteresseLead
   consulenteId?: string
+  consulenteNome?: string
   note?: string
 }
 
@@ -63,7 +65,8 @@ export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
   website: "Sito web",
   facebook: "Facebook Ads",
   google: "Google Ads",
-  sql_server: "Microsoft SQL Server",
+  tour_spontaneo: "Tour spontaneo",
+  sql_server: "SQL Server (storico)",
 }
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {

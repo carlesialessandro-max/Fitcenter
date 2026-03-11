@@ -1,7 +1,18 @@
 /**
- * Lettura dati dal gestionale (Microsoft SQL Server).
+ * Lettura dal gestionale (Microsoft SQL Server): solo anagrafici clienti e abbonamenti.
  * Configurare SQL_CONNECTION_STRING nel .env.
- * Nomi tabelle/viste configurabili con env (es. GESTIONALE_CLIENTI=Clienti).
+ *
+ * Supporta:
+ * - Autenticazione Windows (Integrated Security=true): richiede il driver opzionale msnodesqlv8.
+ *   L'app deve essere eseguita con un account Windows che abbia accesso in sola lettura al DB.
+ * - Autenticazione SQL (User Id=...; Password=...): connessione standard.
+ *
+ * Dal gestionale si importano SOLO:
+ * - Clienti (anagrafiche: nome, cognome, email, telefono, ecc.)
+ * - Abbonamenti (tipologia, prezzo, scadenza, collegamento cliente)
+ *
+ * NON si importano: Lead (arrivano da sito/FB/Google), Budget (assegnato da admin),
+ * Piani/Catalogo (non usati dal gestionale).
  */
 
 import sql from "mssql"
@@ -12,14 +23,62 @@ function getConnectionString(): string | undefined {
   return process.env.SQL_CONNECTION_STRING
 }
 
+/** Estrae coppie chiave=valore dalla connection string (case-insensitive per chiavi). */
+function parseConnectionString(cs: string): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const part of cs.split(";")) {
+    const eq = part.indexOf("=")
+    if (eq === -1) continue
+    const key = part.slice(0, eq).trim().toLowerCase()
+    const value = part.slice(eq + 1).trim()
+    map.set(key, value)
+  }
+  return map
+}
+
+function isWindowsAuth(cs: string): boolean {
+  const p = parseConnectionString(cs)
+  const integrated = p.get("integrated security") ?? p.get("trusted_connection")
+  return integrated === "true" || integrated === "yes" || integrated === "sspi"
+}
+
 export async function getPool(): Promise<sql.ConnectionPool | null> {
   const cs = getConnectionString()
   if (!cs) return null
   if (pool) return pool
   try {
-    pool = await sql.connect(cs)
+    if (isWindowsAuth(cs)) {
+      const params = parseConnectionString(cs)
+      const server = params.get("server") ?? params.get("data source") ?? "."
+      const database = params.get("database") ?? params.get("initial catalog") ?? ""
+      const trustCert = params.get("trustservercertificate")?.toLowerCase() === "true"
+      try {
+        const sqlWin = await import("mssql/msnodesqlv8")
+        pool = await sqlWin.default.connect({
+          server,
+          database,
+          options: {
+            trustedConnection: true,
+            trustServerCertificate: trustCert,
+            enableArithAbort: true,
+          },
+        })
+      } catch (e) {
+        const msg = (e as NodeJS.ErrnoException)?.message ?? String(e)
+        if (msg.includes("Cannot find module") || msg.includes("msnodesqlv8")) {
+          throw new Error(
+            "Per usare l'autenticazione Windows (Integrated Security) installa il driver opzionale: pnpm add msnodesqlv8 (solo su Windows). " +
+              "Oppure usa autenticazione SQL con User Id e Password nella connection string."
+          )
+        }
+        throw e
+      }
+    } else {
+      pool = await sql.connect(cs)
+    }
     return pool
-  } catch {
+  } catch (e) {
+    if (isWindowsAuth(cs)) throw e
     return null
   }
 }
@@ -27,9 +86,6 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
 const defaultTables = {
   clienti: process.env.GESTIONALE_TABLE_CLIENTI ?? "Clienti",
   abbonamenti: process.env.GESTIONALE_TABLE_ABBONAMENTI ?? "Abbonamenti",
-  lead: process.env.GESTIONALE_TABLE_LEAD ?? "Lead",
-  piani: process.env.GESTIONALE_TABLE_PIANI ?? "PianiAbbonamento",
-  budget: process.env.GESTIONALE_TABLE_BUDGET ?? "BudgetMensile",
 }
 
 /** Query flessibili: se le tabelle non esistono, ritorniamo array vuoti (il frontend userà i mock). */
@@ -52,43 +108,6 @@ export async function queryAbbonamenti(): Promise<Record<string, unknown>[]> {
   try {
     const r = await p.request().query(
       `SELECT * FROM [${defaultTables.abbonamenti}] ORDER BY DataInizio DESC`
-    )
-    return (r.recordset ?? []) as Record<string, unknown>[]
-  } catch {
-    return []
-  }
-}
-
-export async function queryLead(): Promise<Record<string, unknown>[]> {
-  const p = await getPool()
-  if (!p) return []
-  try {
-    const r = await p.request().query(
-      `SELECT * FROM [${defaultTables.lead}] ORDER BY DataCreazione DESC`
-    )
-    return (r.recordset ?? []) as Record<string, unknown>[]
-  } catch {
-    return []
-  }
-}
-
-export async function queryPiani(): Promise<Record<string, unknown>[]> {
-  const p = await getPool()
-  if (!p) return []
-  try {
-    const r = await p.request().query(`SELECT * FROM [${defaultTables.piani}]`)
-    return (r.recordset ?? []) as Record<string, unknown>[]
-  } catch {
-    return []
-  }
-}
-
-export async function queryBudget(): Promise<Record<string, unknown>[]> {
-  const p = await getPool()
-  if (!p) return []
-  try {
-    const r = await p.request().query(
-      `SELECT * FROM [${defaultTables.budget}] ORDER BY Anno, Mese`
     )
     return (r.recordset ?? []) as Record<string, unknown>[]
   } catch {

@@ -6,8 +6,11 @@ import type { Lead, LeadSource, LeadStatus } from "@/types/lead"
 import { LEAD_SOURCE_LABELS, LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { Button } from "@workspace/ui/components/button"
+import { useAuth } from "@/contexts/AuthContext"
+import { leadsApi } from "@/api/leads"
 
 const PIPELINE_STATUSES: LeadStatus[] = [
   "nuovo",
@@ -27,12 +30,22 @@ const CARD_COLORS: Record<LeadStatus, string> = {
   chiuso_vinto: "bg-emerald-500/20 border-emerald-500/40 text-emerald-300",
   chiuso_perso: "bg-red-500/20 border-red-500/40 text-red-300",
 }
-const SOURCES: LeadSource[] = ["website", "facebook", "google", "sql_server"]
+/** Fonti per filtro: solo quelle attive (no sql_server). Lead da Zapier/sito/FB/Google + tour spontanei manuali. */
+const SOURCES: LeadSource[] = ["website", "facebook", "google", "tour_spontaneo"]
 
 export function LeadList() {
+  const queryClient = useQueryClient()
+  const { consulenteNome } = useAuth()
   const [search, setSearch] = useState("")
   const [fonte, setFonte] = useState<LeadSource | "">("")
   const [consulente, setConsulente] = useState("")
+
+  const assignToMe = useMutation({
+    mutationFn: (leadId: string) => leadsApi.update(leadId, { consulenteNome }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
+    },
+  })
 
   const { data: allLeads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -74,7 +87,7 @@ export function LeadList() {
   const consulenti = useMemo(() => {
     const set = new Set<string>()
     allLeads.forEach((l) => l.consulenteNome && set.add(l.consulenteNome))
-    return Array.from(set).sort()
+    return Array.from(set).filter((c) => c !== "Amministratore").sort()
   }, [allLeads])
 
   return (
@@ -85,7 +98,7 @@ export function LeadList() {
           <p className="text-sm text-zinc-400">Gestione lead e pipeline di vendita</p>
         </div>
         <Link to="/crm/nuovo">
-          <Button>+ Nuovo Lead</Button>
+          <Button>+ Aggiungi lead (tour spontanei)</Button>
         </Link>
       </div>
 
@@ -193,7 +206,17 @@ export function LeadList() {
                     {new Date(lead.createdAt).toLocaleDateString("it-IT")}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {lead.consulenteNome !== consulenteNome && (
+                        <button
+                          type="button"
+                          onClick={() => assignToMe.mutate(lead.id)}
+                          disabled={assignToMe.isPending}
+                          className="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
+                        >
+                          Assegna a me
+                        </button>
+                      )}
                       {lead.telefono && (
                         <ChiamaButton
                           telefono={lead.telefono}

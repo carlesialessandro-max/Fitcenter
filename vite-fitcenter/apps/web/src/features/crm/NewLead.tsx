@@ -6,7 +6,8 @@ import { LEAD_SOURCE_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { Button } from "@workspace/ui/components/button"
 import { useState } from "react"
 
-const FONTI: LeadSource[] = ["website", "facebook", "google", "sql_server"]
+/** Inserimento manuale: solo per tour spontanei (walk-in). */
+const FONTI_MANUALE: LeadSource[] = ["tour_spontaneo"]
 const INTERESSI: InteresseLead[] = ["palestra", "piscina", "spa", "corsi", "full_premium"]
 
 export function NewLead() {
@@ -16,7 +17,7 @@ export function NewLead() {
   const [cognome, setCognome] = useState("")
   const [email, setEmail] = useState("")
   const [telefono, setTelefono] = useState("")
-  const [fonte, setFonte] = useState<LeadSource>("website")
+  const [fonte, setFonte] = useState<LeadSource>("tour_spontaneo")
   const [interesse, setInteresse] = useState<InteresseLead | "">("")
 
   const create = useMutation({
@@ -40,8 +41,8 @@ export function NewLead() {
       <Button variant="ghost" size="sm" onClick={() => navigate("/crm")} className="mb-4">
         ← Indietro
       </Button>
-      <h1 className="text-2xl font-semibold text-zinc-100">Nuovo Lead</h1>
-      <p className="mt-1 text-sm text-zinc-400">Inserisci i dati del lead</p>
+      <h1 className="text-2xl font-semibold text-zinc-100">Aggiungi lead manualmente</h1>
+      <p className="mt-1 text-sm text-zinc-400">Solo per tour spontanei (walk-in). I lead da sito, Facebook e Google arrivano via Zapier.</p>
 
       <form
         className="mt-6 max-w-md space-y-4"
@@ -93,7 +94,7 @@ export function NewLead() {
             onChange={(e) => setFonte(e.target.value as LeadSource)}
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-zinc-100"
           >
-            {FONTI.map((f) => (
+            {FONTI_MANUALE.map((f) => (
               <option key={f} value={f}>{LEAD_SOURCE_LABELS[f]}</option>
             ))}
           </select>

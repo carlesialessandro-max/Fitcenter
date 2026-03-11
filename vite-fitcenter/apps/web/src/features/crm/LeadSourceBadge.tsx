@@ -6,7 +6,8 @@ const sourceColors: Record<LeadSource, string> = {
   website: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   facebook: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   google: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  sql_server: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  tour_spontaneo: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  sql_server: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 }
 
 export function LeadSourceBadge({

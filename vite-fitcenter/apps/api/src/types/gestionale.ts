@@ -52,13 +52,52 @@ export interface DashboardStats {
   leadPersi: number
   abbonamentiAttivi: number
   abbonamentiInScadenza: number
+  abbonamentiInScadenza60: number
   entrateMese: number
   percentualeBudget: number
   budgetMese: number
   tassoConversione: number
   clientiAttivi: number
-  venditePerMese: { mese: string; vendite: number; budget: number }[]
+  venditePerMese: { mese: string; anno: number; meseNum: number; vendite: number; budget: number; percentuale: number }[]
   leadPerFonte: { fonte: string; count: number }[]
   abbonamentiPerCategoria: { categoria: string; count: number }[]
   abbonamentiInScadenzaLista: { clienteNome: string; piano: string; dataFine: string }[]
+  abbonamentiInScadenza60Lista: { clienteNome: string; piano: string; dataFine: string }[]
+}
+
+/** Riga dettaglio per consulente (giorno o mese) */
+export interface DettaglioConsulente {
+  consulente: string
+  budget: number
+  budgetProgressivo: number
+  consuntivo: number
+  scostamento: number
+  assenze: number
+  improduttivi: number
+  trend: number
+}
+
+/** Blocco KPI + tabella per giorno o mese */
+export interface DettaglioBlocco {
+  budget: number
+  budgetProgressivo: number
+  consuntivo: number
+  scostamento: number
+  assenze: number
+  improduttivi: number
+  trend: number
+  perConsulente: DettaglioConsulente[]
+}
+
+export interface DettaglioMeseResponse {
+  anno: number
+  mese: number
+  meseLabel: string
+  giorno?: number
+  giornoLabel?: string
+  giorniNelMese: number
+  /** Dettaglio del giorno (se giorno specificato) */
+  dettaglioGiorno: DettaglioBlocco
+  /** Dettaglio del mese (progressivo fino al giorno se specificato) */
+  dettaglioMese: DettaglioBlocco
 }

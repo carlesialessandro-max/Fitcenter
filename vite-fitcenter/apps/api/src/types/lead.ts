@@ -2,6 +2,7 @@ export type LeadSource =
   | "website"
   | "facebook"
   | "google"
+  | "tour_spontaneo"
   | "sql_server"
 
 export type LeadStatus =
@@ -48,6 +49,7 @@ export interface LeadUpdate {
   stato?: LeadStatus
   interesse?: InteresseLead
   consulenteId?: string
+  consulenteNome?: string
   note?: string
 }
 
