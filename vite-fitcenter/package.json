@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",
     "format": "turbo format",
     "typecheck": "turbo typecheck"

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "pnpm --dir vite-fitcenter dev",
     "build": "pnpm --dir vite-fitcenter build",
+    "start": "pnpm --dir vite-fitcenter start",
     "install:all": "pnpm install && pnpm --dir vite-fitcenter install"
   }
 }

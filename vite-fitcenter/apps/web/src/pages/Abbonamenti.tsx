@@ -5,7 +5,6 @@ import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
 
-const CATEGORIE: CategoriaAbbonamento[] = ["palestra", "piscina", "spa", "corsi", "full_premium"]
 const CAT_LABELS: Record<CategoriaAbbonamento, string> = {
   palestra: "Palestra",
   piscina: "Piscina",
@@ -21,17 +20,32 @@ const CAT_COLORS: Record<CategoriaAbbonamento, string> = {
   full_premium: "bg-amber-500/20 text-amber-400 border-amber-500/30",
 }
 
+/** Parse data (YYYY-MM-DD o DD/MM/YYYY) per confronti */
+function parseDataScadenza(s: string): Date {
+  if (!s) return new Date(0)
+  const t = s.trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return new Date(t)
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1])
+  return new Date(t)
+}
+
 export function Abbonamenti() {
   const { role, consulenteFilter } = useAuth()
   const [tab, setTab] = useState<"abbonamenti" | "andamento">("abbonamenti")
+  /** Giorni per filtro scadenza: da oggi a 30 o 60 giorni */
+  const [giorniScadenza, setGiorniScadenza] = useState<30 | 60>(60)
 
   const { data: dashboard } = useQuery({
     queryKey: ["dashboard", consulenteFilter],
     queryFn: () => dataApi.getDashboard(consulenteFilter),
   })
   const { data: abbonamenti = [], isLoading, error } = useQuery({
-    queryKey: ["data", "abbonamenti", consulenteFilter],
-    queryFn: () => dataApi.getAbbonamenti(consulenteFilter),
+    queryKey: ["data", "abbonamenti", consulenteFilter ?? ""],
+    queryFn: () => dataApi.getAbbonamenti(consulenteFilter ?? undefined),
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   })
   const { data: clienti = [] } = useQuery({
     queryKey: ["data", "clienti"],
@@ -44,21 +58,37 @@ export function Abbonamenti() {
     return map
   }, [clienti])
 
-  /** Solo abbonamenti attivi che scadono da oggi a 60 giorni, ordinati per data scadenza */
+  /** Solo abbonamenti attivi che scadono da oggi a N giorni (30 o 60), esclusi quelli già rinnovati, ordinati per DataFine. Rinnovato calcolato qui per evitare dipendenze instabili. */
   const listaAbbonamenti = useMemo(() => {
     const oggi = new Date()
     oggi.setHours(0, 0, 0, 0)
-    const tra60 = new Date(oggi)
-    tra60.setDate(tra60.getDate() + 60)
+    const traNGiorni = new Date(oggi)
+    traNGiorni.setDate(traNGiorni.getDate() + giorniScadenza)
+
+    const isRinnovato = (a: (typeof abbonamenti)[0]): boolean => {
+      const fineA = parseDataScadenza(a.dataFine).getTime()
+      if (!fineA || Number.isNaN(fineA)) return false
+      const clienteId = String(a.clienteId ?? "").trim()
+      if (!clienteId) return false
+      return abbonamenti.some(
+        (b) =>
+          b.id !== a.id &&
+          String(b.clienteId ?? "").trim() === clienteId &&
+          parseDataScadenza(b.dataInizio ?? "").getTime() > fineA
+      )
+    }
+
     return abbonamenti
       .filter((a) => {
         if (a.stato !== "attivo") return false
-        const fine = new Date(a.dataFine)
+        if (a.rinnovato === true || isRinnovato(a)) return false
+        const fine = parseDataScadenza(a.dataFine)
+        if (Number.isNaN(fine.getTime())) return false
         fine.setHours(0, 0, 0, 0)
-        return fine >= oggi && fine <= tra60
+        return fine >= oggi && fine <= traNGiorni
       })
-      .sort((a, b) => new Date(a.dataFine).getTime() - new Date(b.dataFine).getTime())
-  }, [abbonamenti])
+      .sort((a, b) => parseDataScadenza(a.dataFine).getTime() - parseDataScadenza(b.dataFine).getTime())
+  }, [abbonamenti, giorniScadenza])
 
   return (
     <div className="p-6">
@@ -123,10 +153,30 @@ export function Abbonamenti() {
 
       {tab === "abbonamenti" && (
       <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-        <h2 className="text-sm font-medium text-zinc-400">Abbonamenti</h2>
-        <p className="mt-1 text-xs text-zinc-500">
-          Abbonamenti attivi in scadenza da oggi a 60 giorni, ordinati per data di scadenza
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-zinc-400">Abbonamenti in scadenza (DataFine)</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Solo attivi, da oggi a {giorniScadenza} giorni, ordinati per data scadenza
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setGiorniScadenza(30)}
+              className={`rounded border px-3 py-1.5 text-sm ${giorniScadenza === 30 ? "border-amber-500 bg-amber-500/20 text-amber-400" : "border-zinc-600 text-zinc-400 hover:bg-zinc-800"}`}
+            >
+              Entro 30 giorni
+            </button>
+            <button
+              type="button"
+              onClick={() => setGiorniScadenza(60)}
+              className={`rounded border px-3 py-1.5 text-sm ${giorniScadenza === 60 ? "border-amber-500 bg-amber-500/20 text-amber-400" : "border-zinc-600 text-zinc-400 hover:bg-zinc-800"}`}
+            >
+              Entro 60 giorni
+            </button>
+          </div>
+        </div>
         <div className="mt-4 overflow-x-auto">
           {isLoading && (
             <div className="flex justify-center py-12 text-zinc-400">Caricamento...</div>
@@ -135,7 +185,7 @@ export function Abbonamenti() {
             <div className="py-8 text-center text-red-400">{(error as Error).message}</div>
           )}
           {!isLoading && !error && listaAbbonamenti.length === 0 && (
-            <p className="text-sm text-zinc-500">Nessun abbonamento in scadenza nei prossimi 60 giorni.</p>
+            <p className="text-sm text-zinc-500">Nessun abbonamento in scadenza nei prossimi {giorniScadenza} giorni.</p>
           )}
           {!isLoading && !error && listaAbbonamenti.length > 0 && (
             <table className="w-full text-left text-sm">

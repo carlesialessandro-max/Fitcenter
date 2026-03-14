@@ -31,7 +31,7 @@ const CARD_COLORS: Record<LeadStatus, string> = {
   chiuso_perso: "bg-red-500/20 border-red-500/40 text-red-300",
 }
 /** Fonti per filtro: solo quelle attive (no sql_server). Lead da Zapier/sito/FB/Google + tour spontanei manuali. */
-const SOURCES: LeadSource[] = ["website", "facebook", "google", "tour_spontaneo"]
+const SOURCES: LeadSource[] = ["website", "facebook", "google", "tour_spontaneo", "zapier"]
 
 export function LeadList() {
   const queryClient = useQueryClient()

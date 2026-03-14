@@ -1,0 +1,10 @@
+SELECT     RVW_AbbonamentiUtenti.NomeVenditoreAbbonamento, RVW_AbbonamentiUtenti.IDVenditoreAbbonamento, SUM(RVW_AbbonamentiUtenti.Totale) 
+                      AS Totale, COUNT(RVW_AbbonamentiUtenti.IDIscrizione) AS NumAbbonamenti
+FROM         RVW_AbbonamentiUtenti INNER JOIN
+                      Temp_Stampe ON RVW_AbbonamentiUtenti.IDIscrizione = Temp_Stampe.ID
+GROUP BY RVW_AbbonamentiUtenti.NomeVenditoreAbbonamento, RVW_AbbonamentiUtenti.IDVenditoreAbbonamento
+
+
+
+
+

@@ -4,6 +4,7 @@ export type LeadSource =
   | "google"
   | "tour_spontaneo"
   | "sql_server"
+  | "zapier"
 
 export type LeadStatus =
   | "nuovo"

@@ -7,7 +7,17 @@ import { LeadList } from "@/features/crm/LeadList"
 import { LeadDetail } from "@/features/crm/LeadDetail"
 import { NewLead } from "@/features/crm/NewLead"
 import { Abbonamenti } from "@/pages/Abbonamenti"
-import { Clienti } from "@/pages/Clienti"
+
+function ClientiDisabilitata() {
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center p-6">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+        <h2 className="text-lg font-semibold text-zinc-200">Clienti</h2>
+        <p className="mt-2 text-sm text-zinc-500">Pagina temporaneamente non disponibile.</p>
+      </div>
+    </div>
+  )
+}
 
 export const router = createBrowserRouter([
   {
@@ -31,7 +41,7 @@ export const router = createBrowserRouter([
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },
       { path: "abbonamenti", element: <Abbonamenti /> },
-      { path: "clienti", element: <Clienti /> },
+      { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

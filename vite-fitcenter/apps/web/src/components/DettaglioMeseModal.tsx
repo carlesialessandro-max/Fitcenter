@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
-import type { DettaglioMeseResponse, DettaglioBlocco, DettaglioConsulente } from "@/types/gestionale"
+import type { DettaglioBlocco, DettaglioConsulente } from "@/types/gestionale"
 import { useAuth } from "@/contexts/AuthContext"
 
 type Props = {

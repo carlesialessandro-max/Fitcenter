@@ -9,13 +9,14 @@ export interface User {
 }
 
 /**
- * Utenti per accesso (in produzione usare variabili d'ambiente e hash password).
- * Credenziali: admin/admin, luca/luca, anna/anna
+ * Utenti: admin + 3 consulenti (username/password in produzione usare env e hash).
+ * Nel DB IDUtente (tabella Utenti) è la chiave in tutte le tabelle; filtro venditore tramite IDVenditore = IDUtente consulente.
  */
 const USERS: (User & { password: string })[] = [
   { username: "admin", password: "admin", nome: "Amministratore", role: "admin" },
-  { username: "luca", password: "luca", nome: "Luca Ferrari", role: "operatore", consulenteNome: "Luca Ferrari" },
-  { username: "anna", password: "anna", nome: "Anna Bianchi", role: "operatore", consulenteNome: "Anna Bianchi" },
+  { username: "carmen", password: "carmen", nome: "Carmen Severino", role: "operatore", consulenteNome: "Carmen Severino" },
+  { username: "ombretta", password: "ombretta", nome: "Ombretta Zenoni", role: "operatore", consulenteNome: "Ombretta Zenoni" },
+  { username: "serena", password: "serena", nome: "Serena Del Prete", role: "operatore", consulenteNome: "Serena Del Prete" },
 ]
 
 const sessions = new Map<string, { user: User; expiresAt: number }>()

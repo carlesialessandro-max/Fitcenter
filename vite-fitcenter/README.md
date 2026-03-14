@@ -113,6 +113,32 @@ pnpm dev
 
 Il frontend usa il proxy `/api` → `http://localhost:3001`.
 
+## Uso in rete locale (stesso PC o più PC in LAN)
+
+Per usare FitCenter **sul tuo PC** o su **più PC della stessa rete** (senza pubblicare su internet):
+
+1. **Un solo programma da avviare**: l’API serve anche il frontend, così non serve aprire due processi.
+
+2. Dalla cartella **vite-fitcenter**:
+   ```bash
+   pnpm install
+   pnpm build
+   pnpm start
+   ```
+
+3. **Sul PC dove gira l’app** apri il browser su:  
+   `http://localhost:3001`  
+   (login e uso come in sviluppo.)
+
+4. **Da altri PC della stessa rete**: apri il browser su  
+   `http://<IP-del-PC-dove-gira-FitCenter>:3001`  
+   (es. `http://192.168.1.50:3001`).  
+   L’IP lo vedi in Windows con `ipconfig` (IPv4), su Mac/Linux con `ip addr` o `ifconfig`.
+
+5. Opzionale: in `apps/api/.env` puoi impostare `PORT=3001` (o un’altra porta) e `HOST=0.0.0.0` (default: l’app è già in ascolto su tutte le interfacce).
+
+**Riassunto**: `pnpm build` poi `pnpm start`; un solo indirizzo per tutti (locale o IP in LAN). Non serve pubblicare online: funziona solo in rete locale.
+
 ## Struttura progetto
 
 - `apps/web` – React (Vite), React Router, TanStack Query, Recharts (grafici)

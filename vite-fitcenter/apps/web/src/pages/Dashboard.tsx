@@ -392,35 +392,13 @@ export function Dashboard() {
 
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">In scadenza (30 giorni)</h2>
-          <ul className="mt-3 space-y-2">
-            {(data.abbonamentiInScadenzaLista ?? []).length === 0 ? (
-              <li className="text-sm text-zinc-500">Nessuno</li>
-            ) : (
-              (data.abbonamentiInScadenzaLista ?? []).map((item, i) => (
-                <li key={i} className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2 text-sm">
-                  <span className="font-medium text-zinc-200">{item.clienteNome}</span>
-                  <span className="text-zinc-500">{item.piano}</span>
-                  <span className="text-amber-400">Scade: {formatDate(item.dataFine)}</span>
-                </li>
-              ))
-            )}
-          </ul>
+          <p className="mt-3 text-2xl font-semibold text-amber-400">{data.abbonamentiInScadenza ?? 0}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">totale</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">In scadenza (60 giorni)</h2>
-          <ul className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-            {(data.abbonamentiInScadenza60Lista ?? []).length === 0 ? (
-              <li className="text-sm text-zinc-500">Nessuno</li>
-            ) : (
-              (data.abbonamentiInScadenza60Lista ?? []).map((item, i) => (
-                <li key={i} className="flex items-center justify-between rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-3 py-2 text-sm">
-                  <span className="font-medium text-zinc-200">{item.clienteNome}</span>
-                  <span className="text-zinc-500">{item.piano}</span>
-                  <span className="text-amber-400">Scade: {formatDate(item.dataFine)}</span>
-                </li>
-              ))
-            )}
-          </ul>
+          <p className="mt-3 text-2xl font-semibold text-amber-400">{data.abbonamentiInScadenza60 ?? 0}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">totale</p>
         </div>
       </div>
 
@@ -473,12 +451,4 @@ export function Dashboard() {
       )}
     </div>
   )
-}
-
-function formatDate(s: string) {
-  try {
-    return new Date(s).toLocaleDateString("it-IT")
-  } catch {
-    return s
-  }
 }

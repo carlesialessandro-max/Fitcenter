@@ -11,8 +11,8 @@ import {
 export const leadsRouter = Router()
 
 leadsRouter.get("/leads", listLeads)
+leadsRouter.post("/leads/import-sql", importFromSql)
 leadsRouter.get("/leads/:id", getLead)
 leadsRouter.post("/leads", createLead)
 leadsRouter.put("/leads/:id", updateLead)
 leadsRouter.delete("/leads/:id", deleteLead)
-leadsRouter.post("/leads/import-sql", importFromSql)

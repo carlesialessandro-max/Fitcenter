@@ -6,7 +6,7 @@ const nav = [
   { to: "/", label: "Dashboard" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
-  { to: "/clienti", label: "Clienti" },
+  // Clienti temporaneamente non in uso
 ] as const
 
 export function AppLayout() {

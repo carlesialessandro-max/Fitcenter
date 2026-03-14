@@ -1,10 +1,11 @@
-/** Fonti dei lead: sito web, Facebook, Google, tour spontanei (inserimento manuale). Da Zapier/automazioni: website, facebook, google. */
+/** Fonti dei lead: sito web, Facebook, Google, tour spontanei (inserimento manuale), Zapier (webhook). */
 export type LeadSource =
   | "website"
   | "facebook"
   | "google"
   | "tour_spontaneo"
   | "sql_server" /** @deprecated solo per storico, non più usato */
+  | "zapier"
 
 export type LeadStatus =
   | "nuovo"
@@ -67,6 +68,7 @@ export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
   google: "Google Ads",
   tour_spontaneo: "Tour spontaneo",
   sql_server: "SQL Server (storico)",
+  zapier: "Zapier",
 }
 
 export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {

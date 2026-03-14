@@ -29,6 +29,8 @@ export interface Abbonamento {
   dataFine: string
   stato: "attivo" | "scaduto"
   consulenteNome?: string
+  /** true se esiste un altro abbonamento dello stesso cliente con dataInizio > questa dataFine (già rinnovato) */
+  rinnovato?: boolean
 }
 
 export interface PianoAbbonamento {

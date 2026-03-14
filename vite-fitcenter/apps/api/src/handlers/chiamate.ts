@@ -18,7 +18,7 @@ export async function listChiamate(req: Request, res: Response) {
 }
 
 export async function getChiamata(req: Request, res: Response) {
-  const c = store.get(req.params.id)
+  const c = store.get(String(req.params.id))
   if (!c) return res.status(404).json({ message: "Chiamata non trovata" })
   res.json(c)
 }

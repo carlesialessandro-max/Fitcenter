@@ -1,8 +1,10 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getVenditeStorico, getTotaliAnni, getClienti, getAbbonamenti, getBudget, setBudget, getLeadsFromGestionale } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getVenditeStorico, getTotaliAnni, getClienti, getAbbonamenti, getBudget, setBudget, getLeadsFromGestionale, getSqlStatus, getDebugConsulenti } from "../handlers/data.js"
 
 export const dataRouter = Router()
 
+dataRouter.get("/debug-consulenti", getDebugConsulenti)
+dataRouter.get("/sql-status", getSqlStatus)
 dataRouter.get("/dashboard", getDashboard)
 dataRouter.get("/vendite-storico", getVenditeStorico)
 dataRouter.get("/totali-anni", getTotaliAnni)
