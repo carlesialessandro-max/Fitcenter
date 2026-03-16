@@ -38,12 +38,14 @@ export interface ChiamateStats {
 }
 
 export const chiamateApi = {
-  list: (params?: { consulenteId?: string; da?: string; a?: string; tipo?: string }) => {
+  list: (params?: { consulenteId?: string; da?: string; a?: string; tipo?: string; clienteId?: string; leadId?: string }) => {
     const q = new URLSearchParams()
     if (params?.consulenteId) q.set("consulenteId", params.consulenteId)
     if (params?.da) q.set("da", params.da)
     if (params?.a) q.set("a", params.a)
     if (params?.tipo) q.set("tipo", params.tipo)
+    if (params?.clienteId) q.set("clienteId", params.clienteId)
+    if (params?.leadId) q.set("leadId", params.leadId)
     const query = q.toString()
     return api.get<Chiamata[]>(`/chiamate${query ? `?${query}` : ""}`)
   },

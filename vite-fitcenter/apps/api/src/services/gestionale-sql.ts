@@ -97,8 +97,12 @@ export function getLastConnectionError(): string | null {
 
 const defaultTables = {
   clienti: process.env.GESTIONALE_TABLE_CLIENTI ?? "Utenti",
-  abbonamenti: process.env.GESTIONALE_TABLE_ABBONAMENTI ?? "AbbonamentiIscrizione",
   movimentiVenduto: process.env.GESTIONALE_TABLE_MOVIMENTI_VENDUTO ?? "MovimentiVenduto",
+}
+
+/** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
+export function getAbbonamentiTableName(): string {
+  return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"
 }
 
 /** View venditore da anagrafica (es. RVW_AbbonamentiUtentiCapofamiglia): IDVenditoreAbbonamento, NomeVenditoreAbbonamento, colonna join IDIscrizione. */
@@ -190,7 +194,7 @@ export async function getConsultantIdUtenteMap(): Promise<Map<string, string>> {
 
   if (result.size === 0) {
     try {
-      const tblA = defaultTables.abbonamenti
+      const tblA = getAbbonamentiTableName()
       const r = await p.request().query(
         `SELECT DISTINCT IDVenditore, NomeOperatore FROM [${tblA}] WHERE IDVenditore IS NOT NULL AND NomeOperatore IS NOT NULL`
       )
@@ -293,7 +297,7 @@ function parseConsultantIds(idConsultant: string): number[] {
 export async function queryAbbonamenti(idConsultant?: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
-  const tblA = defaultTables.abbonamenti
+  const tblA = getAbbonamentiTableName()
   const tblU = defaultTables.clienti
   const runWithCol = async (col: string) => {
     let req = p.request()

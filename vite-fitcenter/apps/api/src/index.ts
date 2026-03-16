@@ -3,8 +3,12 @@ import { fileURLToPath } from "url"
 import { existsSync } from "fs"
 import dotenv from "dotenv"
 
+// Carica .env: prima da apps/api/.env (risolto rispetto a dist/index.js), poi dalla root
 const __dirnameForEnv = path.dirname(fileURLToPath(import.meta.url))
-dotenv.config({ path: path.join(__dirnameForEnv, "../.env") })
+const apiEnvPath = path.resolve(__dirnameForEnv, "../.env")
+const rootEnvPath = path.resolve(process.cwd(), ".env")
+dotenv.config({ path: apiEnvPath })
+if (rootEnvPath !== apiEnvPath) dotenv.config({ path: rootEnvPath })
 
 import express from "express"
 import cors from "cors"
@@ -66,6 +70,10 @@ app.listen(Number(PORT), HOST, () => {
   if (HOST === "0.0.0.0") {
     console.log("  In rete: altri PC possono aprire http://<IP-DI-QUESTO-PC>:" + PORT)
   }
+  const tableAbb = process.env.GESTIONALE_TABLE_ABBONAMENTI
+  const envLoaded = existsSync(apiEnvPath)
+  console.log(`  .env: ${envLoaded ? "trovato " + apiEnvPath : "NON trovato " + apiEnvPath}`)
+  console.log(`  GESTIONALE_TABLE_ABBONAMENTI: ${tableAbb ?? "(non impostato → si usa AbbonamentiIscrizione)"}`)
   const sqlEnv = process.env.SQL_CONNECTION_STRING
   if (sqlEnv) {
     console.log("  SQL: configurato (verifica: GET /api/data/sql-status)")

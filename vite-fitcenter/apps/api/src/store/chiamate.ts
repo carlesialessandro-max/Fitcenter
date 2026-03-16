@@ -21,13 +21,19 @@ export const store = {
     return chiamata
   },
 
-  list(filters: { consulenteId?: string; da?: string; a?: string; tipo?: string } = {}): Chiamata[] {
+  list(filters: { consulenteId?: string; da?: string; a?: string; tipo?: string; clienteId?: string; leadId?: string } = {}): Chiamata[] {
     let list = Array.from(db.values())
     if (filters.consulenteId) {
       list = list.filter((c) => c.consulenteId === filters.consulenteId)
     }
     if (filters.tipo) {
       list = list.filter((c) => c.tipo === filters.tipo)
+    }
+    if (filters.clienteId) {
+      list = list.filter((c) => c.clienteId === filters.clienteId)
+    }
+    if (filters.leadId) {
+      list = list.filter((c) => c.leadId === filters.leadId)
     }
     if (filters.da) {
       const da = new Date(filters.da)

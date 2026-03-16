@@ -7,6 +7,7 @@ import { LeadList } from "@/features/crm/LeadList"
 import { LeadDetail } from "@/features/crm/LeadDetail"
 import { NewLead } from "@/features/crm/NewLead"
 import { Abbonamenti } from "@/pages/Abbonamenti"
+import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
 
 function ClientiDisabilitata() {
   return (
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },
       { path: "abbonamenti", element: <Abbonamenti /> },
+      { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

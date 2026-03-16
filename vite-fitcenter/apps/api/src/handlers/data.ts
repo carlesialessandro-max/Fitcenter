@@ -3,6 +3,9 @@ import * as gestionaleSql from "../services/gestionale-sql.js"
 import { getMockDashboardStats } from "../data/mock-gestionale.js"
 import { store as leadsStore } from "../store/leads.js"
 import { budgetStore } from "../store/budget.js"
+import * as budgetPerConsulente from "../store/budget-per-consulente.js"
+import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
+import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { rowToCliente, rowToAbbonamento } from "../data/map-sql-to-types.js"
 import type {
   Cliente,
@@ -150,7 +153,12 @@ function mergeBudgetWithStore(budget: { anno: number; mese: number; budget: numb
     const existing = map.get(`${o.anno}-${o.mese}`)
     map.set(`${o.anno}-${o.mese}`, { anno: o.anno, mese: o.mese, budget: o.budget, vendite: existing?.vendite })
   })
-  return Array.from(map.values()).sort((a, b) => a.anno - b.anno || a.mese - b.mese)
+  const result = Array.from(map.values()).sort((a, b) => a.anno - b.anno || a.mese - b.mese)
+  result.forEach((r) => {
+    const totalePerConsulente = budgetPerConsulente.getTotaleMese(r.anno, r.mese)
+    r.budget = totalePerConsulente
+  })
+  return result
 }
 
 function buildDashboardFromData(
@@ -281,7 +289,13 @@ function buildDashboardFromData(
 
 export async function getClienti(req: Request, res: Response) {
   try {
-    res.json([])
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      return res.json([])
+    }
+    const rows = await gestionaleSql.queryClienti()
+    const abbonamentiCount = new Map<string, number>()
+    const list = rows.map((r) => rowToCliente(r, abbonamentiCount))
+    res.json(list)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -299,8 +313,16 @@ export async function getAbbonamenti(req: Request, res: Response) {
       const rows = idVenditore
         ? await gestionaleSql.queryAbbonamenti(idVenditore)
         : await gestionaleSql.queryAbbonamenti(undefined)
-      const list = rows.map((r) => rowToAbbonamento(r))
+      let list = rows.map((r) => rowToAbbonamento(r))
       markRinnovato(list)
+      list = list.filter((a) => !a.isTesseramento)
+      if (consulente?.trim()) {
+        const want = consulente.trim().toLowerCase()
+        list = list.filter((a) => {
+          const row = (a.consulenteNome ?? "").trim().toLowerCase()
+          return row === want || row.includes(want) || want.includes(row)
+        })
+      }
       return res.json(list)
     }
     const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
@@ -313,14 +335,15 @@ export async function getAbbonamenti(req: Request, res: Response) {
   }
 }
 
-/** Budget: assegnato ogni mese dall'admin (store). Non si importa dal gestionale. */
+/** Budget: suddiviso per le 3 consulenti per mese; il totale mese = budget generale. */
 export async function getBudget(req: Request, res: Response) {
   try {
-    const defaultList = gestionaleSql.isGestionaleConfigured()
-      ? getDefaultBudgetList()
-      : (await import("../data/mock-gestionale.js")).mockBudget
+    const y = Number(req.query.anno)
+    const anno = Number.isNaN(y) || req.query.anno === "" ? new Date().getFullYear() : y
+    const defaultList = getDefaultBudgetList(anno)
     const budget = mergeBudgetWithStore(defaultList)
-    res.json(budget)
+    const perConsulente = budgetPerConsulente.getAll(anno)
+    res.json({ list: budget, perConsulente, consulenti: budgetPerConsulente.getConsulentiLabels() })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -328,11 +351,20 @@ export async function getBudget(req: Request, res: Response) {
 
 export async function setBudget(req: Request, res: Response) {
   try {
-    const { anno, mese, budget } = req.body as { anno: number; mese: number; budget: number }
-    if (anno == null || mese == null || budget == null) {
-      return res.status(400).json({ message: "anno, mese e budget sono obbligatori" })
+    const body = req.body as { anno: number; mese: number; budget?: number; consulenteLabel?: string }
+    const { anno, mese, budget, consulenteLabel } = body
+    if (anno == null || mese == null) {
+      return res.status(400).json({ message: "anno e mese sono obbligatori" })
     }
-    budgetStore.set(anno, mese, budget)
+    if (consulenteLabel != null && consulenteLabel !== "") {
+      if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio per consulente" })
+      budgetPerConsulente.set(anno, mese, consulenteLabel, budget)
+      return res.json({ anno, mese, consulenteLabel, budget })
+    }
+    if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio" })
+    budgetPerConsulente.getConsulentiLabels().forEach((label) => {
+      budgetPerConsulente.set(anno, mese, label, Math.round((budget / 3) * 100) / 100)
+    })
     res.json({ anno, mese, budget })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -501,6 +533,7 @@ export async function getDebugConsulenti(req: Request, res: Response) {
       consulenti,
       movimentiTotal,
       abbonamentiTotal,
+      tableAbbonamenti: gestionaleSql.getAbbonamentiTableName(),
       movimentiConFiltroId: consulenti[0]?.id ?? null,
       movimentiConFiltro,
       abbonamentiConFiltro,
@@ -645,6 +678,25 @@ function buildDettaglioBloccoFromTotale(
   }
 }
 
+/** Dettaglio con una riga per consulente (admin: tutte e 3). */
+function buildDettaglioBloccoFromPerConsulente(rows: DettaglioConsulente[]): DettaglioBlocco {
+  const budget = rows.reduce((s, r) => s + r.budget, 0)
+  const budgetProgressivo = rows.reduce((s, r) => s + r.budgetProgressivo, 0)
+  const consuntivo = rows.reduce((s, r) => s + r.consuntivo, 0)
+  const scostamento = consuntivo - budgetProgressivo
+  const trend = budgetProgressivo > 0 ? Math.round((consuntivo / budgetProgressivo) * 10000) / 100 : 0
+  return {
+    budget: Math.round(budget * 100) / 100,
+    budgetProgressivo: Math.round(budgetProgressivo * 100) / 100,
+    consuntivo,
+    scostamento: Math.round(scostamento * 100) / 100,
+    assenze: 0,
+    improduttivi: 0,
+    trend,
+    perConsulente: rows,
+  }
+}
+
 function buildDettaglioBlocco(
   abbonamenti: Abbonamento[],
   budgetTotale: number,
@@ -728,8 +780,10 @@ export async function getDettaglioMese(req: Request, res: Response) {
     const useMovimenti = movimenti.length > 0
 
     if (fromSql) {
-      const merged = mergeBudgetWithStore(getDefaultBudgetList())
-      budgetMese = merged.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 6000
+      const merged = mergeBudgetWithStore(getDefaultBudgetList(anno))
+      budgetMese = consulente
+        ? budgetPerConsulente.get(anno, mese, consulente)
+        : (merged.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 6000)
       if (!useMovimenti) {
         const rows = await gestionaleSql.queryAbbonamenti(idUtente)
         abbonamenti = rows.map((r) => rowToAbbonamento(r))
@@ -747,12 +801,54 @@ export async function getDettaglioMese(req: Request, res: Response) {
     let bloccoGiorno: DettaglioBlocco
     let bloccoMese: DettaglioBlocco
     if (fromSql) {
-      const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
-        gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
-        gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, idUtente),
-      ])
-      bloccoGiorno = buildDettaglioBloccoFromTotale(totaleGiornoSql, budgetGiorno, budgetGiorno)
-      bloccoMese = buildDettaglioBloccoFromTotale(totaleMeseSql, budgetMese, budgetProgressivoMese)
+      const labels = budgetPerConsulente.getConsulentiLabels()
+      if (!idUtente && labels.length > 0) {
+        const perConsulenteGiorno: DettaglioConsulente[] = []
+        const perConsulenteMese: DettaglioConsulente[] = []
+        for (const label of labels) {
+          const id = await resolveConsultantId(label)
+          const budgetCons = budgetPerConsulente.get(anno, mese, label)
+          const budgetGiornoCons = budgetCons / giorniNelMese
+          const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
+          const [venditeGiorno, venditeMese] = await Promise.all([
+            gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
+            gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, id),
+          ])
+          const scostG = venditeGiorno - budgetGiornoCons
+          const scostM = venditeMese - budgetProgressivoMeseCons
+          const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
+          const trendM = budgetProgressivoMeseCons > 0 ? Math.round((venditeMese / budgetProgressivoMeseCons) * 10000) / 100 : 0
+          perConsulenteGiorno.push({
+            consulente: label,
+            budget: Math.round(budgetGiornoCons * 100) / 100,
+            budgetProgressivo: Math.round(budgetGiornoCons * 100) / 100,
+            consuntivo: venditeGiorno,
+            scostamento: Math.round(scostG * 100) / 100,
+            assenze: 0,
+            improduttivi: 0,
+            trend: trendG,
+          })
+          perConsulenteMese.push({
+            consulente: label,
+            budget: Math.round(budgetCons * 100) / 100,
+            budgetProgressivo: Math.round(budgetProgressivoMeseCons * 100) / 100,
+            consuntivo: venditeMese,
+            scostamento: Math.round(scostM * 100) / 100,
+            assenze: 0,
+            improduttivi: 0,
+            trend: trendM,
+          })
+        }
+        bloccoGiorno = buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno)
+        bloccoMese = buildDettaglioBloccoFromPerConsulente(perConsulenteMese)
+      } else {
+        const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
+          gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
+          gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, idUtente),
+        ])
+        bloccoGiorno = buildDettaglioBloccoFromTotale(totaleGiornoSql, budgetGiorno, budgetGiorno)
+        bloccoMese = buildDettaglioBloccoFromTotale(totaleMeseSql, budgetMese, budgetProgressivoMese)
+      }
     } else if (useMovimenti) {
       const nomeToId = await gestionaleSql.getConsultantIdUtenteMap()
       const idToNome = new Map<string, string>()
@@ -801,6 +897,111 @@ export async function getDettaglioMese(req: Request, res: Response) {
       _debug: { consulente, idUtente: idUtente ?? undefined },
     }
     res.json(result)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Dettaglio anno: totale + per consulente (budget anno, progressivo a oggi, consuntivo, scostamento, assenze, improduttivi, trend). */
+export async function getDettaglioAnno(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno)
+    if (Number.isNaN(anno) || anno < 2000 || anno > 2100) {
+      return res.status(400).json({ message: "anno obbligatorio e valido (2000-2100)" })
+    }
+    const oggi = toDateParts(new Date())
+    const labels = budgetPerConsulente.getConsulentiLabels()
+    const perConsulente: DettaglioConsulente[] = []
+
+    for (const label of labels) {
+      const id = await resolveConsultantId(label)
+      const venditePerMese = gestionaleSql.isGestionaleConfigured()
+        ? await gestionaleSql.getVenditePerMeseAnno(anno, id)
+        : []
+      const venditeAnno = venditePerMese.reduce((s, x) => s + x.totale, 0)
+      let budgetAnno = 0
+      let budgetProgressivoAnno = 0
+      for (let m = 1; m <= 12; m++) {
+        const b = budgetPerConsulente.get(anno, m, label)
+        budgetAnno += b
+        if (anno < oggi.year || (anno === oggi.year && m < oggi.month)) {
+          budgetProgressivoAnno += b
+        } else if (anno === oggi.year && m === oggi.month) {
+          const giorniNelMese = new Date(anno, m, 0).getDate()
+          budgetProgressivoAnno += (b * Math.min(oggi.day, giorniNelMese)) / giorniNelMese
+        }
+      }
+      const scost = venditeAnno - budgetProgressivoAnno
+      const trend = budgetProgressivoAnno > 0 ? Math.round((venditeAnno / budgetProgressivoAnno) * 10000) / 100 : 0
+      perConsulente.push({
+        consulente: label,
+        budget: Math.round(budgetAnno * 100) / 100,
+        budgetProgressivo: Math.round(budgetProgressivoAnno * 100) / 100,
+        consuntivo: venditeAnno,
+        scostamento: Math.round(scost * 100) / 100,
+        assenze: 0,
+        improduttivi: 0,
+        trend,
+      })
+    }
+
+    const dettaglio = buildDettaglioBloccoFromPerConsulente(perConsulente)
+    res.json({ anno, annoLabel: String(anno), dettaglio })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Follow-up rinnovi abbonamenti: stato e note per abbonamento (come CRM vendita). */
+export async function getAbbonamentiFollowUp(req: Request, res: Response) {
+  try {
+    const all = abbonamentiFollowUpStore.store.getAll()
+    res.json(all)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function updateAbbonamentiFollowUp(req: Request, res: Response) {
+  try {
+    const abbonamentoId = String(req.params.abbonamentoId ?? "")
+    if (!abbonamentoId) return res.status(400).json({ message: "abbonamentoId mancante" })
+    const body = req.body as { stato?: string; note?: string }
+    const entry = abbonamentiFollowUpStore.store.set(abbonamentoId, {
+      stato: body.stato as abbonamentiFollowUpStore.RinnovoStato | undefined,
+      note: body.note,
+    })
+    res.json(entry)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Convalida giorno lavorativo (consulente). */
+export async function getConvalidazioni(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno)
+    const mese = Number(req.query.mese)
+    const consulenteNome = (req.query.consulente as string)?.trim()
+    if (Number.isNaN(anno) || Number.isNaN(mese) || !consulenteNome) {
+      return res.status(400).json({ message: "anno, mese e consulente obbligatori" })
+    }
+    const convalidati = convalidazioniStore.getGiorniConvalidati(consulenteNome, anno, mese)
+    res.json({ anno, mese, consulenteNome, convalidati })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function setConvalidazione(req: Request, res: Response) {
+  try {
+    const body = req.body as { anno: number; mese: number; giorno: number; convalidato: boolean; consulenteNome: string }
+    const { anno, mese, giorno, convalidato, consulenteNome } = body
+    if (anno == null || mese == null || giorno == null || typeof convalidato !== "boolean" || !consulenteNome?.trim()) {
+      return res.status(400).json({ message: "anno, mese, giorno, convalidato e consulenteNome obbligatori" })
+    }
+    convalidazioniStore.set(consulenteNome.trim(), anno, mese, giorno, convalidato)
+    res.json({ anno, mese, giorno, convalidato })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

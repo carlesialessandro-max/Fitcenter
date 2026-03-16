@@ -1,9 +1,18 @@
 import { useState, useMemo } from "react"
+import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
+import { chiamateApi, type EsitoChiamata } from "@/api/chiamate"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
+
+const ESITO_LABELS: Record<EsitoChiamata, string> = {
+  risposto: "Risposto",
+  non_risposto: "Non risposto",
+  occupato: "Occupato",
+  altro: "Altro",
+}
 
 const CAT_LABELS: Record<CategoriaAbbonamento, string> = {
   palestra: "Palestra",
@@ -30,8 +39,15 @@ function parseDataScadenza(s: string): Date {
   return new Date(t)
 }
 
+/** Esclude tesseramenti (ASI + iscrizione, ecc.): non vanno in lista "in scadenza". Inclusi abbonamenti a 39€. */
+function isTesseramento(a: { pianoNome?: string; prezzo?: number }): boolean {
+  if (a.prezzo != null && Number(a.prezzo) === 39) return true
+  const nome = (a.pianoNome ?? "").toLowerCase()
+  return nome.includes("tesserament") || (nome.includes("asi") && nome.includes("isc"))
+}
+
 export function Abbonamenti() {
-  const { role, consulenteFilter } = useAuth()
+  const { role, consulenteFilter, consulenteNome } = useAuth()
   const [tab, setTab] = useState<"abbonamenti" | "andamento">("abbonamenti")
   /** Giorni per filtro scadenza: da oggi a 30 o 60 giorni */
   const [giorniScadenza, setGiorniScadenza] = useState<30 | 60>(60)
@@ -51,12 +67,49 @@ export function Abbonamenti() {
     queryKey: ["data", "clienti"],
     queryFn: () => dataApi.getClienti(),
   })
+  const { data: chiamateCliente = [] } = useQuery({
+    queryKey: ["chiamate", "cliente"],
+    queryFn: () => chiamateApi.list({ tipo: "cliente" }),
+  })
 
   const telefonoByClienteId = useMemo(() => {
     const map = new Map<string, string>()
     clienti.forEach((c) => map.set(c.id, c.telefono ?? ""))
     return map
   }, [clienti])
+
+  /** Per colonna Stato chiamate: ultima chiamata e conteggio per cliente (come in CRM vendita). API ordina per data desc. */
+  const statoChiamateByClienteId = useMemo(() => {
+    const byCliente = new Map<
+      string,
+      { last: { dataOra: string; esito?: EsitoChiamata }; count: number }
+    >()
+    chiamateCliente.forEach((c) => {
+      const id = c.clienteId ?? ""
+      if (!id) return
+      const cur = byCliente.get(id)
+      if (!cur) {
+        byCliente.set(id, {
+          last: { dataOra: c.dataOra ?? "", esito: c.esito },
+          count: 1,
+        })
+      } else {
+        byCliente.set(id, { ...cur, count: cur.count + 1 })
+      }
+    })
+    return byCliente
+  }, [chiamateCliente])
+
+  /** Solo abbonamenti della consulente loggata (match normalizzato: stesso nome o uno contiene l'altro) */
+  const abbonamentiScope = useMemo(() => {
+    if (role === "admin") return abbonamenti
+    const target = (consulenteNome ?? "").toLowerCase().trim()
+    if (!target) return abbonamenti
+    return abbonamenti.filter((a) => {
+      const row = (a.consulenteNome ?? "").toLowerCase().trim()
+      return row === target || row.includes(target) || target.includes(row)
+    })
+  }, [abbonamenti, role, consulenteNome])
 
   /** Solo abbonamenti attivi che scadono da oggi a N giorni (30 o 60), esclusi quelli già rinnovati, ordinati per DataFine. Rinnovato calcolato qui per evitare dipendenze instabili. */
   const listaAbbonamenti = useMemo(() => {
@@ -65,22 +118,24 @@ export function Abbonamenti() {
     const traNGiorni = new Date(oggi)
     traNGiorni.setDate(traNGiorni.getDate() + giorniScadenza)
 
-    const isRinnovato = (a: (typeof abbonamenti)[0]): boolean => {
+    const isRinnovato = (a: (typeof abbonamentiScope)[0]): boolean => {
       const fineA = parseDataScadenza(a.dataFine).getTime()
       if (!fineA || Number.isNaN(fineA)) return false
       const clienteId = String(a.clienteId ?? "").trim()
       if (!clienteId) return false
-      return abbonamenti.some(
+      // Rinnovo anche lo stesso giorno della scadenza: dataInizio >= dataFine
+      return abbonamentiScope.some(
         (b) =>
           b.id !== a.id &&
           String(b.clienteId ?? "").trim() === clienteId &&
-          parseDataScadenza(b.dataInizio ?? "").getTime() > fineA
+          parseDataScadenza(b.dataInizio ?? "").getTime() >= fineA
       )
     }
 
-    return abbonamenti
+    return abbonamentiScope
       .filter((a) => {
         if (a.stato !== "attivo") return false
+        if (a.isTesseramento === true || isTesseramento(a)) return false
         if (a.rinnovato === true || isRinnovato(a)) return false
         const fine = parseDataScadenza(a.dataFine)
         if (Number.isNaN(fine.getTime())) return false
@@ -88,7 +143,7 @@ export function Abbonamenti() {
         return fine >= oggi && fine <= traNGiorni
       })
       .sort((a, b) => parseDataScadenza(a.dataFine).getTime() - parseDataScadenza(b.dataFine).getTime())
-  }, [abbonamenti, giorniScadenza])
+  }, [abbonamentiScope, giorniScadenza])
 
   return (
     <div className="p-6">
@@ -192,11 +247,12 @@ export function Abbonamenti() {
               <thead>
                 <tr className="border-b border-zinc-700 text-zinc-500">
                   <th className="pb-2 pr-4 font-medium">Cliente</th>
-                  <th className="pb-2 pr-4 font-medium">Piano</th>
+                  <th className="pb-2 pr-4 font-medium">Abbonamento</th>
                   <th className="pb-2 pr-4 font-medium">Categoria</th>
                   <th className="pb-2 pr-4 font-medium">Prezzo</th>
                   <th className="pb-2 pr-4 font-medium">Scadenza</th>
                   <th className="pb-2 pr-4 font-medium">Consulente</th>
+                  <th className="pb-2 pr-4 font-medium">Stato chiamate</th>
                   <th className="pb-2 font-medium">Azioni</th>
                 </tr>
               </thead>
@@ -204,26 +260,61 @@ export function Abbonamenti() {
                 {listaAbbonamenti.map((a) => (
                   <tr key={a.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
                     <td className="py-2 pr-4 font-medium text-zinc-200">{a.clienteNome}</td>
-                    <td className="py-2 pr-4">{a.pianoNome}</td>
+                    <td className="py-2 pr-4">{a.abbonamentoDescrizione ?? a.pianoNome}</td>
                     <td className="py-2 pr-4">
-                      <span className={`inline-flex rounded border px-2 py-0.5 text-xs ${CAT_COLORS[a.categoria]}`}>
-                        {CAT_LABELS[a.categoria]}
-                      </span>
+                      {a.categoriaAbbonamentoDescrizione ? (
+                        <span className="inline-flex rounded border border-zinc-600 bg-zinc-800/50 px-2 py-0.5 text-xs text-zinc-300">
+                          {a.categoriaAbbonamentoDescrizione}
+                        </span>
+                      ) : a.macroCategoriaDescrizione ? (
+                        <span className="inline-flex rounded border border-zinc-600 bg-zinc-800/50 px-2 py-0.5 text-xs text-zinc-300">
+                          {a.macroCategoriaDescrizione}
+                        </span>
+                      ) : (
+                        <span className={`inline-flex rounded border px-2 py-0.5 text-xs ${CAT_COLORS[a.categoria]}`}>
+                          {CAT_LABELS[a.categoria]}
+                        </span>
+                      )}
                     </td>
                     <td className="py-2 pr-4">€{a.prezzo.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</td>
                     <td className="py-2 pr-4 text-amber-400">{new Date(a.dataFine).toLocaleDateString("it-IT")}</td>
                     <td className="py-2 pr-4 text-zinc-400">{a.consulenteNome ?? "—"}</td>
+                    <td className="py-2 pr-4 text-zinc-400">
+                      {(() => {
+                        const sc = statoChiamateByClienteId.get(a.clienteId)
+                        if (!sc) return <span className="text-zinc-500">—</span>
+                        const esitoLabel = sc.last.esito ? ESITO_LABELS[sc.last.esito] : "—"
+                        const dataShort = sc.last.dataOra
+                          ? new Date(sc.last.dataOra).toLocaleDateString("it-IT", { day: "2-digit", month: "2-digit", year: "2-digit" })
+                          : ""
+                        return (
+                          <span className="inline-flex flex-col text-xs">
+                            <span>{esitoLabel}</span>
+                            {dataShort && <span className="text-zinc-500">{dataShort} · {sc.count} chiamat{sc.count === 1 ? "a" : "e"}</span>}
+                          </span>
+                        )
+                      })()}
+                    </td>
                     <td className="py-2">
-                      {telefonoByClienteId.get(a.clienteId) ? (
-                        <ChiamaButton
-                          telefono={telefonoByClienteId.get(a.clienteId)!}
-                          nomeContatto={a.clienteNome}
-                          tipo="cliente"
-                          clienteId={a.clienteId}
-                        />
-                      ) : (
-                        <span className="text-xs text-zinc-500">—</span>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {telefonoByClienteId.get(a.clienteId) ? (
+                          <ChiamaButton
+                            telefono={telefonoByClienteId.get(a.clienteId)!}
+                            nomeContatto={a.clienteNome}
+                            tipo="cliente"
+                            clienteId={a.clienteId}
+                          />
+                        ) : (
+                          <span className="text-xs text-zinc-500">—</span>
+                        )}
+                        <Link
+                          to={`/abbonamenti/dettaglio/${a.id}`}
+                          className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                          title="Stato e note (come CRM)"
+                        >
+                          Dettaglio
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}

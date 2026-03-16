@@ -21,7 +21,9 @@ export function rowToCliente(row: Record<string, unknown>, abbonamentiCount: Map
   const id = str(row.IDUtente ?? row.Id ?? row.id ?? row.ClienteId ?? row.clienteId)
   const count = abbonamentiCount.get(id) ?? 0
   const stato = (row.Stato ?? row.stato ?? (count > 0 ? "attivo" : "inattivo")) as string
-  const telefono = str(row.Telefono_1 ?? row.Telefono_2 ?? row.Telefono ?? row.telefono ?? row.Phone ?? row.phone)
+  const telefono = str(
+    row.SMS ?? row.sms ?? row.Telefono_1 ?? row.Telefono_2 ?? row.Telefono ?? row.telefono ?? row.Phone ?? row.phone
+  )
   return {
     id: id || crypto.randomUUID(),
     nome: str(row.Nome ?? row.nome ?? row.Name ?? row.name),
@@ -35,6 +37,25 @@ export function rowToCliente(row: Record<string, unknown>, abbonamentiCount: Map
   }
 }
 
+/** Tesseramenti da escludere: solo descrizioni (CategoriaAbbonamentoDescrizione, MacroCategoriaAbbonamentoDescrizione). */
+function isTesseramentoRow(row: Record<string, unknown>): boolean {
+  const idCategoria = row.IDCategoria != null ? num(row.IDCategoria) : NaN
+  const catDesc = str(row.CategoriaAbbonamentoDescrizione ?? row.categoriaAbbonamentoDescrizione ?? "").trim().toUpperCase()
+  const macroDesc = str(
+    row.MacroCategoriaAbbonamentoDescrizione ?? row.macroCategoriaAbbonamentoDescrizione ?? ""
+  ).trim().toUpperCase()
+  const abbonDesc = str(
+    row.AbbonamentoDescrizione ?? row.abbonamentoDescrizione ?? row.Abbonamento ?? row.abbonamento ?? ""
+  ).trim().toUpperCase()
+  // IDCategoria = 19: VARIE/TESSERAMENTI da escludere
+  if (!Number.isNaN(idCategoria) && idCategoria === 19) return true
+  if (catDesc === "TESSERAMENTI") return true
+  if (macroDesc === "VARIE") return true
+  if (macroDesc.includes("ASI") && macroDesc.includes("ISCRIZIONE")) return true
+  if (abbonDesc.includes("ASI") && abbonDesc.includes("ISCRIZIONE")) return true
+  return false
+}
+
 /** Mappa riga DB ad Abbonamento (Abbonamentilscrizione, ecc.) */
 export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
   const dataFine = dateStr(row.DataFine ?? row.dataFine ?? row.Fine ?? row.fine)
@@ -46,18 +67,52 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
   const cognome = str(row.ClienteCognome ?? row.Cognome ?? row.cognome)
   const nome = str(row.ClienteNome ?? row.Nome ?? row.nome)
   const clienteNome = [cognome, nome].filter(Boolean).join(" ") || str(row.Cliente ?? row.cliente)
+  // Descrizioni dalla view (se la view le espone; altrimenti la tabella base ha solo IDDurata, NomeOperatore, ecc.)
+  const categoriaAbbonamentoDescrizione = str(
+    row.CategoriaAbbonamentoDescrizione ??
+    row.categoriaAbbonamentoDescrizione ??
+    row.DescrizioneCategoria ??
+    row.NomeCategoria ??
+    ""
+  )
+  const macroCategoriaDescrizione = str(
+    row.MacroCategoriaAbbonamentoDescrizione ?? row.macroCategoriaAbbonamentoDescrizione ?? ""
+  )
+  const abbonamentoDescrizione = str(
+    row.AbbonamentoDescrizione ??
+    row.abbonamentoDescrizione ??
+    row.DescrizioneAbbonamento ??
+    row.NomeAbbonamento ??
+    row.Abbonamento ??
+    row.abbonamento ??
+    ""
+  )
+  // Per la colonna "Abbonamento" in UI: descrizione view, oppure "Piano IDDurata" se abbiamo solo IDDurata (tabella base)
+  const pianoNome =
+    abbonamentoDescrizione ||
+    categoriaAbbonamentoDescrizione ||
+    str(row.PianoNome ?? row.pianoNome ?? row.Piano ?? row.piano) ||
+    str(row.Descrizione ?? row.descrizione) ||
+    (row.IDDurata != null ? `Piano ${row.IDDurata}` : "") ||
+    "Abbonamento"
+  const prezzo = num(row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price ?? row.Importo ?? row.importo)
+  const isTesseramento = isTesseramentoRow(row)
   return {
     id: str(row.IDIscrizione ?? row.Id ?? row.id) || crypto.randomUUID(),
     clienteId: str(row.IDUtente ?? row.ClienteId ?? row.clienteId),
     clienteNome: clienteNome || "—",
     pianoId: str(row.IDDurata ?? row.PianoId ?? row.pianoId),
-    pianoNome: str(row.PianoNome ?? row.pianoNome ?? row.Piano ?? row.piano) || "Abbonamento",
+    pianoNome,
     categoria: cat as Abbonamento["categoria"],
-    prezzo: num(row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price),
+    prezzo,
     dataInizio: dateStr(row.DataInizio ?? row.Datalnizio ?? row.dataInizio ?? row.Inizio ?? row.inizio),
     dataFine,
     stato: (row.Stato ?? row.stato ?? stato) as "attivo" | "scaduto",
     consulenteNome: str(row.NomeOperatore ?? row.ConsulenteNome ?? row.consulenteNome ?? row.Consulente ?? row.consulente) || undefined,
+    categoriaAbbonamentoDescrizione: categoriaAbbonamentoDescrizione || undefined,
+    abbonamentoDescrizione: abbonamentoDescrizione || undefined,
+    macroCategoriaDescrizione: macroCategoriaDescrizione || undefined,
+    isTesseramento: isTesseramento || undefined,
   }
 }
 

@@ -4,12 +4,14 @@ import type { ChiamataCreate } from "../types/chiamata.js"
 
 export async function listChiamate(req: Request, res: Response) {
   try {
-    const { consulenteId, da, a, tipo } = req.query
+    const { consulenteId, da, a, tipo, clienteId, leadId } = req.query
     const list = store.list({
       consulenteId: consulenteId as string | undefined,
       da: da as string | undefined,
       a: a as string | undefined,
       tipo: tipo as string | undefined,
+      clienteId: clienteId as string | undefined,
+      leadId: leadId as string | undefined,
     })
     res.json(list)
   } catch (e) {

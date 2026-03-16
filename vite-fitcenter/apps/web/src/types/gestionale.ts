@@ -26,6 +26,14 @@ export interface Abbonamento {
   consulenteNome?: string
   /** true se esiste un altro abbonamento dello stesso cliente con dataInizio > dataFine (già rinnovato) */
   rinnovato?: boolean
+  /** CategoriaAbbonamentoDescrizione dalla view (per colonna Categoria in UI) */
+  categoriaAbbonamentoDescrizione?: string
+  /** AbbonamentoDescrizione dalla view (per colonna Abbonamento in UI) */
+  abbonamentoDescrizione?: string
+  /** Descrizione macro categoria (es. ASI + ISCRIZIONE) per colonna Categoria in UI */
+  macroCategoriaDescrizione?: string
+  /** true se tesseramento da escludere dalla lista in scadenza */
+  isTesseramento?: boolean
 }
 
 export interface BudgetMensile {
