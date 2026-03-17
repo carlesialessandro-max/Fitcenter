@@ -18,6 +18,9 @@ export type LeadStatus =
 
 export type InteresseLead = "palestra" | "piscina" | "spa" | "corsi" | "full_premium"
 
+/** "bambini" = visibile solo a consulente bambini (Irene). */
+export type LeadCategoria = "bambini" | "generale"
+
 export interface Lead {
   id: string
   nome: string
@@ -28,6 +31,9 @@ export interface Lead {
   fonteDettaglio?: string
   stato: LeadStatus
   interesse?: InteresseLead
+  /** Testo libero (es. "offerta marzo") quando interesse non è un valore predefinito. */
+  interesseDettaglio?: string
+  categoria?: LeadCategoria
   consulenteId?: string
   consulenteNome?: string
   note?: string
@@ -44,6 +50,7 @@ export interface LeadCreate {
   fonte: LeadSource
   fonteDettaglio?: string
   interesse?: InteresseLead
+  categoria?: LeadCategoria
   note?: string
 }
 

@@ -49,7 +49,11 @@ export function getMockDashboardStats(
       return inizio.getFullYear() === now.getFullYear() && inizio.getMonth() + 1 === now.getMonth() + 1
     })
     .reduce((s, a) => s + a.prezzo, 0)
-  const budgetMese = 6000
+  const anno = new Date().getFullYear()
+  const budgetMese = mockBudget.find((b) => b.anno === anno)?.budget ?? 6000
+  const budgetAnno = mockBudget
+    .filter((b) => b.anno === anno)
+    .reduce((s, b) => s + b.budget, 0)
   const venditePerMese = mockBudget.slice(0, 12).map((b) => {
     const vendite = abbonamenti
       .filter((a) => {
@@ -76,6 +80,7 @@ export function getMockDashboardStats(
     abbonamentiInScadenza60: inScadenza60.length,
     entrateMese,
     budgetMese,
+    budgetAnno,
     percentualeBudget: Math.round((entrateMese / budgetMese) * 1000) / 10,
     tassoConversione: leadTotali > 0 ? Math.round((leadVinti / leadTotali) * 1000) / 10 : 0,
     clientiAttivi: mockClienti.filter((c) => c.stato === "attivo").length,

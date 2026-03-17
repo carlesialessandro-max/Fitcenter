@@ -56,18 +56,28 @@ function CardVendite({
 }
 
 /** Dashboard vendite in primo piano per consulenti: solo le proprie vendite, layout chiaro. */
-export function DettaglioVenditePrimoPiano() {
+export function DettaglioVenditePrimoPiano({
+  giornoSelezionato: giornoControlled,
+  onGiornoChange,
+}: {
+  giornoSelezionato?: number
+  onGiornoChange?: (day: number) => void
+} = {}) {
   const { consulenteFilter } = useAuth()
   const now = new Date()
   const anno = now.getFullYear()
   const mese = now.getMonth() + 1
   const giornoOggi = now.getDate()
-  const [giornoSelezionato, setGiornoSelezionato] = useState(giornoOggi)
+  const [giornoInternal, setGiornoInternal] = useState(giornoOggi)
   const [mostraAltroGiorno, setMostraAltroGiorno] = useState(false)
+
+  const giornoSelezionato = giornoControlled ?? giornoInternal
+  const setGiornoSelezionato = onGiornoChange ?? setGiornoInternal
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["dettaglio-mese-primo-piano", anno, mese, giornoSelezionato, consulenteFilter],
     queryFn: () => dataApi.getDettaglioMese(anno, mese, giornoSelezionato, consulenteFilter),
+    staleTime: 0,
   })
 
   const giorniNelMese = new Date(anno, mese, 0).getDate()
@@ -115,6 +125,7 @@ export function DettaglioVenditePrimoPiano() {
             if (mostraAltroGiorno) setGiornoSelezionato(giornoOggi)
             setMostraAltroGiorno((v) => !v)
           }}
+          aria-label={mostraAltroGiorno ? "Usa oggi" : "Altro giorno"}
           className="rounded-lg border border-zinc-600 bg-zinc-800/80 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200"
         >
           {mostraAltroGiorno ? "Usa oggi" : "Altro giorno"}

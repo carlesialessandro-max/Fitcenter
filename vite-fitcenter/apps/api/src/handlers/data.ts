@@ -6,6 +6,9 @@ import { budgetStore } from "../store/budget.js"
 import * as budgetPerConsulente from "../store/budget-per-consulente.js"
 import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
+import { store as oreLavorateStore } from "../store/ore-lavorate.js"
+import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
+import { bumpMetaVersion, cacheGet, cacheSet, getDepSig } from "../services/persistent-cache.js"
 import { rowToCliente, rowToAbbonamento } from "../data/map-sql-to-types.js"
 import type {
   Cliente,
@@ -34,6 +37,26 @@ function toDateParts(d: Date): { year: number; month: number; day: number } {
     month: (useLocal ? d.getMonth() : d.getUTCMonth()) + 1,
     day: useLocal ? d.getDate() : d.getUTCDate(),
   }
+}
+
+function parseAsOf(req: Request): { date: Date; key: string } {
+  const raw = String(req.query.asOf ?? "").trim()
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw)
+  if (m) {
+    const year = Number(m[1])
+    const month = Number(m[2])
+    const day = Number(m[3])
+    const dt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+    const p = toDateParts(dt)
+    const key = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`
+    if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31 && !Number.isNaN(dt.getTime())) {
+      return { date: dt, key }
+    }
+  }
+  const dt = new Date()
+  const p = toDateParts(dt)
+  const key = `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`
+  return { date: dt, key }
 }
 
 /** Importo e data da riga MovimentiVenduto (nomi colonne comuni). */
@@ -99,21 +122,98 @@ async function resolveConsultantId(consulente: string | undefined): Promise<stri
   return CONSULENTE_NOME_TO_ID[key] ?? undefined
 }
 
+function cacheScope(req: Request): string {
+  const u = getScopedUser(req)
+  if (u.role === "admin") return "admin"
+  const nome = u.consulenteNome ?? u.nome ?? u.username
+  return `operatore:${nome}`
+}
+
 export async function getDashboard(req: Request, res: Response) {
   try {
-    const consulente = (req.query.consulente as string) || undefined
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const depSig = await getDepSig()
+    const scope = cacheScope(req)
+    const asOf = parseAsOf(req)
+    const cacheKeyParams = { consulente: consulente ?? null }
+    const cached = await cacheGet<DashboardStats>({
+      name: "data.dashboard",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+    })
+    if (cached) return res.json(cached)
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
       const idUtente = await resolveConsultantId(consulente)
-      const now = new Date()
-      const oggi = toDateParts(now)
+      const oggi = toDateParts(asOf.date)
       const anno = oggi.year
       const mese = oggi.month
-      const [abbonamentiRows, venditeMeseSql, venditePerMeseSql] = await Promise.all([
+      let venditeMeseSql: number
+      let venditePerMeseSql: { mese: number; totale: number }[]
+      if (consulente == null || consulente === "") {
+        const labels = budgetPerConsulente.getConsulentiLabels()
+        const [abbonamentiRows, ...venditeResults] = await Promise.all([
+          gestionaleSql.queryAbbonamenti(undefined),
+          ...labels.map(async (label) => {
+            const id = await resolveConsultantId(label)
+            const [prog, perMese] = await Promise.all([
+              gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
+              gestionaleSql.getVenditePerMeseAnno(anno, id),
+            ])
+            return { prog, perMese }
+          }),
+        ])
+        venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
+        const mapMese = new Map<number, number>()
+        for (const r of venditeResults) {
+          for (const row of r.perMese) {
+            mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
+          }
+        }
+        venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+          mese: m,
+          totale: mapMese.get(m) ?? 0,
+        }))
+        const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+        const leads = leadsStore.list({})
+        const leadTotali = leads.length
+        const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+        const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+        const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
+        const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+        const stats = buildDashboardFromData(
+          [],
+          abbonamenti,
+          budgetList,
+          leadTotali,
+          leadVinti,
+          leadPersi,
+          leadRowsForFonte,
+          undefined,
+          venditeMeseSql,
+          venditePerMeseSql
+        )
+        await cacheSet({
+          name: "data.dashboard",
+          scope,
+          params: cacheKeyParams,
+          asOf: asOf.key,
+          depSig,
+          ttlMs: 60_000,
+          value: stats,
+        })
+        return res.json(stats)
+      }
+      const [abbonamentiRows, venditeMeseSqlSingle, venditePerMeseSqlSingle] = await Promise.all([
         gestionaleSql.queryAbbonamenti(idUtente),
-        gestionaleSql.getVenditeTotaleMese(anno, mese, oggi.day, idUtente),
+        gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
         gestionaleSql.getVenditePerMeseAnno(anno, idUtente),
       ])
+      venditeMeseSql = venditeMeseSqlSingle
+      venditePerMeseSql = venditePerMeseSqlSingle
       const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
       const leads = leadsStore.list({})
       const leadTotali = leads.length
@@ -133,12 +233,30 @@ export async function getDashboard(req: Request, res: Response) {
         venditeMeseSql,
         venditePerMeseSql
       )
+      await cacheSet({
+        name: "data.dashboard",
+        scope,
+        params: cacheKeyParams,
+        asOf: asOf.key,
+        depSig,
+        ttlMs: 60_000,
+        value: stats,
+      })
       return res.json(stats)
     }
     const leads = leadsStore.list({})
     const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
     const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
     const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
+    await cacheSet({
+      name: "data.dashboard",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+      ttlMs: 60_000,
+      value: stats,
+    })
     res.json(stats)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -156,7 +274,7 @@ function mergeBudgetWithStore(budget: { anno: number; mese: number; budget: numb
   const result = Array.from(map.values()).sort((a, b) => a.anno - b.anno || a.mese - b.mese)
   result.forEach((r) => {
     const totalePerConsulente = budgetPerConsulente.getTotaleMese(r.anno, r.mese)
-    r.budget = totalePerConsulente
+    r.budget = Math.round(totalePerConsulente)
   })
   return result
 }
@@ -177,7 +295,22 @@ function buildDashboardFromData(
   const oggi = toDateParts(now)
   const anno = oggi.year
   const mese = oggi.month
-  const attivi = abbonamenti.filter((a) => a.stato === "attivo")
+  const oggiTime = new Date(oggi.year, oggi.month - 1, oggi.day).getTime()
+  /** Esclude tesseramenti (ASI, iscrizioni 39€, ecc.) dal conteggio attivi. */
+  const isTesseramentoAbb = (a: Abbonamento) =>
+    a.isTesseramento === true ||
+    (a.prezzo != null && Number(a.prezzo) === 39) ||
+    (a.pianoNome ?? "").toLowerCase().includes("tesserament") ||
+    ((a.pianoNome ?? "").toLowerCase().includes("asi") && (a.pianoNome ?? "").toLowerCase().includes("isc"))
+  /** Attivi = abbonamenti validi oggi (dataInizio <= oggi <= dataFine), esclusi i tesseramenti. */
+  const attivi = abbonamenti.filter((a) => {
+    if (a.stato !== "attivo" || isTesseramentoAbb(a)) return false
+    const inizio = new Date(String(a.dataInizio).trim().split("T")[0])
+    const fine = new Date(String(a.dataFine).trim().split("T")[0])
+    const tInizio = inizio.getTime()
+    const tFine = fine.getTime()
+    return !Number.isNaN(tInizio) && !Number.isNaN(tFine) && oggiTime >= tInizio && oggiTime <= tFine
+  })
   const in30 = new Date()
   in30.setDate(in30.getDate() + 30)
   const in60 = new Date()
@@ -186,6 +319,12 @@ function buildDashboardFromData(
   const inScadenza60 = attivi.filter((a) => new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
   const budgetVal = budgetCorrente?.budget ?? 6000
+  /** Totale anno = somma esatta dei budget mese (ogni mese = somma Carmen + Serena + Ombretta). */
+  const budgetAnno = Math.round(
+    budget
+      .filter((b) => b.anno === anno)
+      .reduce((s, b) => s + b.budget, 0)
+  )
   const mesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
 
   const useSqlTotals = venditeMeseSql !== undefined && venditePerMeseSql !== undefined
@@ -267,6 +406,7 @@ function buildDashboardFromData(
     abbonamentiInScadenza60: inScadenza60.length,
     entrateMese: venditeMese,
     budgetMese: budgetVal,
+    budgetAnno,
     percentualeBudget: budgetVal ? Math.round((venditeMese / budgetVal) * 1000) / 10 : 0,
     tassoConversione: leadTotali ? Math.round((leadVinti / leadTotali) * 1000) / 10 : 0,
     clientiAttivi,
@@ -303,16 +443,21 @@ export async function getClienti(req: Request, res: Response) {
 
 export async function getAbbonamenti(req: Request, res: Response) {
   try {
-    const consulente = (req.query.consulente as string) || undefined
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const inScadenzaRaw = req.query.inScadenza
+    const inScadenza =
+      inScadenzaRaw === "30" ? 30 : inScadenzaRaw === "60" ? 60 : undefined
+    const options = inScadenza != null ? { inScadenza } : undefined
     if (gestionaleSql.isGestionaleConfigured()) {
       const idVenditore = await resolveConsultantId(consulente)
       if (consulente && !idVenditore) {
         return res.json([])
       }
-      // Una sola query: se c'è consulente solo la sua lista (evita query "tutti" che può bloccare o essere lenta)
+      // Una sola query: se inScadenza è impostato si restituiscono solo abbonamenti in scadenza (meno righe)
       const rows = idVenditore
-        ? await gestionaleSql.queryAbbonamenti(idVenditore)
-        : await gestionaleSql.queryAbbonamenti(undefined)
+        ? await gestionaleSql.queryAbbonamenti(idVenditore, options)
+        : await gestionaleSql.queryAbbonamenti(undefined, options)
       let list = rows.map((r) => rowToAbbonamento(r))
       markRinnovato(list)
       list = list.filter((a) => !a.isTesseramento)
@@ -358,13 +503,15 @@ export async function setBudget(req: Request, res: Response) {
     }
     if (consulenteLabel != null && consulenteLabel !== "") {
       if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio per consulente" })
-      budgetPerConsulente.set(anno, mese, consulenteLabel, budget)
+      budgetPerConsulente.set(anno, mese, consulenteLabel, Math.round(budget))
+      await bumpMetaVersion("budget")
       return res.json({ anno, mese, consulenteLabel, budget })
     }
     if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio" })
     budgetPerConsulente.getConsulentiLabels().forEach((label) => {
-      budgetPerConsulente.set(anno, mese, label, Math.round((budget / 3) * 100) / 100)
+      budgetPerConsulente.set(anno, mese, label, Math.round(budget / 3))
     })
+    await bumpMetaVersion("budget")
     res.json({ anno, mese, budget })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -375,7 +522,8 @@ export async function setBudget(req: Request, res: Response) {
 export async function getVenditeStorico(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno)
-    const consulente = (req.query.consulente as string) || undefined
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
     if (isNaN(anno) || anno < 2000 || anno > 2100) {
       return res.status(400).json({ message: "Parametro anno obbligatorio e valido (2000-2100)" })
     }
@@ -430,11 +578,22 @@ export async function getVenditeStorico(req: Request, res: Response) {
 /** Totale vendite e budget per anno (admin). Vendite da MovimentiVenduto se disponibile. */
 export async function getTotaliAnni(req: Request, res: Response) {
   try {
+    const depSig = await getDepSig()
+    const scope = cacheScope(req)
+    const asOf = "today"
+    const cached = await cacheGet<{ totali: { anno: number; vendite: number; budget: number; percentuale: number }[] }>({
+      name: "data.totali-anni",
+      scope,
+      params: {},
+      asOf,
+      depSig,
+    })
+    if (cached) return res.json(cached)
     const fromSql = gestionaleSql.isGestionaleConfigured()
-    const movimenti = fromSql ? await gestionaleSql.queryMovimentiVenduto() : []
-    const useMovimenti = movimenti.length > 0
+    const venditeSqlPerAnno = fromSql ? await gestionaleSql.getVenditeTotaliPerAnno() : []
+    const mapVenditeSqlPerAnno = new Map(venditeSqlPerAnno.map((x) => [x.anno, x.totale]))
     let abbonamenti: Abbonamento[] = []
-    if (fromSql && !useMovimenti) {
+    if (fromSql && venditeSqlPerAnno.length === 0) {
       const rows = await gestionaleSql.queryAbbonamenti()
       abbonamenti = rows.map((r) => rowToAbbonamento(r))
     } else if (!fromSql) {
@@ -442,11 +601,8 @@ export async function getTotaliAnni(req: Request, res: Response) {
       abbonamenti = mockAbbonamenti
     }
     const anniFromVendite = new Set<number>()
-    if (useMovimenti) {
-      (movimenti as Record<string, unknown>[]).forEach((r) => {
-        const d = movimentoDate(r)
-        if (d) anniFromVendite.add(toDateParts(d).year)
-      })
+    if (venditeSqlPerAnno.length > 0) {
+      venditeSqlPerAnno.forEach((x) => anniFromVendite.add(x.anno))
     } else {
       abbonamenti.forEach((a) => anniFromVendite.add(new Date(a.dataInizio).getFullYear()))
     }
@@ -454,13 +610,8 @@ export async function getTotaliAnni(req: Request, res: Response) {
     const anniFromBudget = new Set(budgetAll.map((b) => b.anno))
     const anni = Array.from(new Set([...anniFromVendite, ...anniFromBudget])).sort((a, b) => a - b)
     const totali = anni.map((anno) => {
-      const vendite = useMovimenti
-        ? (movimenti as Record<string, unknown>[])
-            .filter((r) => {
-              const d = movimentoDate(r)
-              return d && movimentoCountAsSale(r) && toDateParts(d).year === anno
-            })
-            .reduce((s, r) => s + movimentoAmount(r), 0)
+      const vendite = venditeSqlPerAnno.length > 0
+        ? (mapVenditeSqlPerAnno.get(anno) ?? 0)
         : abbonamenti
             .filter((a) => new Date(a.dataInizio).getFullYear() === anno)
             .reduce((s, a) => s + a.prezzo, 0)
@@ -469,16 +620,53 @@ export async function getTotaliAnni(req: Request, res: Response) {
       const percentuale = budget ? Math.round((vendite / budget) * 1000) / 10 : 0
       return { anno, vendite, budget, percentuale }
     })
-    res.json({ totali })
+    const payload = { totali }
+    await cacheSet({
+      name: "data.totali-anni",
+      scope,
+      params: {},
+      asOf,
+      depSig,
+      ttlMs: 10 * 60_000,
+      value: payload,
+    })
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
 }
 
-/** Lead: da sito, campagne FB e Google (store locale). Non si importano dal gestionale. */
+/** Lead: da sito, campagne FB e Google (store locale). Non si importano dal gestionale. Per consulente bambini (Irene) filtra solo categoria bambini. */
 export async function getLeadsFromGestionale(req: Request, res: Response) {
   try {
-    res.json(leadsStore.list({}))
+    const u = getScopedUser(req)
+    const filters: { categoria?: "bambini" } = {}
+    if (u?.leadFilter === "bambini") filters.categoria = "bambini"
+    res.json(leadsStore.list(filters))
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/**
+ * Presa in carico lead (operatore).
+ * Una volta assegnato a una consulente, non può essere riassegnato da altri.
+ */
+export async function assignLeadToMe(req: Request, res: Response) {
+  try {
+    const consulenteNome = getOperatoreConsulenteNome(req)
+    if (!consulenteNome) return res.status(403).json({ message: "Solo operatore può assegnarsi un lead" })
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "id lead mancante" })
+    const lead = leadsStore.get(id)
+    if (!lead) return res.status(404).json({ message: "Lead non trovato" })
+    const already = (lead.consulenteNome ?? "").trim()
+    if (already && already.toLowerCase() !== consulenteNome.toLowerCase()) {
+      return res.status(409).json({ message: `Lead già assegnato a ${already}` })
+    }
+    const updated = leadsStore.update(id, { consulenteNome })
+    if (!updated) return res.status(404).json({ message: "Lead non trovato" })
+    res.json(updated)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -625,7 +813,7 @@ function buildDettaglioBloccoFromMovimenti(
   })
   if (perConsulente.length === 0) {
     perConsulente.push({
-      consulente: "—",
+      consulente: "Totale",
       budget: Math.round(budgetPerConsulente * 100) / 100,
       budgetProgressivo: Math.round(progressivoPerConsulente * 100) / 100,
       consuntivo: 0,
@@ -665,7 +853,7 @@ function buildDettaglioBloccoFromTotale(
     trend,
     perConsulente: [
       {
-        consulente: "—",
+        consulente: "Totale",
         budget: Math.round(budgetTotale * 100) / 100,
         budgetProgressivo: Math.round(budgetProgressivo * 100) / 100,
         consuntivo,
@@ -732,7 +920,7 @@ function buildDettaglioBlocco(
   )
   if (perConsulente.length === 0) {
     perConsulente.push({
-      consulente: "—",
+      consulente: "Totale",
       budget: Math.round(budgetPerConsulente * 100) / 100,
       budgetProgressivo: Math.round(progressivoPerConsulente * 100) / 100,
       consuntivo: 0,
@@ -762,15 +950,29 @@ export async function getDettaglioMese(req: Request, res: Response) {
     if (isNaN(anno) || isNaN(mese) || mese < 1 || mese > 12) {
       return res.status(400).json({ message: "anno e mese obbligatori e validi" })
     }
-    const consulente = (req.query.consulente as string) || undefined
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
     const giorniNelMese = new Date(anno, mese, 0).getDate()
     if (giorno == null || isNaN(giorno)) {
-      const oggi = toDateParts(new Date())
+      const oggi = toDateParts(parseAsOf(req).date)
       giorno = oggi.year === anno && oggi.month === mese
         ? Math.min(oggi.day, giorniNelMese)
         : giorniNelMese
     }
     giorno = Math.min(Math.max(1, giorno), giorniNelMese)
+
+    const depSig = await getDepSig()
+    const scope = cacheScope(req)
+    const asOf = parseAsOf(req)
+    const cacheKeyParams = { anno, mese, giorno, consulente: consulente ?? null }
+    const cached = await cacheGet<DettaglioMeseResponse>({
+      name: "data.dettaglio-mese",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+    })
+    if (cached) return res.json(cached)
 
     let abbonamenti: Abbonamento[] = []
     let budgetMese: number
@@ -896,6 +1098,15 @@ export async function getDettaglioMese(req: Request, res: Response) {
       dettaglioMese: bloccoMese,
       _debug: { consulente, idUtente: idUtente ?? undefined },
     }
+    await cacheSet({
+      name: "data.dettaglio-mese",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+      ttlMs: 60_000,
+      value: result,
+    })
     res.json(result)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -909,7 +1120,19 @@ export async function getDettaglioAnno(req: Request, res: Response) {
     if (Number.isNaN(anno) || anno < 2000 || anno > 2100) {
       return res.status(400).json({ message: "anno obbligatorio e valido (2000-2100)" })
     }
-    const oggi = toDateParts(new Date())
+    const depSig = await getDepSig()
+    const scope = cacheScope(req)
+    const asOf = parseAsOf(req)
+    const cacheKeyParams = { anno }
+    const cached = await cacheGet<{ anno: number; annoLabel: string; dettaglio: DettaglioBlocco }>({
+      name: "data.dettaglio-anno",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+    })
+    if (cached) return res.json(cached)
+    const oggi = toDateParts(asOf.date)
     const labels = budgetPerConsulente.getConsulentiLabels()
     const perConsulente: DettaglioConsulente[] = []
 
@@ -946,7 +1169,17 @@ export async function getDettaglioAnno(req: Request, res: Response) {
     }
 
     const dettaglio = buildDettaglioBloccoFromPerConsulente(perConsulente)
-    res.json({ anno, annoLabel: String(anno), dettaglio })
+    const payload = { anno, annoLabel: String(anno), dettaglio }
+    await cacheSet({
+      name: "data.dettaglio-anno",
+      scope,
+      params: cacheKeyParams,
+      asOf: asOf.key,
+      depSig,
+      ttlMs: 10 * 60_000,
+      value: payload,
+    })
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -982,10 +1215,12 @@ export async function getConvalidazioni(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno)
     const mese = Number(req.query.mese)
-    const consulenteNome = (req.query.consulente as string)?.trim()
-    if (Number.isNaN(anno) || Number.isNaN(mese) || !consulenteNome) {
-      return res.status(400).json({ message: "anno, mese e consulente obbligatori" })
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulenteNome = (operatoreNome ?? (req.query.consulente as string))?.trim()
+    if (Number.isNaN(anno) || Number.isNaN(mese)) {
+      return res.status(400).json({ message: "anno e mese obbligatori" })
     }
+    if (!consulenteNome) return res.status(400).json({ message: "consulente obbligatorio" })
     const convalidati = convalidazioniStore.getGiorniConvalidati(consulenteNome, anno, mese)
     res.json({ anno, mese, consulenteNome, convalidati })
   } catch (e) {
@@ -996,12 +1231,86 @@ export async function getConvalidazioni(req: Request, res: Response) {
 export async function setConvalidazione(req: Request, res: Response) {
   try {
     const body = req.body as { anno: number; mese: number; giorno: number; convalidato: boolean; consulenteNome: string }
-    const { anno, mese, giorno, convalidato, consulenteNome } = body
-    if (anno == null || mese == null || giorno == null || typeof convalidato !== "boolean" || !consulenteNome?.trim()) {
-      return res.status(400).json({ message: "anno, mese, giorno, convalidato e consulenteNome obbligatori" })
+    const { anno, mese, giorno, convalidato } = body
+    if (anno == null || mese == null || giorno == null || typeof convalidato !== "boolean") {
+      return res.status(400).json({ message: "anno, mese, giorno e convalidato obbligatori" })
     }
-    convalidazioniStore.set(consulenteNome.trim(), anno, mese, giorno, convalidato)
+    const u = getScopedUser(req)
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulenteNome = (operatoreNome ?? body.consulenteNome)?.trim()
+    if (!consulenteNome) return res.status(400).json({ message: "consulenteNome obbligatorio" })
+    if (u.role !== "admin" && operatoreNome && consulenteNome !== operatoreNome) {
+      return res.status(403).json({ message: "Permessi insufficienti" })
+    }
+    convalidazioniStore.set(consulenteNome, anno, mese, giorno, convalidato)
+    await bumpMetaVersion("convalidazioni")
     res.json({ anno, mese, giorno, convalidato })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Ore lavorate: lista (consulente, anno, mese) e creazione. Solo operatore per i propri dati; admin può vedere tutti. */
+export async function getOreLavorate(req: Request, res: Response) {
+  try {
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = (operatoreNome ?? (req.query.consulente as string))?.trim()
+    const anno = req.query.anno != null ? Number(req.query.anno) : undefined
+    const mese = req.query.mese != null ? Number(req.query.mese) : undefined
+    const list = oreLavorateStore.list({
+      consulenteNome: consulente || undefined,
+      anno: Number.isNaN(anno as number) ? undefined : (anno as number),
+      mese: Number.isNaN(mese as number) ? undefined : (mese as number),
+    })
+    res.json(list)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function postOraLavorata(req: Request, res: Response) {
+  try {
+    const body = req.body as { consulenteNome: string; giorno: string; oraInizio: string; oraFine: string }
+    const { consulenteNome, giorno, oraInizio, oraFine } = body
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const nome = (operatoreNome ?? consulenteNome)?.trim()
+    if (!nome) return res.status(400).json({ message: "consulenteNome obbligatorio" })
+    const u = getScopedUser(req)
+    if (u.role !== "admin" && operatoreNome && nome !== operatoreNome) {
+      return res.status(403).json({ message: "Permessi insufficienti" })
+    }
+    if (!giorno || !/^\d{4}-\d{2}-\d{2}$/.test(giorno)) {
+      return res.status(400).json({ message: "giorno obbligatorio (YYYY-MM-DD)" })
+    }
+    if (!oraInizio || !/^\d{1,2}:\d{2}$/.test(oraInizio)) {
+      return res.status(400).json({ message: "oraInizio obbligatorio (HH:mm)" })
+    }
+    if (!oraFine || !/^\d{1,2}:\d{2}$/.test(oraFine)) {
+      return res.status(400).json({ message: "oraFine obbligatorio (HH:mm)" })
+    }
+    if (oraInizio >= oraFine) {
+      return res.status(400).json({ message: "oraFine deve essere successiva a oraInizio" })
+    }
+    const created = oreLavorateStore.create({ consulenteNome: nome, giorno, oraInizio, oraFine })
+    res.status(201).json(created)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function deleteOraLavorata(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id)
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const list = oreLavorateStore.list({})
+    const row = list.find((r) => r.id === id)
+    if (!row) return res.status(404).json({ message: "Ora lavorata non trovata" })
+    const u = getScopedUser(req)
+    if (u.role !== "admin" && (operatoreNome ?? "") !== (row.consulenteNome ?? "")) {
+      return res.status(403).json({ message: "Puoi eliminare solo le tue ore" })
+    }
+    oreLavorateStore.delete(id)
+    res.status(204).send()
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

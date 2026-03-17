@@ -7,12 +7,14 @@ import {
   deleteLead,
   importFromSql,
 } from "../handlers/leads.js"
+import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const leadsRouter = Router()
 
-leadsRouter.get("/leads", listLeads)
-leadsRouter.post("/leads/import-sql", importFromSql)
-leadsRouter.get("/leads/:id", getLead)
-leadsRouter.post("/leads", createLead)
-leadsRouter.put("/leads/:id", updateLead)
-leadsRouter.delete("/leads/:id", deleteLead)
+leadsRouter.use(requireAuth)
+leadsRouter.get("/leads", requireAdmin, listLeads)
+leadsRouter.post("/leads/import-sql", requireAdmin, importFromSql)
+leadsRouter.get("/leads/:id", requireAdmin, getLead)
+leadsRouter.post("/leads", requireAdmin, createLead)
+leadsRouter.put("/leads/:id", requireAdmin, updateLead)
+leadsRouter.delete("/leads/:id", requireAdmin, deleteLead)

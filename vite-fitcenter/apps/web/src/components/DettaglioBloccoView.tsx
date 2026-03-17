@@ -3,6 +3,10 @@ import type { DettaglioBlocco, DettaglioConsulente } from "@/types/gestionale"
 export function fmtEuro(n: number) {
   return `${n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
 }
+/** Budget: senza decimali. */
+export function fmtEuroBudget(n: number) {
+  return `${Math.round(n).toLocaleString("it-IT")} €`
+}
 export function fmtPct(n: number) {
   return `${n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
 }
@@ -23,11 +27,11 @@ export function KpiRow({ b }: { b: DettaglioBlocco }) {
     <div className="mb-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4 md:grid-cols-7">
       <div>
         <p className="text-xs text-zinc-500">Budget</p>
-        <p className="font-medium text-zinc-200">{fmtEuro(b.budget)}</p>
+        <p className="font-medium text-zinc-200">{fmtEuroBudget(b.budget)}</p>
       </div>
       <div>
         <p className="text-xs text-zinc-500">Budget progressivo</p>
-        <p className="font-medium text-zinc-200">{fmtEuro(b.budgetProgressivo)}</p>
+        <p className="font-medium text-zinc-200">{fmtEuroBudget(b.budgetProgressivo)}</p>
       </div>
       <div>
         <p className="text-xs text-zinc-500">Consuntivo</p>
@@ -75,8 +79,8 @@ export function TabellaConsulenti({ rows }: { rows: DettaglioConsulente[] }) {
           {rows.map((r, i) => (
             <tr key={i} className="border-t border-zinc-700/50 hover:bg-zinc-800/30">
               <td className="px-4 py-2 font-medium text-zinc-200">{r.consulente}</td>
-              <td className="px-4 py-2 text-right">{fmtEuro(r.budget)}</td>
-              <td className="px-4 py-2 text-right">{fmtEuro(r.budgetProgressivo)}</td>
+              <td className="px-4 py-2 text-right">{fmtEuroBudget(r.budget)}</td>
+              <td className="px-4 py-2 text-right">{fmtEuroBudget(r.budgetProgressivo)}</td>
               <td className="px-4 py-2 text-right text-amber-400">{fmtEuro(r.consuntivo)}</td>
               <td className={`px-4 py-2 text-right ${r.scostamento >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                 {r.scostamento >= 0 ? "+" : ""}{fmtEuro(r.scostamento)}

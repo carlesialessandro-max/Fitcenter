@@ -2,6 +2,7 @@ import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { leadsApi } from "@/api/leads"
+import { useAuth } from "@/contexts/AuthContext"
 import type { LeadStatus, InteresseLead } from "@/types/lead"
 import { LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { LeadSourceBadge } from "./LeadSourceBadge"
@@ -15,6 +16,7 @@ export function LeadDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { role } = useAuth()
 
   const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -28,6 +30,14 @@ export function LeadDetail() {
       leadsApi.update(id!, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => leadsApi.delete(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
+      navigate("/crm")
     },
   })
 
@@ -73,6 +83,19 @@ export function LeadDetail() {
             </div>
           </div>
         </div>
+        {role === "admin" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!confirm("Eliminare definitivamente questo lead?")) return
+              deleteMutation.mutate()
+            }}
+            disabled={deleteMutation.isPending}
+          >
+            {deleteMutation.isPending ? "Eliminazione..." : "Elimina"}
+          </Button>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -105,7 +128,9 @@ export function LeadDetail() {
             )}
             <div>
               <dt className="text-zinc-500">Interesse</dt>
-              <dd className="text-zinc-100">{lead.interesse ? INTERESSE_LABELS[lead.interesse] : "—"}</dd>
+              <dd className="text-zinc-100">
+                {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
+              </dd>
             </div>
             <div>
               <dt className="text-zinc-500">Consulente</dt>

@@ -293,19 +293,31 @@ function parseConsultantIds(idConsultant: string): number[] {
   return Number.isNaN(single) ? [] : [single]
 }
 
+/** Opzioni per query abbonamenti: inScadenza = 30 o 60 restituisce solo abbonamenti con DataFine tra oggi e oggi+N. */
+export type QueryAbbonamentiOptions = { inScadenza?: number }
+
 /** Abbonamenti con JOIN Utenti. Filtro: prova IDVenditore, Abbonanditore e confronto come stringa. */
-export async function queryAbbonamenti(idConsultant?: string): Promise<Record<string, unknown>[]> {
+export async function queryAbbonamenti(
+  idConsultant?: string,
+  options?: QueryAbbonamentiOptions
+): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
   const tblA = getAbbonamentiTableName()
   const tblU = defaultTables.clienti
+  const inScadenza = options?.inScadenza
+  const dateFilter =
+    inScadenza != null && inScadenza > 0
+      ? ` AND CAST(a.DataFine AS DATE) >= CAST(GETDATE() AS DATE) AND CAST(a.DataFine AS DATE) <= CAST(DATEADD(day, ${Math.min(365, inScadenza)}, GETDATE()) AS DATE)`
+      : ""
+
   const runWithCol = async (col: string) => {
     let req = p.request()
     if (idConsultant) {
       const { type, value } = idParamType(idConsultant)
       req = req.input("id", type, value)
     }
-    const where = idConsultant ? ` WHERE a.[${col}] = @id` : ""
+    const where = (idConsultant ? ` WHERE a.[${col}] = @id` : " WHERE 1=1") + dateFilter
     const r = await req.query(
       `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome
        FROM [${tblA}] a
@@ -316,10 +328,12 @@ export async function queryAbbonamenti(idConsultant?: string): Promise<Record<st
     return (r.recordset ?? []) as Record<string, unknown>[]
   }
   if (!idConsultant) {
+    const where = "WHERE 1=1" + dateFilter
     const r = await p.request().query(
       `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome
        FROM [${tblA}] a
        LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
+       ${where}
        ORDER BY a.IDIscrizione DESC`
     )
     return (r.recordset ?? []) as Record<string, unknown>[]
@@ -335,11 +349,11 @@ export async function queryAbbonamenti(idConsultant?: string): Promise<Record<st
         let req = p.request()
         ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
         const r = await req.query(
-          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome
+          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, R.[${viewCfg.colNome}] AS ConsulenteNome
            FROM [${tblA}] a
            INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
            LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
-           WHERE ${idWhere}
+           WHERE ${idWhere}${dateFilter}
            ORDER BY a.IDIscrizione DESC`
         )
         return (r.recordset ?? []) as Record<string, unknown>[]
@@ -368,7 +382,7 @@ export async function queryAbbonamenti(idConsultant?: string): Promise<Record<st
       `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome
        FROM [${tblA}] a
        LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
-       WHERE CAST(a.IDVenditore AS NVARCHAR(50)) = @id OR CAST(a.Abbonanditore AS NVARCHAR(50)) = @id
+       WHERE (CAST(a.IDVenditore AS NVARCHAR(50)) = @id OR CAST(a.Abbonanditore AS NVARCHAR(50)) = @id)${dateFilter}
        ORDER BY a.IDIscrizione DESC`
     )
     return (r.recordset ?? []) as Record<string, unknown>[]
@@ -428,12 +442,14 @@ const COL_ISCRIZIONE = "IDIscrizione"
  * Totale vendite: se è configurata la view venditore si usa la logica report (somma R.Totale dalla view
  * una volta per IDIscrizione per le iscrizioni con movimento nel periodo). Altrimenti SUM(M.Importo).
  */
+/** progressivoGiorno: se impostato (e giorno non usato), somma vendite da inizio mese fino a quel giorno incluso. */
 async function queryVenditeSum(
   p: sql.ConnectionPool,
   anno: number,
   mese: number,
   giorno?: number,
-  idConsultant?: string
+  idConsultant?: string,
+  progressivoGiorno?: number
 ): Promise<number> {
   const tbl = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditoreAbbonamento()
@@ -477,10 +493,15 @@ async function queryVenditeSum(
       const ultimoGiorno = new Date(anno, mese, 0).getDate()
       const dataInizioStr = `${anno}-${String(mese).padStart(2, "0")}-01`
       const dataFineStr = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
+      // progressivo: da inizio mese fino a progressivoGiorno (incluso)
+      const dataFineEffettiva =
+        progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
+          ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
+          : dataFineStr
       let req = p
         .request()
         .input("dataInizio", sql.VarChar(10), dataInizioStr)
-        .input("dataFine", sql.VarChar(10), dataFineStr)
+        .input("dataFine", sql.VarChar(10), dataFineEffettiva)
       ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
       const r = await req.query(
         `;WITH Temp_Stampe AS (
@@ -511,14 +532,17 @@ async function queryVenditeSum(
   const runQuery = async (consultantCol: string | null): Promise<number> => {
     const req = p.request().input("anno", sql.Int, anno).input("mese", sql.Int, mese)
     if (giorno != null) req.input("giorno", sql.Int, giorno)
+    if (progressivoGiorno != null) req.input("progressivoGiorno", sql.Int, progressivoGiorno)
     if (consultantCol && idConsultant) {
       const { type, value } = idParamType(idConsultant)
       req.input("id", type, value)
     }
+    const dayCondition =
+      giorno != null ? ` AND DAY([${COL_DATA}]) = @giorno` : progressivoGiorno != null ? ` AND DAY([${COL_DATA}]) <= @progressivoGiorno` : ""
     const where =
       (consultantCol && idConsultant ? `[${consultantCol}] = @id AND ` : "") +
       `[${COL_IMPORTO}] > 0 AND YEAR([${COL_DATA}]) = @anno AND MONTH([${COL_DATA}]) = @mese` +
-      (giorno != null ? ` AND DAY([${COL_DATA}]) = @giorno` : "")
+      dayCondition
     const r = await req.query(`SELECT SUM([${COL_IMPORTO}]) AS Totale FROM [${tbl}] WHERE ${where}`)
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
     return Number(row?.Totale ?? row?.totale) || 0
@@ -550,6 +574,22 @@ export async function getVenditeTotaleMese(
   if (!p) return 0
   try {
     return await queryVenditeSum(p, anno, mese, undefined, idConsultant)
+  } catch {
+    return 0
+  }
+}
+
+/** Consuntivo progressivo: vendite da inizio mese fino a giorno (incluso). Usare per "entrate mese" alla data di oggi. */
+export async function getVenditeProgressivoMese(
+  anno: number,
+  mese: number,
+  giorno: number,
+  idConsultant?: string
+): Promise<number> {
+  const p = await getPool()
+  if (!p) return 0
+  try {
+    return await queryVenditeSum(p, anno, mese, undefined, idConsultant, giorno)
   } catch {
     return 0
   }
@@ -645,6 +685,76 @@ export async function getVenditePerMeseAnno(
       if (rows.length > 0) return rows
     } catch {
       // skip
+    }
+  }
+  return []
+}
+
+/** Totali vendite per anno (admin/report): calcolo in SQL senza full scan in Node. */
+export async function getVenditeTotaliPerAnno(
+  idConsultant?: string
+): Promise<{ anno: number; totale: number }[]> {
+  const p = await getPool()
+  if (!p) return []
+  const viewCfg = getViewVenditoreAbbonamento()
+  const mapRows = (recordset: Record<string, unknown>[]) =>
+    recordset
+      .map((row) => ({
+        anno: Number(row.Anno ?? row.anno),
+        totale: Number(row.Totale ?? row.totale) || 0,
+      }))
+      .filter((x) => !Number.isNaN(x.anno))
+      .sort((a, b) => a.anno - b.anno)
+
+  if (viewCfg) {
+    const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+    const idWhere = ids.length === 0 ? "" : ids.length === 1 ? ` AND R.[${viewCfg.colId}] = @id0` : ` AND R.[${viewCfg.colId}] IN (${idParams})`
+    try {
+      let req = p.request()
+      ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
+      const r = await req.query(
+        `WITH UnaPerIscrizioneAnno AS (
+          SELECT YEAR(R.[${COL_DATA}]) AS Anno, R.[${viewCfg.colJoin}] AS ID, MAX(R.Totale) AS Totale
+          FROM [${viewCfg.view}] R
+          WHERE R.Totale > 0${idWhere}
+          GROUP BY YEAR(R.[${COL_DATA}]), R.[${viewCfg.colJoin}]
+        )
+        SELECT Anno, SUM(Totale) AS Totale
+        FROM UnaPerIscrizioneAnno
+        GROUP BY Anno
+        ORDER BY Anno`
+      )
+      return mapRows((r.recordset ?? []) as Record<string, unknown>[])
+    } catch {
+      return []
+    }
+  }
+
+  const tbl = defaultTables.movimentiVenduto
+  const envCol = process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE?.trim()
+  const colsToTry = idConsultant ? (envCol ? [envCol, "IDVenditore"] : ["IDVenditore"]) : [null]
+  for (const consultantCol of colsToTry) {
+    try {
+      const req = p.request()
+      if (consultantCol && idConsultant) {
+        const { type, value } = idParamType(idConsultant)
+        req.input("id", type, value)
+      }
+      const where =
+        (consultantCol && idConsultant ? `[${consultantCol}] = @id AND ` : "") +
+        `[${COL_IMPORTO}] > 0`
+      const r = await req.query(
+        `SELECT YEAR([${COL_DATA}]) AS Anno, SUM([${COL_IMPORTO}]) AS Totale
+         FROM [${tbl}]
+         WHERE ${where}
+         GROUP BY YEAR([${COL_DATA}])
+         ORDER BY Anno`
+      )
+      const rows = mapRows((r.recordset ?? []) as Record<string, unknown>[])
+      if (!idConsultant || rows.length > 0) return rows
+    } catch {
+      // try next col
     }
   }
   return []

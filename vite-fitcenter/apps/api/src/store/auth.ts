@@ -6,6 +6,8 @@ export interface User {
   role: Role
   /** Solo per operatore: nome consulente (es. Luca Ferrari) */
   consulenteNome?: string
+  /** Se "bambini": vede solo lead con categoria bambini (CRM vendita). Nav: solo CRM. */
+  leadFilter?: "bambini"
 }
 
 /**
@@ -17,6 +19,7 @@ const USERS: (User & { password: string })[] = [
   { username: "carmen", password: "carmen", nome: "Carmen Severino", role: "operatore", consulenteNome: "Carmen Severino" },
   { username: "ombretta", password: "ombretta", nome: "Ombretta Zenoni", role: "operatore", consulenteNome: "Ombretta Zenoni" },
   { username: "serena", password: "serena", nome: "Serena Del Prete", role: "operatore", consulenteNome: "Serena Del Prete" },
+  { username: "irene", password: "irene", nome: "Irene", role: "operatore", consulenteNome: "Irene", leadFilter: "bambini" },
 ]
 
 const sessions = new Map<string, { user: User; expiresAt: number }>()
@@ -37,6 +40,7 @@ export const authStore = {
       nome: u.nome,
       role: u.role,
       consulenteNome: u.consulenteNome,
+      leadFilter: u.leadFilter,
     }
     const t = token()
     sessions.set(t, { user, expiresAt: Date.now() + SESSION_TTL_MS })

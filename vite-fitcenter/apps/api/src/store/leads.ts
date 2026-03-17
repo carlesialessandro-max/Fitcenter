@@ -1,6 +1,8 @@
 import type { Lead, LeadCreate, LeadUpdate, LeadFilters, LeadStatus } from "../types/lead.js"
+import { readJson, writeJson } from "./persist.js"
 
 const db = new Map<string, Lead>()
+const PERSIST_FILE = "leads.json"
 
 function id() {
   return crypto.randomUUID()
@@ -10,10 +12,24 @@ function now() {
   return new Date().toISOString()
 }
 
+function persist() {
+  const list = Array.from(db.values())
+  writeJson(PERSIST_FILE, list)
+}
+
+function loadPersisted() {
+  const list = readJson<Lead[]>(PERSIST_FILE, [])
+  db.clear()
+  list.forEach((l) => {
+    if (l && l.id && typeof l.nome === "string") db.set(l.id, l)
+  })
+}
+
 function matchesFilters(lead: Lead, filters: LeadFilters): boolean {
   if (filters.fonte && lead.fonte !== filters.fonte) return false
   if (filters.stato && lead.stato !== filters.stato) return false
   if (filters.consulenteId && lead.consulenteId !== filters.consulenteId) return false
+  if (filters.categoria && (lead.categoria ?? "generale") !== filters.categoria) return false
   if (filters.search) {
     const s = filters.search.toLowerCase()
     const full = `${lead.nome} ${lead.cognome} ${lead.email} ${lead.telefono}`.toLowerCase()
@@ -41,6 +57,7 @@ export const store = {
       updatedAt: now(),
     }
     db.set(lead.id, lead)
+    persist()
     return lead
   },
 
@@ -53,32 +70,38 @@ export const store = {
       updatedAt: now(),
     }
     db.set(id, updated)
+    persist()
     return updated
   },
 
   delete(id: string): boolean {
-    return db.delete(id)
+    const ok = db.delete(id)
+    if (ok) persist()
+    return ok
   },
 
   createMany(leads: LeadCreate[]): Lead[] {
-    return leads.map((l) => this.create(l))
+    const out = leads.map((l) => this.create(l))
+    return out
   },
 }
 
-// Seed esempio: pipeline e interesse (riferimento UI)
-const examples: LeadCreate[] = [
-  { nome: "Marco", cognome: "Rossi", email: "marco.rossi@email.it", telefono: "333 1234567", fonte: "google", interesse: "palestra" },
-  { nome: "Laura", cognome: "Bianchi", email: "laura.b@email.it", telefono: "340 9876543", fonte: "website", interesse: "full_premium" },
-  { nome: "Giuseppe", cognome: "Verdi", email: "g.verdi@email.it", telefono: "328 5551234", fonte: "facebook", interesse: "spa" },
-  { nome: "Anna", cognome: "Neri", email: "anna.neri@email.it", telefono: "347 7778899", fonte: "website", interesse: "corsi" },
-  { nome: "Sara", cognome: "Fontana", email: "sara.f@email.it", telefono: "333 1112233", fonte: "google", interesse: "piscina" },
-  { nome: "Luca", cognome: "Ferrari", email: "luca.ferrari@email.it", telefono: "340 4445566", fonte: "facebook", interesse: "palestra" },
-  { nome: "Maria", cognome: "Romano", email: "maria.r@email.it", telefono: "328 7778899", fonte: "website", interesse: "corsi" },
-  { nome: "Andrea", cognome: "Colombo", email: "andrea.c@email.it", telefono: "347 0001122", fonte: "google", interesse: "full_premium" },
-  { nome: "Giulia", cognome: "Ricci", email: "giulia.ricci@email.it", telefono: "333 9998877", fonte: "facebook", interesse: "spa" },
-  { nome: "Paolo", cognome: "Bruno", email: "paolo.b@email.it", telefono: "340 6655443", fonte: "website", interesse: "palestra" },
-]
-examples.forEach((e) => store.create(e))
-const ids = Array.from(db.keys())
-const statusi: LeadStatus[] = ["nuovo", "nuovo", "contattato", "contattato", "appuntamento", "tour", "proposta", "chiuso_vinto", "chiuso_vinto", "chiuso_perso"]
-ids.forEach((id, i) => { if (id && statusi[i]) store.update(id, { stato: statusi[i], consulenteNome: i % 2 ? "Anna Bianchi" : "Luca Ferrari" }) })
+loadPersisted()
+if (db.size === 0) {
+  const examples: LeadCreate[] = [
+    { nome: "Marco", cognome: "Rossi", email: "marco.rossi@email.it", telefono: "333 1234567", fonte: "google", interesse: "palestra" },
+    { nome: "Laura", cognome: "Bianchi", email: "laura.b@email.it", telefono: "340 9876543", fonte: "website", interesse: "full_premium" },
+    { nome: "Giuseppe", cognome: "Verdi", email: "g.verdi@email.it", telefono: "328 5551234", fonte: "facebook", interesse: "spa" },
+    { nome: "Anna", cognome: "Neri", email: "anna.neri@email.it", telefono: "347 7778899", fonte: "website", interesse: "corsi" },
+    { nome: "Sara", cognome: "Fontana", email: "sara.f@email.it", telefono: "333 1112233", fonte: "google", interesse: "piscina" },
+    { nome: "Luca", cognome: "Ferrari", email: "luca.ferrari@email.it", telefono: "340 4445566", fonte: "facebook", interesse: "palestra" },
+    { nome: "Maria", cognome: "Romano", email: "maria.r@email.it", telefono: "328 7778899", fonte: "website", interesse: "corsi" },
+    { nome: "Andrea", cognome: "Colombo", email: "andrea.c@email.it", telefono: "347 0001122", fonte: "google", interesse: "full_premium" },
+    { nome: "Giulia", cognome: "Ricci", email: "giulia.ricci@email.it", telefono: "333 9998877", fonte: "facebook", interesse: "spa" },
+    { nome: "Paolo", cognome: "Bruno", email: "paolo.b@email.it", telefono: "340 6655443", fonte: "website", interesse: "palestra" },
+  ]
+  examples.forEach((e) => store.create(e))
+  const ids = Array.from(db.keys())
+  const statusi: LeadStatus[] = ["nuovo", "nuovo", "contattato", "contattato", "appuntamento", "tour", "proposta", "chiuso_vinto", "chiuso_vinto", "chiuso_perso"]
+  ids.forEach((idKey, i) => { if (idKey && statusi[i]) store.update(idKey, { stato: statusi[i], consulenteNome: i % 2 ? "Anna Bianchi" : "Luca Ferrari" }) })
+}

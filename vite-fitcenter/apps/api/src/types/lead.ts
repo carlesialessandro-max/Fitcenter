@@ -17,6 +17,9 @@ export type LeadStatus =
 
 export type InteresseLead = "palestra" | "piscina" | "spa" | "corsi" | "full_premium"
 
+/** Per filtro consulente bambini: solo lead con categoria "bambini" vengono mostrati a Irene. */
+export type LeadCategoria = "bambini" | "generale"
+
 export interface Lead {
   id: string
   nome: string
@@ -27,6 +30,10 @@ export interface Lead {
   fonteDettaglio?: string
   stato: LeadStatus
   interesse?: InteresseLead
+  /** Testo libero da Zapier/form (es. "offerta marzo") quando interesse non è uno dei valori predefiniti. */
+  interesseDettaglio?: string
+  /** "bambini" = visibile solo a consulente bambini (Irene); assente o "generale" = visibile a tutti. */
+  categoria?: LeadCategoria
   consulenteId?: string
   consulenteNome?: string
   note?: string
@@ -43,6 +50,8 @@ export interface LeadCreate {
   fonte: LeadSource
   fonteDettaglio?: string
   interesse?: InteresseLead
+  interesseDettaglio?: string
+  categoria?: LeadCategoria
   note?: string
 }
 
@@ -59,4 +68,5 @@ export interface LeadFilters {
   stato?: LeadStatus
   consulenteId?: string
   search?: string
+  categoria?: LeadCategoria
 }

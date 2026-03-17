@@ -47,18 +47,30 @@ function isTesseramento(a: { pianoNome?: string; prezzo?: number }): boolean {
 }
 
 export function Abbonamenti() {
-  const { role, consulenteFilter, consulenteNome } = useAuth()
+  const { role, consulenteFilter, consulenteNome, consulenti } = useAuth()
   const [tab, setTab] = useState<"abbonamenti" | "andamento">("abbonamenti")
   /** Giorni per filtro scadenza: da oggi a 30 o 60 giorni */
   const [giorniScadenza, setGiorniScadenza] = useState<30 | 60>(60)
+  const [adminConsulente, setAdminConsulente] = useState<string>("")
+
+  const effectiveConsulenteFilter = role === "admin"
+    ? (adminConsulente.trim() ? adminConsulente.trim() : undefined)
+    : consulenteFilter
 
   const { data: dashboard } = useQuery({
-    queryKey: ["dashboard", consulenteFilter],
-    queryFn: () => dataApi.getDashboard(consulenteFilter),
+    queryKey: ["dashboard", effectiveConsulenteFilter],
+    queryFn: () => dataApi.getDashboard(effectiveConsulenteFilter),
   })
+  const { data: budgetData } = useQuery({
+    queryKey: ["budget"],
+    queryFn: () => dataApi.getBudget(),
+    enabled: role === "admin",
+  })
+  const consulentiList = role === "admin" && budgetData?.consulenti?.length ? budgetData.consulenti : (consulenti ?? [])
+
   const { data: abbonamenti = [], isLoading, error } = useQuery({
-    queryKey: ["data", "abbonamenti", consulenteFilter ?? ""],
-    queryFn: () => dataApi.getAbbonamenti(consulenteFilter ?? undefined),
+    queryKey: ["data", "abbonamenti", effectiveConsulenteFilter ?? "", giorniScadenza],
+    queryFn: () => dataApi.getAbbonamenti(effectiveConsulenteFilter ?? undefined, giorniScadenza),
     staleTime: 2 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -66,10 +78,11 @@ export function Abbonamenti() {
   const { data: clienti = [] } = useQuery({
     queryKey: ["data", "clienti"],
     queryFn: () => dataApi.getClienti(),
+    enabled: role !== "admin",
   })
   const { data: chiamateCliente = [] } = useQuery({
-    queryKey: ["chiamate", "cliente"],
-    queryFn: () => chiamateApi.list({ tipo: "cliente" }),
+    queryKey: ["chiamate", "cliente", effectiveConsulenteFilter ?? ""],
+    queryFn: () => chiamateApi.list({ tipo: "cliente", consulenteId: effectiveConsulenteFilter }),
   })
 
   const telefonoByClienteId = useMemo(() => {
@@ -158,6 +171,24 @@ export function Abbonamenti() {
           </a>
         )}
       </div>
+
+      {role === "admin" && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-900/50 px-4 py-3">
+          <span className="text-sm font-medium text-zinc-300">Filtro consulente</span>
+          <select
+            value={adminConsulente}
+            onChange={(e) => setAdminConsulente(e.target.value)}
+            className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+            aria-label="Seleziona consulente"
+          >
+            <option value="">Tutte le consulenti</option>
+            {consulentiList.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+          <p className="text-xs text-zinc-500">La colonna Consulente in tabella mostra il nome della consulente per ogni abbonamento.</p>
+        </div>
+      )}
 
       {/* KPI */}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -252,8 +283,10 @@ export function Abbonamenti() {
                   <th className="pb-2 pr-4 font-medium">Prezzo</th>
                   <th className="pb-2 pr-4 font-medium">Scadenza</th>
                   <th className="pb-2 pr-4 font-medium">Consulente</th>
-                  <th className="pb-2 pr-4 font-medium">Stato chiamate</th>
-                  <th className="pb-2 font-medium">Azioni</th>
+                  <th className="pb-2 pr-4 font-medium">Stato</th>
+                  {role !== "admin" && (
+                    <th className="pb-2 font-medium">Azioni</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="text-zinc-300">
@@ -295,27 +328,29 @@ export function Abbonamenti() {
                         )
                       })()}
                     </td>
-                    <td className="py-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {telefonoByClienteId.get(a.clienteId) ? (
-                          <ChiamaButton
-                            telefono={telefonoByClienteId.get(a.clienteId)!}
-                            nomeContatto={a.clienteNome}
-                            tipo="cliente"
-                            clienteId={a.clienteId}
-                          />
-                        ) : (
-                          <span className="text-xs text-zinc-500">—</span>
-                        )}
-                        <Link
-                          to={`/abbonamenti/dettaglio/${a.id}`}
-                          className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                          title="Stato e note (come CRM)"
-                        >
-                          Dettaglio
-                        </Link>
-                      </div>
-                    </td>
+                    {role !== "admin" && (
+                      <td className="py-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {telefonoByClienteId.get(a.clienteId) ? (
+                            <ChiamaButton
+                              telefono={telefonoByClienteId.get(a.clienteId)!}
+                              nomeContatto={a.clienteNome}
+                              tipo="cliente"
+                              clienteId={a.clienteId}
+                            />
+                          ) : (
+                            <span className="text-xs text-zinc-500">—</span>
+                          )}
+                          <Link
+                            to={`/abbonamenti/dettaglio/${a.id}`}
+                            className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                            title="Stato e note (come CRM)"
+                          >
+                            Dettaglio
+                          </Link>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

@@ -35,24 +35,78 @@ const VALID_INTERESSE: InteresseLead[] = ["palestra", "piscina", "spa", "corsi",
 
 /** Webhook Zapier: nome, cognome, email, telefono; opzionale fonte (facebook|google|website|zapier) per CRM vendita. */
 function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
-  const nome = String(body.nome ?? body.first_name ?? body.name ?? "").trim()
-  const cognome = String(body.cognome ?? body.last_name ?? body.surname ?? "").trim()
-  const email = String(body.email ?? "").trim()
-  const telefono = String(body.telefono ?? body.phone ?? body.cellulare ?? "").trim()
+  // Zapier/FB Lead Ads spesso usano chiavi diverse (camelCase, PascalCase, nested, ecc.)
+  const unwrap = (v: unknown): string => {
+    if (v == null) return ""
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v)
+    if (typeof v === "object") {
+      const o = v as Record<string, unknown>
+      if (o.value != null) return unwrap(o.value)
+      if (o.text != null) return unwrap(o.text)
+    }
+    return ""
+  }
+  const pick = (keys: string[]): string => {
+    for (const k of keys) {
+      if (body[k] != null) {
+        const s = unwrap(body[k]).trim()
+        if (s) return s
+      }
+    }
+    return ""
+  }
+
+  const parseFromRawString = (raw: string): { nome?: string; cognome?: string; email?: string; telefono?: string } => {
+    const s = String(raw ?? "").trim()
+    if (!s || !s.includes(",")) return {}
+    const emailMatch = s.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)
+    const phoneMatch = s.match(/\+?\d{8,15}/)
+    const email = emailMatch?.[0]?.trim()
+    const telefono = phoneMatch?.[0]?.trim()
+    const parts = s
+      .split(",")
+      .map((x) => x.trim())
+      .filter(Boolean)
+    const nome = parts[0]
+    const cognome = parts[1]
+    return { nome, cognome, email, telefono }
+  }
+
+  const nomePick = pick(["nome", "Nome", "first_name", "firstName", "FirstName", "name", "Name", "given_name", "givenName"])
+  const cognomePick = pick(["cognome", "Cognome", "last_name", "lastName", "LastName", "surname", "Surname", "family_name", "familyName"])
+  const emailPick = pick(["email", "Email", "e_mail", "mail", "Mail", "email_address", "emailAddress"])
+  const telefonoPick = pick(["telefono", "Telefono", "phone", "Phone", "cellulare", "Cellulare", "mobile", "Mobile", "phone_number", "phoneNumber"])
+
+  // Google Ads / form esterni: spesso mandano un'unica stringa tipo "Ilaria,Ciardi,mail,+39..."
+  const rawCandidate =
+    (nomePick && nomePick.includes(",") ? nomePick : "") ||
+    pick(["raw", "Raw", "lead", "Lead", "contatto", "Contatto", "payload", "Payload", "message", "Message", "text", "Text"])
+  const parsed = parseFromRawString(rawCandidate)
+
+  const nome = nomePick || parsed.nome || ""
+  const cognome = cognomePick || parsed.cognome || ""
+  const email = emailPick || parsed.email || ""
+  const telefono = telefonoPick || parsed.telefono || ""
   let fonte: LeadSource = "zapier"
-  const fonteRaw = String(body.fonte ?? body.source ?? body.campaign_source ?? body.origin ?? "").trim().toLowerCase()
+  let fonteRaw = pick(["fonte", "Fonte", "source", "Source", "campaign_source", "origin"]).trim().toLowerCase()
+  if (fonteRaw === "sito web" || fonteRaw === "sito") fonteRaw = "website"
   if (fonteRaw && VALID_FONTE_ZAPIER.includes(fonteRaw as LeadSource)) fonte = fonteRaw as LeadSource
-  let interesse = body.interesse as string | undefined
-  if (interesse && !VALID_INTERESSE.includes(interesse as InteresseLead)) interesse = undefined
+  const interesseRaw = pick(["interesse", "Interesse", "interest"]) || (body.interesse != null ? unwrap(body.interesse) : "")
+  const interesseValido = interesseRaw && VALID_INTERESSE.includes(interesseRaw as InteresseLead) ? (interesseRaw as InteresseLead) : undefined
+  const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw.trim() : undefined
   const note = body.note != null ? String(body.note) : undefined
+  const categoriaRaw = pick(["categoria", "Categoria", "tipo", "Tipo", "canale"])?.toLowerCase()
+  const categoria = categoriaRaw === "bambini" ? ("bambini" as const) : undefined
   return {
     nome: nome || "—",
     cognome: cognome || "—",
     email: email || "—",
     telefono: telefono || "—",
     fonte,
-    fonteDettaglio: body.fonte_dettaglio != null ? String(body.fonte_dettaglio) : undefined,
-    interesse: interesse as InteresseLead | undefined,
+    fonteDettaglio: body.fonte_dettaglio != null ? String(body.fonte_dettaglio) : (body["fonteDettaglio"] != null ? String(body["fonteDettaglio"]) : undefined),
+    interesse: interesseValido,
+    interesseDettaglio: interesseDettaglio || undefined,
+    categoria,
     note,
   }
 }

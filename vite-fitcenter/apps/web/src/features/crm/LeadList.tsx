@@ -1,16 +1,14 @@
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { dataApi } from "@/api/data"
 import type { Lead, LeadSource, LeadStatus } from "@/types/lead"
 import { LEAD_SOURCE_LABELS, LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { Button } from "@workspace/ui/components/button"
 import { useAuth } from "@/contexts/AuthContext"
-import { leadsApi } from "@/api/leads"
 
 const PIPELINE_STATUSES: LeadStatus[] = [
   "nuovo",
@@ -35,13 +33,13 @@ const SOURCES: LeadSource[] = ["website", "facebook", "google", "tour_spontaneo"
 
 export function LeadList() {
   const queryClient = useQueryClient()
-  const { consulenteNome } = useAuth()
+  const { role } = useAuth()
   const [search, setSearch] = useState("")
   const [fonte, setFonte] = useState<LeadSource | "">("")
   const [consulente, setConsulente] = useState("")
 
   const assignToMe = useMutation({
-    mutationFn: (leadId: string) => leadsApi.update(leadId, { consulenteNome }),
+    mutationFn: (leadId: string) => dataApi.assignLeadToMe(leadId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
     },
@@ -53,7 +51,7 @@ export function LeadList() {
   })
 
   const filtered = useMemo(() => {
-    let list: Lead[] = [...allLeads]
+    let list: Lead[] = [...allLeads].sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
     if (search.trim()) {
       const s = search.toLowerCase()
       list = list.filter(
@@ -84,11 +82,9 @@ export function LeadList() {
     return m
   }, [filtered])
 
-  const consulenti = useMemo(() => {
-    const set = new Set<string>()
-    allLeads.forEach((l) => l.consulenteNome && set.add(l.consulenteNome))
-    return Array.from(set).filter((c) => c !== "Amministratore").sort()
-  }, [allLeads])
+  /** Solo Carmen, Serena e Ombretta nel dropdown (nessun altro nome). */
+  const CONSULENTI_OPZIONI = ["Carmen Severino", "Serena Del Prete", "Ombretta Zenoni"]
+  const consulenti = CONSULENTI_OPZIONI
 
   return (
     <div className="p-6">
@@ -174,7 +170,9 @@ export function LeadList() {
                 <th className="px-4 py-3 font-medium text-zinc-400">Stato</th>
                 <th className="px-4 py-3 font-medium text-zinc-400">Consulente</th>
                 <th className="px-4 py-3 font-medium text-zinc-400">Data</th>
-                <th className="px-4 py-3 font-medium text-zinc-400">Azioni</th>
+                {role !== "admin" && (
+                  <th className="px-4 py-3 font-medium text-zinc-400">Azioni</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
@@ -196,7 +194,7 @@ export function LeadList() {
                     <LeadSourceBadge source={lead.fonte} />
                   </td>
                   <td className="px-4 py-3 text-zinc-400">
-                    {lead.interesse ? INTERESSE_LABELS[lead.interesse] : "—"}
+                    {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
                   </td>
                   <td className="px-4 py-3">
                     <LeadStatusBadge status={lead.stato} />
@@ -205,31 +203,33 @@ export function LeadList() {
                   <td className="px-4 py-3 text-xs text-zinc-500">
                     {new Date(lead.createdAt).toLocaleDateString("it-IT")}
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {lead.consulenteNome !== consulenteNome && (
-                        <button
-                          type="button"
-                          onClick={() => assignToMe.mutate(lead.id)}
-                          disabled={assignToMe.isPending}
-                          className="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
-                        >
-                          Assegna a me
-                        </button>
-                      )}
-                      {lead.telefono && (
-                        <ChiamaButton
-                          telefono={lead.telefono}
-                          nomeContatto={`${lead.nome} ${lead.cognome}`}
-                          tipo="lead"
-                          leadId={lead.id}
-                        />
-                      )}
-                      <Link to={`/crm/lead/${lead.id}`} className="text-zinc-400 hover:text-zinc-200" title="Dettaglio">
-                        👁
-                      </Link>
-                    </div>
-                  </td>
+                  {role !== "admin" && (
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!lead.consulenteNome && (
+                          <button
+                            type="button"
+                            onClick={() => assignToMe.mutate(lead.id)}
+                            disabled={assignToMe.isPending}
+                            className="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
+                          >
+                            Assegna a me
+                          </button>
+                        )}
+                        {lead.telefono && (
+                          <ChiamaButton
+                            telefono={lead.telefono}
+                            nomeContatto={`${lead.nome} ${lead.cognome}`}
+                            tipo="lead"
+                            leadId={lead.id}
+                          />
+                        )}
+                        <Link to={`/crm/lead/${lead.id}`} className="text-zinc-400 hover:text-zinc-200" title="Dettaglio">
+                          👁
+                        </Link>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

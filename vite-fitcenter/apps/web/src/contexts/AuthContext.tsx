@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import { authApi, type User } from "@/api/auth"
 import { setAuthToken } from "@/api/client"
 
-const DEFAULT_CONSULENTI = ["Luca Ferrari", "Anna Bianchi"]
+const DEFAULT_CONSULENTI = ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
 export type Role = "admin" | "operatore"
 
@@ -19,6 +19,8 @@ type AuthContextType = {
   /** Per chiamate API: se operatore, passa questo; se admin, undefined */
   consulenteFilter: string | undefined
   consulenti: string[]
+  /** Se "bambini": consulente bambini, vede solo CRM con lead BAMBINI */
+  leadFilter?: "bambini"
 }
 
 const defaultValue: AuthContextType = {
@@ -31,6 +33,7 @@ const defaultValue: AuthContextType = {
   consulenteNome: DEFAULT_CONSULENTI[0] ?? "",
   consulenteFilter: undefined,
   consulenti: DEFAULT_CONSULENTI,
+  leadFilter: undefined,
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -96,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         consulenteNome,
         consulenteFilter,
         consulenti: DEFAULT_CONSULENTI,
+        leadFilter: user?.leadFilter,
       }}
     >
       {children}

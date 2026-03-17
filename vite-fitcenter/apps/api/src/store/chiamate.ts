@@ -1,6 +1,24 @@
 import type { Chiamata, ChiamataCreate } from "../types/chiamata.js"
+import { readJson, writeJson } from "./persist.js"
 
 const db = new Map<string, Chiamata>()
+const PERSIST_FILE = "chiamate.json"
+
+function loadPersisted() {
+  const list = readJson<Chiamata[]>(PERSIST_FILE, [])
+  if (!Array.isArray(list)) return
+  for (const item of list) {
+    if (item && typeof item === "object" && typeof (item as Chiamata).id === "string") {
+      db.set((item as Chiamata).id, item as Chiamata)
+    }
+  }
+}
+
+function persist() {
+  writeJson(PERSIST_FILE, Array.from(db.values()))
+}
+
+loadPersisted()
 
 function id() {
   return crypto.randomUUID()
@@ -18,6 +36,7 @@ export const store = {
       dataOra: now(),
     }
     db.set(chiamata.id, chiamata)
+    persist()
     return chiamata
   },
 

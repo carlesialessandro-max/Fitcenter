@@ -53,6 +53,7 @@ export interface DashboardStats {
   entrateMese: number
   percentualeBudget: number
   budgetMese: number
+  budgetAnno: number
   tassoConversione: number
   clientiAttivi: number
   venditePerMese: { mese: string; anno?: number; meseNum?: number; vendite: number; budget: number; percentuale?: number }[]

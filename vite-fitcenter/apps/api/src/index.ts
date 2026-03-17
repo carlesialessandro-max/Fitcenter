@@ -40,6 +40,8 @@ const app = express()
 
 app.use(cors({ origin: true }))
 app.use(express.json())
+// Zapier a volte invia payload come application/x-www-form-urlencoded
+app.use(express.urlencoded({ extended: true }))
 app.use("/api", authRouter)
 app.get("/api/webhook/zapier", webhookZapier)
 app.post("/api/webhook/zapier", webhookZapier)

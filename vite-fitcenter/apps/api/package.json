@@ -12,7 +12,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
     "express": "^5.0.1",
-    "mssql": "^11.0.1"
+    "mssql": "^11.0.1",
+    "sql.js": "^1.14.1"
   },
   "optionalDependencies": {
     "msnodesqlv8": "^4.2.2"
@@ -22,6 +23,7 @@
     "@types/express": "^5.0.0",
     "@types/mssql": "^9.1.9",
     "@types/node": "^22.15.29",
+    "@types/sql.js": "^1.4.9",
     "tsx": "^4.19.4",
     "typescript": "^5.9.3"
   }

@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom"
 import { AuthGuard, LoginRedirect } from "@/components/AuthGuard"
 import { AppLayout } from "@/layouts/AppLayout"
+import { useAuth } from "@/contexts/AuthContext"
 import { Login } from "@/pages/Login"
 import { Dashboard } from "@/pages/Dashboard"
 import { LeadList } from "@/features/crm/LeadList"
@@ -8,6 +9,12 @@ import { LeadDetail } from "@/features/crm/LeadDetail"
 import { NewLead } from "@/features/crm/NewLead"
 import { Abbonamenti } from "@/pages/Abbonamenti"
 import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
+
+function DashboardOrRedirect() {
+  const { leadFilter } = useAuth()
+  if (leadFilter === "bambini") return <Navigate to="/crm" replace />
+  return <Dashboard />
+}
 
 function ClientiDisabilitata() {
   return (
@@ -37,7 +44,7 @@ export const router = createBrowserRouter([
       </AuthGuard>
     ),
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <DashboardOrRedirect /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },

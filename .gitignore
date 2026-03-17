@@ -22,3 +22,8 @@ dist
 coverage
 .vercel
 *.pem
+
+# Dati locali API (persistenza runtime)
+vite-fitcenter/apps/api/data/
+vite-fitcenter/apps/api/apps/**/data/
+vite-fitcenter/apps/api/**/app.sqlite

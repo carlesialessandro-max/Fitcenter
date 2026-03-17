@@ -8,6 +8,8 @@ export interface User {
   nome: string
   role: Role
   consulenteNome?: string
+  /** Se "bambini": vede solo CRM con lead BAMBINI; nav solo CRM Vendita. */
+  leadFilter?: "bambini"
 }
 
 export interface LoginResponse {
