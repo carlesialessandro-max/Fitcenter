@@ -4,6 +4,7 @@ import { getMockDashboardStats } from "../data/mock-gestionale.js"
 import { store as leadsStore } from "../store/leads.js"
 import { budgetStore } from "../store/budget.js"
 import * as budgetPerConsulente from "../store/budget-per-consulente.js"
+import { store as chiamateStore } from "../store/chiamate.js"
 import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
@@ -1335,6 +1336,153 @@ export async function deleteOraLavorata(req: Request, res: Response) {
     }
     oreLavorateStore.delete(id)
     res.status(204).send()
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+type ReportPeriodo = "week" | "month" | "year"
+type ReportRow = {
+  consulenteNome: string
+  vendite: number
+  telefonate: number
+  oreLavorate: number
+  oreAttese: number
+  percentualeOre: number
+}
+
+function toISODate(d: Date): string {
+  const x = new Date(d)
+  x.setHours(0, 0, 0, 0)
+  return x.toISOString().slice(0, 10)
+}
+
+function startOfWeekMonday(date: Date): Date {
+  const d = new Date(date)
+  d.setHours(0, 0, 0, 0)
+  const day = d.getDay() // 0=Sun..6=Sat
+  const diff = (day + 6) % 7 // days since Monday
+  d.setDate(d.getDate() - diff)
+  return d
+}
+
+function countWeekdaysMonFri(from: Date, to: Date): number {
+  const a = new Date(from); a.setHours(0, 0, 0, 0)
+  const b = new Date(to); b.setHours(0, 0, 0, 0)
+  let count = 0
+  for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay()
+    if (dow >= 1 && dow <= 5) count++
+  }
+  return count
+}
+
+function oreDiff(oraInizio: string, oraFine: string): number {
+  const [h1, m1] = oraInizio.split(":").map((x) => Number(x))
+  const [h2, m2] = oraFine.split(":").map((x) => Number(x))
+  if ([h1, m1, h2, m2].some((n) => Number.isNaN(n))) return 0
+  const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+  return Math.max(0, mins / 60)
+}
+
+/** Report per consulenti: vendite + telefonate + ore lavorate con % ore (ore/attese) su settimana/mese/anno. */
+export async function getReportConsulenti(req: Request, res: Response) {
+  try {
+    const periodo = String(req.query.periodo ?? "week") as ReportPeriodo
+    const asOfRaw = String(req.query.asOf ?? "")
+    const asOf = asOfRaw && /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) ? new Date(`${asOfRaw}T12:00:00Z`) : new Date()
+
+    const labels = budgetPerConsulente.getConsulentiLabels()
+
+    let from: Date
+    let to: Date
+    if (periodo === "year") {
+      from = new Date(asOf.getFullYear(), 0, 1)
+      to = new Date(asOf.getFullYear(), 11, 31)
+    } else if (periodo === "month") {
+      from = new Date(asOf.getFullYear(), asOf.getMonth(), 1)
+      to = new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0)
+    } else {
+      from = startOfWeekMonday(asOf)
+      to = new Date(from); to.setDate(to.getDate() + 6)
+    }
+
+    const EXCLUDE_MACRO = new Set(["DANZA"])
+    const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
+    const normalizeKey = (s: string | undefined) =>
+      (s ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .replace(/’/g, "'")
+    const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
+      const macro = normalizeKey(a.macroCategoriaDescrizione)
+      const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
+      return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
+    }
+
+    const fromIso = toISODate(from)
+    const toIso = toISODate(to)
+    const oreAttese = countWeekdaysMonFri(from, to) * 8
+
+    const rows: ReportRow[] = []
+
+    for (const consulenteNome of labels) {
+      const idUtente = await resolveConsultantId(consulenteNome)
+      let vendite = 0
+
+      if (gestionaleSql.isGestionaleConfigured() && idUtente) {
+        const abbonRows = await gestionaleSql.queryAbbonamenti(idUtente)
+        const abbonamenti = abbonRows
+          .map((r) => rowToAbbonamento(r))
+          .filter((a) => !a.isTesseramento)
+          .filter((a) => !isExcluded(a))
+          .filter((a) => {
+            const di = new Date(a.dataInizio)
+            di.setHours(0, 0, 0, 0)
+            return di >= from && di <= to
+          })
+        vendite = abbonamenti.reduce((s, a) => s + (a.prezzo ?? 0), 0)
+      } else {
+        const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
+        vendite = mockAbbonamenti
+          .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
+          .filter((a) => !a.isTesseramento)
+          .filter((a) => !isExcluded(a as any))
+          .filter((a) => {
+            const di = new Date(a.dataInizio)
+            di.setHours(0, 0, 0, 0)
+            return di >= from && di <= to
+          })
+          .reduce((s, a) => s + (a.prezzo ?? 0), 0)
+      }
+
+      // Telefonate: persistite localmente.
+      const chiamate = chiamateStore.list({
+        consulenteId: consulenteNome,
+        da: fromIso,
+        a: toIso,
+      })
+      const telefonate = chiamate.length
+
+      // Ore lavorate: persistite localmente.
+      const oreRows = oreLavorateStore.list({ consulenteNome })
+        .filter((r) => r.giorno >= fromIso && r.giorno <= toIso)
+      const oreLavorate = oreRows.reduce((s, r) => s + oreDiff(r.oraInizio, r.oraFine), 0)
+      const percentualeOre = oreAttese > 0 ? Math.round((oreLavorate / oreAttese) * 1000) / 10 : 0
+
+      rows.push({
+        consulenteNome,
+        vendite: Math.round(vendite * 100) / 100,
+        telefonate,
+        oreLavorate: Math.round(oreLavorate * 10) / 10,
+        oreAttese,
+        percentualeOre,
+      })
+    }
+
+    rows.sort((a, b) => b.vendite - a.vendite)
+    res.json({ periodo, from: fromIso, to: toIso, rows })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

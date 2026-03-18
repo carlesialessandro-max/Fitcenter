@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getTotaliAnni, getClienti, getAbbonamenti, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getTotaliAnni, getClienti, getAbbonamenti, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const dataRouter = Router()
@@ -26,3 +26,4 @@ dataRouter.post("/convalidazioni", setConvalidazione)
 dataRouter.get("/ore-lavorate", getOreLavorate)
 dataRouter.post("/ore-lavorate", postOraLavorata)
 dataRouter.delete("/ore-lavorate/:id", deleteOraLavorata)
+dataRouter.get("/report-consulenti", requireAdmin, getReportConsulenti)

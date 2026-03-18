@@ -6,12 +6,14 @@ const navFull = [
   { to: "/", label: "Dashboard" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
+  { to: "/report", label: "Report" },
 ] as const
 
 export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
-  const nav = leadFilter === "bambini" ? [{ to: "/crm" as const, label: "CRM Vendita" }] : navFull
+  const baseNav = leadFilter === "bambini" ? [{ to: "/crm" as const, label: "CRM Vendita" }] : navFull
+  const nav = role === "admin" ? baseNav : baseNav.filter((x) => x.to !== "/report")
 
   return (
     <div className="flex min-h-svh bg-zinc-950 text-zinc-100">

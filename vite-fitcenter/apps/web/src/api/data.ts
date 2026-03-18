@@ -80,6 +80,15 @@ export const dataApi = {
   postOraLavorata: (body: { consulenteNome: string; giorno: string; oraInizio: string; oraFine: string }) =>
     api.post<OraLavorata>("/data/ore-lavorate", body),
   deleteOraLavorata: (id: string) => api.delete(`/data/ore-lavorate/${encodeURIComponent(id)}`),
+  getReportConsulenti: (params?: { periodo?: "week" | "month" | "year"; asOf?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.periodo) q.set("periodo", params.periodo)
+    if (params?.asOf) q.set("asOf", params.asOf)
+    const query = q.toString()
+    return api.get<{ periodo: string; from: string; to: string; rows: ReportConsulenteRow[] }>(
+      `/data/report-consulenti${query ? `?${query}` : ""}`
+    )
+  },
 }
 
 export interface OraLavorata {
@@ -89,4 +98,13 @@ export interface OraLavorata {
   oraInizio: string
   oraFine: string
   createdAt: string
+}
+
+export interface ReportConsulenteRow {
+  consulenteNome: string
+  vendite: number
+  telefonate: number
+  oreLavorate: number
+  oreAttese: number
+  percentualeOre: number
 }
