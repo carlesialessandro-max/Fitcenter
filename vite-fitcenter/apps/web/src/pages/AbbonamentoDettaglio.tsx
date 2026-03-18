@@ -35,7 +35,7 @@ export function AbbonamentoDettaglio() {
   const { id: abbonamentoId } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { consulenteFilter } = useAuth()
+  const { consulenteFilter, consulenteNome } = useAuth()
 
   const { data: abbonamenti = [], isLoading: loadingAbb, error: errAbb } = useQuery({
     queryKey: ["data", "abbonamenti", consulenteFilter ?? ""],
@@ -58,6 +58,21 @@ export function AbbonamentoDettaglio() {
   const followUp = abbonamentoId ? followUpAll[abbonamentoId] : undefined
   const stato = (followUp?.stato as RinnovoStato) ?? "da_contattare"
   const note = followUp?.note ?? ""
+
+  const crmParams =
+    abbonamento && cliente && consulenteNome
+      ? {
+          nomeVenditore: abbonamento.consulenteNome ?? "",
+          cognome: cliente.cognome ?? "",
+          nome: cliente.nome ?? "",
+          nomeOperatore: consulenteNome,
+        }
+      : null
+  const { data: crmAppuntamenti = [] } = useQuery({
+    queryKey: ["data", "crm-appuntamenti", crmParams?.nomeVenditore ?? "", crmParams?.cognome ?? "", crmParams?.nome ?? "", crmParams?.nomeOperatore ?? ""],
+    queryFn: () => dataApi.getCrmAppuntamenti(crmParams!),
+    enabled: !!crmParams && (!!crmParams.nomeVenditore || !!crmParams.cognome || !!crmParams.nome),
+  })
 
   const updateMutation = useMutation({
     mutationFn: (updates: { stato?: RinnovoStato; note?: string }) =>
@@ -179,6 +194,44 @@ export function AbbonamentoDettaglio() {
               placeholder="Note del consulente..."
             />
           </div>
+
+          {crmAppuntamenti.length > 0 && (
+            <div className="mt-6">
+              <h3 className="mb-2 text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h3>
+              <div className="overflow-x-auto rounded-md border border-zinc-700">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-700 bg-zinc-800/50">
+                      <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                      <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
+                      <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
+                      <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crmAppuntamenti.map((row, i) => (
+                      <tr key={i} className="border-b border-zinc-800 last:border-0">
+                        <td className="px-3 py-2 text-zinc-300">
+                          {row.dataAppuntamento
+                            ? new Date(row.dataAppuntamento).toLocaleDateString("it-IT", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-zinc-300">{row.tipoDescrizione || "—"}</td>
+                        <td className="px-3 py-2 text-zinc-300">{row.esitoDescrizione || "—"}</td>
+                        <td className="px-3 py-2 text-zinc-300">{row.crmDescrizione || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

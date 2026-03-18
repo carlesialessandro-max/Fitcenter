@@ -451,6 +451,61 @@ export async function queryMovimentiVenduto(idConsultant?: string): Promise<Reco
   return []
 }
 
+/** Nome view CRM appuntamenti (env o default [dbo].[RVW_CRMUtenti]). */
+function getCrmUtentiViewName(): string {
+  return process.env.GESTIONALE_VIEW_CRM_UTENTI?.trim() || "[dbo].[RVW_CRMUtenti]"
+}
+
+/**
+ * Appuntamenti CRM dal gestionale (RVW_CRMUtenti): DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione.
+ * Filtri: NomeVenditore, Cognome/Nome cliente, DestinatarioNomeOperatore. Solo mese in corso.
+ */
+export interface CrmAppuntamentoRow {
+  dataAppuntamento: string
+  tipoDescrizione: string
+  esitoDescrizione: string
+  crmDescrizione: string
+}
+
+export async function queryCrmAppuntamenti(params: {
+  nomeVenditore: string
+  cognome: string
+  nome: string
+  nomeOperatore: string
+}): Promise<CrmAppuntamentoRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getCrmUtentiViewName()
+  try {
+    const req = p
+      .request()
+      .input("nomeVenditore", sql.NVarChar, params.nomeVenditore?.trim() ?? "")
+      .input("cognome", sql.NVarChar, params.cognome?.trim() ?? "")
+      .input("nome", sql.NVarChar, params.nome?.trim() ?? "")
+      .input("nomeOperatore", sql.NVarChar, params.nomeOperatore?.trim() ?? "")
+    const r = await req.query(
+      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione
+       FROM ${view}
+       WHERE NomeVenditore = @nomeVenditore
+         AND Cognome = @cognome
+         AND Nome = @nome
+         AND DestinatarioNomeOperatore = @nomeOperatore
+         AND YEAR(DataAppuntamento) = YEAR(GETDATE())
+         AND MONTH(DataAppuntamento) = MONTH(GETDATE())
+       ORDER BY DataAppuntamento DESC`
+    )
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      dataAppuntamento: row.DataAppuntamento != null ? String(row.DataAppuntamento) : "",
+      tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
+      esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
+      crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+    }))
+  } catch {
+    return []
+  }
+}
+
 const COL_DATA = "DataOperazione"
 const COL_IMPORTO = "Importo"
 const COL_ISCRIZIONE = "IDIscrizione"

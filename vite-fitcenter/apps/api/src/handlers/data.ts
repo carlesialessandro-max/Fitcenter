@@ -179,6 +179,7 @@ export async function getDashboard(req: Request, res: Response) {
           totale: mapMese.get(m) ?? 0,
         }))
         const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+        markRinnovato(abbonamenti)
         const leads = leadsStore.list({})
         const leadTotali = leads.length
         const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
@@ -195,7 +196,8 @@ export async function getDashboard(req: Request, res: Response) {
           leadRowsForFonte,
           undefined,
           venditeMeseSql,
-          venditePerMeseSql
+          venditePerMeseSql,
+          asOf.date
         )
         await cacheSet({
           name: "data.dashboard",
@@ -216,6 +218,7 @@ export async function getDashboard(req: Request, res: Response) {
       venditeMeseSql = venditeMeseSqlSingle
       venditePerMeseSql = venditePerMeseSqlSingle
       const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+      markRinnovato(abbonamenti)
       const leads = leadsStore.list({})
       const leadTotali = leads.length
       const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
@@ -232,7 +235,8 @@ export async function getDashboard(req: Request, res: Response) {
         leadRowsForFonte,
         undefined,
         venditeMeseSql,
-        venditePerMeseSql
+        venditePerMeseSql,
+        asOf.date
       )
       await cacheSet({
         name: "data.dashboard",
@@ -290,9 +294,10 @@ function buildDashboardFromData(
   leadRows?: Record<string, unknown>[],
   movimentiVenduto?: Record<string, unknown>[],
   venditeMeseSql?: number,
-  venditePerMeseSql?: { mese: number; totale: number }[]
+  venditePerMeseSql?: { mese: number; totale: number }[],
+  referenceDate?: Date
 ): DashboardStats {
-  const now = new Date()
+  const now = referenceDate ? new Date(referenceDate) : new Date()
   const oggi = toDateParts(now)
   const anno = oggi.year
   const mese = oggi.month
@@ -304,20 +309,36 @@ function buildDashboardFromData(
     (a.pianoNome ?? "").toLowerCase().includes("tesserament") ||
     ((a.pianoNome ?? "").toLowerCase().includes("asi") && (a.pianoNome ?? "").toLowerCase().includes("isc"))
   /** Attivi = abbonamenti validi oggi (dataInizio <= oggi <= dataFine), esclusi i tesseramenti. */
+  const EXCLUDE_MACRO = new Set(["DANZA"])
+  const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
+  const normalizeKey = (s: string | undefined) =>
+    (s ?? "")
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, " ")
+      .replace(/’/g, "'")
+  const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
+    const macro = normalizeKey(a.macroCategoriaDescrizione)
+    const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
+    return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
+  }
+
   const attivi = abbonamenti.filter((a) => {
     if (a.stato !== "attivo" || isTesseramentoAbb(a)) return false
+    if (isExcluded(a)) return false
     const inizio = new Date(String(a.dataInizio).trim().split("T")[0])
     const fine = new Date(String(a.dataFine).trim().split("T")[0])
     const tInizio = inizio.getTime()
     const tFine = fine.getTime()
     return !Number.isNaN(tInizio) && !Number.isNaN(tFine) && oggiTime >= tInizio && oggiTime <= tFine
   })
-  const in30 = new Date()
+  const in30 = new Date(now)
   in30.setDate(in30.getDate() + 30)
-  const in60 = new Date()
+  const in60 = new Date(now)
   in60.setDate(in60.getDate() + 60)
-  const inScadenza = attivi.filter((a) => new Date(a.dataFine) <= in30)
-  const inScadenza60 = attivi.filter((a) => new Date(a.dataFine) <= in60)
+  // In scadenza: attivi, con le stesse esclusioni della lista abbonamenti, e NON già rinnovati.
+  const inScadenza = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in30)
+  const inScadenza60 = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
   const budgetVal = budgetCorrente?.budget ?? 6000
   /** Totale anno = somma esatta dei budget mese (ogni mese = somma Carmen + Serena + Ombretta). */
@@ -1235,6 +1256,28 @@ export async function updateAbbonamentiFollowUp(req: Request, res: Response) {
   }
 }
 
+/** Appuntamenti CRM (RVW_CRMUtenti) per dettaglio abbonamento: venditore, cliente nome/cognome, operatore. Solo mese in corso. */
+export async function getCrmAppuntamenti(req: Request, res: Response) {
+  try {
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      return res.json([])
+    }
+    const nomeVenditore = String(req.query.nomeVenditore ?? "").trim()
+    const cognome = String(req.query.cognome ?? "").trim()
+    const nome = String(req.query.nome ?? "").trim()
+    const nomeOperatore = String(req.query.nomeOperatore ?? getOperatoreConsulenteNome(req) ?? "").trim()
+    const rows = await gestionaleSql.queryCrmAppuntamenti({
+      nomeVenditore,
+      cognome,
+      nome,
+      nomeOperatore,
+    })
+    res.json(rows)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 /** Convalida giorno lavorativo (consulente). */
 export async function getConvalidazioni(req: Request, res: Response) {
   try {
@@ -1345,6 +1388,8 @@ type ReportPeriodo = "week" | "month" | "year"
 type ReportRow = {
   consulenteNome: string
   vendite: number
+  budget: number
+  percentualeBudget: number
   telefonate: number
   oreLavorate: number
   oreAttese: number
@@ -1375,6 +1420,16 @@ function countWeekdaysMonFri(from: Date, to: Date): number {
     if (dow >= 1 && dow <= 5) count++
   }
   return count
+}
+
+function clampRangeToMonth(from: Date, to: Date): { from: Date; to: Date } {
+  const a = new Date(from); a.setHours(0, 0, 0, 0)
+  const b = new Date(to); b.setHours(0, 0, 0, 0)
+  const monthStart = new Date(a.getFullYear(), a.getMonth(), 1)
+  const monthEnd = new Date(a.getFullYear(), a.getMonth() + 1, 0)
+  const outFrom = a < monthStart ? monthStart : a
+  const outTo = b > monthEnd ? monthEnd : b
+  return { from: outFrom, to: outTo }
 }
 
 function oreDiff(oraInizio: string, oraFine: string): number {
@@ -1431,6 +1486,27 @@ export async function getReportConsulenti(req: Request, res: Response) {
       const idUtente = await resolveConsultantId(consulenteNome)
       let vendite = 0
 
+      // Budget periodo per consulente
+      let budget = 0
+      if (periodo === "year") {
+        for (let m = 1; m <= 12; m++) budget += budgetPerConsulente.get(asOf.getFullYear(), m, consulenteNome)
+      } else if (periodo === "month") {
+        budget = budgetPerConsulente.get(asOf.getFullYear(), asOf.getMonth() + 1, consulenteNome)
+      } else {
+        // Settimana: proporzionale al budget mensile in base ai giorni lavorativi del mese coperti dalla settimana.
+        const y = from.getFullYear()
+        const m = from.getMonth() + 1
+        const budgetMese = budgetPerConsulente.get(y, m, consulenteNome)
+        const monthStart = new Date(y, m - 1, 1)
+        const monthEnd = new Date(y, m, 0)
+        const giorniLavorativiMese = countWeekdaysMonFri(monthStart, monthEnd)
+        const clipped = clampRangeToMonth(from, to)
+        const giorniLavorativiSettimanaNelMese = countWeekdaysMonFri(clipped.from, clipped.to)
+        budget = giorniLavorativiMese > 0
+          ? (budgetMese / giorniLavorativiMese) * giorniLavorativiSettimanaNelMese
+          : 0
+      }
+
       if (gestionaleSql.isGestionaleConfigured() && idUtente) {
         const abbonRows = await gestionaleSql.queryAbbonamenti(idUtente)
         const abbonamenti = abbonRows
@@ -1470,10 +1546,13 @@ export async function getReportConsulenti(req: Request, res: Response) {
         .filter((r) => r.giorno >= fromIso && r.giorno <= toIso)
       const oreLavorate = oreRows.reduce((s, r) => s + oreDiff(r.oraInizio, r.oraFine), 0)
       const percentualeOre = oreAttese > 0 ? Math.round((oreLavorate / oreAttese) * 1000) / 10 : 0
+      const percentualeBudget = budget > 0 ? Math.round((vendite / budget) * 1000) / 10 : 0
 
       rows.push({
         consulenteNome,
         vendite: Math.round(vendite * 100) / 100,
+        budget: Math.round(budget * 100) / 100,
+        percentualeBudget,
         telefonate,
         oreLavorate: Math.round(oreLavorate * 10) / 10,
         oreAttese,

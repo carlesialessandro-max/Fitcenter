@@ -63,6 +63,19 @@ export const dataApi = {
       `/data/abbonamenti-follow-up/${encodeURIComponent(abbonamentoId)}`,
       body
     ),
+  getCrmAppuntamenti: (params: {
+    nomeVenditore: string
+    cognome: string
+    nome: string
+    nomeOperatore: string
+  }) => {
+    const q = new URLSearchParams()
+    q.set("nomeVenditore", params.nomeVenditore)
+    q.set("cognome", params.cognome)
+    q.set("nome", params.nome)
+    q.set("nomeOperatore", params.nomeOperatore)
+    return api.get<CrmAppuntamento[]>(`/data/crm-appuntamenti?${q}`)
+  },
   getConvalidazioni: (anno: number, mese: number, consulenteNome: string) =>
     api.get<{ anno: number; mese: number; consulenteNome: string; convalidati: number[] }>(
       `/data/convalidazioni?anno=${anno}&mese=${mese}&consulente=${encodeURIComponent(consulenteNome)}`
@@ -103,8 +116,17 @@ export interface OraLavorata {
 export interface ReportConsulenteRow {
   consulenteNome: string
   vendite: number
+  budget: number
+  percentualeBudget: number
   telefonate: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+}
+
+export interface CrmAppuntamento {
+  dataAppuntamento: string
+  tipoDescrizione: string
+  esitoDescrizione: string
+  crmDescrizione: string
 }
