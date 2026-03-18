@@ -328,7 +328,24 @@ export async function queryAbbonamenti(
     return (r.recordset ?? []) as Record<string, unknown>[]
   }
   if (!idConsultant) {
+    const viewCfg = getViewVenditoreAbbonamento()
     const where = "WHERE 1=1" + dateFilter
+    // Se configurata la view venditore, esponi anche il nome consulente per la lista admin (tutti).
+    if (viewCfg) {
+      try {
+        const r = await p.request().query(
+          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, R.[${viewCfg.colNome}] AS ConsulenteNome
+           FROM [${tblA}] a
+           INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
+           LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
+           ${where}
+           ORDER BY a.IDIscrizione DESC`
+        )
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        // fallback sotto
+      }
+    }
     const r = await p.request().query(
       `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome
        FROM [${tblA}] a

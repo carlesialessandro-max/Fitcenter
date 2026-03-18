@@ -449,6 +449,20 @@ export async function getAbbonamenti(req: Request, res: Response) {
     const inScadenza =
       inScadenzaRaw === "30" ? 30 : inScadenzaRaw === "60" ? 60 : undefined
     const options = inScadenza != null ? { inScadenza } : undefined
+    const EXCLUDE_MACRO = new Set(["DANZA"])
+    const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
+    const normalizeKey = (s: string | undefined) =>
+      (s ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, " ")
+        .replace(/’/g, "'")
+
+    const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
+      const macro = normalizeKey(a.macroCategoriaDescrizione)
+      const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
+      return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
+    }
     if (gestionaleSql.isGestionaleConfigured()) {
       const idVenditore = await resolveConsultantId(consulente)
       if (consulente && !idVenditore) {
@@ -461,6 +475,16 @@ export async function getAbbonamenti(req: Request, res: Response) {
       let list = rows.map((r) => rowToAbbonamento(r))
       markRinnovato(list)
       list = list.filter((a) => !a.isTesseramento)
+      // Escludi DANZA e categorie non desiderate.
+      list = list.filter((a) => !isExcluded(a))
+      // Admin: quando non filtra per una consulente specifica, mostra solo abbonamenti delle 3 consulenti.
+      if (!consulente?.trim()) {
+        const allowed = budgetPerConsulente.getConsulentiLabels().map((x) => x.toLowerCase().trim())
+        list = list.filter((a) => {
+          const row = (a.consulenteNome ?? "").trim().toLowerCase()
+          return allowed.some((want) => row === want || row.includes(want) || want.includes(row))
+        })
+      }
       if (consulente?.trim()) {
         const want = consulente.trim().toLowerCase()
         list = list.filter((a) => {
