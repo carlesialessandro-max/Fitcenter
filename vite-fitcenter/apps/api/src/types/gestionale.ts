@@ -25,6 +25,8 @@ export interface Abbonamento {
   pianoNome: string
   categoria: CategoriaAbbonamento
   prezzo: number
+  /** Durata stimata in mesi (da IDDurata o DurataMesi nella view). */
+  durataMesi?: number
   dataInizio: string
   dataFine: string
   stato: "attivo" | "scaduto"

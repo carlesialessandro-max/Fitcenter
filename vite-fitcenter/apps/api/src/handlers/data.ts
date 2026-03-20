@@ -9,7 +9,7 @@ import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
 import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
-import { bumpMetaVersion, cacheGet, cacheSet, getDepSig } from "../services/persistent-cache.js"
+import { bumpMetaVersion, cacheGet, cacheSet, getBudgetDepSig } from "../services/persistent-cache.js"
 import { rowToCliente, rowToAbbonamento } from "../data/map-sql-to-types.js"
 import type {
   Cliente,
@@ -23,7 +23,7 @@ import type {
 /** Budget: solo da admin (store). Default 12 mesi per l'anno indicato. */
 function getDefaultBudgetList(anno?: number): { anno: number; mese: number; budget: number }[] {
   const y = anno ?? new Date().getFullYear()
-  return Array.from({ length: 12 }, (_, i) => ({ anno: y, mese: i + 1, budget: 6000 }))
+  return Array.from({ length: 12 }, (_, i) => ({ anno: y, mese: i + 1, budget: 60000 }))
 }
 
 /**
@@ -98,18 +98,49 @@ function parseDateToTime(s: string): number {
 
 /** Marca rinnovato=true se esiste un altro abbonamento dello stesso cliente con dataInizio > dataFine di questo. */
 function markRinnovato(list: Abbonamento[]): void {
+  // Versione ottimizzata: O(n) invece di O(n^2).
+  // Per ogni cliente teniamo il massimo (dataInizio) e il secondo massimo, così
+  // possiamo decidere rapidamente se esiste un "altro" abbonamento rinnovato.
+  type Top = { time: number; id: string | null }
+  const topsByCliente = new Map<string, { top1: Top; top2: Top }>()
+
   for (const a of list) {
+    const cliente = String(a.clienteId ?? "").trim()
+    if (!cliente) continue
+
+    const id = String(a.id ?? "").trim() || null
+    const inizioT = parseDateToTime(a.dataInizio ?? "")
+    const entry = topsByCliente.get(cliente)
+    if (!entry) {
+      topsByCliente.set(cliente, { top1: { time: inizioT, id }, top2: { time: 0, id: null } })
+      continue
+    }
+
+    // Aggiorna top1/top2 mantenendo due migliori per tempo, evitando di "duplicare" l'id.
+    if (inizioT > entry.top1.time) {
+      entry.top2 = entry.top1
+      entry.top1 = { time: inizioT, id }
+    } else if (id !== entry.top1.id && inizioT > entry.top2.time) {
+      entry.top2 = { time: inizioT, id }
+    }
+  }
+
+  for (const a of list) {
+    const cliente = String(a.clienteId ?? "").trim()
+    if (!cliente) continue
+
+    const id = String(a.id ?? "").trim() || null
     const dataFineA = parseDateToTime(a.dataFine ?? "")
     if (!dataFineA) continue
-    const clienteA = String(a.clienteId ?? "").trim()
-    if (!clienteA) continue
-    const hasRinnovo = list.some(
-      (b) =>
-        b.id !== a.id &&
-        String(b.clienteId ?? "").trim() === clienteA &&
-        parseDateToTime(b.dataInizio ?? "") > dataFineA
-    )
-    a.rinnovato = hasRinnovo
+
+    const entry = topsByCliente.get(cliente)
+    if (!entry) {
+      a.rinnovato = false
+      continue
+    }
+
+    const maxOther = entry.top1.id !== id ? entry.top1.time : entry.top2.time
+    a.rinnovato = maxOther > dataFineA
   }
 }
 
@@ -130,13 +161,48 @@ function cacheScope(req: Request): string {
   return `operatore:${nome}`
 }
 
+const HISTORICAL_TTL_MS = Number(process.env.HISTORICAL_TTL_MS ?? 10 * 365 * 24 * 60 * 60 * 1000) // ~10 anni
+
+function getTodayKey(): string {
+  const nowParts = toDateParts(new Date())
+  return `${nowParts.year}-${String(nowParts.month).padStart(2, "0")}-${String(nowParts.day).padStart(2, "0")}`
+}
+
+function isAsOfToday(asOfKey: string): boolean {
+  return asOfKey === getTodayKey()
+}
+
+function getCacheTtlMsForAsOf(asOfKey: string, fallbackMs: number): number {
+  return isAsOfToday(asOfKey) ? fallbackMs : HISTORICAL_TTL_MS
+}
+
+/**
+ * Per i totali storici (asOf != oggi) vogliamo una cache "definitiva":
+ * non deve dipendere da depSig che cambia (budget/chiamate/convalidazioni).
+ * Per questo, congeliamo depSig in cache per asOf storici.
+ */
+function getFrozenDepSig(asOfKey: string, depSig: string): string {
+  return isAsOfToday(asOfKey) ? depSig : `frozen:${asOfKey}`
+}
+
+// Evita che React Query rimanga in loading infinito quando SQL non risponde.
+const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 45_000)
+function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("__FITCENTER_DASHBOARD_SQL_TIMEOUT__")), DASHBOARD_SQL_TIMEOUT_MS)
+    ),
+  ])
+}
+
 export async function getDashboard(req: Request, res: Response) {
   try {
     const operatoreNome = getOperatoreConsulenteNome(req)
     const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
-    const depSig = await getDepSig()
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
+    const depSig = await getBudgetDepSig()
     const cacheKeyParams = { consulente: consulente ?? null }
     const cached = await cacheGet<DashboardStats>({
       name: "data.dashboard",
@@ -148,56 +214,90 @@ export async function getDashboard(req: Request, res: Response) {
     if (cached) return res.json(cached)
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
-      const idUtente = await resolveConsultantId(consulente)
-      const oggi = toDateParts(asOf.date)
-      const anno = oggi.year
-      const mese = oggi.month
-      let venditeMeseSql: number
-      let venditePerMeseSql: { mese: number; totale: number }[]
-      if (consulente == null || consulente === "") {
-        const labels = budgetPerConsulente.getConsulentiLabels()
-        const [abbonamentiRows, ...venditeResults] = await Promise.all([
-          gestionaleSql.queryAbbonamenti(undefined),
-          ...labels.map(async (label) => {
-            const id = await resolveConsultantId(label)
-            const [prog, perMese] = await Promise.all([
-              gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
-              gestionaleSql.getVenditePerMeseAnno(anno, id),
+      try {
+        const stats = await withDashboardSqlTimeout(
+          (async (): Promise<DashboardStats> => {
+            const idUtente = await resolveConsultantId(consulente)
+            const oggi = toDateParts(asOf.date)
+            const anno = oggi.year
+            const mese = oggi.month
+            let venditeMeseSql: number
+            let venditePerMeseSql: { mese: number; totale: number }[]
+            if (consulente == null || consulente === "") {
+              const labels = budgetPerConsulente.getConsulentiLabels()
+              const [abbonamentiRows, ...venditeResults] = await Promise.all([
+                gestionaleSql.queryAbbonamenti(undefined),
+                ...labels.map(async (label) => {
+                  const id = await resolveConsultantId(label)
+                  const [prog, perMese] = await Promise.all([
+                    gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
+                    gestionaleSql.getVenditePerMeseAnno(anno, id),
+                  ])
+                  return { prog, perMese }
+                }),
+              ])
+              venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
+              const mapMese = new Map<number, number>()
+              for (const r of venditeResults) {
+                for (const row of r.perMese) {
+                  mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
+                }
+              }
+              venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                mese: m,
+                totale: mapMese.get(m) ?? 0,
+              }))
+              const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+              markRinnovato(abbonamenti)
+              const leads = leadsStore.list({})
+              const leadTotali = leads.length
+              const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+              const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+              const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
+              const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+              return buildDashboardFromData(
+                [],
+                abbonamenti,
+                budgetList,
+                leadTotali,
+                leadVinti,
+                leadPersi,
+                leadRowsForFonte,
+                undefined,
+                venditeMeseSql,
+                venditePerMeseSql,
+                asOf.date
+              )
+            }
+            const [abbonamentiRows, venditeMeseSqlSingle, venditePerMeseSqlSingle] = await Promise.all([
+              gestionaleSql.queryAbbonamenti(idUtente),
+              gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
+              gestionaleSql.getVenditePerMeseAnno(anno, idUtente),
             ])
-            return { prog, perMese }
-          }),
-        ])
-        venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
-        const mapMese = new Map<number, number>()
-        for (const r of venditeResults) {
-          for (const row of r.perMese) {
-            mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
-          }
-        }
-        venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
-          mese: m,
-          totale: mapMese.get(m) ?? 0,
-        }))
-        const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
-        markRinnovato(abbonamenti)
-        const leads = leadsStore.list({})
-        const leadTotali = leads.length
-        const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
-        const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-        const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
-        const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-        const stats = buildDashboardFromData(
-          [],
-          abbonamenti,
-          budgetList,
-          leadTotali,
-          leadVinti,
-          leadPersi,
-          leadRowsForFonte,
-          undefined,
-          venditeMeseSql,
-          venditePerMeseSql,
-          asOf.date
+            venditeMeseSql = venditeMeseSqlSingle
+            venditePerMeseSql = venditePerMeseSqlSingle
+            const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+            markRinnovato(abbonamenti)
+            const leads = leadsStore.list({})
+            const leadTotali = leads.length
+            const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+            const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+            const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
+            const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+            return buildDashboardFromData(
+              [],
+              abbonamenti,
+              budgetList,
+              leadTotali,
+              leadVinti,
+              leadPersi,
+              leadRowsForFonte,
+              undefined,
+              venditeMeseSql,
+              venditePerMeseSql,
+              asOf.date
+            )
+          })()
         )
         await cacheSet({
           name: "data.dashboard",
@@ -205,49 +305,30 @@ export async function getDashboard(req: Request, res: Response) {
           params: cacheKeyParams,
           asOf: asOf.key,
           depSig,
-          ttlMs: 60_000,
+          ttlMs: getCacheTtlMsForAsOf(asOf.key, 60_000),
           value: stats,
         })
         return res.json(stats)
+      } catch (e) {
+        if ((e as Error).message !== "__FITCENTER_DASHBOARD_SQL_TIMEOUT__") throw e
+        const leads = leadsStore.list({})
+        const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+        const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+        const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
+        if (isAsOfToday(asOf.key)) {
+          // Solo "oggi": ha senso cacheare rapidamente un mock temporaneo.
+          await cacheSet({
+            name: "data.dashboard",
+            scope,
+            params: cacheKeyParams,
+            asOf: asOf.key,
+            depSig,
+            ttlMs: 10_000,
+            value: stats,
+          })
+        }
+        return res.json(stats)
       }
-      const [abbonamentiRows, venditeMeseSqlSingle, venditePerMeseSqlSingle] = await Promise.all([
-        gestionaleSql.queryAbbonamenti(idUtente),
-        gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
-        gestionaleSql.getVenditePerMeseAnno(anno, idUtente),
-      ])
-      venditeMeseSql = venditeMeseSqlSingle
-      venditePerMeseSql = venditePerMeseSqlSingle
-      const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
-      markRinnovato(abbonamenti)
-      const leads = leadsStore.list({})
-      const leadTotali = leads.length
-      const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
-      const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-      const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
-      const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-      const stats = buildDashboardFromData(
-        [],
-        abbonamenti,
-        budgetList,
-        leadTotali,
-        leadVinti,
-        leadPersi,
-        leadRowsForFonte,
-        undefined,
-        venditeMeseSql,
-        venditePerMeseSql,
-        asOf.date
-      )
-      await cacheSet({
-        name: "data.dashboard",
-        scope,
-        params: cacheKeyParams,
-        asOf: asOf.key,
-        depSig,
-        ttlMs: 60_000,
-        value: stats,
-      })
-      return res.json(stats)
     }
     const leads = leadsStore.list({})
     const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
@@ -259,7 +340,7 @@ export async function getDashboard(req: Request, res: Response) {
       params: cacheKeyParams,
       asOf: asOf.key,
       depSig,
-      ttlMs: 60_000,
+      ttlMs: getCacheTtlMsForAsOf(asOf.key, 60_000),
       value: stats,
     })
     res.json(stats)
@@ -340,7 +421,7 @@ function buildDashboardFromData(
   const inScadenza = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in30)
   const inScadenza60 = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
-  const budgetVal = budgetCorrente?.budget ?? 6000
+  const budgetVal = budgetCorrente?.budget ?? 60000
   /** Totale anno = somma esatta dei budget mese (ogni mese = somma Carmen + Serena + Ombretta). */
   const budgetAnno = Math.round(
     budget
@@ -621,10 +702,34 @@ export async function getVenditeStorico(req: Request, res: Response) {
   }
 }
 
+/** Distribuzione vendite (movimenti) per categoria e durata (abbonamenti venduti).
+ *  Periodo: ultimi N mesi (default 12). */
+export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Response) {
+  try {
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+
+    const now = new Date()
+    const to = now.toISOString().slice(0, 10)
+
+    // Richiesta: "mese corrente" (non ultimi N mesi).
+    const year = now.getUTCFullYear()
+    const monthIndex = now.getUTCMonth() // 0..11
+    const from = new Date(Date.UTC(year, monthIndex, 1, 12, 0, 0)).toISOString().slice(0, 10)
+
+    const idUtente = await resolveConsultantId(consulente)
+    const { rows, totalCount } = await gestionaleSql.getVenditeMovimentiCategoriaDurata(from, to, idUtente ?? undefined)
+
+    res.json({ from, to, totalCount, rows })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 /** Totale vendite e budget per anno (admin). Vendite da MovimentiVenduto se disponibile. */
 export async function getTotaliAnni(req: Request, res: Response) {
   try {
-    const depSig = await getDepSig()
+    const depSig = await getBudgetDepSig()
     const scope = cacheScope(req)
     const asOf = "today"
     const cached = await cacheGet<{ totali: { anno: number; vendite: number; budget: number; percentuale: number }[] }>({
@@ -988,6 +1093,31 @@ function buildDettaglioBlocco(
   }
 }
 
+// Evita che React Query rimanga in loading infinito quando SQL non risponde.
+const DETTAGLIO_SQL_TIMEOUT_MS = Number(process.env.DETTAGLIO_SQL_TIMEOUT_MS ?? 45_000)
+function withDettaglioSqlTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("__FITCENTER_DETTAGLIO_SQL_TIMEOUT__")), DETTAGLIO_SQL_TIMEOUT_MS)
+    ),
+  ])
+}
+
+// Timeout dedicato per report/admin (pagina "consulenti"), perché qui facciamo più query in loop.
+const REPORT_CONSULENTI_SQL_TIMEOUT_MS = Number(process.env.REPORT_CONSULENTI_SQL_TIMEOUT_MS ?? 45_000)
+function withReportConsulentiSqlTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, rej) =>
+      setTimeout(
+        () => rej(new Error("__FITCENTER_REPORT_CONSULENTI_SQL_TIMEOUT__")),
+        REPORT_CONSULENTI_SQL_TIMEOUT_MS
+      )
+    ),
+  ])
+}
+
 export async function getDettaglioMese(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno)
@@ -1007,9 +1137,9 @@ export async function getDettaglioMese(req: Request, res: Response) {
     }
     giorno = Math.min(Math.max(1, giorno), giorniNelMese)
 
-    const depSig = await getDepSig()
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
+    const depSig = await getBudgetDepSig()
     const cacheKeyParams = { anno, mese, giorno, consulente: consulente ?? null }
     const cached = await cacheGet<DettaglioMeseResponse>({
       name: "data.dettaglio-mese",
@@ -1022,7 +1152,8 @@ export async function getDettaglioMese(req: Request, res: Response) {
 
     let abbonamenti: Abbonamento[] = []
     let budgetMese: number
-    const fromSql = gestionaleSql.isGestionaleConfigured()
+    let fromSql = gestionaleSql.isGestionaleConfigured()
+    let dettaglioMeseWarning: string | undefined
     const idUtente = await resolveConsultantId(consulente)
     const movimenti = fromSql ? [] : ((await gestionaleSql.queryMovimentiVenduto(idUtente)) as Record<string, unknown>[])
     const useMovimenti = movimenti.length > 0
@@ -1031,73 +1162,113 @@ export async function getDettaglioMese(req: Request, res: Response) {
       const merged = mergeBudgetWithStore(getDefaultBudgetList(anno))
       budgetMese = consulente
         ? budgetPerConsulente.get(anno, mese, consulente)
-        : (merged.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 6000)
+        : (merged.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000)
       if (!useMovimenti) {
-        const rows = await gestionaleSql.queryAbbonamenti(idUtente)
-        abbonamenti = rows.map((r) => rowToAbbonamento(r))
+        try {
+          const rows = await withDettaglioSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
+          abbonamenti = rows.map((r) => rowToAbbonamento(r))
+        } catch (e) {
+          if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
+            dettaglioMeseWarning = `Timeout SQL per dettaglio-mese dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms — uso dati mock`
+            fromSql = false
+            const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
+            abbonamenti = mockAbbonamenti
+            budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
+            if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
+          } else {
+            throw e
+          }
+        }
       }
     } else {
       const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
       abbonamenti = mockAbbonamenti
-      budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 6000
+      budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
       if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
     }
 
-    const budgetGiorno = budgetMese / giorniNelMese
-    const budgetProgressivoMese = (budgetMese * giorno) / giorniNelMese
+    let budgetGiorno = budgetMese / giorniNelMese
+    let budgetProgressivoMese = (budgetMese * giorno) / giorniNelMese
 
-    let bloccoGiorno: DettaglioBlocco
-    let bloccoMese: DettaglioBlocco
+    let bloccoGiorno!: DettaglioBlocco
+    let bloccoMese!: DettaglioBlocco
     if (fromSql) {
-      const labels = budgetPerConsulente.getConsulentiLabels()
-      if (!idUtente && labels.length > 0) {
-        const perConsulenteGiorno: DettaglioConsulente[] = []
-        const perConsulenteMese: DettaglioConsulente[] = []
-        for (const label of labels) {
-          const id = await resolveConsultantId(label)
-          const budgetCons = budgetPerConsulente.get(anno, mese, label)
-          const budgetGiornoCons = budgetCons / giorniNelMese
-          const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
-          const [venditeGiorno, venditeMese] = await Promise.all([
-            gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
-            gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, id),
-          ])
-          const scostG = venditeGiorno - budgetGiornoCons
-          const scostM = venditeMese - budgetProgressivoMeseCons
-          const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
-          const trendM = budgetProgressivoMeseCons > 0 ? Math.round((venditeMese / budgetProgressivoMeseCons) * 10000) / 100 : 0
-          perConsulenteGiorno.push({
-            consulente: label,
-            budget: Math.round(budgetGiornoCons * 100) / 100,
-            budgetProgressivo: Math.round(budgetGiornoCons * 100) / 100,
-            consuntivo: venditeGiorno,
-            scostamento: Math.round(scostG * 100) / 100,
-            assenze: 0,
-            improduttivi: 0,
-            trend: trendG,
-          })
-          perConsulenteMese.push({
-            consulente: label,
-            budget: Math.round(budgetCons * 100) / 100,
-            budgetProgressivo: Math.round(budgetProgressivoMeseCons * 100) / 100,
-            consuntivo: venditeMese,
-            scostamento: Math.round(scostM * 100) / 100,
-            assenze: 0,
-            improduttivi: 0,
-            trend: trendM,
-          })
+      try {
+        const sqlBuilt = await withDettaglioSqlTimeout(
+          (async () => {
+            const labels = budgetPerConsulente.getConsulentiLabels()
+            if (!idUtente && labels.length > 0) {
+              const perConsulenteGiorno: DettaglioConsulente[] = []
+              const perConsulenteMese: DettaglioConsulente[] = []
+              for (const label of labels) {
+                const id = await resolveConsultantId(label)
+                const budgetCons = budgetPerConsulente.get(anno, mese, label)
+                const budgetGiornoCons = budgetCons / giorniNelMese
+                const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
+                const [venditeGiorno, venditeMese] = await Promise.all([
+                  gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
+                  gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, id),
+                ])
+                const scostG = venditeGiorno - budgetGiornoCons
+                const scostM = venditeMese - budgetProgressivoMeseCons
+                const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
+                const trendM =
+                  budgetProgressivoMeseCons > 0 ? Math.round((venditeMese / budgetProgressivoMeseCons) * 10000) / 100 : 0
+                perConsulenteGiorno.push({
+                  consulente: label,
+                  budget: Math.round(budgetGiornoCons * 100) / 100,
+                  budgetProgressivo: Math.round(budgetGiornoCons * 100) / 100,
+                  consuntivo: venditeGiorno,
+                  scostamento: Math.round(scostG * 100) / 100,
+                  assenze: 0,
+                  improduttivi: 0,
+                  trend: trendG,
+                })
+                perConsulenteMese.push({
+                  consulente: label,
+                  budget: Math.round(budgetCons * 100) / 100,
+                  budgetProgressivo: Math.round(budgetProgressivoMeseCons * 100) / 100,
+                  consuntivo: venditeMese,
+                  scostamento: Math.round(scostM * 100) / 100,
+                  assenze: 0,
+                  improduttivi: 0,
+                  trend: trendM,
+                })
+              }
+              return {
+                bloccoGiorno: buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno),
+                bloccoMese: buildDettaglioBloccoFromPerConsulente(perConsulenteMese),
+              }
+            }
+            const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
+              gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
+              gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, idUtente),
+            ])
+            return {
+              bloccoGiorno: buildDettaglioBloccoFromTotale(totaleGiornoSql, budgetGiorno, budgetGiorno),
+              bloccoMese: buildDettaglioBloccoFromTotale(totaleMeseSql, budgetMese, budgetProgressivoMese),
+            }
+          })()
+        )
+        bloccoGiorno = sqlBuilt.bloccoGiorno
+        bloccoMese = sqlBuilt.bloccoMese
+      } catch (e) {
+        if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
+          dettaglioMeseWarning = `Timeout SQL per dettaglio-mese dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms — uso dati mock`
+          fromSql = false
+          const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
+          abbonamenti = mockAbbonamenti
+          budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
+          if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
+          budgetGiorno = budgetMese / giorniNelMese
+          budgetProgressivoMese = (budgetMese * giorno) / giorniNelMese
+        } else {
+          throw e
         }
-        bloccoGiorno = buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno)
-        bloccoMese = buildDettaglioBloccoFromPerConsulente(perConsulenteMese)
-      } else {
-        const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
-          gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
-          gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, idUtente),
-        ])
-        bloccoGiorno = buildDettaglioBloccoFromTotale(totaleGiornoSql, budgetGiorno, budgetGiorno)
-        bloccoMese = buildDettaglioBloccoFromTotale(totaleMeseSql, budgetMese, budgetProgressivoMese)
       }
-    } else if (useMovimenti) {
+    }
+
+    if (!fromSql && useMovimenti) {
       const nomeToId = await gestionaleSql.getConsultantIdUtenteMap()
       const idToNome = new Map<string, string>()
       nomeToId.forEach((id, nome) => idToNome.set(id, nome))
@@ -1116,7 +1287,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
       })
       bloccoGiorno = buildDettaglioBloccoFromMovimenti(movimentiGiorno, budgetGiorno, budgetGiorno, idToNome)
       bloccoMese = buildDettaglioBloccoFromMovimenti(movimentiMese, budgetMese, budgetProgressivoMese, idToNome)
-    } else {
+    } else if (!fromSql) {
       const fineGiorno = new Date(anno, mese - 1, giorno, 23, 59, 59)
       const abbonamentiMese = abbonamenti.filter((a) => {
         const d = new Date(a.dataInizio)
@@ -1133,7 +1304,10 @@ export async function getDettaglioMese(req: Request, res: Response) {
     const dataOra = new Date(anno, mese - 1, giorno)
     const giornoLabel = `${GIORNI_SETTIMANA[dataOra.getDay()].toUpperCase()} ${giorno} ${MESI_LABEL[mese - 1].toUpperCase()} ${anno}`
 
-    const result: DettaglioMeseResponse & { _debug?: { consulente: string | undefined; idUtente: string | undefined } } = {
+    const result: DettaglioMeseResponse & {
+      _debug?: { consulente: string | undefined; idUtente: string | undefined }
+      _warning?: string
+    } = {
       anno,
       mese,
       meseLabel: `${MESI_LABEL[mese - 1].toUpperCase()} ${anno}`,
@@ -1143,14 +1317,21 @@ export async function getDettaglioMese(req: Request, res: Response) {
       dettaglioGiorno: bloccoGiorno,
       dettaglioMese: bloccoMese,
       _debug: { consulente, idUtente: idUtente ?? undefined },
+      ...(dettaglioMeseWarning ? { _warning: dettaglioMeseWarning } : {}),
     }
+    if (dettaglioMeseWarning && !isAsOfToday(asOf.key)) {
+      // Evita di "congelare" dati mock su storico: se oggi abbiamo problemi di rete/SQL,
+      // al prossimo refresh (con storico non scaduto) verrà ricalcolato solo dopo un buon segnale.
+      return res.json(result)
+    }
+
     await cacheSet({
       name: "data.dettaglio-mese",
       scope,
       params: cacheKeyParams,
       asOf: asOf.key,
       depSig,
-      ttlMs: 60_000,
+      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(asOf.key, 60_000),
       value: result,
     })
     res.json(result)
@@ -1159,6 +1340,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
   }
 }
 
+
 /** Dettaglio anno: totale + per consulente (budget anno, progressivo a oggi, consuntivo, scostamento, assenze, improduttivi, trend). */
 export async function getDettaglioAnno(req: Request, res: Response) {
   try {
@@ -1166,9 +1348,9 @@ export async function getDettaglioAnno(req: Request, res: Response) {
     if (Number.isNaN(anno) || anno < 2000 || anno > 2100) {
       return res.status(400).json({ message: "anno obbligatorio e valido (2000-2100)" })
     }
-    const depSig = await getDepSig()
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
+    const depSig = await getBudgetDepSig()
     const cacheKeyParams = { anno }
     const cached = await cacheGet<{ anno: number; annoLabel: string; dettaglio: DettaglioBlocco }>({
       name: "data.dettaglio-anno",
@@ -1222,7 +1404,7 @@ export async function getDettaglioAnno(req: Request, res: Response) {
       params: cacheKeyParams,
       asOf: asOf.key,
       depSig,
-      ttlMs: 10 * 60_000,
+      ttlMs: getCacheTtlMsForAsOf(asOf.key, 10 * 60_000),
       value: payload,
     })
     res.json(payload)
@@ -1398,35 +1580,40 @@ type ReportRow = {
 
 function toISODate(d: Date): string {
   const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
+  // Evita scivolamenti di 1 giorno tra timezone (il frontend usa ISO date).
+  x.setUTCHours(0, 0, 0, 0)
   return x.toISOString().slice(0, 10)
 }
 
 function startOfWeekMonday(date: Date): Date {
   const d = new Date(date)
-  d.setHours(0, 0, 0, 0)
-  const day = d.getDay() // 0=Sun..6=Sat
+  d.setUTCHours(0, 0, 0, 0)
+  const day = d.getUTCDay() // 0=Sun..6=Sat
   const diff = (day + 6) % 7 // days since Monday
-  d.setDate(d.getDate() - diff)
+  d.setUTCDate(d.getUTCDate() - diff)
   return d
 }
 
 function countWeekdaysMonFri(from: Date, to: Date): number {
-  const a = new Date(from); a.setHours(0, 0, 0, 0)
-  const b = new Date(to); b.setHours(0, 0, 0, 0)
+  const a = new Date(from)
+  a.setUTCHours(0, 0, 0, 0)
+  const b = new Date(to)
+  b.setUTCHours(0, 0, 0, 0)
   let count = 0
-  for (let d = new Date(a); d <= b; d.setDate(d.getDate() + 1)) {
-    const dow = d.getDay()
+  for (let d = new Date(a); d <= b; d.setUTCDate(d.getUTCDate() + 1)) {
+    const dow = d.getUTCDay()
     if (dow >= 1 && dow <= 5) count++
   }
   return count
 }
 
 function clampRangeToMonth(from: Date, to: Date): { from: Date; to: Date } {
-  const a = new Date(from); a.setHours(0, 0, 0, 0)
-  const b = new Date(to); b.setHours(0, 0, 0, 0)
-  const monthStart = new Date(a.getFullYear(), a.getMonth(), 1)
-  const monthEnd = new Date(a.getFullYear(), a.getMonth() + 1, 0)
+  const a = new Date(from)
+  a.setUTCHours(0, 0, 0, 0)
+  const b = new Date(to)
+  b.setUTCHours(0, 0, 0, 0)
+  const monthStart = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), 1))
+  const monthEnd = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 0))
   const outFrom = a < monthStart ? monthStart : a
   const outTo = b > monthEnd ? monthEnd : b
   return { from: outFrom, to: outTo }
@@ -1452,11 +1639,14 @@ export async function getReportConsulenti(req: Request, res: Response) {
     let from: Date
     let to: Date
     if (periodo === "year") {
-      from = new Date(asOf.getFullYear(), 0, 1)
-      to = new Date(asOf.getFullYear(), 11, 31)
+      const y = asOf.getUTCFullYear()
+      from = new Date(Date.UTC(y, 0, 1, 0, 0, 0, 0))
+      to = new Date(Date.UTC(y, 11, 31, 23, 59, 59, 999))
     } else if (periodo === "month") {
-      from = new Date(asOf.getFullYear(), asOf.getMonth(), 1)
-      to = new Date(asOf.getFullYear(), asOf.getMonth() + 1, 0)
+      const y = asOf.getUTCFullYear()
+      const m = asOf.getUTCMonth() // 0..11
+      from = new Date(Date.UTC(y, m, 1, 0, 0, 0, 0))
+      to = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999))
     } else {
       from = startOfWeekMonday(asOf)
       to = new Date(from); to.setDate(to.getDate() + 6)
@@ -1481,24 +1671,53 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const oreAttese = countWeekdaysMonFri(from, to) * 8
 
     const rows: ReportRow[] = []
+    let cachedMockAbbonamenti: Abbonamento[] | null = null
+    const mockVenditePerConsulente = (consulenteNome: string, from: Date, to: Date, isExcluded: (a: any) => unknown) => {
+      // Lazily import is done once below; this function only filters and sums.
+      if (!cachedMockAbbonamenti) return 0
+      return cachedMockAbbonamenti
+        .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
+        .filter((a) => !a.isTesseramento)
+        .filter((a) => !Boolean(isExcluded(a as any)))
+        .filter((a) => {
+          const di = new Date(a.dataInizio)
+          di.setUTCHours(0, 0, 0, 0)
+          return di >= from && di <= to
+        })
+        .reduce((s, a) => s + (a.prezzo ?? 0), 0)
+    }
+
+    const ensureMockLoaded = async () => {
+      if (cachedMockAbbonamenti) return cachedMockAbbonamenti
+      const mod = await import("../data/mock-gestionale.js")
+      cachedMockAbbonamenti = mod.mockAbbonamenti
+      return cachedMockAbbonamenti
+    }
 
     for (const consulenteNome of labels) {
-      const idUtente = await resolveConsultantId(consulenteNome)
+      let idUtente: string | undefined
+      try {
+        idUtente = await withReportConsulentiSqlTimeout(resolveConsultantId(consulenteNome))
+      } catch (e) {
+        if ((e as Error).message !== "__FITCENTER_REPORT_CONSULENTI_SQL_TIMEOUT__") throw e
+        idUtente = undefined
+      }
       let vendite = 0
 
       // Budget periodo per consulente
       let budget = 0
       if (periodo === "year") {
-        for (let m = 1; m <= 12; m++) budget += budgetPerConsulente.get(asOf.getFullYear(), m, consulenteNome)
+        const y = asOf.getUTCFullYear()
+        for (let m = 1; m <= 12; m++) budget += budgetPerConsulente.get(y, m, consulenteNome)
       } else if (periodo === "month") {
-        budget = budgetPerConsulente.get(asOf.getFullYear(), asOf.getMonth() + 1, consulenteNome)
+        budget = budgetPerConsulente.get(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
       } else {
         // Settimana: proporzionale al budget mensile in base ai giorni lavorativi del mese coperti dalla settimana.
-        const y = from.getFullYear()
-        const m = from.getMonth() + 1
+        const y = from.getUTCFullYear()
+        const m = from.getUTCMonth() + 1
         const budgetMese = budgetPerConsulente.get(y, m, consulenteNome)
-        const monthStart = new Date(y, m - 1, 1)
-        const monthEnd = new Date(y, m, 0)
+        const monthStart = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0))
+        const monthEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999))
         const giorniLavorativiMese = countWeekdaysMonFri(monthStart, monthEnd)
         const clipped = clampRangeToMonth(from, to)
         const giorniLavorativiSettimanaNelMese = countWeekdaysMonFri(clipped.from, clipped.to)
@@ -1508,29 +1727,26 @@ export async function getReportConsulenti(req: Request, res: Response) {
       }
 
       if (gestionaleSql.isGestionaleConfigured() && idUtente) {
-        const abbonRows = await gestionaleSql.queryAbbonamenti(idUtente)
-        const abbonamenti = abbonRows
-          .map((r) => rowToAbbonamento(r))
-          .filter((a) => !a.isTesseramento)
-          .filter((a) => !isExcluded(a))
-          .filter((a) => {
-            const di = new Date(a.dataInizio)
-            di.setHours(0, 0, 0, 0)
-            return di >= from && di <= to
-          })
-        vendite = abbonamenti.reduce((s, a) => s + (a.prezzo ?? 0), 0)
+        try {
+          const abbonRows = await withReportConsulentiSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
+          const abbonamenti = abbonRows
+            .map((r) => rowToAbbonamento(r))
+            .filter((a) => !a.isTesseramento)
+            .filter((a) => !isExcluded(a))
+            .filter((a) => {
+              const di = new Date(a.dataInizio)
+              di.setUTCHours(0, 0, 0, 0)
+              return di >= from && di <= to
+            })
+          vendite = abbonamenti.reduce((s, a) => s + (a.prezzo ?? 0), 0)
+        } catch (e) {
+          if ((e as Error).message !== "__FITCENTER_REPORT_CONSULENTI_SQL_TIMEOUT__") throw e
+          await ensureMockLoaded()
+          vendite = mockVenditePerConsulente(consulenteNome, from, to, isExcluded)
+        }
       } else {
-        const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
-        vendite = mockAbbonamenti
-          .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
-          .filter((a) => !a.isTesseramento)
-          .filter((a) => !isExcluded(a as any))
-          .filter((a) => {
-            const di = new Date(a.dataInizio)
-            di.setHours(0, 0, 0, 0)
-            return di >= from && di <= to
-          })
-          .reduce((s, a) => s + (a.prezzo ?? 0), 0)
+        await ensureMockLoaded()
+        vendite = mockVenditePerConsulente(consulenteNome, from, to, isExcluded)
       }
 
       // Telefonate: persistite localmente.

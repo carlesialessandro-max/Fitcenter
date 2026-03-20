@@ -6,6 +6,8 @@ import initSqlJs from "sql.js"
 
 let dbPromise: Promise<any> | null = null
 let dbFilePath: string | null = null
+let lastDbInstance: any | null = null
+const PERSIST_CACHE_AT_END = process.env.PERSIST_CACHE_AT_END === "true"
 
 function resolveDataDir(): string {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -47,7 +49,8 @@ async function openDb(): Promise<any> {
       value TEXT NOT NULL
     );`
   )
-  persistDb(db)
+  if (!PERSIST_CACHE_AT_END) persistDb(db)
+  lastDbInstance = db
   return db
 }
 
@@ -103,6 +106,15 @@ export async function getDepSig(): Promise<string> {
   return `${b}.${c}.${ch}`
 }
 
+/**
+ * Firma dipendenze "leggera" per dati che dipendono solo dal budget.
+ * Riduce invalidazioni inutili (es. chiamate/convalidazioni) sui totali dashboard storici.
+ */
+export async function getBudgetDepSig(): Promise<string> {
+  const b = await getMeta("v:budget")
+  return `${b}`
+}
+
 export async function cacheGet<T>(args: {
   name: string
   scope: string
@@ -113,17 +125,41 @@ export async function cacheGet<T>(args: {
   const db = await getDb()
   const paramsHash = sha1(stableJson(args.params))
   const now = Date.now()
+
+  // Se si tratta di dati storici (asOf != oggi) e sono "totali" di vendita,
+  // non devono mai scadere: anche se un TTL precedente li ha fatti scadere,
+  // continuiamo a usarli perché sono definitivi una volta calcolati.
+  const isHistoricalTotalsName =
+    args.name === "data.dashboard" || args.name === "data.dettaglio-mese" || args.name === "data.dettaglio-anno"
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const d = new Date()
+  const year = useLocal ? d.getFullYear() : d.getUTCFullYear()
+  const month = (useLocal ? d.getMonth() : d.getUTCMonth()) + 1
+  const day = useLocal ? d.getDate() : d.getUTCDate()
+  const todayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+  const treatAsNoExpiry = isHistoricalTotalsName && args.asOf !== todayKey
+
   const rows = db.exec(
-    `SELECT value_json, expires_at_ms FROM cache_results
-     WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ? AND dep_sig = ?
-     LIMIT 1;`,
-    [args.name, args.scope, paramsHash, args.asOf, args.depSig]
+    treatAsNoExpiry
+      ? `SELECT value_json, expires_at_ms FROM cache_results
+         WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ? AND dep_sig = ?
+         ORDER BY created_at_ms DESC
+         LIMIT 1;`
+      : `SELECT value_json, expires_at_ms FROM cache_results
+         WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ? AND dep_sig = ?
+         LIMIT 1;`,
+    treatAsNoExpiry
+      ? [args.name, args.scope, paramsHash, args.asOf, args.depSig]
+      : [args.name, args.scope, paramsHash, args.asOf, args.depSig]
   )
   const row = rows?.[0]?.values?.[0]
   if (!row) return null
   const valueJson = row[0]
   const expiresAt = Number(row[1] ?? 0)
-  if (!valueJson || Number.isNaN(expiresAt) || expiresAt < now) return null
+  if (!valueJson) return null
+  if (!treatAsNoExpiry) {
+    if (Number.isNaN(expiresAt) || expiresAt < now) return null
+  }
   try {
     return JSON.parse(String(valueJson)) as T
   } catch {
@@ -161,6 +197,19 @@ export async function cacheSet(args: {
       expiresAt,
     ]
   )
-  persistDb(db)
+  if (!PERSIST_CACHE_AT_END) persistDb(db)
+}
+
+// Se richiesto, esporta/salva una sola volta alla fine del processo.
+if (PERSIST_CACHE_AT_END) {
+  process.once("exit", () => {
+    if (lastDbInstance) {
+      try {
+        persistDb(lastDbInstance)
+      } catch {
+        // best-effort
+      }
+    }
+  })
 }
 

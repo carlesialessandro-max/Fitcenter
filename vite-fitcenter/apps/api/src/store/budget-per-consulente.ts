@@ -1,7 +1,7 @@
 import { readJson, writeJson } from "./persist.js"
 
 /** Budget per (anno, mese, consulente). Il totale mese = somma delle 3 consulenti = budget generale. */
-const DEFAULT_BUDGET_PER_CONSULENTE = 2000
+const DEFAULT_BUDGET_PER_CONSULENTE = 20000
 const CONSULENTI_LABELS = ["Carmen Severino", "Serena Del Prete", "Ombretta Zenoni"] as const
 
 const store = new Map<string, number>()

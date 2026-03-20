@@ -22,18 +22,31 @@ import { KpiRow, TabellaConsulenti } from "@/components/DettaglioBloccoView"
 const COLORS_FONTE = ["#3b82f6", "#22c55e", "#f97316"]
 const COLORS_CAT = ["#8b5cf6", "#06b6d4", "#ec4899", "#eab308", "#f97316"]
 
+function localIsoDate(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function fmtDateIt(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
 export function Dashboard() {
   const queryClient = useQueryClient()
   const { role, consulenteFilter, consulenteNome } = useAuth()
   const [budgetModal, setBudgetModal] = useState(false)
   const annoInCorso = new Date().getFullYear()
-  const [asOf, setAsOf] = useState(() => new Date().toISOString().slice(0, 10))
+  const [asOf, setAsOf] = useState(() => localIsoDate())
   const [budgetAnno, setBudgetAnno] = useState(annoInCorso)
   const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
   const [budgetPerConsulente, setBudgetPerConsulente] = useState<Record<string, number>>({})
   const now = new Date()
   const [giornoConsulente, setGiornoConsulente] = useState(now.getDate())
-  const todayStr = now.toISOString().slice(0, 10)
+  const todayStr = localIsoDate(now)
   const [oraLavorataGiorno, setOraLavorataGiorno] = useState(todayStr)
   const [oraLavorataInizio, setOraLavorataInizio] = useState("09:00")
   const [oraLavorataFine, setOraLavorataFine] = useState("18:00")
@@ -41,6 +54,10 @@ export function Dashboard() {
   const { data, isLoading, error } = useQuery({
     queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null],
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30_000,
   })
 
   const { data: budgetData } = useQuery({
@@ -87,12 +104,20 @@ export function Dashboard() {
   const { data: dettaglioGiornoMese } = useQuery({
     queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null],
     queryFn: () => dataApi.getDettaglioMese(annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : undefined),
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30_000,
   })
 
   const { data: dettaglioAnnoData } = useQuery({
     queryKey: ["dettaglio-anno", annoInCorso, role === "admin" ? asOf : null],
     queryFn: () => dataApi.getDettaglioAnno(annoInCorso, role === "admin" ? asOf : undefined),
     enabled: role === "admin",
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30_000,
   })
 
   const annoOre = now.getFullYear()
@@ -138,7 +163,7 @@ export function Dashboard() {
   }
 
   const oggi = role === "admin"
-    ? new Date().toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" })
+    ? fmtDateIt(asOf)
     : (() => {
         const d = new Date(annoOggi, meseOggi - 1, giornoOggi)
         return d.toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" })
@@ -161,6 +186,8 @@ export function Dashboard() {
                 type="date"
                 value={asOf}
                 onChange={(e) => setAsOf(e.target.value)}
+                lang="it-IT"
+                title="Formato data: gg/mm/aaaa"
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
             </label>
@@ -513,7 +540,7 @@ export function Dashboard() {
                   <label className="block text-xs text-zinc-500">Budget {label} (€)</label>
                   <input
                     type="number"
-                    value={budgetPerConsulente[label] ?? 2000}
+                    value={budgetPerConsulente[label] ?? 20000}
                     onChange={(e) => setBudgetPerConsulente((prev) => ({ ...prev, [label]: Number(e.target.value) }))}
                     className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
                   />
@@ -523,7 +550,7 @@ export function Dashboard() {
                 Totale mese: €
                 {Math.round(
                   (budgetData?.consulenti ?? []).reduce(
-                    (s, label) => s + (budgetPerConsulente[label] ?? 2000),
+                    (s, label) => s + (budgetPerConsulente[label] ?? 20000),
                     0
                   )
                 ).toLocaleString("it-IT")}

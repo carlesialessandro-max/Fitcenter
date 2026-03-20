@@ -6,6 +6,7 @@ import { chiamateApi, type EsitoChiamata } from "@/api/chiamate"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts"
 
 const ESITO_LABELS: Record<EsitoChiamata, string> = {
   risposto: "Risposto",
@@ -74,6 +75,24 @@ export function Abbonamenti() {
     staleTime: 2 * 60 * 1000,
     retry: false,
     refetchOnWindowFocus: false,
+  })
+
+  const {
+    data: venditeMovimentiAndamento,
+    isLoading: isLoadingVenditeMovimentiAndamento,
+    error: venditeMovimentiAndamentoError,
+  } = useQuery({
+    queryKey: ["vendite-movimenti-andamento", effectiveConsulenteFilter ?? ""],
+    queryFn: () =>
+      dataApi.getVenditeMovimentiCategoriaDurata({
+        months: 1,
+        consulente: effectiveConsulenteFilter,
+      }),
+    enabled: tab === "andamento",
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60_000,
   })
   const { data: clienti = [] } = useQuery({
     queryKey: ["data", "clienti"],
@@ -361,8 +380,167 @@ export function Abbonamenti() {
       )}
 
       {tab === "andamento" && (
-        <div className="mt-4 rounded-lg border border-zinc-800 p-6 text-center text-zinc-500">
-          Andamento vendite (grafico in sviluppo)
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-6">
+          {isLoadingVenditeMovimentiAndamento ? (
+            <div className="py-10 text-center text-zinc-400">Caricamento andamento...</div>
+          ) : venditeMovimentiAndamentoError ? (
+            <div className="py-6 text-center text-red-400">{(venditeMovimentiAndamentoError as Error).message}</div>
+          ) : (
+            (() => {
+              const rows = venditeMovimentiAndamento?.rows ?? []
+              const totalDistinct = venditeMovimentiAndamento?.totalCount ?? 0
+              // Per percentuali coerenti con le fette del grafico usiamo la somma dei count mostrati (rows).
+              const totalForPct = rows.reduce((s, r) => s + (r.count ?? 0), 0)
+              if (totalForPct <= 0) {
+                return <div className="py-10 text-center text-zinc-500">Nessun dato per il periodo.</div>
+              }
+
+              const byCategoriaMap: Record<string, number> = {}
+              const byDurataMap: Record<string, number> = {}
+              rows.forEach((r) => {
+                const cat = r.categoria ?? "palestra"
+                byCategoriaMap[cat] = (byCategoriaMap[cat] ?? 0) + (r.count ?? 0)
+                const durataLabel = r.durataMesi != null ? `${r.durataMesi} mesi` : "Sconosciuta"
+                byDurataMap[durataLabel] = (byDurataMap[durataLabel] ?? 0) + (r.count ?? 0)
+              })
+
+              const byCategoria = Object.entries(byCategoriaMap)
+                .map(([name, count]) => ({
+                  name,
+                  count,
+                  pct: Math.round((count / totalForPct) * 1000) / 10,
+                }))
+                .sort((a, b) => b.count - a.count)
+
+              const byDurata = Object.entries(byDurataMap)
+                .map(([name, count]) => ({
+                  name,
+                  count,
+                  pct: Math.round((count / totalForPct) * 1000) / 10,
+                }))
+                .sort((a, b) => {
+                  const na = Number(a.name.split(" ")[0])
+                  const nb = Number(b.name.split(" ")[0])
+                  const oka = !Number.isNaN(na) && na > 0
+                  const okb = !Number.isNaN(nb) && nb > 0
+                  if (oka && okb) return na - nb
+                  if (oka) return -1
+                  if (okb) return 1
+                  return a.name.localeCompare(b.name)
+                })
+
+              const paletteCat = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308"]
+              const paletteDur = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#60a5fa"]
+
+              return (
+                <>
+                      <h2 className="mb-1 text-sm font-medium text-zinc-400">Andamento vendite (mese corrente)</h2>
+                      <div className="mb-4 text-sm text-zinc-500">
+                        Totale movimenti (esclusi tesseramenti): <span className="text-zinc-200">{totalDistinct}</span>
+                      </div>
+
+                  <div className="grid gap-6 lg:grid-cols-1">
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
+                      <p className="mb-2 text-sm text-zinc-300">Distribuzione per categoria</p>
+                      <ResponsiveContainer width="100%" height={520}>
+                        <PieChart>
+                          <Tooltip
+                            contentStyle={{ background: "#18181b", border: "1px solid #27272a" }}
+                            formatter={(_value: any, _name: any, props: any) => {
+                              const payload = props?.payload as { name: string; count: number; pct: number }
+                              return [`${payload.pct}% (${payload.count})`, payload.name]
+                            }}
+                          />
+                          <Pie
+                            data={byCategoria}
+                            dataKey="count"
+                            nameKey="name"
+                            outerRadius={185}
+                            labelLine
+                            label={(props: any) => {
+                              const payload = props?.payload as { name?: string; pct?: number; count?: number }
+                              const pct = payload?.pct ?? 0
+                              const name = payload?.name ?? ""
+                              const count = payload?.count ?? 0
+                              // Riduce l'affollamento: per slice piccole mostriamo niente (oppure solo tooltip).
+                              if (pct >= 7) return `${name} (${pct}%) ${count}`
+                              if (pct >= 3) return `${name} (${pct}%)`
+                              return ""
+                            }}
+                          >
+                            {byCategoria.map((e, i) => (
+                              <Cell key={e.name} fill={paletteCat[i % paletteCat.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {byCategoria.slice(0, 10).map((e, i) => (
+                          <div key={e.name} className="flex items-center gap-2 text-xs text-zinc-300">
+                            <span
+                              className="inline-block h-2.5 w-2.5 rounded-sm"
+                              style={{ background: paletteCat[i % paletteCat.length] }}
+                            />
+                            <span className="flex-1 truncate">{e.name}</span>
+                            <span className="text-zinc-500">{e.pct}%</span>
+                            <span className="text-zinc-400">({e.count})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
+                      <p className="mb-2 text-sm text-zinc-300">Distribuzione per durata</p>
+                      <ResponsiveContainer width="100%" height={520}>
+                        <PieChart>
+                          <Tooltip
+                            contentStyle={{ background: "#18181b", border: "1px solid #27272a" }}
+                            formatter={(_value: any, _name: any, props: any) => {
+                              const payload = props?.payload as { name: string; count: number; pct: number }
+                              return [`${payload.pct}% (${payload.count})`, payload.name]
+                            }}
+                          />
+                          <Pie
+                            data={byDurata}
+                            dataKey="count"
+                            nameKey="name"
+                            outerRadius={185}
+                            labelLine
+                            label={(props: any) => {
+                              const payload = props?.payload as { name?: string; pct?: number; count?: number }
+                              const pct = payload?.pct ?? 0
+                              const name = payload?.name ?? ""
+                              const count = payload?.count ?? 0
+                              if (pct >= 7) return `${name} (${pct}%) ${count}`
+                              if (pct >= 3) return `${name} (${pct}%)`
+                              return ""
+                            }}
+                          >
+                            {byDurata.map((e, i) => (
+                              <Cell key={e.name} fill={paletteDur[i % paletteDur.length]} />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {byDurata.slice(0, 10).map((e, i) => (
+                          <div key={e.name} className="flex items-center gap-2 text-xs text-zinc-300">
+                            <span
+                              className="inline-block h-2.5 w-2.5 rounded-sm"
+                              style={{ background: paletteDur[i % paletteDur.length] }}
+                            />
+                            <span className="flex-1 truncate">{e.name}</span>
+                            <span className="text-zinc-500">{e.pct}%</span>
+                            <span className="text-zinc-400">({e.count})</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )
+            })()
+          )}
         </div>
       )}
     </div>

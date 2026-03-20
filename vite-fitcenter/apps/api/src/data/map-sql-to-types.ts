@@ -96,6 +96,8 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
     (row.IDDurata != null ? `Piano ${row.IDDurata}` : "") ||
     "Abbonamento"
   const prezzo = num(row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price ?? row.Importo ?? row.importo)
+  const durataMesiRaw = num(row.DurataMesi ?? row.durataMesi ?? row.Durata ?? row.durata ?? row.IDDurata)
+  const durataMesi = durataMesiRaw >= 1 && durataMesiRaw <= 240 ? Math.round(durataMesiRaw) : undefined
   const isTesseramento = isTesseramentoRow(row)
   return {
     id: str(row.IDIscrizione ?? row.Id ?? row.id) || crypto.randomUUID(),
@@ -105,6 +107,7 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
     pianoNome,
     categoria: cat as Abbonamento["categoria"],
     prezzo,
+    durataMesi,
     dataInizio: dateStr(row.DataInizio ?? row.Datalnizio ?? row.dataInizio ?? row.Inizio ?? row.inizio),
     dataFine,
     stato: (row.Stato ?? row.stato ?? stato) as "attivo" | "scaduto",

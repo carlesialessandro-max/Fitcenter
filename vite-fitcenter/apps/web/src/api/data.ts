@@ -44,6 +44,20 @@ export const dataApi = {
     if (consulente) params.set("consulente", consulente)
     return api.get<{ anno: number; venditePerMese: { mese: string; anno: number; meseNum: number; vendite: number; budget: number; percentuale: number }[] }>(`/data/vendite-storico?${params}`)
   },
+  getVenditeMovimentiCategoriaDurata: (params: { months?: number; consulente?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (params.months != null) q.set("months", String(params.months))
+    if (params.consulente) q.set("consulente", params.consulente)
+    const query = q.toString()
+    return api.get<{
+      from: string
+      to: string
+      totalCount: number
+      rows: { categoria: string; durataMesi: number | null; count: number }[]
+    }>(
+      `/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`
+    )
+  },
   getDettaglioMese: (anno: number, mese: number, giorno?: number, consulente?: string, asOf?: string) => {
     const params = new URLSearchParams({ anno: String(anno), mese: String(mese) })
     if (giorno != null) params.set("giorno", String(giorno))

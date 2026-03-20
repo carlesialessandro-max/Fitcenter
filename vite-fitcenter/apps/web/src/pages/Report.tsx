@@ -6,7 +6,17 @@ import { useAuth } from "@/contexts/AuthContext"
 type Periodo = "week" | "month" | "year"
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function fmtDateIt(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
 }
 
 export function Report() {
@@ -50,8 +60,11 @@ export function Report() {
               type="date"
               value={asOf}
               onChange={(e) => setAsOf(e.target.value)}
+              lang="it-IT"
+              title="Formato data: gg/mm/aaaa"
               className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
             />
+            <span className="text-xs text-zinc-500">{fmtDateIt(asOf)}</span>
           </label>
         </div>
       </div>

@@ -48,6 +48,25 @@ function isWindowsAuth(cs: string): boolean {
   return integrated === "true" || integrated === "yes" || integrated === "sspi"
 }
 
+function ensureSqlTimeouts(cs: string): string {
+  // Applica timeouts "nativi" al driver mssql.
+  // Se non funzionano, la Promise JS (Promise.race) non basta perché alcune fasi possono bloccare l'event loop.
+  const p = parseConnectionString(cs)
+  const connectKey = "connect timeout"
+  const requestKey = "request timeout"
+
+  // Default: 15s per connettere, 45s per la singola request SQL.
+  const connectTimeout = p.get(connectKey)
+  const requestTimeout = p.get(requestKey)
+
+  let out = cs
+  if (connectTimeout == null) out += ";Connect Timeout=15"
+  // Per tedious, Request Timeout in connection string viene interpretato in millisecondi.
+  // Se mettiamo 45 otteniamo 45ms (come visto dai test), quindi usiamo 45000.
+  if (requestTimeout == null) out += ";Request Timeout=45000"
+  return out
+}
+
 export async function getPool(): Promise<sql.ConnectionPool | null> {
   const cs = getConnectionString()
   if (!cs) return null
@@ -80,7 +99,7 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
         throw e
       }
     } else {
-      pool = await sql.connect(cs)
+      pool = await sql.connect(ensureSqlTimeouts(cs))
     }
     return pool
   } catch (e) {
@@ -830,6 +849,100 @@ export async function getVenditeTotaliPerAnno(
     }
   }
   return []
+}
+
+/** Distribuzione vendite (movimenti Importo>0) per categoria e durata.
+ *  Conta abbonamenti distinti (IDIscrizione) venduti nel periodo [from,to]. */
+export async function getVenditeMovimentiCategoriaDurata(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{
+  totalCount: number
+  rows: { categoria: string; durataMesi: number | null; count: number }[]
+}> {
+  const p = await getPool()
+  if (!p) return { totalCount: 0, rows: [] }
+
+  const tblM = defaultTables.movimentiVenduto
+  const viewCfg = getViewVenditoreAbbonamento()
+  const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
+  try {
+    const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    if (!viewCfg) return { totalCount: 0, rows: [] }
+
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+
+    const whereBase = `
+      WHERE M.[${COL_IMPORTO}] > 0
+        AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+    `
+
+    // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + IDDurata (vedi ispezione SELECT TOP 1).
+    // In SELECT TOP 1 della view troviamo anche la colonna `Durata` (tipicamente mesi).
+    const durataCol = "Durata"
+    const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+
+    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
+    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
+
+    // Escludi "tesseramenti" (e varianti ASI+ISCRIZIONE, VARIE) come in UI.
+    const whereTesseramento = `
+      AND COALESCE(R.[IDCategoriaUtente], -1) <> 19
+      AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%VARIE%'
+    `
+
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        : ""
+
+    const rTotal = await req.query(
+      `SELECT COUNT(DISTINCT M.[${COL_ISCRIZIONE}]) AS totalCount
+       FROM [${tblM}] M
+       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+       ${whereBase}
+       ${consultantFilter}
+       ${whereTesseramento};`
+    )
+
+    const r = await req.query(
+      `SELECT
+          ${categoriaExpr} AS Categoria,
+          R.[${durataCol}] AS DurataMesi,
+          COUNT(DISTINCT M.[${COL_ISCRIZIONE}]) AS count
+        FROM [${tblM}] M
+        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+        ${whereBase}
+        ${consultantFilter}
+        ${whereTesseramento}
+        GROUP BY ${categoriaExpr}, R.[${durataCol}]
+        ORDER BY count DESC;`
+    )
+
+    const totalCount = Number(rTotal.recordset?.[0]?.totalCount ?? 0) || 0
+    const rows = (r.recordset ?? []).map((row) => {
+      const durataRaw = row.DurataMesi == null ? null : Number(row.DurataMesi)
+      const durataMesi = durataRaw == null || Number.isNaN(durataRaw) ? null : durataRaw
+      return {
+        categoria: String(row.Categoria ?? "").toLowerCase().trim() || "palestra",
+        durataMesi,
+        count: Number(row.count ?? row.Count ?? 0) || 0,
+      }
+    })
+
+    return { totalCount, rows }
+  } catch (e) {
+    if (strict) throw e
+    // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.
+    return { totalCount: 0, rows: [] }
+  }
 }
 
 export function isGestionaleConfigured(): boolean {
