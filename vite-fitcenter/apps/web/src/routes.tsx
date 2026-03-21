@@ -10,6 +10,7 @@ import { NewLead } from "@/features/crm/NewLead"
 import { Abbonamenti } from "@/pages/Abbonamenti"
 import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
 import { Report } from "@/pages/Report"
+import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 
 function DashboardOrRedirect() {
   const { leadFilter } = useAuth()
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       { path: "abbonamenti", element: <Abbonamenti /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "report", element: <Report /> },
+      { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

@@ -144,6 +144,115 @@ function markRinnovato(list: Abbonamento[]): void {
   }
 }
 
+/** Allineato a KPI dashboard: esclusione tesseramenti. */
+function isTesseramentoAbbForKpi(a: Abbonamento): boolean {
+  return (
+    a.isTesseramento === true ||
+    (a.prezzo != null && Number(a.prezzo) === 39) ||
+    (a.pianoNome ?? "").toLowerCase().includes("tesserament") ||
+    ((a.pianoNome ?? "").toLowerCase().includes("asi") && (a.pianoNome ?? "").toLowerCase().includes("isc"))
+  )
+}
+
+/**
+ * Esclusioni macro/categoria per pagina Abbonamenti, report vendite consulenti, ecc.
+ * Non si applica al KPI «abbonamenti attivi» né alla pagina analisi attivi (lì: solo tesseramenti).
+ */
+const EXCLUDE_MACRO_VENDITE_LISTE = new Set(["DANZA"])
+const EXCLUDE_CAT_DESC_VENDITE_LISTE = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
+
+function normalizeVenditeListeKey(s: string | undefined) {
+  return (s ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .replace(/'/g, "'")
+}
+
+function isEsclusoVenditeListe(a: {
+  macroCategoriaDescrizione?: string
+  categoriaAbbonamentoDescrizione?: string
+}) {
+  const macro = normalizeVenditeListeKey(a.macroCategoriaDescrizione)
+  const cat = normalizeVenditeListeKey(a.categoriaAbbonamentoDescrizione)
+  return (
+    (Boolean(macro) && EXCLUDE_MACRO_VENDITE_LISTE.has(macro)) ||
+    (Boolean(cat) && EXCLUDE_CAT_DESC_VENDITE_LISTE.has(cat))
+  )
+}
+
+/** Abbonamenti attivi: finestra date + solo esclusione tesseramenti (tutte le altre categorie incluse). */
+function filterAbbonamentiAttiviForKpi(abbonamenti: Abbonamento[], referenceDate: Date): Abbonamento[] {
+  const oggi = toDateParts(referenceDate)
+  const oggiTime = new Date(oggi.year, oggi.month - 1, oggi.day).getTime()
+  return abbonamenti.filter((a) => {
+    if (a.stato !== "attivo" || isTesseramentoAbbForKpi(a)) return false
+    const inizio = new Date(String(a.dataInizio).trim().split("T")[0])
+    const fine = new Date(String(a.dataFine).trim().split("T")[0])
+    const tInizio = inizio.getTime()
+    const tFine = fine.getTime()
+    return !Number.isNaN(tInizio) && !Number.isNaN(tFine) && oggiTime >= tInizio && oggiTime <= tFine
+  })
+}
+
+function inferDurataMesiAbb(a: Abbonamento): number | null {
+  const d = a.durataMesi
+  if (d != null && d >= 1 && d <= 120) return d
+  const p = `${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""} ${a.categoriaAbbonamentoDescrizione ?? ""}`.toUpperCase()
+  if (/\bANNUAL/.test(p)) return 12
+  if (/SEMESTR/.test(p)) return 6
+  if (/TRIMESTR/.test(p)) return 3
+  if (/MENSILE|\b1\s*MESE\b/.test(p)) return 1
+  if (/BIENNAL/.test(p)) return 24
+  return null
+}
+
+function bucketDurataLabel(m: number | null): string {
+  if (m == null) return "Durata non nota"
+  if (m <= 1) return "1 mese"
+  if (m <= 3) return "2–3 mesi"
+  if (m <= 6) return "4–6 mesi"
+  if (m <= 12) return "7–12 mesi"
+  return "Oltre 12 mesi"
+}
+
+/**
+ * Stima «bambini» da testi gestionale (macro, categoria, piano).
+ * Non c’è data di nascita nel payload abbonamento lato API.
+ */
+function isAbbonamentoBambiniEuristico(a: Abbonamento): boolean {
+  const text = `${a.macroCategoriaDescrizione ?? ""} ${a.categoriaAbbonamentoDescrizione ?? ""} ${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  return (
+    /\bBAMBIN[IO]\b/.test(text) ||
+    /\bMINI\b/.test(text) ||
+    /GIOVANISSIM/.test(text) ||
+    /ESORDIEN/.test(text) ||
+    /PREAGONISMO/.test(text) ||
+    /PROPAGANDA/.test(text) ||
+    /RAGAZZ/.test(text) ||
+    /\bU(6|8|10|12|14)\b/.test(text) ||
+    /PICCOLI/.test(text) ||
+    /TEATRO/.test(text) ||
+    (/\bAGONISMO\b/.test(text) && !/\bSENIOR\b/.test(text))
+  )
+}
+
+/** Soglia anni: sotto = segmento «bambini» nei grafici attivi. Env ATTIVI_SOGLIA_ETA_ADULTI (default 18). */
+function getSogliaEtaAdultiAnno(): number {
+  const n = Number(process.env.ATTIVI_SOGLIA_ETA_ADULTI ?? 18)
+  return Number.isFinite(n) && n > 0 && n <= 30 ? Math.floor(n) : 18
+}
+
+/** Preferisce età dal gestionale (clienteEta); se assente, stima da testi abbonamento. */
+function isAbbonamentoBambini(a: Abbonamento): boolean {
+  const eta = a.clienteEta
+  if (eta != null && eta >= 0 && eta <= 120) return eta < getSogliaEtaAdultiAnno()
+  return isAbbonamentoBambiniEuristico(a)
+}
+
 /** Se consulente (nome) è passato, risolve ID venditore (da DB o fallback env). */
 async function resolveConsultantId(consulente: string | undefined): Promise<string | undefined> {
   if (!consulente?.trim()) return undefined
@@ -382,42 +491,12 @@ function buildDashboardFromData(
   const oggi = toDateParts(now)
   const anno = oggi.year
   const mese = oggi.month
-  const oggiTime = new Date(oggi.year, oggi.month - 1, oggi.day).getTime()
-  /** Esclude tesseramenti (ASI, iscrizioni 39€, ecc.) dal conteggio attivi. */
-  const isTesseramentoAbb = (a: Abbonamento) =>
-    a.isTesseramento === true ||
-    (a.prezzo != null && Number(a.prezzo) === 39) ||
-    (a.pianoNome ?? "").toLowerCase().includes("tesserament") ||
-    ((a.pianoNome ?? "").toLowerCase().includes("asi") && (a.pianoNome ?? "").toLowerCase().includes("isc"))
-  /** Attivi = abbonamenti validi oggi (dataInizio <= oggi <= dataFine), esclusi i tesseramenti. */
-  const EXCLUDE_MACRO = new Set(["DANZA"])
-  const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
-  const normalizeKey = (s: string | undefined) =>
-    (s ?? "")
-      .trim()
-      .toUpperCase()
-      .replace(/\s+/g, " ")
-      .replace(/’/g, "'")
-  const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
-    const macro = normalizeKey(a.macroCategoriaDescrizione)
-    const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
-    return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
-  }
-
-  const attivi = abbonamenti.filter((a) => {
-    if (a.stato !== "attivo" || isTesseramentoAbb(a)) return false
-    if (isExcluded(a)) return false
-    const inizio = new Date(String(a.dataInizio).trim().split("T")[0])
-    const fine = new Date(String(a.dataFine).trim().split("T")[0])
-    const tInizio = inizio.getTime()
-    const tFine = fine.getTime()
-    return !Number.isNaN(tInizio) && !Number.isNaN(tFine) && oggiTime >= tInizio && oggiTime <= tFine
-  })
+  const attivi = filterAbbonamentiAttiviForKpi(abbonamenti, now)
   const in30 = new Date(now)
   in30.setDate(in30.getDate() + 30)
   const in60 = new Date(now)
   in60.setDate(in60.getDate() + 60)
-  // In scadenza: attivi, con le stesse esclusioni della lista abbonamenti, e NON già rinnovati.
+  // In scadenza: stessi «attivi» del KPI (tutte le categorie tranne tesseramenti), non già rinnovati.
   const inScadenza = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in30)
   const inScadenza60 = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
@@ -448,6 +527,7 @@ function buildDashboardFromData(
           })
           .reduce((s, r) => s + movimentoAmount(r), 0)
       : abbonamenti
+          .filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
           .filter((a) => {
             const inizio = new Date(a.dataInizio)
             return inizio.getFullYear() === anno && inizio.getMonth() + 1 === mese
@@ -468,6 +548,7 @@ function buildDashboardFromData(
               })
               .reduce((s, r) => s + movimentoAmount(r), 0)
           : abbonamenti
+              .filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
               .filter((a) => {
                 const inizio = new Date(a.dataInizio)
                 return inizio.getFullYear() === b.anno && inizio.getMonth() + 1 === b.mese
@@ -530,6 +611,58 @@ function buildDashboardFromData(
   }
 }
 
+/** Admin: attivi per KPI, ripartiti per durata (fascia) e stima adulti / bambini. */
+export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
+  try {
+    const { date, key } = parseAsOf(req)
+    let list: Abbonamento[] = []
+    if (gestionaleSql.isGestionaleConfigured()) {
+      const rows = await gestionaleSql.queryAbbonamenti(undefined)
+      list = rows.map((r) => rowToAbbonamento(r))
+    } else {
+      const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
+      list = [...mockAbbonamenti]
+    }
+    markRinnovato(list)
+    const attivi = filterAbbonamentiAttiviForKpi(list, date)
+    const soglia = getSogliaEtaAdultiAnno()
+    const conEta = attivi.filter((a) => a.clienteEta != null).length
+    const adulti = attivi.filter((a) => !isAbbonamentoBambini(a))
+    const bambini = attivi.filter((a) => isAbbonamentoBambini(a))
+
+    const orderDurata = ["1 mese", "2–3 mesi", "4–6 mesi", "7–12 mesi", "Oltre 12 mesi", "Durata non nota"] as const
+    const byDurata = (rows: Abbonamento[]) => {
+      const m = new Map<string, number>()
+      for (const a of rows) {
+        const label = bucketDurataLabel(inferDurataMesiAbb(a))
+        m.set(label, (m.get(label) ?? 0) + 1)
+      }
+      return orderDurata.map((durata) => ({ durata, count: m.get(durata) ?? 0 }))
+    }
+
+    const notaClassificazione =
+      attivi.length === 0
+        ? "Nessun abbonamento attivo nel periodo."
+        : conEta === attivi.length
+          ? `Adulti / bambini: età dal gestionale (colonna Eta / join utenti). Minori di ${soglia} anni = bambini. Fasce durata: DurataMesi o parole chiave nel nome abbonamento.`
+          : conEta > 0
+            ? `Adulti / bambini: dove c’è l’età (${conEta} su ${attivi.length} attivi) si usa il gestionale (< ${soglia} anni = bambini); per gli altri resta la stima da macro/categorie. Durata: campi DurataMesi/Durata o testo (annuale, mensile, …).`
+            : `Nessuna età nelle righe: classificazione adulti/bambini solo da testi (macro, categoria, piano). Se l'età è nella view abbonamenti (a.*), verifica il nome colonna nel mapping. Se è solo su Utenti, imposta in .env GESTIONALE_UTENTI_COL_ETA=<nome_esatto_colonna>. Soglia anni: ATTIVI_SOGLIA_ETA_ADULTI=${soglia}.`
+
+    res.json({
+      asOf: key,
+      sogliaEtaAdulti: soglia,
+      attiviConEta: conEta,
+      totaleAttivi: attivi.length,
+      adulti: { totale: adulti.length, byDurata: byDurata(adulti) },
+      bambini: { totale: bambini.length, byDurata: byDurata(bambini) },
+      notaClassificazione,
+    })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function getClienti(req: Request, res: Response) {
   try {
     if (!gestionaleSql.isGestionaleConfigured()) {
@@ -552,20 +685,6 @@ export async function getAbbonamenti(req: Request, res: Response) {
     const inScadenza =
       inScadenzaRaw === "30" ? 30 : inScadenzaRaw === "60" ? 60 : undefined
     const options = inScadenza != null ? { inScadenza } : undefined
-    const EXCLUDE_MACRO = new Set(["DANZA"])
-    const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
-    const normalizeKey = (s: string | undefined) =>
-      (s ?? "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, " ")
-        .replace(/’/g, "'")
-
-    const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
-      const macro = normalizeKey(a.macroCategoriaDescrizione)
-      const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
-      return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
-    }
     if (gestionaleSql.isGestionaleConfigured()) {
       const idVenditore = await resolveConsultantId(consulente)
       if (consulente && !idVenditore) {
@@ -578,8 +697,7 @@ export async function getAbbonamenti(req: Request, res: Response) {
       let list = rows.map((r) => rowToAbbonamento(r))
       markRinnovato(list)
       list = list.filter((a) => !a.isTesseramento)
-      // Escludi DANZA e categorie non desiderate.
-      list = list.filter((a) => !isExcluded(a))
+      list = list.filter((a) => !isEsclusoVenditeListe(a))
       // Admin: quando non filtra per una consulente specifica, mostra solo abbonamenti delle 3 consulenti.
       if (!consulente?.trim()) {
         const allowed = budgetPerConsulente.getConsulentiLabels().map((x) => x.toLowerCase().trim())
@@ -601,6 +719,8 @@ export async function getAbbonamenti(req: Request, res: Response) {
     let list = [...mockAbbonamenti]
     if (consulente) list = list.filter((a) => a.consulenteNome === consulente)
     markRinnovato(list)
+    list = list.filter((a) => !a.isTesseramento)
+    list = list.filter((a) => !isEsclusoVenditeListe(a))
     res.json(list)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -680,6 +800,7 @@ export async function getVenditeStorico(req: Request, res: Response) {
       const abbonamenti = consulente ? mockAbbonamenti.filter((a) => a.consulenteNome === consulente) : mockAbbonamenti
       venditePerMese = budgetList.map((b) => {
         const vendite = abbonamenti
+          .filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
           .filter((a) => {
             const inizio = new Date(a.dataInizio)
             return inizio.getFullYear() === b.anno && inizio.getMonth() + 1 === b.mese
@@ -764,6 +885,7 @@ export async function getTotaliAnni(req: Request, res: Response) {
       const vendite = venditeSqlPerAnno.length > 0
         ? (mapVenditeSqlPerAnno.get(anno) ?? 0)
         : abbonamenti
+            .filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
             .filter((a) => new Date(a.dataInizio).getFullYear() === anno)
             .reduce((s, a) => s + a.prezzo, 0)
       const budgetList = mergeBudgetWithStore(getDefaultBudgetList(anno))
@@ -1289,7 +1411,8 @@ export async function getDettaglioMese(req: Request, res: Response) {
       bloccoMese = buildDettaglioBloccoFromMovimenti(movimentiMese, budgetMese, budgetProgressivoMese, idToNome)
     } else if (!fromSql) {
       const fineGiorno = new Date(anno, mese - 1, giorno, 23, 59, 59)
-      const abbonamentiMese = abbonamenti.filter((a) => {
+      const venditeAbb = abbonamenti.filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
+      const abbonamentiMese = venditeAbb.filter((a) => {
         const d = new Date(a.dataInizio)
         return d.getFullYear() === anno && d.getMonth() + 1 === mese && d <= fineGiorno
       })
@@ -1652,33 +1775,19 @@ export async function getReportConsulenti(req: Request, res: Response) {
       to = new Date(from); to.setDate(to.getDate() + 6)
     }
 
-    const EXCLUDE_MACRO = new Set(["DANZA"])
-    const EXCLUDE_CAT_DESC = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
-    const normalizeKey = (s: string | undefined) =>
-      (s ?? "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s+/g, " ")
-        .replace(/’/g, "'")
-    const isExcluded = (a: { macroCategoriaDescrizione?: string; categoriaAbbonamentoDescrizione?: string }) => {
-      const macro = normalizeKey(a.macroCategoriaDescrizione)
-      const cat = normalizeKey(a.categoriaAbbonamentoDescrizione)
-      return (macro && EXCLUDE_MACRO.has(macro)) || (cat && EXCLUDE_CAT_DESC.has(cat))
-    }
-
     const fromIso = toISODate(from)
     const toIso = toISODate(to)
     const oreAttese = countWeekdaysMonFri(from, to) * 8
 
     const rows: ReportRow[] = []
     let cachedMockAbbonamenti: Abbonamento[] | null = null
-    const mockVenditePerConsulente = (consulenteNome: string, from: Date, to: Date, isExcluded: (a: any) => unknown) => {
+    const mockVenditePerConsulente = (consulenteNome: string, from: Date, to: Date) => {
       // Lazily import is done once below; this function only filters and sums.
       if (!cachedMockAbbonamenti) return 0
       return cachedMockAbbonamenti
         .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
         .filter((a) => !a.isTesseramento)
-        .filter((a) => !Boolean(isExcluded(a as any)))
+        .filter((a) => !isEsclusoVenditeListe(a))
         .filter((a) => {
           const di = new Date(a.dataInizio)
           di.setUTCHours(0, 0, 0, 0)
@@ -1732,7 +1841,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
           const abbonamenti = abbonRows
             .map((r) => rowToAbbonamento(r))
             .filter((a) => !a.isTesseramento)
-            .filter((a) => !isExcluded(a))
+            .filter((a) => !isEsclusoVenditeListe(a))
             .filter((a) => {
               const di = new Date(a.dataInizio)
               di.setUTCHours(0, 0, 0, 0)
@@ -1742,11 +1851,11 @@ export async function getReportConsulenti(req: Request, res: Response) {
         } catch (e) {
           if ((e as Error).message !== "__FITCENTER_REPORT_CONSULENTI_SQL_TIMEOUT__") throw e
           await ensureMockLoaded()
-          vendite = mockVenditePerConsulente(consulenteNome, from, to, isExcluded)
+          vendite = mockVenditePerConsulente(consulenteNome, from, to)
         }
       } else {
         await ensureMockLoaded()
-        vendite = mockVenditePerConsulente(consulenteNome, from, to, isExcluded)
+        vendite = mockVenditePerConsulente(consulenteNome, from, to)
       }
 
       // Telefonate: persistite localmente.

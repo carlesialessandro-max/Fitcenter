@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const dataRouter = Router()
@@ -16,6 +16,7 @@ dataRouter.get("/dettaglio-mese", getDettaglioMese)
 dataRouter.get("/dettaglio-anno", requireAdmin, getDettaglioAnno)
 dataRouter.get("/clienti", getClienti)
 dataRouter.get("/abbonamenti", getAbbonamenti)
+dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
 dataRouter.get("/budget", requireAdmin, getBudget)
 dataRouter.post("/budget", requireAdmin, setBudget)
 dataRouter.get("/leads", getLeadsFromGestionale)

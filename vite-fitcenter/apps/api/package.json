@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "precompute:dashboard-cache": "tsx scripts/precompute-dashboard-cache.ts"
+    "precompute:dashboard-cache": "tsx scripts/precompute-dashboard-cache.ts",
+    "abbonamenti:attivi-reconcile": "tsx scripts/abbonamenti-attivi-reconcile.ts",
+    "abbonamenti:attivi-xls": "tsx scripts/abbonamenti-attivi-reconcile.ts --layout attivi-xls"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -25,7 +27,9 @@
     "@types/mssql": "^9.1.9",
     "@types/node": "^22.15.29",
     "@types/sql.js": "^1.4.9",
+    "@types/xlsx": "^0.0.36",
     "tsx": "^4.19.4",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "xlsx": "^0.18.5"
   }
 }

@@ -9,8 +9,8 @@ export const mockClienti: Cliente[] = [
 ]
 
 export const mockAbbonamenti: Abbonamento[] = [
-  { id: "a1", clienteId: "2", clienteNome: "Chiara Marino", pianoId: "p1", pianoNome: "Piscina Annuale", categoria: "piscina", prezzo: 499.9, dataInizio: "2026-03-01", dataFine: "2027-02-28", stato: "attivo", consulenteNome: "Luca Ferrari" },
-  { id: "a2", clienteId: "3", clienteNome: "Elena Moretti", pianoId: "p2", pianoNome: "Corsi Mensile", categoria: "corsi", prezzo: 69.9, dataInizio: "2026-02-01", dataFine: "2026-03-31", stato: "attivo", consulenteNome: "Anna Bianchi" },
+  { id: "a1", clienteId: "2", clienteNome: "Chiara Marino", clienteEta: 42, pianoId: "p1", pianoNome: "Piscina Annuale", categoria: "piscina", prezzo: 499.9, dataInizio: "2026-03-01", dataFine: "2027-02-28", stato: "attivo", consulenteNome: "Luca Ferrari" },
+  { id: "a2", clienteId: "3", clienteNome: "Elena Moretti", clienteEta: 14, pianoId: "p2", pianoNome: "Corsi Mensile", categoria: "corsi", prezzo: 69.9, dataInizio: "2026-02-01", dataFine: "2026-03-31", stato: "attivo", consulenteNome: "Anna Bianchi" },
   { id: "a3", clienteId: "3", clienteNome: "Elena Moretti", pianoId: "p3", pianoNome: "Spa Mensile", categoria: "spa", prezzo: 179.9, dataInizio: "2026-02-01", dataFine: "2026-02-28", stato: "scaduto", consulenteNome: "Anna Bianchi" },
   { id: "a4", clienteId: "4", clienteNome: "Luca Barbieri", pianoId: "p4", pianoNome: "Palestra Base", categoria: "palestra", prezzo: 49.9, dataInizio: "2026-01-15", dataFine: "2026-02-15", stato: "attivo", consulenteNome: "Luca Ferrari" },
   { id: "a5", clienteId: "1", clienteNome: "Valentina Gallo", pianoId: "p5", pianoNome: "Full Premium Annuale", categoria: "full_premium", prezzo: 899, dataInizio: "2026-01-01", dataFine: "2026-12-31", stato: "attivo", consulenteNome: "Anna Bianchi" },

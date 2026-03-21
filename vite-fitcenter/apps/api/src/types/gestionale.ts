@@ -21,6 +21,8 @@ export interface Abbonamento {
   id: string
   clienteId: string
   clienteNome: string
+  /** Età anni dal gestionale (colonna Eta / Età nella view abbonamenti), se presente */
+  clienteEta?: number
   pianoId: string
   pianoNome: string
   categoria: CategoriaAbbonamento

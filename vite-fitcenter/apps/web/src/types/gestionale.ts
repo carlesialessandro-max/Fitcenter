@@ -16,6 +16,8 @@ export interface Abbonamento {
   id: string
   clienteId: string
   clienteNome: string
+  /** Età anni dal gestionale, se la view la espone */
+  clienteEta?: number
   pianoId: string
   pianoNome: string
   categoria: CategoriaAbbonamento
@@ -42,6 +44,29 @@ export interface BudgetMensile {
   mese: number
   budget: number
   vendite?: number
+}
+
+export interface AbbAttiviDurataBucket {
+  durata: string
+  count: number
+}
+
+export interface AbbAttiviSegmentoAnalisi {
+  totale: number
+  byDurata: AbbAttiviDurataBucket[]
+}
+
+/** Risposta GET /data/abbonamenti-attivi-analisi (admin) */
+export interface AbbAttiviAnalisiResponse {
+  asOf: string
+  /** Anni: sotto questa età = segmento bambini (se clienteEta valorizzata) */
+  sogliaEtaAdulti: number
+  /** Quanti attivi hanno età dal gestionale */
+  attiviConEta: number
+  totaleAttivi: number
+  adulti: AbbAttiviSegmentoAnalisi
+  bambini: AbbAttiviSegmentoAnalisi
+  notaClassificazione: string
 }
 
 export interface DashboardStats {

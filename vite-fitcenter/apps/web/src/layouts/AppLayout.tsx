@@ -2,8 +2,15 @@ import { Outlet, Link, useLocation } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 
-const navFull = [
+const navOperatore = [
   { to: "/", label: "Dashboard" },
+  { to: "/crm", label: "CRM Vendita" },
+  { to: "/abbonamenti", label: "Abbonamenti" },
+] as const
+
+const navAdmin = [
+  { to: "/", label: "Dashboard" },
+  { to: "/attivi-analisi", label: "Attivi" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
   { to: "/report", label: "Report" },
@@ -12,8 +19,12 @@ const navFull = [
 export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
-  const baseNav = leadFilter === "bambini" ? [{ to: "/crm" as const, label: "CRM Vendita" }] : navFull
-  const nav = role === "admin" ? baseNav : baseNav.filter((x) => x.to !== "/report")
+  const nav =
+    leadFilter === "bambini"
+      ? [{ to: "/crm" as const, label: "CRM Vendita" }]
+      : role === "admin"
+        ? navAdmin
+        : navOperatore
 
   return (
     <div className="flex min-h-svh bg-zinc-950 text-zinc-100">

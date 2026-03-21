@@ -1,4 +1,12 @@
-import type { DashboardStats, Cliente, Abbonamento, BudgetMensile, DettaglioMeseResponse, DettaglioBlocco } from "@/types/gestionale"
+import type {
+  DashboardStats,
+  Cliente,
+  Abbonamento,
+  BudgetMensile,
+  DettaglioMeseResponse,
+  DettaglioBlocco,
+  AbbAttiviAnalisiResponse,
+} from "@/types/gestionale"
 import type { Lead } from "@/types/lead"
 import { api } from "./client"
 
@@ -17,6 +25,10 @@ export const dataApi = {
     return api.get<DashboardStats>(url)
   },
   getClienti: () => api.get<Cliente[]>("/data/clienti"),
+  getAbbonamentiAttiviAnalisi: (asOf?: string) => {
+    const q = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ""
+    return api.get<AbbAttiviAnalisiResponse>(`/data/abbonamenti-attivi-analisi${q}`)
+  },
   getAbbonamenti: (consulente?: string, inScadenza?: 30 | 60) => {
     let url = withConsulente("/data/abbonamenti", consulente)
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza

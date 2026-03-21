@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BarChart,
@@ -311,6 +312,14 @@ export function Dashboard() {
           <p className="text-sm text-zinc-400">Abbonamenti attivi</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-400">{data.abbonamentiAttivi}</p>
           <p className="mt-0.5 text-xs text-zinc-500">esclusi tesseramenti — {data.abbonamentiInScadenza} (30 gg) / {data.abbonamentiInScadenza60 ?? 0} (60 gg) in scadenza</p>
+          {role === "admin" && (
+            <Link
+              to={`/attivi-analisi?asOf=${encodeURIComponent(asOf)}`}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300 transition hover:border-emerald-400/60 hover:bg-emerald-500/20"
+            >
+              Grafici attivi (durata · adulti / bambini)
+            </Link>
+          )}
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Entrate mese (consuntivo a oggi)</p>

@@ -9,6 +9,39 @@ function num(v: unknown): number {
   const n = Number(v)
   return Number.isNaN(n) ? 0 : n
 }
+
+/** Valore grezzo età: colonne note + qualunque chiave che corrisponde a «Eta» (driver SQL può usare maiuscole diverse). */
+function findEtaRaw(row: Record<string, unknown>): unknown {
+  const explicit =
+    row.Eta ??
+    row.Età ??
+    row.ETA ??
+    row.ClienteEtaJoin ??
+    row.ClienteEta ??
+    row.clienteEta ??
+    row.EtaCliente ??
+    row.Age ??
+    row.age
+  if (explicit != null && explicit !== "") return explicit
+  for (const [k, v] of Object.entries(row)) {
+    const nk = k.replace(/\s/g, "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    if (nk === "eta" || nk === "clienteetajoin") {
+      if (v != null && v !== "") return v
+    }
+  }
+  return undefined
+}
+
+/** Età in anni dalla view (`a.*` con colonna Eta) o da `ClienteEtaJoin` se imposti GESTIONALE_UTENTI_COL_ETA. */
+function optionalEtaAnni(row: Record<string, unknown>): number | undefined {
+  const raw = findEtaRaw(row)
+  if (raw == null || raw === "") return undefined
+  const n = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."))
+  if (!Number.isFinite(n)) return undefined
+  const rounded = Math.round(n)
+  if (rounded < 0 || rounded > 120) return undefined
+  return rounded
+}
 function dateStr(v: unknown): string {
   if (v == null) return ""
   if (typeof v === "string") return v.split("T")[0] ?? v
@@ -96,13 +129,22 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
     (row.IDDurata != null ? `Piano ${row.IDDurata}` : "") ||
     "Abbonamento"
   const prezzo = num(row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price ?? row.Importo ?? row.importo)
-  const durataMesiRaw = num(row.DurataMesi ?? row.durataMesi ?? row.Durata ?? row.durata ?? row.IDDurata)
-  const durataMesi = durataMesiRaw >= 1 && durataMesiRaw <= 240 ? Math.round(durataMesiRaw) : undefined
+  const dmRaw = row.DurataMesi ?? row.durataMesi ?? row.Durata ?? row.durata
+  let durataMesi: number | undefined
+  if (dmRaw != null && String(dmRaw).trim() !== "") {
+    const n = num(dmRaw)
+    if (n >= 1 && n <= 240) durataMesi = Math.round(n)
+  } else {
+    const idDur = num(row.IDDurata)
+    if (idDur >= 1 && idDur <= 24) durataMesi = Math.round(idDur)
+  }
   const isTesseramento = isTesseramentoRow(row)
+  const clienteEta = optionalEtaAnni(row)
   return {
     id: str(row.IDIscrizione ?? row.Id ?? row.id) || crypto.randomUUID(),
     clienteId: str(row.IDUtente ?? row.ClienteId ?? row.clienteId),
     clienteNome: clienteNome || "—",
+    clienteEta,
     pianoId: str(row.IDDurata ?? row.PianoId ?? row.pianoId),
     pianoNome,
     categoria: cat as Abbonamento["categoria"],
