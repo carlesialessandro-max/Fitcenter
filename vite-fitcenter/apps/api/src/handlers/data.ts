@@ -624,38 +624,107 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
       list = [...mockAbbonamenti]
     }
     markRinnovato(list)
-    const attivi = filterAbbonamentiAttiviForKpi(list, date)
-    const soglia = getSogliaEtaAdultiAnno()
-    const conEta = attivi.filter((a) => a.clienteEta != null).length
-    const adulti = attivi.filter((a) => !isAbbonamentoBambini(a))
-    const bambini = attivi.filter((a) => isAbbonamentoBambini(a))
+    let attivi = filterAbbonamentiAttiviForKpi(list, date)
 
+    const soglia = getSogliaEtaAdultiAnno()
+
+    // Dedupe bambini: lo stesso cliente iscritto a più corsi va contato una sola volta.
+    // Regola scelta: tiene la durata inferita più alta (se esiste un valore).
+    const dedupBambiniByClienteId = (rows: Abbonamento[]): Abbonamento[] => {
+      const byCliente = new Map<string, Abbonamento>()
+      for (const a of rows) {
+        const id = String(a.clienteId ?? "").trim()
+        if (!id) continue
+        const prev = byCliente.get(id)
+        if (!prev) {
+          byCliente.set(id, a)
+          continue
+        }
+        const dPrev = inferDurataMesiAbb(prev)
+        const dNext = inferDurataMesiAbb(a)
+        if (dPrev == null && dNext != null) {
+          byCliente.set(id, a)
+          continue
+        }
+        if (dNext != null && (dPrev == null || dNext > dPrev)) {
+          byCliente.set(id, a)
+          continue
+        }
+      }
+      return Array.from(byCliente.values())
+    }
     const orderDurata = ["1 mese", "2–3 mesi", "4–6 mesi", "7–12 mesi", "Oltre 12 mesi", "Durata non nota"] as const
     const byDurata = (rows: Abbonamento[]) => {
-      const m = new Map<string, number>()
+      const mCount = new Map<string, number>()
+      const mMesi = new Map<string, number>()
       for (const a of rows) {
         const label = bucketDurataLabel(inferDurataMesiAbb(a))
+        mCount.set(label, (mCount.get(label) ?? 0) + 1)
+        const mesi = inferDurataMesiAbb(a) ?? 0
+        mMesi.set(label, (mMesi.get(label) ?? 0) + mesi)
+      }
+      return orderDurata.map((durata) => ({
+        durata,
+        count: mCount.get(durata) ?? 0,
+        totaleDurataMesi: mMesi.get(durata) ?? 0,
+      }))
+    }
+    const categoriaLabel = (a: Abbonamento) =>
+      (a.categoriaAbbonamentoDescrizione ?? a.macroCategoriaDescrizione ?? a.categoria ?? "ALTRO").toString().trim() || "ALTRO"
+    const normalizeCategoria = (s: string) =>
+      s
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    const adultiCategoriaEscluse = new Set(["QUOTE DANZA", "DANZA ADULTI", "DANZA BAMBINI", "PROFESSIONALE", "INVITO"])
+    const isGestantiCategoria = (a: Abbonamento) => normalizeCategoria(categoriaLabel(a)).includes("GESTANTI")
+    const isAdultiCategoriaEsclusa = (a: Abbonamento) => adultiCategoriaEscluse.has(normalizeCategoria(categoriaLabel(a)))
+    const byCategoria = (rows: Abbonamento[]) => {
+      const m = new Map<string, number>()
+      for (const a of rows) {
+        const label = categoriaLabel(a)
         m.set(label, (m.get(label) ?? 0) + 1)
       }
-      return orderDurata.map((durata) => ({ durata, count: m.get(durata) ?? 0 }))
+      return Array.from(m.entries())
+        .map(([categoria, totale]) => ({ categoria, totale }))
+        .sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria))
     }
 
+    const adultiRaw = attivi.filter((a) => !isAbbonamentoBambini(a))
+    const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a))
+    // Regole business applicate in modo unico a TUTTI i blocchi (card/grafici/liste),
+    // così i totali tornano sempre con la somma per categoria.
+    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a) && !isGestantiCategoria(a))
+    const bambini = dedupBambiniByClienteId([...bambiniRaw, ...adultiRaw.filter((a) => isGestantiCategoria(a))])
+    const attiviSegmentati = [...adulti, ...bambini]
+    const conEta = attiviSegmentati.filter((a) => a.clienteEta != null).length
+
+    const durataMesiForTotal = (a: Abbonamento) => inferDurataMesiAbb(a) ?? 0
+    const sumDurataMesi = (rows: Abbonamento[]) => rows.reduce((s, a) => s + durataMesiForTotal(a), 0)
+    const adultiTotDurataMesi = sumDurataMesi(adulti)
+    const bambiniTotDurataMesi = sumDurataMesi(bambini)
+    const totaleDurataMesi = adultiTotDurataMesi + bambiniTotDurataMesi
+
+    const totaleAttiviSegmentati = attiviSegmentati.length
     const notaClassificazione =
-      attivi.length === 0
+      totaleAttiviSegmentati === 0
         ? "Nessun abbonamento attivo nel periodo."
-        : conEta === attivi.length
+        : conEta === totaleAttiviSegmentati
           ? `Adulti / bambini: età dal gestionale (colonna Eta / join utenti). Minori di ${soglia} anni = bambini. Fasce durata: DurataMesi o parole chiave nel nome abbonamento.`
           : conEta > 0
-            ? `Adulti / bambini: dove c’è l’età (${conEta} su ${attivi.length} attivi) si usa il gestionale (< ${soglia} anni = bambini); per gli altri resta la stima da macro/categorie. Durata: campi DurataMesi/Durata o testo (annuale, mensile, …).`
+            ? `Adulti / bambini: dove c’è l’età (${conEta} su ${totaleAttiviSegmentati} attivi) si usa il gestionale (< ${soglia} anni = bambini); per gli altri resta la stima da macro/categorie. Durata: campi DurataMesi/Durata o testo (annuale, mensile, …).`
             : `Nessuna età nelle righe: classificazione adulti/bambini solo da testi (macro, categoria, piano). Se l'età è nella view abbonamenti (a.*), verifica il nome colonna nel mapping. Se è solo su Utenti, imposta in .env GESTIONALE_UTENTI_COL_ETA=<nome_esatto_colonna>. Soglia anni: ATTIVI_SOGLIA_ETA_ADULTI=${soglia}.`
 
     res.json({
       asOf: key,
       sogliaEtaAdulti: soglia,
       attiviConEta: conEta,
-      totaleAttivi: attivi.length,
-      adulti: { totale: adulti.length, byDurata: byDurata(adulti) },
-      bambini: { totale: bambini.length, byDurata: byDurata(bambini) },
+      totaleAttivi: totaleAttiviSegmentati,
+      totaleDurataMesi,
+      adulti: { totale: adulti.length, totaleDurataMesi: adultiTotDurataMesi, byDurata: byDurata(adulti), byCategoria: byCategoria(adulti) },
+      bambini: { totale: bambini.length, totaleDurataMesi: bambiniTotDurataMesi, byDurata: byDurata(bambini), byCategoria: byCategoria(bambini) },
       notaClassificazione,
     })
   } catch (e) {

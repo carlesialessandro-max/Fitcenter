@@ -27,3 +27,9 @@ coverage
 vite-fitcenter/apps/api/data/
 vite-fitcenter/apps/api/apps/**/data/
 vite-fitcenter/apps/api/**/app.sqlite
+
+# Path duplicato (cwd errato): non committare
+/apps/
+
+# Export Excel locale
+vite-fitcenter/attivi.xlsx

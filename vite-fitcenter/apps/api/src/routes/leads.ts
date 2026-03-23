@@ -11,10 +11,9 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const leadsRouter = Router()
 
-leadsRouter.use(requireAuth)
-leadsRouter.get("/leads", requireAdmin, listLeads)
-leadsRouter.post("/leads/import-sql", requireAdmin, importFromSql)
-leadsRouter.get("/leads/:id", requireAdmin, getLead)
-leadsRouter.post("/leads", requireAdmin, createLead)
-leadsRouter.put("/leads/:id", requireAdmin, updateLead)
-leadsRouter.delete("/leads/:id", requireAdmin, deleteLead)
+leadsRouter.get("/leads", requireAuth, requireAdmin, listLeads)
+leadsRouter.post("/leads/import-sql", requireAuth, requireAdmin, importFromSql)
+leadsRouter.get("/leads/:id", requireAuth, requireAdmin, getLead)
+leadsRouter.post("/leads", requireAuth, requireAdmin, createLead)
+leadsRouter.put("/leads/:id", requireAuth, requireAdmin, updateLead)
+leadsRouter.delete("/leads/:id", requireAuth, requireAdmin, deleteLead)

@@ -11,6 +11,7 @@ const navOperatore = [
 const navAdmin = [
   { to: "/", label: "Dashboard" },
   { to: "/attivi-analisi", label: "Attivi" },
+  { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
   { to: "/report", label: "Report" },

@@ -4,9 +4,7 @@ import { requireAuth } from "../middleware/auth.js"
 
 export const chiamateRouter = Router()
 
-chiamateRouter.use(requireAuth)
-
-chiamateRouter.get("/chiamate/stats", getChiamateStats)
-chiamateRouter.get("/chiamate", listChiamate)
-chiamateRouter.get("/chiamate/:id", getChiamata)
-chiamateRouter.post("/chiamate", createChiamata)
+chiamateRouter.get("/chiamate/stats", requireAuth, getChiamateStats)
+chiamateRouter.get("/chiamate", requireAuth, listChiamate)
+chiamateRouter.get("/chiamate/:id", requireAuth, getChiamata)
+chiamateRouter.post("/chiamate", requireAuth, createChiamata)

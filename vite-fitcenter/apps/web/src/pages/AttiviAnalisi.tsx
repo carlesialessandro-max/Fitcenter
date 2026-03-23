@@ -73,6 +73,8 @@ export function AttiviAnalisi() {
     const p = (n / tot) * 100
     return Math.abs(p - Math.round(p)) < 0.05 ? String(Math.round(p)) : p.toFixed(1)
   }
+  const adultiTotByCategoria = data ? data.adulti.byCategoria.reduce((s, r) => s + r.totale, 0) : 0
+  const bambiniTotByCategoria = data ? data.bambini.byCategoria.reduce((s, r) => s + r.totale, 0) : 0
 
   return (
     <div className="p-6">
@@ -85,7 +87,7 @@ export function AttiviAnalisi() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Abbonamenti attivi — ripartizione</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Solo KPI attivi / questa pagina: tutte le categorie, esclusi i tesseramenti. La pagina Abbonamenti e le vendite usano ancora le esclusioni per categoria (DANZA, ACQUATICITÀ, …).
+            Solo KPI attivi: esclusi i tesseramenti. Nella ripartizione adulti/bambini, per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -240,7 +242,7 @@ export function AttiviAnalisi() {
 
           <div className="mt-8 grid gap-8 lg:grid-cols-2">
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-              <h2 className="text-lg font-semibold text-zinc-100">Adulti — conteggio per durata</h2>
+              <h2 className="text-lg font-semibold text-zinc-100">Adulti — totale abbonamenti per durata</h2>
               <p className="mt-1 text-xs text-zinc-500">Fascia ricavata da mesi o da testo abbonamento</p>
               <div className="mt-4 h-[320px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -251,7 +253,7 @@ export function AttiviAnalisi() {
                     <Tooltip
                       contentStyle={{ background: "#18181b", border: "1px solid #3f3f46" }}
                       labelStyle={{ color: "#e4e4e7" }}
-                      formatter={(value: number | string) => [`${value} abbonamenti`, "Conteggio"]}
+                      formatter={(value: number | string) => [`${value} abbonamenti`, "Totale"]}
                     />
                     <Bar dataKey="count" name="N. abbonamenti" fill={COL_BAR} radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -260,7 +262,7 @@ export function AttiviAnalisi() {
             </section>
 
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-              <h2 className="text-lg font-semibold text-zinc-100">Bambini — conteggio per durata</h2>
+              <h2 className="text-lg font-semibold text-zinc-100">Bambini — totale abbonamenti per durata</h2>
               <p className="mt-1 text-xs text-zinc-500">Stessa logica fascie; sottoinsieme classificato come attività minori</p>
               <div className="mt-4 h-[320px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
@@ -271,11 +273,67 @@ export function AttiviAnalisi() {
                     <Tooltip
                       contentStyle={{ background: "#18181b", border: "1px solid #3f3f46" }}
                       labelStyle={{ color: "#e4e4e7" }}
-                      formatter={(value: number | string) => [`${value} abbonamenti`, "Conteggio"]}
+                      formatter={(value: number | string) => [`${value} abbonamenti`, "Totale"]}
                     />
                     <Bar dataKey="count" name="N. abbonamenti" fill={COL_BAR_BAMBINI} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            </section>
+          </div>
+
+          <div className="mt-8 grid gap-8 lg:grid-cols-2">
+            <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+              <h2 className="text-lg font-semibold text-zinc-100">Adulti — categorie</h2>
+              <p className="mt-1 text-xs text-zinc-500">Totale abbonamenti per categoria</p>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
+                <table className="w-full min-w-[280px] text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-zinc-500">
+                      <th className="px-3 py-2 text-left font-medium">Categoria</th>
+                      <th className="px-3 py-2 text-right font-medium">Totale</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-zinc-200">
+                    {data.adulti.byCategoria.map((r) => (
+                      <tr key={`ad-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
+                        <td className="px-3 py-2">{r.categoria}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-zinc-900/60">
+                      <td className="px-3 py-2 font-medium text-zinc-300">Totale adulti</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-emerald-400">{adultiTotByCategoria}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+              <h2 className="text-lg font-semibold text-zinc-100">Bambini — categorie</h2>
+              <p className="mt-1 text-xs text-zinc-500">Totale abbonamenti per categoria</p>
+              <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
+                <table className="w-full min-w-[280px] text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-zinc-500">
+                      <th className="px-3 py-2 text-left font-medium">Categoria</th>
+                      <th className="px-3 py-2 text-right font-medium">Totale</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-zinc-200">
+                    {data.bambini.byCategoria.map((r) => (
+                      <tr key={`ba-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
+                        <td className="px-3 py-2">{r.categoria}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>
+                      </tr>
+                    ))}
+                    <tr className="bg-zinc-900/60">
+                      <td className="px-3 py-2 font-medium text-zinc-300">Totale bambini</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-violet-400">{bambiniTotByCategoria}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </section>
           </div>

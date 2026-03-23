@@ -11,6 +11,8 @@ import { Abbonamenti } from "@/pages/Abbonamenti"
 import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
 import { Report } from "@/pages/Report"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
+import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
+import { SignPublicPage } from "@/pages/SignPublic"
 
 function DashboardOrRedirect() {
   const { leadFilter } = useAuth()
@@ -30,6 +32,10 @@ function ClientiDisabilitata() {
 }
 
 export const router = createBrowserRouter([
+  {
+    path: "/firma/:token",
+    element: <SignPublicPage />,
+  },
   {
     path: "/login",
     element: (
@@ -54,6 +60,7 @@ export const router = createBrowserRouter([
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "report", element: <Report /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
+      { path: "firme", element: <SignaturesAdmin /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

@@ -49,11 +49,20 @@ export interface BudgetMensile {
 export interface AbbAttiviDurataBucket {
   durata: string
   count: number
+  totaleDurataMesi: number
+}
+
+export interface AbbAttiviCategoriaBucket {
+  categoria: string
+  totale: number
 }
 
 export interface AbbAttiviSegmentoAnalisi {
   totale: number
+  /** Somma durate inferite (mesi) sul segmento (dopo dedupe bambini). */
+  totaleDurataMesi: number
   byDurata: AbbAttiviDurataBucket[]
+  byCategoria: AbbAttiviCategoriaBucket[]
 }
 
 /** Risposta GET /data/abbonamenti-attivi-analisi (admin) */
@@ -64,6 +73,8 @@ export interface AbbAttiviAnalisiResponse {
   /** Quanti attivi hanno età dal gestionale */
   attiviConEta: number
   totaleAttivi: number
+  /** Somma durate inferite (mesi) adulti + bambini (con dedupe bambini). */
+  totaleDurataMesi: number
   adulti: AbbAttiviSegmentoAnalisi
   bambini: AbbAttiviSegmentoAnalisi
   notaClassificazione: string

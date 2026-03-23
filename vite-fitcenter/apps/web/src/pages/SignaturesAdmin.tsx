@@ -1,0 +1,432 @@
+import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { signaturesApi } from "@/api/signatures"
+import { useAuth } from "@/contexts/AuthContext"
+import type { SignatureSlot } from "@/types/signature"
+import { DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
+
+function fmtDate(v?: string) {
+  if (!v) return "—"
+  return new Date(v).toLocaleString("it-IT")
+}
+
+export function SignaturesAdmin() {
+  const { role } = useAuth()
+  const [customerEmail, setCustomerEmail] = useState("")
+  const [customerName, setCustomerName] = useState("")
+  const [documentFile, setDocumentFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [templateName, setTemplateName] = useState("")
+  const [templateFile, setTemplateFile] = useState<File | null>(null)
+  const [templateBusy, setTemplateBusy] = useState(false)
+  const [templateId, setTemplateId] = useState("")
+  const [useTemplate, setUseTemplate] = useState(true)
+  const [slotsDraft, setSlotsDraft] = useState<SignatureSlot[]>([])
+  const [slotsBusy, setSlotsBusy] = useState(false)
+
+  const listQ = useQuery({
+    queryKey: ["signatures-admin"],
+    queryFn: () => signaturesApi.listAdmin(),
+    enabled: role === "admin",
+  })
+  const templatesQ = useQuery({
+    queryKey: ["signature-templates"],
+    queryFn: () => signaturesApi.listTemplates(),
+    enabled: role === "admin",
+  })
+
+  useEffect(() => {
+    if (!templateId) {
+      setSlotsDraft([])
+      return
+    }
+    const t = (templatesQ.data ?? []).find((x) => x.id === templateId)
+    const slots = t?.slots && t.slots.length > 0 ? t.slots : DEFAULT_SIGNATURE_SLOTS
+    setSlotsDraft(slots.map((s) => ({ ...s })))
+  }, [templateId, templatesQ.data])
+
+  async function onCreate(e: React.FormEvent) {
+    e.preventDefault()
+    setErr(null)
+    setMsg(null)
+    if (!customerEmail.trim()) return setErr("Email obbligatoria")
+    if (useTemplate) {
+      if (!templateId) return setErr("Seleziona un template")
+    } else {
+      if (!documentFile) return setErr("Seleziona un PDF")
+    }
+    setBusy(true)
+    try {
+      const out = useTemplate
+        ? await signaturesApi.createFromTemplate({
+            templateId,
+            customerEmail: customerEmail.trim(),
+            customerName: customerName.trim() || undefined,
+          })
+        : await signaturesApi.createAdmin({
+            customerEmail: customerEmail.trim(),
+            customerName: customerName.trim() || undefined,
+            document: documentFile as File,
+          })
+      setMsg(`Richiesta creata. Link inviato a ${out.customerEmail}`)
+      setCustomerName("")
+      setCustomerEmail("")
+      setDocumentFile(null)
+      await listQ.refetch()
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onCreateTemplate(e: React.FormEvent) {
+    e.preventDefault()
+    setErr(null)
+    setMsg(null)
+    if (!templateName.trim()) return setErr("Nome template obbligatorio")
+    if (!templateFile) return setErr("Seleziona il PDF template")
+    setTemplateBusy(true)
+    try {
+      const tpl = await signaturesApi.createTemplate({ name: templateName.trim(), document: templateFile })
+      setMsg(`Template creato: ${tpl.name}`)
+      setTemplateName("")
+      setTemplateFile(null)
+      await templatesQ.refetch()
+      setTemplateId(tpl.id)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setTemplateBusy(false)
+    }
+  }
+
+  async function onDeleteTemplate(id: string) {
+    if (!globalThis.confirm("Eliminare il template?")) return
+    setErr(null)
+    setMsg(null)
+    try {
+      await signaturesApi.deleteTemplate(id)
+      setMsg("Template eliminato.")
+      await templatesQ.refetch()
+      if (templateId === id) setTemplateId("")
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    }
+  }
+
+  async function onSaveTemplateSlots() {
+    if (!templateId || slotsDraft.length === 0) return
+    setErr(null)
+    setMsg(null)
+    setSlotsBusy(true)
+    try {
+      await signaturesApi.updateTemplateSlots(templateId, slotsDraft)
+      setMsg("Regolazione firme salvata sul template.")
+      await templatesQ.refetch()
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setSlotsBusy(false)
+    }
+  }
+
+  async function onExportAudit() {
+    setErr(null)
+    setMsg(null)
+    setExportBusy(true)
+    try {
+      const out = await signaturesApi.exportAudit()
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const el = globalThis.document.createElement("a")
+      el.href = url
+      el.download = `firma-audit-${new Date().toISOString().slice(0, 10)}.json`
+      el.click()
+      URL.revokeObjectURL(url)
+      setMsg("Audit esportato (JSON).")
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  async function onDelete(id: string) {
+    if (!globalThis.confirm("Eliminare la richiesta firma?")) return
+    setErr(null)
+    setMsg(null)
+    setDeletingId(id)
+    try {
+      await signaturesApi.deleteAdmin(id)
+      setMsg("Richiesta eliminata.")
+      await listQ.refetch()
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  if (role !== "admin") {
+    return <div className="p-6 text-zinc-400">Disponibile solo per admin.</div>
+  }
+
+  return (
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-zinc-100">Firme documenti</h1>
+      <p className="mt-1 text-sm text-zinc-500">Carica PDF, invia link al cliente, verifica OTP e firma grafica.</p>
+
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={exportBusy}
+          onClick={onExportAudit}
+          className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200 disabled:opacity-60"
+        >
+          {exportBusy ? "Esportazione..." : "Esporta audit (JSON)"}
+        </button>
+      </div>
+
+      <form onSubmit={onCreateTemplate} className="mt-4 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 md:grid-cols-4">
+        <input
+          type="text"
+          placeholder="Nome template (es. Consenso privacy)"
+          value={templateName}
+          onChange={(e) => setTemplateName(e.target.value)}
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+        />
+        <input
+          type="file"
+          accept="application/pdf,.pdf"
+          onChange={(e) => setTemplateFile(e.target.files?.[0] ?? null)}
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300"
+        />
+        <div className="md:col-span-2">
+          <button
+            type="submit"
+            disabled={templateBusy}
+            className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200 disabled:opacity-60"
+          >
+            {templateBusy ? "Creo template..." : "Crea template"}
+          </button>
+        </div>
+      </form>
+
+      <div className="mt-3 rounded border border-zinc-800 bg-zinc-900/30 p-3">
+        <p className="mb-2 text-xs text-zinc-500">Template disponibili</p>
+        <div className="flex flex-wrap gap-2">
+          {(templatesQ.data ?? []).map((t) => (
+            <div key={t.id} className="flex items-center gap-2 rounded border border-zinc-700 px-2 py-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setTemplateId(t.id)}
+                className={templateId === t.id ? "text-amber-400" : "text-zinc-200"}
+              >
+                {t.name}
+              </button>
+              <button type="button" onClick={() => onDeleteTemplate(t.id)} className="text-red-300">
+                elimina
+              </button>
+            </div>
+          ))}
+          {(templatesQ.data ?? []).length === 0 && <span className="text-xs text-zinc-500">Nessun template.</span>}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-4">
+        <h2 className="text-sm font-semibold text-amber-200">Regolazione firme sul PDF</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Tre firme in sequenza: Tesseramento → Contratto → Privacy. Valori: pagina (1 = prima), X/Y, larghezza e altezza in punti PDF (origine in basso a sinistra, come in pdf-lib).
+        </p>
+        {!templateId ? (
+          <p className="mt-3 text-xs text-zinc-400">
+            <span className="font-medium text-zinc-300">Seleziona un template</span>: clic sul nome nella lista &quot;Template disponibili&quot; oppure dal menu &quot;Seleziona template&quot; qui sotto, poi modifica le coordinate e premi Salva.
+          </p>
+        ) : (
+          <>
+            <div className="mt-3 grid gap-2">
+              {slotsDraft
+                .slice()
+                .sort((a, b) => a.order - b.order)
+                .map((s) => (
+                  <div key={s.id} className="grid gap-2 rounded border border-zinc-700 p-2 md:grid-cols-6">
+                    <div className="flex items-center text-xs font-medium text-zinc-200">{s.label}</div>
+                    <input
+                      type="number"
+                      min={1}
+                      title="Pagina"
+                      value={s.page}
+                      onChange={(e) => setSlotsDraft((prev) => prev.map((x) => (x.id === s.id ? { ...x, page: Number(e.target.value || 1) } : x)))}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                      placeholder="Pagina"
+                    />
+                    <input
+                      type="number"
+                      title="X"
+                      value={s.x}
+                      onChange={(e) => setSlotsDraft((prev) => prev.map((x) => (x.id === s.id ? { ...x, x: Number(e.target.value || 0) } : x)))}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                      placeholder="X"
+                    />
+                    <input
+                      type="number"
+                      title="Y"
+                      value={s.y}
+                      onChange={(e) => setSlotsDraft((prev) => prev.map((x) => (x.id === s.id ? { ...x, y: Number(e.target.value || 0) } : x)))}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                      placeholder="Y"
+                    />
+                    <input
+                      type="number"
+                      min={40}
+                      title="Larghezza"
+                      value={s.width}
+                      onChange={(e) => setSlotsDraft((prev) => prev.map((x) => (x.id === s.id ? { ...x, width: Number(e.target.value || 40) } : x)))}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                      placeholder="Larghezza"
+                    />
+                    <input
+                      type="number"
+                      min={20}
+                      title="Altezza"
+                      value={s.height}
+                      onChange={(e) => setSlotsDraft((prev) => prev.map((x) => (x.id === s.id ? { ...x, height: Number(e.target.value || 20) } : x)))}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                      placeholder="Altezza"
+                    />
+                  </div>
+                ))}
+            </div>
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={onSaveTemplateSlots}
+                disabled={slotsBusy || slotsDraft.length === 0}
+                className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
+              >
+                {slotsBusy ? "Salvataggio..." : "Salva posizioni sul template"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <form onSubmit={onCreate} className="mt-6 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 md:grid-cols-4">
+        <label className="flex items-center gap-2 text-xs text-zinc-400 md:col-span-4">
+          <input type="checkbox" checked={useTemplate} onChange={(e) => setUseTemplate(e.target.checked)} />
+          Usa template esistente (consigliato)
+        </label>
+        {useTemplate && (
+          <select
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+            className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 md:col-span-4"
+          >
+            <option value="">Seleziona template...</option>
+            {(templatesQ.data ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.originalName})
+              </option>
+            ))}
+          </select>
+        )}
+        <input
+          type="email"
+          placeholder="Email cliente"
+          value={customerEmail}
+          onChange={(e) => setCustomerEmail(e.target.value)}
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+          required
+        />
+        <input
+          type="text"
+          placeholder="Nome cliente (opz.)"
+          value={customerName}
+          onChange={(e) => setCustomerName(e.target.value)}
+          className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+        />
+        {!useTemplate ? (
+          <input
+            type="file"
+            accept="application/pdf,.pdf"
+            onChange={(e) => setDocumentFile(e.target.files?.[0] ?? null)}
+            className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300"
+            required
+          />
+        ) : (
+          <div className="rounded border border-zinc-800 bg-zinc-900 px-3 py-2 text-xs text-zinc-500">PDF dal template selezionato</div>
+        )}
+        <button
+          type="submit"
+          disabled={busy}
+          className="rounded bg-amber-500 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
+        >
+          {busy ? "Invio..." : "Crea e invia"}
+        </button>
+      </form>
+      {msg && <p className="mt-3 text-sm text-emerald-400">{msg}</p>}
+      {err && <p className="mt-3 text-sm text-red-400">{err}</p>}
+
+      <div className="mt-8 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr className="border-b border-zinc-800 text-zinc-500">
+              <th className="px-3 py-2 text-left font-medium">Creato</th>
+              <th className="px-3 py-2 text-left font-medium">Cliente</th>
+              <th className="px-3 py-2 text-left font-medium">Documento</th>
+              <th className="px-3 py-2 text-left font-medium">Stato</th>
+              <th className="px-3 py-2 text-left font-medium">Scadenza</th>
+              <th className="px-3 py-2 text-left font-medium">Link</th>
+              <th className="px-3 py-2 text-left font-medium">Azioni</th>
+            </tr>
+          </thead>
+          <tbody className="text-zinc-200">
+            {(listQ.data ?? []).map((r) => {
+              const link = `${window.location.origin}/firma/${r.token}`
+              return (
+                <tr key={r.id} className="border-b border-zinc-800/70 last:border-b-0">
+                  <td className="px-3 py-2">{fmtDate(r.createdAt)}</td>
+                  <td className="px-3 py-2">
+                    <div>{r.customerName || "—"}</div>
+                    <div className="text-xs text-zinc-500">{r.customerEmail}</div>
+                  </td>
+                  <td className="px-3 py-2">{r.documentOriginalName}</td>
+                  <td className="px-3 py-2">{r.status}</td>
+                  <td className="px-3 py-2">{fmtDate(r.expiresAt)}</td>
+                  <td className="px-3 py-2">
+                    <a className="text-amber-400 hover:underline" href={link} target="_blank" rel="noreferrer">
+                      Apri
+                    </a>
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      disabled={deletingId === r.id}
+                      onClick={() => onDelete(r.id)}
+                      className="rounded border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-900/20 disabled:opacity-60"
+                    >
+                      {deletingId === r.id ? "Elimino..." : "Elimina"}
+                    </button>
+                  </td>
+                </tr>
+              )
+            })}
+            {!listQ.isLoading && (listQ.data ?? []).length === 0 && (
+              <tr>
+                <td className="px-3 py-3 text-zinc-500" colSpan={7}>
+                  Nessuna richiesta firma.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+

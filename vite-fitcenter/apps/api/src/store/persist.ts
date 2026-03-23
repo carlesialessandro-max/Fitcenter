@@ -2,23 +2,40 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
-function resolveDataDir(): string {
+function dataDirCandidates(): string[] {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
-  const candidates = [
-    path.resolve(process.cwd(), "apps/api/data"),
+  return [
     path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
+    path.resolve(process.cwd(), "apps/api/data"),
     path.resolve(__dirname, "../../data"),
   ]
-  const dir = candidates[0] ?? path.resolve(process.cwd(), "data")
+}
+
+function resolveDataDir(): string {
+  const candidates = dataDirCandidates()
+  const existing = candidates.find((d) => fs.existsSync(d))
+  const dir = existing ?? candidates[0] ?? path.resolve(process.cwd(), "data")
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
   return dir
 }
 
 export function readJson<T>(filename: string, fallback: T): T {
   try {
-    const filePath = path.join(resolveDataDir(), filename)
-    if (!fs.existsSync(filePath)) return fallback
-    const raw = fs.readFileSync(filePath, "utf8")
+    const primaryDir = resolveDataDir()
+    const primaryPath = path.join(primaryDir, filename)
+    if (!fs.existsSync(primaryPath)) {
+      // Migrazione soft: se il file esiste in un altro candidato, copialo e usalo.
+      for (const dir of dataDirCandidates()) {
+        if (dir === primaryDir) continue
+        const altPath = path.join(dir, filename)
+        if (!fs.existsSync(altPath)) continue
+        const rawAlt = fs.readFileSync(altPath, "utf8")
+        fs.writeFileSync(primaryPath, rawAlt, "utf8")
+        return JSON.parse(rawAlt) as T
+      }
+      return fallback
+    }
+    const raw = fs.readFileSync(primaryPath, "utf8")
     return JSON.parse(raw) as T
   } catch {
     return fallback
