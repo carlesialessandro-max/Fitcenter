@@ -119,14 +119,21 @@ export const dataApi = {
   postOraLavorata: (body: { consulenteNome: string; giorno: string; oraInizio: string; oraFine: string }) =>
     api.post<OraLavorata>("/data/ore-lavorate", body),
   deleteOraLavorata: (id: string) => api.delete(`/data/ore-lavorate/${encodeURIComponent(id)}`),
-  getReportConsulenti: (params?: { periodo?: "week" | "month" | "year"; asOf?: string }) => {
+  getReportConsulenti: (params?: {
+    periodo?: "week" | "month" | "year"
+    asOf?: string
+    from?: string
+    to?: string
+    consulenti?: string[]
+  }) => {
     const q = new URLSearchParams()
     if (params?.periodo) q.set("periodo", params.periodo)
     if (params?.asOf) q.set("asOf", params.asOf)
+    if (params?.from) q.set("from", params.from)
+    if (params?.to) q.set("to", params.to)
+    if (params?.consulenti?.length) q.set("consulenti", params.consulenti.join(","))
     const query = q.toString()
-    return api.get<{ periodo: string; from: string; to: string; rows: ReportConsulenteRow[] }>(
-      `/data/report-consulenti${query ? `?${query}` : ""}`
-    )
+    return api.get<ReportConsulentiResponse>(`/data/report-consulenti${query ? `?${query}` : ""}`)
   },
 }
 
@@ -142,12 +149,42 @@ export interface OraLavorata {
 export interface ReportConsulenteRow {
   consulenteNome: string
   vendite: number
+  /** Stesso conteggio di Andamento vendite (iscrizioni distinte nel periodo). */
+  movimentiAndamento: number
   budget: number
   percentualeBudget: number
   telefonate: number
+  clientiNuovi: number
+  rinnovi: number
+  invitoClienti: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+}
+
+export interface ReportConsulentiTotals {
+  movimentiAndamento: number
+  vendite: number
+  budget: number
+  scostamento: number
+  percentualeBudget: number
+  telefonate: number
+  clientiNuovi: number
+  rinnovi: number
+  invitoClienti: number
+  oreLavorate: number
+  oreAttese: number
+  percentualeOre: number
+}
+
+export interface ReportConsulentiResponse {
+  periodo: string
+  from: string
+  to: string
+  /** Timestamp risposta (verifica che non sia cache vecchia). */
+  computedAt?: string
+  rows: ReportConsulenteRow[]
+  totals: ReportConsulentiTotals
 }
 
 export interface CrmAppuntamento {

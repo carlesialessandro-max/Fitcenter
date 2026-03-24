@@ -87,8 +87,8 @@ export function SignPublicPage() {
     if (!canvas) return
     const ctx = canvas.getContext("2d")
     if (!ctx) return
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    // Manteniamo il canvas trasparente: nel PDF verra' disegnato solo il tratto firma.
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
   }
 
   useEffect(() => {

@@ -12,6 +12,18 @@ export const signaturesApi = {
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
   updateTemplateSlots: (id: string, slots: SignatureSlot[]) =>
     api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, { slots }),
+  getTemplateDocument: async (id: string) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const res = await fetch(`${API_BASE}/signatures/admin/templates/${encodeURIComponent(id)}/document`, {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }))
+      throw new Error((err as { message?: string }).message ?? "Errore download template PDF")
+    }
+    return res.arrayBuffer()
+  },
 
   createAdmin: async (body: { customerEmail: string; customerName?: string; document: File }) => {
     const token = localStorage.getItem(TOKEN_KEY)

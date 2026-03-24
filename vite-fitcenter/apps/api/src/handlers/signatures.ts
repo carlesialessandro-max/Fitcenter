@@ -105,11 +105,14 @@ async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], sign
 
 export async function createSignatureRequest(req: Request, res: Response) {
   try {
+    const isAdmin = req.user?.role === "admin"
     const f = req.file
     const templateId = String(req.body.templateId ?? "").trim()
     const customerEmail = String(req.body.customerEmail ?? "").trim().toLowerCase()
     const customerName = String(req.body.customerName ?? "").trim()
     if (!f && !templateId) return res.status(400).json({ message: "PDF o template obbligatorio" })
+    if (!isAdmin && !templateId) return res.status(403).json({ message: "Operatore: selezionare un template esistente" })
+    if (!isAdmin && f) return res.status(403).json({ message: "Operatore: upload PDF non consentito" })
     if (!customerEmail || !customerEmail.includes("@")) return res.status(400).json({ message: "Email cliente non valida" })
     if (f) {
       const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
@@ -188,7 +191,12 @@ export async function createSignatureRequest(req: Request, res: Response) {
 }
 
 export async function listSignatureRequests(_req: Request, res: Response) {
-  const rows = signatureStore.list().map((r) => ({
+  const isAdmin = _req.user?.role === "admin"
+  const username = (_req.user?.username ?? "").trim().toLowerCase()
+  const rows = signatureStore
+    .list()
+    .filter((r) => isAdmin || String(r.createdByUsername ?? "").trim().toLowerCase() === username)
+    .map((r) => ({
     ...(function () {
       const steps = normalizedSteps(r)
       const completed = steps.length > 0 && steps.every((s) => !!s.signedAt)
@@ -204,13 +212,19 @@ export async function listSignatureRequests(_req: Request, res: Response) {
     signedAt: r.signedAt,
     documentOriginalName: r.documentOriginalName,
     signedDocumentFileName: r.signedDocumentFileName,
-  }))
+    }))
   res.json(rows)
 }
 
 export async function deleteSignatureRequest(req: Request, res: Response) {
   const id = String(req.params.id ?? "").trim()
   if (!id) return res.status(400).json({ message: "Id richiesta mancante" })
+  const row = signatureStore.getById(id)
+  if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
+  const isAdmin = req.user?.role === "admin"
+  const username = (req.user?.username ?? "").trim().toLowerCase()
+  const createdBy = String(row.createdByUsername ?? "").trim().toLowerCase()
+  if (!isAdmin && createdBy !== username) return res.status(403).json({ message: "Permessi insufficienti" })
   const deleted = signatureStore.deleteById(id)
   if (!deleted) return res.status(404).json({ message: "Richiesta non trovata" })
   const dir = signatureStore.resolveSignatureDir()
@@ -416,6 +430,18 @@ export async function updateSignatureTemplateSlots(req: Request, res: Response) 
   const next = signatureStore.updateTemplateById(id, (r) => ({ ...r, slots }))
   if (!next) return res.status(500).json({ message: "Errore aggiornamento template" })
   res.json(next)
+}
+
+export async function downloadSignatureTemplateDocument(req: Request, res: Response) {
+  const id = String(req.params.id ?? "").trim()
+  if (!id) return res.status(400).json({ message: "Id template mancante" })
+  const tpl = signatureStore.getTemplateById(id)
+  if (!tpl) return res.status(404).json({ message: "Template non trovato" })
+  const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
+  if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
+  res.setHeader("Content-Type", "application/pdf")
+  res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(tpl.originalName || "template.pdf")}"`)
+  fs.createReadStream(fp).pipe(res)
 }
 
 export async function deleteSignatureTemplate(req: Request, res: Response) {

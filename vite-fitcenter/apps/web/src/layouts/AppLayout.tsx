@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext"
 
 const navOperatore = [
   { to: "/", label: "Dashboard" },
+  { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
 ] as const

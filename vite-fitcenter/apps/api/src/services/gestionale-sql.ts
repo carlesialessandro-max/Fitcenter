@@ -911,6 +911,15 @@ export async function getVenditeMovimentiCategoriaDurata(
       AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
       AND ${upperCatExpr} NOT LIKE '%VARIE%'
     `
+    // Allineamento con il resto delle viste vendite: escludi categorie non commerciali.
+    const whereCategorieEscluse = `
+      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+    `
 
     const consultantFilter =
       idConsultant && ids.length > 0
@@ -923,7 +932,8 @@ export async function getVenditeMovimentiCategoriaDurata(
        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
        ${whereBase}
        ${consultantFilter}
-       ${whereTesseramento};`
+       ${whereTesseramento}
+       ${whereCategorieEscluse};`
     )
 
     const r = await req.query(
@@ -936,6 +946,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         ${whereBase}
         ${consultantFilter}
         ${whereTesseramento}
+        ${whereCategorieEscluse}
         GROUP BY ${categoriaExpr}, R.[${durataCol}]
         ORDER BY count DESC;`
     )
@@ -956,6 +967,156 @@ export async function getVenditeMovimentiCategoriaDurata(
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.
     return { totalCount: 0, rows: [] }
+  }
+}
+
+const ZERO_VENDITE_RANGE_VIEW = { ok: false as const, totaleEuro: 0 }
+
+/**
+ * Produzione € su intervallo [from,to]: **stessa CTE di `queryVenditeSum`** (data sulla view, MAX(Totale) per iscrizione).
+ * Allineata al **dashboard** dettaglio vendite, non al tab Andamento (che usa Movimenti + filtri categoria).
+ */
+export async function getVenditeTotaleRangeView(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ ok: true; totaleEuro: number } | typeof ZERO_VENDITE_RANGE_VIEW> {
+  const p = await getPool()
+  if (!p) return ZERO_VENDITE_RANGE_VIEW
+  const viewCfg = getViewVenditoreAbbonamento()
+  if (!viewCfg || !idConsultant) return ZERO_VENDITE_RANGE_VIEW
+  const ids = parseConsultantIds(idConsultant)
+  if (ids.length === 0) return ZERO_VENDITE_RANGE_VIEW
+  try {
+    const view = viewCfg.view
+    const colId = viewCfg.colId
+    const colJoin = viewCfg.colJoin
+    const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+    const idWhere = ids.length === 1 ? `[${colId}] = @id0` : `[${colId}] IN (${idParams})`
+    let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    ids.forEach((id, i) => {
+      req = req.input(`id${i}`, sql.Int, id)
+    })
+    const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+    const colTotale =
+      rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+    const r = await req.query(
+      `;WITH Temp_Stampe AS (
+        SELECT DISTINCT [${colJoin}] AS ID
+        FROM [${view}]
+        WHERE CAST([${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+          AND CAST([${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+          AND ${idWhere}
+      ),
+      UnaPerIscrizione AS (
+        SELECT R.[${colJoin}], MAX(R.[${colTotale}]) AS Totale
+        FROM [${view}] R
+        INNER JOIN Temp_Stampe T ON R.[${colJoin}] = T.ID
+        WHERE ${idWhere}
+          AND CAST(R.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+          AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+        GROUP BY R.[${colJoin}]
+      )
+      SELECT COALESCE(SUM(Totale), 0) AS Totale FROM UnaPerIscrizione`
+    )
+    const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+    return { ok: true, totaleEuro: Number(row?.Totale ?? row?.totale) || 0 }
+  } catch {
+    return ZERO_VENDITE_RANGE_VIEW
+  }
+}
+
+const ZERI_CONTEGGI_REPORT = { ok: false as const, clientiNuovi: 0, rinnovi: 0, invitoClienti: 0 }
+
+/**
+ * Conteggi report (nuovi / rinnovi / invito) allineati a «Andamento vendite»:
+ * stesso join MovimentiVenduto → view venditore, data su movimento (Importo>0), stessi filtri tesseramenti ed esclusioni categoria.
+ * Macro: NUOVI, GOLD ESTIVO, GOLD ESITVO, GOLD PREMIUM; RINNOVI; categoria abbonamento = INVITO.
+ */
+export async function getReportConteggiAndamento(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ ok: true; clientiNuovi: number; rinnovi: number; invitoClienti: number } | typeof ZERI_CONTEGGI_REPORT> {
+  const p = await getPool()
+  if (!p) return ZERI_CONTEGGI_REPORT
+
+  const tblM = defaultTables.movimentiVenduto
+  const viewCfg = getViewVenditoreAbbonamento()
+  const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
+  const colMacro = process.env.GESTIONALE_VIEW_COL_MACRO?.trim() ?? "MacroCategoriaAbbonamentoDescrizione"
+
+  if (!viewCfg) return ZERI_CONTEGGI_REPORT
+
+  try {
+    const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+
+    const whereBase = `
+      WHERE M.[${COL_IMPORTO}] > 0
+        AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+    `
+
+    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
+    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
+    const upperMacroExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], ''))))`
+
+    const whereTesseramento = `
+      AND COALESCE(R.[IDCategoriaUtente], -1) <> 19
+      AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%VARIE%'
+    `
+    const whereCategorieEscluse = `
+      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+    `
+
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        : ""
+
+    const upperCategoriaInvito =
+      "UPPER(LTRIM(RTRIM(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], ''))))"
+
+    const r = await req.query(
+      `SELECT
+        COUNT(DISTINCT CASE
+          WHEN ${upperMacroExpr} IN (N'NUOVI', N'GOLD ESTIVO', N'GOLD ESITVO', N'GOLD PREMIUM')
+          THEN M.[${COL_ISCRIZIONE}] END) AS clientiNuovi,
+        COUNT(DISTINCT CASE
+          WHEN ${upperMacroExpr} = N'RINNOVI'
+          THEN M.[${COL_ISCRIZIONE}] END) AS rinnovi,
+        COUNT(DISTINCT CASE
+          WHEN ${upperCategoriaInvito} = N'INVITO' OR ${upperCategoriaInvito} LIKE N'INVITO %'
+          THEN M.[${COL_ISCRIZIONE}] END) AS invitoClienti
+      FROM [${tblM}] M
+      INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+      ${whereBase}
+      ${consultantFilter}
+      ${whereTesseramento}
+      ${whereCategorieEscluse}`
+    )
+
+    const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+    return {
+      ok: true,
+      clientiNuovi: Number(row?.clientiNuovi ?? row?.ClientiNuovi ?? 0) || 0,
+      rinnovi: Number(row?.rinnovi ?? row?.Rinnovi ?? 0) || 0,
+      invitoClienti: Number(row?.invitoClienti ?? row?.InvitoClienti ?? 0) || 0,
+    }
+  } catch (e) {
+    if (strict) throw e
+    return ZERI_CONTEGGI_REPORT
   }
 }
 

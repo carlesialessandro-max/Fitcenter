@@ -7,6 +7,8 @@ import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 const ESITO_LABELS: Record<EsitoChiamata, string> = {
   risposto: "Risposto",
@@ -176,6 +178,39 @@ export function Abbonamenti() {
       })
       .sort((a, b) => parseDataScadenza(a.dataFine).getTime() - parseDataScadenza(b.dataFine).getTime())
   }, [abbonamentiScope, giorniScadenza])
+
+  function exportAndamentoPdf(args: {
+    totalDistinct: number
+    from?: string
+    to?: string
+    byCategoria: { name: string; count: number; pct: number }[]
+    byDurata: { name: string; count: number; pct: number }[]
+  }) {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+    doc.setFontSize(14)
+    doc.text("Andamento Vendite", 14, 14)
+    doc.setFontSize(10)
+    const periodo = args.from && args.to ? `${args.from} -> ${args.to}` : "Mese corrente"
+    doc.text(`Periodo: ${periodo}`, 14, 20)
+    doc.text(`Totale movimenti: ${args.totalDistinct}`, 14, 25)
+
+    autoTable(doc, {
+      startY: 32,
+      head: [["Categoria", "Movimenti", "%"]],
+      body: args.byCategoria.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [59, 130, 246] },
+    })
+    const y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : 90
+    autoTable(doc, {
+      startY: y,
+      head: [["Durata", "Movimenti", "%"]],
+      body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129] },
+    })
+    doc.save(`andamento-vendite-${new Date().toISOString().slice(0, 10)}.pdf`)
+  }
 
   return (
     <div className="p-6">
@@ -434,7 +469,24 @@ export function Abbonamenti() {
 
               return (
                 <>
+                  <div className="mb-3 flex items-center justify-between gap-3">
                       <h2 className="mb-1 text-sm font-medium text-zinc-400">Andamento vendite (mese corrente)</h2>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          exportAndamentoPdf({
+                            totalDistinct,
+                            from: venditeMovimentiAndamento?.from,
+                            to: venditeMovimentiAndamento?.to,
+                            byCategoria,
+                            byDurata,
+                          })
+                        }
+                        className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                      >
+                        Scarica PDF
+                      </button>
+                  </div>
                       <div className="mb-4 text-sm text-zinc-500">
                         Totale movimenti (esclusi tesseramenti): <span className="text-zinc-200">{totalDistinct}</span>
                       </div>

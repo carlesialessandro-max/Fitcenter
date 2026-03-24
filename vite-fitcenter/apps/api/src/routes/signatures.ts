@@ -7,6 +7,7 @@ import {
   createSignatureTemplate,
   deleteSignatureRequest,
   deleteSignatureTemplate,
+  downloadSignatureTemplateDocument,
   downloadPublicSignatureDocument,
   exportSignatureAudit,
   getPublicSignatureInfo,
@@ -34,12 +35,13 @@ signaturesRouter.post("/public/:token/verify-otp", verifySignatureOtp)
 signaturesRouter.post("/public/:token/sign", confirmSignature)
 
 // Admin area
-signaturesRouter.get("/admin", requireAuth, requireAdmin, listSignatureRequests)
-signaturesRouter.post("/admin", requireAuth, requireAdmin, upload.single("document"), createSignatureRequest)
-signaturesRouter.delete("/admin/:id", requireAuth, requireAdmin, deleteSignatureRequest)
+signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
+signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
+signaturesRouter.delete("/admin/:id", requireAuth, deleteSignatureRequest)
 signaturesRouter.get("/admin/export-audit", requireAuth, requireAdmin, exportSignatureAudit)
-signaturesRouter.get("/admin/templates", requireAuth, requireAdmin, listSignatureTemplates)
+signaturesRouter.get("/admin/templates", requireAuth, listSignatureTemplates)
 signaturesRouter.post("/admin/templates", requireAuth, requireAdmin, upload.single("document"), createSignatureTemplate)
 signaturesRouter.put("/admin/templates/:id/slots", requireAuth, requireAdmin, updateSignatureTemplateSlots)
+signaturesRouter.get("/admin/templates/:id/document", requireAuth, downloadSignatureTemplateDocument)
 signaturesRouter.delete("/admin/templates/:id", requireAuth, requireAdmin, deleteSignatureTemplate)
 

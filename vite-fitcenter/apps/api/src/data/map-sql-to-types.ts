@@ -45,7 +45,13 @@ function optionalEtaAnni(row: Record<string, unknown>): number | undefined {
 function dateStr(v: unknown): string {
   if (v == null) return ""
   if (typeof v === "string") return v.split("T")[0] ?? v
-  if (v instanceof Date) return v.toISOString().split("T")[0] ?? ""
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return ""
+    const y = v.getFullYear()
+    const m = String(v.getMonth() + 1).padStart(2, "0")
+    const d = String(v.getDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+  }
   return String(v)
 }
 

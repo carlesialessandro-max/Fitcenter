@@ -1129,7 +1129,7 @@ function buildDettaglioBloccoFromMovimenti(
 ): DettaglioBlocco {
   const consuntivo = movimenti.reduce((s, r) => s + movimentoAmount(r), 0)
   const scostamento = consuntivo - budgetProgressivo
-  const trend = budgetProgressivo > 0 ? Math.round((consuntivo / budgetProgressivo) * 10000) / 100 : 0
+  const trend = budgetProgressivo > 0 ? Math.round(((consuntivo - budgetProgressivo) / budgetProgressivo) * 10000) / 100 : 0
   const consulentiMap = new Map<string, number>()
   movimenti.forEach((r) => {
     const id = String(r.IDVenditore ?? r.IDUtente ?? r.Id ?? r.id ?? "—")
@@ -1141,7 +1141,10 @@ function buildDettaglioBloccoFromMovimenti(
   const progressivoPerConsulente = budgetProgressivo / nConsulenti
   const perConsulente: DettaglioConsulente[] = Array.from(consulentiMap.entries()).map(([nome, cons]) => {
     const scost = cons - progressivoPerConsulente
-    const tr = progressivoPerConsulente > 0 ? Math.round((cons / progressivoPerConsulente) * 10000) / 100 : 0
+    const tr =
+      progressivoPerConsulente > 0
+        ? Math.round(((cons - progressivoPerConsulente) / progressivoPerConsulente) * 10000) / 100
+        : 0
     return {
       consulente: nome,
       budget: Math.round(budgetPerConsulente * 100) / 100,
@@ -1184,7 +1187,7 @@ function buildDettaglioBloccoFromTotale(
   budgetProgressivo: number
 ): DettaglioBlocco {
   const scostamento = consuntivo - budgetProgressivo
-  const trend = budgetProgressivo > 0 ? Math.round((consuntivo / budgetProgressivo) * 10000) / 100 : 0
+  const trend = budgetProgressivo > 0 ? Math.round(((consuntivo - budgetProgressivo) / budgetProgressivo) * 10000) / 100 : 0
   return {
     budget: Math.round(budgetTotale * 100) / 100,
     budgetProgressivo: Math.round(budgetProgressivo * 100) / 100,
@@ -1214,7 +1217,7 @@ function buildDettaglioBloccoFromPerConsulente(rows: DettaglioConsulente[]): Det
   const budgetProgressivo = rows.reduce((s, r) => s + r.budgetProgressivo, 0)
   const consuntivo = rows.reduce((s, r) => s + r.consuntivo, 0)
   const scostamento = consuntivo - budgetProgressivo
-  const trend = budgetProgressivo > 0 ? Math.round((consuntivo / budgetProgressivo) * 10000) / 100 : 0
+  const trend = budgetProgressivo > 0 ? Math.round(((consuntivo - budgetProgressivo) / budgetProgressivo) * 10000) / 100 : 0
   return {
     budget: Math.round(budget * 100) / 100,
     budgetProgressivo: Math.round(budgetProgressivo * 100) / 100,
@@ -1235,7 +1238,7 @@ function buildDettaglioBlocco(
   const consuntivo = abbonamenti.reduce((s, a) => s + a.prezzo, 0)
   const scostamento = consuntivo - budgetProgressivo
   const trend =
-    budgetProgressivo > 0 ? Math.round((consuntivo / budgetProgressivo) * 10000) / 100 : 0
+    budgetProgressivo > 0 ? Math.round(((consuntivo - budgetProgressivo) / budgetProgressivo) * 10000) / 100 : 0
   const consulentiMap = new Map<string, number>()
   abbonamenti.forEach((a) => {
     const nome = a.consulenteNome ?? "—"
@@ -1247,7 +1250,10 @@ function buildDettaglioBlocco(
   const perConsulente: DettaglioConsulente[] = Array.from(consulentiMap.entries()).map(
     ([nome, cons]) => {
       const scost = cons - progressivoPerConsulente
-      const tr = progressivoPerConsulente > 0 ? Math.round((cons / progressivoPerConsulente) * 10000) / 100 : 0
+      const tr =
+        progressivoPerConsulente > 0
+          ? Math.round(((cons - progressivoPerConsulente) / progressivoPerConsulente) * 10000) / 100
+          : 0
       return {
         consulente: nome,
         budget: Math.round(budgetPerConsulente * 100) / 100,
@@ -1398,7 +1404,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
                 const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
                 const [venditeGiorno, venditeMese] = await Promise.all([
                   gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
-                  gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, id),
+                  gestionaleSql.getVenditeProgressivoMese(anno, mese, giorno, id),
                 ])
                 const scostG = venditeGiorno - budgetGiornoCons
                 const scostM = venditeMese - budgetProgressivoMeseCons
@@ -1433,7 +1439,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
             }
             const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
               gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
-              gestionaleSql.getVenditeTotaleMese(anno, mese, giorno, idUtente),
+              gestionaleSql.getVenditeProgressivoMese(anno, mese, giorno, idUtente),
             ])
             return {
               bloccoGiorno: buildDettaglioBloccoFromTotale(totaleGiornoSql, budgetGiorno, budgetGiorno),
@@ -1762,12 +1768,84 @@ type ReportPeriodo = "week" | "month" | "year"
 type ReportRow = {
   consulenteNome: string
   vendite: number
+  /** Iscrizioni distinte con movimento nel periodo (stesso filtro di Andamento vendite). */
+  movimentiAndamento: number
   budget: number
   percentualeBudget: number
   telefonate: number
+  clientiNuovi: number
+  rinnovi: number
+  invitoClienti: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+}
+
+function normalizeCategoryToken(s: string | undefined): string {
+  return (s ?? "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function isMacroClienteNuovo(macro: string): boolean {
+  const x = normalizeCategoryToken(macro)
+  return x === "NUOVI" || x === "GOLD ESTIVO" || x === "GOLD ESITVO" || x === "GOLD PREMIUM"
+}
+
+/** YYYY-MM-DD da dataInizio (mappa già normalizza; evita confronti Date/timezone). */
+function abbonamentoDataInizioKey(dataInizio: string | undefined): string | null {
+  const key = String(dataInizio ?? "").trim().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(key) ? key : null
+}
+
+function abbonamentoInRangeCalendar(dataInizio: string | undefined, fromKey: string, toKey: string): boolean {
+  const key = abbonamentoDataInizioKey(dataInizio)
+  if (key) return key >= fromKey && key <= toKey
+  const di = new Date(String(dataInizio ?? "").trim())
+  if (Number.isNaN(di.getTime())) return false
+  di.setUTCHours(0, 0, 0, 0)
+  const k = di.toISOString().slice(0, 10)
+  return k >= fromKey && k <= toKey
+}
+
+/** Conteggio report: macro da view; se assente, cerca nelle descrizioni categoria/abbonamento. */
+function isMacroClienteNuovoAbb(a: Abbonamento): boolean {
+  const macro = a.macroCategoriaDescrizione ?? ""
+  if (macro.trim()) {
+    if (isMacroClienteNuovo(macro)) return true
+    const mx = normalizeCategoryToken(macro)
+    if (mx.includes("NUOVI") || mx.includes("GOLD ESTIVO") || mx.includes("GOLD ESITVO") || mx.includes("GOLD PREMIUM")) {
+      return true
+    }
+  }
+  const blob = normalizeCategoryToken(`${a.categoriaAbbonamentoDescrizione ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+  if (!blob) return false
+  return (
+    blob.includes("GOLD ESTIVO") ||
+    blob.includes("GOLD ESITVO") ||
+    blob.includes("GOLD PREMIUM") ||
+    (blob.includes("NUOVI") && !blob.includes("RINNOVI"))
+  )
+}
+
+function isMacroRinnoviAbb(a: Abbonamento): boolean {
+  const macro = a.macroCategoriaDescrizione ?? ""
+  if (macro.trim()) {
+    const mx = normalizeCategoryToken(macro)
+    if (mx === "RINNOVI" || mx.includes("RINNOVI")) return true
+  }
+  const blob = normalizeCategoryToken(`${a.categoriaAbbonamentoDescrizione ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+  return blob.includes("RINNOVI")
+}
+
+function isCategoriaInvitoAbb(a: Abbonamento): boolean {
+  const cat = normalizeCategoryToken(a.categoriaAbbonamentoDescrizione ?? "")
+  if (cat === "INVITO" || cat.includes("INVITO")) return true
+  const macro = normalizeCategoryToken(a.macroCategoriaDescrizione ?? "")
+  return macro.includes("INVITO")
 }
 
 function toISODate(d: Date): string {
@@ -1799,16 +1877,99 @@ function countWeekdaysMonFri(from: Date, to: Date): number {
   return count
 }
 
-function clampRangeToMonth(from: Date, to: Date): { from: Date; to: Date } {
-  const a = new Date(from)
-  a.setUTCHours(0, 0, 0, 0)
-  const b = new Date(to)
-  b.setUTCHours(0, 0, 0, 0)
-  const monthStart = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth(), 1))
-  const monthEnd = new Date(Date.UTC(a.getUTCFullYear(), a.getUTCMonth() + 1, 0))
-  const outFrom = a < monthStart ? monthStart : a
-  const outTo = b > monthEnd ? monthEnd : b
-  return { from: outFrom, to: outTo }
+/** Parsing YYYY-MM-DD senza shift fuso: stessi numeri scelti nel date picker. */
+function parseIsoDatePartsCalendar(iso: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+  if (!m) return null
+  const year = Number(m[1])
+  const month = Number(m[2])
+  const day = Number(m[3])
+  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year, month, day }
+}
+
+/** Come `getDettaglioMese`: giorni nel mese con `new Date(anno, mese, 0).getDate()` (locale server). */
+function daysInMonthLocal(year: number, month1to12: number): number {
+  return new Date(year, month1to12, 0).getDate()
+}
+
+/**
+ * Budget prorata sul range [fp, tp] inclusivo, stessa formula del dashboard:
+ * per ogni mese, `budgetMese * (giorni nell’intersezione / giorni del mese)`.
+ */
+function budgetProRataCalendarParts(
+  fp: { year: number; month: number; day: number },
+  tp: { year: number; month: number; day: number },
+  consulenteNome: string
+): number {
+  if (
+    fp.year > tp.year ||
+    (fp.year === tp.year && fp.month > tp.month) ||
+    (fp.year === tp.year && fp.month === tp.month && fp.day > tp.day)
+  ) {
+    return 0
+  }
+
+  let sum = 0
+  let y = fp.year
+  let m = fp.month
+
+  while (y < tp.year || (y === tp.year && m <= tp.month)) {
+    const dim = daysInMonthLocal(y, m)
+    const startD = y === fp.year && m === fp.month ? fp.day : 1
+    const endD = y === tp.year && m === tp.month ? tp.day : dim
+    const sd = Math.max(1, Math.min(startD, dim))
+    const ed = Math.max(1, Math.min(endD, dim))
+    if (sd <= ed) {
+      const giorni = ed - sd + 1
+      const budgetMese = budgetPerConsulente.get(y, m, consulenteNome)
+      sum += dim > 0 ? (budgetMese / dim) * giorni : 0
+    }
+    m += 1
+    if (m > 12) {
+      m = 1
+      y += 1
+    }
+  }
+  return sum
+}
+
+/**
+ * Euro vendite su [fa,ta] usando solo `getVenditeProgressivoMese` (stessa logica SQL del dashboard).
+ * Utile se la CTE sulla view fallisce o non è configurata.
+ */
+async function venditeEuroRangeViaProgressivo(
+  fa: { year: number; month: number; day: number },
+  ta: { year: number; month: number; day: number },
+  idUtente: string
+): Promise<number> {
+  if (
+    fa.year > ta.year ||
+    (fa.year === ta.year && fa.month > ta.month) ||
+    (fa.year === ta.year && fa.month === ta.month && fa.day > ta.day)
+  ) {
+    return 0
+  }
+  let total = 0
+  let y = fa.year
+  let m = fa.month
+  for (;;) {
+    if (y > ta.year || (y === ta.year && m > ta.month)) break
+    const dim = daysInMonthLocal(y, m)
+    const startD = y === fa.year && m === fa.month ? fa.day : 1
+    const endD = y === ta.year && m === ta.month ? ta.day : dim
+    if (startD <= endD) {
+      const thruEnd = await gestionaleSql.getVenditeProgressivoMese(y, m, endD, idUtente)
+      const before = startD > 1 ? await gestionaleSql.getVenditeProgressivoMese(y, m, startD - 1, idUtente) : 0
+      total += thruEnd - before
+    }
+    m += 1
+    if (m > 12) {
+      m = 1
+      y += 1
+    }
+  }
+  return Math.max(0, Math.round(total * 100) / 100)
 }
 
 function oreDiff(oraInizio: string, oraFine: string): number {
@@ -1825,12 +1986,25 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const periodo = String(req.query.periodo ?? "week") as ReportPeriodo
     const asOfRaw = String(req.query.asOf ?? "")
     const asOf = asOfRaw && /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) ? new Date(`${asOfRaw}T12:00:00Z`) : new Date()
+    const fromRaw = String(req.query.from ?? "")
+    const toRaw = String(req.query.to ?? "")
+    const selectedConsulentiRaw = String(req.query.consulenti ?? "")
+    const selectedConsulenti = selectedConsulentiRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
 
     const labels = budgetPerConsulente.getConsulentiLabels()
+    const labelsFiltered = selectedConsulenti.length > 0 ? labels.filter((l) => selectedConsulenti.includes(l)) : labels
 
     let from: Date
     let to: Date
-    if (periodo === "year") {
+    const hasCustomRange = /^\d{4}-\d{2}-\d{2}$/.test(fromRaw) && /^\d{4}-\d{2}-\d{2}$/.test(toRaw)
+    if (hasCustomRange) {
+      from = new Date(`${fromRaw}T00:00:00Z`)
+      to = new Date(`${toRaw}T23:59:59.999Z`)
+      if (from > to) return res.status(400).json({ message: "Intervallo date non valido (from > to)" })
+    } else if (periodo === "year") {
       const y = asOf.getUTCFullYear()
       from = new Date(Date.UTC(y, 0, 1, 0, 0, 0, 0))
       to = new Date(Date.UTC(y, 11, 31, 23, 59, 59, 999))
@@ -1841,29 +2015,18 @@ export async function getReportConsulenti(req: Request, res: Response) {
       to = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59, 999))
     } else {
       from = startOfWeekMonday(asOf)
-      to = new Date(from); to.setDate(to.getDate() + 6)
+      to = new Date(from)
+      to.setUTCDate(to.getUTCDate() + 6)
     }
 
     const fromIso = toISODate(from)
     const toIso = toISODate(to)
     const oreAttese = countWeekdaysMonFri(from, to) * 8
+    const faCal = hasCustomRange ? parseIsoDatePartsCalendar(fromRaw) : null
+    const taCal = hasCustomRange ? parseIsoDatePartsCalendar(toRaw) : null
 
     const rows: ReportRow[] = []
     let cachedMockAbbonamenti: Abbonamento[] | null = null
-    const mockVenditePerConsulente = (consulenteNome: string, from: Date, to: Date) => {
-      // Lazily import is done once below; this function only filters and sums.
-      if (!cachedMockAbbonamenti) return 0
-      return cachedMockAbbonamenti
-        .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
-        .filter((a) => !a.isTesseramento)
-        .filter((a) => !isEsclusoVenditeListe(a))
-        .filter((a) => {
-          const di = new Date(a.dataInizio)
-          di.setUTCHours(0, 0, 0, 0)
-          return di >= from && di <= to
-        })
-        .reduce((s, a) => s + (a.prezzo ?? 0), 0)
-    }
 
     const ensureMockLoaded = async () => {
       if (cachedMockAbbonamenti) return cachedMockAbbonamenti
@@ -1872,7 +2035,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
       return cachedMockAbbonamenti
     }
 
-    for (const consulenteNome of labels) {
+    for (const consulenteNome of labelsFiltered) {
       let idUtente: string | undefined
       try {
         idUtente = await withReportConsulentiSqlTimeout(resolveConsultantId(consulenteNome))
@@ -1881,27 +2044,20 @@ export async function getReportConsulenti(req: Request, res: Response) {
         idUtente = undefined
       }
       let vendite = 0
+      let venditeAbbRows: Abbonamento[] = []
+      let reportCountRows: Abbonamento[] = []
 
-      // Budget periodo per consulente
+      // Budget periodo per consulente (prorata calendario = dettaglio mese; Dal/Al = stringhe picker senza UTC)
       let budget = 0
-      if (periodo === "year") {
+      if (hasCustomRange) {
+        budget = faCal && taCal ? budgetProRataCalendarParts(faCal, taCal, consulenteNome) : 0
+      } else if (periodo === "year") {
         const y = asOf.getUTCFullYear()
         for (let m = 1; m <= 12; m++) budget += budgetPerConsulente.get(y, m, consulenteNome)
       } else if (periodo === "month") {
         budget = budgetPerConsulente.get(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
       } else {
-        // Settimana: proporzionale al budget mensile in base ai giorni lavorativi del mese coperti dalla settimana.
-        const y = from.getUTCFullYear()
-        const m = from.getUTCMonth() + 1
-        const budgetMese = budgetPerConsulente.get(y, m, consulenteNome)
-        const monthStart = new Date(Date.UTC(y, m - 1, 1, 0, 0, 0, 0))
-        const monthEnd = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999))
-        const giorniLavorativiMese = countWeekdaysMonFri(monthStart, monthEnd)
-        const clipped = clampRangeToMonth(from, to)
-        const giorniLavorativiSettimanaNelMese = countWeekdaysMonFri(clipped.from, clipped.to)
-        budget = giorniLavorativiMese > 0
-          ? (budgetMese / giorniLavorativiMese) * giorniLavorativiSettimanaNelMese
-          : 0
+        budget = budgetProRataCalendarParts(toDateParts(from), toDateParts(to), consulenteNome)
       }
 
       if (gestionaleSql.isGestionaleConfigured() && idUtente) {
@@ -1910,21 +2066,82 @@ export async function getReportConsulenti(req: Request, res: Response) {
           const abbonamenti = abbonRows
             .map((r) => rowToAbbonamento(r))
             .filter((a) => !a.isTesseramento)
-            .filter((a) => !isEsclusoVenditeListe(a))
-            .filter((a) => {
-              const di = new Date(a.dataInizio)
-              di.setUTCHours(0, 0, 0, 0)
-              return di >= from && di <= to
-            })
-          vendite = abbonamenti.reduce((s, a) => s + (a.prezzo ?? 0), 0)
+            .filter((a) => abbonamentoInRangeCalendar(a.dataInizio, fromIso, toIso))
+          reportCountRows = abbonamenti
+          venditeAbbRows = abbonamenti.filter((a) => !isEsclusoVenditeListe(a))
+          vendite = venditeAbbRows.reduce((s, a) => s + (a.prezzo ?? 0), 0)
         } catch (e) {
           if ((e as Error).message !== "__FITCENTER_REPORT_CONSULENTI_SQL_TIMEOUT__") throw e
           await ensureMockLoaded()
-          vendite = mockVenditePerConsulente(consulenteNome, from, to)
+          const source = cachedMockAbbonamenti ?? ([] as Abbonamento[])
+          const abbonamenti = source
+            .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
+            .filter((a) => !a.isTesseramento)
+            .filter((a) => abbonamentoInRangeCalendar(a.dataInizio, fromIso, toIso))
+          reportCountRows = abbonamenti
+          venditeAbbRows = abbonamenti.filter((a) => !isEsclusoVenditeListe(a))
+          vendite = venditeAbbRows.reduce((s, a) => s + (a.prezzo ?? 0), 0)
         }
       } else {
         await ensureMockLoaded()
-        vendite = mockVenditePerConsulente(consulenteNome, from, to)
+        const source = cachedMockAbbonamenti ?? ([] as Abbonamento[])
+        const abbonamenti = source
+          .filter((a) => (a.consulenteNome ?? "") === consulenteNome)
+          .filter((a) => !a.isTesseramento)
+          .filter((a) => abbonamentoInRangeCalendar(a.dataInizio, fromIso, toIso))
+        reportCountRows = abbonamenti
+        venditeAbbRows = abbonamenti.filter((a) => !isEsclusoVenditeListe(a))
+        vendite = venditeAbbRows.reduce((s, a) => s + (a.prezzo ?? 0), 0)
+      }
+
+      let movimentiAndamento = 0
+      let venditeDaViewSql = false
+      if (gestionaleSql.isGestionaleConfigured() && idUtente) {
+        try {
+          const [euro, mov] = await Promise.all([
+            withReportConsulentiSqlTimeout(gestionaleSql.getVenditeTotaleRangeView(fromIso, toIso, idUtente)),
+            withReportConsulentiSqlTimeout(
+              gestionaleSql.getVenditeMovimentiCategoriaDurata(fromIso, toIso, idUtente)
+            ),
+          ])
+          if (euro.ok) {
+            vendite = euro.totaleEuro
+            venditeDaViewSql = true
+          }
+          movimentiAndamento = mov.totalCount ?? 0
+        } catch {
+          /* mantieni vendite da abbonamenti */
+        }
+      }
+
+      if (gestionaleSql.isGestionaleConfigured() && idUtente && !venditeDaViewSql) {
+        try {
+          if (hasCustomRange && faCal && taCal) {
+            vendite = await withReportConsulentiSqlTimeout(
+              venditeEuroRangeViaProgressivo(faCal, taCal, idUtente)
+            )
+          } else if (periodo === "week") {
+            const rf = toDateParts(from)
+            const rt = toDateParts(to)
+            vendite = await withReportConsulentiSqlTimeout(
+              venditeEuroRangeViaProgressivo(
+                { year: rf.year, month: rf.month, day: rf.day },
+                { year: rt.year, month: rt.month, day: rt.day },
+                idUtente
+              )
+            )
+          } else {
+            const f = parseIsoDatePartsCalendar(fromIso)
+            const t = parseIsoDatePartsCalendar(toIso)
+            if (f && t) {
+              vendite = await withReportConsulentiSqlTimeout(
+                venditeEuroRangeViaProgressivo(f, t, idUtente)
+              )
+            }
+          }
+        } catch {
+          /* vendite da abbonamenti */
+        }
       }
 
       // Telefonate: persistite localmente.
@@ -1942,12 +2159,44 @@ export async function getReportConsulenti(req: Request, res: Response) {
       const percentualeOre = oreAttese > 0 ? Math.round((oreLavorate / oreAttese) * 1000) / 10 : 0
       const percentualeBudget = budget > 0 ? Math.round((vendite / budget) * 1000) / 10 : 0
 
+      let clientiNuovi = 0
+      let rinnovi = 0
+      let invitoClienti = 0
+      if (gestionaleSql.isGestionaleConfigured() && idUtente) {
+        try {
+          const conteggi = await withReportConsulentiSqlTimeout(
+            gestionaleSql.getReportConteggiAndamento(fromIso, toIso, idUtente)
+          )
+          if (conteggi.ok) {
+            clientiNuovi = conteggi.clientiNuovi
+            rinnovi = conteggi.rinnovi
+            invitoClienti = conteggi.invitoClienti
+          } else {
+            clientiNuovi = reportCountRows.filter((a) => isMacroClienteNuovoAbb(a)).length
+            rinnovi = reportCountRows.filter((a) => isMacroRinnoviAbb(a)).length
+            invitoClienti = reportCountRows.filter((a) => isCategoriaInvitoAbb(a)).length
+          }
+        } catch {
+          clientiNuovi = reportCountRows.filter((a) => isMacroClienteNuovoAbb(a)).length
+          rinnovi = reportCountRows.filter((a) => isMacroRinnoviAbb(a)).length
+          invitoClienti = reportCountRows.filter((a) => isCategoriaInvitoAbb(a)).length
+        }
+      } else {
+        clientiNuovi = reportCountRows.filter((a) => isMacroClienteNuovoAbb(a)).length
+        rinnovi = reportCountRows.filter((a) => isMacroRinnoviAbb(a)).length
+        invitoClienti = reportCountRows.filter((a) => isCategoriaInvitoAbb(a)).length
+      }
+
       rows.push({
         consulenteNome,
         vendite: Math.round(vendite * 100) / 100,
+        movimentiAndamento,
         budget: Math.round(budget * 100) / 100,
         percentualeBudget,
         telefonate,
+        clientiNuovi,
+        rinnovi,
+        invitoClienti,
         oreLavorate: Math.round(oreLavorate * 10) / 10,
         oreAttese,
         percentualeOre,
@@ -1955,7 +2204,46 @@ export async function getReportConsulenti(req: Request, res: Response) {
     }
 
     rows.sort((a, b) => b.vendite - a.vendite)
-    res.json({ periodo, from: fromIso, to: toIso, rows })
+
+    const sumV = rows.reduce((s, r) => s + r.vendite, 0)
+    const sumB = rows.reduce((s, r) => s + r.budget, 0)
+    const sumMov = rows.reduce((s, r) => s + r.movimentiAndamento, 0)
+    const sumTel = rows.reduce((s, r) => s + r.telefonate, 0)
+    const sumNuovi = rows.reduce((s, r) => s + r.clientiNuovi, 0)
+    const sumRin = rows.reduce((s, r) => s + r.rinnovi, 0)
+    const sumInv = rows.reduce((s, r) => s + r.invitoClienti, 0)
+    const sumOre = rows.reduce((s, r) => s + r.oreLavorate, 0)
+    const scost = Math.round((sumV - sumB) * 100) / 100
+    const pctB = sumB > 0 ? Math.round((sumV / sumB) * 1000) / 10 : 0
+    const oreAtteseRiga = rows.length > 0 ? rows[0].oreAttese : 0
+    const pctOre =
+      rows.length > 0 && oreAtteseRiga > 0
+        ? Math.round((sumOre / (oreAtteseRiga * rows.length)) * 1000) / 10
+        : 0
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
+    res.setHeader("Pragma", "no-cache")
+    res.json({
+      periodo,
+      from: fromIso,
+      to: toIso,
+      computedAt: new Date().toISOString(),
+      rows,
+      totals: {
+        movimentiAndamento: sumMov,
+        vendite: Math.round(sumV * 100) / 100,
+        budget: Math.round(sumB * 100) / 100,
+        scostamento: scost,
+        percentualeBudget: pctB,
+        telefonate: sumTel,
+        clientiNuovi: sumNuovi,
+        rinnovi: sumRin,
+        invitoClienti: sumInv,
+        oreLavorate: Math.round(sumOre * 10) / 10,
+        oreAttese: oreAtteseRiga,
+        percentualeOre: pctOre,
+      },
+    })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
