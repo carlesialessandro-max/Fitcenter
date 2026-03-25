@@ -15,7 +15,6 @@ const navAdmin = [
   { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/abbonamenti", label: "Abbonamenti" },
-  { to: "/report", label: "Report" },
 ] as const
 
 export function AppLayout() {

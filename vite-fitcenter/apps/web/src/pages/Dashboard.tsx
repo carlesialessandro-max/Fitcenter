@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
@@ -14,6 +14,8 @@ import {
   Pie,
   Cell,
 } from "recharts"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 import { dataApi, type OraLavorata } from "@/api/data"
 import { chiamateApi } from "@/api/chiamate"
 import { useAuth } from "@/contexts/AuthContext"
@@ -34,6 +36,20 @@ function fmtDateIt(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (!m) return iso
   return `${m[3]}/${m[2]}/${m[1]}`
+}
+
+type JsPdfInstance = InstanceType<typeof jsPDF>
+type JsPdfWithAutoTable = JsPdfInstance & { lastAutoTable?: { finalY?: number } }
+
+function autoTableNextY(doc: JsPdfWithAutoTable, fallbackY: number, gap = 8): number {
+  const finalY = doc.lastAutoTable?.finalY
+  return typeof finalY === "number" ? finalY + gap : fallbackY
+}
+
+function monthStartIso(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[1]}-${m[2]}-01`
 }
 
 export function Dashboard() {
@@ -111,6 +127,24 @@ export function Dashboard() {
     staleTime: 30_000,
   })
 
+  const reportConsulenti = useMemo(() => {
+    const list = dettaglioGiornoMese?.dettaglioMese?.perConsulente?.map((x) => x.consulente) ?? []
+    return Array.from(new Set(list)).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  }, [dettaglioGiornoMese?.dettaglioMese?.perConsulente])
+
+  const reportFrom = role === "admin" ? monthStartIso(asOf) : monthStartIso(localIsoDate())
+  const reportTo = role === "admin" ? asOf : localIsoDate()
+
+  const { data: reportData, isFetching: isFetchingReport } = useQuery({
+    queryKey: ["report-consulenti", reportFrom, reportTo, reportConsulenti.join("|")],
+    queryFn: () => dataApi.getReportConsulenti({ from: reportFrom, to: reportTo, consulenti: reportConsulenti }),
+    enabled: role === "admin" && reportConsulenti.length > 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 30_000,
+  })
+
   const { data: dettaglioAnnoData } = useQuery({
     queryKey: ["dettaglio-anno", annoInCorso, role === "admin" ? asOf : null],
     queryFn: () => dataApi.getDettaglioAnno(annoInCorso, role === "admin" ? asOf : undefined),
@@ -170,6 +204,97 @@ export function Dashboard() {
         return d.toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" })
       })()
 
+  function stampaReportPdf() {
+    if (!reportData) return
+    const { rows, totals } = reportData
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as JsPdfWithAutoTable
+    const footStyles = { fontStyle: "bold" as const, fontSize: 8, halign: "left" as const }
+
+    doc.setFontSize(14)
+    doc.text("ANALISI PRODUZIONE - FitCenter", 10, 10)
+    doc.setFontSize(10)
+    doc.text(`Dal: ${fmtDateIt(reportFrom)}   Al: ${fmtDateIt(reportTo)}`, 10, 16)
+    doc.text(`Consulenti: ${reportConsulenti.join(", ") || "Nessuna"}`, 10, 21)
+    let y = 28
+
+    doc.setFontSize(11)
+    doc.text("PRODUZIONE TOTALE", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Movimenti", "Produzione €", "Budget", "Scostamento", "Trend"]],
+      body: rows.map((r) => [
+        r.consulenteNome,
+        String(r.movimentiAndamento ?? 0),
+        `${r.vendite.toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+        `${r.budget.toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+        `${(r.vendite - r.budget).toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+        `${r.percentualeBudget.toLocaleString("it-IT", { minimumFractionDigits: 2 })}%`,
+      ]),
+      foot: [
+        [
+          "TOTALE",
+          String(totals.movimentiAndamento),
+          `${totals.vendite.toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+          `${totals.budget.toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+          `${totals.scostamento.toLocaleString("it-IT", { minimumFractionDigits: 2 })} €`,
+          `${totals.percentualeBudget.toLocaleString("it-IT", { minimumFractionDigits: 2 })}%`,
+        ],
+      ],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+    y = autoTableNextY(doc, y + 45)
+
+    doc.setFontSize(11)
+    doc.text("CLIENTI NUOVI", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Nuovi clienti"]],
+      body: rows.map((r) => [r.consulenteNome, String(r.clientiNuovi ?? 0)]),
+      foot: [["TOTALE", String(totals.clientiNuovi)]],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+    y = autoTableNextY(doc, y + 25)
+
+    doc.setFontSize(11)
+    doc.text("RINNOVI", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Rinnovi"]],
+      body: rows.map((r) => [r.consulenteNome, String(r.rinnovi ?? 0)]),
+      foot: [["TOTALE", String(totals.rinnovi)]],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+    y = autoTableNextY(doc, y + 25)
+
+    doc.setFontSize(11)
+    doc.text("INVITO CLIENTI", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Invito clienti (categoria INVITO)"]],
+      body: rows.map((r) => [r.consulenteNome, String(r.invitoClienti ?? 0)]),
+      foot: [["TOTALE", String(totals.invitoClienti)]],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+    y = autoTableNextY(doc, y + 25)
+
+    doc.setFontSize(11)
+    doc.text("CONTATTI TELEFONICI", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Contatti telefonici"]],
+      body: rows.map((r) => [r.consulenteNome, String(r.telefonate)]),
+      foot: [["TOTALE", String(totals.telefonate)]],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+
+    doc.save(`analisi-produzione-${reportFrom}-${reportTo}.pdf`)
+  }
+
   return (
     <div className="p-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -192,6 +317,15 @@ export function Dashboard() {
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
             </label>
+            <button
+              type="button"
+              onClick={stampaReportPdf}
+              disabled={!reportData || isFetchingReport}
+              title={!reportData ? "Caricamento dati report in corso..." : undefined}
+              className="rounded-md border border-zinc-600 bg-zinc-900/40 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+            >
+              {isFetchingReport ? "Preparazione..." : "Stampa Report"}
+            </button>
             <button
               type="button"
               onClick={() => setBudgetModal(true)}
@@ -527,7 +661,10 @@ export function Dashboard() {
                   <input
                     type="number"
                     value={budgetAnno}
-                    onChange={(e) => setBudgetAnno(Number(e.target.value))}
+                    onChange={(e) => {
+                      setBudgetPerConsulente({})
+                      setBudgetAnno(Number(e.target.value))
+                    }}
                     className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
                   />
                 </div>
@@ -535,7 +672,10 @@ export function Dashboard() {
                   <label className="block text-xs text-zinc-500">Mese</label>
                   <select
                     value={budgetMese}
-                    onChange={(e) => setBudgetMese(Number(e.target.value))}
+                    onChange={(e) => {
+                      setBudgetPerConsulente({})
+                      setBudgetMese(Number(e.target.value))
+                    }}
                     className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
                   >
                     {["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"].map((nome, i) => (
