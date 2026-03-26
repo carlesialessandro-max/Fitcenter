@@ -6,9 +6,6 @@ import { chiamateApi, type EsitoChiamata } from "@/api/chiamate"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import type { CategoriaAbbonamento } from "@/types/gestionale"
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts"
-import jsPDF from "jspdf"
-import autoTable from "jspdf-autotable"
 
 const ESITO_LABELS: Record<EsitoChiamata, string> = {
   risposto: "Risposto",
@@ -51,7 +48,6 @@ function isTesseramento(a: { pianoNome?: string; prezzo?: number }): boolean {
 
 export function Abbonamenti() {
   const { role, consulenteFilter, consulenteNome, consulenti } = useAuth()
-  const [tab, setTab] = useState<"abbonamenti" | "andamento">("abbonamenti")
   /** Giorni per filtro scadenza: da oggi a 30 o 60 giorni */
   const [giorniScadenza, setGiorniScadenza] = useState<30 | 60>(60)
   const [adminConsulente, setAdminConsulente] = useState<string>("")
@@ -79,23 +75,6 @@ export function Abbonamenti() {
     refetchOnWindowFocus: false,
   })
 
-  const {
-    data: venditeMovimentiAndamento,
-    isLoading: isLoadingVenditeMovimentiAndamento,
-    error: venditeMovimentiAndamentoError,
-  } = useQuery({
-    queryKey: ["vendite-movimenti-andamento", effectiveConsulenteFilter ?? ""],
-    queryFn: () =>
-      dataApi.getVenditeMovimentiCategoriaDurata({
-        months: 1,
-        consulente: effectiveConsulenteFilter,
-      }),
-    enabled: tab === "andamento",
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    staleTime: 60_000,
-  })
   const { data: clienti = [] } = useQuery({
     queryKey: ["data", "clienti"],
     queryFn: () => dataApi.getClienti(),
@@ -179,45 +158,12 @@ export function Abbonamenti() {
       .sort((a, b) => parseDataScadenza(a.dataFine).getTime() - parseDataScadenza(b.dataFine).getTime())
   }, [abbonamentiScope, giorniScadenza])
 
-  function exportAndamentoPdf(args: {
-    totalDistinct: number
-    from?: string
-    to?: string
-    byCategoria: { name: string; count: number; pct: number }[]
-    byDurata: { name: string; count: number; pct: number }[]
-  }) {
-    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
-    doc.setFontSize(14)
-    doc.text("Andamento Vendite", 14, 14)
-    doc.setFontSize(10)
-    const periodo = args.from && args.to ? `${args.from} -> ${args.to}` : "Mese corrente"
-    doc.text(`Periodo: ${periodo}`, 14, 20)
-    doc.text(`Totale movimenti: ${args.totalDistinct}`, 14, 25)
-
-    autoTable(doc, {
-      startY: 32,
-      head: [["Categoria", "Movimenti", "%"]],
-      body: args.byCategoria.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [59, 130, 246] },
-    })
-    const y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : 90
-    autoTable(doc, {
-      startY: y,
-      head: [["Durata", "Movimenti", "%"]],
-      body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`]),
-      styles: { fontSize: 9 },
-      headStyles: { fillColor: [16, 185, 129] },
-    })
-    doc.save(`andamento-vendite-${new Date().toISOString().slice(0, 10)}.pdf`)
-  }
-
   return (
     <div className="p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">Abbonamenti & Vendite</h1>
-          <p className="text-sm text-zinc-400">Gestione abbonamenti, vendite e budget</p>
+          <h1 className="text-2xl font-semibold text-zinc-100">Abbonamenti in Scadenza</h1>
+          <p className="text-sm text-zinc-400">Gestione abbonamenti e follow-up</p>
         </div>
         {role === "admin" && (
           <a href="/" className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800">
@@ -269,29 +215,6 @@ export function Abbonamenti() {
         </div>
       </div>
 
-      {/* Tab: Abbonamenti e Andamento Vendite (no Catalogo Piani) */}
-      <div className="mt-6 flex gap-2 border-b border-zinc-800">
-        <button
-          type="button"
-          onClick={() => setTab("abbonamenti")}
-          className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "abbonamenti" ? "border-amber-500 text-amber-400" : "border-transparent text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          Abbonamenti
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("andamento")}
-          className={`border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-            tab === "andamento" ? "border-amber-500 text-amber-400" : "border-transparent text-zinc-400 hover:text-zinc-200"
-          }`}
-        >
-          Andamento Vendite
-        </button>
-      </div>
-
-      {tab === "abbonamenti" && (
       <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -412,189 +335,6 @@ export function Abbonamenti() {
           )}
         </div>
       </div>
-      )}
-
-      {tab === "andamento" && (
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-6">
-          {isLoadingVenditeMovimentiAndamento ? (
-            <div className="py-10 text-center text-zinc-400">Caricamento andamento...</div>
-          ) : venditeMovimentiAndamentoError ? (
-            <div className="py-6 text-center text-red-400">{(venditeMovimentiAndamentoError as Error).message}</div>
-          ) : (
-            (() => {
-              const rows = venditeMovimentiAndamento?.rows ?? []
-              const totalDistinct = venditeMovimentiAndamento?.totalCount ?? 0
-              // Per percentuali coerenti con le fette del grafico usiamo la somma dei count mostrati (rows).
-              const totalForPct = rows.reduce((s, r) => s + (r.count ?? 0), 0)
-              if (totalForPct <= 0) {
-                return <div className="py-10 text-center text-zinc-500">Nessun dato per il periodo.</div>
-              }
-
-              const byCategoriaMap: Record<string, number> = {}
-              const byDurataMap: Record<string, number> = {}
-              rows.forEach((r) => {
-                const cat = r.categoria ?? "palestra"
-                byCategoriaMap[cat] = (byCategoriaMap[cat] ?? 0) + (r.count ?? 0)
-                const durataLabel = r.durataMesi != null ? `${r.durataMesi} mesi` : "Sconosciuta"
-                byDurataMap[durataLabel] = (byDurataMap[durataLabel] ?? 0) + (r.count ?? 0)
-              })
-
-              const byCategoria = Object.entries(byCategoriaMap)
-                .map(([name, count]) => ({
-                  name,
-                  count,
-                  pct: Math.round((count / totalForPct) * 1000) / 10,
-                }))
-                .sort((a, b) => b.count - a.count)
-
-              const byDurata = Object.entries(byDurataMap)
-                .map(([name, count]) => ({
-                  name,
-                  count,
-                  pct: Math.round((count / totalForPct) * 1000) / 10,
-                }))
-                .sort((a, b) => {
-                  const na = Number(a.name.split(" ")[0])
-                  const nb = Number(b.name.split(" ")[0])
-                  const oka = !Number.isNaN(na) && na > 0
-                  const okb = !Number.isNaN(nb) && nb > 0
-                  if (oka && okb) return na - nb
-                  if (oka) return -1
-                  if (okb) return 1
-                  return a.name.localeCompare(b.name)
-                })
-
-              const paletteCat = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308"]
-              const paletteDur = ["#38bdf8", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#60a5fa"]
-
-              return (
-                <>
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                      <h2 className="mb-1 text-sm font-medium text-zinc-400">Andamento vendite (mese corrente)</h2>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          exportAndamentoPdf({
-                            totalDistinct,
-                            from: venditeMovimentiAndamento?.from,
-                            to: venditeMovimentiAndamento?.to,
-                            byCategoria,
-                            byDurata,
-                          })
-                        }
-                        className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
-                      >
-                        Scarica PDF
-                      </button>
-                  </div>
-                      <div className="mb-4 text-sm text-zinc-500">
-                        Totale movimenti (esclusi tesseramenti): <span className="text-zinc-200">{totalDistinct}</span>
-                      </div>
-
-                  <div className="grid gap-6 lg:grid-cols-1">
-                    <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
-                      <p className="mb-2 text-sm text-zinc-300">Distribuzione per categoria</p>
-                      <ResponsiveContainer width="100%" height={520}>
-                        <PieChart>
-                          <Tooltip
-                            contentStyle={{ background: "#18181b", border: "1px solid #27272a" }}
-                            formatter={(_value: any, _name: any, props: any) => {
-                              const payload = props?.payload as { name: string; count: number; pct: number }
-                              return [`${payload.pct}% (${payload.count})`, payload.name]
-                            }}
-                          />
-                          <Pie
-                            data={byCategoria}
-                            dataKey="count"
-                            nameKey="name"
-                            outerRadius={185}
-                            labelLine
-                            label={(props: any) => {
-                              const payload = props?.payload as { name?: string; pct?: number; count?: number }
-                              const pct = payload?.pct ?? 0
-                              const name = payload?.name ?? ""
-                              const count = payload?.count ?? 0
-                              // Riduce l'affollamento: per slice piccole mostriamo niente (oppure solo tooltip).
-                              if (pct >= 7) return `${name} (${pct}%) ${count}`
-                              if (pct >= 3) return `${name} (${pct}%)`
-                              return ""
-                            }}
-                          >
-                            {byCategoria.map((e, i) => (
-                              <Cell key={e.name} fill={paletteCat[i % paletteCat.length]} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        {byCategoria.slice(0, 10).map((e, i) => (
-                          <div key={e.name} className="flex items-center gap-2 text-xs text-zinc-300">
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-sm"
-                              style={{ background: paletteCat[i % paletteCat.length] }}
-                            />
-                            <span className="flex-1 truncate">{e.name}</span>
-                            <span className="text-zinc-500">{e.pct}%</span>
-                            <span className="text-zinc-400">({e.count})</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
-                      <p className="mb-2 text-sm text-zinc-300">Distribuzione per durata</p>
-                      <ResponsiveContainer width="100%" height={520}>
-                        <PieChart>
-                          <Tooltip
-                            contentStyle={{ background: "#18181b", border: "1px solid #27272a" }}
-                            formatter={(_value: any, _name: any, props: any) => {
-                              const payload = props?.payload as { name: string; count: number; pct: number }
-                              return [`${payload.pct}% (${payload.count})`, payload.name]
-                            }}
-                          />
-                          <Pie
-                            data={byDurata}
-                            dataKey="count"
-                            nameKey="name"
-                            outerRadius={185}
-                            labelLine
-                            label={(props: any) => {
-                              const payload = props?.payload as { name?: string; pct?: number; count?: number }
-                              const pct = payload?.pct ?? 0
-                              const name = payload?.name ?? ""
-                              const count = payload?.count ?? 0
-                              if (pct >= 7) return `${name} (${pct}%) ${count}`
-                              if (pct >= 3) return `${name} (${pct}%)`
-                              return ""
-                            }}
-                          >
-                            {byDurata.map((e, i) => (
-                              <Cell key={e.name} fill={paletteDur[i % paletteDur.length]} />
-                            ))}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                        {byDurata.slice(0, 10).map((e, i) => (
-                          <div key={e.name} className="flex items-center gap-2 text-xs text-zinc-300">
-                            <span
-                              className="inline-block h-2.5 w-2.5 rounded-sm"
-                              style={{ background: paletteDur[i % paletteDur.length] }}
-                            />
-                            <span className="flex-1 truncate">{e.name}</span>
-                            <span className="text-zinc-500">{e.pct}%</span>
-                            <span className="text-zinc-400">({e.count})</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )
-            })()
-          )}
-        </div>
-      )}
     </div>
   )
 }

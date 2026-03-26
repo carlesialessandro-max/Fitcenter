@@ -873,7 +873,7 @@ export async function getVenditeMovimentiCategoriaDurata(
   idConsultant?: string
 ): Promise<{
   totalCount: number
-  rows: { categoria: string; durataMesi: number | null; count: number }[]
+  rows: { categoria: string; durataMesi: number | null; count: number; totalEuro: number }[]
 }> {
   const p = await getPool()
   if (!p) return { totalCount: 0, rows: [] }
@@ -898,6 +898,8 @@ export async function getVenditeMovimentiCategoriaDurata(
     // In SELECT TOP 1 della view troviamo anche la colonna `Durata` (tipicamente mesi).
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+    const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+    const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
 
     const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
     const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
@@ -937,18 +939,33 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const r = await req.query(
-      `SELECT
-          ${categoriaExpr} AS Categoria,
-          R.[${durataCol}] AS DurataMesi,
-          COUNT(DISTINCT M.[${COL_ISCRIZIONE}]) AS count
-        FROM [${tblM}] M
-        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
-        ${whereBase}
-        ${consultantFilter}
-        ${whereTesseramento}
-        ${whereCategorieEscluse}
-        GROUP BY ${categoriaExpr}, R.[${durataCol}]
-        ORDER BY count DESC;`
+      `;WITH Sold AS (
+         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS IDIscrizione
+         FROM [${tblM}] M
+         INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+         ${whereBase}
+         ${consultantFilter}
+         ${whereTesseramento}
+         ${whereCategorieEscluse}
+       ),
+       PerIscrizione AS (
+         SELECT
+           S.IDIscrizione,
+           ${categoriaExpr} AS Categoria,
+           R.[${durataCol}] AS DurataMesi,
+           MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
+         FROM Sold S
+         INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = S.IDIscrizione
+         GROUP BY S.IDIscrizione, ${categoriaExpr}, R.[${durataCol}]
+       )
+       SELECT
+         Categoria,
+         DurataMesi,
+         COUNT(*) AS count,
+         SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
+       FROM PerIscrizione
+       GROUP BY Categoria, DurataMesi
+       ORDER BY count DESC;`
     )
 
     const totalCount = Number(rTotal.recordset?.[0]?.totalCount ?? 0) || 0
@@ -959,6 +976,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         categoria: String(row.Categoria ?? "").toLowerCase().trim() || "palestra",
         durataMesi,
         count: Number(row.count ?? row.Count ?? 0) || 0,
+        totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
       }
     })
 

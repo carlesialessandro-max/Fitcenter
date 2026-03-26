@@ -6,15 +6,18 @@ const navOperatore = [
   { to: "/", label: "Dashboard" },
   { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
-  { to: "/abbonamenti", label: "Abbonamenti" },
+  { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
+  { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
 const navAdmin = [
   { to: "/", label: "Dashboard" },
+  { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
-  { to: "/abbonamenti", label: "Abbonamenti" },
+  { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
+  { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
 export function AppLayout() {

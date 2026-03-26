@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
@@ -16,6 +16,7 @@ export function DettaglioMeseModal({ anno, mese, meseLabel, onClose }: Props) {
   const { consulenteFilter, role, consulenteNome } = useAuth()
   const queryClient = useQueryClient()
   const [giorno, setGiorno] = useState(10)
+  const [convalideView, setConvalideView] = useState<"settimana" | "mese">("settimana")
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["dettaglio-mese", anno, mese, giorno, consulenteFilter],
@@ -29,6 +30,22 @@ export function DettaglioMeseModal({ anno, mese, meseLabel, onClose }: Props) {
   })
   const convalidati = convalidazioniData?.convalidati ?? []
   const giornoConvalidato = convalidati.includes(giorno)
+  const convalidatiSorted = useMemo(() => [...convalidati].sort((a, b) => a - b), [convalidati])
+  const settimaneConvalidate = useMemo(() => {
+    const giorniNelMese = data?.giorniNelMese ?? 31
+    const set = new Set(convalidatiSorted)
+    const out: Array<{ idx: number; from: number; to: number; giorni: number[] }> = []
+    let start = 1
+    let idx = 1
+    while (start <= giorniNelMese) {
+      const end = Math.min(start + 6, giorniNelMese)
+      const giorni = Array.from({ length: end - start + 1 }, (_, i) => start + i).filter((g) => set.has(g))
+      out.push({ idx, from: start, to: end, giorni })
+      start = end + 1
+      idx += 1
+    }
+    return out
+  }, [convalidatiSorted, data?.giorniNelMese])
 
   const setConvalidazioneMutation = useMutation({
     mutationFn: (convalidato: boolean) =>
@@ -107,6 +124,55 @@ export function DettaglioMeseModal({ anno, mese, meseLabel, onClose }: Props) {
                 </div>
               )}
             </div>
+          )}
+
+          {role === "operatore" && consulenteNome && (
+            <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-zinc-200">Convalide consulente</h3>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConvalideView("settimana")}
+                    className={`rounded border px-2 py-1 text-xs ${
+                      convalideView === "settimana"
+                        ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                        : "border-zinc-700 text-zinc-400"
+                    }`}
+                  >
+                    Settimana
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConvalideView("mese")}
+                    className={`rounded border px-2 py-1 text-xs ${
+                      convalideView === "mese"
+                        ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                        : "border-zinc-700 text-zinc-400"
+                    }`}
+                  >
+                    Mese
+                  </button>
+                </div>
+              </div>
+              {convalideView === "settimana" ? (
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {settimaneConvalidate.map((w) => (
+                    <div key={w.idx} className="rounded border border-zinc-800 bg-zinc-900/30 p-2 text-xs">
+                      <p className="text-zinc-500">Settimana {w.idx} ({w.from}-{w.to})</p>
+                      <p className="mt-1 text-zinc-300">{w.giorni.length} giorni</p>
+                      <p className="text-zinc-500">{w.giorni.join(", ") || "Nessuno"}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-zinc-300">
+                  {convalidatiSorted.length
+                    ? `Giorni convalidati: ${convalidatiSorted.join(", ")}`
+                    : "Nessun giorno convalidato"}
+                </p>
+              )}
+            </section>
           )}
 
           {isLoading && (

@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useSearchParams, Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -26,6 +27,7 @@ function localIsoDate(d = new Date()): string {
 const COL_BAR = "#34d399"
 const COL_BAR_BAMBINI = "#a78bfa"
 const COL_PIE = ["#34d399", "#a78bfa", "#64748b"]
+const COL_CAT = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308", "#06b6d4", "#ef4444"]
 
 export function AttiviAnalisi() {
   const { role } = useAuth()
@@ -73,8 +75,31 @@ export function AttiviAnalisi() {
     const p = (n / tot) * 100
     return Math.abs(p - Math.round(p)) < 0.05 ? String(Math.round(p)) : p.toFixed(1)
   }
-  const adultiTotByCategoria = data ? data.adulti.byCategoria.reduce((s, r) => s + r.totale, 0) : 0
-  const bambiniTotByCategoria = data ? data.bambini.byCategoria.reduce((s, r) => s + r.totale, 0) : 0
+  const adultiTotByCategoria = data
+    ? data.adulti.byCategoria
+        .filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
+        .reduce((s, r) => s + r.totale, 0)
+    : 0
+  const bambiniTotByCategoria = data
+    ? data.bambini.byCategoria
+        .filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
+        .reduce((s, r) => s + r.totale, 0)
+    : 0
+  const categoriaRows = useMemo(() => {
+    if (!data) return []
+    const map = new Map<string, number>()
+    const add = (categoria: string, totale: number) => {
+      const key = (categoria ?? "").trim()
+      if (!key) return
+      if (key.toUpperCase().includes("DANZA")) return
+      map.set(key, (map.get(key) ?? 0) + (totale ?? 0))
+    }
+    data.adulti.byCategoria.forEach((r) => add(r.categoria, r.totale))
+    data.bambini.byCategoria.forEach((r) => add(r.categoria, r.totale))
+    return Array.from(map.entries())
+      .map(([categoria, count]) => ({ categoria, count }))
+      .sort((a, b) => b.count - a.count)
+  }, [data])
 
   return (
     <div className="p-6">
@@ -282,6 +307,43 @@ export function AttiviAnalisi() {
             </section>
           </div>
 
+          <section className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+            <h2 className="text-lg font-semibold text-zinc-100">Attivi per categoria</h2>
+            <p className="mt-1 text-xs text-zinc-500">Vista dedicata completa. Categorie DANZA escluse.</p>
+            <div className="mt-4 grid gap-6 lg:grid-cols-[2fr,1fr]">
+              <div className="h-[520px] min-w-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={categoriaRows}
+                      dataKey="count"
+                      nameKey="categoria"
+                      outerRadius={180}
+                      label={({ categoria, count }) => `${categoria}: ${count}`}
+                    >
+                      {categoriaRows.map((_, i) => (
+                        <Cell key={i} fill={COL_CAT[i % COL_CAT.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="max-h-[520px] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                <p className="mb-2 text-xs uppercase tracking-wider text-zinc-500">Legenda</p>
+                <div className="space-y-2">
+                  {categoriaRows.map((r, i) => (
+                    <div key={r.categoria} className="flex items-center gap-2 text-sm text-zinc-200">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: COL_CAT[i % COL_CAT.length] }} />
+                      <span className="flex-1 truncate">{r.categoria}</span>
+                      <span className="tabular-nums text-zinc-400">{r.count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
           <div className="mt-8 grid gap-8 lg:grid-cols-2">
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Adulti — categorie</h2>
@@ -295,7 +357,7 @@ export function AttiviAnalisi() {
                     </tr>
                   </thead>
                   <tbody className="text-zinc-200">
-                    {data.adulti.byCategoria.map((r) => (
+                    {data.adulti.byCategoria.filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA")).map((r) => (
                       <tr key={`ad-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
                         <td className="px-3 py-2">{r.categoria}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>
@@ -322,7 +384,7 @@ export function AttiviAnalisi() {
                     </tr>
                   </thead>
                   <tbody className="text-zinc-200">
-                    {data.bambini.byCategoria.map((r) => (
+                    {data.bambini.byCategoria.filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA")).map((r) => (
                       <tr key={`ba-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
                         <td className="px-3 py-2">{r.categoria}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>

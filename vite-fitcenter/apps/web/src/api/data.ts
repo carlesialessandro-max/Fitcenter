@@ -65,7 +65,7 @@ export const dataApi = {
       from: string
       to: string
       totalCount: number
-      rows: { categoria: string; durataMesi: number | null; count: number }[]
+      rows: { categoria: string; durataMesi: number | null; count: number; totalEuro?: number }[]
     }>(
       `/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`
     )

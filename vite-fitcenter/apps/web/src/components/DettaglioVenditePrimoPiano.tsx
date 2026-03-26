@@ -77,9 +77,7 @@ export function DettaglioVenditePrimoPiano({
   const { data, isLoading, error } = useQuery({
     queryKey: ["dettaglio-mese-primo-piano", anno, mese, giornoSelezionato, consulenteFilter],
     queryFn: () => dataApi.getDettaglioMese(anno, mese, giornoSelezionato, consulenteFilter),
-    staleTime: 30_000,
-    retry: false,
-    refetchOnWindowFocus: false,
+    staleTime: 0,
   })
 
   const giorniNelMese = new Date(anno, mese, 0).getDate()
@@ -106,7 +104,6 @@ export function DettaglioVenditePrimoPiano({
 
   const d = data as DettaglioMeseResponse | undefined
   if (!d) return null
-  const warning = (d as { _warning?: string })._warning
 
   const giornoLabel =
     giornoSafe === giornoOggi
@@ -115,11 +112,6 @@ export function DettaglioVenditePrimoPiano({
 
   return (
     <section className="space-y-6">
-      {warning && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-          {warning}
-        </div>
-      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-zinc-100">Le tue vendite</h2>

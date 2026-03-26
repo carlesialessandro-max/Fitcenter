@@ -23,7 +23,6 @@ import { DettaglioVenditePrimoPiano } from "@/components/DettaglioVenditePrimoPi
 import { KpiRow, TabellaConsulenti } from "@/components/DettaglioBloccoView"
 
 const COLORS_FONTE = ["#3b82f6", "#22c55e", "#f97316"]
-const COLORS_CAT = ["#8b5cf6", "#06b6d4", "#ec4899", "#eab308", "#f97316"]
 
 function localIsoDate(d = new Date()): string {
   const y = d.getFullYear()
@@ -203,6 +202,7 @@ export function Dashboard() {
         const d = new Date(annoOggi, meseOggi - 1, giornoOggi)
         return d.toLocaleDateString("it-IT", { day: "2-digit", month: "long", year: "numeric" })
       })()
+
 
   function stampaReportPdf() {
     if (!reportData) return
@@ -611,33 +611,6 @@ export function Dashboard() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-          <h2 className="text-sm font-medium text-zinc-400">Abbonamenti attivi per categoria</h2>
-          <div className="mt-2 h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={data.abbonamentiPerCategoria}
-                  dataKey="count"
-                  nameKey="categoria"
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  paddingAngle={2}
-                  label={({ categoria, count }) => `${categoria}: ${count}`}
-                >
-                  {data.abbonamentiPerCategoria.map((_, i) => (
-                    <Cell key={i} fill={COLORS_CAT[i % COLORS_CAT.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#27272a", border: "1px solid #3f3f46" }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">In scadenza (30 giorni)</h2>
           <p className="mt-3 text-2xl font-semibold text-amber-400">{data.abbonamentiInScadenza ?? 0}</p>
