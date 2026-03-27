@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
+import { chiamateApi, type Chiamata, type EsitoChiamata } from "@/api/chiamate"
 import { Button } from "@workspace/ui/components/button"
 
 export type RinnovoStato =
@@ -29,6 +30,13 @@ const RINNOVO_LABELS: Record<RinnovoStato, string> = {
   rinnovo_confermato: "Rinnovo confermato",
   non_rinnova: "Non rinnova",
   chiuso: "Chiuso",
+}
+
+const ESITO_LABELS: Record<EsitoChiamata, string> = {
+  risposto: "Risposto",
+  non_risposto: "Non risposto",
+  occupato: "Occupato",
+  altro: "Altro",
 }
 
 export function AbbonamentoDettaglio() {
@@ -72,6 +80,12 @@ export function AbbonamentoDettaglio() {
     queryKey: ["data", "crm-appuntamenti", crmParams?.nomeVenditore ?? "", crmParams?.cognome ?? "", crmParams?.nome ?? "", crmParams?.nomeOperatore ?? ""],
     queryFn: () => dataApi.getCrmAppuntamenti(crmParams!),
     enabled: !!crmParams && (!!crmParams.nomeVenditore || !!crmParams.cognome || !!crmParams.nome),
+  })
+
+  const { data: chiamate = [] } = useQuery({
+    queryKey: ["chiamate", "cliente", abbonamento?.clienteId ?? ""],
+    queryFn: () => chiamateApi.list({ tipo: "cliente", clienteId: abbonamento!.clienteId }),
+    enabled: !!abbonamento?.clienteId,
   })
 
   const updateMutation = useMutation({
@@ -232,6 +246,52 @@ export function AbbonamentoDettaglio() {
               </div>
             </div>
           )}
+
+          <div className="mt-6">
+            <h3 className="mb-2 text-sm font-medium text-zinc-400">Attività telefoniche</h3>
+            <div className="overflow-x-auto rounded-md border border-zinc-700">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-700 bg-zinc-800/50">
+                    <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Durata</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chiamate.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-3 text-zinc-500">
+                        Nessuna chiamata registrata.
+                      </td>
+                    </tr>
+                  ) : (
+                    chiamate.map((c: Chiamata) => (
+                      <tr key={c.id} className="border-b border-zinc-800 last:border-0">
+                        <td className="px-3 py-2 text-zinc-300">
+                          {c.dataOra
+                            ? new Date(c.dataOra).toLocaleString("it-IT", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-zinc-300">{c.esito ? ESITO_LABELS[c.esito] : "—"}</td>
+                        <td className="px-3 py-2 text-zinc-300">
+                          {typeof c.durataSecondi === "number" ? `${Math.round(c.durataSecondi / 60)}m` : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-zinc-300">{c.note || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
 

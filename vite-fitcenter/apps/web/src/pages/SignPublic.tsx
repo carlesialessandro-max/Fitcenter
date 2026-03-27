@@ -140,12 +140,13 @@ export function SignPublicPage() {
 
   const typedSignatureDataUrl = useMemo(() => {
     if (!fullNameTrimmed) return null
-    const out = getCtx()
-    if (!out) return null
-    const { canvas } = out
+    // In modalità "typed" la canvas può non essere montata: usiamo un canvas offscreen fisso.
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
+    const width = Math.round(760 * dpr)
+    const height = Math.round(220 * dpr)
     const off = document.createElement("canvas")
-    off.width = canvas.width
-    off.height = canvas.height
+    off.width = width
+    off.height = height
     const ctx = off.getContext("2d")
     if (!ctx) return null
     ctx.clearRect(0, 0, off.width, off.height)
