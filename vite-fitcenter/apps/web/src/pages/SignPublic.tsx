@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import { signaturesApi } from "@/api/signatures"
 import type { SignaturePublicInfo } from "@/types/signature"
@@ -19,8 +19,18 @@ export function SignPublicPage() {
   })
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+  const [signatureMode, setSignatureMode] = useState<"draw" | "typed">("draw")
   const [drawing, setDrawing] = useState(false)
+  const [hasInk, setHasInk] = useState(false)
+  const [fullName, setFullName] = useState("")
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const lastPtRef = useRef<{ x: number; y: number } | null>(null)
+  const lastMidRef = useRef<{ x: number; y: number } | null>(null)
+  const activePointerIdRef = useRef<number | null>(null)
+
+  const fullNameTrimmed = fullName.trim()
+  const canSign = !!signerToken && acceptedTerms && !!fullNameTrimmed && (signatureMode === "typed" || hasInk)
 
   useEffect(() => {
     let mounted = true
@@ -29,13 +39,14 @@ export function SignPublicPage() {
       .then((d) => {
         if (!mounted) return
         setInfo(d)
+        if (!fullNameTrimmed && d.customerName?.trim()) setFullName(d.customerName.trim())
       })
       .catch((e) => setErr((e as Error).message))
       .finally(() => setLoading(false))
     return () => {
       mounted = false
     }
-  }, [token])
+  }, [token, fullNameTrimmed])
 
   useEffect(() => {
     try {
@@ -46,40 +57,62 @@ export function SignPublicPage() {
     }
   }, [signerStorageKey, signerToken])
 
-  function canvasPos(e: React.MouseEvent<HTMLCanvasElement>) {
+  function getCtx() {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return null
+    return { canvas, ctx }
+  }
+
+  function pointerToCanvas(e: React.PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current
     if (!canvas) return null
     const rect = canvas.getBoundingClientRect()
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
   }
 
-  function onDown(e: React.MouseEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current
-    const p = canvasPos(e)
-    if (!canvas || !p) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    setDrawing(true)
+  function beginStroke(p: { x: number; y: number }) {
+    const out = getCtx()
+    if (!out) return
+    const { ctx } = out
+    ctx.lineCap = "round"
+    ctx.lineJoin = "round"
+    ctx.strokeStyle = "#111827"
+    ctx.lineWidth = 2.4
     ctx.beginPath()
     ctx.moveTo(p.x, p.y)
+    lastPtRef.current = p
+    lastMidRef.current = p
   }
 
-  function onMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!drawing) return
-    const canvas = canvasRef.current
-    const p = canvasPos(e)
-    if (!canvas || !p) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-    ctx.lineWidth = 2
-    ctx.lineCap = "round"
-    ctx.strokeStyle = "#111827"
-    ctx.lineTo(p.x, p.y)
+  function extendStroke(p: { x: number; y: number }) {
+    const out = getCtx()
+    if (!out) return
+    const { ctx } = out
+    const prev = lastPtRef.current
+    const lastMid = lastMidRef.current
+    if (!prev || !lastMid) {
+      lastPtRef.current = p
+      lastMidRef.current = p
+      return
+    }
+    const mid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 }
+    ctx.beginPath()
+    ctx.moveTo(lastMid.x, lastMid.y)
+    ctx.quadraticCurveTo(prev.x, prev.y, mid.x, mid.y)
     ctx.stroke()
+    lastPtRef.current = p
+    lastMidRef.current = mid
   }
 
-  function onUp() {
+  function endStroke() {
     setDrawing(false)
+    activePointerIdRef.current = null
+    lastPtRef.current = null
+    lastMidRef.current = null
   }
 
   function clearCanvas() {
@@ -89,11 +122,41 @@ export function SignPublicPage() {
     if (!ctx) return
     // Manteniamo il canvas trasparente: nel PDF verra' disegnato solo il tratto firma.
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+    setHasInk(false)
   }
 
   useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    // Hi-DPI: scala il canvas in base al DPR.
+    const rect = canvas.getBoundingClientRect()
+    const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1))
+    const targetW = Math.round(rect.width * dpr)
+    const targetH = Math.round(rect.height * dpr)
+    if (canvas.width !== targetW) canvas.width = targetW
+    if (canvas.height !== targetH) canvas.height = targetH
     clearCanvas()
   }, [])
+
+  const typedSignatureDataUrl = useMemo(() => {
+    if (!fullNameTrimmed) return null
+    const out = getCtx()
+    if (!out) return null
+    const { canvas } = out
+    const off = document.createElement("canvas")
+    off.width = canvas.width
+    off.height = canvas.height
+    const ctx = off.getContext("2d")
+    if (!ctx) return null
+    ctx.clearRect(0, 0, off.width, off.height)
+    const fontSize = Math.round(Math.min(off.height * 0.55, off.width / Math.max(8, fullNameTrimmed.length) * 1.8))
+    ctx.fillStyle = "#111827"
+    ctx.textBaseline = "middle"
+    ctx.textAlign = "center"
+    ctx.font = `${fontSize}px "Segoe Script","Brush Script MT",cursive`
+    ctx.fillText(fullNameTrimmed, off.width / 2, off.height / 2)
+    return off.toDataURL("image/png")
+  }, [fullNameTrimmed])
 
   async function onRequestOtp() {
     try {
@@ -122,11 +185,13 @@ export function SignPublicPage() {
   async function onSign() {
     try {
       if (!signerToken) return setErr("Verifica OTP prima di firmare")
-      const dataUrl = canvasRef.current?.toDataURL("image/png")
-      if (!dataUrl) return setErr("Firma mancante")
+      if (!acceptedTerms) return setErr("Devi accettare i termini")
+      if (!fullNameTrimmed) return setErr("Inserisci nome e cognome")
+      const dataUrl = signatureMode === "typed" ? typedSignatureDataUrl : canvasRef.current?.toDataURL("image/png")
+      if (!dataUrl || (signatureMode === "draw" && !hasInk)) return setErr("Firma mancante")
       setErr(null)
       setOk(null)
-      const out = await signaturesApi.sign(token, signerToken, dataUrl, info?.customerName || undefined, info?.nextStepId ?? undefined)
+      const out = await signaturesApi.sign(token, signerToken, dataUrl, fullNameTrimmed, info?.nextStepId ?? undefined)
       setOk(out.completed ? "Firma completata." : `Firma salvata. Prossimo step: ${out.nextStepLabel ?? "successivo"}.`)
       clearCanvas()
       if (out.completed) setSignerToken(null)
@@ -170,6 +235,28 @@ export function SignPublicPage() {
 
         {info.status === "pending" && (
           <>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-sm text-zinc-400">
+                Nome e cognome
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Es. Mario Rossi"
+                  className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+                />
+              </label>
+              <label className="flex items-center gap-2 self-end text-sm text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="h-4 w-4 accent-amber-500"
+                />
+                Accetto i termini
+              </label>
+            </div>
+
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <input
                 type="text"
@@ -189,18 +276,84 @@ export function SignPublicPage() {
             </div>
             {debugOtp && <p className="mt-2 text-xs text-zinc-500">Debug OTP (dev): {debugOtp}</p>}
 
-            <div className="mt-4 rounded border border-zinc-700 bg-white p-2">
-              <canvas
-                ref={canvasRef}
-                width={760}
-                height={220}
-                className="h-[220px] w-full cursor-crosshair rounded bg-white"
-                onMouseDown={onDown}
-                onMouseMove={onMove}
-                onMouseUp={onUp}
-                onMouseLeave={onUp}
-              />
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSignatureMode("draw")}
+                className={`rounded border px-3 py-2 text-sm ${
+                  signatureMode === "draw"
+                    ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                    : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                }`}
+              >
+                Disegna firma
+              </button>
+              <button
+                type="button"
+                onClick={() => setSignatureMode("typed")}
+                className={`rounded border px-3 py-2 text-sm ${
+                  signatureMode === "typed"
+                    ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                    : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                }`}
+              >
+                Firma digitata
+              </button>
+              {signatureMode === "draw" && (
+                <p className="text-xs text-zinc-500">Supporta mouse, dito e penna (Wacom).</p>
+              )}
             </div>
+
+            {signatureMode === "draw" ? (
+              <div className="mt-3 rounded border border-zinc-700 bg-white p-2">
+                <canvas
+                  ref={canvasRef}
+                  width={760}
+                  height={220}
+                  className="h-[220px] w-full cursor-crosshair rounded bg-white"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(e) => {
+                    e.preventDefault()
+                    if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+                    activePointerIdRef.current = e.pointerId
+                    e.currentTarget.setPointerCapture(e.pointerId)
+                    const p = pointerToCanvas(e)
+                    if (!p) return
+                    setDrawing(true)
+                    setHasInk(true)
+                    beginStroke(p)
+                  }}
+                  onPointerMove={(e) => {
+                    if (!drawing) return
+                    if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+                    e.preventDefault()
+                    const p = pointerToCanvas(e)
+                    if (!p) return
+                    extendStroke(p)
+                  }}
+                  onPointerUp={(e) => {
+                    if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+                    e.preventDefault()
+                    endStroke()
+                  }}
+                  onPointerCancel={(e) => {
+                    if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+                    e.preventDefault()
+                    endStroke()
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="mt-3 rounded border border-zinc-700 bg-white p-6 text-center">
+                <p className="text-sm text-zinc-500">Anteprima firma digitata</p>
+                <p
+                  className="mt-2 select-none text-4xl text-zinc-900"
+                  style={{ fontFamily: '"Segoe Script","Brush Script MT",cursive' }}
+                >
+                  {fullNameTrimmed || "—"}
+                </p>
+              </div>
+            )}
 
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={clearCanvas} className="rounded border border-zinc-700 px-3 py-2 text-sm">
@@ -209,6 +362,8 @@ export function SignPublicPage() {
               <button
                 type="button"
                 onClick={onSign}
+                disabled={!canSign}
+                title={!canSign ? "Compila nome/cognome, accetta termini e inserisci la firma" : undefined}
                 className="rounded bg-emerald-500 px-3 py-2 text-sm font-semibold text-zinc-900"
               >
                 Conferma firma {info.nextStepLabel ? `(${info.nextStepLabel})` : ""}
