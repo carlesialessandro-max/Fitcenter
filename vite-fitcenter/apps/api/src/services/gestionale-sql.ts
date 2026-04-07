@@ -575,18 +575,51 @@ async function queryVenditeSum(
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
         let req = p.request().input("data", sql.VarChar(10), dataStr)
         ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
+        const upperCatAbbonExpr = "UPPER(COALESCE([CategoriaAbbonamentoDescrizione], ''))"
+        const upperCatExpr = "UPPER(COALESCE([CategoriaDescrizione], ''))"
+        const whereTesseramento = `
+          AND COALESCE([IDCategoriaUtente], -1) <> 19
+          AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+          AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+          AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+          AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+          AND ${upperCatExpr} NOT LIKE '%VARIE%'
+        `
+        const whereCategorieEscluse = `
+          AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+          AND ${upperCatExpr} NOT LIKE '%DANZA%'
+          AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+          AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+          AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+          AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+          AND NOT (
+            (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+            AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+            AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+          )
+          AND NOT (
+            (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+            AND ${upperCatExpr} NOT LIKE '%ADULT%'
+            AND ${upperCatExpr} NOT LIKE '%MASTER%'
+          )
+        `
         const r = await req.query(
           `;WITH Temp_Stampe AS (
             SELECT DISTINCT [${colJoin}] AS ID
             FROM [${view}]
             WHERE CAST([${COL_DATA}] AS DATE) = CAST(@data AS DATE)
               AND ${idWhere}
+              ${whereTesseramento}
+              ${whereCategorieEscluse}
           ),
           UnaPerIscrizione AS (
             SELECT R.[${colJoin}], MAX(R.Totale) AS Totale
             FROM [${view}] R
             INNER JOIN Temp_Stampe T ON R.[${colJoin}] = T.ID
-            WHERE ${idWhere} AND CAST(R.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
+            WHERE ${idWhere}
+              AND CAST(R.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
+              ${whereTesseramento}
+              ${whereCategorieEscluse}
             GROUP BY R.[${colJoin}]
           )
           SELECT SUM(Totale) AS Totale FROM UnaPerIscrizione`
@@ -608,6 +641,34 @@ async function queryVenditeSum(
         .input("dataInizio", sql.VarChar(10), dataInizioStr)
         .input("dataFine", sql.VarChar(10), dataFineEffettiva)
       ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
+      const upperCatAbbonExpr = "UPPER(COALESCE([CategoriaAbbonamentoDescrizione], ''))"
+      const upperCatExpr = "UPPER(COALESCE([CategoriaDescrizione], ''))"
+      const whereTesseramento = `
+        AND COALESCE([IDCategoriaUtente], -1) <> 19
+        AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+        AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+        AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+        AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+        AND ${upperCatExpr} NOT LIKE '%VARIE%'
+      `
+      const whereCategorieEscluse = `
+        AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+        AND ${upperCatExpr} NOT LIKE '%DANZA%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+        AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+        AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+        AND NOT (
+          (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+          AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+          AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+        )
+        AND NOT (
+          (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+          AND ${upperCatExpr} NOT LIKE '%ADULT%'
+          AND ${upperCatExpr} NOT LIKE '%MASTER%'
+        )
+      `
       const r = await req.query(
         `;WITH Temp_Stampe AS (
           SELECT DISTINCT [${colJoin}] AS ID
@@ -615,6 +676,8 @@ async function queryVenditeSum(
           WHERE CAST([${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
             AND CAST([${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
             AND ${idWhere}
+            ${whereTesseramento}
+            ${whereCategorieEscluse}
         ),
         UnaPerIscrizione AS (
           SELECT R.[${colJoin}], MAX(R.Totale) AS Totale
@@ -623,6 +686,8 @@ async function queryVenditeSum(
           WHERE ${idWhere}
             AND CAST(R.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
             AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
+            ${whereTesseramento}
+            ${whereCategorieEscluse}
           GROUP BY R.[${colJoin}]
         )
         SELECT SUM(Totale) AS Totale FROM UnaPerIscrizione`
@@ -921,6 +986,17 @@ export async function getVenditeMovimentiCategoriaDurata(
       AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
       AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
       AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+      -- "Scuola nuoto" di solito è bambini: escludiamo salvo casi esplicitamente adulti/master.
+      AND NOT (
+        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+      )
+      AND NOT (
+        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+        AND ${upperCatExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatExpr} NOT LIKE '%MASTER%'
+      )
     `
 
     const consultantFilter =
@@ -956,6 +1032,11 @@ export async function getVenditeMovimentiCategoriaDurata(
            MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
          FROM Sold S
          INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = S.IDIscrizione
+         WHERE CAST(R.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+           AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+           ${consultantFilter}
+           ${whereTesseramento}
+           ${whereCategorieEscluse}
          GROUP BY S.IDIscrizione, ${categoriaExpr}, R.[${durataCol}]
        )
        SELECT
@@ -1096,6 +1177,17 @@ export async function getReportConteggiAndamento(
       AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
       AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
       AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+      -- "Scuola nuoto" di solito è bambini: escludiamo salvo casi esplicitamente adulti/master.
+      AND NOT (
+        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+      )
+      AND NOT (
+        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+        AND ${upperCatExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatExpr} NOT LIKE '%MASTER%'
+      )
     `
 
     const consultantFilter =
