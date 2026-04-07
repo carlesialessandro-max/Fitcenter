@@ -57,6 +57,8 @@ export function Dashboard() {
   const [budgetModal, setBudgetModal] = useState(false)
   const annoInCorso = new Date().getFullYear()
   const [asOf, setAsOf] = useState(() => localIsoDate())
+  const todayIso = localIsoDate()
+  const isAdminToday = role === "admin" ? asOf === todayIso : true
   const [budgetAnno, setBudgetAnno] = useState(annoInCorso)
   const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
   const [budgetPerConsulente, setBudgetPerConsulente] = useState<Record<string, number>>({})
@@ -73,7 +75,10 @@ export function Dashboard() {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 30_000,
+    // Per date storiche (asOf != oggi) i dati sono "fissi": evitiamo refetch inutili.
+    staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : 30_000,
+    gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    placeholderData: (prev) => prev,
   })
 
   const { data: budgetData } = useQuery({
@@ -123,25 +128,39 @@ export function Dashboard() {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 30_000,
+    staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : 30_000,
+    gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    placeholderData: (prev) => prev,
   })
 
-  const reportConsulenti = useMemo(() => {
+  const allConsulentiFromDettaglio = useMemo(() => {
     const list = dettaglioGiornoMese?.dettaglioMese?.perConsulente?.map((x) => x.consulente) ?? []
     return Array.from(new Set(list)).filter(Boolean).sort((a, b) => a.localeCompare(b))
   }, [dettaglioGiornoMese?.dettaglioMese?.perConsulente])
 
-  const reportFrom = role === "admin" ? monthStartIso(asOf) : monthStartIso(localIsoDate())
-  const reportTo = role === "admin" ? asOf : localIsoDate()
+  // Report: range e consulenti selezionabili (admin).
+  const [reportFrom, setReportFrom] = useState(() => monthStartIso(todayIso))
+  const [reportTo, setReportTo] = useState(() => todayIso)
+  const [reportConsulentiSel, setReportConsulentiSel] = useState<string[]>([])
+  const reportConsulentiEffective = reportConsulentiSel.length > 0 ? reportConsulentiSel : allConsulentiFromDettaglio
 
-  const { data: reportData, isFetching: isFetchingReport } = useQuery({
-    queryKey: ["report-consulenti", reportFrom, reportTo, reportConsulenti.join("|")],
-    queryFn: () => dataApi.getReportConsulenti({ from: reportFrom, to: reportTo, consulenti: reportConsulenti }),
-    enabled: role === "admin" && reportConsulenti.length > 0,
+  useEffect(() => {
+    if (role !== "admin") return
+    // Quando cambi asOf: default range mese corrente fino ad asOf (ma l’utente può sempre cambiare manualmente).
+    setReportFrom(monthStartIso(asOf))
+    setReportTo(asOf)
+    // Se non c'è una selezione esplicita, lasciamo che si aggiorni in base al dettaglio.
+    // Se invece l'utente ha già selezionato consulenti, non tocchiamo.
+  }, [role, asOf])
+
+  const reportQuery = useQuery({
+    queryKey: ["report-consulenti", reportFrom, reportTo, reportConsulentiEffective.join("|")],
+    queryFn: () => dataApi.getReportConsulenti({ from: reportFrom, to: reportTo, consulenti: reportConsulentiEffective }),
+    enabled: false, // fetch solo on-demand quando clicchi "Stampa Report"
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 30_000,
+    staleTime: 0,
   })
 
   const { data: dettaglioAnnoData } = useQuery({
@@ -204,7 +223,13 @@ export function Dashboard() {
       })()
 
 
-  function stampaReportPdf() {
+  async function stampaReportPdf() {
+    if (role !== "admin") return
+    if (!reportFrom || !reportTo) return
+    if (reportFrom > reportTo) return
+    if (reportConsulentiEffective.length === 0) return
+    const out = await reportQuery.refetch()
+    const reportData = out.data
     if (!reportData) return
     const { rows, totals } = reportData
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as JsPdfWithAutoTable
@@ -214,7 +239,7 @@ export function Dashboard() {
     doc.text("ANALISI PRODUZIONE - FitCenter", 10, 10)
     doc.setFontSize(10)
     doc.text(`Dal: ${fmtDateIt(reportFrom)}   Al: ${fmtDateIt(reportTo)}`, 10, 16)
-    doc.text(`Consulenti: ${reportConsulenti.join(", ") || "Nessuna"}`, 10, 21)
+    doc.text(`Consulenti: ${reportConsulentiEffective.join(", ") || "Nessuna"}`, 10, 21)
     let y = 28
 
     doc.setFontSize(11)
@@ -317,14 +342,46 @@ export function Dashboard() {
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
             </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              Dal
+              <input
+                type="date"
+                value={reportFrom}
+                onChange={(e) => setReportFrom(e.target.value)}
+                className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-400">
+              Al
+              <input
+                type="date"
+                value={reportTo}
+                onChange={(e) => setReportTo(e.target.value)}
+                className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+              />
+            </label>
             <button
               type="button"
               onClick={stampaReportPdf}
-              disabled={!reportData || isFetchingReport}
-              title={!reportData ? "Caricamento dati report in corso..." : undefined}
+              disabled={
+                reportQuery.isFetching ||
+                !reportFrom ||
+                !reportTo ||
+                reportFrom > reportTo ||
+                reportConsulentiEffective.length === 0
+              }
+              title={
+                reportFrom && reportTo && reportFrom > reportTo
+                  ? "Intervallo non valido: Dal è dopo Al"
+                  : reportConsulentiEffective.length === 0
+                    ? "Seleziona almeno una consulente"
+                    : reportQuery.isFetching
+                      ? "Preparazione report..."
+                      : "Genera PDF con range e consulenti selezionati"
+              }
               className="rounded-md border border-zinc-600 bg-zinc-900/40 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
             >
-              {isFetchingReport ? "Preparazione..." : "Stampa Report"}
+              {reportQuery.isFetching ? "Preparazione..." : "Stampa Report"}
             </button>
             <button
               type="button"
@@ -336,6 +393,49 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {role === "admin" && (
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="text-sm font-medium text-zinc-300">Consulenti per Stampa Report</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Se non selezioni nulla, verranno usate automaticamente quelle presenti nel dettaglio mese del giorno scelto.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {allConsulentiFromDettaglio.map((c) => {
+              const active = reportConsulentiSel.includes(c)
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() =>
+                    setReportConsulentiSel((prev) =>
+                      prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]
+                    )
+                  }
+                  className={`rounded border px-3 py-1.5 text-xs ${
+                    active
+                      ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                      : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                  }`}
+                  title={active ? "Inclusa nel report" : "Esclusa dal report"}
+                >
+                  {c}
+                </button>
+              )
+            })}
+            {allConsulentiFromDettaglio.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setReportConsulentiSel([])}
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800"
+                title="Reset selezione (auto)"
+              >
+                Reset (Auto)
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Consulente: in primo piano due card (Giorno / Mese) con vendite e % obiettivo */}
       {role === "operatore" && (
