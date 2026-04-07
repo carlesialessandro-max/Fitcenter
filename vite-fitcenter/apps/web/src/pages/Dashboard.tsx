@@ -336,7 +336,11 @@ export function Dashboard() {
               <input
                 type="date"
                 value={asOf}
-                onChange={(e) => setAsOf(e.target.value)}
+                max={todayIso}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setAsOf(v > todayIso ? todayIso : v)
+                }}
                 lang="it-IT"
                 title="Formato data: gg/mm/aaaa"
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
@@ -347,7 +351,11 @@ export function Dashboard() {
               <input
                 type="date"
                 value={reportFrom}
-                onChange={(e) => setReportFrom(e.target.value)}
+                max={todayIso}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setReportFrom(v > todayIso ? todayIso : v)
+                }}
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
             </label>
@@ -356,7 +364,11 @@ export function Dashboard() {
               <input
                 type="date"
                 value={reportTo}
-                onChange={(e) => setReportTo(e.target.value)}
+                max={todayIso}
+                onChange={(e) => {
+                  const v = e.target.value
+                  setReportTo(v > todayIso ? todayIso : v)
+                }}
                 className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
             </label>
