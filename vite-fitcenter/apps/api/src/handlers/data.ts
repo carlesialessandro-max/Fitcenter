@@ -334,28 +334,46 @@ export async function getDashboard(req: Request, res: Response) {
             let venditePerMeseSql: { mese: number; totale: number }[]
             if (consulente == null || consulente === "") {
               const labels = budgetPerConsulente.getConsulentiLabels()
-              const [abbonamentiRows, ...venditeResults] = await Promise.all([
-                gestionaleSql.queryAbbonamenti(undefined),
-                ...labels.map(async (label) => {
-                  const id = await resolveConsultantId(label)
-                  const [prog, perMese] = await Promise.all([
-                    gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
-                    gestionaleSql.getVenditePerMeseAnno(anno, id),
-                  ])
-                  return { prog, perMese }
-                }),
-              ])
-              venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
-              const mapMese = new Map<number, number>()
-              for (const r of venditeResults) {
-                for (const row of r.perMese) {
-                  mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
+              const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
+              const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
+              const abbonamentiRows = await gestionaleSql.queryAbbonamenti(undefined)
+              if (mergedIds) {
+                const [prog, perMeseRaw] = await Promise.all([
+                  gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds),
+                  gestionaleSql.getVenditePerMeseAnno(anno, mergedIds),
+                ])
+                venditeMeseSql = prog
+                const mapMese = new Map<number, number>()
+                for (const row of perMeseRaw) {
+                  mapMese.set(row.mese, row.totale)
                 }
+                venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                  mese: m,
+                  totale: mapMese.get(m) ?? 0,
+                }))
+              } else {
+                const venditeResults = await Promise.all(
+                  labels.map(async (label) => {
+                    const id = await resolveConsultantId(label)
+                    const [prog, perMese] = await Promise.all([
+                      gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
+                      gestionaleSql.getVenditePerMeseAnno(anno, id),
+                    ])
+                    return { prog, perMese }
+                  })
+                )
+                venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
+                const mapMese = new Map<number, number>()
+                for (const r of venditeResults) {
+                  for (const row of r.perMese) {
+                    mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
+                  }
+                }
+                venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+                  mese: m,
+                  totale: mapMese.get(m) ?? 0,
+                }))
               }
-              venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
-                mese: m,
-                totale: mapMese.get(m) ?? 0,
-              }))
               const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
               markRinnovato(abbonamenti)
               const leads = leadsStore.list({})
@@ -907,7 +925,13 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
     const monthIndex = now.getUTCMonth() // 0..11
     const from = new Date(Date.UTC(year, monthIndex, 1, 12, 0, 0)).toISOString().slice(0, 10)
 
-    const idUtente = await resolveConsultantId(consulente)
+    let idUtente = await resolveConsultantId(consulente)
+    // Se admin non seleziona consulente: default = somma delle 3 consulenti (come dashboard).
+    if (!idUtente) {
+      const labels = budgetPerConsulente.getConsulentiLabels()
+      const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
+      idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
+    }
     const { rows, totalCount } = await gestionaleSql.getVenditeMovimentiCategoriaDurata(from, to, idUtente ?? undefined)
 
     res.json({ from, to, totalCount, rows })

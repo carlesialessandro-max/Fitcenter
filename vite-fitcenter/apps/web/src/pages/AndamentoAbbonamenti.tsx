@@ -204,7 +204,7 @@ export function AndamentoAbbonamenti() {
               </button>
             </div>
             <div className="mb-4 text-sm text-zinc-500">
-              Totale movimenti (esclusi tesseramenti): <span className="text-zinc-200">{computed.totalDistinct}</span>
+              Totale movimenti (inclusi tesseramenti): <span className="text-zinc-200">{computed.totalDistinct}</span>
             </div>
             <div className="mb-6 grid gap-4 sm:grid-cols-2">
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">

@@ -312,6 +312,17 @@ function parseConsultantIds(idConsultant: string): number[] {
   return Number.isNaN(single) ? [] : [single]
 }
 
+/** Unisce gli ID delle consulenti (es. risoluzione per Carmen + Serena + Ombretta) in una stringa per una sola query SQL. */
+export function mergeConsultantIdStrings(parts: (string | undefined)[]): string | undefined {
+  const set = new Set<number>()
+  for (const s of parts) {
+    if (!s?.trim()) continue
+    for (const n of parseConsultantIds(s)) set.add(n)
+  }
+  if (set.size === 0) return undefined
+  return [...set].sort((a, b) => a - b).join(",")
+}
+
 /** Opzioni per query abbonamenti: inScadenza = 30 o 60 restituisce solo abbonamenti con DataFine tra oggi e oggi+N. */
 export type QueryAbbonamentiOptions = { inScadenza?: number }
 
@@ -544,8 +555,47 @@ const COL_IMPORTO = "Importo"
 const COL_ISCRIZIONE = "IDIscrizione"
 
 /**
- * Totale vendite: se è configurata la view venditore si usa la logica report (somma R.Totale dalla view
- * una volta per IDIscrizione per le iscrizioni con movimento nel periodo). Altrimenti SUM(M.Importo).
+ * Colonne su MovimentiVenduto da usare per «chi ha venduto» (il gestionale può usare cassa/operatore).
+ * `GESTIONALE_MOVIMENTI_COL_VENDITORE` = primaria (default IDVenditore);
+ * `GESTIONALE_MOVIMENTI_COL_VENDITORE_EXTRA` = lista separata da virgola, es. IDOperatore
+ */
+function colsAttribuzioneVenditaSuMovimento(): string[] {
+  const raw = process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE?.trim()
+  const prim =
+    raw && /^[A-Za-z_][A-Za-z0-9_]*$/.test(raw) ? raw : "IDVenditore"
+  const extras = (process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE_EXTRA ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s))
+  return [...new Set([prim, ...extras])]
+}
+
+/**
+ * Il gestionale include movimenti attribuiti al consulente anche via colonna su M, non solo tramite view
+ * (INNER JOIN view esclude righe senza iscrizione in view o con join incompleto).
+ */
+function sqlMovimentoAttribuitoConsulente(
+  view: string,
+  colJoin: string,
+  idWhereR: string,
+  idParams: string
+): string {
+  const orM = colsAttribuzioneVenditaSuMovimento()
+    .map((col) => `M.[${col}] IN (${idParams})`)
+    .join(" OR ")
+  return `(
+    EXISTS (
+      SELECT 1 FROM [${view}] R
+      WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
+    )
+    OR (${orM})
+  )`
+}
+
+/**
+ * Totale vendite: con view venditore si usa **SUM(M.Importo)** su MovimentiVenduto join view (stesso criterio
+ * del gestionale: una riga = un movimento). La vecchia logica MAX(R.Totale) per IDIscrizione sottostimava
+ * quando ci sono più movimenti sulla stessa iscrizione (merchandising, ecc.). Senza view: SUM(M.Importo).
  */
 /** progressivoGiorno: se impostato (e giorno non usato), somma vendite da inizio mese fino a quel giorno incluso. */
 async function queryVenditeSum(
@@ -559,8 +609,8 @@ async function queryVenditeSum(
   const tbl = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditoreAbbonamento()
 
-  // Stessa logica del report: CTE Temp_Stampe (IDIscrizione per data+venditore) poi SUM(R.Totale).
-  // Supporta idConsultant multipli (es. "312,352,73" per Ombretta) con IN (@id0, @id1, @id2).
+  // Dashboard: consuntivo "entrate" come somma Importo dei movimenti (una riga = un movimento),
+  // filtrando per consulente (ID) via view o colonne di attribuzione su MovimentiVenduto.
   if (viewCfg && idConsultant) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
@@ -569,60 +619,21 @@ async function queryVenditeSum(
       const colId = viewCfg.colId
       const colJoin = viewCfg.colJoin
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-      const idWhere = ids.length === 1 ? `[${colId}] = @id0` : `[${colId}] IN (${idParams})`
+      const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
+      const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
 
       if (giorno != null) {
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
         let req = p.request().input("data", sql.VarChar(10), dataStr)
-        ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
-        const upperCatAbbonExpr = "UPPER(COALESCE([CategoriaAbbonamentoDescrizione], ''))"
-        const upperCatExpr = "UPPER(COALESCE([CategoriaDescrizione], ''))"
-        const whereTesseramento = `
-          AND COALESCE([IDCategoriaUtente], -1) <> 19
-          AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
-          AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
-          AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
-          AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
-          AND ${upperCatExpr} NOT LIKE '%VARIE%'
-        `
-        const whereCategorieEscluse = `
-          AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
-          AND ${upperCatExpr} NOT LIKE '%DANZA%'
-          AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
-          AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
-          AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
-          AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
-          AND NOT (
-            (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
-            AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
-            AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
-          )
-          AND NOT (
-            (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
-            AND ${upperCatExpr} NOT LIKE '%ADULT%'
-            AND ${upperCatExpr} NOT LIKE '%MASTER%'
-          )
-        `
+        ids.forEach((id, i) => {
+          req = req.input(`id${i}`, sql.Int, id)
+        })
         const r = await req.query(
-          `;WITH Temp_Stampe AS (
-            SELECT DISTINCT [${colJoin}] AS ID
-            FROM [${view}]
-            WHERE CAST([${COL_DATA}] AS DATE) = CAST(@data AS DATE)
-              AND ${idWhere}
-              ${whereTesseramento}
-              ${whereCategorieEscluse}
-          ),
-          UnaPerIscrizione AS (
-            SELECT R.[${colJoin}], MAX(R.Totale) AS Totale
-            FROM [${view}] R
-            INNER JOIN Temp_Stampe T ON R.[${colJoin}] = T.ID
-            WHERE ${idWhere}
-              AND CAST(R.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
-              ${whereTesseramento}
-              ${whereCategorieEscluse}
-            GROUP BY R.[${colJoin}]
-          )
-          SELECT SUM(Totale) AS Totale FROM UnaPerIscrizione`
+          `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+           FROM [${tbl}] M
+           WHERE M.[${COL_IMPORTO}] > 0
+             AND CAST(M.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
+             AND ${matchCons}`
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         return Number(row?.Totale ?? row?.totale) || 0
@@ -640,57 +651,16 @@ async function queryVenditeSum(
         .request()
         .input("dataInizio", sql.VarChar(10), dataInizioStr)
         .input("dataFine", sql.VarChar(10), dataFineEffettiva)
-      ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
-      const upperCatAbbonExpr = "UPPER(COALESCE([CategoriaAbbonamentoDescrizione], ''))"
-      const upperCatExpr = "UPPER(COALESCE([CategoriaDescrizione], ''))"
-      const whereTesseramento = `
-        AND COALESCE([IDCategoriaUtente], -1) <> 19
-        AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
-        AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
-        AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
-        AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
-        AND ${upperCatExpr} NOT LIKE '%VARIE%'
-      `
-      const whereCategorieEscluse = `
-        AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
-        AND ${upperCatExpr} NOT LIKE '%DANZA%'
-        AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
-        AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
-        AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
-        AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
-        AND NOT (
-          (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
-          AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
-          AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
-        )
-        AND NOT (
-          (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
-          AND ${upperCatExpr} NOT LIKE '%ADULT%'
-          AND ${upperCatExpr} NOT LIKE '%MASTER%'
-        )
-      `
+      ids.forEach((id, i) => {
+        req = req.input(`id${i}`, sql.Int, id)
+      })
       const r = await req.query(
-        `;WITH Temp_Stampe AS (
-          SELECT DISTINCT [${colJoin}] AS ID
-          FROM [${view}]
-          WHERE CAST([${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
-            AND CAST([${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-            AND ${idWhere}
-            ${whereTesseramento}
-            ${whereCategorieEscluse}
-        ),
-        UnaPerIscrizione AS (
-          SELECT R.[${colJoin}], MAX(R.Totale) AS Totale
-          FROM [${view}] R
-          INNER JOIN Temp_Stampe T ON R.[${colJoin}] = T.ID
-          WHERE ${idWhere}
-            AND CAST(R.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
-            AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-            ${whereTesseramento}
-            ${whereCategorieEscluse}
-          GROUP BY R.[${colJoin}]
-        )
-        SELECT SUM(Totale) AS Totale FROM UnaPerIscrizione`
+        `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+         FROM [${tbl}] M
+         WHERE M.[${COL_IMPORTO}] > 0
+           AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
+           AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
+           AND ${matchCons}`
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
@@ -801,17 +771,17 @@ export async function getVenditePerMeseAnno(
     if (ids.length === 0) return []
     try {
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-      const idWhere = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
+      const idWhereR = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
+      const matchCons = sqlMovimentoAttribuitoConsulente(viewCfg.view, viewCfg.colJoin, idWhereR, idParams)
       let req = p.request().input("anno", sql.Int, anno)
-      ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
+      ids.forEach((id, i) => {
+        req = req.input(`id${i}`, sql.Int, id)
+      })
       const r = await req.query(
-        `WITH UnaPerIscrizioneMese AS (
-          SELECT MONTH(R.[${COL_DATA}]) AS Mese, R.[${viewCfg.colJoin}], MAX(R.Totale) AS Totale
-          FROM [${viewCfg.view}] R
-          WHERE ${idWhere} AND YEAR(R.[${COL_DATA}]) = @anno
-          GROUP BY MONTH(R.[${COL_DATA}]), R.[${viewCfg.colJoin}]
-        )
-        SELECT Mese, SUM(Totale) AS Totale FROM UnaPerIscrizioneMese GROUP BY Mese ORDER BY Mese`
+        `SELECT MONTH(M.[${COL_DATA}]) AS Mese, SUM(M.[${COL_IMPORTO}]) AS Totale
+         FROM [${tbl}] M
+         WHERE M.[${COL_IMPORTO}] > 0 AND YEAR(M.[${COL_DATA}]) = @anno AND ${matchCons}
+         GROUP BY MONTH(M.[${COL_DATA}]) ORDER BY Mese`
       )
       return mapRows((r.recordset ?? []) as Record<string, unknown>[])
     } catch {
@@ -866,6 +836,7 @@ export async function getVenditeTotaliPerAnno(
 ): Promise<{ anno: number; totale: number }[]> {
   const p = await getPool()
   if (!p) return []
+  const tbl = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditoreAbbonamento()
   const mapRows = (recordset: Record<string, unknown>[]) =>
     recordset
@@ -878,22 +849,30 @@ export async function getVenditeTotaliPerAnno(
 
   if (viewCfg) {
     const ids = idConsultant ? parseConsultantIds(idConsultant) : []
-    const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-    const idWhere = ids.length === 0 ? "" : ids.length === 1 ? ` AND R.[${viewCfg.colId}] = @id0` : ` AND R.[${viewCfg.colId}] IN (${idParams})`
     try {
       let req = p.request()
-      ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
-      const r = await req.query(
-        `WITH UnaPerIscrizioneAnno AS (
-          SELECT YEAR(R.[${COL_DATA}]) AS Anno, R.[${viewCfg.colJoin}] AS ID, MAX(R.Totale) AS Totale
-          FROM [${viewCfg.view}] R
-          WHERE R.Totale > 0${idWhere}
-          GROUP BY YEAR(R.[${COL_DATA}]), R.[${viewCfg.colJoin}]
+      ids.forEach((id, i) => {
+        req = req.input(`id${i}`, sql.Int, id)
+      })
+      if (ids.length === 0) {
+        const r = await req.query(
+          `SELECT YEAR(M.[${COL_DATA}]) AS Anno, SUM(M.[${COL_IMPORTO}]) AS Totale
+           FROM [${tbl}] M
+           WHERE M.[${COL_IMPORTO}] > 0
+           GROUP BY YEAR(M.[${COL_DATA}])
+           ORDER BY Anno`
         )
-        SELECT Anno, SUM(Totale) AS Totale
-        FROM UnaPerIscrizioneAnno
-        GROUP BY Anno
-        ORDER BY Anno`
+        return mapRows((r.recordset ?? []) as Record<string, unknown>[])
+      }
+      const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+      const idWhereR = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
+      const matchCons = sqlMovimentoAttribuitoConsulente(viewCfg.view, viewCfg.colJoin, idWhereR, idParams)
+      const r = await req.query(
+        `SELECT YEAR(M.[${COL_DATA}]) AS Anno, SUM(M.[${COL_IMPORTO}]) AS Totale
+         FROM [${tbl}] M
+         WHERE M.[${COL_IMPORTO}] > 0 AND ${matchCons}
+         GROUP BY YEAR(M.[${COL_DATA}])
+         ORDER BY Anno`
       )
       return mapRows((r.recordset ?? []) as Record<string, unknown>[])
     } catch {
@@ -901,7 +880,6 @@ export async function getVenditeTotaliPerAnno(
     }
   }
 
-  const tbl = defaultTables.movimentiVenduto
   const envCol = process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE?.trim()
   const colsToTry = idConsultant ? (envCol ? [envCol, "IDVenditore"] : ["IDVenditore"]) : [null]
   for (const consultantCol of colsToTry) {
@@ -931,7 +909,8 @@ export async function getVenditeTotaliPerAnno(
 }
 
 /** Distribuzione vendite (movimenti Importo>0) per categoria e durata.
- *  Conta abbonamenti distinti (IDIscrizione) venduti nel periodo [from,to]. */
+ *  Replica il gestionale: **conteggio movimenti** e **somma importo** nel periodo [from,to],
+ *  includendo anche i tesseramenti (che generano importo). */
 export async function getVenditeMovimentiCategoriaDurata(
   from: string,
   to: string,
@@ -959,100 +938,44 @@ export async function getVenditeMovimentiCategoriaDurata(
         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
     `
 
-    // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + IDDurata (vedi ispezione SELECT TOP 1).
-    // In SELECT TOP 1 della view troviamo anche la colonna `Durata` (tipicamente mesi).
+    // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + Durata (tipicamente mesi).
     const durataCol = "Durata"
-    const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
-    const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-    const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+    const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+    const idWhereR = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
+    const categoriaExpr = `COALESCE(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione]), N'altro')`
+    const durataExpr = `COALESCE(R.[${durataCol}], -1)`
 
-    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
-    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
-
-    // Escludi "tesseramenti" (e varianti ASI+ISCRIZIONE, VARIE) come in UI.
-    const whereTesseramento = `
-      AND COALESCE(R.[IDCategoriaUtente], -1) <> 19
-      AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
-      AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
-      AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
-      AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
-      AND ${upperCatExpr} NOT LIKE '%VARIE%'
-    `
-    // Allineamento con il resto delle viste vendite: escludi categorie non commerciali.
-    const whereCategorieEscluse = `
-      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
-      AND ${upperCatExpr} NOT LIKE '%DANZA%'
-      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
-      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
-      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
-      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
-      -- "Scuola nuoto" di solito è bambini: escludiamo salvo casi esplicitamente adulti/master.
-      AND NOT (
-        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
-        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
-        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
-      )
-      AND NOT (
-        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
-        AND ${upperCatExpr} NOT LIKE '%ADULT%'
-        AND ${upperCatExpr} NOT LIKE '%MASTER%'
-      )
-    `
-
-    const consultantFilter =
-      idConsultant && ids.length > 0
-        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+    const filterCons =
+      ids.length > 0
+        ? ` AND ${sqlMovimentoAttribuitoConsulente(viewCfg.view, viewCfg.colJoin, idWhereR, idParams)}`
         : ""
 
     const rTotal = await req.query(
-      `SELECT COUNT(DISTINCT M.[${COL_ISCRIZIONE}]) AS totalCount
+      `SELECT COUNT(*) AS totalCount
        FROM [${tblM}] M
-       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
        ${whereBase}
-       ${consultantFilter}
-       ${whereTesseramento}
-       ${whereCategorieEscluse};`
+       ${filterCons};`
     )
 
     const r = await req.query(
-      `;WITH Sold AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS IDIscrizione
-         FROM [${tblM}] M
-         INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
-         ${whereBase}
-         ${consultantFilter}
-         ${whereTesseramento}
-         ${whereCategorieEscluse}
-       ),
-       PerIscrizione AS (
-         SELECT
-           S.IDIscrizione,
-           ${categoriaExpr} AS Categoria,
-           R.[${durataCol}] AS DurataMesi,
-           MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
-         FROM Sold S
-         INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = S.IDIscrizione
-         WHERE CAST(R.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-           AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
-           ${consultantFilter}
-           ${whereTesseramento}
-           ${whereCategorieEscluse}
-         GROUP BY S.IDIscrizione, ${categoriaExpr}, R.[${durataCol}]
-       )
-       SELECT
-         Categoria,
-         DurataMesi,
-         COUNT(*) AS count,
-         SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
-       FROM PerIscrizione
-       GROUP BY Categoria, DurataMesi
-       ORDER BY count DESC;`
+      `SELECT
+          ${categoriaExpr} AS Categoria,
+          ${durataExpr} AS DurataMesi,
+          COUNT(*) AS count,
+          SUM(COALESCE(M.[${COL_IMPORTO}], 0)) AS totalEuro
+        FROM [${tblM}] M
+        LEFT JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+        ${whereBase}
+        ${filterCons}
+        GROUP BY ${categoriaExpr}, ${durataExpr}
+        ORDER BY count DESC;`
     )
 
     const totalCount = Number(rTotal.recordset?.[0]?.totalCount ?? 0) || 0
     const rows = (r.recordset ?? []).map((row) => {
       const durataRaw = row.DurataMesi == null ? null : Number(row.DurataMesi)
-      const durataMesi = durataRaw == null || Number.isNaN(durataRaw) ? null : durataRaw
+      const durataMesi =
+        durataRaw == null || Number.isNaN(durataRaw) || durataRaw === -1 ? null : durataRaw
       return {
         categoria: String(row.Categoria ?? "").toLowerCase().trim() || "palestra",
         durataMesi,
@@ -1072,8 +995,7 @@ export async function getVenditeMovimentiCategoriaDurata(
 const ZERO_VENDITE_RANGE_VIEW = { ok: false as const, totaleEuro: 0 }
 
 /**
- * Produzione € su intervallo [from,to]: **stessa CTE di `queryVenditeSum`** (data sulla view, MAX(Totale) per iscrizione).
- * Allineata al **dashboard** dettaglio vendite, non al tab Andamento (che usa Movimenti + filtri categoria).
+ * Produzione € su intervallo [from,to]: **SUM(M.Importo)** movimenti join view venditore (stessa base di `queryVenditeSum`).
  */
 export async function getVenditeTotaleRangeView(
   from: string,
@@ -1091,32 +1013,20 @@ export async function getVenditeTotaleRangeView(
     const colId = viewCfg.colId
     const colJoin = viewCfg.colJoin
     const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-    const idWhere = ids.length === 1 ? `[${colId}] = @id0` : `[${colId}] IN (${idParams})`
+    const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
+    const tblM = defaultTables.movimentiVenduto
+    const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
     let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     ids.forEach((id, i) => {
       req = req.input(`id${i}`, sql.Int, id)
     })
-    const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-    const colTotale =
-      rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
     const r = await req.query(
-      `;WITH Temp_Stampe AS (
-        SELECT DISTINCT [${colJoin}] AS ID
-        FROM [${view}]
-        WHERE CAST([${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-          AND CAST([${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
-          AND ${idWhere}
-      ),
-      UnaPerIscrizione AS (
-        SELECT R.[${colJoin}], MAX(R.[${colTotale}]) AS Totale
-        FROM [${view}] R
-        INNER JOIN Temp_Stampe T ON R.[${colJoin}] = T.ID
-        WHERE ${idWhere}
-          AND CAST(R.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-          AND CAST(R.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
-        GROUP BY R.[${colJoin}]
-      )
-      SELECT COALESCE(SUM(Totale), 0) AS Totale FROM UnaPerIscrizione`
+      `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+       FROM [${tblM}] M
+       WHERE M.[${COL_IMPORTO}] > 0
+         AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+         AND ${matchCons}`
     )
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
     return { ok: true, totaleEuro: Number(row?.Totale ?? row?.totale) || 0 }
