@@ -578,7 +578,6 @@ function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string): string {
 }
 
 function sqlTotaleReportPerIscrizione(args: {
-  tblMov: string
   view: string
   colJoin: string
   idWhereR: string
@@ -589,11 +588,11 @@ function sqlTotaleReportPerIscrizione(args: {
   // Replica report: Temp_Stampe = IDIscrizione con movimento nel periodo,
   // poi somma Totale dalla view una volta per iscrizione (MAX per sicurezza).
   return `;WITH Temp_Stampe AS (
-    SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-    FROM [${args.tblMov}] M
-    WHERE M.[${COL_IMPORTO}] > 0
-      AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(${args.fromParam} AS DATE)
-      AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(${args.toParam} AS DATE)
+    SELECT DISTINCT R0.[${args.colJoin}] AS ID
+    FROM [${args.view}] R0
+    WHERE ${args.idWhereR}
+      AND CAST(R0.[${COL_DATA}] AS DATE) >= CAST(${args.fromParam} AS DATE)
+      AND CAST(R0.[${COL_DATA}] AS DATE) <= CAST(${args.toParam} AS DATE)
   ),
   UnaPerIscrizione AS (
     SELECT T.ID, MAX(TRY_CONVERT(float, R.[${args.colTotale}])) AS Totale
@@ -665,7 +664,6 @@ async function queryVenditeSum(
         req = req.input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
         const r = await req.query(
           sqlTotaleReportPerIscrizione({
-            tblMov: tbl,
             view,
             colJoin,
             idWhereR,
@@ -695,7 +693,6 @@ async function queryVenditeSum(
       })
       const r = await req.query(
         sqlTotaleReportPerIscrizione({
-          tblMov: tbl,
           view,
           colJoin,
           idWhereR,
@@ -1023,26 +1020,28 @@ export async function getVenditeMovimentiCategoriaDurata(
            MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
            MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
            MAX(R0.[${durataCol}]) AS Durata,
+           MAX(R0.[${colTotale}]) AS Totale,
            MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
          FROM [${viewCfg.view}] R0
          GROUP BY R0.[${viewCfg.colJoin}]
        ),
        Temp_Stampe AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-         FROM [${tblM}] M
-         ${whereBase}
+         SELECT DISTINCT R1.[${viewCfg.colJoin}] AS ID
+         FROM [${viewCfg.view}] R1
+         WHERE CAST(R1.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+           AND CAST(R1.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+           ${consultantFilter}
+           ${whereCategorieEscluse}
        ),
        PerIscrizione AS (
          SELECT
            T.ID,
            ${categoriaExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
-           MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
+           MAX(TRY_CONVERT(float, R.[Totale])) AS TotaleEuro
          FROM Temp_Stampe T
          INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
          WHERE 1=1
-           ${consultantFilter}
-           ${whereCategorieEscluse}
          GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
        )
        SELECT COUNT(*) AS totalCount FROM PerIscrizione;`
@@ -1055,26 +1054,28 @@ export async function getVenditeMovimentiCategoriaDurata(
            MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
            MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
            MAX(R0.[${durataCol}]) AS Durata,
+           MAX(R0.[${colTotale}]) AS Totale,
            MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
          FROM [${viewCfg.view}] R0
          GROUP BY R0.[${viewCfg.colJoin}]
        ),
        Temp_Stampe AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-         FROM [${tblM}] M
-         ${whereBase}
+         SELECT DISTINCT R1.[${viewCfg.colJoin}] AS ID
+         FROM [${viewCfg.view}] R1
+         WHERE CAST(R1.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+           AND CAST(R1.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+           ${consultantFilter}
+           ${whereCategorieEscluse}
        ),
        PerIscrizione AS (
          SELECT
            T.ID,
            ${categoriaExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
-           MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
+           MAX(TRY_CONVERT(float, R.[Totale])) AS TotaleEuro
          FROM Temp_Stampe T
          INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
          WHERE 1=1
-           ${consultantFilter}
-           ${whereCategorieEscluse}
          GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
        )
        SELECT
