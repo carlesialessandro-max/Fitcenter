@@ -102,6 +102,14 @@ export const dataApi = {
     q.set("nomeOperatore", params.nomeOperatore)
     return api.get<CrmAppuntamento[]>(`/data/crm-appuntamenti?${q}`)
   },
+  getCrmAppuntamentiOperatore: (params?: { consulente?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams()
+    if (params?.consulente) q.set("consulente", params.consulente)
+    if (params?.from) q.set("from", params.from)
+    if (params?.to) q.set("to", params.to)
+    const query = q.toString()
+    return api.get<{ from: string; to: string; rows: CrmAppuntamento[] }>(`/data/crm-appuntamenti-operatore${query ? `?${query}` : ""}`)
+  },
   getConvalidazioni: (anno: number, mese: number, consulenteNome: string) =>
     api.get<{ anno: number; mese: number; consulenteNome: string; convalidati: number[] }>(
       `/data/convalidazioni?anno=${anno}&mese=${mese}&consulente=${encodeURIComponent(consulenteNome)}`

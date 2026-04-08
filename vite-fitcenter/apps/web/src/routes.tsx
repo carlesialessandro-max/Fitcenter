@@ -10,6 +10,7 @@ import { NewLead } from "@/features/crm/NewLead"
 import { Abbonamenti } from "@/pages/Abbonamenti"
 import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
 import { AndamentoAbbonamenti } from "@/pages/AndamentoAbbonamenti"
+import { Telefonate } from "@/pages/Telefonate"
 import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
@@ -59,6 +60,7 @@ export const router = createBrowserRouter([
       { path: "crm/lead/:id", element: <LeadDetail /> },
       { path: "abbonamenti", element: <Abbonamenti /> },
       { path: "andamento-vendite", element: <AndamentoAbbonamenti /> },
+      { path: "telefonate", element: <Telefonate /> },
       { path: "convalide-consulenti", element: <ConvalideConsulenti /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },

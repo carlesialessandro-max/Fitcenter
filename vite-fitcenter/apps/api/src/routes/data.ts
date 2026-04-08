@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const dataRouter = Router()
@@ -24,6 +24,7 @@ dataRouter.post("/leads/:id/assign-me", assignLeadToMe)
 dataRouter.get("/abbonamenti-follow-up", getAbbonamentiFollowUp)
 dataRouter.patch("/abbonamenti-follow-up/:abbonamentoId", updateAbbonamentiFollowUp)
 dataRouter.get("/crm-appuntamenti", getCrmAppuntamenti)
+dataRouter.get("/crm-appuntamenti-operatore", getCrmAppuntamentiOperatore)
 dataRouter.get("/convalidazioni", getConvalidazioni)
 dataRouter.post("/convalidazioni", setConvalidazione)
 dataRouter.get("/ore-lavorate", getOreLavorate)

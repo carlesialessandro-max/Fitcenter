@@ -6,6 +6,7 @@ const navOperatore = [
   { to: "/", label: "Dashboard" },
   { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
+  { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
@@ -16,6 +17,7 @@ const navAdmin = [
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },
   { to: "/crm", label: "CRM Vendita" },
+  { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const

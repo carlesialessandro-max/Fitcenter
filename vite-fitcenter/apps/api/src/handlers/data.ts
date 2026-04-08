@@ -1686,6 +1686,27 @@ export async function getCrmAppuntamenti(req: Request, res: Response) {
   }
 }
 
+/** Appuntamenti CRM per consulente (operatore): range date, default oggi→+14. */
+export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
+  try {
+    if (!gestionaleSql.isGestionaleConfigured()) return res.json([])
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const nomeOperatore = String(operatoreNome ?? (req.query.consulente as string) ?? "").trim()
+    if (!nomeOperatore) return res.status(400).json({ message: "consulente/nomeOperatore obbligatorio" })
+    const from = String(req.query.from ?? "").trim()
+    const to = String(req.query.to ?? "").trim()
+    const today = new Date()
+    const defFrom = today.toISOString().slice(0, 10)
+    const defTo = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : defFrom
+    const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : defTo
+    const rows = await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
+    res.json({ from: fromIso, to: toIso, rows })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 /** Convalida giorno lavorativo (consulente). */
 export async function getConvalidazioni(req: Request, res: Response) {
   try {

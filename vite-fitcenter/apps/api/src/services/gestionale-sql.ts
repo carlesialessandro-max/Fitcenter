@@ -550,6 +550,41 @@ export async function queryCrmAppuntamenti(params: {
   }
 }
 
+/** Appuntamenti CRM per operatore (range date). */
+export async function queryCrmAppuntamentiOperatore(params: {
+  nomeOperatore: string
+  from: string // YYYY-MM-DD
+  to: string // YYYY-MM-DD
+}): Promise<CrmAppuntamentoRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getCrmUtentiViewName()
+  try {
+    const req = p
+      .request()
+      .input("nomeOperatore", sql.NVarChar, params.nomeOperatore?.trim() ?? "")
+      .input("from", sql.VarChar(10), params.from)
+      .input("to", sql.VarChar(10), params.to)
+    const r = await req.query(
+      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione
+       FROM ${view}
+       WHERE DestinatarioNomeOperatore = @nomeOperatore
+         AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
+         AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
+       ORDER BY DataAppuntamento ASC`
+    )
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      dataAppuntamento: row.DataAppuntamento != null ? String(row.DataAppuntamento) : "",
+      tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
+      esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
+      crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+    }))
+  } catch {
+    return []
+  }
+}
+
 const COL_DATA = "DataOperazione"
 const COL_IMPORTO = "Importo"
 const COL_ISCRIZIONE = "IDIscrizione"
