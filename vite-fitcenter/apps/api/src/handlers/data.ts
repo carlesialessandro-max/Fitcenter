@@ -257,10 +257,14 @@ function isAbbonamentoBambini(a: Abbonamento): boolean {
 async function resolveConsultantId(consulente: string | undefined): Promise<string | undefined> {
   if (!consulente?.trim()) return undefined
   const nome = consulente.trim()
+  const key = nome.toLowerCase()
+  // Preferisci mapping deterministico (env/fallback) per evitare fuzzy-match sulla view
+  // che può includere ID di altri venditori e gonfiare i totali.
+  const fixed = CONSULENTE_NOME_TO_ID[key]
+  if (fixed) return fixed
   const id = await gestionaleSql.getConsultantIdUtente(nome)
   if (id) return id
-  const key = nome.toLowerCase()
-  return CONSULENTE_NOME_TO_ID[key] ?? undefined
+  return undefined
 }
 
 function cacheScope(req: Request): string {
