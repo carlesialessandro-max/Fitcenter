@@ -591,12 +591,8 @@ function whereEsclusioniVenditeView(alias = "R"): string {
   const upperCatAbbonExpr = `UPPER(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ''))`
   const upperCatExpr = `UPPER(COALESCE(${alias}.[CategoriaDescrizione], ''))`
   return `
-    AND COALESCE(${alias}.[IDCategoriaUtente], -1) <> 19
-    AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
-    AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
-    AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
-    AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
-    AND ${upperCatExpr} NOT LIKE '%VARIE%'
+    -- Nota: alcune view (es. RVW_AbbonamentiUtenti) non espongono IDCategoriaUtente.
+    -- Inoltre il report gestionale include VARIE/TESSERAMENTI/ASI+ISCRIZIONE: NON li escludiamo qui.
     AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
     AND ${upperCatExpr} NOT LIKE '%DANZA%'
     AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
