@@ -570,6 +570,13 @@ function colsAttribuzioneVenditaSuMovimento(): string[] {
   return [...new Set([prim, ...extras])]
 }
 
+function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string): string {
+  const orM = colsAttribuzioneVenditaSuMovimento()
+    .map((col) => `M.[${col}] IN (${idParams})`)
+    .join(" OR ")
+  return `(${orM})`
+}
+
 /**
  * Il gestionale include movimenti attribuiti al consulente anche via colonna su M, non solo tramite view
  * (INNER JOIN view esclude righe senza iscrizione in view o con join incompleto).
@@ -580,15 +587,12 @@ function sqlMovimentoAttribuitoConsulente(
   idWhereR: string,
   idParams: string
 ): string {
-  const orM = colsAttribuzioneVenditaSuMovimento()
-    .map((col) => `M.[${col}] IN (${idParams})`)
-    .join(" OR ")
   return `(
     EXISTS (
       SELECT 1 FROM [${view}] R
       WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
     )
-    OR (${orM})
+    OR ${sqlMovimentoAttribuitoIdsSuMovimento(idParams)}
   )`
 }
 
@@ -610,16 +614,13 @@ async function queryVenditeSum(
   const viewCfg = getViewVenditoreAbbonamento()
 
   // Dashboard: consuntivo "entrate" come somma Importo dei movimenti (una riga = un movimento),
-  // filtrando per consulente via **view venditore** (come gestionale: venditore assegnato in anagrafica).
+  // filtrando per venditore sul movimento (criterio tipico gestionale “Abbonamenti venduti”).
   if (viewCfg && idConsultant) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
     try {
-      const view = viewCfg.view
-      const colId = viewCfg.colId
-      const colJoin = viewCfg.colJoin
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-      const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
+      const whereM = sqlMovimentoAttribuitoIdsSuMovimento(idParams)
 
       if (giorno != null) {
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
@@ -632,10 +633,7 @@ async function queryVenditeSum(
            FROM [${tbl}] M
            WHERE M.[${COL_IMPORTO}] > 0
              AND CAST(M.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
-             AND EXISTS (
-               SELECT 1 FROM [${view}] R
-               WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
-             )`
+             AND ${whereM}`
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         return Number(row?.Totale ?? row?.totale) || 0
@@ -662,10 +660,7 @@ async function queryVenditeSum(
          WHERE M.[${COL_IMPORTO}] > 0
            AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
            AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-           AND EXISTS (
-             SELECT 1 FROM [${view}] R
-             WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
-           )`
+           AND ${whereM}`
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
@@ -965,7 +960,7 @@ export async function getVenditeMovimentiCategoriaDurata(
 
     const consultantFilter =
       idConsultant && ids.length > 0
-        ? ` AND R.[IDVenditoreAbbonamento] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        ? ` AND ${sqlMovimentoAttribuitoIdsSuMovimento(ids.map((_, i) => `@id${i}`).join(", "))}`
         : ""
 
     // Escludi categorie non commerciali (come prima): evita "Danza adulti" e simili.
