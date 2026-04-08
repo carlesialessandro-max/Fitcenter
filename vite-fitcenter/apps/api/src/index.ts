@@ -40,9 +40,11 @@ function findPublicDir(): string | null {
 const app = express()
 
 app.use(cors({ origin: true }))
-app.use(express.json())
+// Firma: inviamo immagini base64 (dataURL) -> aumenta limite JSON.
+const JSON_LIMIT = process.env.API_JSON_LIMIT?.trim() || "15mb"
+app.use(express.json({ limit: JSON_LIMIT }))
 // Zapier a volte invia payload come application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: true }))
+app.use(express.urlencoded({ extended: true, limit: JSON_LIMIT }))
 app.use("/api", authRouter)
 app.get("/api/webhook/zapier", webhookZapier)
 app.post("/api/webhook/zapier", webhookZapier)
