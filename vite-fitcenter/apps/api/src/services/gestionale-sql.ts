@@ -610,7 +610,7 @@ async function queryVenditeSum(
   const viewCfg = getViewVenditoreAbbonamento()
 
   // Dashboard: consuntivo "entrate" come somma Importo dei movimenti (una riga = un movimento),
-  // filtrando per consulente (ID) via view o colonne di attribuzione su MovimentiVenduto.
+  // filtrando per consulente via **view venditore** (come gestionale: venditore assegnato in anagrafica).
   if (viewCfg && idConsultant) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
@@ -620,7 +620,6 @@ async function queryVenditeSum(
       const colJoin = viewCfg.colJoin
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
       const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
-      const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
 
       if (giorno != null) {
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
@@ -631,9 +630,10 @@ async function queryVenditeSum(
         const r = await req.query(
           `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
            FROM [${tbl}] M
+           INNER JOIN [${view}] R ON R.[${colJoin}] = M.[${COL_ISCRIZIONE}]
            WHERE M.[${COL_IMPORTO}] > 0
              AND CAST(M.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
-             AND ${matchCons}`
+             AND ${idWhereR}`
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         return Number(row?.Totale ?? row?.totale) || 0
@@ -657,10 +657,11 @@ async function queryVenditeSum(
       const r = await req.query(
         `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
          FROM [${tbl}] M
+         INNER JOIN [${view}] R ON R.[${colJoin}] = M.[${COL_ISCRIZIONE}]
          WHERE M.[${COL_IMPORTO}] > 0
            AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
            AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-           AND ${matchCons}`
+           AND ${idWhereR}`
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
@@ -939,35 +940,58 @@ export async function getVenditeMovimentiCategoriaDurata(
     `
 
     // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + Durata (tipicamente mesi).
+    // Per evitare "categoria sconosciuta" usiamo INNER JOIN sulla view.
     const durataCol = "Durata"
-    const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-    const idWhereR = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
-    const categoriaExpr = `COALESCE(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione]), N'altro')`
-    const durataExpr = `COALESCE(R.[${durataCol}], -1)`
+    const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
 
-    const filterCons =
-      ids.length > 0
-        ? ` AND ${sqlMovimentoAttribuitoConsulente(viewCfg.view, viewCfg.colJoin, idWhereR, idParams)}`
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
         : ""
+
+    // Escludi categorie non commerciali (come prima): evita "Danza adulti" e simili.
+    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
+    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
+    const whereCategorieEscluse = `
+      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+      AND NOT (
+        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+      )
+      AND NOT (
+        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+        AND ${upperCatExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatExpr} NOT LIKE '%MASTER%'
+      )
+    `
 
     const rTotal = await req.query(
       `SELECT COUNT(*) AS totalCount
        FROM [${tblM}] M
+       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
        ${whereBase}
-       ${filterCons};`
+       ${consultantFilter}
+       ${whereCategorieEscluse};`
     )
 
     const r = await req.query(
       `SELECT
           ${categoriaExpr} AS Categoria,
-          ${durataExpr} AS DurataMesi,
+          R.[${durataCol}] AS DurataMesi,
           COUNT(*) AS count,
           SUM(COALESCE(M.[${COL_IMPORTO}], 0)) AS totalEuro
         FROM [${tblM}] M
-        LEFT JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
         ${whereBase}
-        ${filterCons}
-        GROUP BY ${categoriaExpr}, ${durataExpr}
+        ${consultantFilter}
+        ${whereCategorieEscluse}
+        GROUP BY ${categoriaExpr}, R.[${durataCol}]
         ORDER BY count DESC;`
     )
 
