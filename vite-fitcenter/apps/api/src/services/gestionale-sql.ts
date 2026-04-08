@@ -588,28 +588,10 @@ function movimentoTipoServizioVendita(): string | null {
 }
 
 function whereEsclusioniVenditeView(alias = "R"): string {
-  const upperCatAbbonExpr = `UPPER(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ''))`
-  const upperCatExpr = `UPPER(COALESCE(${alias}.[CategoriaDescrizione], ''))`
-  return `
-    -- Nota: alcune view (es. RVW_AbbonamentiUtenti) non espongono IDCategoriaUtente.
-    -- Inoltre il report gestionale include VARIE/TESSERAMENTI/ASI+ISCRIZIONE: NON li escludiamo qui.
-    AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
-    AND ${upperCatExpr} NOT LIKE '%DANZA%'
-    AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
-    AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
-    AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
-    AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
-    AND NOT (
-      (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
-      AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
-      AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
-    )
-    AND NOT (
-      (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
-      AND ${upperCatExpr} NOT LIKE '%ADULT%'
-      AND ${upperCatExpr} NOT LIKE '%MASTER%'
-    )
-  `
+  // Il report gestionale “Analisi abbonamenti venduti” include tutte le categorie:
+  // non applichiamo esclusioni qui (serve solo per disallineare i totali).
+  void alias
+  return ""
 }
 
 function sqlTotaleReportPerIscrizione(args: {
@@ -1021,106 +1003,70 @@ export async function getVenditeMovimentiCategoriaDurata(
         AND M.[TipoOperazione] = '${movimentoTipoOperazioneVendita().replace(/'/g, "''")}'
     `
 
-    // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + Durata (tipicamente mesi).
-    // Per evitare "categoria sconosciuta" usiamo INNER JOIN sulla view.
-    const durataCol = "Durata"
-    const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
-
-    const consultantFilter =
-      idConsultant && ids.length > 0
-        ? ` AND R.[IDVenditoreAbbonamento] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
-        : ""
-
-    // Escludi categorie non commerciali (come prima): evita "Danza adulti" e simili.
-    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
-    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
-    const whereCategorieEscluse = `
-      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
-      AND ${upperCatExpr} NOT LIKE '%DANZA%'
-      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
-      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
-      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
-      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
-      AND NOT (
-        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
-        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
-        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
-      )
-      AND NOT (
-        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
-        AND ${upperCatExpr} NOT LIKE '%ADULT%'
-        AND ${upperCatExpr} NOT LIKE '%MASTER%'
-      )
-    `
-
     // Distribuzione come report: una volta per iscrizione (Totale view), non per movimento.
     const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
     const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+    const durataCol = "Durata"
+    const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        : ""
 
     const rTotal = await req.query(
-      `WITH ViewDedup AS (
-         SELECT
-           R0.[${viewCfg.colJoin}] AS IDIscrizione,
-           MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
-           MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
-           MAX(R0.[${durataCol}]) AS Durata,
-           MAX(R0.[${colTotale}]) AS Totale,
-           MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
-         FROM [${viewCfg.view}] R0
-         GROUP BY R0.[${viewCfg.colJoin}]
-       ),
-       Temp_Stampe AS (
+      `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
        ),
-       PerIscrizione AS (
+       RigheView AS (
          SELECT
-           T.ID,
+           R.[${viewCfg.colJoin}] AS ID,
            ${categoriaExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
-           MAX(TRY_CONVERT(float, R.[Totale])) AS TotaleEuro
-         FROM Temp_Stampe T
-         INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
+           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
+         FROM [${viewCfg.view}] R
+         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-           ${whereEsclusioniVenditeView("R")}
-           ${whereCategorieEscluse}
-         GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
+       ),
+       PerIscrizione AS (
+         SELECT
+           ID,
+           Categoria,
+           DurataMesi,
+           MAX(TotaleEuro) AS TotaleEuro
+         FROM RigheView
+         GROUP BY ID, Categoria, DurataMesi
        )
        SELECT COUNT(*) AS totalCount FROM PerIscrizione;`
     )
 
     const r = await req.query(
-      `WITH ViewDedup AS (
-         SELECT
-           R0.[${viewCfg.colJoin}] AS IDIscrizione,
-           MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
-           MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
-           MAX(R0.[${durataCol}]) AS Durata,
-           MAX(R0.[${colTotale}]) AS Totale,
-           MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
-         FROM [${viewCfg.view}] R0
-         GROUP BY R0.[${viewCfg.colJoin}]
-       ),
-       Temp_Stampe AS (
+      `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
        ),
-       PerIscrizione AS (
+       RigheView AS (
          SELECT
-           T.ID,
+           R.[${viewCfg.colJoin}] AS ID,
            ${categoriaExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
-           MAX(TRY_CONVERT(float, R.[Totale])) AS TotaleEuro
-         FROM Temp_Stampe T
-         INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
+           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
+         FROM [${viewCfg.view}] R
+         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-           ${whereEsclusioniVenditeView("R")}
-           ${whereCategorieEscluse}
-         GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
+       ),
+       PerIscrizione AS (
+         SELECT
+           ID,
+           Categoria,
+           DurataMesi,
+           MAX(TotaleEuro) AS TotaleEuro
+         FROM RigheView
+         GROUP BY ID, Categoria, DurataMesi
        )
        SELECT
          Categoria,
