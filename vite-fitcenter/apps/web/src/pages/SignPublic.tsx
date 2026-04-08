@@ -138,6 +138,63 @@ export function SignPublicPage() {
     clearCanvas()
   }, [])
 
+  // Fallback: alcuni setup Wacom/Windows Ink non inviano correttamente gli eventi React su canvas.
+  // Agganciamo anche listener nativi (con passive=false) per garantire il tratto.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const onDown = (e: PointerEvent) => {
+      if (signatureMode !== "draw") return
+      try { e.preventDefault() } catch {}
+      if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+      activePointerIdRef.current = e.pointerId
+      try { canvas.setPointerCapture(e.pointerId) } catch {}
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      const p = { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
+      setDrawing(true)
+      setHasInk(true)
+      beginStroke(p)
+    }
+
+    const onMove = (e: PointerEvent) => {
+      if (signatureMode !== "draw") return
+      if (!drawing) return
+      if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+      try { e.preventDefault() } catch {}
+      const rect = canvas.getBoundingClientRect()
+      const scaleX = canvas.width / rect.width
+      const scaleY = canvas.height / rect.height
+      const p = { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY }
+      extendStroke(p)
+    }
+
+    const onUp = (e: PointerEvent) => {
+      if (signatureMode !== "draw") return
+      if (activePointerIdRef.current != null && activePointerIdRef.current !== e.pointerId) return
+      try { e.preventDefault() } catch {}
+      endStroke()
+    }
+
+    canvas.addEventListener("pointerdown", onDown, { passive: false })
+    canvas.addEventListener("pointermove", onMove, { passive: false })
+    // Raw updates: alcune penne preferiscono questo canale.
+    canvas.addEventListener("pointerrawupdate", onMove as any, { passive: false } as any)
+    canvas.addEventListener("pointerup", onUp, { passive: false })
+    canvas.addEventListener("pointercancel", onUp, { passive: false })
+
+    return () => {
+      canvas.removeEventListener("pointerdown", onDown as any)
+      canvas.removeEventListener("pointermove", onMove as any)
+      canvas.removeEventListener("pointerrawupdate", onMove as any)
+      canvas.removeEventListener("pointerup", onUp as any)
+      canvas.removeEventListener("pointercancel", onUp as any)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signatureMode, drawing])
+
   const typedSignatureDataUrl = useMemo(() => {
     if (!fullNameTrimmed) return null
     // In modalità "typed" la canvas può non essere montata: usiamo un canvas offscreen fisso.
