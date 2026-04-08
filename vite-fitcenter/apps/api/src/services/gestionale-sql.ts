@@ -985,21 +985,6 @@ export async function getVenditeMovimentiCategoriaDurata(
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
 
-    // Dedup view per IDIscrizione: alcune installazioni hanno più righe per iscrizione,
-    // e un JOIN diretto duplica i movimenti (totali troppo alti).
-    const viewDedupCte = `
-      WITH ViewDedup AS (
-        SELECT
-          R0.[${viewCfg.colJoin}] AS IDIscrizione,
-          MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
-          MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
-          MAX(R0.[${durataCol}]) AS Durata,
-          MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
-        FROM [${viewCfg.view}] R0
-        GROUP BY R0.[${viewCfg.colJoin}]
-      )
-    `
-
     const consultantFilter =
       idConsultant && ids.length > 0
         ? ` AND R.[IDVenditoreAbbonamento] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
@@ -1032,8 +1017,17 @@ export async function getVenditeMovimentiCategoriaDurata(
     const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
 
     const rTotal = await req.query(
-      `${viewDedupCte}
-       ;WITH Temp_Stampe AS (
+      `WITH ViewDedup AS (
+         SELECT
+           R0.[${viewCfg.colJoin}] AS IDIscrizione,
+           MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
+           MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
+           MAX(R0.[${durataCol}]) AS Durata,
+           MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
+         FROM [${viewCfg.view}] R0
+         GROUP BY R0.[${viewCfg.colJoin}]
+       ),
+       Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -1055,8 +1049,17 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const r = await req.query(
-      `${viewDedupCte}
-       ;WITH Temp_Stampe AS (
+      `WITH ViewDedup AS (
+         SELECT
+           R0.[${viewCfg.colJoin}] AS IDIscrizione,
+           MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
+           MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
+           MAX(R0.[${durataCol}]) AS Durata,
+           MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
+         FROM [${viewCfg.view}] R0
+         GROUP BY R0.[${viewCfg.colJoin}]
+       ),
+       Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
