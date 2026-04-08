@@ -588,10 +588,12 @@ function movimentoTipoServizioVendita(): string | null {
 }
 
 function whereEsclusioniVenditeView(alias = "R"): string {
-  // Il report gestionale “Analisi abbonamenti venduti” include tutte le categorie:
-  // non applichiamo esclusioni qui (serve solo per disallineare i totali).
-  void alias
-  return ""
+  // Regola richiesta: "DANZA ADULTI" è un falso positivo (altra azienda).
+  // La escludiamo ovunque si usi la logica vendite/report (dashboard + andamento).
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
+  return `
+    AND ${cat} <> 'DANZA ADULTI'
+  `
 }
 
 function sqlTotaleReportPerIscrizione(args: {
