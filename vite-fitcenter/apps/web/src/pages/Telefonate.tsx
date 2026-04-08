@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { chiamateApi, type Chiamata } from "@/api/chiamate"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
+import { ChiamaButton } from "@/components/ChiamaButton"
 
 function isoToday(): string {
   const d = new Date()
@@ -161,6 +162,7 @@ export function Telefonate() {
                     <th className="px-3 py-2 font-medium text-zinc-400">Nome</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Tel</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -170,6 +172,15 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{c.nomeContatto}</td>
                       <td className="px-3 py-2 text-zinc-300">{c.tipo}</td>
                       <td className="px-3 py-2 text-zinc-300">{c.telefono}</td>
+                      <td className="px-3 py-2 text-right">
+                        <ChiamaButton
+                          telefono={c.telefono}
+                          nomeContatto={c.nomeContatto}
+                          tipo={c.tipo}
+                          leadId={c.leadId}
+                          clienteId={c.clienteId}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
