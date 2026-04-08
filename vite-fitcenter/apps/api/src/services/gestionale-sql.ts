@@ -577,6 +577,45 @@ function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string): string {
   return `(${orM})`
 }
 
+function movimentoTipoOperazioneVendita(): string {
+  const raw = (process.env.GESTIONALE_MOVIMENTI_TIPO_OPERAZIONE_VENDITA ?? "I").trim()
+  return /^[A-Za-z0-9_]+$/.test(raw) ? raw : "I"
+}
+function movimentoTipoServizioVendita(): string | null {
+  const raw = (process.env.GESTIONALE_MOVIMENTI_TIPO_SERVIZIO_VENDITA ?? "").trim()
+  if (!raw) return null
+  return /^[A-Za-z0-9_]+$/.test(raw) ? raw : null
+}
+
+function whereEsclusioniVenditeView(alias = "R"): string {
+  const upperCatAbbonExpr = `UPPER(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ''))`
+  const upperCatExpr = `UPPER(COALESCE(${alias}.[CategoriaDescrizione], ''))`
+  return `
+    AND COALESCE(${alias}.[IDCategoriaUtente], -1) <> 19
+    AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+    AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+    AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+    AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+    AND ${upperCatExpr} NOT LIKE '%VARIE%'
+    AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+    AND ${upperCatExpr} NOT LIKE '%DANZA%'
+    AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+    AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+    AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+    AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+    AND NOT (
+      (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+      AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+    )
+    AND NOT (
+      (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+      AND ${upperCatExpr} NOT LIKE '%ADULT%'
+      AND ${upperCatExpr} NOT LIKE '%MASTER%'
+    )
+  `
+}
+
 function sqlTotaleReportPerIscrizione(args: {
   tblMov: string
   view: string
@@ -588,18 +627,23 @@ function sqlTotaleReportPerIscrizione(args: {
 }): string {
   // Replica report: Temp_Stampe = IDIscrizione con movimento nel periodo (da MovimentiVenduto),
   // poi somma Totale dalla view una volta per iscrizione (MAX per sicurezza).
+  const tipoOp = movimentoTipoOperazioneVendita()
+  const tipoServ = movimentoTipoServizioVendita()
+  const whereTipo = `AND M.[TipoOperazione] = '${tipoOp.replace(/'/g, "''")}'` + (tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : "")
   return `;WITH Temp_Stampe AS (
     SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
     FROM [${args.tblMov}] M
     WHERE M.[${COL_IMPORTO}] > 0
       AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(${args.fromParam} AS DATE)
       AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(${args.toParam} AS DATE)
+      ${whereTipo}
   ),
   UnaPerIscrizione AS (
     SELECT T.ID, MAX(TRY_CONVERT(float, R.[${args.colTotale}])) AS Totale
     FROM Temp_Stampe T
     INNER JOIN [${args.view}] R ON R.[${args.colJoin}] = T.ID
     WHERE ${args.idWhereR}
+      ${whereEsclusioniVenditeView("R")}
     GROUP BY T.ID
   )
   SELECT COALESCE(SUM(Totale), 0) AS Totale FROM UnaPerIscrizione`
@@ -978,6 +1022,7 @@ export async function getVenditeMovimentiCategoriaDurata(
       WHERE M.[${COL_IMPORTO}] > 0
         AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+        AND M.[TipoOperazione] = '${movimentoTipoOperazioneVendita().replace(/'/g, "''")}'
     `
 
     // La view espone CategoriaAbbonamentoDescrizione / CategoriaDescrizione + Durata (tipicamente mesi).
@@ -1043,6 +1088,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
          WHERE 1=1
            ${consultantFilter}
+           ${whereEsclusioniVenditeView("R")}
            ${whereCategorieEscluse}
          GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
        )
@@ -1076,6 +1122,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN ViewDedup R ON R.[IDIscrizione] = T.ID
          WHERE 1=1
            ${consultantFilter}
+           ${whereEsclusioniVenditeView("R")}
            ${whereCategorieEscluse}
          GROUP BY T.ID, ${categoriaExpr}, R.[${durataCol}]
        )
