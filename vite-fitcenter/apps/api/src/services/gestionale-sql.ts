@@ -539,16 +539,18 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   const hasCognome = await crmHasCol(view, "Cognome")
   const hasTel = await crmHasCol(view, "Telefono")
   const hasCell = await crmHasCol(view, "Cellulare")
+  const hasSms = await crmHasCol(view, "SMS")
   const selectParts: string[] = []
   if (hasNome) selectParts.push("Nome")
   if (hasCognome) selectParts.push("Cognome")
   if (hasTel) selectParts.push("Telefono")
   if (hasCell) selectParts.push("Cellulare")
+  if (hasSms) selectParts.push("SMS")
   const select = selectParts.length ? ", " + selectParts.join(", ") : ""
   const map = (row: Record<string, unknown>) => ({
     nome: row.Nome != null ? String(row.Nome) : undefined,
     cognome: row.Cognome != null ? String(row.Cognome) : undefined,
-    telefono: (row.Telefono ?? row.Cellulare) != null ? String(row.Telefono ?? row.Cellulare) : undefined,
+    telefono: (row.SMS ?? row.Telefono ?? row.Cellulare) != null ? String(row.SMS ?? row.Telefono ?? row.Cellulare) : undefined,
   })
   return { select, map }
 }
