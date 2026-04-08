@@ -128,6 +128,7 @@ export function Telefonate() {
                     <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -137,6 +138,18 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{r.tipoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.esitoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.crmDescrizione || "—"}</td>
+                      <td className="px-3 py-2 text-right">
+                        {r.telefono ? (
+                          <ChiamaButton
+                            telefono={r.telefono}
+                            nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
+                            tipo="cliente"
+                            registraAlClick
+                          />
+                        ) : (
+                          <span className="text-xs text-zinc-500">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

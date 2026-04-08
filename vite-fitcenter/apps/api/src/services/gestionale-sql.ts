@@ -509,6 +509,48 @@ export interface CrmAppuntamentoRow {
   tipoDescrizione: string
   esitoDescrizione: string
   crmDescrizione: string
+  nome?: string
+  cognome?: string
+  telefono?: string
+}
+
+let crmColsCache: { view: string; cols: Set<string> } | null = null
+async function crmHasCol(view: string, col: string): Promise<boolean> {
+  const clean = view.replace(/[\[\]]/g, "")
+  if (crmColsCache?.view === clean) return crmColsCache.cols.has(col.toLowerCase())
+  try {
+    const p = await getPool()
+    if (!p) return false
+    const r = await p.request().input("obj", sql.NVarChar, clean).query(
+      `SELECT LOWER(c.name) AS name
+       FROM sys.columns c
+       WHERE c.object_id = OBJECT_ID(@obj);`
+    )
+    const cols = new Set<string>(((r.recordset ?? []) as any[]).map((x) => String(x.name ?? "").toLowerCase()).filter(Boolean))
+    crmColsCache = { view: clean, cols }
+    return cols.has(col.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {
+  const hasNome = await crmHasCol(view, "Nome")
+  const hasCognome = await crmHasCol(view, "Cognome")
+  const hasTel = await crmHasCol(view, "Telefono")
+  const hasCell = await crmHasCol(view, "Cellulare")
+  const selectParts: string[] = []
+  if (hasNome) selectParts.push("Nome")
+  if (hasCognome) selectParts.push("Cognome")
+  if (hasTel) selectParts.push("Telefono")
+  if (hasCell) selectParts.push("Cellulare")
+  const select = selectParts.length ? ", " + selectParts.join(", ") : ""
+  const map = (row: Record<string, unknown>) => ({
+    nome: row.Nome != null ? String(row.Nome) : undefined,
+    cognome: row.Cognome != null ? String(row.Cognome) : undefined,
+    telefono: (row.Telefono ?? row.Cellulare) != null ? String(row.Telefono ?? row.Cellulare) : undefined,
+  })
+  return { select, map }
 }
 
 export async function queryCrmAppuntamenti(params: {
@@ -560,13 +602,14 @@ export async function queryCrmAppuntamentiOperatore(params: {
   if (!p) return []
   const view = getCrmUtentiViewName()
   try {
+    const extra = await crmSelectExtraFragments(view)
     const req = p
       .request()
       .input("nomeOperatore", sql.NVarChar, params.nomeOperatore?.trim() ?? "")
       .input("from", sql.VarChar(10), params.from)
       .input("to", sql.VarChar(10), params.to)
     const r = await req.query(
-      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione
+      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
        FROM ${view}
        WHERE DestinatarioNomeOperatore = @nomeOperatore
          AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
@@ -579,6 +622,7 @@ export async function queryCrmAppuntamentiOperatore(params: {
       tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
       esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
       crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+      ...extra.map(row),
     }))
   } catch {
     return []
@@ -628,6 +672,19 @@ function whereEsclusioniVenditeView(alias = "R"): string {
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
   return `
     AND ${cat} <> 'DANZA ADULTI'
+  `
+}
+
+function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): string {
+  const cat = categoriaExpr
+    ? `UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, ''))))`
+    : `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
+  // Solo UISP tesseramenti: non devono influire sui conteggi.
+  return `
+    AND NOT (
+      ${cat} LIKE '%UISP%'
+      AND (${cat} LIKE '%TESSERAMENT%' OR ${cat} LIKE '%ISCRIZ%')
+    )
   `
 }
 
@@ -1080,6 +1137,8 @@ export async function getVenditeMovimentiCategoriaDurata(
            DurataMesi,
            MAX(TotaleEuro) AS TotaleEuro
          FROM RigheView
+         WHERE 1=1
+           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
          GROUP BY ID, Categoria, DurataMesi
        )
        SELECT COUNT(*) AS totalCount FROM PerIscrizione;`
@@ -1110,6 +1169,8 @@ export async function getVenditeMovimentiCategoriaDurata(
            DurataMesi,
            MAX(TotaleEuro) AS TotaleEuro
          FROM RigheView
+         WHERE 1=1
+           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
          GROUP BY ID, Categoria, DurataMesi
        )
        SELECT

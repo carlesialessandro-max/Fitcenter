@@ -200,4 +200,7 @@ export interface CrmAppuntamento {
   tipoDescrizione: string
   esitoDescrizione: string
   crmDescrizione: string
+  nome?: string
+  cognome?: string
+  telefono?: string
 }
