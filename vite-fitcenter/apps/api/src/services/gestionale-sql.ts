@@ -1008,6 +1008,11 @@ export async function getVenditeMovimentiCategoriaDurata(
     const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+    // Regola richiesta: "DANZA ADULTI" è un falso positivo (venditore rimasto da storico),
+    // quindi lo escludiamo dall'andamento vendite.
+    const whereCategoriaDanzaAdulti = `
+      AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+    `
     const consultantFilter =
       idConsultant && ids.length > 0
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
@@ -1029,6 +1034,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
+          ${whereCategoriaDanzaAdulti}
        ),
        PerIscrizione AS (
          SELECT
@@ -1058,6 +1064,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
+          ${whereCategoriaDanzaAdulti}
        ),
        PerIscrizione AS (
          SELECT
