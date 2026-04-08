@@ -685,7 +685,6 @@ function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): stri
   return `
     AND NOT (
       ${cat} LIKE '%UISP%'
-      AND (${cat} LIKE '%TESSERAMENT%' OR ${cat} LIKE '%ISCRIZ%')
     )
   `
 }
