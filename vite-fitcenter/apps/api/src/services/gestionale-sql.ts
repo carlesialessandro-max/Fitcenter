@@ -630,10 +630,12 @@ async function queryVenditeSum(
         const r = await req.query(
           `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
            FROM [${tbl}] M
-           INNER JOIN [${view}] R ON R.[${colJoin}] = M.[${COL_ISCRIZIONE}]
            WHERE M.[${COL_IMPORTO}] > 0
              AND CAST(M.[${COL_DATA}] AS DATE) = CAST(@data AS DATE)
-             AND ${idWhereR}`
+             AND EXISTS (
+               SELECT 1 FROM [${view}] R
+               WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
+             )`
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         return Number(row?.Totale ?? row?.totale) || 0
@@ -657,11 +659,13 @@ async function queryVenditeSum(
       const r = await req.query(
         `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
          FROM [${tbl}] M
-         INNER JOIN [${view}] R ON R.[${colJoin}] = M.[${COL_ISCRIZIONE}]
          WHERE M.[${COL_IMPORTO}] > 0
            AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
            AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-           AND ${idWhereR}`
+           AND EXISTS (
+             SELECT 1 FROM [${view}] R
+             WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
+           )`
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
@@ -944,9 +948,24 @@ export async function getVenditeMovimentiCategoriaDurata(
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
 
+    // Dedup view per IDIscrizione: alcune installazioni hanno più righe per iscrizione,
+    // e un JOIN diretto duplica i movimenti (totali troppo alti).
+    const viewDedupCte = `
+      WITH ViewDedup AS (
+        SELECT
+          R0.[${viewCfg.colJoin}] AS IDIscrizione,
+          MAX(R0.[CategoriaAbbonamentoDescrizione]) AS CategoriaAbbonamentoDescrizione,
+          MAX(R0.[CategoriaDescrizione]) AS CategoriaDescrizione,
+          MAX(R0.[${durataCol}]) AS Durata,
+          MAX(R0.[${viewCfg.colId}]) AS IDVenditoreAbbonamento
+        FROM [${viewCfg.view}] R0
+        GROUP BY R0.[${viewCfg.colJoin}]
+      )
+    `
+
     const consultantFilter =
       idConsultant && ids.length > 0
-        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        ? ` AND R.[IDVenditoreAbbonamento] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
         : ""
 
     // Escludi categorie non commerciali (come prima): evita "Danza adulti" e simili.
@@ -972,22 +991,24 @@ export async function getVenditeMovimentiCategoriaDurata(
     `
 
     const rTotal = await req.query(
-      `SELECT COUNT(*) AS totalCount
+      `${viewDedupCte}
+       SELECT COUNT(*) AS totalCount
        FROM [${tblM}] M
-       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+       INNER JOIN ViewDedup R ON R.[IDIscrizione] = M.[${COL_ISCRIZIONE}]
        ${whereBase}
        ${consultantFilter}
        ${whereCategorieEscluse};`
     )
 
     const r = await req.query(
-      `SELECT
+      `${viewDedupCte}
+       SELECT
           ${categoriaExpr} AS Categoria,
           R.[${durataCol}] AS DurataMesi,
           COUNT(*) AS count,
           SUM(COALESCE(M.[${COL_IMPORTO}], 0)) AS totalEuro
         FROM [${tblM}] M
-        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+        INNER JOIN ViewDedup R ON R.[IDIscrizione] = M.[${COL_ISCRIZIONE}]
         ${whereBase}
         ${consultantFilter}
         ${whereCategorieEscluse}
