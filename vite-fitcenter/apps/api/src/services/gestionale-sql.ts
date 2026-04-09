@@ -31,6 +31,19 @@ function isSafeSqlIdentifierLoose(s: string): boolean {
   return /^[A-Za-z0-9_\.\[\]]+$/.test(s)
 }
 
+function qualifySqlObject(name: string): { query: string; objectId: string } {
+  const raw = (name ?? "").trim()
+  const cleaned = raw.replace(/[\[\]]/g, "")
+  // Se è già qualificato (schema.obj) lo lasciamo.
+  if (cleaned.includes(".")) {
+    const q = raw.includes("[") ? raw : raw.split(".").map((p) => `[${p}]`).join(".")
+    return { query: q, objectId: cleaned }
+  }
+  // Default: dbo.<obj>
+  const safe = cleaned
+  return { query: `[dbo].[${safe}]`, objectId: `dbo.${safe}` }
+}
+
 function getConnectionString(): string | undefined {
   return process.env.SQL_CONNECTION_STRING
 }
@@ -161,8 +174,8 @@ async function resolvePrenotazioniViewName(): Promise<string> {
   for (const name of candidates) {
     try {
       // OBJECT_ID funziona con schema qualora passato (dbo.View) o [dbo].[View].
-      const clean = name.replace(/[\[\]]/g, "")
-      const r = await p.request().input("obj", sql.NVarChar, clean).query("SELECT OBJECT_ID(@obj) AS oid")
+      const q = qualifySqlObject(name)
+      const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
       const oid = r.recordset?.[0]?.oid
       if (oid != null) return name
     } catch {
@@ -629,7 +642,7 @@ async function crmHasCol(view: string, col: string): Promise<boolean> {
 
 let prenColsCache: { view: string; cols: Set<string> } | null = null
 async function prenHasCol(view: string, col: string): Promise<boolean> {
-  const clean = view.replace(/[\[\]]/g, "")
+  const clean = qualifySqlObject(view).objectId
   if (prenColsCache?.view === clean) return prenColsCache.cols.has(col.toLowerCase())
   try {
     const p = await getPool()
@@ -648,7 +661,7 @@ async function prenHasCol(view: string, col: string): Promise<boolean> {
 }
 
 async function prenGetCols(view: string): Promise<string[]> {
-  const clean = view.replace(/[\[\]]/g, "")
+  const clean = qualifySqlObject(view).objectId
   if (prenColsCache?.view === clean) return Array.from(prenColsCache.cols.values())
   try {
     const p = await getPool()
@@ -751,6 +764,7 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
   for (const col of toTry) {
     try {
       const c = bracketCol(col)
+      const vq = qualifySqlObject(view).query
       const r = await p.request().query(
         `SELECT TOP (1)
            SUM(CASE WHEN ${`
@@ -763,7 +777,7 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
                TRY_CONVERT(date, SUBSTRING(${c}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${c}), 0), 10), 103)
              )
            `} IS NOT NULL THEN 1 ELSE 0 END) AS ok
-         FROM (SELECT TOP (50) ${c} AS v FROM [${view}] WHERE ${c} IS NOT NULL) t;`
+         FROM (SELECT TOP (50) ${c} AS v FROM ${vq} WHERE ${c} IS NOT NULL) t;`
       )
       const ok = Number(r.recordset?.[0]?.ok ?? 0) || 0
       if (!best || ok > best.ok) best = { col, ok }
@@ -1665,6 +1679,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const p = await getPool()
   if (!p) return []
   const view = await resolvePrenotazioniViewName()
+  const vq = qualifySqlObject(view).query
   const giorno = params?.giorno?.trim()
 
   const giornoOk = giorno ? /^\d{4}-\d{2}-\d{2}$/.test(giorno) : false
@@ -1776,7 +1791,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     // Caso 1: la vista fornisce già partecipanti → SELECT * + normalizzazione giorno + partecipanti.
     if (partecipantiCol) {
       if (giornoOk && !dateCol) return []
-      const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
+      const r = await req.query(`SELECT * FROM ${vq}${where} ORDER BY 1`)
       const rows = (r.recordset ?? []) as Record<string, unknown>[]
       return rows.map((raw) => {
         const n = Number(raw[partecipantiCol!] ?? raw.NumeroPartecipanti ?? raw.Partecipanti ?? raw.NumeroIscritti ?? raw.Iscritti)
@@ -1794,7 +1809,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
           *,
           ${dSelect},
           COUNT(1) OVER (PARTITION BY ${partition}) AS __Partecipanti
-        FROM [${view}]
+        FROM ${vq}
         ${where}
       `
       const r = await req.query(q)
@@ -1808,7 +1823,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
     // Caso 3: fallback: nessun conteggio possibile → ritorna righe raw.
     if (giornoOk && !dateCol) return []
-    const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
+    const r = await req.query(`SELECT * FROM ${vq}${where} ORDER BY 1`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
     return rows.map((raw) => enrich(raw))
   } catch {
