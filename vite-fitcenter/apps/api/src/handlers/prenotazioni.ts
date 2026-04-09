@@ -17,13 +17,15 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
       return res.status(400).json({ message: "Parametro giorno non valido (YYYY-MM-DD)" })
     }
     const rows = await gestionaleSql.queryPrenotazioniCorsi({ giorno })
-    const view = await gestionaleSql.getPrenotazioniViewNameResolved()
+    const dbg = await gestionaleSql.debugPrenotazioniViewInfo()
     res.json({
       rows,
       meta: {
         fromSql: true,
         giorno: giorno ?? null,
-        view,
+        view: dbg.view,
+        dateCol: dbg.dateCol,
+        cols: dbg.cols,
         count: rows.length,
       },
     })

@@ -167,6 +167,23 @@ export async function getPrenotazioniViewNameResolved(): Promise<string> {
   return resolvePrenotazioniViewName()
 }
 
+export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateCol: string | null; cols: string[] }> {
+  const view = await resolvePrenotazioniViewName()
+  const dateCandidates = [
+    "Data",
+    "Giorno",
+    "DataLezione",
+    "DataCorso",
+    "DataAppuntamento",
+    "DataInizio",
+    "DataOraInizio",
+    "DataOra",
+  ]
+  const cols = await prenGetCols(view)
+  const dateCol = pickBestDateCol(cols, dateCandidates)
+  return { view, dateCol, cols }
+}
+
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
 export function getAbbonamentiTableName(): string {
   return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"

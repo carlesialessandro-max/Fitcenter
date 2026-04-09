@@ -91,6 +91,7 @@ export function Corsi() {
     () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
     [gruppi]
   )
+  const meta = data?.meta
 
   if (!enabled) {
     return (
@@ -126,7 +127,16 @@ export function Corsi() {
         ) : error ? (
           <p className="text-sm text-red-400">Errore: {(error as Error).message}</p>
         ) : gruppi.length === 0 ? (
-          <p className="text-sm text-zinc-500">Nessuna prenotazione per il giorno selezionato.</p>
+          <div className="space-y-2">
+            <p className="text-sm text-zinc-500">Nessuna prenotazione per il giorno selezionato.</p>
+            {meta?.view && (
+              <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-400">
+                <div><span className="text-zinc-500">view</span>: {meta.view}</div>
+                <div><span className="text-zinc-500">dateCol</span>: {meta.dateCol ?? "(non trovata)"}</div>
+                <div><span className="text-zinc-500">count</span>: {meta.count ?? 0}</div>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="space-y-6">
             <div className="text-sm text-zinc-400">
