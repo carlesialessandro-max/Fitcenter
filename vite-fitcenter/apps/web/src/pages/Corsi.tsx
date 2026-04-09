@@ -11,39 +11,63 @@ function isoToday(): string {
   return `${y}-${m}-${day}`
 }
 
-function pickColumns(rows: PrenotazioneCorsoRow[]): string[] {
-  if (rows.length === 0) return []
-  const first = rows[0]?.raw ?? {}
-  const keys = Object.keys(first)
-  const preferred = [
-    "Corso",
-    "NomeCorso",
-    "CorsoDescrizione",
-    "Attivita",
-    "DescrizioneCorso",
-    "Ora",
-    "OraInizio",
-    "OraFine",
-    "Sala",
-    "Istruttore",
-    "NomeIstruttore",
-  ]
-  const picked = preferred.filter((k) => keys.includes(k))
-  const rest = keys.filter((k) => !picked.includes(k)).slice(0, 6)
-  return [...picked, ...rest]
+function fmtDateIt(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
 }
 
-function cellValue(v: unknown): string {
-  if (v == null) return ""
-  if (typeof v === "string") return v
-  if (typeof v === "number" || typeof v === "boolean") return String(v)
-  // Date da mssql spesso arriva come string o Date serializzabile
-  if (v instanceof Date) return v.toISOString()
-  try {
-    return JSON.stringify(v)
-  } catch {
-    return String(v)
+function fmtTimeDot(hhmm: string): string {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm)
+  return m ? `${m[1]}.${m[2]}` : hhmm
+}
+
+type CorsoGroup = {
+  key: string
+  servizio: string
+  giorno: string
+  oraInizio?: string
+  oraFine?: string
+  partecipanti: PrenotazioneCorsoRow[]
+}
+
+function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
+  const map = new Map<string, CorsoGroup>()
+  for (const r of rows) {
+    const servizio = (r.servizio ?? "").trim() || "—"
+    const giorno = (r.giorno ?? "").trim() || "—"
+    const oraInizio = (r.oraInizio ?? "").trim() || undefined
+    const oraFine = (r.oraFine ?? "").trim() || undefined
+    const key = `${servizio}__${giorno}__${oraInizio ?? ""}__${oraFine ?? ""}`
+    const g = map.get(key)
+    if (!g) {
+      map.set(key, { key, servizio, giorno, oraInizio, oraFine, partecipanti: [r] })
+    } else {
+      g.partecipanti.push(r)
+    }
   }
+  const list = Array.from(map.values())
+  list.sort((a, b) => {
+    const s = a.servizio.localeCompare(b.servizio)
+    if (s) return s
+    const d = a.giorno.localeCompare(b.giorno)
+    if (d) return d
+    const o = (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "")
+    if (o) return o
+    return (a.oraFine ?? "").localeCompare(b.oraFine ?? "")
+  })
+  // ordina partecipanti per "progressivo" se esiste, altrimenti cognome/nome
+  for (const g of list) {
+    g.partecipanti.sort((x, y) => {
+      const px = Number((x.raw as any)?.Progressivo ?? (x.raw as any)?.progressivo)
+      const py = Number((y.raw as any)?.Progressivo ?? (y.raw as any)?.progressivo)
+      if (Number.isFinite(px) && Number.isFinite(py) && px !== py) return px - py
+      const cx = (x.cognome ?? "").localeCompare(y.cognome ?? "")
+      if (cx) return cx
+      return (x.nome ?? "").localeCompare(y.nome ?? "")
+    })
+  }
+  return list
 }
 
 export function Corsi() {
@@ -62,7 +86,11 @@ export function Corsi() {
   })
 
   const rows = data?.rows ?? []
-  const cols = useMemo(() => pickColumns(rows), [rows])
+  const gruppi = useMemo(() => groupByCorso(rows), [rows])
+  const totalePartecipanti = useMemo(
+    () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
+    [gruppi]
+  )
 
   if (!enabled) {
     return (
@@ -77,7 +105,9 @@ export function Corsi() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
-          <p className="mt-1 text-sm text-zinc-400">Prenotazioni corsi con numero partecipanti.</p>
+          <p className="mt-1 text-sm text-zinc-400">
+            Corsi del giorno con elenco partecipanti.
+          </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
           Giorno
@@ -95,38 +125,58 @@ export function Corsi() {
           <p className="text-sm text-zinc-500">Caricamento...</p>
         ) : error ? (
           <p className="text-sm text-red-400">Errore: {(error as Error).message}</p>
-        ) : rows.length === 0 ? (
+        ) : gruppi.length === 0 ? (
           <p className="text-sm text-zinc-500">Nessuna prenotazione per il giorno selezionato.</p>
         ) : (
-          <div className="overflow-x-auto rounded-md border border-zinc-800">
-            <table className="min-w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                  <th className="px-3 py-2 font-medium text-zinc-400">Servizio</th>
-                  <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
-                  <th className="px-3 py-2 font-medium text-zinc-400">Ora</th>
-                  <th className="px-3 py-2 font-medium text-zinc-400 text-right">Partecipanti</th>
-                  {cols.map((c) => (
-                    <th key={c} className="px-3 py-2 font-medium text-zinc-400">{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className="border-b border-zinc-900 last:border-0 hover:bg-zinc-800/30">
-                    <td className="px-3 py-2 text-zinc-200">{r.servizio ?? ""}</td>
-                    <td className="px-3 py-2 text-zinc-200">{r.giorno ?? ""}</td>
-                    <td className="px-3 py-2 text-zinc-200">
-                      {r.oraInizio ?? ""}{r.oraFine ? ` - ${r.oraFine}` : ""}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-amber-400 text-right">{r.partecipanti ?? ""}</td>
-                    {cols.map((c) => (
-                      <td key={c} className="px-3 py-2 text-zinc-300">{cellValue(r.raw?.[c])}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-6">
+            <div className="text-sm text-zinc-400">
+              Totale partecipanti: <span className="font-semibold text-amber-400">{totalePartecipanti}</span>
+            </div>
+
+            {gruppi.map((g) => (
+              <div key={g.key} className="rounded-lg border border-zinc-800 bg-zinc-900/30">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-3">
+                  <div className="text-sm font-semibold text-zinc-200">
+                    {g.servizio}, gio {fmtDateIt(g.giorno)}
+                    {g.oraInizio ? ` dalle ${fmtTimeDot(g.oraInizio)}` : ""}
+                    {g.oraFine ? ` alle ${fmtTimeDot(g.oraFine)}` : ""}
+                  </div>
+                  <div className="text-sm font-semibold text-amber-400">
+                    {g.partecipanti.length}
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-800 bg-zinc-900/60">
+                        <th className="px-3 py-2 font-medium text-zinc-400">Progressivo</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">Cognome e Nome</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">Prenotato il</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {g.partecipanti.map((p, idx) => {
+                        const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
+                        const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
+                        const pren = p.prenotatoIl
+                          ? new Date(p.prenotatoIl).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                          : ""
+                        return (
+                          <tr key={idx} className="border-b border-zinc-900 last:border-0">
+                            <td className="px-3 py-2 text-zinc-200">{String(prog)}</td>
+                            <td className="px-3 py-2 text-zinc-200">{nome}</td>
+                            <td className="px-3 py-2 text-zinc-300">{pren}</td>
+                            <td className="px-3 py-2 text-zinc-300">{p.note ?? ""}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

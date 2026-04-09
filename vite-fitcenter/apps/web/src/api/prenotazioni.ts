@@ -6,6 +6,10 @@ export type PrenotazioneCorsoRow = {
   oraInizio?: string
   oraFine?: string
   partecipanti?: number
+  cognome?: string
+  nome?: string
+  prenotatoIl?: string
+  note?: string
   raw: Record<string, unknown>
 }
 
