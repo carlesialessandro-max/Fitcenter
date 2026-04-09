@@ -677,16 +677,39 @@ function bracketCol(col: string): string {
 }
 
 async function pickBestDateColForView(view: string, candidates: string[]): Promise<string | null> {
+  const envForced = (process.env.GESTIONALE_PRENOTAZIONI_COL_DATA ?? "").trim()
   const cols = await prenGetCols(view) // lower-case
   const set = new Set(cols)
+  if (envForced && set.has(envForced.toLowerCase())) return envForced
+
+  const isBad = (c: string) => {
+    const x = c.toLowerCase()
+    if (x.includes("nascita") || x.includes("birth")) return true
+    if (x.includes("dataprenot") || x.includes("prenotato")) return true
+    if (x.includes("created") || x.includes("creato")) return true
+    return false
+  }
+  const boost = (c: string) => {
+    const x = c.toLowerCase()
+    if (x.includes("dataorainizio") || x.includes("orainizio")) return 5
+    if (x.includes("datainizio") || x.includes("inizio")) return 4
+    if (x.includes("dataorafine") || x.includes("orafine") || x.includes("fine")) return 3
+    if (x.includes("lezione") || x.includes("corso") || x.includes("appuntamento")) return 2
+    if (x === "data" || x.startsWith("data")) return 1
+    return 0
+  }
+
   const existing = candidates
     .map((c) => c.trim())
     .filter(Boolean)
     .filter((c) => set.has(c.toLowerCase()))
+    .filter((c) => !isBad(c))
 
   // Fallback fuzzy: includi colonne che contengono "data" o "ora"
-  const fuzzy = cols.filter((c) => (c.includes("data") || c.includes("ora")) && !existing.includes(c))
-  const toTry = [...new Set([...existing, ...fuzzy])].slice(0, 12) // evita troppi roundtrip
+  const fuzzy = cols.filter((c) => (c.includes("data") || c.includes("ora")) && !existing.includes(c) && !isBad(c))
+  const toTry = [...new Set([...existing, ...fuzzy])]
+    .sort((a, b) => boost(b) - boost(a))
+    .slice(0, 12) // evita troppi roundtrip
 
   const p = await getPool()
   if (!p) return existing[0] ?? fuzzy[0] ?? null
@@ -720,7 +743,7 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
 
   // Se nessuna colonna è convertibile, prova l'exact "data*" anche se score 0.
   if (!best || best.ok <= 0) {
-    const prefer = cols.find((c) => c.startsWith("data"))
+    const prefer = cols.find((c) => c.startsWith("data") && !isBad(c))
     return prefer ?? existing[0] ?? null
   }
   return best.col
