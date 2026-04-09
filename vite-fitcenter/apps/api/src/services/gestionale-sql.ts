@@ -171,6 +171,10 @@ export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateC
   const view = await resolvePrenotazioniViewName()
   const cols = await prenGetCols(view)
   const dateCol = await pickBestDateColForView(view, [
+    "InizioPrenotazioneIscrizione",
+    "DataInizioPrenotazioneIscrizione",
+    "PrenotazioniListaAttesaDataInizio",
+    "DataFinePrenotazioneIscrizione",
     "DataOraInizio",
     "DataInizio",
     "DataLezione",
@@ -1642,6 +1646,13 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   // Scelta colonna data: NON usare "Giorno" se è testo (es. "martedì").
   // Preferiamo colonne data/ora reali e scegliamo quella convertibile.
   const dateCandidates = [
+    // Prenotazioni corsi (gestionale): colonne viste in RVW_PrenotazioniUtentiAbbonamento
+    "InizioPrenotazioneIscrizione",
+    "DataInizioPrenotazioneIscrizione",
+    "PrenotazioniListaAttesaDataInizio",
+    "DataFinePrenotazioneIscrizione",
+    "PrenotazioniIscrizioneOraInizio",
+    "PrenotazioniIscrizioneOraFine",
     "DataOraInizio",
     "DataInizio",
     "DataLezione",
@@ -1694,8 +1705,32 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "CorsoDescrizione",
       "DescrizioneCorso",
     ])
-    const oraInizio = toIsoTimeHHmm(firstNonEmpty(raw, ["OraInizio", "OraIn", "OrarioInizio", "DataOraInizio", "DataInizio", "Inizio", "Ora"]))
-    const oraFine = toIsoTimeHHmm(firstNonEmpty(raw, ["OraFine", "OraFin", "OrarioFine", "DataOraFine", "DataFine", "Fine"]))
+    const oraInizio = toIsoTimeHHmm(
+      firstNonEmpty(raw, [
+        "OraInizio",
+        "OraIn",
+        "OrarioInizio",
+        "PrenotazioniIscrizioneOraInizio",
+        "DataOraInizio",
+        "InizioPrenotazioneIscrizione",
+        "DataInizioPrenotazioneIscrizione",
+        "DataInizio",
+        "Inizio",
+        "Ora",
+      ])
+    )
+    const oraFine = toIsoTimeHHmm(
+      firstNonEmpty(raw, [
+        "OraFine",
+        "OraFin",
+        "OrarioFine",
+        "PrenotazioniIscrizioneOraFine",
+        "DataOraFine",
+        "DataFinePrenotazioneIscrizione",
+        "DataFine",
+        "Fine",
+      ])
+    )
     const day = toIsoDay(dateCol ? raw[dateCol] : raw.Data)
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
