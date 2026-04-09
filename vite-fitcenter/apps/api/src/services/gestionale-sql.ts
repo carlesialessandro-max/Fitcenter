@@ -681,10 +681,12 @@ function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): stri
   const cat = categoriaExpr
     ? `UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, ''))))`
     : `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
+  // Normalizza: molti DB salvano "U.I.S.P." o "U I S P" -> togliamo separatori comuni.
+  const catNorm = `REPLACE(REPLACE(REPLACE(REPLACE(${cat}, '.', ''), ' ', ''), '-', ''), '_', '')`
   // Solo UISP tesseramenti: non devono influire sui conteggi.
   return `
     AND NOT (
-      ${cat} LIKE '%UISP%'
+      ${catNorm} LIKE '%UISP%'
     )
   `
 }

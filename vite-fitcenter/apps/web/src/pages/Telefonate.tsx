@@ -125,6 +125,9 @@ export function Telefonate() {
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/60">
                     <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Nome</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Cognome</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Tel</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
@@ -135,6 +138,9 @@ export function Telefonate() {
                   {(crm?.rows ?? []).map((r, i) => (
                     <tr key={i} className="border-b border-zinc-900 last:border-0">
                       <td className="px-3 py-2 text-zinc-200">{fmtDateTime(r.dataAppuntamento)}</td>
+                      <td className="px-3 py-2 text-zinc-300">{(r.nome ?? "").trim() || "—"}</td>
+                      <td className="px-3 py-2 text-zinc-300">{(r.cognome ?? "").trim() || "—"}</td>
+                      <td className="px-3 py-2 text-zinc-300">{r.telefono || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.tipoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.esitoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.crmDescrizione || "—"}</td>
