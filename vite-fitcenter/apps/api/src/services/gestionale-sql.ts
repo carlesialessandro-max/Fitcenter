@@ -743,18 +743,19 @@ function sqlDateEqualsExpr(col: string, param: string): string {
   // - varchar in formato ISO: 2026-04-09 (style 23)
   // - varchar in formato IT: 09/04/2026 (style 103)
   // - stringhe con testo + data (es. "giovedì 09/04/2026"): estraiamo la prima occorrenza dd/MM/yyyy
-  const c = `[${col}]`
+  const c = bracketCol(col)
+  const s = `CAST(${c} AS NVARCHAR(256))`
   const p = `CAST(${param} AS DATE)`
   return `
     COALESCE(
       TRY_CONVERT(date, ${c}),
-      TRY_CONVERT(date, ${c}, 23),
-      TRY_CONVERT(date, ${c}, 103),
-      TRY_CONVERT(date, LEFT(${c}, 10), 23),
-      TRY_CONVERT(date, LEFT(${c}, 10), 103),
+      TRY_CONVERT(date, ${s}, 23),
+      TRY_CONVERT(date, ${s}, 103),
+      TRY_CONVERT(date, LEFT(${s}, 10), 23),
+      TRY_CONVERT(date, LEFT(${s}, 10), 103),
       TRY_CONVERT(
         date,
-        SUBSTRING(${c}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${c}), 0), 10),
+        SUBSTRING(${s}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${s}), 0), 10),
         103
       )
     ) = ${p}
