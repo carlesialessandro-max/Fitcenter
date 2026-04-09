@@ -24,6 +24,7 @@ import sql from "mssql"
 
 let pool: sql.ConnectionPool | null = null
 let lastConnectionError: string | null = null
+let lastPrenotazioniQueryError: string | null = null
 
 function isSafeSqlIdentifierLoose(s: string): boolean {
   // Permettiamo solo caratteri innocui per identificatori (schema.tabella, [dbo].[View], ecc.).
@@ -140,6 +141,10 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
 /** Ultimo errore di connessione (per debug in /api/data/sql-status). */
 export function getLastConnectionError(): string | null {
   return lastConnectionError
+}
+
+export function getLastPrenotazioniQueryError(): string | null {
+  return lastPrenotazioniQueryError
 }
 
 const defaultTables = {
@@ -1841,6 +1846,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   }
 
   try {
+    lastPrenotazioniQueryError = null
     // Ritorna sempre righe prenotazione (1 riga = 1 partecipante).
     // Niente window function (può fallire se la view ha colonne non partizionabili).
     if (giornoOk && !dateCol) return []
@@ -1848,8 +1854,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const r = await req.query(`SELECT * FROM ${vq}${where}${order}`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
     return rows.map((raw) => enrich(raw))
-  } catch {
+  } catch (e) {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
+    lastPrenotazioniQueryError = (e as Error)?.message ?? String(e)
     return []
   }
 }

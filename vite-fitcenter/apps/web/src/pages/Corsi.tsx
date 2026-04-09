@@ -146,6 +146,9 @@ export function Corsi() {
                 {meta.sqlError && (
                   <div><span className="text-zinc-500">sqlError</span>: {meta.sqlError ?? "(errore non disponibile)"}</div>
                 )}
+                {meta.queryError && (
+                  <div><span className="text-zinc-500">queryError</span>: {meta.queryError}</div>
+                )}
                 {meta.sql && (
                   <>
                     <div><span className="text-zinc-500">sql.server</span>: {meta.sql.server ?? "(n/a)"}</div>
