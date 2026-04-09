@@ -31,6 +31,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
     const rows = await gestionaleSql.queryPrenotazioniCorsi({ giorno })
     const dbg = await gestionaleSql.debugPrenotazioniViewInfo()
     const sql = await gestionaleSql.getSqlIdentity()
+    const lastErr = gestionaleSql.getLastConnectionError()
     res.json({
       rows,
       meta: {
@@ -42,6 +43,8 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         cols: dbg.cols,
         count: rows.length,
         sql,
+        // Se sql identity non è disponibile, esponi eventuale errore precedente.
+        ...(sql.server == null && sql.database == null && lastErr ? { sqlError: lastErr } : {}),
       },
     })
   } catch (e) {
