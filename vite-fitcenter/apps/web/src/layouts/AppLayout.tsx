@@ -11,6 +11,10 @@ const navOperatore = [
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
+const navCorsi = [
+  { to: "/corsi", label: "Corsi" },
+] as const
+
 const navAdmin = [
   { to: "/", label: "Dashboard" },
   { to: "/convalide-consulenti", label: "Convalide" },
@@ -30,7 +34,9 @@ export function AppLayout() {
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
       : role === "admin"
         ? navAdmin
-        : navOperatore
+        : role === "corsi"
+          ? navCorsi
+          : navOperatore
 
   return (
     <div className="flex min-h-svh bg-zinc-950 text-zinc-100">
@@ -45,7 +51,7 @@ export function AppLayout() {
             {user?.nome ?? "—"}
           </p>
           <p className="text-xs text-zinc-500">
-            {role === "admin" ? "Admin" : "Operatore"}
+            {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : "Operatore"}
           </p>
           <button
             type="button"

@@ -20,6 +20,7 @@ const USERS: (User & { password: string })[] = [
   { username: "ombretta", password: "ombretta", nome: "Ombretta Zenoni", role: "operatore", consulenteNome: "Ombretta Zenoni" },
   { username: "serena", password: "serena", nome: "Serena Del Prete", role: "operatore", consulenteNome: "Serena Del Prete" },
   { username: "irene", password: "irene", nome: "Irene", role: "operatore", consulenteNome: "Irene", leadFilter: "bambini" },
+  { username: "corsi", password: "corsi", nome: "Corsi", role: "corsi" },
 ]
 
 const sessions = new Map<string, { user: User; expiresAt: number }>()

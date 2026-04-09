@@ -15,6 +15,7 @@ import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
 import { SignPublicPage } from "@/pages/SignPublic"
+import { Corsi } from "@/pages/Corsi"
 
 function DashboardOrRedirect() {
   const { leadFilter } = useAuth()
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <DashboardOrRedirect /> },
+      { path: "corsi", element: <Corsi /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },

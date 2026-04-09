@@ -4,7 +4,7 @@ import { setAuthToken } from "@/api/client"
 
 const DEFAULT_CONSULENTI = ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
-export type Role = "admin" | "operatore"
+export type Role = "admin" | "operatore" | "corsi"
 
 type AuthContextType = {
   isAuthenticated: boolean
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const role = user?.role ?? "operatore"
   const consulenteNome = user?.consulenteNome ?? user?.nome ?? ""
-  const consulenteFilter = role === "admin" ? undefined : consulenteNome || undefined
+  const consulenteFilter = role === "operatore" ? (consulenteNome || undefined) : undefined
 
   return (
     <AuthContext.Provider

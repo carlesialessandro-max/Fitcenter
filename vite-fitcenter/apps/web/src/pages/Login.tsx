@@ -73,7 +73,7 @@ export function Login() {
           </button>
         </form>
         <p className="mt-4 text-center text-xs text-zinc-500">
-          Admin: admin / admin — Operatori: luca/luca, anna/anna
+          Admin: admin / admin — Operatori: carmen/carmen, serena/serena, ombretta/ombretta — Corsi: corsi/corsi
         </p>
       </div>
     </div>
