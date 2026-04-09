@@ -186,6 +186,21 @@ export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateC
   return { view, dateCol, cols }
 }
 
+export async function getSqlIdentity(): Promise<{ server: string | null; database: string | null }> {
+  const p = await getPool()
+  if (!p) return { server: null, database: null }
+  try {
+    const r = await p.request().query("SELECT CAST(@@SERVERNAME AS NVARCHAR(256)) AS server, CAST(DB_NAME() AS NVARCHAR(256)) AS database;")
+    const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+    return {
+      server: row?.server != null ? String(row.server) : null,
+      database: row?.database != null ? String(row.database) : null,
+    }
+  } catch {
+    return { server: null, database: null }
+  }
+}
+
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
 export function getAbbonamentiTableName(): string {
   return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"

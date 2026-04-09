@@ -18,6 +18,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
     }
     const rows = await gestionaleSql.queryPrenotazioniCorsi({ giorno })
     const dbg = await gestionaleSql.debugPrenotazioniViewInfo()
+    const sql = await gestionaleSql.getSqlIdentity()
     res.json({
       rows,
       meta: {
@@ -27,6 +28,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         dateCol: dbg.dateCol,
         cols: dbg.cols,
         count: rows.length,
+        sql,
       },
     })
   } catch (e) {
