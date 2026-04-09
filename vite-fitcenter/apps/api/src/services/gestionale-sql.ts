@@ -247,6 +247,26 @@ export async function debugPrenotazioniCountForDay(args: {
   }
 }
 
+export async function debugPrenotazioniCountForDayExpr(args: {
+  view: string
+  dateCol: string
+  giornoIso: string // YYYY-MM-DD
+}): Promise<number | null> {
+  const p = await getPool()
+  if (!p) return null
+  try {
+    const vq = qualifySqlObject(args.view).query
+    const req = p.request().input("giorno", sql.VarChar(10), args.giornoIso)
+    const r = await req.query(
+      `SELECT COUNT(1) AS c FROM ${vq} WHERE ${sqlDateEqualsExpr(args.dateCol, "@giorno")};`
+    )
+    const c = Number(r.recordset?.[0]?.c ?? 0)
+    return Number.isFinite(c) ? c : 0
+  } catch {
+    return null
+  }
+}
+
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
 export function getAbbonamentiTableName(): string {
   return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"
@@ -734,6 +754,13 @@ function sqlDateEqualsExpr(col: string, param: string): string {
       )
     ) = ${p}
   `
+}
+
+function sqlDateEqualsFastExpr(col: string, param: string): string {
+  // Percorso veloce: per datetime e date funziona sempre; per stringhe invalide torna NULL senza errori.
+  const c = bracketCol(col)
+  const p = `CAST(${param} AS DATE)`
+  return `TRY_CONVERT(date, ${c}) = ${p}`
 }
 
 function bracketCol(col: string): string {
@@ -1727,7 +1754,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   ]
   const dateCol = giornoOk ? await pickBestDateColForView(view, dateCandidates) : (await pickBestDateColForView(view, dateCandidates))
   // Se non troviamo la colonna data non possiamo filtrare in modo affidabile → evita query enorme.
-  const where = giornoOk && dateCol ? ` WHERE ${sqlDateEqualsExpr(dateCol, "@giorno")}` : ""
+  const where =
+    giornoOk && dateCol
+      ? ` WHERE (${sqlDateEqualsFastExpr(dateCol, "@giorno")} OR ${sqlDateEqualsExpr(dateCol, "@giorno")})`
+      : ""
 
   // Se esiste già una colonna partecipanti, la esponiamo.
   const partecipantiCols = ["NumeroPartecipanti", "Partecipanti", "NumeroIscritti", "Iscritti"]

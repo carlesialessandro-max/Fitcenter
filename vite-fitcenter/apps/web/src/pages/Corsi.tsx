@@ -137,6 +137,9 @@ export function Corsi() {
                 {"dayCount" in (meta ?? {}) && (
                   <div><span className="text-zinc-500">dayCount</span>: {String(meta.dayCount ?? "(n/a)")}</div>
                 )}
+                {"dayCountExpr" in (meta ?? {}) && (
+                  <div><span className="text-zinc-500">dayCountExpr</span>: {String(meta.dayCountExpr ?? "(n/a)")}</div>
+                )}
                 {"connected" in (meta ?? {}) && (
                   <div><span className="text-zinc-500">connected</span>: {String(meta.connected)}</div>
                 )}

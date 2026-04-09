@@ -40,6 +40,14 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
             giornoIso: giorno,
           })
         : null
+    const dayCountExpr =
+      giorno && dbg.dateCol
+        ? await gestionaleSql.debugPrenotazioniCountForDayExpr({
+            view: dbg.view,
+            dateCol: dbg.dateCol,
+            giornoIso: giorno,
+          })
+        : null
     const lastErr = gestionaleSql.getLastConnectionError()
     res.json({
       rows,
@@ -52,6 +60,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         cols: dbg.cols,
         count: rows.length,
         dayCount,
+        dayCountExpr,
         sql,
         cs,
         // Se sql identity non è disponibile, esponi eventuale errore precedente.
