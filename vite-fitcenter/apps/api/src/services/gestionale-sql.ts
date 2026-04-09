@@ -602,6 +602,36 @@ async function prenHasCol(view: string, col: string): Promise<boolean> {
   }
 }
 
+async function prenGetCols(view: string): Promise<string[]> {
+  const clean = view.replace(/[\[\]]/g, "")
+  if (prenColsCache?.view === clean) return Array.from(prenColsCache.cols.values())
+  try {
+    const p = await getPool()
+    if (!p) return []
+    const r = await p.request().input("obj", sql.NVarChar, clean).query(
+      `SELECT LOWER(c.name) AS name
+       FROM sys.columns c
+       WHERE c.object_id = OBJECT_ID(@obj);`
+    )
+    const cols = new Set<string>(((r.recordset ?? []) as any[]).map((x) => String(x.name ?? "").toLowerCase()).filter(Boolean))
+    prenColsCache = { view: clean, cols }
+    return Array.from(cols.values())
+  } catch {
+    return []
+  }
+}
+
+function pickBestDateCol(colsLower: string[], candidates: string[]): string | null {
+  const set = new Set(colsLower)
+  // 1) match esatto sui candidates
+  for (const c of candidates) {
+    if (set.has(c.toLowerCase())) return c
+  }
+  // 2) fallback: prima colonna che contiene "data" o "giorno"
+  const fuzzy = colsLower.find((x) => x.includes("data") || x.includes("giorno"))
+  return fuzzy ? fuzzy : null
+}
+
 async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {
   const hasNome = await crmHasCol(view, "Nome")
   const hasCognome = await crmHasCol(view, "Cognome")
@@ -1492,20 +1522,21 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const giornoOk = giorno ? /^\d{4}-\d{2}-\d{2}$/.test(giorno) : false
   const whereGiorno = giornoOk ? " WHERE CAST([Data] AS DATE) = CAST(@giorno AS DATE)" : ""
 
-  // Scelta colonna data: proviamo varie denominazioni comuni.
-  const dateCandidates = ["Data", "DataLezione", "DataCorso", "DataAppuntamento", "DataInizio", "DataOraInizio"]
-  let dateCol: string | null = null
-  for (const c of dateCandidates) {
-    if (await prenHasCol(view, c)) {
-      dateCol = c
-      break
-    }
-  }
-  // Fallback: se non troviamo una colonna data, non applichiamo il filtro giorno.
-  const where =
-    giornoOk && dateCol
-      ? ` WHERE CAST([${dateCol}] AS DATE) = CAST(@giorno AS DATE)`
-      : ""
+  // Scelta colonna data: proviamo varie denominazioni comuni + fallback fuzzy.
+  const dateCandidates = [
+    "Data",
+    "Giorno",
+    "DataLezione",
+    "DataCorso",
+    "DataAppuntamento",
+    "DataInizio",
+    "DataOraInizio",
+    "DataOra",
+  ]
+  const colsLower = await prenGetCols(view)
+  const dateCol = pickBestDateCol(colsLower, dateCandidates)
+  // Se non troviamo la colonna data non possiamo filtrare in modo affidabile → evita query enorme.
+  const where = giornoOk && dateCol ? ` WHERE CAST([${dateCol}] AS DATE) = CAST(@giorno AS DATE)` : ""
 
   // Se esiste già una colonna partecipanti, la esponiamo.
   const partecipantiCols = ["NumeroPartecipanti", "Partecipanti", "NumeroIscritti", "Iscritti"]
@@ -1550,8 +1581,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const oraInizio = toIsoTimeHHmm(firstNonEmpty(raw, ["OraInizio", "OraIn", "OrarioInizio", "DataOraInizio", "DataInizio", "Inizio", "Ora"]))
     const oraFine = toIsoTimeHHmm(firstNonEmpty(raw, ["OraFine", "OraFin", "OrarioFine", "DataOraFine", "DataFine", "Fine"]))
     const day = toIsoDay(dateCol ? raw[dateCol] : raw.Data)
-    const cognome = firstNonEmpty(raw, ["Cognome", "ClienteCognome"])
-    const nome = firstNonEmpty(raw, ["Nome", "ClienteNome"])
+    const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
+    const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = firstNonEmpty(raw, ["PrenotatoIl", "DataPrenotazione", "DataPrenotato", "PrenotazioneData", "CreatoIl", "CreatedAt"])
     const prenotatoIl = prenotatoIlRaw
       ? (() => {
@@ -1566,6 +1597,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   try {
     // Caso 1: la vista fornisce già partecipanti → SELECT * + normalizzazione giorno + partecipanti.
     if (partecipantiCol) {
+      if (giornoOk && !dateCol) return []
       const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
       const rows = (r.recordset ?? []) as Record<string, unknown>[]
       return rows.map((raw) => {
@@ -1576,6 +1608,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
     // Caso 2: calcoliamo partecipanti con window function se abbiamo almeno 2 colonne per partizionare (es. idCorso + data).
     if (groupCols.length >= 2) {
+      if (giornoOk && !dateCol) return []
       const partition = groupCols.map((c) => `[${c}]`).join(", ")
       const dSelect = dateCol ? `[${dateCol}] AS __Data` : "NULL AS __Data"
       const q = `
@@ -1596,6 +1629,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     }
 
     // Caso 3: fallback: nessun conteggio possibile → ritorna righe raw.
+    if (giornoOk && !dateCol) return []
     const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
     return rows.map((raw) => enrich(raw))

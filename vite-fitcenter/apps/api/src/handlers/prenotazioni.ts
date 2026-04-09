@@ -24,6 +24,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         fromSql: true,
         giorno: giorno ?? null,
         view,
+        count: rows.length,
       },
     })
   } catch (e) {
