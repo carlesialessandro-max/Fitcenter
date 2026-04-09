@@ -102,8 +102,10 @@ export function Corsi() {
             <table className="min-w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                  <th className="px-3 py-2 font-medium text-zinc-400">Giorno</th>
-                  <th className="px-3 py-2 font-medium text-zinc-400">Partecipanti</th>
+                  <th className="px-3 py-2 font-medium text-zinc-400">Servizio</th>
+                  <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                  <th className="px-3 py-2 font-medium text-zinc-400">Ora</th>
+                  <th className="px-3 py-2 font-medium text-zinc-400 text-right">Partecipanti</th>
                   {cols.map((c) => (
                     <th key={c} className="px-3 py-2 font-medium text-zinc-400">{c}</th>
                   ))}
@@ -112,8 +114,12 @@ export function Corsi() {
               <tbody>
                 {rows.map((r, i) => (
                   <tr key={i} className="border-b border-zinc-900 last:border-0 hover:bg-zinc-800/30">
+                    <td className="px-3 py-2 text-zinc-200">{r.servizio ?? ""}</td>
                     <td className="px-3 py-2 text-zinc-200">{r.giorno ?? ""}</td>
-                    <td className="px-3 py-2 font-medium text-amber-400">{r.partecipanti ?? ""}</td>
+                    <td className="px-3 py-2 text-zinc-200">
+                      {r.oraInizio ?? ""}{r.oraFine ? ` - ${r.oraFine}` : ""}
+                    </td>
+                    <td className="px-3 py-2 font-medium text-amber-400 text-right">{r.partecipanti ?? ""}</td>
                     {cols.map((c) => (
                       <td key={c} className="px-3 py-2 text-zinc-300">{cellValue(r.raw?.[c])}</td>
                     ))}

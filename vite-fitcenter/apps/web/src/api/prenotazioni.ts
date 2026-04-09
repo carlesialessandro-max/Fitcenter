@@ -2,6 +2,9 @@ import { api } from "./client"
 
 export type PrenotazioneCorsoRow = {
   giorno?: string
+  servizio?: string
+  oraInizio?: string
+  oraFine?: string
   partecipanti?: number
   raw: Record<string, unknown>
 }

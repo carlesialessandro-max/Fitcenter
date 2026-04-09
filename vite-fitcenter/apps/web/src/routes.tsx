@@ -18,8 +18,9 @@ import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi } from "@/pages/Corsi"
 
 function DashboardOrRedirect() {
-  const { leadFilter } = useAuth()
+  const { leadFilter, role } = useAuth()
   if (leadFilter === "bambini") return <Navigate to="/crm" replace />
+  if (role === "corsi") return <Navigate to="/corsi" replace />
   return <Dashboard />
 }
 

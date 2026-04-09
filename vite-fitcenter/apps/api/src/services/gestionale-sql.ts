@@ -1423,9 +1423,46 @@ export function isGestionaleConfigured(): boolean {
 
 export type PrenotazioneCorsoRow = {
   giorno?: string
+  servizio?: string
+  oraInizio?: string
+  oraFine?: string
   partecipanti?: number
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
+}
+
+function firstNonEmpty(raw: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = raw[k]
+    if (v == null) continue
+    const s = String(v).trim()
+    if (s) return s
+  }
+  return undefined
+}
+
+function toIsoTimeHHmm(val: unknown): string | undefined {
+  if (val == null) return undefined
+  // Alcune view usano "13.30" o "13:30" o datetime.
+  if (typeof val === "string") {
+    const t = val.trim()
+    const m1 = /^(\d{1,2})[:\.](\d{2})/.exec(t)
+    if (m1) return `${String(Number(m1[1])).padStart(2, "0")}:${m1[2]}`
+    const d = new Date(t)
+    if (!Number.isNaN(d.getTime())) return d.toISOString().slice(11, 16)
+    return undefined
+  }
+  if (val instanceof Date) return val.toISOString().slice(11, 16)
+  const d = new Date(val as any)
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(11, 16)
+  return undefined
+}
+
+function toIsoDay(val: unknown): string | undefined {
+  if (val == null) return undefined
+  const d = val instanceof Date ? val : new Date(val as any)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toISOString().slice(0, 10)
 }
 
 /**
@@ -1489,20 +1526,56 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const req = p.request()
   if (giornoOk && dateCol) req.input("giorno", sql.VarChar(10), giorno)
 
+  const groupAndSort = (rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] => {
+    const byKey = new Map<string, PrenotazioneCorsoRow & { __count: number }>()
+    for (const r of rows) {
+      const raw = r.raw ?? {}
+      const servizio = r.servizio ?? firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "TipoServizio", "Attivita", "Corso", "NomeCorso", "CorsoDescrizione", "DescrizioneCorso"])
+      const oraInizio = r.oraInizio ?? toIsoTimeHHmm(firstNonEmpty(raw, ["OraInizio", "OraIn", "OrarioInizio", "DataOraInizio", "DataInizio", "Inizio"]))
+      const oraFine = r.oraFine ?? toIsoTimeHHmm(firstNonEmpty(raw, ["OraFine", "OraFin", "OrarioFine", "DataOraFine", "DataFine", "Fine"]))
+      const day = r.giorno ?? toIsoDay(dateCol ? raw[dateCol] : raw.Data)
+      const key = `${servizio ?? ""}__${day ?? ""}__${oraInizio ?? ""}__${oraFine ?? ""}`
+      const existing = byKey.get(key)
+      if (!existing) {
+        byKey.set(key, { ...r, giorno: day, servizio, oraInizio, oraFine, __count: 1 })
+      } else {
+        existing.__count += 1
+        // partecipanti: se non esiste, usa conteggio; se esiste, prendi il max.
+        const curr = existing.partecipanti
+        const next = r.partecipanti
+        const max = Math.max(Number(curr ?? 0), Number(next ?? 0), existing.__count)
+        existing.partecipanti = Number.isFinite(max) && max > 0 ? max : existing.partecipanti
+      }
+    }
+    const list = Array.from(byKey.values()).map(({ __count, ...x }) => x)
+    list.sort((a, b) => {
+      const sa = (a.servizio ?? "").localeCompare(b.servizio ?? "")
+      if (sa) return sa
+      const da = (a.giorno ?? "").localeCompare(b.giorno ?? "")
+      if (da) return da
+      const oa = (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "")
+      if (oa) return oa
+      return (a.oraFine ?? "").localeCompare(b.oraFine ?? "")
+    })
+    return list
+  }
+
   try {
     // Caso 1: la vista fornisce già partecipanti → SELECT * + normalizzazione giorno + partecipanti.
     if (partecipantiCol) {
       const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
       const rows = (r.recordset ?? []) as Record<string, unknown>[]
-      return rows.map((raw) => {
+      return groupAndSort(
+        rows.map((raw) => {
         const d = dateCol ? raw[dateCol] : raw.Data
-        const dayKey =
-          d != null && !Number.isNaN(new Date(d as any).getTime())
-            ? new Date(d as any).toISOString().slice(0, 10)
-            : undefined
+        const dayKey = toIsoDay(d)
         const n = Number(raw[partecipantiCol!] ?? raw.NumeroPartecipanti ?? raw.Partecipanti ?? raw.NumeroIscritti ?? raw.Iscritti)
-        return { giorno: dayKey, partecipanti: Number.isFinite(n) ? n : undefined, raw }
+        const servizio = firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "TipoServizio", "Attivita", "Corso", "NomeCorso", "CorsoDescrizione", "DescrizioneCorso"])
+        const oraInizio = toIsoTimeHHmm(firstNonEmpty(raw, ["OraInizio", "OraIn", "OrarioInizio", "DataOraInizio", "DataInizio", "Inizio"]))
+        const oraFine = toIsoTimeHHmm(firstNonEmpty(raw, ["OraFine", "OraFin", "OrarioFine", "DataOraFine", "DataFine", "Fine"]))
+        return { giorno: dayKey, servizio, oraInizio, oraFine, partecipanti: Number.isFinite(n) ? n : undefined, raw }
       })
+      )
     }
 
     // Caso 2: calcoliamo partecipanti con window function se abbiamo almeno 2 colonne per partizionare (es. idCorso + data).
@@ -1519,23 +1592,25 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       `
       const r = await req.query(q)
       const rows = (r.recordset ?? []) as Record<string, unknown>[]
-      return rows.map((raw) => {
+      return groupAndSort(
+        rows.map((raw) => {
         const d = (raw.__Data ?? raw[dateCol ?? ""] ?? null) as unknown
-        const dayKey =
-          d != null && !Number.isNaN(new Date(d as any).getTime())
-            ? new Date(d as any).toISOString().slice(0, 10)
-            : undefined
+        const dayKey = toIsoDay(d)
         const n = Number(raw.__Partecipanti)
         // togli campi tecnici dalla raw
         const { __Data, __Partecipanti, ...clean } = raw as any
-        return { giorno: dayKey, partecipanti: Number.isFinite(n) ? n : undefined, raw: clean as Record<string, unknown> }
+        const servizio = firstNonEmpty(clean, ["Servizio", "ServizioDescrizione", "TipoServizio", "Attivita", "Corso", "NomeCorso", "CorsoDescrizione", "DescrizioneCorso"])
+        const oraInizio = toIsoTimeHHmm(firstNonEmpty(clean, ["OraInizio", "OraIn", "OrarioInizio", "DataOraInizio", "DataInizio", "Inizio"]))
+        const oraFine = toIsoTimeHHmm(firstNonEmpty(clean, ["OraFine", "OraFin", "OrarioFine", "DataOraFine", "DataFine", "Fine"]))
+        return { giorno: dayKey, servizio, oraInizio, oraFine, partecipanti: Number.isFinite(n) ? n : undefined, raw: clean as Record<string, unknown> }
       })
+      )
     }
 
     // Caso 3: fallback: nessun conteggio possibile → ritorna righe raw.
     const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
-    return rows.map((raw) => ({ raw }))
+    return groupAndSort(rows.map((raw) => ({ raw })))
   } catch {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
     return []
