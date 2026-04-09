@@ -16,7 +16,7 @@ export type PrenotazioneCorsoRow = {
 export const prenotazioniApi = {
   listPrenotazioni: (giorno?: string) => {
     const qs = giorno ? `?giorno=${encodeURIComponent(giorno)}` : ""
-    return api.get<{ rows: PrenotazioneCorsoRow[]; meta?: { fromSql?: boolean; connected?: boolean; sqlError?: string | null; giorno?: string | null; view?: string; dateCol?: string | null; count?: number; cols?: string[]; sql?: { server: string | null; database: string | null }; cs?: { server: string | null; database: string | null } } }>(
+    return api.get<{ rows: PrenotazioneCorsoRow[]; meta?: { fromSql?: boolean; connected?: boolean; sqlError?: string | null; giorno?: string | null; view?: string; dateCol?: string | null; count?: number; dayCount?: number | null; cols?: string[]; sql?: { server: string | null; database: string | null }; cs?: { server: string | null; database: string | null } } }>(
       `/prenotazioni/prenotazioni${qs}`
     )
   },

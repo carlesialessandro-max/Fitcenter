@@ -225,6 +225,28 @@ export async function getSqlIdentity(): Promise<{ server: string | null; databas
   }
 }
 
+export async function debugPrenotazioniCountForDay(args: {
+  view: string
+  dateCol: string
+  giornoIso: string // YYYY-MM-DD
+}): Promise<number | null> {
+  const p = await getPool()
+  if (!p) return null
+  try {
+    const vq = qualifySqlObject(args.view).query
+    const dc = bracketCol(args.dateCol)
+    const req = p.request().input("giorno", sql.VarChar(10), args.giornoIso)
+    // CAST diretto: se fallisce (tipo colonna non castabile) ritorniamo null.
+    const r = await req.query(
+      `SELECT COUNT(1) AS c FROM ${vq} WHERE CAST(${dc} AS DATE) = CAST(@giorno AS DATE);`
+    )
+    const c = Number(r.recordset?.[0]?.c ?? 0)
+    return Number.isFinite(c) ? c : 0
+  } catch {
+    return null
+  }
+}
+
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
 export function getAbbonamentiTableName(): string {
   return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"

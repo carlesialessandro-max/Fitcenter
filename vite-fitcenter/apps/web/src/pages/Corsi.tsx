@@ -134,6 +134,9 @@ export function Corsi() {
                 <div><span className="text-zinc-500">view</span>: {meta.view}</div>
                 <div><span className="text-zinc-500">dateCol</span>: {meta.dateCol ?? "(non trovata)"}</div>
                 <div><span className="text-zinc-500">count</span>: {meta.count ?? 0}</div>
+                {"dayCount" in (meta ?? {}) && (
+                  <div><span className="text-zinc-500">dayCount</span>: {String(meta.dayCount ?? "(n/a)")}</div>
+                )}
                 {"connected" in (meta ?? {}) && (
                   <div><span className="text-zinc-500">connected</span>: {String(meta.connected)}</div>
                 )}
