@@ -649,6 +649,30 @@ function pickBestDateCol(colsLower: string[], candidates: string[]): string | nu
   return fuzzy ? fuzzy : null
 }
 
+function sqlDateEqualsExpr(col: string, param: string): string {
+  // Supporta:
+  // - datetime/date nativi: CAST(col AS DATE)
+  // - varchar in formato ISO: 2026-04-09 (style 23)
+  // - varchar in formato IT: 09/04/2026 (style 103)
+  // - stringhe con testo + data (es. "giovedì 09/04/2026"): estraiamo la prima occorrenza dd/MM/yyyy
+  const c = `[${col}]`
+  const p = `CAST(${param} AS DATE)`
+  return `
+    COALESCE(
+      TRY_CONVERT(date, ${c}),
+      TRY_CONVERT(date, ${c}, 23),
+      TRY_CONVERT(date, ${c}, 103),
+      TRY_CONVERT(date, LEFT(${c}, 10), 23),
+      TRY_CONVERT(date, LEFT(${c}, 10), 103),
+      TRY_CONVERT(
+        date,
+        SUBSTRING(${c}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${c}), 0), 10),
+        103
+      )
+    ) = ${p}
+  `
+}
+
 async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {
   const hasNome = await crmHasCol(view, "Nome")
   const hasCognome = await crmHasCol(view, "Cognome")
@@ -1553,7 +1577,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const colsLower = await prenGetCols(view)
   const dateCol = pickBestDateCol(colsLower, dateCandidates)
   // Se non troviamo la colonna data non possiamo filtrare in modo affidabile → evita query enorme.
-  const where = giornoOk && dateCol ? ` WHERE CAST([${dateCol}] AS DATE) = CAST(@giorno AS DATE)` : ""
+  const where = giornoOk && dateCol ? ` WHERE ${sqlDateEqualsExpr(dateCol, "@giorno")}` : ""
 
   // Se esiste già una colonna partecipanti, la esponiamo.
   const partecipantiCols = ["NumeroPartecipanti", "Partecipanti", "NumeroIscritti", "Iscritti"]
@@ -1582,7 +1606,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const groupCols = [...new Set(groupCandidates)]
 
   const req = p.request()
-  if (giornoOk && dateCol) req.input("giorno", sql.VarChar(10), giorno)
+  if (giornoOk && dateCol) req.input("giorno", sql.VarChar(32), giorno)
 
   const enrich = (raw: Record<string, unknown>, partecipanti?: number): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
