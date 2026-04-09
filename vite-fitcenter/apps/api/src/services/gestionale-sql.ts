@@ -73,6 +73,15 @@ function ensureSqlTimeouts(cs: string): string {
   return out
 }
 
+export function getSqlConnectionInfo(): { server: string | null; database: string | null } {
+  const cs = getConnectionString()
+  if (!cs) return { server: null, database: null }
+  const p = parseConnectionString(cs)
+  const server = (p.get("server") ?? p.get("data source") ?? p.get("address") ?? p.get("addr") ?? p.get("network address") ?? "").trim()
+  const database = (p.get("database") ?? p.get("initial catalog") ?? "").trim()
+  return { server: server || null, database: database || null }
+}
+
 export async function getPool(): Promise<sql.ConnectionPool | null> {
   const cs = getConnectionString()
   if (!cs) return null
@@ -190,12 +199,14 @@ export async function getSqlIdentity(): Promise<{ server: string | null; databas
   const p = await getPool()
   if (!p) return { server: null, database: null }
   try {
-    const r = await p.request().query("SELECT CAST(@@SERVERNAME AS NVARCHAR(256)) AS server, CAST(DB_NAME() AS NVARCHAR(256)) AS database;")
+    // Best-effort: alcune configurazioni/permessi possono fallire su @@SERVERNAME.
+    const r = await p.request().query(
+      "SELECT CAST(COALESCE(CAST(SERVERPROPERTY('ServerName') AS NVARCHAR(256)), @@SERVERNAME) AS NVARCHAR(256)) AS server, CAST(DB_NAME() AS NVARCHAR(256)) AS database;"
+    )
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-    return {
-      server: row?.server != null ? String(row.server) : null,
-      database: row?.database != null ? String(row.database) : null,
-    }
+    const server = row?.server != null ? String(row.server) : null
+    const database = row?.database != null ? String(row.database) : null
+    return { server, database }
   } catch {
     return { server: null, database: null }
   }

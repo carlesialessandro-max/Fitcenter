@@ -146,6 +146,12 @@ export function Corsi() {
                     <div><span className="text-zinc-500">sql.database</span>: {meta.sql.database ?? "(n/a)"}</div>
                   </>
                 )}
+                {meta.cs && (
+                  <>
+                    <div><span className="text-zinc-500">cs.server</span>: {meta.cs.server ?? "(n/a)"}</div>
+                    <div><span className="text-zinc-500">cs.database</span>: {meta.cs.database ?? "(n/a)"}</div>
+                  </>
+                )}
               </div>
             )}
           </div>
