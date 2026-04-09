@@ -169,18 +169,16 @@ export async function getPrenotazioniViewNameResolved(): Promise<string> {
 
 export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateCol: string | null; cols: string[] }> {
   const view = await resolvePrenotazioniViewName()
-  const dateCandidates = [
-    "Data",
-    "Giorno",
+  const cols = await prenGetCols(view)
+  const dateCol = await pickBestDateColForView(view, [
+    "DataOraInizio",
+    "DataInizio",
     "DataLezione",
     "DataCorso",
     "DataAppuntamento",
-    "DataInizio",
-    "DataOraInizio",
     "DataOra",
-  ]
-  const cols = await prenGetCols(view)
-  const dateCol = pickBestDateCol(cols, dateCandidates)
+    "Data",
+  ])
   return { view, dateCol, cols }
 }
 
@@ -671,6 +669,61 @@ function sqlDateEqualsExpr(col: string, param: string): string {
       )
     ) = ${p}
   `
+}
+
+function bracketCol(col: string): string {
+  // col viene da sys.columns -> preveniamo edge-case con ]
+  return `[${col.replace(/]/g, "]]")}]`
+}
+
+async function pickBestDateColForView(view: string, candidates: string[]): Promise<string | null> {
+  const cols = await prenGetCols(view) // lower-case
+  const set = new Set(cols)
+  const existing = candidates
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .filter((c) => set.has(c.toLowerCase()))
+
+  // Fallback fuzzy: includi colonne che contengono "data" o "ora"
+  const fuzzy = cols.filter((c) => (c.includes("data") || c.includes("ora")) && !existing.includes(c))
+  const toTry = [...new Set([...existing, ...fuzzy])].slice(0, 12) // evita troppi roundtrip
+
+  const p = await getPool()
+  if (!p) return existing[0] ?? fuzzy[0] ?? null
+
+  // Score: quante righe su TOP(50) sono convertibili a date?
+  // Usiamo la stessa COALESCE di `sqlDateEqualsExpr` ma senza parametro.
+  let best: { col: string; ok: number } | null = null
+  for (const col of toTry) {
+    try {
+      const c = bracketCol(col)
+      const r = await p.request().query(
+        `SELECT TOP (1)
+           SUM(CASE WHEN ${`
+             COALESCE(
+               TRY_CONVERT(date, ${c}),
+               TRY_CONVERT(date, ${c}, 23),
+               TRY_CONVERT(date, ${c}, 103),
+               TRY_CONVERT(date, LEFT(${c}, 10), 23),
+               TRY_CONVERT(date, LEFT(${c}, 10), 103),
+               TRY_CONVERT(date, SUBSTRING(${c}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${c}), 0), 10), 103)
+             )
+           `} IS NOT NULL THEN 1 ELSE 0 END) AS ok
+         FROM (SELECT TOP (50) ${c} AS v FROM [${view}] WHERE ${c} IS NOT NULL) t;`
+      )
+      const ok = Number(r.recordset?.[0]?.ok ?? 0) || 0
+      if (!best || ok > best.ok) best = { col, ok }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Se nessuna colonna è convertibile, prova l'exact "data*" anche se score 0.
+  if (!best || best.ok <= 0) {
+    const prefer = cols.find((c) => c.startsWith("data"))
+    return prefer ?? existing[0] ?? null
+  }
+  return best.col
 }
 
 async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {
@@ -1563,19 +1616,18 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const giornoOk = giorno ? /^\d{4}-\d{2}-\d{2}$/.test(giorno) : false
   const whereGiorno = giornoOk ? " WHERE CAST([Data] AS DATE) = CAST(@giorno AS DATE)" : ""
 
-  // Scelta colonna data: proviamo varie denominazioni comuni + fallback fuzzy.
+  // Scelta colonna data: NON usare "Giorno" se è testo (es. "martedì").
+  // Preferiamo colonne data/ora reali e scegliamo quella convertibile.
   const dateCandidates = [
-    "Data",
-    "Giorno",
+    "DataOraInizio",
+    "DataInizio",
     "DataLezione",
     "DataCorso",
     "DataAppuntamento",
-    "DataInizio",
-    "DataOraInizio",
     "DataOra",
+    "Data",
   ]
-  const colsLower = await prenGetCols(view)
-  const dateCol = pickBestDateCol(colsLower, dateCandidates)
+  const dateCol = giornoOk ? await pickBestDateColForView(view, dateCandidates) : (await pickBestDateColForView(view, dateCandidates))
   // Se non troviamo la colonna data non possiamo filtrare in modo affidabile → evita query enorme.
   const where = giornoOk && dateCol ? ` WHERE ${sqlDateEqualsExpr(dateCol, "@giorno")}` : ""
 
