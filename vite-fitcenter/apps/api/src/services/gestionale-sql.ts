@@ -691,6 +691,7 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
     if (x.includes("nascita") || x.includes("birth")) return true
     if (x.includes("dataprenot") || x.includes("prenotato")) return true
     if (x.includes("created") || x.includes("creato") || x.includes("creazione") || x.includes("datacreaz")) return true
+    if (x.includes("modifica") || x.includes("modified") || x.includes("update") || x.includes("datamodif")) return true
     return false
   }
   const boost = (c: string) => {
