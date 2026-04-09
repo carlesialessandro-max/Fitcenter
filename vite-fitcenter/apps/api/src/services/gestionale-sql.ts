@@ -193,8 +193,8 @@ export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateC
   const view = await resolvePrenotazioniViewName()
   const cols = await prenGetCols(view)
   const dateCol = await pickBestDateColForView(view, [
-    "InizioPrenotazioneIscrizione",
     "DataInizioPrenotazioneIscrizione",
+    "InizioPrenotazioneIscrizione",
     "PrenotazioniListaAttesaDataInizio",
     "DataFinePrenotazioneIscrizione",
     "DataOraInizio",
@@ -784,6 +784,7 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
   }
   const boost = (c: string) => {
     const x = c.toLowerCase()
+    if (x.includes("datainizioprenotazioneiscrizione")) return 6
     if (x.includes("dataorainizio") || x.includes("orainizio")) return 5
     if (x.includes("datainizio") || x.includes("inizio")) return 4
     if (x.includes("dataorafine") || x.includes("orafine") || x.includes("fine")) return 3
@@ -1738,8 +1739,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   // Preferiamo colonne data/ora reali e scegliamo quella convertibile.
   const dateCandidates = [
     // Prenotazioni corsi (gestionale): colonne viste in RVW_PrenotazioniUtentiAbbonamento
-    "InizioPrenotazioneIscrizione",
     "DataInizioPrenotazioneIscrizione",
+    "InizioPrenotazioneIscrizione",
     "PrenotazioniListaAttesaDataInizio",
     "DataFinePrenotazioneIscrizione",
     "PrenotazioniIscrizioneOraInizio",
