@@ -258,7 +258,7 @@ export async function debugPrenotazioniCountForDayExpr(args: {
     const vq = qualifySqlObject(args.view).query
     const req = p.request().input("giorno", sql.VarChar(10), args.giornoIso)
     const r = await req.query(
-      `SELECT COUNT(1) AS c FROM ${vq} WHERE ${sqlDateEqualsExpr(args.dateCol, "@giorno")};`
+      `SELECT COUNT(1) AS c FROM ${vq} WHERE (${sqlDateEqualsFastExpr(args.dateCol, "@giorno")} OR ${sqlDateEqualsExpr(args.dateCol, "@giorno")});`
     )
     const c = Number(r.recordset?.[0]?.c ?? 0)
     return Number.isFinite(c) ? c : 0
@@ -1840,42 +1840,11 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   }
 
   try {
-    // Caso 1: la vista fornisce già partecipanti → SELECT * + normalizzazione giorno + partecipanti.
-    if (partecipantiCol) {
-      if (giornoOk && !dateCol) return []
-      const r = await req.query(`SELECT * FROM ${vq}${where} ORDER BY 1`)
-      const rows = (r.recordset ?? []) as Record<string, unknown>[]
-      return rows.map((raw) => {
-        const n = Number(raw[partecipantiCol!] ?? raw.NumeroPartecipanti ?? raw.Partecipanti ?? raw.NumeroIscritti ?? raw.Iscritti)
-        return enrich(raw, Number.isFinite(n) ? n : undefined)
-      })
-    }
-
-    // Caso 2: calcoliamo partecipanti con window function se abbiamo almeno 2 colonne per partizionare (es. idCorso + data).
-    if (groupCols.length >= 2) {
-      if (giornoOk && !dateCol) return []
-      const partition = groupCols.map((c) => `[${c}]`).join(", ")
-      const dSelect = dateCol ? `[${dateCol}] AS __Data` : "NULL AS __Data"
-      const q = `
-        SELECT
-          *,
-          ${dSelect},
-          COUNT(1) OVER (PARTITION BY ${partition}) AS __Partecipanti
-        FROM ${vq}
-        ${where}
-      `
-      const r = await req.query(q)
-      const rows = (r.recordset ?? []) as Record<string, unknown>[]
-      return rows.map((raw) => {
-        const n = Number(raw.__Partecipanti)
-        const { __Data, __Partecipanti, ...clean } = raw as any
-        return enrich(clean as Record<string, unknown>, Number.isFinite(n) ? n : undefined)
-      })
-    }
-
-    // Caso 3: fallback: nessun conteggio possibile → ritorna righe raw.
+    // Ritorna sempre righe prenotazione (1 riga = 1 partecipante).
+    // Niente window function (può fallire se la view ha colonne non partizionabili).
     if (giornoOk && !dateCol) return []
-    const r = await req.query(`SELECT * FROM ${vq}${where} ORDER BY 1`)
+    const order = dateCol ? ` ORDER BY ${bracketCol(dateCol)} ASC` : ""
+    const r = await req.query(`SELECT * FROM ${vq}${where}${order}`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
     return rows.map((raw) => enrich(raw))
   } catch {
