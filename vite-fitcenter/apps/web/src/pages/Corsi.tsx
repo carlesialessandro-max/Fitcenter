@@ -134,6 +134,9 @@ export function Corsi() {
                 <div><span className="text-zinc-500">view</span>: {meta.view}</div>
                 <div><span className="text-zinc-500">dateCol</span>: {meta.dateCol ?? "(non trovata)"}</div>
                 <div><span className="text-zinc-500">count</span>: {meta.count ?? 0}</div>
+                {meta.connected === false && (
+                  <div><span className="text-zinc-500">sqlError</span>: {meta.sqlError ?? "(errore non disponibile)"}</div>
+                )}
                 {meta.sql && (
                   <>
                     <div><span className="text-zinc-500">sql.server</span>: {meta.sql.server ?? "(n/a)"}</div>

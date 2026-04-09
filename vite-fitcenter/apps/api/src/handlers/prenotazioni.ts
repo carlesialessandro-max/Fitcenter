@@ -12,9 +12,21 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
     if (!gestionaleSql.isGestionaleConfigured()) {
       return res.json({ rows: [], meta: { fromSql: false } })
     }
+    const pool = await gestionaleSql.getPool()
     const giorno = parseGiorno(req)
     if (giorno === "__INVALID__") {
       return res.status(400).json({ message: "Parametro giorno non valido (YYYY-MM-DD)" })
+    }
+    if (!pool) {
+      return res.json({
+        rows: [],
+        meta: {
+          fromSql: true,
+          connected: false,
+          giorno: giorno ?? null,
+          sqlError: gestionaleSql.getLastConnectionError(),
+        },
+      })
     }
     const rows = await gestionaleSql.queryPrenotazioniCorsi({ giorno })
     const dbg = await gestionaleSql.debugPrenotazioniViewInfo()
@@ -23,6 +35,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
       rows,
       meta: {
         fromSql: true,
+        connected: true,
         giorno: giorno ?? null,
         view: dbg.view,
         dateCol: dbg.dateCol,
