@@ -126,10 +126,11 @@ const defaultTables = {
 }
 
 function getPrenotazioniViewName(): string {
-  const raw = (process.env.GESTIONALE_VIEW_PRENOTAZIONI_UTENTI ?? "RVW_PrenotazioniUtenti").trim()
-  if (!raw) return "RVW_PrenotazioniUtenti"
+  // Default: vista corsi con righe prenotazioni (nome, prenotato il, note, orari).
+  const raw = (process.env.GESTIONALE_VIEW_PRENOTAZIONI_UTENTI ?? "RVW_PrenotazioniUtentiAbbonamento").trim()
+  if (!raw) return "RVW_PrenotazioniUtentiAbbonamento"
   // Evita injection via env.
-  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_PrenotazioniUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_PrenotazioniUtentiAbbonamento"
   return raw
 }
 
@@ -137,8 +138,8 @@ async function resolvePrenotazioniViewName(): Promise<string> {
   const preferred = getPrenotazioniViewName()
   const candidates = [
     preferred,
-    "RVW_PrenotazioniUtenti",
     "RVW_PrenotazioniUtentiAbbonamento",
+    "RVW_PrenotazioniUtenti",
     "RVW_PrenotazioniUtent",
     "SRVW_PrenotazioniUtenti",
   ]
@@ -160,6 +161,10 @@ async function resolvePrenotazioniViewName(): Promise<string> {
     }
   }
   return preferred
+}
+
+export async function getPrenotazioniViewNameResolved(): Promise<string> {
+  return resolvePrenotazioniViewName()
 }
 
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
