@@ -25,6 +25,12 @@ import sql from "mssql"
 let pool: sql.ConnectionPool | null = null
 let lastConnectionError: string | null = null
 
+function isSafeSqlIdentifierLoose(s: string): boolean {
+  // Permettiamo solo caratteri innocui per identificatori (schema.tabella, [dbo].[View], ecc.).
+  // Niente apici, punti e virgola, commenti, spazi.
+  return /^[A-Za-z0-9_\.\[\]]+$/.test(s)
+}
+
 function getConnectionString(): string | undefined {
   return process.env.SQL_CONNECTION_STRING
 }
@@ -117,6 +123,42 @@ export function getLastConnectionError(): string | null {
 const defaultTables = {
   clienti: process.env.GESTIONALE_TABLE_CLIENTI ?? "Utenti",
   movimentiVenduto: process.env.GESTIONALE_TABLE_MOVIMENTI_VENDUTO ?? "MovimentiVenduto",
+}
+
+function getPrenotazioniViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_PRENOTAZIONI_UTENTI ?? "RVW_PrenotazioniUtenti").trim()
+  if (!raw) return "RVW_PrenotazioniUtenti"
+  // Evita injection via env.
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_PrenotazioniUtenti"
+  return raw
+}
+
+async function resolvePrenotazioniViewName(): Promise<string> {
+  const preferred = getPrenotazioniViewName()
+  const candidates = [
+    preferred,
+    "RVW_PrenotazioniUtenti",
+    "RVW_PrenotazioniUtent",
+    "SRVW_PrenotazioniUtenti",
+  ]
+    .map((s) => s.trim())
+    .filter((s) => s && isSafeSqlIdentifierLoose(s))
+
+  const p = await getPool()
+  if (!p) return preferred
+
+  for (const name of candidates) {
+    try {
+      // OBJECT_ID funziona con schema qualora passato (dbo.View) o [dbo].[View].
+      const clean = name.replace(/[\[\]]/g, "")
+      const r = await p.request().input("obj", sql.NVarChar, clean).query("SELECT OBJECT_ID(@obj) AS oid")
+      const oid = r.recordset?.[0]?.oid
+      if (oid != null) return name
+    } catch {
+      // ignore e prova prossimo
+    }
+  }
+  return preferred
 }
 
 /** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
@@ -528,6 +570,26 @@ async function crmHasCol(view: string, col: string): Promise<boolean> {
     )
     const cols = new Set<string>(((r.recordset ?? []) as any[]).map((x) => String(x.name ?? "").toLowerCase()).filter(Boolean))
     crmColsCache = { view: clean, cols }
+    return cols.has(col.toLowerCase())
+  } catch {
+    return false
+  }
+}
+
+let prenColsCache: { view: string; cols: Set<string> } | null = null
+async function prenHasCol(view: string, col: string): Promise<boolean> {
+  const clean = view.replace(/[\[\]]/g, "")
+  if (prenColsCache?.view === clean) return prenColsCache.cols.has(col.toLowerCase())
+  try {
+    const p = await getPool()
+    if (!p) return false
+    const r = await p.request().input("obj", sql.NVarChar, clean).query(
+      `SELECT LOWER(c.name) AS name
+       FROM sys.columns c
+       WHERE c.object_id = OBJECT_ID(@obj);`
+    )
+    const cols = new Set<string>(((r.recordset ?? []) as any[]).map((x) => String(x.name ?? "").toLowerCase()).filter(Boolean))
+    prenColsCache = { view: clean, cols }
     return cols.has(col.toLowerCase())
   } catch {
     return false
@@ -1357,4 +1419,125 @@ export async function getReportConteggiAndamento(
 
 export function isGestionaleConfigured(): boolean {
   return !!getConnectionString()
+}
+
+export type PrenotazioneCorsoRow = {
+  giorno?: string
+  partecipanti?: number
+  // lasciamo anche le colonne originali, perché la vista può variare per DB
+  raw: Record<string, unknown>
+}
+
+/**
+ * Prenotazioni corsi (SRVW_PrenotazioniUtenti o vista configurata).
+ * - Filtro opzionale per giorno: YYYY-MM-DD
+ * - Numero partecipanti:
+ *   - Se la vista espone già una colonna (NumeroPartecipanti/Partecipanti/Iscritti) la usiamo.
+ *   - Altrimenti, se la vista è una riga-per-utente, calcoliamo COUNT(*) per gruppo tramite window function
+ *     quando esistono colonne chiave per raggruppare.
+ */
+export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Promise<PrenotazioneCorsoRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = await resolvePrenotazioniViewName()
+  const giorno = params?.giorno?.trim()
+
+  const giornoOk = giorno ? /^\d{4}-\d{2}-\d{2}$/.test(giorno) : false
+  const whereGiorno = giornoOk ? " WHERE CAST([Data] AS DATE) = CAST(@giorno AS DATE)" : ""
+
+  // Scelta colonna data: proviamo varie denominazioni comuni.
+  const dateCandidates = ["Data", "DataLezione", "DataCorso", "DataAppuntamento", "DataInizio", "DataOraInizio"]
+  let dateCol: string | null = null
+  for (const c of dateCandidates) {
+    if (await prenHasCol(view, c)) {
+      dateCol = c
+      break
+    }
+  }
+  // Fallback: se non troviamo una colonna data, non applichiamo il filtro giorno.
+  const where =
+    giornoOk && dateCol
+      ? ` WHERE CAST([${dateCol}] AS DATE) = CAST(@giorno AS DATE)`
+      : ""
+
+  // Se esiste già una colonna partecipanti, la esponiamo.
+  const partecipantiCols = ["NumeroPartecipanti", "Partecipanti", "NumeroIscritti", "Iscritti"]
+  let partecipantiCol: string | null = null
+  for (const c of partecipantiCols) {
+    if (await prenHasCol(view, c)) {
+      partecipantiCol = c
+      break
+    }
+  }
+
+  // Tentativo di raggruppamento: colonne tipiche per identificare "una lezione/corso".
+  const groupCandidates: string[] = []
+  const groupTry = ["IDCorso", "CorsoId", "IDAttivita", "IDLezione", "LezioneId", "IDAppuntamento", "AppuntamentoId", "IDSchedaCorso"]
+  for (const c of groupTry) {
+    if (await prenHasCol(view, c)) groupCandidates.push(c)
+  }
+  // Se non abbiamo chiavi, proviamo a raggruppare per (nome corso + data/ora) se presenti.
+  const nameTry = ["Corso", "NomeCorso", "CorsoDescrizione", "Attivita", "DescrizioneCorso"]
+  for (const c of nameTry) {
+    if (await prenHasCol(view, c)) groupCandidates.push(c)
+  }
+  if (dateCol) groupCandidates.push(dateCol)
+
+  // De-dup dei group cols mantenendo ordine.
+  const groupCols = [...new Set(groupCandidates)]
+
+  const req = p.request()
+  if (giornoOk && dateCol) req.input("giorno", sql.VarChar(10), giorno)
+
+  try {
+    // Caso 1: la vista fornisce già partecipanti → SELECT * + normalizzazione giorno + partecipanti.
+    if (partecipantiCol) {
+      const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
+      const rows = (r.recordset ?? []) as Record<string, unknown>[]
+      return rows.map((raw) => {
+        const d = dateCol ? raw[dateCol] : raw.Data
+        const dayKey =
+          d != null && !Number.isNaN(new Date(d as any).getTime())
+            ? new Date(d as any).toISOString().slice(0, 10)
+            : undefined
+        const n = Number(raw[partecipantiCol!] ?? raw.NumeroPartecipanti ?? raw.Partecipanti ?? raw.NumeroIscritti ?? raw.Iscritti)
+        return { giorno: dayKey, partecipanti: Number.isFinite(n) ? n : undefined, raw }
+      })
+    }
+
+    // Caso 2: calcoliamo partecipanti con window function se abbiamo almeno 2 colonne per partizionare (es. idCorso + data).
+    if (groupCols.length >= 2) {
+      const partition = groupCols.map((c) => `[${c}]`).join(", ")
+      const dSelect = dateCol ? `[${dateCol}] AS __Data` : "NULL AS __Data"
+      const q = `
+        SELECT
+          *,
+          ${dSelect},
+          COUNT(1) OVER (PARTITION BY ${partition}) AS __Partecipanti
+        FROM [${view}]
+        ${where}
+      `
+      const r = await req.query(q)
+      const rows = (r.recordset ?? []) as Record<string, unknown>[]
+      return rows.map((raw) => {
+        const d = (raw.__Data ?? raw[dateCol ?? ""] ?? null) as unknown
+        const dayKey =
+          d != null && !Number.isNaN(new Date(d as any).getTime())
+            ? new Date(d as any).toISOString().slice(0, 10)
+            : undefined
+        const n = Number(raw.__Partecipanti)
+        // togli campi tecnici dalla raw
+        const { __Data, __Partecipanti, ...clean } = raw as any
+        return { giorno: dayKey, partecipanti: Number.isFinite(n) ? n : undefined, raw: clean as Record<string, unknown> }
+      })
+    }
+
+    // Caso 3: fallback: nessun conteggio possibile → ritorna righe raw.
+    const r = await req.query(`SELECT * FROM [${view}]${where} ORDER BY 1`)
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((raw) => ({ raw }))
+  } catch {
+    // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
+    return []
+  }
 }
