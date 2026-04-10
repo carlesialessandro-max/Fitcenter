@@ -340,9 +340,8 @@ function WacomGSS_SignatureSDK(_onDetectRunning, service_port)
   this.service_port = service_port;
   var sigsdkptr = this;
 
-  // Some installations bind SigCaptX only on IPv4 loopback.
-  // Using 127.0.0.1 avoids Chrome attempting ::1 first.
-  var service_hostname = "127.0.0.1";
+  // SigCaptX installs a localhost-only certificate. Using "localhost" avoids CN mismatches.
+  var service_hostname = "localhost";
   var server_address;
   //JSONreq.secure = false;
 
