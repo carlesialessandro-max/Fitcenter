@@ -63,7 +63,11 @@ export function SignPublicPage() {
       await loadSigCaptX()
       // inizializza un'istanza e aspetta un attimo che setti .running
       const sdk = new (globalThis as any).WacomGSS_SignatureSDK(() => {}, 8000)
-      await new Promise((r) => setTimeout(r, 250))
+      const deadline = Date.now() + 3_000
+      while (Date.now() < deadline) {
+        if (sdk?.running) return true
+        await new Promise((r) => setTimeout(r, 250))
+      }
       return !!sdk?.running
     } catch {
       return false
@@ -75,11 +79,16 @@ export function SignPublicPage() {
     const WacomGSS_SignatureSDK = (globalThis as any).WacomGSS_SignatureSDK as any
     const sdk = new WacomGSS_SignatureSDK(() => {}, 8000)
 
-    // attesa inizializzazione
-    await new Promise((r) => setTimeout(r, 250))
+    // attesa inizializzazione (su PC lenti può richiedere qualche secondo)
+    {
+      const deadline = Date.now() + 3_000
+      while (Date.now() < deadline && !sdk.running) {
+        await new Promise((r) => setTimeout(r, 250))
+      }
+    }
     if (!sdk.running) {
       throw new Error(
-        "SigCaptX non disponibile su questa postazione. Verifica installazione e apri https://localhost:8000 in Chrome (accetta certificato)."
+        "SigCaptX non disponibile su questa postazione. Verifica installazione e apri https://localhost:8000 (e se serve https://localhost:8001) in Chrome (accetta certificato)."
       )
     }
 
