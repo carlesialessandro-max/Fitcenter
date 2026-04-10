@@ -131,30 +131,30 @@ export function Corsi() {
   }
 
   return (
-    <div className="p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="p-4 sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
-            Giorno
+        <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-2 sm:items-end">
+          <label className="grid gap-1 text-sm text-zinc-400">
+            <span>Giorno</span>
             <input
               type="date"
               value={giorno}
               onChange={(e) => setGiorno(e.target.value)}
-              className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
             />
           </label>
-          <label className="flex items-center gap-2 text-sm text-zinc-400">
-            Cerca corso
+          <label className="grid gap-1 text-sm text-zinc-400">
+            <span>Cerca corso</span>
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Es. pilates"
-              className="w-56 rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30 sm:w-56"
             />
           </label>
         </div>
@@ -235,7 +235,48 @@ export function Corsi() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* Mobile: lista compatta (senza tabella) */}
+                <div className="block sm:hidden">
+                  <div className="divide-y divide-zinc-800/60">
+                    {g.partecipanti.map((p, idx) => {
+                      const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
+                      const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
+                      const pren = p.prenotatoIl
+                        ? new Date(p.prenotatoIl).toLocaleString("it-IT", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""
+                      const note = (p.note ?? "").trim()
+                      return (
+                        <div key={idx} className="px-4 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-zinc-100">
+                                {String(prog)}. {nome}
+                              </div>
+                              <div className="mt-0.5 text-xs text-zinc-400">
+                                Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
+                              </div>
+                            </div>
+                          </div>
+                          {note ? (
+                            <div className="mt-2 text-xs text-zinc-300">
+                              <span className="text-zinc-500">Note: </span>
+                              {note}
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Desktop: tabella */}
+                <div className="hidden overflow-x-auto sm:block">
                   <table className="min-w-full text-left text-sm">
                     <thead>
                       <tr className="border-b border-zinc-800 bg-zinc-950/40">
