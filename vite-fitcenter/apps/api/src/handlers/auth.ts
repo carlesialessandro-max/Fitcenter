@@ -7,11 +7,37 @@ export async function login(req: Request, res: Response) {
     if (!username || !password) {
       return res.status(400).json({ message: "Username e password obbligatori" })
     }
-    const result = authStore.login(username, password)
-    if (!result) {
+    const result = await authStore.loginWithPassword(username, password)
+    if (result.kind === "invalid") {
       return res.status(401).json({ message: "Utente o password non validi" })
     }
-    res.json(result)
+    if (result.kind === "otp_mail_failed") {
+      return res.status(503).json({ message: `Invio email non riuscito: ${result.message}` })
+    }
+    if (result.kind === "needs_otp") {
+      return res.status(200).json({
+        needsOtp: true,
+        username: result.username,
+        emailHint: result.emailHint,
+      })
+    }
+    res.json({ token: result.token, user: result.user })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function loginOtp(req: Request, res: Response) {
+  try {
+    const { username, code } = req.body as { username?: string; code?: string }
+    if (!username || !code) {
+      return res.status(400).json({ message: "Username e codice obbligatori" })
+    }
+    const out = authStore.verifyOtp(username, code)
+    if (!out) {
+      return res.status(401).json({ message: "Codice non valido o scaduto" })
+    }
+    res.json({ token: out.token, user: out.user })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

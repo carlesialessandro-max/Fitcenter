@@ -10,7 +10,8 @@ type AuthContextType = {
   isAuthenticated: boolean
   isLoading: boolean
   user: User | null
-  login: (username: string, password: string) => Promise<void>
+  /** Dopo POST /auth/login o /auth/login/otp */
+  applySession: (token: string, user: User) => void
   logout: () => Promise<void>
   /** Per compatibilità: ruolo dell'utente loggato */
   role: Role
@@ -27,7 +28,7 @@ const defaultValue: AuthContextType = {
   isAuthenticated: false,
   isLoading: true,
   user: null,
-  login: async () => {},
+  applySession: () => {},
   logout: async () => {},
   role: "operatore",
   consulenteNome: DEFAULT_CONSULENTI[0] ?? "",
@@ -72,8 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSession()
   }, [restoreSession])
 
-  const login = useCallback(async (username: string, password: string) => {
-    const { token, user: u } = await authApi.login(username, password)
+  const applySession = useCallback((token: string, u: User) => {
     setAuthToken(token)
     setUser(u)
   }, [])
@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user,
         isLoading,
         user,
-        login,
+        applySession,
         logout,
         role,
         consulenteNome,

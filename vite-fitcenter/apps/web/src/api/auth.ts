@@ -17,9 +17,20 @@ export interface LoginResponse {
   user: User
 }
 
+export interface LoginNeedsOtp {
+  needsOtp: true
+  username: string
+  emailHint: string
+}
+
+export type LoginStep1Response = LoginResponse | LoginNeedsOtp
+
 export const authApi = {
   login: (username: string, password: string) =>
-    api.post<LoginResponse>("/auth/login", { username, password }),
+    api.post<LoginStep1Response>("/auth/login", { username, password }),
+
+  loginOtp: (username: string, code: string) =>
+    api.post<LoginResponse>("/auth/login/otp", { username, code }),
 
   me: () => api.get<{ user: User }>("/auth/me"),
 
