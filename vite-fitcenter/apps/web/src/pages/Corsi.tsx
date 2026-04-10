@@ -106,9 +106,7 @@ export function Corsi() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Corsi del giorno con elenco partecipanti.
-          </p>
+          <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
           Giorno
@@ -116,12 +114,12 @@ export function Corsi() {
             type="date"
             value={giorno}
             onChange={(e) => setGiorno(e.target.value)}
-            className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
           />
         </label>
       </div>
 
-      <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+      <div className="mt-4 rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900/40 to-zinc-950/20 p-5 shadow-lg">
         {isLoading ? (
           <p className="text-sm text-zinc-500">Caricamento...</p>
         ) : error ? (
@@ -166,31 +164,41 @@ export function Corsi() {
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="text-sm text-zinc-400">
-              Totale partecipanti: <span className="font-semibold text-amber-400">{totalePartecipanti}</span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-zinc-400">
+                Totale partecipanti: <span className="font-semibold text-amber-400">{totalePartecipanti}</span>
+              </div>
+              <div className="text-xs text-zinc-500">
+                Corsi: <span className="font-medium text-zinc-300">{gruppi.length}</span>
+              </div>
             </div>
 
             {gruppi.map((g) => (
-              <div key={g.key} className="rounded-lg border border-zinc-800 bg-zinc-900/30">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-4 py-3">
-                  <div className="text-sm font-semibold text-zinc-200">
-                    {g.servizio}, gio {fmtDateIt(g.giorno)}
-                    {g.oraInizio ? ` dalle ${fmtTimeDot(g.oraInizio)}` : ""}
-                    {g.oraFine ? ` alle ${fmtTimeDot(g.oraFine)}` : ""}
+              <div key={g.key} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight text-zinc-100">
+                      {g.servizio}
+                    </div>
+                    <div className="mt-0.5 text-xs text-zinc-500">
+                      gio {fmtDateIt(g.giorno)}
+                      {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
+                      {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
+                    </div>
                   </div>
-                  <div className="text-sm font-semibold text-amber-400">
-                    {g.partecipanti.length}
+                  <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">
+                    {g.partecipanti.length} partecipanti
                   </div>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="min-w-full text-left text-sm">
                     <thead>
-                      <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                        <th className="px-3 py-2 font-medium text-zinc-400">Progressivo</th>
-                        <th className="px-3 py-2 font-medium text-zinc-400">Cognome e Nome</th>
-                        <th className="px-3 py-2 font-medium text-zinc-400">Prenotato il</th>
-                        <th className="px-3 py-2 font-medium text-zinc-400">Note</th>
+                      <tr className="border-b border-zinc-800 bg-zinc-950/40">
+                        <th className="px-5 py-3 font-medium text-zinc-400">#</th>
+                        <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
+                        <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
+                        <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -201,11 +209,11 @@ export function Corsi() {
                           ? new Date(p.prenotatoIl).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                           : ""
                         return (
-                          <tr key={idx} className="border-b border-zinc-900 last:border-0">
-                            <td className="px-3 py-2 text-zinc-200">{String(prog)}</td>
-                            <td className="px-3 py-2 text-zinc-200">{nome}</td>
-                            <td className="px-3 py-2 text-zinc-300">{pren}</td>
-                            <td className="px-3 py-2 text-zinc-300">{p.note ?? ""}</td>
+                          <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
+                            <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
+                            <td className="px-5 py-3 font-medium text-zinc-100">{nome}</td>
+                            <td className="px-5 py-3 text-zinc-300">{pren || "—"}</td>
+                            <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
                           </tr>
                         )
                       })}

@@ -1797,6 +1797,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
   const enrich = (raw: Record<string, unknown>, partecipanti?: number): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
+      // Tipico titolo in stampa: "FITNESS - PILATES", "CORSI A PAGAMENTO - Pole Dance", ecc.
+      "ServizioDescrizione",
       "Servizio",
       "ServizioDescrizione",
       "TipoServizio",
@@ -1835,7 +1837,21 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const day = toIsoDay(dateCol ? raw[dateCol] : raw.Data)
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
-    const prenotatoIlRaw = firstNonEmpty(raw, ["PrenotatoIl", "DataPrenotazione", "DataPrenotato", "PrenotazioneData", "CreatoIl", "CreatedAt"])
+    const prenotatoIlRaw = firstNonEmpty(raw, [
+      "PrenotatoIl",
+      "DataPrenotazione",
+      "DataPrenotato",
+      "PrenotazioneData",
+      "DataCreazione",
+      "DataCreazionePrenotazione",
+      "DataCreazioneIscrizione",
+      "DataCreazionePrenotazioneIscrizione",
+      "DataCreazionePrenotazioneUtente",
+      "DataModifica",
+      "DataModificaPrenotazione",
+      "CreatoIl",
+      "CreatedAt",
+    ])
     const prenotatoIl = prenotatoIlRaw
       ? (() => {
           const d = new Date(prenotatoIlRaw)
