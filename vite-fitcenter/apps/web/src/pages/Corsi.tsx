@@ -40,6 +40,7 @@ function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
   const raw = (r.raw ?? {}) as any
   return (
     firstNonEmptyStr(r.servizio) ??
+    firstNonEmptyStr(raw?.PrenotazioneDescrizione) ??
     firstNonEmptyStr(raw?.ServizioDescrizione) ??
     firstNonEmptyStr(raw?.DescrizioneServizio) ??
     firstNonEmptyStr(raw?.NomeServizio) ??

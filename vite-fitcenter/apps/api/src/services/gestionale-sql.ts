@@ -1798,6 +1798,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const enrich = (raw: Record<string, unknown>, partecipanti?: number): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
       // Tipico titolo in stampa: "FITNESS - PILATES", "CORSI A PAGAMENTO - Pole Dance", ecc.
+      "PrenotazioneDescrizione",
       "Servizio",
       "ServizioDescrizione",
       "DescrizioneServizio",
