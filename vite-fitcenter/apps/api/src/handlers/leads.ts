@@ -118,6 +118,16 @@ export async function webhookZapier(req: Request, res: Response) {
       example: { nome: "Mario", cognome: "Rossi", email: "mario@example.com", telefono: "3331234567", fonte: "website" },
     })
   }
+  const expected = (process.env.ZAPIER_WEBHOOK_TOKEN ?? "").trim()
+  if (expected) {
+    const provided =
+      String(req.query?.token ?? "").trim() ||
+      String(req.get("x-zapier-token") ?? "").trim() ||
+      String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim()
+    if (!provided || provided !== expected) {
+      return res.status(401).json({ message: "Unauthorized" })
+    }
+  }
   try {
     const body = req.body as Record<string, unknown>
     const items = Array.isArray(body) ? body : body.data ? (body.data as Record<string, unknown>[]) : [body]
