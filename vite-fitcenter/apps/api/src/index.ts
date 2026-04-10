@@ -39,6 +39,10 @@ function findPublicDir(): string | null {
 }
 
 const app = express()
+// Dietro Caddy / reverse proxy: host e proto corretti per link firma (SIGN_BASE_URL / getBaseUrl)
+if (process.env.TRUST_PROXY !== "false") {
+  app.set("trust proxy", 1)
+}
 
 app.use(cors({ origin: true }))
 // Firma: inviamo immagini base64 (dataURL) -> aumenta limite JSON.

@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api"
+import { getApiBase } from "./baseUrl"
+
+const API_BASE = getApiBase()
 const TOKEN_KEY = "fitcenter-token"
 
 function getToken(): string | null {

@@ -60,8 +60,11 @@ function normalizedSteps(row: SignatureRequest): SignatureStep[] {
 function getBaseUrl(req: Request): string {
   const envBase = process.env.SIGN_BASE_URL?.trim()
   if (envBase) return envBase.replace(/\/$/, "")
-  const proto = req.headers["x-forwarded-proto"]?.toString().split(",")[0] ?? req.protocol
-  const host = req.get("host")
+  const proto = (req.headers["x-forwarded-proto"]?.toString().split(",")[0] ?? req.protocol ?? "https")
+    .toString()
+    .replace(/:$/, "")
+  const host =
+    req.headers["x-forwarded-host"]?.toString().split(",")[0]?.trim() || req.get("host") || ""
   return `${proto}://${host}`
 }
 

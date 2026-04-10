@@ -1,7 +1,8 @@
 import type { SignatureAdminItem, SignaturePublicInfo, SignatureSlot, SignatureTemplate } from "@/types/signature"
+import { getApiBase } from "./baseUrl"
 import { api } from "./client"
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "/api"
+const API_BASE = getApiBase()
 const TOKEN_KEY = "fitcenter-token"
 
 export const signaturesApi = {
