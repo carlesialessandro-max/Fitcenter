@@ -31,10 +31,32 @@ type CorsoGroup = {
   partecipanti: PrenotazioneCorsoRow[]
 }
 
+function firstNonEmptyStr(v: unknown): string | undefined {
+  const s = typeof v === "string" ? v.trim() : String(v ?? "").trim()
+  return s ? s : undefined
+}
+
+function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
+  const raw = (r.raw ?? {}) as any
+  return (
+    firstNonEmptyStr(r.servizio) ??
+    firstNonEmptyStr(raw?.ServizioDescrizione) ??
+    firstNonEmptyStr(raw?.DescrizioneServizio) ??
+    firstNonEmptyStr(raw?.NomeServizio) ??
+    firstNonEmptyStr(raw?.AttivitaDescrizione) ??
+    firstNonEmptyStr(raw?.DescrizioneAttivita) ??
+    firstNonEmptyStr(raw?.CorsoDescrizione) ??
+    firstNonEmptyStr(raw?.DescrizioneCorso) ??
+    firstNonEmptyStr(raw?.NomeCorso) ??
+    firstNonEmptyStr(raw?.Corso) ??
+    "—"
+  )
+}
+
 function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
   for (const r of rows) {
-    const servizio = (r.servizio ?? "").trim() || "—"
+    const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
     const oraInizio = (r.oraInizio ?? "").trim() || undefined
     const oraFine = (r.oraFine ?? "").trim() || undefined
@@ -73,6 +95,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
 export function Corsi() {
   const { role } = useAuth()
   const [giorno, setGiorno] = useState(() => isoToday())
+  const [search, setSearch] = useState("")
 
   const enabled = role === "admin" || role === "corsi"
 
@@ -87,6 +110,11 @@ export function Corsi() {
 
   const rows = data?.rows ?? []
   const gruppi = useMemo(() => groupByCorso(rows), [rows])
+  const gruppiFiltrati = useMemo(() => {
+    const q = search.trim().toLocaleLowerCase()
+    if (!q) return gruppi
+    return gruppi.filter((g) => g.servizio.toLocaleLowerCase().includes(q))
+  }, [gruppi, search])
   const totalePartecipanti = useMemo(
     () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
     [gruppi]
@@ -108,15 +136,27 @@ export function Corsi() {
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-zinc-400">
-          Giorno
-          <input
-            type="date"
-            value={giorno}
-            onChange={(e) => setGiorno(e.target.value)}
-            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
-          />
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Giorno
+            <input
+              type="date"
+              value={giorno}
+              onChange={(e) => setGiorno(e.target.value)}
+              className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Cerca corso
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Es. pilates"
+              className="w-56 rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="mt-4 rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900/40 to-zinc-950/20 p-5 shadow-lg">
@@ -169,11 +209,14 @@ export function Corsi() {
                 Totale partecipanti: <span className="font-semibold text-amber-400">{totalePartecipanti}</span>
               </div>
               <div className="text-xs text-zinc-500">
-                Corsi: <span className="font-medium text-zinc-300">{gruppi.length}</span>
+                Corsi: <span className="font-medium text-zinc-300">{gruppiFiltrati.length}</span>
+                {search.trim() ? (
+                  <span className="text-zinc-600"> (filtrati)</span>
+                ) : null}
               </div>
             </div>
 
-            {gruppi.map((g) => (
+            {gruppiFiltrati.map((g) => (
               <div key={g.key} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
                   <div>
