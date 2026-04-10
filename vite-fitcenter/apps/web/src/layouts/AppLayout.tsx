@@ -12,9 +12,7 @@ const navOperatore = [
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
-const navCorsi = [
-  { to: "/corsi", label: "Corsi" },
-] as const
+const navCorsi = [{ to: "/corsi", label: "Corsi" }] as const
 
 const navAdmin = [
   { to: "/", label: "Dashboard" },
@@ -83,15 +81,13 @@ export function AppLayout() {
   )
 
   return (
-    <div className="flex min-h-svh bg-zinc-950 text-zinc-100">
-      {/* Sidebar desktop */}
-      <div className="hidden sm:block">
-        {Sidebar}
-      </div>
+    <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">
+      {/* Sidebar desktop: colonna fissa */}
+      <div className="hidden shrink-0 sm:block">{Sidebar}</div>
 
-      {/* Topbar mobile */}
-      <div className="flex w-full flex-col sm:hidden">
-        <div className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-3 backdrop-blur">
+      {/* Mobile: colonna verticale (topbar + main) — evita flex-row che schiaccia il main */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="sticky top-0 z-40 flex h-14 shrink-0 items-center justify-between border-b border-zinc-800 bg-zinc-950/90 px-3 backdrop-blur sm:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -106,25 +102,23 @@ export function AppLayout() {
           </div>
         </div>
 
-        {/* Drawer mobile */}
-        {mobileOpen ? (
-          <div className="fixed inset-0 z-50">
-            <button
-              type="button"
-              className="absolute inset-0 bg-black/60"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Chiudi menu"
-            />
-            <div className="absolute left-0 top-0 h-full w-[85vw] max-w-sm shadow-2xl">
-              {Sidebar}
-            </div>
-          </div>
-        ) : null}
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <Outlet />
+        </main>
       </div>
 
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+      {/* Drawer mobile (fixed, non nel flusso flex) */}
+      {mobileOpen ? (
+        <div className="fixed inset-0 z-50 sm:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Chiudi menu"
+          />
+          <div className="absolute left-0 top-0 h-full w-[85vw] max-w-sm shadow-2xl">{Sidebar}</div>
+        </div>
+      ) : null}
     </div>
   )
 }
