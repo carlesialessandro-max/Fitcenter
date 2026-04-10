@@ -595,9 +595,12 @@ export function SignPublicPage() {
                         setTabletSignatureDataUrl(dataUrl)
                         setTabletReady(true)
                       } catch (e) {
-                        setTabletReady(false)
+                        // Non confondiamo "servizio non disponibile" con "licenza non valida".
+                        // Se la cattura fallisce per licenza, il servizio è comunque pronto.
+                        const msg = (e as Error).message ?? String(e)
+                        setTabletReady(!/licenza/i.test(msg))
                         setTabletSignatureDataUrl(null)
-                        setErr((e as Error).message)
+                        setErr(msg)
                       } finally {
                         setTabletBusy(false)
                       }
