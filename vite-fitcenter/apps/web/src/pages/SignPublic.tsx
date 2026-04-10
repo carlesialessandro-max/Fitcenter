@@ -78,6 +78,7 @@ export function SignPublicPage() {
     await loadSigCaptX()
     const WacomGSS_SignatureSDK = (globalThis as any).WacomGSS_SignatureSDK as any
     const sdk = new WacomGSS_SignatureSDK(() => {}, 8000)
+    const licence = String((import.meta as any).env?.VITE_WACOM_SIGCAPTX_LICENCE ?? "").trim()
 
     // attesa inizializzazione (su PC lenti può richiedere qualche secondo)
     {
@@ -108,12 +109,36 @@ export function SignPublicPage() {
       void o
     })
 
+    // Se disponibile, applica la licenza Wacom (necessaria per alcuni setup: DynCaptNotLicensed).
+    if (licence) {
+      await new Promise<void>((resolve, reject) => {
+        sigCtl.PutLicence(licence, (_sigCtlV: any, status: number) => {
+          if (status === sdk.ResponseStatus.OK) resolve()
+          else reject(new Error(`PutLicence (SigCtl) error: ${status}`))
+        })
+      })
+      await new Promise<void>((resolve, reject) => {
+        dynCapt.PutLicence(licence, (_dynV: any, status: number) => {
+          if (status === sdk.ResponseStatus.OK) resolve()
+          else reject(new Error(`PutLicence (DynamicCapture) error: ${status}`))
+        })
+      })
+    }
+
     const sigObj = await new Promise<any>((resolve, reject) => {
       dynCapt.Capture(sigCtl, fullNameTrimmed, "Firma documento", null, null, (_dynV: any, sigObjV: any, status: number) => {
         if (status === sdk.DynamicCaptureResult.DynCaptOK) return resolve(sigObjV)
         if (status === sdk.DynamicCaptureResult.DynCaptCancel) return reject(new Error("Firma annullata"))
         if (status === sdk.DynamicCaptureResult.DynCaptPadError) return reject(new Error("Nessun servizio di cattura disponibile"))
-        if (status === sdk.DynamicCaptureResult.DynCaptNotLicensed) return reject(new Error("Licenza Signature Capture non valida"))
+        if (status === sdk.DynamicCaptureResult.DynCaptNotLicensed) {
+          return reject(
+            new Error(
+              licence
+                ? "Licenza Signature Capture non valida (chiave presente ma rifiutata)."
+                : "Licenza Signature Capture non valida. Imposta `VITE_WACOM_SIGCAPTX_LICENCE` nella .env del web (chiave Wacom)."
+            )
+          )
+        }
         return reject(new Error(`Errore firma (${status})`))
       })
     })
