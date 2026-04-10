@@ -19,9 +19,12 @@ export function SignPublicPage() {
   })
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
-  const [signatureMode, setSignatureMode] = useState<"draw" | "typed">("draw")
+  const [signatureMode, setSignatureMode] = useState<"draw" | "typed" | "tablet">("draw")
   const [drawing, setDrawing] = useState(false)
   const [hasInk, setHasInk] = useState(false)
+  const [tabletReady, setTabletReady] = useState<boolean | null>(null)
+  const [tabletBusy, setTabletBusy] = useState(false)
+  const [tabletSignatureDataUrl, setTabletSignatureDataUrl] = useState<string | null>(null)
   const [fullName, setFullName] = useState("")
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -30,7 +33,103 @@ export function SignPublicPage() {
   const activePointerIdRef = useRef<number | null>(null)
 
   const fullNameTrimmed = fullName.trim()
-  const canSign = !!signerToken && acceptedTerms && !!fullNameTrimmed && (signatureMode === "typed" || hasInk)
+  const canSign =
+    !!signerToken &&
+    acceptedTerms &&
+    !!fullNameTrimmed &&
+    (signatureMode === "typed" || (signatureMode === "draw" && hasInk) || (signatureMode === "tablet" && !!tabletSignatureDataUrl))
+
+  async function loadSigCaptX(): Promise<void> {
+    if ((globalThis as any).WacomGSS_SignatureSDK) return
+    await new Promise<void>((resolve, reject) => {
+      const existing = globalThis.document.querySelector<HTMLScriptElement>('script[data-wacom-sigcaptx="1"]')
+      if (existing) {
+        existing.addEventListener("load", () => resolve(), { once: true })
+        existing.addEventListener("error", () => reject(new Error("Impossibile caricare SigCaptX")), { once: true })
+        return
+      }
+      const s = globalThis.document.createElement("script")
+      s.src = "/wacom-sigcaptx/wgssSigCaptX.js"
+      s.async = true
+      s.dataset.wacomSigcaptx = "1"
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error("Impossibile caricare SigCaptX"))
+      globalThis.document.head.appendChild(s)
+    })
+  }
+
+  async function probeSigCaptX(): Promise<boolean> {
+    try {
+      await loadSigCaptX()
+      // inizializza un'istanza e aspetta un attimo che setti .running
+      const sdk = new (globalThis as any).WacomGSS_SignatureSDK(() => {}, 8000)
+      await new Promise((r) => setTimeout(r, 250))
+      return !!sdk?.running
+    } catch {
+      return false
+    }
+  }
+
+  async function captureFromTablet(): Promise<string> {
+    await loadSigCaptX()
+    const WacomGSS_SignatureSDK = (globalThis as any).WacomGSS_SignatureSDK as any
+    const sdk = new WacomGSS_SignatureSDK(() => {}, 8000)
+
+    // attesa inizializzazione
+    await new Promise((r) => setTimeout(r, 250))
+    if (!sdk.running) {
+      throw new Error(
+        "SigCaptX non disponibile su questa postazione. Verifica installazione e apri https://localhost:8000 in Chrome (accetta certificato)."
+      )
+    }
+
+    const sigCtl = await new Promise<any>((resolve, reject) => {
+      const o = new sdk.SigCtl((sigCtlV: any, status: number) => {
+        if (status === sdk.ResponseStatus.OK) resolve(sigCtlV)
+        else reject(new Error(`SigCtl error: ${status}`))
+      })
+      void o
+    })
+
+    const dynCapt = await new Promise<any>((resolve, reject) => {
+      const o = new sdk.DynamicCapture((dynV: any, status: number) => {
+        if (status === sdk.ResponseStatus.OK) resolve(dynV)
+        else reject(new Error(`DynamicCapture error: ${status}`))
+      })
+      void o
+    })
+
+    const sigObj = await new Promise<any>((resolve, reject) => {
+      dynCapt.Capture(sigCtl, fullNameTrimmed, "Firma documento", null, null, (_dynV: any, sigObjV: any, status: number) => {
+        if (status === sdk.DynamicCaptureResult.DynCaptOK) return resolve(sigObjV)
+        if (status === sdk.DynamicCaptureResult.DynCaptCancel) return reject(new Error("Firma annullata"))
+        if (status === sdk.DynamicCaptureResult.DynCaptPadError) return reject(new Error("Nessun servizio di cattura disponibile"))
+        if (status === sdk.DynamicCaptureResult.DynCaptNotLicensed) return reject(new Error("Licenza Signature Capture non valida"))
+        return reject(new Error(`Errore firma (${status})`))
+      })
+    })
+
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const outputFlags = sdk.RBFlags.RenderOutputBase64 | sdk.RBFlags.RenderColor32BPP
+      sigObj.RenderBitmap(
+        "image/png",
+        760,
+        220,
+        2,
+        "0R 0G 0B",
+        "1R 1G 1B",
+        outputFlags,
+        10,
+        10,
+        (_sigObjV: any, bmpObj: any, status: number) => {
+          if (status === sdk.ResponseStatus.OK) resolve(String(bmpObj))
+          else reject(new Error(`RenderBitmap error: ${status}`))
+        }
+      )
+    })
+
+    return `data:image/png;base64,${base64}`
+  }
 
   useEffect(() => {
     let mounted = true
@@ -245,13 +344,19 @@ export function SignPublicPage() {
       if (!signerToken) return setErr("Verifica OTP prima di firmare")
       if (!acceptedTerms) return setErr("Devi accettare i termini")
       if (!fullNameTrimmed) return setErr("Inserisci nome e cognome")
-      const dataUrl = signatureMode === "typed" ? typedSignatureDataUrl : canvasRef.current?.toDataURL("image/png")
-      if (!dataUrl || (signatureMode === "draw" && !hasInk)) return setErr("Firma mancante")
+      const dataUrl =
+        signatureMode === "typed"
+          ? typedSignatureDataUrl
+          : signatureMode === "tablet"
+            ? tabletSignatureDataUrl
+            : canvasRef.current?.toDataURL("image/png")
+      if (!dataUrl || (signatureMode === "draw" && !hasInk) || (signatureMode === "tablet" && !tabletSignatureDataUrl)) return setErr("Firma mancante")
       setErr(null)
       setOk(null)
       const out = await signaturesApi.sign(token, signerToken, dataUrl, fullNameTrimmed, info?.nextStepId ?? undefined)
       setOk(out.completed ? "Firma completata." : `Firma salvata. Prossimo step: ${out.nextStepLabel ?? "successivo"}.`)
       clearCanvas()
+      setTabletSignatureDataUrl(null)
       if (out.completed) setSignerToken(null)
       const refreshed = await signaturesApi.getPublicInfo(token)
       setInfo(refreshed)
@@ -357,8 +462,29 @@ export function SignPublicPage() {
               >
                 Firma digitata
               </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setSignatureMode("tablet")
+                  setErr(null)
+                  const ok = await probeSigCaptX()
+                  setTabletReady(ok)
+                }}
+                className={`rounded border px-3 py-2 text-sm ${
+                  signatureMode === "tablet"
+                    ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                    : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                }`}
+              >
+                Tavoletta (Wacom)
+              </button>
               {signatureMode === "draw" && (
                 <p className="text-xs text-zinc-500">Supporta mouse, dito e penna (Wacom).</p>
+              )}
+              {signatureMode === "tablet" && (
+                <p className="text-xs text-zinc-500">
+                  Richiede SigCaptX installato sulla postazione (default <span className="font-mono">https://localhost:8000</span>).
+                </p>
               )}
             </div>
 
@@ -401,7 +527,7 @@ export function SignPublicPage() {
                   }}
                 />
               </div>
-            ) : (
+            ) : signatureMode === "typed" ? (
               <div className="mt-3 rounded border border-zinc-700 bg-white p-6 text-center">
                 <p className="text-sm text-zinc-500">Anteprima firma digitata</p>
                 <p
@@ -410,6 +536,49 @@ export function SignPublicPage() {
                 >
                   {fullNameTrimmed || "—"}
                 </p>
+              </div>
+            ) : (
+              <div className="mt-3 rounded border border-zinc-700 bg-zinc-950/40 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm text-zinc-300">
+                    Stato SigCaptX:{" "}
+                    {tabletReady == null ? (
+                      <span className="text-zinc-500">non verificato</span>
+                    ) : tabletReady ? (
+                      <span className="text-emerald-400">pronto</span>
+                    ) : (
+                      <span className="text-red-400">non disponibile</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={tabletBusy || !fullNameTrimmed}
+                    onClick={async () => {
+                      try {
+                        setTabletBusy(true)
+                        setErr(null)
+                        const dataUrl = await captureFromTablet()
+                        setTabletSignatureDataUrl(dataUrl)
+                        setTabletReady(true)
+                      } catch (e) {
+                        setTabletReady(false)
+                        setTabletSignatureDataUrl(null)
+                        setErr((e as Error).message)
+                      } finally {
+                        setTabletBusy(false)
+                      }
+                    }}
+                    className="rounded bg-amber-500 px-3 py-2 text-sm font-semibold text-zinc-900 disabled:opacity-60"
+                  >
+                    {tabletBusy ? "Acquisizione..." : "Acquisisci firma"}
+                  </button>
+                </div>
+                {!fullNameTrimmed && <p className="mt-2 text-xs text-zinc-500">Inserisci Nome e Cognome prima di acquisire.</p>}
+                {tabletSignatureDataUrl && (
+                  <div className="mt-3 rounded bg-white p-2">
+                    <img alt="Firma" src={tabletSignatureDataUrl} className="h-[160px] w-full object-contain" />
+                  </div>
+                )}
               </div>
             )}
 
