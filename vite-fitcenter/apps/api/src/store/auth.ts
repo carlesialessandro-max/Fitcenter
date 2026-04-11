@@ -13,40 +13,60 @@ export interface User {
 type UserRecord = User & { password: string; email?: string }
 
 /**
- * Utenti di default (sviluppo). In produzione impostare AUTH_USERS_JSON con password in bcrypt.
+ * Utenti di default (solo se AUTH_USERS_JSON non è impostato).
+ * Password in bcrypt (min. ~12 caratteri, maiuscole, minuscole, cifre, simboli).
+ * In produzione: definire AUTH_USERS_JSON con hash propri (vedi scripts/hash-password.ts).
+ *
+ * Credenziali predefinite (cambiarle sul server con variabile d'ambiente):
+ *   admin     → H2Fc.Admin2026!xK
+ *   carmen    → H2Fc.Carmen.9!m
+ *   ombretta  → H2Fc.Ombre.9!n
+ *   serena    → H2Fc.Serena.9!p
+ *   irene     → H2Fc.Irene.9!q
+ *   corsi     → H2Fc.Corsi.9!r
  */
 const DEFAULT_USERS: UserRecord[] = [
-  { username: "admin", password: "admin", nome: "Amministratore", role: "admin" },
+  {
+    username: "admin",
+    password: "$2b$12$6o6BHuCJOkLxC0ai54MQ1ut3zX312HXzaOWuSQXqxEqh8Fd35Ybw2",
+    nome: "Amministratore",
+    role: "admin",
+  },
   {
     username: "carmen",
-    password: "carmen",
+    password: "$2b$12$4bIWZxR28y64K5.CI/vQsOQaejrLU2N4rr77Jhtkd4Je5shT/u1Ka",
     nome: "Carmen Severino",
     role: "operatore",
     consulenteNome: "Carmen Severino",
   },
   {
     username: "ombretta",
-    password: "ombretta",
+    password: "$2b$12$YcdQvhAMqmmS9GYfn2JMcuWVXEZceUE3S7I7Y19lz4rzGAOh.QqI.",
     nome: "Ombretta Zenoni",
     role: "operatore",
     consulenteNome: "Ombretta Zenoni",
   },
   {
     username: "serena",
-    password: "serena",
+    password: "$2b$12$p9u11pWi3BR.e/Psugsvie19AusSRX6KjQqGVv6/ZVkxYloW6ccDu",
     nome: "Serena Del Prete",
     role: "operatore",
     consulenteNome: "Serena Del Prete",
   },
   {
     username: "irene",
-    password: "irene",
+    password: "$2b$12$ub/3cJrBpy.ZG/35yMux..1UQ0pl2sIv6NRSECR/aO897DhbEQWqq",
     nome: "Irene",
     role: "operatore",
     consulenteNome: "Irene",
     leadFilter: "bambini",
   },
-  { username: "corsi", password: "corsi", nome: "Corsi", role: "corsi" },
+  {
+    username: "corsi",
+    password: "$2b$12$pM0JZcrvtqNxxW7g/A4ps.5VWYFGGZrZ6ohxK5pv3p4Vz2.fKex/m",
+    nome: "Corsi",
+    role: "corsi",
+  },
 ]
 
 function loadUsersFromEnv(): UserRecord[] | null {
