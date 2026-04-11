@@ -10,6 +10,8 @@ export type PrenotazioneCorsoRow = {
   nome?: string
   prenotatoIl?: string
   note?: string
+  email?: string
+  sms?: string
   raw: Record<string, unknown>
 }
 
@@ -20,5 +22,7 @@ export const prenotazioniApi = {
       `/prenotazioni/prenotazioni${qs}`
     )
   },
+  notifyEmail: (body: { giorno: string; groupKey: string; subject: string; text: string }) =>
+    api.post<{ ok: boolean; recipients: number }>("/prenotazioni/notify-email", body),
 }
 

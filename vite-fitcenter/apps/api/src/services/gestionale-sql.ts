@@ -1685,6 +1685,10 @@ export type PrenotazioneCorsoRow = {
   nome?: string
   prenotatoIl?: string
   note?: string
+  /** Colonna Email dalla vista (se presente) */
+  email?: string
+  /** Colonna SMS / cellulare dalla vista (es. per WhatsApp) */
+  sms?: string
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
 }
@@ -1869,7 +1873,22 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         })()
       : undefined
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
-    return { giorno: day, servizio, oraInizio, oraFine, partecipanti, cognome, nome, prenotatoIl, note, raw }
+    const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
+    const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
+    return {
+      giorno: day,
+      servizio,
+      oraInizio,
+      oraFine,
+      partecipanti,
+      cognome,
+      nome,
+      prenotatoIl,
+      note,
+      email,
+      sms,
+      raw,
+    }
   }
 
   try {

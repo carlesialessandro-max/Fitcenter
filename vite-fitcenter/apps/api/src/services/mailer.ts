@@ -2,6 +2,7 @@ import nodemailer from "nodemailer"
 
 type SendMailInput = {
   to: string
+  bcc?: string
   subject: string
   text: string
   attachments?: { filename: string; path: string; contentType?: string }[]
@@ -18,6 +19,10 @@ function asBool(v: string | undefined): boolean | undefined {
   if (["1", "true", "yes", "on"].includes(x)) return true
   if (["0", "false", "no", "off"].includes(x)) return false
   return undefined
+}
+
+export function isSmtpConfigured(): boolean {
+  return createTransportOrNull() !== null
 }
 
 function createTransportOrNull() {
@@ -51,6 +56,7 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean }>
   if (!transport) {
     console.log("[SIGNATURE][MAIL-DRYRUN]", {
       to: input.to,
+      bcc: input.bcc,
       subject: input.subject,
       text: input.text,
       attachments: input.attachments?.map((a) => a.filename) ?? [],
@@ -61,6 +67,7 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean }>
     await transport.sendMail({
       from,
       to: input.to,
+      ...(input.bcc ? { bcc: input.bcc } : {}),
       subject: input.subject,
       text: input.text,
       attachments: input.attachments,
