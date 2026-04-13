@@ -24,6 +24,7 @@ type UserRecord = User & { password: string; email?: string }
  *   serena    → H2Fc.Serena.9!p
  *   irene     → H2Fc.Irene.9!q
  *   corsi     → H2Fc.Corsi.9!r
+ *   istruttore→ H2Fc.Istruttore.9!s
  */
 const DEFAULT_USERS: UserRecord[] = [
   {
@@ -66,6 +67,12 @@ const DEFAULT_USERS: UserRecord[] = [
     password: "$2b$12$pM0JZcrvtqNxxW7g/A4ps.5VWYFGGZrZ6ohxK5pv3p4Vz2.fKex/m",
     nome: "Corsi",
     role: "corsi",
+  },
+  {
+    username: "istruttore",
+    password: "$2b$12$TS74XYRwEV7wYCFdol8miuJY//CfFpgOdVamG.eH4tOlRYnwfpMEa",
+    nome: "Istruttore",
+    role: "istruttore",
   },
 ]
 
