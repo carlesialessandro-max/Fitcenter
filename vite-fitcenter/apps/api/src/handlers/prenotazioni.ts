@@ -49,6 +49,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
           })
         : null
     const prenErr = gestionaleSql.getLastPrenotazioniQueryError()
+    const waitErr = gestionaleSql.getLastPrenotazioniWaitlistError()
     const lastErr = gestionaleSql.getLastConnectionError()
     res.json({
       rows,
@@ -60,9 +61,11 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         dateCol: dbg.dateCol,
         cols: dbg.cols,
         count: rows.length,
+        inAttesaCount: rows.filter((x) => (x as any)?.inAttesa).length,
         dayCount,
         dayCountExpr,
         ...(prenErr ? { queryError: prenErr } : {}),
+        ...(waitErr ? { waitlistError: waitErr } : {}),
         sql,
         cs,
         // Se sql identity non è disponibile, esponi eventuale errore precedente.

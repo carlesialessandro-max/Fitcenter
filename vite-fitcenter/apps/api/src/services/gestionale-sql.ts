@@ -25,6 +25,7 @@ import sql from "mssql"
 let pool: sql.ConnectionPool | null = null
 let lastConnectionError: string | null = null
 let lastPrenotazioniQueryError: string | null = null
+let lastPrenotazioniWaitlistError: string | null = null
 
 function isSafeSqlIdentifierLoose(s: string): boolean {
   // Permettiamo solo caratteri innocui per identificatori (schema.tabella, [dbo].[View], ecc.).
@@ -147,6 +148,10 @@ export function getLastPrenotazioniQueryError(): string | null {
   return lastPrenotazioniQueryError
 }
 
+export function getLastPrenotazioniWaitlistError(): string | null {
+  return lastPrenotazioniWaitlistError
+}
+
 const defaultTables = {
   clienti: process.env.GESTIONALE_TABLE_CLIENTI ?? "Utenti",
   movimentiVenduto: process.env.GESTIONALE_TABLE_MOVIMENTI_VENDUTO ?? "MovimentiVenduto",
@@ -158,6 +163,13 @@ function getPrenotazioniViewName(): string {
   if (!raw) return "RVW_PrenotazioniUtentiAbbonamento"
   // Evita injection via env.
   if (!isSafeSqlIdentifierLoose(raw)) return "RVW_PrenotazioniUtentiAbbonamento"
+  return raw
+}
+
+function getPrenotazioniWaitlistViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_PRENOTAZIONI_LISTA_ATTESA ?? "RVW_PrenotazioniListaAttesaUtenti").trim()
+  if (!raw) return "RVW_PrenotazioniListaAttesaUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_PrenotazioniListaAttesaUtenti"
   return raw
 }
 
@@ -179,6 +191,28 @@ async function resolvePrenotazioniViewName(): Promise<string> {
   for (const name of candidates) {
     try {
       // OBJECT_ID funziona con schema qualora passato (dbo.View) o [dbo].[View].
+      const q = qualifySqlObject(name)
+      const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
+      const oid = r.recordset?.[0]?.oid
+      if (oid != null) return name
+    } catch {
+      // ignore e prova prossimo
+    }
+  }
+  return preferred
+}
+
+async function resolvePrenotazioniWaitlistViewName(): Promise<string> {
+  const preferred = getPrenotazioniWaitlistViewName()
+  const candidates = [preferred, "RVW_PrenotazioniListaAttesaUtenti", "RVW_PrenotazioniListaAttesaUtent"]
+    .map((s) => s.trim())
+    .filter((s) => s && isSafeSqlIdentifierLoose(s))
+
+  const p = await getPool()
+  if (!p) return preferred
+
+  for (const name of candidates) {
+    try {
       const q = qualifySqlObject(name)
       const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
       const oid = r.recordset?.[0]?.oid
@@ -1942,6 +1976,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
   try {
     lastPrenotazioniQueryError = null
+    lastPrenotazioniWaitlistError = null
     // Ritorna sempre righe prenotazione (1 riga = 1 partecipante).
     // Niente window function (può fallire se la view ha colonne non partizionabili).
     if (giornoOk && !dateCol) return []
@@ -1951,8 +1986,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const base = rows.map((raw) => enrich(raw))
 
     // Lista d'attesa (se esiste): RVW_PrenotazioniListaAttesaUtenti
-    const waitView = "dbo.RVW_PrenotazioniListaAttesaUtenti"
     try {
+      const waitView = await resolvePrenotazioniWaitlistViewName()
       const wq = qualifySqlObject(waitView).query
       const wDateCol = giornoOk
         ? await pickBestDateColForView(waitView, dateCandidates)
@@ -1967,7 +2002,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
       const wait = wRows.map((raw) => enrich(raw, undefined, { inAttesa: true }))
       return [...base, ...wait]
-    } catch {
+    } catch (e) {
+      lastPrenotazioniWaitlistError = (e as Error)?.message ?? String(e)
       return base
     }
   } catch (e) {
