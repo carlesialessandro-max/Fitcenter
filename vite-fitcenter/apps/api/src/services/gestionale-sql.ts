@@ -850,6 +850,8 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
     if (x.includes("dataprenot") || x.includes("prenotato")) return true
     if (x.includes("created") || x.includes("creato") || x.includes("creazione") || x.includes("datacreaz")) return true
     if (x.includes("modifica") || x.includes("modified") || x.includes("update") || x.includes("datamodif")) return true
+    // Evita colonne che sembrano di sospensioni/periodi abbonamento (non data lezione).
+    if (x.includes("sospensione")) return true
     return false
   }
   const boost = (c: string) => {
@@ -2023,9 +2025,11 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     try {
       const waitView = await resolvePrenotazioniWaitlistViewName()
       const wq = qualifySqlObject(waitView).query
-      const wDateCol = giornoOk
-        ? await pickBestDateColForView(waitView, dateCandidates)
-        : await pickBestDateColForView(waitView, dateCandidates)
+      // Per la lista attesa preferiamo la colonna esplicita se presente.
+      const preferredWaitDateCol = (await prenHasCol(waitView, "PrenotazioniListaAttesaDataInizio"))
+        ? "PrenotazioniListaAttesaDataInizio"
+        : null
+      const wDateCol = preferredWaitDateCol ?? (await pickBestDateColForView(waitView, dateCandidates))
       lastPrenotazioniWaitlistView = waitView
       lastPrenotazioniWaitlistDateCol = wDateCol
       if (giornoOk && !wDateCol) return base
