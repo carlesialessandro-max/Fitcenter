@@ -246,6 +246,7 @@ export function Corsi() {
     [gruppi]
   )
   const meta = data?.meta
+  const [debugOpen, setDebugOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -512,6 +513,54 @@ export function Corsi() {
         </div>
       </div>
 
+      {meta?.fromSql ? (
+        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950/30 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs text-zinc-500">
+              Debug SQL{" "}
+              {typeof (meta as any)?.inAttesaCount === "number" ? (
+                <>
+                  · Attesa: <span className="font-medium text-fuchsia-300">{String((meta as any).inAttesaCount)}</span>
+                </>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => setDebugOpen((v) => !v)}
+              className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800/60"
+            >
+              {debugOpen ? "Nascondi" : "Mostra"}
+            </button>
+          </div>
+          {debugOpen ? (
+            <div className="mt-3 grid gap-1 text-xs text-zinc-400">
+              <div>
+                <span className="text-zinc-500">view</span>: {(meta as any).view ?? "—"}
+              </div>
+              <div>
+                <span className="text-zinc-500">dateCol</span>: {(meta as any).dateCol ?? "—"}
+              </div>
+              <div>
+                <span className="text-zinc-500">waitlistView</span>: {(meta as any).waitlistView ?? "—"}
+              </div>
+              <div>
+                <span className="text-zinc-500">waitlistDateCol</span>: {(meta as any).waitlistDateCol ?? "—"}
+              </div>
+              {(meta as any).waitlistError ? (
+                <div className="text-red-400">
+                  <span className="text-zinc-500">waitlistError</span>: {String((meta as any).waitlistError)}
+                </div>
+              ) : null}
+              {(meta as any).queryError ? (
+                <div className="text-red-400">
+                  <span className="text-zinc-500">queryError</span>: {String((meta as any).queryError)}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="mt-4 rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900/40 to-zinc-950/20 p-5 shadow-lg">
         {isLoading ? (
           <p className="text-sm text-zinc-500">Caricamento...</p>
@@ -520,40 +569,6 @@ export function Corsi() {
         ) : gruppi.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-zinc-500">Nessuna prenotazione per il giorno selezionato.</p>
-            {meta?.view && (
-              <div className="rounded-md border border-zinc-800 bg-zinc-950/40 p-3 text-xs text-zinc-400">
-                <div><span className="text-zinc-500">view</span>: {meta.view}</div>
-                <div><span className="text-zinc-500">dateCol</span>: {meta.dateCol ?? "(non trovata)"}</div>
-                <div><span className="text-zinc-500">count</span>: {meta.count ?? 0}</div>
-                {"dayCount" in (meta ?? {}) && (
-                  <div><span className="text-zinc-500">dayCount</span>: {String(meta.dayCount ?? "(n/a)")}</div>
-                )}
-                {"dayCountExpr" in (meta ?? {}) && (
-                  <div><span className="text-zinc-500">dayCountExpr</span>: {String(meta.dayCountExpr ?? "(n/a)")}</div>
-                )}
-                {"connected" in (meta ?? {}) && (
-                  <div><span className="text-zinc-500">connected</span>: {String(meta.connected)}</div>
-                )}
-                {meta.sqlError && (
-                  <div><span className="text-zinc-500">sqlError</span>: {meta.sqlError ?? "(errore non disponibile)"}</div>
-                )}
-                {meta.queryError && (
-                  <div><span className="text-zinc-500">queryError</span>: {meta.queryError}</div>
-                )}
-                {meta.sql && (
-                  <>
-                    <div><span className="text-zinc-500">sql.server</span>: {meta.sql.server ?? "(n/a)"}</div>
-                    <div><span className="text-zinc-500">sql.database</span>: {meta.sql.database ?? "(n/a)"}</div>
-                  </>
-                )}
-                {meta.cs && (
-                  <>
-                    <div><span className="text-zinc-500">cs.server</span>: {meta.cs.server ?? "(n/a)"}</div>
-                    <div><span className="text-zinc-500">cs.database</span>: {meta.cs.database ?? "(n/a)"}</div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         ) : (
           <div className="space-y-6">
