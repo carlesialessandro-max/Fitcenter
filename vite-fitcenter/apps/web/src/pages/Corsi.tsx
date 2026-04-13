@@ -64,15 +64,34 @@ function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
 
 function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
+  const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno -> gruppi (per agganciare attese senza orario)
   for (const r of rows) {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
     const oraInizio = (r.oraInizio ?? "").trim() || undefined
     const oraFine = (r.oraFine ?? "").trim() || undefined
+    const isWait = !!r.inAttesa
+    const waitNoTime = isWait && (!oraInizio || oraInizio === "00:00")
+
+    // Se è in attesa e non ha un orario affidabile, prova ad agganciarla al corso del giorno con stesso servizio.
+    if (waitNoTime) {
+      const baseKey = `${servizio}__${giorno}`
+      const candidates = byBase.get(baseKey) ?? []
+      if (candidates.length > 0) {
+        // Se ci sono più gruppi (stesso corso, più orari), aggancia al primo in ordine di ora.
+        const pick = [...candidates].sort((a, b) => (a.oraInizio ?? "").localeCompare(b.oraInizio ?? ""))[0]!
+        pick.partecipanti.push(r)
+        continue
+      }
+    }
+
     const key = `${servizio}__${giorno}__${oraInizio ?? ""}__${oraFine ?? ""}`
     const g = map.get(key)
     if (!g) {
-      map.set(key, { key, servizio, giorno, oraInizio, oraFine, partecipanti: [r] })
+      const created = { key, servizio, giorno, oraInizio, oraFine, partecipanti: [r] }
+      map.set(key, created)
+      const baseKey = `${servizio}__${giorno}`
+      byBase.set(baseKey, [...(byBase.get(baseKey) ?? []), created])
     } else {
       g.partecipanti.push(r)
     }
@@ -93,6 +112,10 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       const px = Number((x.raw as any)?.Progressivo ?? (x.raw as any)?.progressivo)
       const py = Number((y.raw as any)?.Progressivo ?? (y.raw as any)?.progressivo)
       if (Number.isFinite(px) && Number.isFinite(py) && px !== py) return px - py
+      // Metti in attesa dopo i prenotati, a parità di progressivo.
+      const wx = x.inAttesa ? 1 : 0
+      const wy = y.inAttesa ? 1 : 0
+      if (wx !== wy) return wx - wy
       const cx = (x.cognome ?? "").localeCompare(y.cognome ?? "")
       if (cx) return cx
       return (x.nome ?? "").localeCompare(y.nome ?? "")
