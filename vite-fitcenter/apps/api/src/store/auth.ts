@@ -83,7 +83,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
       const password = String(o.password ?? "")
       const nome = String(o.nome ?? "").trim() || username
       const role = o.role as Role
-      if (!username || !password || !["admin", "operatore", "corsi"].includes(role)) continue
+      if (!username || !password || !["admin", "operatore", "corsi", "istruttore"].includes(role)) continue
       out.push({
         username,
         password,

@@ -4,7 +4,7 @@ import { setAuthToken } from "@/api/client"
 
 const DEFAULT_CONSULENTI = ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
-export type Role = "admin" | "operatore" | "corsi"
+export type Role = "admin" | "operatore" | "corsi" | "istruttore"
 
 type AuthContextType = {
   isAuthenticated: boolean

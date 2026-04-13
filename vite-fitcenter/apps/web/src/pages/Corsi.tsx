@@ -79,13 +79,14 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   }
   const list = Array.from(map.values())
   list.sort((a, b) => {
-    const s = a.servizio.localeCompare(b.servizio)
-    if (s) return s
+    // Ordine richiesto: data + orario (non alfabetico per corso)
     const d = a.giorno.localeCompare(b.giorno)
     if (d) return d
     const o = (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "")
     if (o) return o
-    return (a.oraFine ?? "").localeCompare(b.oraFine ?? "")
+    const f = (a.oraFine ?? "").localeCompare(b.oraFine ?? "")
+    if (f) return f
+    return a.servizio.localeCompare(b.servizio)
   })
   for (const g of list) {
     g.partecipanti.sort((x, y) => {
@@ -180,7 +181,8 @@ export function Corsi() {
   const [messaggiBody, setMessaggiBody] = useState("")
   const [appello, setAppello] = useState<Record<string, true>>({})
 
-  const enabled = role === "admin" || role === "corsi"
+  const enabled = role === "admin" || role === "corsi" || role === "istruttore"
+  const canSendMessages = role === "admin" || role === "corsi"
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["prenotazioni-corsi", giorno],
@@ -194,6 +196,7 @@ export function Corsi() {
   const notifyMutation = useMutation({
     mutationFn: async () => {
       if (!messaggiGroup) throw new Error("Nessun corso selezionato")
+      if (!canSendMessages) throw new Error("Permessi insufficienti")
       return prenotazioniApi.notifyEmail({
         giorno,
         groupKey: messaggiGroup.key,
@@ -250,6 +253,7 @@ export function Corsi() {
   }
 
   function openMessaggi(g: CorsoGroup) {
+    if (!canSendMessages) return
     setMessaggiGroup(g)
     const ne = uniqueValidEmails(g.partecipanti).length
     setMessaggiChannel(ne > 0 ? "email" : "whatsapp")
@@ -490,7 +494,8 @@ export function Corsi() {
             </div>
 
             {gruppiFiltrati.map((g) => {
-              const canMessaggi = uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g)
+              const canMessaggi =
+                canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
               return (
                 <div key={g.key} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
@@ -515,7 +520,9 @@ export function Corsi() {
                         title={
                           canMessaggi
                             ? "Invia messaggio ai prenotati (email o WhatsApp)"
-                            : "Nessun indirizzo email né numero cellulare per questo corso"
+                            : canSendMessages
+                              ? "Nessun indirizzo email né numero cellulare per questo corso"
+                              : "Solo lettura: non puoi inviare messaggi"
                         }
                         onClick={() => openMessaggi(g)}
                       >

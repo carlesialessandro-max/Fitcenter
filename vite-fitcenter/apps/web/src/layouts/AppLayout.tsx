@@ -13,6 +13,7 @@ const navOperatore = [
 ] as const
 
 const navCorsi = [{ to: "/corsi", label: "Corsi" }] as const
+const navIstruttore = [{ to: "/corsi", label: "Corsi" }] as const
 
 const navAdmin = [
   { to: "/", label: "Dashboard" },
@@ -36,6 +37,8 @@ export function AppLayout() {
         ? navAdmin
         : role === "corsi"
           ? navCorsi
+          : role === "istruttore"
+            ? navIstruttore
           : navOperatore
 
   const Sidebar = (
@@ -50,7 +53,7 @@ export function AppLayout() {
           {user?.nome ?? "—"}
         </p>
         <p className="text-xs text-zinc-500">
-          {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : "Operatore"}
+          {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : role === "istruttore" ? "Istruttore" : "Operatore"}
         </p>
         <button
           type="button"

@@ -31,6 +31,15 @@ export function requireAdminOrCorsi(req: Request, res: Response, next: NextFunct
   next()
 }
 
+export function requireAdminOrCorsiOrIstruttore(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (u.role !== "admin" && u.role !== "corsi" && u.role !== "istruttore") {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
+  next()
+}
+
 export function getScopedUser(req: Request): User {
   const u = req.user
   if (!u) {
