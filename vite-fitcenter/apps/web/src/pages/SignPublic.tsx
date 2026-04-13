@@ -33,19 +33,6 @@ export function SignPublicPage() {
   const activePointerIdRef = useRef<number | null>(null)
 
   const fullNameTrimmed = fullName.trim()
-  const signatureReady =
-    signatureMode === "typed"
-      ? !!typedSignatureDataUrl
-      : signatureMode === "tablet"
-        ? !!tabletSignatureDataUrl
-        : hasInk
-
-  const missing: string[] = []
-  if (!acceptedTerms) missing.push("Accetta i termini")
-  if (!fullNameTrimmed) missing.push("Inserisci nome e cognome")
-  if (!signerToken) missing.push("Verifica OTP")
-  if (!signatureReady) missing.push("Inserisci la firma")
-
   const canSign =
     !!signerToken &&
     acceptedTerms &&
@@ -361,6 +348,19 @@ export function SignPublicPage() {
     ctx.fillText(fullNameTrimmed, off.width / 2, off.height / 2)
     return off.toDataURL("image/png")
   }, [fullNameTrimmed])
+
+  const signatureReady =
+    signatureMode === "typed"
+      ? !!typedSignatureDataUrl
+      : signatureMode === "tablet"
+        ? !!tabletSignatureDataUrl
+        : hasInk
+
+  const missing: string[] = []
+  if (!acceptedTerms) missing.push("Accetta i termini")
+  if (!fullNameTrimmed) missing.push("Inserisci nome e cognome")
+  if (!signerToken) missing.push("Verifica OTP")
+  if (!signatureReady) missing.push("Inserisci la firma")
 
   async function onRequestOtp() {
     try {

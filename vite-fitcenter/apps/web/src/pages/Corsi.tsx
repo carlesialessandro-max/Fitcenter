@@ -245,7 +245,7 @@ export function Corsi() {
     () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
     [gruppi]
   )
-  const meta = data?.meta
+  void data?.meta
 
   useEffect(() => {
     try {
