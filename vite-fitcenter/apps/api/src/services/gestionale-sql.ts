@@ -1870,7 +1870,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const enrich = (
     raw: Record<string, unknown>,
     partecipanti?: number,
-    extra?: { inAttesa?: boolean }
+    extra?: { inAttesa?: boolean; dateColOverride?: string }
   ): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
       // Tipico titolo in stampa: "FITNESS - PILATES", "CORSI A PAGAMENTO - Pole Dance", ecc.
@@ -1920,7 +1920,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         "Fine",
       ])
     )
-    const day = toIsoDay(dateCol ? raw[dateCol] : raw.Data)
+    const day = toIsoDay(
+      extra?.dateColOverride ? raw[extra.dateColOverride] : dateCol ? raw[dateCol] : raw.Data
+    )
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = firstNonEmpty(raw, [
@@ -2001,7 +2003,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const wr = await req.query(`SELECT * FROM ${wq}${wWhere}${wOrder}`)
       const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
       const wait = wRows.map((raw) => {
-        const row = enrich(raw, undefined, { inAttesa: true })
+        const row = enrich(raw, undefined, { inAttesa: true, dateColOverride: wDateCol ?? undefined })
         // La view lista attesa spesso espone solo una datetime (es. PrenotazioniListaAttesaDataInizio):
         // usiamola anche per l'orario così il grouping combacia col corso.
         if (!row.oraInizio && wDateCol) {
