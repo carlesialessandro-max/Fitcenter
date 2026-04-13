@@ -20,7 +20,7 @@ import { Corsi } from "@/pages/Corsi"
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
   if (leadFilter === "bambini") return <Navigate to="/crm" replace />
-  if (role === "corsi") return <Navigate to="/corsi" replace />
+  if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
   return <Dashboard />
 }
 
