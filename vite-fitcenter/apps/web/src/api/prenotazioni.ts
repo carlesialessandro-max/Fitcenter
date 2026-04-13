@@ -12,6 +12,7 @@ export type PrenotazioneCorsoRow = {
   note?: string
   email?: string
   sms?: string
+  dataUltimoAcesso?: string
   raw: Record<string, unknown>
 }
 

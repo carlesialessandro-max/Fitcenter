@@ -1689,6 +1689,8 @@ export type PrenotazioneCorsoRow = {
   email?: string
   /** Colonna SMS / cellulare dalla vista (es. per WhatsApp) */
   sms?: string
+  /** Ultimo accesso (se la vista espone una colonna tipo DataUltimoAcesso) */
+  dataUltimoAcesso?: string
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
 }
@@ -1875,6 +1877,20 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
+    const dataUltimoAcessoRaw = firstNonEmpty(raw, [
+      "DataUltimoAcesso",
+      "UltimoAcesso",
+      "DataUltimoLogin",
+      "UltimoLogin",
+      "LastAccess",
+      "LastLogin",
+    ])
+    const dataUltimoAcesso = dataUltimoAcessoRaw
+      ? (() => {
+          const d = new Date(dataUltimoAcessoRaw)
+          return Number.isNaN(d.getTime()) ? dataUltimoAcessoRaw : d.toISOString()
+        })()
+      : undefined
     return {
       giorno: day,
       servizio,
@@ -1887,6 +1903,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       note,
       email,
       sms,
+      dataUltimoAcesso,
       raw,
     }
   }

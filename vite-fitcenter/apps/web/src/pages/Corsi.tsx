@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prenotazioniApi, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
@@ -21,6 +21,13 @@ function fmtDateIt(iso: string): string {
 function fmtTimeDot(hhmm: string): string {
   const m = /^(\d{2}):(\d{2})$/.exec(hhmm)
   return m ? `${m[1]}.${m[2]}` : hhmm
+}
+
+function toIsoDay(val: unknown): string | undefined {
+  if (val == null) return undefined
+  const d = val instanceof Date ? val : new Date(val as any)
+  if (Number.isNaN(d.getTime())) return undefined
+  return d.toISOString().slice(0, 10)
 }
 
 type CorsoGroup = {
@@ -107,6 +114,31 @@ function uniqueValidEmails(part: PrenotazioneCorsoRow[]): string[] {
   return out
 }
 
+function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
+  const raw = (p.raw ?? {}) as any
+  const id =
+    firstNonEmptyStr(raw?.IDCliente) ??
+    firstNonEmptyStr(raw?.ClienteId) ??
+    firstNonEmptyStr(raw?.IdCliente) ??
+    firstNonEmptyStr(raw?.IDUtente) ??
+    firstNonEmptyStr(raw?.UtenteId) ??
+    firstNonEmptyStr(raw?.IdUtente) ??
+    firstNonEmptyStr(raw?.IDAnagrafica) ??
+    firstNonEmptyStr(raw?.AnagraficaId) ??
+    firstNonEmptyStr(raw?.IDSocio) ??
+    firstNonEmptyStr(raw?.SocioId)
+  if (id) return `id:${id}`
+  const nome = `${p.cognome ?? ""}|${p.nome ?? ""}`.trim()
+  const em = (p.email ?? "").trim().toLowerCase()
+  const sms = (p.sms ?? "").trim().replace(/\s+/g, "")
+  return `fallback:${nome}|${em}|${sms}|${idx}`
+}
+
+function hasAccessToday(p: PrenotazioneCorsoRow, giornoIso: string): boolean {
+  const d = toIsoDay(p.dataUltimoAcesso) ?? toIsoDay((p.raw as any)?.DataUltimoAcesso)
+  return !!d && d === giornoIso
+}
+
 function hasWhatsAppableContacts(g: CorsoGroup): boolean {
   for (const p of g.partecipanti) {
     const raw = (p.sms ?? "").trim()
@@ -146,6 +178,7 @@ export function Corsi() {
   const [messaggiChannel, setMessaggiChannel] = useState<"email" | "whatsapp">("email")
   const [messaggiSubject, setMessaggiSubject] = useState("")
   const [messaggiBody, setMessaggiBody] = useState("")
+  const [appello, setAppello] = useState<Record<string, true>>({})
 
   const enabled = role === "admin" || role === "corsi"
 
@@ -186,6 +219,35 @@ export function Corsi() {
     [gruppi]
   )
   const meta = data?.meta
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`fitcenter-corsi-appello:${giorno}`)
+      if (!raw) return setAppello({})
+      const parsed = JSON.parse(raw) as Record<string, true>
+      setAppello(parsed && typeof parsed === "object" ? parsed : {})
+    } catch {
+      setAppello({})
+    }
+  }, [giorno])
+
+  function isAppelloChecked(groupKey: string, p: PrenotazioneCorsoRow, idx: number): boolean {
+    const k = `${groupKey}::${participantStableKey(p, idx)}`
+    return !!appello[k]
+  }
+
+  function toggleAppello(groupKey: string, p: PrenotazioneCorsoRow, idx: number): void {
+    const k = `${groupKey}::${participantStableKey(p, idx)}`
+    setAppello((prev) => {
+      const next = { ...prev }
+      if (next[k]) delete next[k]
+      else next[k] = true
+      try {
+        localStorage.setItem(`fitcenter-corsi-appello:${giorno}`, JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
 
   function openMessaggi(g: CorsoGroup) {
     setMessaggiGroup(g)
@@ -477,6 +539,8 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
+                        const okAccesso = hasAccessToday(p, g.giorno)
+                        const okAppello = isAppelloChecked(g.key, p, idx)
                         return (
                           <div key={idx} className="px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
@@ -487,6 +551,25 @@ export function Corsi() {
                                 <div className="mt-0.5 text-xs text-zinc-400">
                                   Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
                                 </div>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <div
+                                  title={okAccesso ? "Presente (accesso effettuato oggi)" : "Non risulta accesso oggi"}
+                                  className={`h-5 w-5 rounded border ${
+                                    okAccesso ? "border-emerald-400/60 bg-emerald-500/30" : "border-zinc-600 bg-zinc-900/40"
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  title={okAppello ? "Appello: presente" : "Appello: da segnare"}
+                                  aria-pressed={okAppello}
+                                  onClick={() => toggleAppello(g.key, p, idx)}
+                                  className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
+                                    okAppello
+                                      ? "border-emerald-400/60 bg-emerald-500/30"
+                                      : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
+                                  }`}
+                                />
                               </div>
                             </div>
                             {note ? (
@@ -506,6 +589,8 @@ export function Corsi() {
                       <thead>
                         <tr className="border-b border-zinc-800 bg-zinc-950/40">
                           <th className="px-5 py-3 font-medium text-zinc-400">#</th>
+                          <th className="px-5 py-3 font-medium text-zinc-400">Acc.</th>
+                          <th className="px-5 py-3 font-medium text-zinc-400">App.</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
@@ -524,9 +609,32 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
+                          const okAccesso = hasAccessToday(p, g.giorno)
+                          const okAppello = isAppelloChecked(g.key, p, idx)
                           return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
                               <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
+                              <td className="px-5 py-3">
+                                <div
+                                  title={okAccesso ? "Presente (accesso oggi)" : "Non risulta accesso oggi"}
+                                  className={`h-5 w-5 rounded border ${
+                                    okAccesso ? "border-emerald-400/60 bg-emerald-500/30" : "border-zinc-600 bg-zinc-900/40"
+                                  }`}
+                                />
+                              </td>
+                              <td className="px-5 py-3">
+                                <button
+                                  type="button"
+                                  title={okAppello ? "Appello: presente" : "Appello: da segnare"}
+                                  aria-pressed={okAppello}
+                                  onClick={() => toggleAppello(g.key, p, idx)}
+                                  className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
+                                    okAppello
+                                      ? "border-emerald-400/60 bg-emerald-500/30"
+                                      : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
+                                  }`}
+                                />
+                              </td>
                               <td className="px-5 py-3 font-medium text-zinc-100">{nome}</td>
                               <td className="px-5 py-3 text-zinc-300">{pren || "—"}</td>
                               <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
