@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { Link, useParams } from "react-router-dom"
 import { signaturesApi } from "@/api/signatures"
 import type { SignaturePublicInfo } from "@/types/signature"
 
@@ -33,6 +33,19 @@ export function SignPublicPage() {
   const activePointerIdRef = useRef<number | null>(null)
 
   const fullNameTrimmed = fullName.trim()
+  const signatureReady =
+    signatureMode === "typed"
+      ? !!typedSignatureDataUrl
+      : signatureMode === "tablet"
+        ? !!tabletSignatureDataUrl
+        : hasInk
+
+  const missing: string[] = []
+  if (!acceptedTerms) missing.push("Accetta i termini")
+  if (!fullNameTrimmed) missing.push("Inserisci nome e cognome")
+  if (!signerToken) missing.push("Verifica OTP")
+  if (!signatureReady) missing.push("Inserisci la firma")
+
   const canSign =
     !!signerToken &&
     acceptedTerms &&
@@ -367,6 +380,7 @@ export function SignPublicPage() {
       setOk(null)
       const out = await signaturesApi.verifyOtp(token, otp)
       setSignerToken(out.signerToken)
+      setOtp("")
       setOk("OTP verificato. Ora puoi firmare.")
     } catch (e) {
       setErr((e as Error).message)
@@ -450,7 +464,13 @@ export function SignPublicPage() {
                   onChange={(e) => setAcceptedTerms(e.target.checked)}
                   className="h-4 w-4 accent-amber-500"
                 />
-                Accetto i termini
+                <span>
+                  Accetto i termini (
+                  <Link to="/informativa" target="_blank" rel="noreferrer" className="text-amber-400 hover:underline">
+                    leggi informativa privacy
+                  </Link>
+                  )
+                </span>
               </label>
             </div>
 
@@ -469,6 +489,9 @@ export function SignPublicPage() {
                 <button type="button" onClick={onVerifyOtp} className="rounded bg-amber-500 px-3 py-2 text-sm text-zinc-900">
                   Verifica
                 </button>
+                {signerToken ? (
+                  <span className="self-center text-xs font-medium text-emerald-400">OTP verificato</span>
+                ) : null}
               </div>
             </div>
             {debugOtp && <p className="mt-2 text-xs text-zinc-500">Debug OTP (dev): {debugOtp}</p>}
@@ -627,12 +650,17 @@ export function SignPublicPage() {
                 type="button"
                 onClick={onSign}
                 disabled={!canSign}
-                title={!canSign ? "Compila nome/cognome, accetta termini e inserisci la firma" : undefined}
+                title={!canSign ? missing.join(" · ") : undefined}
                 className="rounded bg-emerald-500 px-3 py-2 text-sm font-semibold text-zinc-900"
               >
                 Conferma firma {info.nextStepLabel ? `(${info.nextStepLabel})` : ""}
               </button>
             </div>
+            {!canSign ? (
+              <p className="mt-2 text-xs text-zinc-500">
+                Per continuare: <span className="text-zinc-300">{missing.join(", ")}</span>
+              </p>
+            ) : null}
           </>
         )}
 

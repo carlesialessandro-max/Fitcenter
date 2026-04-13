@@ -16,6 +16,7 @@ import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
 import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi } from "@/pages/Corsi"
+import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -39,6 +40,10 @@ export const router = createBrowserRouter([
   {
     path: "/firma/:token",
     element: <SignPublicPage />,
+  },
+  {
+    path: "/informativa",
+    element: <InformativaPrivacy />,
   },
   {
     path: "/login",

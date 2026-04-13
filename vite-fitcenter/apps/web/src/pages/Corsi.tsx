@@ -246,7 +246,6 @@ export function Corsi() {
     [gruppi]
   )
   const meta = data?.meta
-  const [debugOpen, setDebugOpen] = useState(false)
 
   useEffect(() => {
     try {
@@ -512,54 +511,6 @@ export function Corsi() {
           </label>
         </div>
       </div>
-
-      {meta?.fromSql ? (
-        <div className="mt-3 rounded-2xl border border-zinc-800 bg-zinc-950/30 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-zinc-500">
-              Debug SQL{" "}
-              {typeof (meta as any)?.inAttesaCount === "number" ? (
-                <>
-                  · Attesa: <span className="font-medium text-fuchsia-300">{String((meta as any).inAttesaCount)}</span>
-                </>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => setDebugOpen((v) => !v)}
-              className="rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs font-medium text-zinc-300 hover:bg-zinc-800/60"
-            >
-              {debugOpen ? "Nascondi" : "Mostra"}
-            </button>
-          </div>
-          {debugOpen ? (
-            <div className="mt-3 grid gap-1 text-xs text-zinc-400">
-              <div>
-                <span className="text-zinc-500">view</span>: {(meta as any).view ?? "—"}
-              </div>
-              <div>
-                <span className="text-zinc-500">dateCol</span>: {(meta as any).dateCol ?? "—"}
-              </div>
-              <div>
-                <span className="text-zinc-500">waitlistView</span>: {(meta as any).waitlistView ?? "—"}
-              </div>
-              <div>
-                <span className="text-zinc-500">waitlistDateCol</span>: {(meta as any).waitlistDateCol ?? "—"}
-              </div>
-              {(meta as any).waitlistError ? (
-                <div className="text-red-400">
-                  <span className="text-zinc-500">waitlistError</span>: {String((meta as any).waitlistError)}
-                </div>
-              ) : null}
-              {(meta as any).queryError ? (
-                <div className="text-red-400">
-                  <span className="text-zinc-500">queryError</span>: {String((meta as any).queryError)}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      ) : null}
 
       <div className="mt-4 rounded-2xl border border-zinc-800 bg-gradient-to-b from-zinc-900/40 to-zinc-950/20 p-5 shadow-lg">
         {isLoading ? (
