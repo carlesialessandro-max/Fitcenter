@@ -2000,7 +2000,15 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const wOrder = wDateCol ? ` ORDER BY ${bracketCol(wDateCol)} ASC` : ""
       const wr = await req.query(`SELECT * FROM ${wq}${wWhere}${wOrder}`)
       const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
-      const wait = wRows.map((raw) => enrich(raw, undefined, { inAttesa: true }))
+      const wait = wRows.map((raw) => {
+        const row = enrich(raw, undefined, { inAttesa: true })
+        // La view lista attesa spesso espone solo una datetime (es. PrenotazioniListaAttesaDataInizio):
+        // usiamola anche per l'orario così il grouping combacia col corso.
+        if (!row.oraInizio && wDateCol) {
+          row.oraInizio = toIsoTimeHHmm(raw[wDateCol])
+        }
+        return row
+      })
       return [...base, ...wait]
     } catch (e) {
       lastPrenotazioniWaitlistError = (e as Error)?.message ?? String(e)
