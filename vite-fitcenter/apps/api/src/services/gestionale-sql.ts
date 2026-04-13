@@ -1729,6 +1729,36 @@ function toIsoDay(val: unknown): string | undefined {
   return d.toISOString().slice(0, 10)
 }
 
+function toIsoDateTime(val: unknown): string | undefined {
+  if (val == null) return undefined
+  if (val instanceof Date) return val.toISOString()
+  if (typeof val === "string") {
+    const s = val.trim()
+    if (!s) return undefined
+    // Supporta: "DD/MM/YYYY" o "DD/MM/YYYY HH:mm" (alcune viste esportano in formato italiano).
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s)
+    if (m) {
+      const dd = Number(m[1])
+      const mm = Number(m[2])
+      const yyyy = Number(m[3])
+      const hh = m[4] != null ? Number(m[4]) : 0
+      const mi = m[5] != null ? Number(m[5]) : 0
+      const ss = m[6] != null ? Number(m[6]) : 0
+      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy >= 1900 && yyyy <= 2100) {
+        // Nota: costruiamo UTC per avere confronto coerente.
+        const d = new Date(Date.UTC(yyyy, mm - 1, dd, hh, mi, ss))
+        return d.toISOString()
+      }
+    }
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) return d.toISOString()
+    return undefined
+  }
+  const d = new Date(val as any)
+  if (!Number.isNaN(d.getTime())) return d.toISOString()
+  return undefined
+}
+
 /**
  * Prenotazioni corsi (SRVW_PrenotazioniUtenti o vista configurata).
  * - Filtro opzionale per giorno: YYYY-MM-DD
@@ -1854,6 +1884,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = firstNonEmpty(raw, [
+      // Prenotazione: colonna corretta vista da te
+      "DataOperazionePrenotazioneIscrizione",
       "PrenotatoIl",
       "DataPrenotazione",
       "DataPrenotato",
@@ -1868,29 +1900,22 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "CreatoIl",
       "CreatedAt",
     ])
-    const prenotatoIl = prenotatoIlRaw
-      ? (() => {
-          const d = new Date(prenotatoIlRaw)
-          return Number.isNaN(d.getTime()) ? prenotatoIlRaw : d.toISOString()
-        })()
-      : undefined
+    const prenotatoIl = toIsoDateTime(prenotatoIlRaw) ?? prenotatoIlRaw
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
     const dataUltimoAcessoRaw = firstNonEmpty(raw, [
+      "DataUltimoAccesso",
       "DataUltimoAcesso",
       "UltimoAcesso",
+      "DataUltimoIngresso",
+      "UltimoIngresso",
       "DataUltimoLogin",
       "UltimoLogin",
       "LastAccess",
       "LastLogin",
     ])
-    const dataUltimoAcesso = dataUltimoAcessoRaw
-      ? (() => {
-          const d = new Date(dataUltimoAcessoRaw)
-          return Number.isNaN(d.getTime()) ? dataUltimoAcessoRaw : d.toISOString()
-        })()
-      : undefined
+    const dataUltimoAcesso = toIsoDateTime(dataUltimoAcessoRaw) ?? dataUltimoAcessoRaw
     return {
       giorno: day,
       servizio,
