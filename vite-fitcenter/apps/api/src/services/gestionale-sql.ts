@@ -26,6 +26,8 @@ let pool: sql.ConnectionPool | null = null
 let lastConnectionError: string | null = null
 let lastPrenotazioniQueryError: string | null = null
 let lastPrenotazioniWaitlistError: string | null = null
+let lastPrenotazioniWaitlistView: string | null = null
+let lastPrenotazioniWaitlistDateCol: string | null = null
 
 function isSafeSqlIdentifierLoose(s: string): boolean {
   // Permettiamo solo caratteri innocui per identificatori (schema.tabella, [dbo].[View], ecc.).
@@ -152,6 +154,10 @@ export function getLastPrenotazioniWaitlistError(): string | null {
   return lastPrenotazioniWaitlistError
 }
 
+export function getLastPrenotazioniWaitlistDebug(): { view: string | null; dateCol: string | null } {
+  return { view: lastPrenotazioniWaitlistView, dateCol: lastPrenotazioniWaitlistDateCol }
+}
+
 const defaultTables = {
   clienti: process.env.GESTIONALE_TABLE_CLIENTI ?? "Utenti",
   movimentiVenduto: process.env.GESTIONALE_TABLE_MOVIMENTI_VENDUTO ?? "MovimentiVenduto",
@@ -210,13 +216,37 @@ async function resolvePrenotazioniWaitlistViewName(): Promise<string> {
 
   const p = await getPool()
   if (!p) return preferred
+  const pool = p
+
+  async function resolveAnySchemaIfNeeded(name: string): Promise<string> {
+    const cleaned = name.replace(/[\[\]]/g, "").trim()
+    if (!cleaned || cleaned.includes(".")) return name
+    try {
+      const r = await pool
+        .request()
+        .input("n", sql.NVarChar, cleaned)
+        .query(
+          `SELECT TOP (1)
+             QUOTENAME(s.name) + '.' + QUOTENAME(o.name) AS fullName
+           FROM sys.objects o
+           JOIN sys.schemas s ON s.schema_id = o.schema_id
+           WHERE o.type = 'V' AND o.name = @n
+           ORDER BY s.name ASC;`
+        )
+      const fullName = String(r.recordset?.[0]?.fullName ?? "").trim()
+      return fullName || name
+    } catch {
+      return name
+    }
+  }
 
   for (const name of candidates) {
     try {
-      const q = qualifySqlObject(name)
+      const resolved = await resolveAnySchemaIfNeeded(name)
+      const q = qualifySqlObject(resolved)
       const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
       const oid = r.recordset?.[0]?.oid
-      if (oid != null) return name
+      if (oid != null) return resolved
     } catch {
       // ignore e prova prossimo
     }
@@ -1979,6 +2009,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   try {
     lastPrenotazioniQueryError = null
     lastPrenotazioniWaitlistError = null
+    lastPrenotazioniWaitlistView = null
+    lastPrenotazioniWaitlistDateCol = null
     // Ritorna sempre righe prenotazione (1 riga = 1 partecipante).
     // Niente window function (può fallire se la view ha colonne non partizionabili).
     if (giornoOk && !dateCol) return []
@@ -1994,6 +2026,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const wDateCol = giornoOk
         ? await pickBestDateColForView(waitView, dateCandidates)
         : await pickBestDateColForView(waitView, dateCandidates)
+      lastPrenotazioniWaitlistView = waitView
+      lastPrenotazioniWaitlistDateCol = wDateCol
       if (giornoOk && !wDateCol) return base
       const wWhere =
         giornoOk && wDateCol
