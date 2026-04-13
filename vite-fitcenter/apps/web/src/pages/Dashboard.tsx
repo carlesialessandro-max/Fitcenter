@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react"
-import { Link } from "react-router-dom"
+import { Link, Navigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BarChart,
@@ -54,6 +54,7 @@ function monthStartIso(iso: string): string {
 export function Dashboard() {
   const queryClient = useQueryClient()
   const { role, consulenteFilter, consulenteNome } = useAuth()
+  if (role === "istruttore") return <Navigate to="/corsi" replace />
   const [budgetModal, setBudgetModal] = useState(false)
   const annoInCorso = new Date().getFullYear()
   const [asOf, setAsOf] = useState(() => localIsoDate())

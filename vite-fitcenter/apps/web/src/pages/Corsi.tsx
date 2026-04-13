@@ -180,6 +180,7 @@ export function Corsi() {
   const [messaggiSubject, setMessaggiSubject] = useState("")
   const [messaggiBody, setMessaggiBody] = useState("")
   const [appello, setAppello] = useState<Record<string, true>>({})
+  const [waCursor, setWaCursor] = useState(0)
 
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
@@ -259,6 +260,7 @@ export function Corsi() {
     setMessaggiChannel(ne > 0 ? "email" : "whatsapp")
     setMessaggiSubject(`Lezione: ${g.servizio}`)
     setMessaggiBody(defaultMessageBody(g))
+    setWaCursor(0)
   }
 
   if (!enabled) {
@@ -271,6 +273,30 @@ export function Corsi() {
 
   const modalEmails = messaggiGroup ? uniqueValidEmails(messaggiGroup.partecipanti) : []
   const modalWaLinks = messaggiGroup ? waLinksForGroup(messaggiGroup, messaggiBody) : []
+  const canOpenNext = modalWaLinks.length > 0 && waCursor >= 0 && waCursor < modalWaLinks.length
+
+  function openWaAt(i: number): void {
+    const href = modalWaLinks[i]?.href
+    if (!href) return
+    window.open(href, "_blank", "noreferrer")
+  }
+
+  function openWaNext(): void {
+    if (!canOpenNext) return
+    openWaAt(waCursor)
+    setWaCursor((x) => Math.min(modalWaLinks.length, x + 1))
+  }
+
+  async function openWaAll(): Promise<void> {
+    if (modalWaLinks.length === 0) return
+    for (let i = 0; i < modalWaLinks.length; i += 1) {
+      openWaAt(i)
+      // piccola pausa per ridurre blocchi popup
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 350))
+    }
+    setWaCursor(modalWaLinks.length)
+  }
 
   return (
     <div className="p-4 sm:p-6">
@@ -359,7 +385,33 @@ export function Corsi() {
                     Nessun numero cellulare disponibile per questo corso.
                   </p>
                 ) : (
-                  <div className="flex flex-col gap-2">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-950/30 px-3 py-2">
+                      <div className="text-xs text-zinc-400">
+                        Contatti: <span className="font-medium text-zinc-200">{modalWaLinks.length}</span>
+                        {" · "}
+                        Prossimo:{" "}
+                        <span className="font-medium text-emerald-300">{Math.min(waCursor + 1, modalWaLinks.length)}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openWaNext()}
+                          disabled={!canOpenNext}
+                          className="touch-manipulation rounded-lg border border-emerald-700/50 bg-emerald-950/30 px-3 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-900/40 disabled:opacity-40"
+                        >
+                          Apri prossimo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openWaAll()}
+                          className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/60"
+                        >
+                          Apri tutti
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
                     {modalWaLinks.map((w) => (
                       <a
                         key={w.href}
@@ -371,6 +423,7 @@ export function Corsi() {
                         Apri WhatsApp · {w.label}
                       </a>
                     ))}
+                  </div>
                   </div>
                 )}
               </div>
