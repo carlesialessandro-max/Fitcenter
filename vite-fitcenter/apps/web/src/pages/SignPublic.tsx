@@ -27,6 +27,7 @@ export function SignPublicPage() {
   const [tabletSignatureDataUrl, setTabletSignatureDataUrl] = useState<string | null>(null)
   const [fullName, setFullName] = useState("")
   const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [signBusy, setSignBusy] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const lastPtRef = useRef<{ x: number; y: number } | null>(null)
   const lastMidRef = useRef<{ x: number; y: number } | null>(null)
@@ -389,9 +390,12 @@ export function SignPublicPage() {
 
   async function onSign() {
     try {
+      if (signBusy) return
       if (!signerToken) return setErr("Verifica OTP prima di firmare")
       if (!acceptedTerms) return setErr("Devi accettare i termini")
       if (!fullNameTrimmed) return setErr("Inserisci nome e cognome")
+      const stepId = info?.nextStepId ?? null
+      if (!stepId) return setErr("Step firma non disponibile. Ricarica la pagina.")
       const dataUrl =
         signatureMode === "typed"
           ? typedSignatureDataUrl
@@ -401,7 +405,8 @@ export function SignPublicPage() {
       if (!dataUrl || (signatureMode === "draw" && !hasInk) || (signatureMode === "tablet" && !tabletSignatureDataUrl)) return setErr("Firma mancante")
       setErr(null)
       setOk(null)
-      const out = await signaturesApi.sign(token, signerToken, dataUrl, fullNameTrimmed, info?.nextStepId ?? undefined)
+      setSignBusy(true)
+      const out = await signaturesApi.sign(token, signerToken, dataUrl, fullNameTrimmed, stepId)
       setOk(out.completed ? "Firma completata." : `Firma salvata. Prossimo step: ${out.nextStepLabel ?? "successivo"}.`)
       clearCanvas()
       setTabletSignatureDataUrl(null)
@@ -410,6 +415,8 @@ export function SignPublicPage() {
       setInfo(refreshed)
     } catch (e) {
       setErr((e as Error).message)
+    } finally {
+      setSignBusy(false)
     }
   }
 
@@ -649,11 +656,11 @@ export function SignPublicPage() {
               <button
                 type="button"
                 onClick={onSign}
-                disabled={!canSign}
+                disabled={!canSign || signBusy}
                 title={!canSign ? missing.join(" · ") : undefined}
                 className="rounded bg-emerald-500 px-3 py-2 text-sm font-semibold text-zinc-900"
               >
-                Conferma firma {info.nextStepLabel ? `(${info.nextStepLabel})` : ""}
+                {signBusy ? "Invio..." : `Conferma firma${info.nextStepLabel ? ` (${info.nextStepLabel})` : ""}`}
               </button>
             </div>
             {!canSign ? (

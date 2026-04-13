@@ -480,7 +480,11 @@ export async function confirmSignature(req: Request, res: Response) {
   const steps = normalizedSteps(row)
   const nextPending = steps.find((s) => !s.signedAt)
   if (!nextPending) return res.status(400).json({ message: "Tutte le firme sono già completate" })
-  if (requestedStepId && requestedStepId !== nextPending.id) {
+  // Richiediamo sempre stepId per evitare firme duplicate per doppio click / race.
+  if (!requestedStepId) {
+    return res.status(400).json({ message: `Step firma mancante. Prossima firma: ${nextPending.label}` })
+  }
+  if (requestedStepId !== nextPending.id) {
     return res.status(400).json({ message: `Ordine firme non valido. Prossima firma: ${nextPending.label}` })
   }
 
