@@ -73,6 +73,27 @@ export function SignaturesAdmin() {
     setSlotsDraft((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
   }
 
+  function removeSlot(id: string) {
+    setSlotsDraft((prev) => {
+      if (prev.length <= 1) return prev
+      const next = prev.filter((s) => s.id !== id)
+      return next.map((s, i) => ({ ...s, order: i + 1 }))
+    })
+  }
+
+  function addNextDefaultSlot() {
+    setSlotsDraft((prev) => {
+      const used = new Set(prev.map((s) => s.id))
+      const nextDef = DEFAULT_SIGNATURE_SLOTS.find((d) => !used.has(d.id))
+      if (!nextDef) return prev
+      return [...prev, { ...nextDef, order: prev.length + 1 }]
+    })
+  }
+
+  function resetFiveDefaults() {
+    setSlotsDraft(DEFAULT_SIGNATURE_SLOTS.map((s) => ({ ...s })))
+  }
+
   useEffect(() => {
     let cancelled = false
     async function renderPreview() {
@@ -339,7 +360,7 @@ export function SignaturesAdmin() {
       <div className="mt-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-4">
         <h2 className="text-sm font-semibold text-amber-200">Regolazione firme sul PDF</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Cinque firme in sequenza: Tesseramento → Contratto → Privacy 1/2/3. Clicca sull&apos;anteprima PDF per posizionare lo slot selezionato (mouse o penna Wacom).
+          Ogni slot = una firma in sequenza sul PDF (il cliente preme &quot;Conferma firma&quot; una volta per slot). Se serve una sola firma, lascia un solo slot e salva. Clic sull&apos;anteprima per posizionare lo slot attivo.
         </p>
         {!templateId ? (
           <p className="mt-3 text-xs text-zinc-400">
@@ -389,13 +410,39 @@ export function SignaturesAdmin() {
               </p>
             </div>
 
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addNextDefaultSlot}
+                disabled={slotsDraft.length >= DEFAULT_SIGNATURE_SLOTS.length}
+                className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200 disabled:opacity-40"
+              >
+                Aggiungi slot (da elenco predefinito)
+              </button>
+              <button type="button" onClick={resetFiveDefaults} className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200">
+                Ripristina 5 slot predefiniti
+              </button>
+            </div>
+
             <div className="mt-3 grid gap-2">
               {slotsDraft
                 .slice()
                 .sort((a, b) => a.order - b.order)
                 .map((s) => (
-                  <div key={s.id} className="grid gap-2 rounded border border-zinc-700 p-2 md:grid-cols-6">
-                    <div className="flex items-center text-xs font-medium text-zinc-200">{s.label}</div>
+                  <div key={s.id} className="flex flex-col gap-2 rounded border border-zinc-700 p-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-medium text-zinc-200">{s.label}</div>
+                      <button
+                        type="button"
+                        title="Rimuovi questo step di firma"
+                        disabled={slotsDraft.length <= 1}
+                        onClick={() => removeSlot(s.id)}
+                        className="rounded border border-red-900/60 px-2 py-1 text-xs text-red-300 disabled:opacity-40"
+                      >
+                        Rimuovi
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
                     <input
                       type="number"
                       min={1}
@@ -439,6 +486,7 @@ export function SignaturesAdmin() {
                       className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
                       placeholder="Altezza"
                     />
+                    </div>
                   </div>
                 ))}
             </div>

@@ -45,16 +45,17 @@ function ensurePending(row: SignatureRequest): string | null {
 
 function normalizedSteps(row: SignatureRequest): SignatureStep[] {
   const defaults = defaultSignatureSlots()
+  const defaultById = new Map(defaults.map((d) => [d.id, d]))
   const existing = Array.isArray(row.steps) ? row.steps : []
   if (existing.length === 0) return toSteps(defaults)
-  const byId = new Map(existing.map((s) => [s.id, s]))
-  return defaults
-    .map((d) => {
-      const e = byId.get(d.id)
-      if (!e) return { ...d }
-      return { ...d, ...e }
-    })
+  // Allineato a ensureSignatureSlots: la richiesta memorizza gli step del template (1..N), non sempre 5.
+  return existing
+    .slice()
     .sort((a, b) => a.order - b.order)
+    .map((s) => {
+      const base = defaultById.get(s.id)
+      return base ? { ...base, ...s } : { ...s }
+    })
 }
 
 function getBaseUrl(req: Request): string {
@@ -377,7 +378,7 @@ export async function verifySignatureOtp(req: Request, res: Response) {
 export async function listSignatureTemplates(_req: Request, res: Response) {
   const rows = signatureStore.listTemplates().map((t) => ({
     ...t,
-    // Template salvati prima dell’introduzione degli slot: restituiamo sempre 3 slot predefiniti.
+    // Template senza slots nel JSON: ensureSignatureSlots applica i default (5) o l’elenco salvato.
     slots: ensureSignatureSlots(t.slots as SignatureSlot[] | undefined),
   }))
   res.json(rows)
