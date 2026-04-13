@@ -1691,6 +1691,8 @@ export type PrenotazioneCorsoRow = {
   sms?: string
   /** Ultimo accesso (se la vista espone una colonna tipo DataUltimoAcesso) */
   dataUltimoAcesso?: string
+  /** true se proviene dalla lista d'attesa (RVW_PrenotazioniListaAttesaUtenti) */
+  inAttesa?: boolean
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
 }
@@ -1831,7 +1833,11 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const req = p.request()
   if (giornoOk && dateCol) req.input("giorno", sql.VarChar(32), giorno)
 
-  const enrich = (raw: Record<string, unknown>, partecipanti?: number): PrenotazioneCorsoRow => {
+  const enrich = (
+    raw: Record<string, unknown>,
+    partecipanti?: number,
+    extra?: { inAttesa?: boolean }
+  ): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
       // Tipico titolo in stampa: "FITNESS - PILATES", "CORSI A PAGAMENTO - Pole Dance", ecc.
       "PrenotazioneDescrizione",
@@ -1929,6 +1935,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       email,
       sms,
       dataUltimoAcesso,
+      inAttesa: extra?.inAttesa,
       raw,
     }
   }
@@ -1941,7 +1948,28 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const order = dateCol ? ` ORDER BY ${bracketCol(dateCol)} ASC` : ""
     const r = await req.query(`SELECT * FROM ${vq}${where}${order}`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
-    return rows.map((raw) => enrich(raw))
+    const base = rows.map((raw) => enrich(raw))
+
+    // Lista d'attesa (se esiste): RVW_PrenotazioniListaAttesaUtenti
+    const waitView = "dbo.RVW_PrenotazioniListaAttesaUtenti"
+    try {
+      const wq = qualifySqlObject(waitView).query
+      const wDateCol = giornoOk
+        ? await pickBestDateColForView(waitView, dateCandidates)
+        : await pickBestDateColForView(waitView, dateCandidates)
+      if (giornoOk && !wDateCol) return base
+      const wWhere =
+        giornoOk && wDateCol
+          ? ` WHERE (${sqlDateEqualsFastExpr(wDateCol, "@giorno")} OR ${sqlDateEqualsExpr(wDateCol, "@giorno")})`
+          : ""
+      const wOrder = wDateCol ? ` ORDER BY ${bracketCol(wDateCol)} ASC` : ""
+      const wr = await req.query(`SELECT * FROM ${wq}${wWhere}${wOrder}`)
+      const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
+      const wait = wRows.map((raw) => enrich(raw, undefined, { inAttesa: true }))
+      return [...base, ...wait]
+    } catch {
+      return base
+    }
   } catch (e) {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
     lastPrenotazioniQueryError = (e as Error)?.message ?? String(e)

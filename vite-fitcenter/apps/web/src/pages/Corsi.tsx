@@ -601,34 +601,41 @@ export function Corsi() {
                         const note = (p.note ?? "").trim()
                         const okAccesso = hasAccessToday(p, g.giorno)
                         const okAppello = isAppelloChecked(g.key, p, idx)
+                        const presente = okAccesso || okAppello
                         return (
                           <div key={idx} className="px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
                                 <div className="truncate text-sm font-semibold text-zinc-100">
                                   {String(prog)}. {nome}
+                                  {p.inAttesa ? (
+                                    <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
+                                      ATTESA
+                                    </span>
+                                  ) : null}
                                 </div>
                                 <div className="mt-0.5 text-xs text-zinc-400">
                                   Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
                                 </div>
                               </div>
                               <div className="flex shrink-0 items-center gap-2">
-                                <div
-                                  title={okAccesso ? "Presente (accesso effettuato oggi)" : "Non risulta accesso oggi"}
-                                  className={`h-5 w-5 rounded border ${
-                                    okAccesso ? "border-emerald-400/60 bg-emerald-500/30" : "border-zinc-600 bg-zinc-900/40"
-                                  }`}
-                                />
                                 <button
                                   type="button"
-                                  title={okAppello ? "Appello: presente" : "Appello: da segnare"}
-                                  aria-pressed={okAppello}
+                                  title={
+                                    okAccesso
+                                      ? "Presente (accesso effettuato oggi)"
+                                      : presente
+                                        ? "Presente (appello)"
+                                        : "Segna presente (appello)"
+                                  }
+                                  aria-pressed={presente}
+                                  disabled={okAccesso}
                                   onClick={() => toggleAppello(g.key, p, idx)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
-                                    okAppello
+                                    presente
                                       ? "border-emerald-400/60 bg-emerald-500/30"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  }`}
+                                  } ${okAccesso ? "cursor-not-allowed opacity-90" : ""}`}
                                 />
                               </div>
                             </div>
@@ -649,8 +656,7 @@ export function Corsi() {
                       <thead>
                         <tr className="border-b border-zinc-800 bg-zinc-950/40">
                           <th className="px-5 py-3 font-medium text-zinc-400">#</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Acc.</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">App.</th>
+                          <th className="px-5 py-3 font-medium text-zinc-400">Presente</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
@@ -671,31 +677,38 @@ export function Corsi() {
                             : ""
                           const okAccesso = hasAccessToday(p, g.giorno)
                           const okAppello = isAppelloChecked(g.key, p, idx)
+                          const presente = okAccesso || okAppello
                           return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
                               <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
                               <td className="px-5 py-3">
-                                <div
-                                  title={okAccesso ? "Presente (accesso oggi)" : "Non risulta accesso oggi"}
-                                  className={`h-5 w-5 rounded border ${
-                                    okAccesso ? "border-emerald-400/60 bg-emerald-500/30" : "border-zinc-600 bg-zinc-900/40"
-                                  }`}
-                                />
-                              </td>
-                              <td className="px-5 py-3">
                                 <button
                                   type="button"
-                                  title={okAppello ? "Appello: presente" : "Appello: da segnare"}
-                                  aria-pressed={okAppello}
+                                  title={
+                                    okAccesso
+                                      ? "Presente (accesso effettuato oggi)"
+                                      : presente
+                                        ? "Presente (appello)"
+                                        : "Segna presente (appello)"
+                                  }
+                                  aria-pressed={presente}
+                                  disabled={okAccesso}
                                   onClick={() => toggleAppello(g.key, p, idx)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
-                                    okAppello
+                                    presente
                                       ? "border-emerald-400/60 bg-emerald-500/30"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  }`}
+                                  } ${okAccesso ? "cursor-not-allowed opacity-90" : ""}`}
                                 />
                               </td>
-                              <td className="px-5 py-3 font-medium text-zinc-100">{nome}</td>
+                              <td className="px-5 py-3 font-medium text-zinc-100">
+                                {nome}
+                                {p.inAttesa ? (
+                                  <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
+                                    ATTESA
+                                  </span>
+                                ) : null}
+                              </td>
                               <td className="px-5 py-3 text-zinc-300">{pren || "—"}</td>
                               <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
                             </tr>
