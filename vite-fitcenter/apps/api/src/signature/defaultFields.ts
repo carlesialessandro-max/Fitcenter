@@ -14,6 +14,8 @@ export function defaultSignatureFields(): SignatureField[] {
     { id: "cap", label: "CAP", page: 1, x: 120, y: 642, order: 6, size: 9, maxWidth: 70 },
     { id: "citta", label: "Città", page: 1, x: 200, y: 642, order: 7, size: 9, maxWidth: 180 },
     { id: "provincia", label: "Provincia", page: 1, x: 390, y: 642, order: 7, size: 9, maxWidth: 60 },
+    { id: "data_nascita", label: "Data nascita", page: 1, x: 120, y: 620, order: 8, size: 9, maxWidth: 120 },
+    { id: "luogo_nascita", label: "Luogo nascita", page: 1, x: 260, y: 620, order: 9, size: 9, maxWidth: 200 },
     { id: "codice_fiscale", label: "Codice fiscale", page: 1, x: 390, y: 620, order: 10, size: 9, maxWidth: 220 },
     { id: "legale_rappresentante", label: "Legale rappresentante (minori)", page: 1, x: 280, y: 690, order: 11, size: 9, maxWidth: 280 },
     { id: "asi_tessera", label: "ASI Tessera N.", page: 1, x: 140, y: 285, order: 12, size: 9, maxWidth: 220 },
@@ -30,7 +32,6 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
 
   // Compatibilità: alcuni template vecchi usano cap_citta + campi nascita. Qui migriamo senza rompere la precompilazione.
   const cleaned = fields
-    .filter((f) => !["data_nascita", "luogo_nascita"].includes(String(f.id)))
     .flatMap((f) => {
       const id = String(f.id)
       if (id !== "cap_citta") return [f]

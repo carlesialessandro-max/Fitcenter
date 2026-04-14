@@ -639,11 +639,21 @@ export async function confirmSignature(req: Request, res: Response) {
     const digitsOnly = utenteId.replace(/\D/g, "")
     const safeId = digitsOnly.length >= 8 ? digitsOnly : digitsOnly.padStart(8, "0")
     if (!safeId) return
-    const destDir = path.join(allegatiBase, safeId, "Pdf Firmati")
+    const destDirPreferred = path.join(allegatiBase, safeId, "Pdf Firmati")
+    const destDirFallback = path.join(allegatiBase, safeId)
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
-    const destPath = path.join(destDir, destName)
-    fs.mkdirSync(destDir, { recursive: true })
-    fs.copyFileSync(signedPdfPath, destPath)
+    try {
+      const destPath = path.join(destDirPreferred, destName)
+      fs.mkdirSync(destDirPreferred, { recursive: true })
+      fs.copyFileSync(signedPdfPath, destPath)
+      return
+    } catch (e) {
+      // Se non possiamo creare la sottocartella, ripieghiamo sulla cartella utente (compatibilità permessi share).
+      const destPath = path.join(destDirFallback, destName)
+      fs.mkdirSync(destDirFallback, { recursive: true })
+      fs.copyFileSync(signedPdfPath, destPath)
+      throw e
+    }
   }
 
   const completed = signedSteps.every((s) => !!s.signedAt)

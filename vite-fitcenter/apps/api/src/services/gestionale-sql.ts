@@ -1176,7 +1176,19 @@ export async function queryCassaMovimentiUtenti(args: {
     const codiceFiscale = safeStr(rowGet(row, ["CodiceFiscale", "Cod_Fisc", "CodFiscale", "CF", "C_F"]))
     const paganteNome = safeStr(rowGet(row, ["PaganteNome", "Pagante", "Pagante_Nome"]))
     const paganteCodiceFiscale = safeStr(rowGet(row, ["PaganteCodiceFiscale", "PaganteCF", "Pagante_CodiceFiscale", "PaganteCod_Fisc"]))
-    const asiTesseraCustom2 = safeStr(rowGet(row, ["Custom2", "custom2"]))
+    const asiTesseraCustom2 = safeStr(
+      rowGet(row, [
+        "Custom2",
+        "custom2",
+        "AsiTessera",
+        "ASI_Tessera",
+        "Asi_Tessera",
+        "TesseraASI",
+        "Tessera_Asi",
+        "Asi",
+        "ASI",
+      ])
+    )
     const movimentoId = movimentoIdCol ? safeStr((row as any)[movimentoIdCol]) : safeStr(rowGet(row, ["IDCassaMovimenti", "IdMovimento", "IDMovimento", "Id"]))
     const causale = causaleCol ? safeStr((row as any)[causaleCol]) : safeStr(rowGet(row, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]))
     const importo = importoCol ? safeNum((row as any)[importoCol]) : safeNum(rowGet(row, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare"]))

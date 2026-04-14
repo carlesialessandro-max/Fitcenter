@@ -96,6 +96,8 @@ export function FirmaDaCassa() {
         cap: selected.anagrafica.indirizzoCap ?? "",
         citta: selected.anagrafica.indirizzoCitta ?? "",
         provincia: selected.anagrafica.indirizzoProvincia ?? "",
+        data_nascita: selected.anagrafica.dataNascita ?? "",
+        luogo_nascita: selected.anagrafica.luogoNascita ?? "",
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
