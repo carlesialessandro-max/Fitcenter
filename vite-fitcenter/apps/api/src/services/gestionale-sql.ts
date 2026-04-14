@@ -1203,7 +1203,7 @@ export async function queryCassaMovimentiUtenti(args: {
       indirizzoVia: safeStr(rowGet(row, ["Indirizzo_Via", "IndirizzoVia", "via"])),
       indirizzoNumero: safeStr(rowGet(row, ["Indirizzo_N", "IndirizzoNumero", "numero"])),
       indirizzoCap: safeStr(rowGet(row, ["Indirizzo_Cap", "CAP", "cap"])),
-      indirizzoCitta: safeStr(rowGet(row, ["Indirizzo_Comune", "Citta", "citta", "comune"])),
+      indirizzoCitta: safeStr(rowGet(row, ["Indirizzo_Citta", "Indirizzo_Comune", "Citta", "citta", "comune"])),
       indirizzoProvincia: safeStr(rowGet(row, ["Indirizzo_Pv", "Provincia", "provincia"])),
       telefono1: safeStr(rowGet(row, ["Telefono_1", "Telefono1", "telefono1"])),
       telefono2: safeStr(rowGet(row, ["Telefono_2", "Telefono2", "telefono2"])),

@@ -80,7 +80,10 @@ export function FirmaDaCassa() {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
           const desc = (r.causale ?? "").trim()
           const imp = fmtEuro(r.importo)
-          return `${desc} ${d ? `(${d})` : ""} — ${imp}`.trim()
+          // Nel PDF: 2 righe (come tabella in pagina): descrizione+data, poi totale/versato.
+          const line1 = `${desc} ${d ? `(${d})` : ""}`.trim()
+          const line2 = `Totale: ${imp} — Versato: ${imp}`.trim()
+          return [line1, line2].filter(Boolean).join("\n")
         })
         .filter(Boolean)
         .join("\n")
