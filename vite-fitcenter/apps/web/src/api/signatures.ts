@@ -75,6 +75,7 @@ export const signaturesApi = {
     templateId: string
     customerEmail: string
     customerName?: string
+    customerGestionaleId?: string
     prefill?: Record<string, string>
   }) => {
     const token = localStorage.getItem(TOKEN_KEY)
@@ -82,6 +83,7 @@ export const signaturesApi = {
     fd.append("templateId", body.templateId)
     fd.append("customerEmail", body.customerEmail)
     if (body.customerName?.trim()) fd.append("customerName", body.customerName.trim())
+    if (body.customerGestionaleId?.trim()) fd.append("customerGestionaleId", body.customerGestionaleId.trim())
     if (body.prefill && Object.keys(body.prefill).length) fd.append("prefill", JSON.stringify(body.prefill))
     const res = await fetch(`${API_BASE}/signatures/admin`, {
       method: "POST",

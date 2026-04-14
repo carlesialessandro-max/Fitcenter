@@ -86,6 +86,9 @@ export interface SignatureRequest {
   /** Valori usati per precompilare il PDF (best-effort) */
   prefill?: Record<string, string>
 
+  /** Id utente (gestionale) per export allegati su server */
+  customerGestionaleId?: string
+
   signedDocumentFileName?: string
   audit: SignatureAuditEvent[]
   steps?: SignatureStep[]

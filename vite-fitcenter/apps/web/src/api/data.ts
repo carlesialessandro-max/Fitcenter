@@ -161,6 +161,9 @@ export interface CassaMovimentoUtenteRow {
   email: string | null
   sms: string | null
   codiceFiscale?: string | null
+  paganteNome?: string | null
+  paganteCodiceFiscale?: string | null
+  asiTesseraCustom2?: string | null
   causale: string | null
   importo: number
   dataOperazioneIso: string | null

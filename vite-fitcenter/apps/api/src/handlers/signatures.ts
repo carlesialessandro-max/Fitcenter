@@ -195,6 +195,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const templateId = String(req.body.templateId ?? "").trim()
     const customerEmail = String(req.body.customerEmail ?? "").trim().toLowerCase()
     const customerName = String(req.body.customerName ?? "").trim()
+    const customerGestionaleId = String(req.body.customerGestionaleId ?? "").trim() || undefined
     const prefillRaw = String(req.body.prefill ?? "").trim()
     let prefill: Record<string, string> | undefined
     if (prefillRaw) {
@@ -270,6 +271,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       audit: [{ at: nowIso(), type: "created" }],
       steps: toSteps(slots),
       prefill,
+      customerGestionaleId,
     }
     signatureStore.create(row)
 
@@ -591,6 +593,7 @@ export async function confirmSignature(req: Request, res: Response) {
   const fullName = String(req.body?.fullName ?? "").trim()
   const row = signatureStore.getByToken(token)
   if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
+  const baseRow = row
   const err = ensurePending(row)
   if (err) return res.status(400).json({ message: err })
   if (!signatureDataUrl.startsWith("data:image/png;base64,")) return res.status(400).json({ message: "Firma non valida" })
@@ -625,6 +628,23 @@ export async function confirmSignature(req: Request, res: Response) {
   const signedPdfPath = path.join(signatureStore.resolveSignatureDir(), signedFileName)
   fs.writeFileSync(signedPdfPath, signedPdfBytes)
 
+  // Export gestionale allegati (Windows share), se configurato.
+  // Esempio env: GESTIONALE_ALLEGATI_DIR=\\\\SERVERNEW\\Manager\\Allegati
+  const allegatiBase = String(process.env.GESTIONALE_ALLEGATI_DIR ?? "").trim()
+  async function tryExportToGestionaleShare() {
+    if (!allegatiBase) return
+    const utenteId = String(baseRow.customerGestionaleId ?? "").trim()
+    if (!utenteId) return
+    // Sanitize cartella: solo caratteri sicuri
+    const safeId = utenteId.replace(/[^0-9A-Za-z_\-]/g, "")
+    if (!safeId) return
+    const destDir = path.join(allegatiBase, safeId)
+    const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
+    const destPath = path.join(destDir, destName)
+    fs.mkdirSync(destDir, { recursive: true })
+    fs.copyFileSync(signedPdfPath, destPath)
+  }
+
   const completed = signedSteps.every((s) => !!s.signedAt)
   const signed = signatureStore.updateById(row.id, (r) => ({
     ...r,
@@ -648,6 +668,20 @@ export async function confirmSignature(req: Request, res: Response) {
   if (!signed) return res.status(500).json({ message: "Errore interno" })
 
   if (completed) {
+    try {
+      await tryExportToGestionaleShare()
+    } catch (e) {
+      // Best-effort: non blocchiamo la firma se l'export fallisce.
+      signatureStore.updateById(row.id, (r) => ({
+        ...r,
+        audit: appendAudit(r, {
+          type: "signature_failed",
+          ip: req.ip,
+          userAgent: req.headers["user-agent"]?.toString(),
+          message: `Export allegati fallito: ${(e as Error).message}`,
+        }),
+      }))
+    }
     await sendMail({
       to: row.customerEmail,
       subject: "Documento firmato - FitCenter",

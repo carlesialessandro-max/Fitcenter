@@ -98,12 +98,18 @@ export function FirmaDaCassa() {
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
-        asi_tessera: "",
-        legale_rappresentante: "",
+        asi_tessera: selected.anagrafica.asiTesseraCustom2 ?? "",
+        legale_rappresentante: [selected.anagrafica.paganteNome, selected.anagrafica.paganteCodiceFiscale].filter(Boolean).join(" · "),
         movimenti: movimentiLines,
         totale_generale: fmtEuro(selected.totalImporto),
       }
-      const out = await signaturesApi.createFromTemplate({ templateId: effectiveTemplateId, customerEmail: email, customerName, prefill })
+      const out = await signaturesApi.createFromTemplate({
+        templateId: effectiveTemplateId,
+        customerEmail: email,
+        customerName,
+        customerGestionaleId: selected.clienteId ?? undefined,
+        prefill,
+      })
       const link = `${window.location.origin}/firma/${out.token}`
       setOk(`Richiesta creata. Apro la pagina firma: ${link}`)
       window.open(link, "_blank", "noopener,noreferrer")
