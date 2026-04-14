@@ -163,7 +163,9 @@ export function SignPublicPage() {
       )
     })
 
-    return `data:image/png;base64,${base64}`
+    // Alcune versioni restituiscono già una data URL completa.
+    const out = String(base64 || "").trim()
+    return /^data:image\//i.test(out) ? out : `data:image/png;base64,${out}`
   }
 
   useEffect(() => {

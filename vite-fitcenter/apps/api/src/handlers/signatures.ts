@@ -635,8 +635,9 @@ export async function confirmSignature(req: Request, res: Response) {
     if (!allegatiBase) return
     const utenteId = String(baseRow.customerGestionaleId ?? "").trim()
     if (!utenteId) return
-    // Sanitize cartella: solo caratteri sicuri
-    const safeId = utenteId.replace(/[^0-9A-Za-z_\-]/g, "")
+    // Cartella gestione allegati: ID utente sempre a 8 cifre (es. 218 -> 00000218)
+    const digitsOnly = utenteId.replace(/\D/g, "")
+    const safeId = digitsOnly.length >= 8 ? digitsOnly : digitsOnly.padStart(8, "0")
     if (!safeId) return
     const destDir = path.join(allegatiBase, safeId)
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
