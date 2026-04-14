@@ -225,8 +225,8 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
         const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
         // Coordinate coerenti col template: 4 colonne (Servizio | Descrizione | Totale | Versato)
         const colW = 80
-        const xServizioLeft = 50
-        const xDescLeft = 160
+        const xServizioLeft = 30
+        const xDescLeft = 140
         const xTotaleLeft = 440
         const xVersatoLeft = 515
         const rightXTotale = xTotaleLeft + colW

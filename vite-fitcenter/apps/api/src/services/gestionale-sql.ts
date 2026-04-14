@@ -1053,6 +1053,13 @@ function rowGet(row: Record<string, unknown>, candidates: string[]): unknown {
   return undefined
 }
 
+function rowGetByPickedCol(row: Record<string, unknown>, pickedCol: string | null): unknown {
+  // pickBest*Col può restituire un candidate con casing diverso dal recordset.
+  // Usiamo rowGet case-insensitive per risolvere la chiave reale.
+  if (!pickedCol) return undefined
+  return rowGet(row, [pickedCol])
+}
+
 function safeNum(v: unknown): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
@@ -1199,15 +1206,15 @@ export async function queryCassaMovimentiUtenti(args: {
         "ASI",
       ])
     )
-    const movimentoId = movimentoIdCol ? safeStr((row as any)[movimentoIdCol]) : safeStr(rowGet(row, ["IDCassaMovimenti", "IdMovimento", "IDMovimento", "Id"]))
-    const causale = causaleCol ? safeStr((row as any)[causaleCol]) : safeStr(rowGet(row, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]))
-    const importo = importoCol ? safeNum((row as any)[importoCol]) : safeNum(rowGet(row, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare"]))
+    const movimentoId = movimentoIdCol ? safeStr(rowGetByPickedCol(row, movimentoIdCol)) : safeStr(rowGet(row, ["IDCassaMovimenti", "IdMovimento", "IDMovimento", "Id"]))
+    const causale = causaleCol ? safeStr(rowGetByPickedCol(row, causaleCol)) : safeStr(rowGet(row, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]))
+    const importo = importoCol ? safeNum(rowGetByPickedCol(row, importoCol)) : safeNum(rowGet(row, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare"]))
     const iscrizioneTotale =
       iscrizioneTotaleCol != null
-        ? safeNum((row as any)[iscrizioneTotaleCol])
+        ? safeNum(rowGetByPickedCol(row, iscrizioneTotaleCol))
         : safeNum(rowGet(row, ["AbbonamentiIscrizionetotale", "AbbonamentiIscrizioneTotale", "IscrizioneTotale", "TotaleIscrizione"]))
-    const dataOperazioneIso = dateCol ? toIsoMaybe((row as any)[dateCol]) : toIsoMaybe(rowGet(row, ["DataOperazione", "Data", "DataMovimento"]))
-    const tipoServizioDescrizione = tipoServizioCol ? safeStr((row as any)[tipoServizioCol]) : safeStr(rowGet(row, ["TipoServizioDescrizione", "TipoServizio", "TipoServizioDesc"]))
+    const dataOperazioneIso = dateCol ? toIsoMaybe(rowGetByPickedCol(row, dateCol)) : toIsoMaybe(rowGet(row, ["DataOperazione", "Data", "DataMovimento"]))
+    const tipoServizioDescrizione = tipoServizioCol ? safeStr(rowGetByPickedCol(row, tipoServizioCol)) : safeStr(rowGet(row, ["TipoServizioDescrizione", "TipoServizio", "TipoServizioDesc"]))
 
     return {
       movimentoId,

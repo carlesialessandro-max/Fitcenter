@@ -19,6 +19,14 @@ function cutBeforeTotale(s: string): string {
   return i > 0 ? t.slice(0, i).trim() : t
 }
 
+function normalizeAsiTessera(v?: string | null): string {
+  const s = String(v ?? "").trim()
+  if (!s) return ""
+  // In alcune viste Custom2 contiene "NUMERO dd/mm/yy" -> prendiamo solo il numero iniziale.
+  const m = s.match(/^\d+/)
+  return m ? m[0] : s
+}
+
 function fmtDt(v?: string | null) {
   if (!v) return "—"
   const d = new Date(v)
@@ -116,10 +124,10 @@ export function FirmaDaCassa() {
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
-        asi_tessera: selected.anagrafica.asiTesseraCustom2 ?? "",
+        asi_tessera: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
         // Alcuni template storici usano direttamente l'id colonna invece del campo prefill.
-        Custom2: selected.anagrafica.asiTesseraCustom2 ?? "",
-        custom2: selected.anagrafica.asiTesseraCustom2 ?? "",
+        Custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
+        custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
         legale_rappresentante: [selected.anagrafica.paganteNome, selected.anagrafica.paganteCodiceFiscale].filter(Boolean).join(" · "),
         movimenti: movimentiLines,
         totale_generale: fmtEuro(sumTotale),
