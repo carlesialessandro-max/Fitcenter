@@ -219,12 +219,26 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       // Caso speciale: tabella movimenti (descrizione a sinistra, Totale e Versato allineati a destra).
       if (String(f.id) === "movimenti") {
         const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
-        const colW = Math.max(60, Math.min(120, Math.floor(maxWidth * 0.22)))
-        const gap = Math.max(12, Math.floor(maxWidth * 0.03))
-        const xVersato = f.x + maxWidth - colW
-        const xTotale = xVersato - gap - colW
+        // Coordinate coerenti col template (header Totale/Versato a destra).
+        // Nota: x è "left", quindi per allineare a destra calcoliamo in base alla larghezza del testo.
+        const colW = 80
+        const xTotaleLeft = 440
+        const xVersatoLeft = 515
+        const rightXTotale = xTotaleLeft + colW
+        const rightXVersato = xVersatoLeft + colW
+        const rightAlignX = (s: string, rightX: number) => {
+          const t = s.trim()
+          if (!t) return null
+          try {
+            const w = font.widthOfTextAtSize(t, size)
+            return Math.max(0, rightX - w)
+          } catch {
+            return Math.max(0, rightX - Math.min(colW, t.length * (size * 0.55)))
+          }
+        }
         const toAmount = (s: string) => clampTextToWidth({ text: s.trim(), maxWidth: colW, font, size })
-        const toDescLines = (s: string) => wrapTextToLines({ text: s.trim(), maxWidth: Math.max(60, xTotale - f.x - gap), font, size })
+        const toDescLines = (s: string) =>
+          wrapTextToLines({ text: s.trim(), maxWidth: Math.max(120, xTotaleLeft - f.x - 12), font, size })
 
         let lineNo = 0
         for (const rawLine of blocks) {
@@ -240,8 +254,14 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
           if (m) {
             const tot = toAmount(m[1] ?? "")
             const ver = toAmount(m[2] ?? "")
-            if (tot) page.drawText(tot, { x: xTotale, y, size, font })
-            if (ver) page.drawText(ver, { x: xVersato, y, size, font })
+            if (tot) {
+              const x = rightAlignX(tot, rightXTotale)
+              if (x != null) page.drawText(tot, { x, y, size, font })
+            }
+            if (ver) {
+              const x = rightAlignX(ver, rightXVersato)
+              if (x != null) page.drawText(ver, { x, y, size, font })
+            }
             lineNo++
             continue
           }
@@ -719,9 +739,16 @@ export async function confirmSignature(req: Request, res: Response) {
     const digitsOnly = utenteId.replace(/\D/g, "")
     const safeId = digitsOnly.length >= 8 ? digitsOnly : digitsOnly.padStart(8, "0")
     if (!safeId) return
-    const destDirPreferred = path.join(allegatiBase, safeId, "Pdf Firmati")
+    // UNC path: su alcuni ambienti il runtime può essere non-Windows -> usiamo join win32 per mantenere i backslash.
+    const isUnc = /^\\\\\\\\/.test(allegatiBase)
+    const joinWin = (...parts: string[]) => path.win32.join(...parts)
+    const joinNative = (...parts: string[]) => path.join(...parts)
+    const joinFn = isUnc ? joinWin : joinNative
+
+    const base = isUnc ? allegatiBase.replace(/\//g, "\\") : allegatiBase
+    const destDirPreferred = joinFn(base, safeId, "Pdf Firmati")
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
-    const destPath = path.join(destDirPreferred, destName)
+    const destPath = joinFn(destDirPreferred, destName)
     fs.mkdirSync(destDirPreferred, { recursive: true })
     fs.copyFileSync(signedPdfPath, destPath)
   }
