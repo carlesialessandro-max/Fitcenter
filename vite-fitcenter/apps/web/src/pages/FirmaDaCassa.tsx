@@ -102,6 +102,9 @@ export function FirmaDaCassa() {
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
         asi_tessera: selected.anagrafica.asiTesseraCustom2 ?? "",
+        // Alcuni template storici usano direttamente l'id colonna invece del campo prefill.
+        Custom2: selected.anagrafica.asiTesseraCustom2 ?? "",
+        custom2: selected.anagrafica.asiTesseraCustom2 ?? "",
         legale_rappresentante: [selected.anagrafica.paganteNome, selected.anagrafica.paganteCodiceFiscale].filter(Boolean).join(" · "),
         movimenti: movimentiLines,
         totale_generale: fmtEuro(selected.totalImporto),

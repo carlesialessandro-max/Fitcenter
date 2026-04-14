@@ -198,10 +198,49 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     if (f.multiline && maxWidth) {
       const lh = f.lineHeight != null ? Math.max(8, Number(f.lineHeight)) : Math.max(10, Math.round(size * 1.2))
       const maxLines = f.maxLines != null ? Math.max(1, Math.floor(f.maxLines)) : undefined
-      const lines = wrapMultilineText({ text, maxWidth, font, size, maxLines })
-      for (let i = 0; i < lines.length; i++) {
-        // Coordinate PDF: y cresce verso l’alto → per andare “a capo” scendiamo di lh
-        page.drawText(lines[i] ?? "", { x: f.x, y: f.y - i * lh, size, font })
+      // Caso speciale: tabella movimenti (descrizione a sinistra, Totale e Versato allineati a destra).
+      if (String(f.id) === "movimenti") {
+        const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
+        const colW = Math.max(60, Math.min(120, Math.floor(maxWidth * 0.22)))
+        const gap = Math.max(12, Math.floor(maxWidth * 0.03))
+        const xVersato = f.x + maxWidth - colW
+        const xTotale = xVersato - gap - colW
+        const toAmount = (s: string) => clampTextToWidth({ text: s.trim(), maxWidth: colW, font, size })
+        const toDescLines = (s: string) => wrapTextToLines({ text: s.trim(), maxWidth: Math.max(60, xTotale - f.x - gap), font, size })
+
+        let lineNo = 0
+        for (const rawLine of blocks) {
+          if (maxLines && lineNo >= maxLines) break
+          const line = String(rawLine ?? "")
+          const t = line.trim()
+          const y = f.y - lineNo * lh
+          if (!t) {
+            lineNo++
+            continue
+          }
+          const m = t.match(/^Totale:\s*(.+?)\s*—\s*Versato:\s*(.+)$/i)
+          if (m) {
+            const tot = toAmount(m[1] ?? "")
+            const ver = toAmount(m[2] ?? "")
+            if (tot) page.drawText(tot, { x: xTotale, y, size, font })
+            if (ver) page.drawText(ver, { x: xVersato, y, size, font })
+            lineNo++
+            continue
+          }
+          const descLines = toDescLines(t)
+          for (const dl of descLines) {
+            if (maxLines && lineNo >= maxLines) break
+            const y2 = f.y - lineNo * lh
+            if (dl) page.drawText(dl, { x: f.x, y: y2, size, font })
+            lineNo++
+          }
+        }
+      } else {
+        const lines = wrapMultilineText({ text, maxWidth, font, size, maxLines })
+        for (let i = 0; i < lines.length; i++) {
+          // Coordinate PDF: y cresce verso l’alto → per andare “a capo” scendiamo di lh
+          page.drawText(lines[i] ?? "", { x: f.x, y: f.y - i * lh, size, font })
+        }
       }
     } else {
       const drawText = maxWidth ? clampTextToWidth({ text, maxWidth, font, size }) : text
