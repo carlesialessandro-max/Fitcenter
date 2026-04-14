@@ -67,9 +67,19 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
       ]
     })
 
-  // Template salvato: usa l’elenco così com’è, ma completa proprietà mancanti con fallback dai default.
+  // Se il template salvato non contiene alcuni campi standard (es. asi_tessera), li aggiungiamo dai default.
+  const ids = new Set(cleaned.map((f) => String(f.id)))
+  const maxOrder = cleaned.reduce((m, f) => Math.max(m, Number(f.order ?? 0) || 0), 0) || 0
+  const withMissing = cleaned.slice()
+  let nextOrder = maxOrder + 1
+  for (const d of defaults) {
+    if (ids.has(d.id)) continue
+    withMissing.push({ ...d, order: nextOrder++ })
+  }
+
+  // Template salvato: usa l’elenco così com’è (più eventuali missing), ma completa proprietà mancanti con fallback dai default.
   const byId = new Map(defaults.map((d) => [d.id, d]))
-  return cleaned
+  return withMissing
     .slice()
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((f, i) => {

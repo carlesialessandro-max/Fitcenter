@@ -160,6 +160,29 @@ function wrapTextToLines(args: { text: string; maxWidth: number; font: any; size
   return args.maxLines ? lines.slice(0, args.maxLines) : lines
 }
 
+function wrapMultilineText(args: { text: string; maxWidth: number; font: any; size: number; maxLines?: number }): string[] {
+  // Preserva gli a-capo inseriti nel testo (es. righe Totale/Versato).
+  const blocks = String(args.text ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+  const out: string[] = []
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i] ?? ""
+    const trimmed = b.trim()
+    if (!trimmed) {
+      // riga vuota = a-capo
+      out.push("")
+      continue
+    }
+    const wrapped = wrapTextToLines({ text: trimmed, maxWidth: args.maxWidth, font: args.font, size: args.size })
+    out.push(...wrapped)
+    // Mantieni l'a-capo originale tra blocchi non vuoti.
+    if (i < blocks.length - 1) out.push("")
+    if (args.maxLines && out.length >= args.maxLines) return out.slice(0, args.maxLines)
+  }
+  return args.maxLines ? out.slice(0, args.maxLines) : out
+}
+
 async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], prefill: Record<string, string>): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
   const pages = pdfDoc.getPages()
@@ -175,7 +198,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     if (f.multiline && maxWidth) {
       const lh = f.lineHeight != null ? Math.max(8, Number(f.lineHeight)) : Math.max(10, Math.round(size * 1.2))
       const maxLines = f.maxLines != null ? Math.max(1, Math.floor(f.maxLines)) : undefined
-      const lines = wrapTextToLines({ text, maxWidth, font, size, maxLines })
+      const lines = wrapMultilineText({ text, maxWidth, font, size, maxLines })
       for (let i = 0; i < lines.length; i++) {
         // Coordinate PDF: y cresce verso l’alto → per andare “a capo” scendiamo di lh
         page.drawText(lines[i] ?? "", { x: f.x, y: f.y - i * lh, size, font })
@@ -652,7 +675,7 @@ export async function confirmSignature(req: Request, res: Response) {
       const destPath = path.join(destDirFallback, destName)
       fs.mkdirSync(destDirFallback, { recursive: true })
       fs.copyFileSync(signedPdfPath, destPath)
-      throw e
+      return
     }
   }
 
