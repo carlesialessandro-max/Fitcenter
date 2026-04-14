@@ -12,6 +12,13 @@ function fmtEuro(n: number) {
   }
 }
 
+function cutBeforeTotale(s: string): string {
+  const t = (s ?? "").trim()
+  if (!t) return ""
+  const i = t.toLowerCase().indexOf("totale")
+  return i > 0 ? t.slice(0, i).trim() : t
+}
+
 function fmtDt(v?: string | null) {
   if (!v) return "—"
   const d = new Date(v)
@@ -80,16 +87,18 @@ export function FirmaDaCassa() {
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
+      const sumTotale = selected.rows.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
+      const sumVersato = selected.rows.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
       const movimentiLines = selected.rows
         .map((r) => {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
-          const desc = (r.causale ?? "").trim()
-          const imp = fmtEuro(r.importo)
-          // Nel PDF: 2 righe (come tabella in pagina): descrizione+data, poi totale/versato.
-          const line1 = `${desc} ${d ? `(${d})` : ""}`.trim()
-          // In descrizione c'è già il totale: riportiamo solo il versato.
-          const line2 = `Versato: ${imp}`.trim()
-          return [line1, line2].filter(Boolean).join("\n")
+          const servizio = (r.tipoServizioDescrizione ?? "—").trim() || "—"
+          const causale = cutBeforeTotale(r.causale ?? "")
+          const desc = `${causale}${d ? ` (${d})` : ""}`.trim()
+          const tot = fmtEuro(Number(r.iscrizioneTotale ?? 0))
+          const ver = fmtEuro(Number(r.importo ?? 0))
+          // Formato tabellare: 4 colonne (servizio | descrizione | totale | versato)
+          return [servizio, desc, tot, ver].join("\t")
         })
         .filter(Boolean)
         .join("\n")
@@ -113,7 +122,8 @@ export function FirmaDaCassa() {
         custom2: selected.anagrafica.asiTesseraCustom2 ?? "",
         legale_rappresentante: [selected.anagrafica.paganteNome, selected.anagrafica.paganteCodiceFiscale].filter(Boolean).join(" · "),
         movimenti: movimentiLines,
-        totale_generale: fmtEuro(selected.totalImporto),
+        totale_generale: fmtEuro(sumTotale),
+        versato_generale: fmtEuro(sumVersato),
       }
       const out = await signaturesApi.createFromTemplate({
         templateId: effectiveTemplateId,

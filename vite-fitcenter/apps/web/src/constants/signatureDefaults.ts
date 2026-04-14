@@ -25,5 +25,6 @@ export const DEFAULT_SIGNATURE_FIELDS: SignatureField[] = [
   { id: "asi_tessera", label: "ASI Tessera N.", page: 1, x: 140, y: 285, order: 12, size: 9, maxWidth: 220 },
   { id: "data_oggi", label: "Data (oggi)", page: 1, x: 470, y: 305, order: 13, size: 9, maxWidth: 90 },
   { id: "movimenti", label: "Movimenti (lista)", page: 1, x: 120, y: 520, order: 14, size: 8, maxWidth: 420, multiline: true, lineHeight: 11, maxLines: 10 },
-  { id: "totale_generale", label: "Totale generale", page: 1, x: 440, y: 555, order: 15, size: 10, maxWidth: 120 },
+  { id: "totale_generale", label: "Totale generale (Totale)", page: 1, x: 440, y: 555, order: 15, size: 10, maxWidth: 80 },
+  { id: "versato_generale", label: "Totale generale (Versato)", page: 1, x: 515, y: 555, order: 16, size: 10, maxWidth: 80 },
 ]

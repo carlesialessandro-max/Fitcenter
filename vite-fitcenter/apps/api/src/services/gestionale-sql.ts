@@ -1002,7 +1002,9 @@ export type CassaMovimentoUtenteRow = {
   paganteNome?: string | null
   paganteCodiceFiscale?: string | null
   asiTesseraCustom2?: string | null
+  tipoServizioDescrizione?: string | null
   causale: string | null
+  iscrizioneTotale?: number | null
   importo: number
   dataOperazioneIso: string | null
   // Campi anagrafici utili per precompilare il PDF (best-effort: possono mancare)
@@ -1116,6 +1118,14 @@ export async function queryCassaMovimentiUtenti(args: {
     ]) ?? null
   const importoCol =
     pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
+  const iscrizioneTotaleCol =
+    pickBestNumberCol(colsLower, [
+      "AbbonamentiIscrizionetotale",
+      "AbbonamentiIscrizioneTotale",
+      "IscrizioneTotale",
+      "TotaleIscrizione",
+      "TotaleAbbonamento",
+    ]) ?? null
   const causaleCol = pickBestTextCol(colsLower, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]) ?? null
   const movimentoIdCol =
     pickBestTextCol(colsLower, [
@@ -1192,7 +1202,12 @@ export async function queryCassaMovimentiUtenti(args: {
     const movimentoId = movimentoIdCol ? safeStr((row as any)[movimentoIdCol]) : safeStr(rowGet(row, ["IDCassaMovimenti", "IdMovimento", "IDMovimento", "Id"]))
     const causale = causaleCol ? safeStr((row as any)[causaleCol]) : safeStr(rowGet(row, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]))
     const importo = importoCol ? safeNum((row as any)[importoCol]) : safeNum(rowGet(row, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare"]))
+    const iscrizioneTotale =
+      iscrizioneTotaleCol != null
+        ? safeNum((row as any)[iscrizioneTotaleCol])
+        : safeNum(rowGet(row, ["AbbonamentiIscrizionetotale", "AbbonamentiIscrizioneTotale", "IscrizioneTotale", "TotaleIscrizione"]))
     const dataOperazioneIso = dateCol ? toIsoMaybe((row as any)[dateCol]) : toIsoMaybe(rowGet(row, ["DataOperazione", "Data", "DataMovimento"]))
+    const tipoServizioDescrizione = tipoServizioCol ? safeStr((row as any)[tipoServizioCol]) : safeStr(rowGet(row, ["TipoServizioDescrizione", "TipoServizio", "TipoServizioDesc"]))
 
     return {
       movimentoId,
@@ -1205,7 +1220,9 @@ export async function queryCassaMovimentiUtenti(args: {
       paganteNome,
       paganteCodiceFiscale,
       asiTesseraCustom2,
+      tipoServizioDescrizione,
       causale,
+      iscrizioneTotale,
       importo,
       dataOperazioneIso,
       sesso: safeStr(rowGet(row, ["Sesso", "sesso"])),

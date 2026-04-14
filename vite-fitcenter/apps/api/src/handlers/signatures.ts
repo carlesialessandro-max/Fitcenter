@@ -207,7 +207,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       direct ??
       prefillNorm.get(normalizeKey(id)) ??
       (f.label ? prefillNorm.get(normalizeKey(String(f.label))) : undefined)
-    const text = String(alt ?? "").trim()
+    // Fallback specifico: tessera ASI può essere mappata come Custom2 in vista, ma nel template avere label "ASI Tessera N."
+    const alt2 =
+      alt ??
+      (/asi/i.test(id) || /asi/i.test(String(f.label ?? "")) ? prefillNorm.get("custom2") ?? prefillNorm.get("asi_tessera") : undefined)
+    const text = String((alt2 ?? alt) ?? "").trim()
     if (!text) continue
     const pageIdx = Math.max(0, Math.min(pages.length - 1, (f.page ?? 1) - 1))
     const page = pages[pageIdx]
@@ -219,9 +223,10 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       // Caso speciale: tabella movimenti (descrizione a sinistra, Totale e Versato allineati a destra).
       if (String(f.id) === "movimenti") {
         const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
-        // Coordinate coerenti col template (header Totale/Versato a destra).
-        // Nota: x è "left", quindi per allineare a destra calcoliamo in base alla larghezza del testo.
+        // Coordinate coerenti col template: 4 colonne (Servizio | Descrizione | Totale | Versato)
         const colW = 80
+        const xServizioLeft = 50
+        const xDescLeft = 160
         const xTotaleLeft = 440
         const xVersatoLeft = 515
         const rightXTotale = xTotaleLeft + colW
@@ -237,8 +242,10 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
           }
         }
         const toAmount = (s: string) => clampTextToWidth({ text: s.trim(), maxWidth: colW, font, size })
+        const toServizio = (s: string) =>
+          clampTextToWidth({ text: s.trim(), maxWidth: Math.max(60, xDescLeft - xServizioLeft - 10), font, size })
         const toDescLines = (s: string) =>
-          wrapTextToLines({ text: s.trim(), maxWidth: Math.max(120, xTotaleLeft - f.x - 12), font, size })
+          wrapTextToLines({ text: s.trim(), maxWidth: Math.max(120, xTotaleLeft - xDescLeft - 12), font, size })
 
         let lineNo = 0
         for (const rawLine of blocks) {
@@ -250,26 +257,44 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
             lineNo++
             continue
           }
-          const m = t.match(/^(?:Totale:\s*(.+?)\s*—\s*)?Versato:\s*(.+)$/i)
-          if (m) {
-            const tot = toAmount(m[1] ?? "")
-            const ver = toAmount(m[2] ?? "")
-            if (tot) {
-              const x = rightAlignX(tot, rightXTotale)
-              if (x != null) page.drawText(tot, { x, y, size, font })
-            }
-            if (ver) {
-              const x = rightAlignX(ver, rightXVersato)
-              if (x != null) page.drawText(ver, { x, y, size, font })
-            }
+          const parts = t.split("\t")
+          const servizioRaw = parts[0] ?? ""
+          const descRaw = parts[1] ?? ""
+          const totRaw = parts[2] ?? ""
+          const verRaw = parts[3] ?? ""
+
+          const servizio = toServizio(servizioRaw)
+          if (servizio) page.drawText(servizio, { x: xServizioLeft, y, size, font })
+
+          const tot = toAmount(totRaw)
+          const ver = toAmount(verRaw)
+          if (tot) {
+            const x = rightAlignX(tot, rightXTotale)
+            if (x != null) page.drawText(tot, { x, y, size, font })
+          }
+          if (ver) {
+            const x = rightAlignX(ver, rightXVersato)
+            if (x != null) page.drawText(ver, { x, y, size, font })
+          }
+
+          const descLines = toDescLines(descRaw)
+          if (descLines.length <= 1) {
+            const d0 = (descLines[0] ?? "").trim()
+            if (d0) page.drawText(d0, { x: xDescLeft, y, size, font })
             lineNo++
             continue
           }
-          const descLines = toDescLines(t)
-          for (const dl of descLines) {
+          // Se la descrizione va su più righe, consumiamo righe extra solo per la colonna descrizione.
+          for (let j = 0; j < descLines.length; j++) {
             if (maxLines && lineNo >= maxLines) break
             const y2 = f.y - lineNo * lh
-            if (dl) page.drawText(dl, { x: f.x, y: y2, size, font })
+            const dl = (descLines[j] ?? "").trim()
+            if (j === 0) {
+              if (dl) page.drawText(dl, { x: xDescLeft, y: y2, size, font })
+              lineNo++
+              continue
+            }
+            if (dl) page.drawText(dl, { x: xDescLeft, y: y2, size, font })
             lineNo++
           }
         }

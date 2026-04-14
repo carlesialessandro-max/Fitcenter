@@ -164,7 +164,9 @@ export interface CassaMovimentoUtenteRow {
   paganteNome?: string | null
   paganteCodiceFiscale?: string | null
   asiTesseraCustom2?: string | null
+  tipoServizioDescrizione?: string | null
   causale: string | null
+  iscrizioneTotale?: number | null
   importo: number
   dataOperazioneIso: string | null
   sesso?: string | null
