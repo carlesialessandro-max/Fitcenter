@@ -992,11 +992,13 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
 }
 
 export type CassaMovimentoUtenteRow = {
+  movimentoId?: string | null
   clienteId: string | null
   nome: string | null
   cognome: string | null
   email: string | null
   sms: string | null
+  codiceFiscale?: string | null
   causale: string | null
   importo: number
   dataOperazioneIso: string | null
@@ -1034,6 +1036,18 @@ function safeStr(v: unknown): string | null {
   return t ? t : null
 }
 
+function rowGet(row: Record<string, unknown>, candidates: string[]): unknown {
+  const keys = Object.keys(row)
+  const byLower = new Map(keys.map((k) => [k.toLowerCase(), k]))
+  for (const c of candidates) {
+    const hit = byLower.get(c.toLowerCase())
+    if (!hit) continue
+    const v = row[hit]
+    if (v != null && String(v).trim() !== "") return v
+  }
+  return undefined
+}
+
 function safeNum(v: unknown): number {
   const n = Number(v)
   return Number.isFinite(n) ? n : 0
@@ -1043,6 +1057,11 @@ function toIsoMaybe(v: unknown): string | null {
   if (v == null) return null
   const d = new Date(v as any)
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+function toIsoDateOnlyMaybe(v: unknown): string | null {
+  const iso = toIsoMaybe(v)
+  return iso ? iso.slice(0, 10) : null
 }
 
 export async function queryCassaMovimentiUtenti(args: {
@@ -1095,6 +1114,16 @@ export async function queryCassaMovimentiUtenti(args: {
   const importoCol =
     pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
   const causaleCol = pickBestTextCol(colsLower, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]) ?? null
+  const movimentoIdCol =
+    pickBestTextCol(colsLower, [
+      "IDCassaMovimenti",
+      "IdCassaMovimenti",
+      "CassaMovimentiId",
+      "IdMovimento",
+      "IDMovimento",
+      "MovimentoId",
+      "Id",
+    ]) ?? null
 
   const now = new Date()
   const baseDay =
@@ -1135,40 +1164,56 @@ export async function queryCassaMovimentiUtenti(args: {
   const r = await req.query(`SELECT TOP (${top}) * FROM ${vq} ${where};`)
   const recordset = (r.recordset ?? []) as Record<string, unknown>[]
 
-  const rows: CassaMovimentoUtenteRow[] = recordset.map((row) => {
-    const clienteId = safeStr(row.IDUtente ?? row.IdUtente ?? row.idUtente ?? row.ClienteId ?? row.IdCliente ?? row.IDCliente)
-    const nome = safeStr(row.Nome ?? row.nome)
-    const cognome = safeStr(row.Cognome ?? row.cognome)
-    const email = safeStr(row.Email ?? row.email)
-    const sms = safeStr(row.SMS ?? row.sms ?? row.Telefono ?? row.telefono)
-    const causale = causaleCol ? safeStr(row[causaleCol] as any) : safeStr(row.CassaMovimentiCausale ?? row.Causale ?? row.Descrizione)
-    const importo = importoCol ? safeNum(row[importoCol] as any) : safeNum(row.CassaMovimentiImporto ?? row.Importo ?? row.Totale)
-    const dataOperazioneIso = dateCol ? toIsoMaybe(row[dateCol] as any) : toIsoMaybe(row.DataOperazione ?? row.Data ?? row.DataMovimento)
+  const rowsRaw: CassaMovimentoUtenteRow[] = recordset.map((row) => {
+    const clienteId = safeStr(rowGet(row, ["IDUtente", "IdUtente", "idUtente", "ClienteId", "IdCliente", "IDCliente"]))
+    const nome = safeStr(rowGet(row, ["Nome", "nome"]))
+    const cognome = safeStr(rowGet(row, ["Cognome", "cognome"]))
+    const email = safeStr(rowGet(row, ["Email", "email", "E_mail", "E-mail", "Mail", "mail"]))
+    const sms = safeStr(rowGet(row, ["SMS", "sms", "Cellulare", "cellulare", "Telefono", "telefono", "Telefono_1", "Telefono1"]))
+    const codiceFiscale = safeStr(rowGet(row, ["CodiceFiscale", "Cod_Fisc", "CodFiscale", "CF", "C_F"]))
+    const movimentoId = movimentoIdCol ? safeStr((row as any)[movimentoIdCol]) : safeStr(rowGet(row, ["IDCassaMovimenti", "IdMovimento", "IDMovimento", "Id"]))
+    const causale = causaleCol ? safeStr((row as any)[causaleCol]) : safeStr(rowGet(row, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]))
+    const importo = importoCol ? safeNum((row as any)[importoCol]) : safeNum(rowGet(row, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare"]))
+    const dataOperazioneIso = dateCol ? toIsoMaybe((row as any)[dateCol]) : toIsoMaybe(rowGet(row, ["DataOperazione", "Data", "DataMovimento"]))
 
     return {
+      movimentoId,
       clienteId,
       nome,
       cognome,
       email,
       sms,
+      codiceFiscale,
       causale,
       importo,
       dataOperazioneIso,
-      sesso: safeStr(row.Sesso ?? row.sesso),
-      luogoNascita: safeStr(row.Luogo_Nascita ?? row.LuogoNascita ?? row.luogoNascita),
-      dataNascita: safeStr(row.Data_Nascita ?? row.DataNascita ?? row.dataNascita),
-      professione: safeStr(row.Professione ?? row.professione),
-      indirizzoVia: safeStr(row.Indirizzo_Via ?? row.IndirizzoVia ?? row.via),
-      indirizzoNumero: safeStr(row.Indirizzo_N ?? row.IndirizzoNumero ?? row.numero),
-      indirizzoCap: safeStr(row.Indirizzo_Cap ?? row.CAP ?? row.cap),
-      indirizzoCitta: safeStr(row.Indirizzo_Comune ?? row.Citta ?? row.citta ?? row.comune),
-      indirizzoProvincia: safeStr(row.Indirizzo_Pv ?? row.Provincia ?? row.provincia),
-      telefono1: safeStr(row.Telefono_1 ?? row.Telefono1 ?? row.telefono1),
-      telefono2: safeStr(row.Telefono_2 ?? row.Telefono2 ?? row.telefono2),
-      documento: safeStr(row.Documento ?? row.documento),
-      primaIscrizione: safeStr(row.Prima_Iscrizione ?? row.PrimaIscrizione ?? row.primaIscrizione),
+      sesso: safeStr(rowGet(row, ["Sesso", "sesso"])),
+      luogoNascita: safeStr(rowGet(row, ["Luogo_Nascita", "LuogoNascita", "luogoNascita"])),
+      dataNascita: toIsoDateOnlyMaybe(rowGet(row, ["Data_Nascita", "DataNascita", "dataNascita"])),
+      professione: safeStr(rowGet(row, ["Professione", "professione"])),
+      indirizzoVia: safeStr(rowGet(row, ["Indirizzo_Via", "IndirizzoVia", "via"])),
+      indirizzoNumero: safeStr(rowGet(row, ["Indirizzo_N", "IndirizzoNumero", "numero"])),
+      indirizzoCap: safeStr(rowGet(row, ["Indirizzo_Cap", "CAP", "cap"])),
+      indirizzoCitta: safeStr(rowGet(row, ["Indirizzo_Comune", "Citta", "citta", "comune"])),
+      indirizzoProvincia: safeStr(rowGet(row, ["Indirizzo_Pv", "Provincia", "provincia"])),
+      telefono1: safeStr(rowGet(row, ["Telefono_1", "Telefono1", "telefono1"])),
+      telefono2: safeStr(rowGet(row, ["Telefono_2", "Telefono2", "telefono2"])),
+      documento: safeStr(rowGet(row, ["Documento", "documento"])),
+      primaIscrizione: toIsoDateOnlyMaybe(rowGet(row, ["Prima_Iscrizione", "PrimaIscrizione", "primaIscrizione"])),
     }
   })
+
+  // Dedup: alcune viste possono restituire righe duplicate identiche.
+  const seen = new Set<string>()
+  const rows: CassaMovimentoUtenteRow[] = []
+  for (const it of rowsRaw) {
+    const k =
+      (it.movimentoId && it.movimentoId.trim()) ||
+      `${it.clienteId ?? ""}|${it.nome ?? ""}|${it.cognome ?? ""}|${it.importo}|${it.causale ?? ""}|${it.dataOperazioneIso ?? ""}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    rows.push(it)
+  }
 
   const groupsMap = new Map<string, CassaMovimentiUtentiGroup>()
   for (const it of rows) {

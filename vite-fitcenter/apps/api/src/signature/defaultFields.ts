@@ -15,7 +15,8 @@ export function defaultSignatureFields(): SignatureField[] {
     { id: "provincia", label: "Provincia", page: 1, x: 390, y: 642, order: 7, size: 9, maxWidth: 60 },
     { id: "data_nascita", label: "Data nascita", page: 1, x: 120, y: 620, order: 8, size: 9, maxWidth: 120 },
     { id: "luogo_nascita", label: "Luogo nascita", page: 1, x: 260, y: 620, order: 9, size: 9, maxWidth: 200 },
-    { id: "servizi", label: "Servizi / Importo", page: 1, x: 120, y: 485, order: 10, size: 9, maxWidth: 420 },
+    { id: "codice_fiscale", label: "Codice fiscale", page: 1, x: 390, y: 620, order: 10, size: 9, maxWidth: 220 },
+    { id: "servizi", label: "Servizi / Importo", page: 1, x: 120, y: 485, order: 11, size: 9, maxWidth: 420 },
   ]
 }
 

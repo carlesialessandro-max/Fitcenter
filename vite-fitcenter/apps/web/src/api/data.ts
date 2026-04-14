@@ -154,11 +154,13 @@ export const dataApi = {
 }
 
 export interface CassaMovimentoUtenteRow {
+  movimentoId?: string | null
   clienteId: string | null
   nome: string | null
   cognome: string | null
   email: string | null
   sms: string | null
+  codiceFiscale?: string | null
   causale: string | null
   importo: number
   dataOperazioneIso: string | null

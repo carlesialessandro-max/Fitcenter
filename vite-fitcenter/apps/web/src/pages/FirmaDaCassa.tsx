@@ -18,6 +18,14 @@ function fmtDt(v?: string | null) {
   return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString("it-IT")
 }
 
+function fmtDateOnly(v?: string | null) {
+  if (!v) return "—"
+  // Supporta ISO YYYY-MM-DD oppure ISO datetime
+  const iso = /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : v
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("it-IT")
+}
+
 export function FirmaDaCassa() {
   const { role } = useAuth()
   const canUse = role === "admin" || role === "operatore"
@@ -68,12 +76,13 @@ export function FirmaDaCassa() {
         nome: selected.nome ?? "",
         cognome: selected.cognome ?? "",
         email: selected.email ?? "",
-        cellulare: selected.anagrafica.telefono1 ?? selected.sms ?? "",
+        cellulare: selected.sms ?? "",
         indirizzo,
         cap_citta: capCitta,
         provincia: selected.anagrafica.indirizzoProvincia ?? "",
         data_nascita: selected.anagrafica.dataNascita ?? "",
         luogo_nascita: selected.anagrafica.luogoNascita ?? "",
+        codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         servizi: `Movimenti: ${selected.rows.length} · Totale: ${fmtEuro(selected.totalImporto)}`,
       }
       const out = await signaturesApi.createFromTemplate({ templateId: effectiveTemplateId, customerEmail: email, customerName, prefill })
@@ -202,7 +211,7 @@ export function FirmaDaCassa() {
                 <div className="rounded border border-zinc-800 bg-zinc-950/30 p-3 text-xs text-zinc-300">
                   <div className="text-zinc-500">Contatti</div>
                   <div className="mt-1">Email: {selected.email ?? "—"}</div>
-                  <div className="mt-1">SMS: {selected.sms ?? "—"}</div>
+                  <div className="mt-1">Cellulare (SMS): {selected.sms ?? "—"}</div>
                   <div className="mt-1">Tel1: {selected.anagrafica.telefono1 ?? "—"}</div>
                 </div>
               </div>
@@ -210,8 +219,9 @@ export function FirmaDaCassa() {
               <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/30 p-3 text-xs text-zinc-300">
                 <div className="text-zinc-500">Anagrafica (best-effort)</div>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <div>Data nascita: {selected.anagrafica.dataNascita ?? "—"}</div>
+                  <div>Data nascita: {fmtDateOnly(selected.anagrafica.dataNascita)}</div>
                   <div>Luogo nascita: {selected.anagrafica.luogoNascita ?? "—"}</div>
+                  <div>Codice fiscale: {selected.anagrafica.codiceFiscale ?? "—"}</div>
                   <div>Indirizzo: {[selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ") || "—"}</div>
                   <div>
                     CAP/Città/Prov:{" "}
@@ -220,7 +230,7 @@ export function FirmaDaCassa() {
                       .join(" ") || "—"}
                   </div>
                   <div>Documento: {selected.anagrafica.documento ?? "—"}</div>
-                  <div>Prima iscrizione: {selected.anagrafica.primaIscrizione ?? "—"}</div>
+                  <div>Prima iscrizione: {fmtDateOnly(selected.anagrafica.primaIscrizione)}</div>
                 </div>
               </div>
 
