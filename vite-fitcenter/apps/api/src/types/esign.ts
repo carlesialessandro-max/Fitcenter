@@ -24,6 +24,7 @@ export interface SignatureTemplate {
   createdAt: string
   active: boolean
   slots: SignatureSlot[]
+  fields?: SignatureField[]
 }
 
 export interface SignatureSlot {
@@ -35,6 +36,17 @@ export interface SignatureSlot {
   width: number
   height: number
   order: number
+}
+
+export interface SignatureField {
+  id: string
+  label: string
+  page: number
+  x: number
+  y: number
+  order: number
+  size?: number
+  maxWidth?: number
 }
 
 export interface SignatureStep extends SignatureSlot {
@@ -67,6 +79,9 @@ export interface SignatureRequest {
   signatureFullName?: string
   signatureIp?: string
   signatureUserAgent?: string
+
+  /** Valori usati per precompilare il PDF (best-effort) */
+  prefill?: Record<string, string>
 
   signedDocumentFileName?: string
   audit: SignatureAuditEvent[]

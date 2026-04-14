@@ -1,4 +1,4 @@
-import type { SignatureAdminItem, SignaturePublicInfo, SignatureSlot, SignatureTemplate } from "@/types/signature"
+import type { SignatureAdminItem, SignatureField, SignaturePublicInfo, SignatureSlot, SignatureTemplate } from "@/types/signature"
 import { getApiBase } from "./baseUrl"
 import { api } from "./client"
 
@@ -11,8 +11,8 @@ export const signaturesApi = {
   deleteAdmin: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
-  updateTemplateSlots: (id: string, slots: SignatureSlot[]) =>
-    api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, { slots }),
+  updateTemplateLayout: (id: string, input: { slots: SignatureSlot[]; fields?: SignatureField[] }) =>
+    api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, input),
   getTemplateDocument: async (id: string) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const res = await fetch(`${API_BASE}/signatures/admin/templates/${encodeURIComponent(id)}/document`, {
@@ -71,12 +71,18 @@ export const signaturesApi = {
     return res.json() as Promise<SignatureTemplate>
   },
 
-  createFromTemplate: async (body: { templateId: string; customerEmail: string; customerName?: string }) => {
+  createFromTemplate: async (body: {
+    templateId: string
+    customerEmail: string
+    customerName?: string
+    prefill?: Record<string, string>
+  }) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const fd = new FormData()
     fd.append("templateId", body.templateId)
     fd.append("customerEmail", body.customerEmail)
     if (body.customerName?.trim()) fd.append("customerName", body.customerName.trim())
+    if (body.prefill && Object.keys(body.prefill).length) fd.append("prefill", JSON.stringify(body.prefill))
     const res = await fetch(`${API_BASE}/signatures/admin`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,

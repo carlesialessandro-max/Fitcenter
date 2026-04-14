@@ -1075,6 +1075,15 @@ export async function queryCassaMovimentiUtenti(args: {
   const vq = qualifySqlObject(view).query
   const colsLower = await prenGetCols(view) // lower-case
 
+  const tipoServizioCol =
+    pickBestTextCol(colsLower, [
+      "TipoServizioDescrizione",
+      "TipoServizio",
+      "TipoServizioDesc",
+      "TipoServizioDescr",
+      "ServizioDescrizione",
+      "TipoDescrizione",
+    ]) ?? null
   const dateCol =
     pickBestDateCol(colsLower, [
       "CassaMovimentiDataOperazione",
@@ -1106,6 +1115,10 @@ export async function queryCassaMovimentiUtenti(args: {
   const whereParts: string[] = []
   if (importoCol) {
     whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
+  }
+  if (tipoServizioCol) {
+    // Solo Abbonamenti o Corsi (case-insensitive)
+    whereParts.push(`LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi')`)
   }
   if (dateCol) {
     // best-effort: supporta date/datetime e stringhe comuni (vedi helper usato per prenotazioni)

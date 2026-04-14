@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
-import type { SignatureSlot } from "@/types/signature"
-import { DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
+import type { SignatureField, SignatureSlot } from "@/types/signature"
+import { DEFAULT_SIGNATURE_FIELDS, DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
 
 function fmtDate(v?: string) {
   if (!v) return "—"
@@ -29,6 +29,9 @@ export function SignaturesAdmin() {
   const [slotsDraft, setSlotsDraft] = useState<SignatureSlot[]>([])
   const [slotsBusy, setSlotsBusy] = useState(false)
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
+  const [fieldsDraft, setFieldsDraft] = useState<SignatureField[]>([])
+  const [selectedFieldId, setSelectedFieldId] = useState<string>("")
+  const [editMode, setEditMode] = useState<"slots" | "fields">("slots")
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewErr, setPreviewErr] = useState<string | null>(null)
   const [pageCount, setPageCount] = useState(1)
@@ -51,11 +54,14 @@ export function SignaturesAdmin() {
   useEffect(() => {
     if (!templateId) {
       setSlotsDraft([])
+      setFieldsDraft([])
       return
     }
     const t = (templatesQ.data ?? []).find((x) => x.id === templateId)
     const slots = t?.slots && t.slots.length > 0 ? t.slots : DEFAULT_SIGNATURE_SLOTS
     setSlotsDraft(slots.map((s) => ({ ...s })))
+    const fields = t?.fields && t.fields.length > 0 ? t.fields : DEFAULT_SIGNATURE_FIELDS
+    setFieldsDraft(fields.map((f) => ({ ...f })))
   }, [templateId, templatesQ.data])
 
   useEffect(() => {
@@ -68,6 +74,20 @@ export function SignaturesAdmin() {
   }, [slotsDraft, selectedSlotId])
 
   const selectedSlot = useMemo(() => slotsDraft.find((s) => s.id === selectedSlotId) ?? null, [slotsDraft, selectedSlotId])
+
+  useEffect(() => {
+    if (!fieldsDraft.length) {
+      setSelectedFieldId("")
+      return
+    }
+    const exists = fieldsDraft.some((f) => f.id === selectedFieldId)
+    if (!exists) setSelectedFieldId(fieldsDraft[0]?.id ?? "")
+  }, [fieldsDraft, selectedFieldId])
+
+  const selectedField = useMemo(
+    () => fieldsDraft.find((f) => f.id === selectedFieldId) ?? null,
+    [fieldsDraft, selectedFieldId]
+  )
 
   function updateSlot(id: string, patch: Partial<SignatureSlot>) {
     setSlotsDraft((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)))
@@ -92,6 +112,14 @@ export function SignaturesAdmin() {
 
   function resetFiveDefaults() {
     setSlotsDraft(DEFAULT_SIGNATURE_SLOTS.map((s) => ({ ...s })))
+  }
+
+  function updateField(id: string, patch: Partial<SignatureField>) {
+    setFieldsDraft((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+  }
+
+  function resetDefaultFields() {
+    setFieldsDraft(DEFAULT_SIGNATURE_FIELDS.map((f) => ({ ...f })))
   }
 
   useEffect(() => {
@@ -123,22 +151,41 @@ export function SignaturesAdmin() {
         await page.render({ canvas: canvas as HTMLCanvasElement, canvasContext: ctx, viewport }).promise
         const scaleX = canvas.width / (page.view[2] || 1)
         const scaleY = canvas.height / (page.view[3] || 1)
-        const activeOnPage = slotsDraft.find((s) => s.id === selectedSlotId && (s.page || 1) === safePage)
+        const activeOnPage =
+          editMode === "fields"
+            ? fieldsDraft.find((f) => f.id === selectedFieldId && (f.page || 1) === safePage)
+            : slotsDraft.find((s) => s.id === selectedSlotId && (s.page || 1) === safePage)
         ctx.save()
         if (activeOnPage) {
-          const s = activeOnPage
-          const x = s.x * scaleX
-          const yTop = canvas.height - (s.y + s.height) * scaleY
-          const w = s.width * scaleX
-          const h = s.height * scaleY
-          ctx.lineWidth = 3
-          ctx.strokeStyle = "#f59e0b"
-          ctx.fillStyle = "rgba(245,158,11,0.12)"
-          ctx.fillRect(x, yTop, w, h)
-          ctx.strokeRect(x, yTop, w, h)
-          ctx.fillStyle = "#111827"
-          ctx.font = "12px sans-serif"
-          ctx.fillText(`${s.order}. ${s.label}`, x + 4, Math.max(12, yTop - 4))
+          if (editMode === "fields") {
+            const f = activeOnPage as SignatureField
+            const x = f.x * scaleX
+            const y = canvas.height - f.y * scaleY
+            ctx.lineWidth = 3
+            ctx.strokeStyle = "#22c55e"
+            ctx.fillStyle = "rgba(34,197,94,0.12)"
+            ctx.beginPath()
+            ctx.arc(x, y, 10, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.stroke()
+            ctx.fillStyle = "#111827"
+            ctx.font = "12px sans-serif"
+            ctx.fillText(`${f.order}. ${f.label}`, x + 14, Math.max(12, y - 6))
+          } else {
+            const s = activeOnPage as SignatureSlot
+            const x = s.x * scaleX
+            const yTop = canvas.height - (s.y + s.height) * scaleY
+            const w = s.width * scaleX
+            const h = s.height * scaleY
+            ctx.lineWidth = 3
+            ctx.strokeStyle = "#f59e0b"
+            ctx.fillStyle = "rgba(245,158,11,0.12)"
+            ctx.fillRect(x, yTop, w, h)
+            ctx.strokeRect(x, yTop, w, h)
+            ctx.fillStyle = "#111827"
+            ctx.font = "12px sans-serif"
+            ctx.fillText(`${s.order}. ${s.label}`, x + 4, Math.max(12, yTop - 4))
+          }
         }
         ctx.restore()
       } catch (e) {
@@ -223,14 +270,14 @@ export function SignaturesAdmin() {
     }
   }
 
-  async function onSaveTemplateSlots() {
+  async function onSaveTemplateLayout() {
     if (!templateId || slotsDraft.length === 0) return
     setErr(null)
     setMsg(null)
     setSlotsBusy(true)
     try {
-      await signaturesApi.updateTemplateSlots(templateId, slotsDraft)
-      setMsg("Regolazione firme salvata sul template.")
+      await signaturesApi.updateTemplateLayout(templateId, { slots: slotsDraft, fields: fieldsDraft })
+      setMsg("Layout (firme + campi) salvato sul template.")
       await templatesQ.refetch()
     } catch (e2) {
       setErr((e2 as Error).message)
@@ -240,15 +287,22 @@ export function SignaturesAdmin() {
   }
 
   function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!selectedSlot || !canvasRef.current || pageHeightPdf <= 0 || pageWidthPdf <= 0) return
+    if (!canvasRef.current || pageHeightPdf <= 0 || pageWidthPdf <= 0) return
     const rect = canvasRef.current.getBoundingClientRect()
     const px = e.clientX - rect.left
     const py = e.clientY - rect.top
     const scaleX = canvasRef.current.width / pageWidthPdf
     const scaleY = canvasRef.current.height / pageHeightPdf
     const xPdf = Math.max(0, px / scaleX)
-    const yPdf = Math.max(0, pageHeightPdf - py / scaleY - selectedSlot.height)
-    updateSlot(selectedSlot.id, { page: previewPage, x: Math.round(xPdf), y: Math.round(yPdf) })
+    if (editMode === "fields") {
+      if (!selectedField) return
+      const yPdf = Math.max(0, pageHeightPdf - py / scaleY)
+      updateField(selectedField.id, { page: previewPage, x: Math.round(xPdf), y: Math.round(yPdf) })
+    } else {
+      if (!selectedSlot) return
+      const yPdf = Math.max(0, pageHeightPdf - py / scaleY - selectedSlot.height)
+      updateSlot(selectedSlot.id, { page: previewPage, x: Math.round(xPdf), y: Math.round(yPdf) })
+    }
   }
 
   async function onExportAudit() {
@@ -360,7 +414,7 @@ export function SignaturesAdmin() {
       <div className="mt-3 rounded-lg border border-amber-600/40 bg-amber-950/20 p-4">
         <h2 className="text-sm font-semibold text-amber-200">Regolazione firme sul PDF</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Ogni slot = una firma in sequenza sul PDF (il cliente preme &quot;Conferma firma&quot; una volta per slot). Se serve una sola firma, lascia un solo slot e salva. Clic sull&apos;anteprima per posizionare lo slot attivo.
+          Ogni slot = una firma in sequenza sul PDF. I campi (testo) vengono scritti sul PDF prima della firma usando i dati della cassa. Clic sull&apos;anteprima per posizionare l&apos;elemento attivo.
         </p>
         {!templateId ? (
           <p className="mt-3 text-xs text-zinc-400">
@@ -370,22 +424,53 @@ export function SignaturesAdmin() {
           <>
             <div className="mt-3 rounded border border-zinc-700 bg-zinc-950/40 p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-zinc-400">Slot attivo:</span>
-                {slotsDraft
-                  .slice()
-                  .sort((a, b) => a.order - b.order)
-                  .map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setSelectedSlotId(s.id)}
-                      className={`rounded px-2 py-1 ${
-                        selectedSlotId === s.id ? "bg-amber-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"
-                      }`}
-                    >
-                      {s.order}. {s.label}
-                    </button>
-                  ))}
+                <span className="text-zinc-400">Modalità:</span>
+                <button
+                  type="button"
+                  onClick={() => setEditMode("slots")}
+                  className={`rounded px-2 py-1 ${editMode === "slots" ? "bg-amber-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"}`}
+                >
+                  Firme
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditMode("fields")}
+                  className={`rounded px-2 py-1 ${editMode === "fields" ? "bg-emerald-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"}`}
+                >
+                  Campi
+                </button>
+                <span className="ml-2 text-zinc-400">{editMode === "fields" ? "Campo attivo:" : "Slot attivo:"}</span>
+                {editMode === "fields"
+                  ? fieldsDraft
+                      .slice()
+                      .sort((a, b) => a.order - b.order)
+                      .map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => setSelectedFieldId(f.id)}
+                          className={`rounded px-2 py-1 ${
+                            selectedFieldId === f.id ? "bg-emerald-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"
+                          }`}
+                        >
+                          {f.order}. {f.label}
+                        </button>
+                      ))
+                  : slotsDraft
+                      .slice()
+                      .sort((a, b) => a.order - b.order)
+                      .map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSelectedSlotId(s.id)}
+                          className={`rounded px-2 py-1 ${
+                            selectedSlotId === s.id ? "bg-amber-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"
+                          }`}
+                        >
+                          {s.order}. {s.label}
+                        </button>
+                      ))}
                 <div className="ml-auto flex items-center gap-2">
                   <label className="text-zinc-400">Pagina</label>
                   <select
@@ -421,6 +506,9 @@ export function SignaturesAdmin() {
               </button>
               <button type="button" onClick={resetFiveDefaults} className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200">
                 Ripristina 5 slot predefiniti
+              </button>
+              <button type="button" onClick={resetDefaultFields} className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200">
+                Ripristina campi predefiniti
               </button>
             </div>
 
@@ -490,10 +578,67 @@ export function SignaturesAdmin() {
                   </div>
                 ))}
             </div>
+
+            <div className="mt-4 rounded border border-emerald-700/40 bg-emerald-950/10 p-3">
+              <h3 className="text-xs font-semibold text-emerald-200">Campi precompilazione (testo)</h3>
+              <p className="mt-1 text-xs text-zinc-500">Questi valori vengono scritti sul PDF (prima della firma) usando i dati della cassa.</p>
+              <div className="mt-3 grid gap-2">
+                {fieldsDraft
+                  .slice()
+                  .sort((a, b) => a.order - b.order)
+                  .map((f) => (
+                    <div key={f.id} className="grid gap-2 rounded border border-zinc-700 p-2 md:grid-cols-7">
+                      <div className="flex items-center text-xs font-medium text-zinc-200">{f.label}</div>
+                      <input
+                        type="number"
+                        min={1}
+                        title="Pagina"
+                        value={f.page}
+                        onChange={(e) => updateField(f.id, { page: Number(e.target.value || 1) })}
+                        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                        placeholder="Pagina"
+                      />
+                      <input
+                        type="number"
+                        title="X"
+                        value={f.x}
+                        onChange={(e) => updateField(f.id, { x: Number(e.target.value || 0) })}
+                        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                        placeholder="X"
+                      />
+                      <input
+                        type="number"
+                        title="Y"
+                        value={f.y}
+                        onChange={(e) => updateField(f.id, { y: Number(e.target.value || 0) })}
+                        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                        placeholder="Y"
+                      />
+                      <input
+                        type="number"
+                        title="Size"
+                        value={f.size ?? 10}
+                        onChange={(e) => updateField(f.id, { size: Number(e.target.value || 10) })}
+                        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                        placeholder="Size"
+                      />
+                      <input
+                        type="number"
+                        title="MaxWidth"
+                        value={f.maxWidth ?? ""}
+                        onChange={(e) => updateField(f.id, { maxWidth: e.target.value === "" ? undefined : Number(e.target.value) })}
+                        className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                        placeholder="MaxW"
+                      />
+                      <div className="flex items-center justify-end text-xs text-zinc-500">id: {f.id}</div>
+                    </div>
+                  ))}
+              </div>
+            </div>
             <div className="mt-3">
               <button
                 type="button"
-                onClick={onSaveTemplateSlots}
+                onClick={onSaveTemplateLayout}
                 disabled={slotsBusy || slotsDraft.length === 0}
                 className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
               >

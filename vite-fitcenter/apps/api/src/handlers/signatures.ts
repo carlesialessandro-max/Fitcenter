@@ -4,8 +4,9 @@ import crypto from "crypto"
 import type { Request, Response } from "express"
 import { signatureStore } from "../store/esign.js"
 import { sendMail } from "../services/mailer.js"
-import type { SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
+import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
 import { defaultSignatureSlots, ensureSignatureSlots } from "../signature/defaultSlots.js"
+import { ensureSignatureFields } from "../signature/defaultFields.js"
 import { PDFDocument } from "pdf-lib"
 
 const OTP_TTL_MS = 10 * 60 * 1000
@@ -107,6 +108,40 @@ async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], sign
   return await pdfDoc.save()
 }
 
+function clampTextToWidth(args: { text: string; maxWidth: number; font: any; size: number }): string {
+  const t = (args.text ?? "").trim()
+  if (!t) return ""
+  try {
+    // pdf-lib font: widthOfTextAtSize
+    if (args.font.widthOfTextAtSize(t, args.size) <= args.maxWidth) return t
+    let out = t
+    while (out.length > 1 && args.font.widthOfTextAtSize(out + "…", args.size) > args.maxWidth) {
+      out = out.slice(0, -1)
+    }
+    return out.length < t.length ? out + "…" : out
+  } catch {
+    return t
+  }
+}
+
+async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], prefill: Record<string, string>): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
+  const pages = pdfDoc.getPages()
+  const font = await pdfDoc.embedFont("Helvetica")
+  for (const f of fields) {
+    const raw = prefill?.[f.id]
+    const text = String(raw ?? "").trim()
+    if (!text) continue
+    const pageIdx = Math.max(0, Math.min(pages.length - 1, (f.page ?? 1) - 1))
+    const page = pages[pageIdx]
+    const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
+    const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
+    const drawText = maxWidth ? clampTextToWidth({ text, maxWidth, font, size }) : text
+    page.drawText(drawText, { x: f.x, y: f.y, size, font })
+  }
+  return await pdfDoc.save()
+}
+
 export async function createSignatureRequest(req: Request, res: Response) {
   try {
     const isAdmin = req.user?.role === "admin"
@@ -114,6 +149,20 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const templateId = String(req.body.templateId ?? "").trim()
     const customerEmail = String(req.body.customerEmail ?? "").trim().toLowerCase()
     const customerName = String(req.body.customerName ?? "").trim()
+    const prefillRaw = String(req.body.prefill ?? "").trim()
+    let prefill: Record<string, string> | undefined
+    if (prefillRaw) {
+      try {
+        const parsed = JSON.parse(prefillRaw) as unknown
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          prefill = Object.fromEntries(
+            Object.entries(parsed as Record<string, unknown>).map(([k, v]) => [String(k), v == null ? "" : String(v)])
+          )
+        }
+      } catch {
+        // ignore
+      }
+    }
     if (!f && !templateId) return res.status(400).json({ message: "PDF o template obbligatorio" })
     if (!isAdmin && !templateId) return res.status(403).json({ message: "Operatore: selezionare un template esistente" })
     if (!isAdmin && f) return res.status(403).json({ message: "Operatore: upload PDF non consentito" })
@@ -131,6 +180,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
     let originalName = ""
     let templateName: string | undefined
     let slots: SignatureSlot[] = defaultSignatureSlots()
+    let fields: SignatureField[] = ensureSignatureFields(null)
     if (templateId) {
       const tpl = signatureStore.getTemplateById(templateId)
       if (!tpl || !tpl.active) return res.status(400).json({ message: "Template non valido" })
@@ -141,7 +191,14 @@ export async function createSignatureRequest(req: Request, res: Response) {
       originalName = tpl.originalName
       templateName = tpl.name
       slots = ensureSignatureSlots(tpl.slots as SignatureSlot[] | undefined)
+      fields = ensureSignatureFields((tpl as any).fields as SignatureField[] | undefined)
       fs.copyFileSync(templatePath, path.join(destDir, fileName))
+      // Precompila PDF (se prefill presente)
+      if (prefill && Object.keys(prefill).length > 0 && fields.length > 0) {
+        const target = path.join(destDir, fileName)
+        const bytes = await renderPdfWithPrefill(target, fields, prefill)
+        fs.writeFileSync(target, bytes)
+      }
     } else if (f) {
       const ext = path.extname(f.originalname || "").toLowerCase() || ".pdf"
       fileName = `${id}${ext}`
@@ -166,6 +223,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       otpAttempts: 0,
       audit: [{ at: nowIso(), type: "created" }],
       steps: toSteps(slots),
+      prefill,
     }
     signatureStore.create(row)
 
@@ -378,8 +436,9 @@ export async function verifySignatureOtp(req: Request, res: Response) {
 export async function listSignatureTemplates(_req: Request, res: Response) {
   const rows = signatureStore.listTemplates().map((t) => ({
     ...t,
-    // Template senza slots nel JSON: ensureSignatureSlots applica i default (5) o l’elenco salvato.
+    // Template senza layout nel JSON: applichiamo i default (slots+fields) oppure l’elenco salvato.
     slots: ensureSignatureSlots(t.slots as SignatureSlot[] | undefined),
+    fields: ensureSignatureFields((t as any).fields as SignatureField[] | undefined),
   }))
   res.json(rows)
 }
@@ -407,6 +466,7 @@ export async function createSignatureTemplate(req: Request, res: Response) {
       createdAt: nowIso(),
       active: true,
       slots: defaultSignatureSlots(),
+      fields: ensureSignatureFields(null),
     })
     res.json(tpl)
   } catch (e) {
@@ -431,7 +491,20 @@ export async function updateSignatureTemplateSlots(req: Request, res: Response) 
     height: Math.max(20, Number(s.height ?? 80)),
     order: Math.max(1, Number(s.order ?? i + 1)),
   }))
-  const next = signatureStore.updateTemplateById(id, (r) => ({ ...r, slots }))
+  const fieldsRaw = Array.isArray(req.body?.fields) ? req.body.fields : null
+  const fields: SignatureField[] | undefined = fieldsRaw
+    ? fieldsRaw.map((f: Record<string, unknown>, i: number) => ({
+        id: String(f.id ?? `field-${i + 1}`),
+        label: String(f.label ?? `Campo ${i + 1}`),
+        page: Math.max(1, Number(f.page ?? 1)),
+        x: Number(f.x ?? 50),
+        y: Number(f.y ?? 50),
+        order: Math.max(1, Number(f.order ?? i + 1)),
+        size: f.size != null ? Number(f.size) : undefined,
+        maxWidth: f.maxWidth != null ? Number(f.maxWidth) : undefined,
+      }))
+    : undefined
+  const next = signatureStore.updateTemplateById(id, (r) => ({ ...r, slots, fields: ensureSignatureFields(fields ?? (r as any).fields) }))
   if (!next) return res.status(500).json({ message: "Errore aggiornamento template" })
   res.json(next)
 }

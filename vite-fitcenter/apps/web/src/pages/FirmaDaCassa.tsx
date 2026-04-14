@@ -62,7 +62,21 @@ export function FirmaDaCassa() {
     setBusy(true)
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
-      const out = await signaturesApi.createFromTemplate({ templateId: effectiveTemplateId, customerEmail: email, customerName })
+      const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
+      const capCitta = [selected.anagrafica.indirizzoCap, selected.anagrafica.indirizzoCitta].filter(Boolean).join(" ").trim()
+      const prefill: Record<string, string> = {
+        nome: selected.nome ?? "",
+        cognome: selected.cognome ?? "",
+        email: selected.email ?? "",
+        cellulare: selected.anagrafica.telefono1 ?? selected.sms ?? "",
+        indirizzo,
+        cap_citta: capCitta,
+        provincia: selected.anagrafica.indirizzoProvincia ?? "",
+        data_nascita: selected.anagrafica.dataNascita ?? "",
+        luogo_nascita: selected.anagrafica.luogoNascita ?? "",
+        servizi: `Movimenti: ${selected.rows.length} · Totale: ${fmtEuro(selected.totalImporto)}`,
+      }
+      const out = await signaturesApi.createFromTemplate({ templateId: effectiveTemplateId, customerEmail: email, customerName, prefill })
       const link = `${window.location.origin}/firma/${out.token}`
       setOk(`Richiesta creata. Apro la pagina firma: ${link}`)
       window.open(link, "_blank", "noopener,noreferrer")

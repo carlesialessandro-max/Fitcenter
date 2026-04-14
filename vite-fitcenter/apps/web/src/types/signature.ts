@@ -39,6 +39,17 @@ export interface SignatureSlot {
   order: number
 }
 
+export interface SignatureField {
+  id: string
+  label: string
+  page: number
+  x: number
+  y: number
+  order: number
+  size?: number
+  maxWidth?: number
+}
+
 export interface SignatureTemplate {
   id: string
   name: string
@@ -48,5 +59,6 @@ export interface SignatureTemplate {
   createdAt: string
   active: boolean
   slots: SignatureSlot[]
+  fields?: SignatureField[]
 }
 
