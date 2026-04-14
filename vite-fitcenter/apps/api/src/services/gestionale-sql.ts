@@ -179,6 +179,13 @@ function getPrenotazioniWaitlistViewName(): string {
   return raw
 }
 
+function getCassaMovimentiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_CASSA_MOVIMENTI_UTENTI ?? "RVW_CassaMovimentiUtenti").trim()
+  if (!raw) return "RVW_CassaMovimentiUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_CassaMovimentiUtenti"
+  return raw
+}
+
 async function resolvePrenotazioniViewName(): Promise<string> {
   const preferred = getPrenotazioniViewName()
   const candidates = [
@@ -254,8 +261,58 @@ async function resolvePrenotazioniWaitlistViewName(): Promise<string> {
   return preferred
 }
 
+async function resolveCassaMovimentiViewName(): Promise<string> {
+  const preferred = getCassaMovimentiViewName()
+  const candidates = [preferred, "RVW_CassaMovimentiUtenti", "RVW_CassaMovimentiUtent"]
+    .map((s) => s.trim())
+    .filter((s) => s && isSafeSqlIdentifierLoose(s))
+
+  const p = await getPool()
+  if (!p) return preferred
+  const pool = p
+
+  async function resolveAnySchemaIfNeeded(name: string): Promise<string> {
+    const cleaned = name.replace(/[\[\]]/g, "").trim()
+    if (!cleaned || cleaned.includes(".")) return name
+    try {
+      const r = await pool
+        .request()
+        .input("n", sql.NVarChar, cleaned)
+        .query(
+          `SELECT TOP (1)
+             QUOTENAME(s.name) + '.' + QUOTENAME(o.name) AS fullName
+           FROM sys.objects o
+           JOIN sys.schemas s ON s.schema_id = o.schema_id
+           WHERE o.type = 'V' AND o.name = @n
+           ORDER BY s.name ASC;`
+        )
+      const fullName = String(r.recordset?.[0]?.fullName ?? "").trim()
+      return fullName || name
+    } catch {
+      return name
+    }
+  }
+
+  for (const name of candidates) {
+    try {
+      const resolved = await resolveAnySchemaIfNeeded(name)
+      const q = qualifySqlObject(resolved)
+      const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
+      const oid = r.recordset?.[0]?.oid
+      if (oid != null) return resolved
+    } catch {
+      // ignore e prova prossimo
+    }
+  }
+  return preferred
+}
+
 export async function getPrenotazioniViewNameResolved(): Promise<string> {
   return resolvePrenotazioniViewName()
+}
+
+export async function getCassaMovimentiViewNameResolved(): Promise<string> {
+  return resolveCassaMovimentiViewName()
 }
 
 export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateCol: string | null; cols: string[] }> {
@@ -801,6 +858,24 @@ function pickBestDateCol(colsLower: string[], candidates: string[]): string | nu
   return fuzzy ? fuzzy : null
 }
 
+function pickBestNumberCol(colsLower: string[], candidates: string[]): string | null {
+  const set = new Set(colsLower)
+  for (const c of candidates) {
+    if (set.has(c.toLowerCase())) return c
+  }
+  const fuzzy = colsLower.find((x) => x.includes("importo") || x.includes("totale") || x.includes("ammontare"))
+  return fuzzy ?? null
+}
+
+function pickBestTextCol(colsLower: string[], candidates: string[]): string | null {
+  const set = new Set(colsLower)
+  for (const c of candidates) {
+    if (set.has(c.toLowerCase())) return c
+  }
+  const fuzzy = colsLower.find((x) => x.includes("causale") || x.includes("descrizione") || x.includes("note"))
+  return fuzzy ?? null
+}
+
 function sqlDateEqualsExpr(col: string, param: string): string {
   // Supporta:
   // - datetime/date nativi: CAST(col AS DATE)
@@ -914,6 +989,221 @@ async function pickBestDateColForView(view: string, candidates: string[]): Promi
     return prefer ?? existing[0] ?? null
   }
   return best.col
+}
+
+export type CassaMovimentoUtenteRow = {
+  clienteId: string | null
+  nome: string | null
+  cognome: string | null
+  email: string | null
+  sms: string | null
+  causale: string | null
+  importo: number
+  dataOperazioneIso: string | null
+  // Campi anagrafici utili per precompilare il PDF (best-effort: possono mancare)
+  sesso?: string | null
+  luogoNascita?: string | null
+  dataNascita?: string | null
+  professione?: string | null
+  indirizzoVia?: string | null
+  indirizzoNumero?: string | null
+  indirizzoCap?: string | null
+  indirizzoCitta?: string | null
+  indirizzoProvincia?: string | null
+  telefono1?: string | null
+  telefono2?: string | null
+  documento?: string | null
+  primaIscrizione?: string | null
+}
+
+export type CassaMovimentiUtentiGroup = {
+  key: string
+  clienteId: string | null
+  nome: string | null
+  cognome: string | null
+  email: string | null
+  sms: string | null
+  totalImporto: number
+  rows: CassaMovimentoUtenteRow[]
+  anagrafica: Omit<CassaMovimentoUtenteRow, "causale" | "importo" | "dataOperazioneIso">
+}
+
+function safeStr(v: unknown): string | null {
+  const s = v == null ? "" : String(v)
+  const t = s.trim()
+  return t ? t : null
+}
+
+function safeNum(v: unknown): number {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function toIsoMaybe(v: unknown): string | null {
+  if (v == null) return null
+  const d = new Date(v as any)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+export async function queryCassaMovimentiUtenti(args: {
+  asOfIso?: string // YYYY-MM-DD (default: oggi)
+  windowMinutes?: number // se impostato, prende solo gli ultimi N minuti
+  limit?: number
+}): Promise<{
+  view: string | null
+  dateCol: string | null
+  importoCol: string | null
+  causaleCol: string | null
+  fromIso: string
+  toIso: string
+  groups: CassaMovimentiUtentiGroup[]
+}> {
+  const p = await getPool()
+  if (!p) {
+    return {
+      view: null,
+      dateCol: null,
+      importoCol: null,
+      causaleCol: null,
+      fromIso: new Date().toISOString(),
+      toIso: new Date().toISOString(),
+      groups: [],
+    }
+  }
+
+  const view = await resolveCassaMovimentiViewName()
+  const vq = qualifySqlObject(view).query
+  const colsLower = await prenGetCols(view) // lower-case
+
+  const dateCol =
+    pickBestDateCol(colsLower, [
+      "CassaMovimentiDataOperazione",
+      "DataOperazione",
+      "DataMovimento",
+      "CassaMovimentiData",
+      "Data",
+    ]) ?? null
+  const importoCol =
+    pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
+  const causaleCol = pickBestTextCol(colsLower, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]) ?? null
+
+  const now = new Date()
+  const baseDay =
+    args.asOfIso && /^\d{4}-\d{2}-\d{2}$/.test(args.asOfIso)
+      ? new Date(`${args.asOfIso}T12:00:00.000Z`)
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0))
+  const parts = {
+    year: baseDay.getUTCFullYear(),
+    month: baseDay.getUTCMonth(),
+    day: baseDay.getUTCDate(),
+  }
+  const start = new Date(Date.UTC(parts.year, parts.month, parts.day, 0, 0, 0))
+  const end = new Date(Date.UTC(parts.year, parts.month, parts.day + 1, 0, 0, 0))
+  const windowMinutes = args.windowMinutes != null ? Math.max(1, Math.min(24 * 60, Math.floor(args.windowMinutes))) : null
+  const from = windowMinutes ? new Date(Date.now() - windowMinutes * 60 * 1000) : start
+  const to = windowMinutes ? new Date(Date.now()) : end
+
+  const whereParts: string[] = []
+  if (importoCol) {
+    whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
+  }
+  if (dateCol) {
+    // best-effort: supporta date/datetime e stringhe comuni (vedi helper usato per prenotazioni)
+    whereParts.push(`(${sqlDateEqualsExpr(dateCol, "@giorno")} OR (TRY_CONVERT(datetime, ${bracketCol(dateCol)}) >= @from AND TRY_CONVERT(datetime, ${bracketCol(dateCol)}) < @to))`)
+  }
+  const where = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : ""
+  const top = Math.max(50, Math.min(2000, Math.floor(args.limit ?? 800)))
+
+  const req = p.request()
+  req.input("giorno", sql.VarChar(10), `${parts.year}-${String(parts.month + 1).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`)
+  req.input("from", sql.DateTime, from)
+  req.input("to", sql.DateTime, to)
+
+  const r = await req.query(`SELECT TOP (${top}) * FROM ${vq} ${where};`)
+  const recordset = (r.recordset ?? []) as Record<string, unknown>[]
+
+  const rows: CassaMovimentoUtenteRow[] = recordset.map((row) => {
+    const clienteId = safeStr(row.IDUtente ?? row.IdUtente ?? row.idUtente ?? row.ClienteId ?? row.IdCliente ?? row.IDCliente)
+    const nome = safeStr(row.Nome ?? row.nome)
+    const cognome = safeStr(row.Cognome ?? row.cognome)
+    const email = safeStr(row.Email ?? row.email)
+    const sms = safeStr(row.SMS ?? row.sms ?? row.Telefono ?? row.telefono)
+    const causale = causaleCol ? safeStr(row[causaleCol] as any) : safeStr(row.CassaMovimentiCausale ?? row.Causale ?? row.Descrizione)
+    const importo = importoCol ? safeNum(row[importoCol] as any) : safeNum(row.CassaMovimentiImporto ?? row.Importo ?? row.Totale)
+    const dataOperazioneIso = dateCol ? toIsoMaybe(row[dateCol] as any) : toIsoMaybe(row.DataOperazione ?? row.Data ?? row.DataMovimento)
+
+    return {
+      clienteId,
+      nome,
+      cognome,
+      email,
+      sms,
+      causale,
+      importo,
+      dataOperazioneIso,
+      sesso: safeStr(row.Sesso ?? row.sesso),
+      luogoNascita: safeStr(row.Luogo_Nascita ?? row.LuogoNascita ?? row.luogoNascita),
+      dataNascita: safeStr(row.Data_Nascita ?? row.DataNascita ?? row.dataNascita),
+      professione: safeStr(row.Professione ?? row.professione),
+      indirizzoVia: safeStr(row.Indirizzo_Via ?? row.IndirizzoVia ?? row.via),
+      indirizzoNumero: safeStr(row.Indirizzo_N ?? row.IndirizzoNumero ?? row.numero),
+      indirizzoCap: safeStr(row.Indirizzo_Cap ?? row.CAP ?? row.cap),
+      indirizzoCitta: safeStr(row.Indirizzo_Comune ?? row.Citta ?? row.citta ?? row.comune),
+      indirizzoProvincia: safeStr(row.Indirizzo_Pv ?? row.Provincia ?? row.provincia),
+      telefono1: safeStr(row.Telefono_1 ?? row.Telefono1 ?? row.telefono1),
+      telefono2: safeStr(row.Telefono_2 ?? row.Telefono2 ?? row.telefono2),
+      documento: safeStr(row.Documento ?? row.documento),
+      primaIscrizione: safeStr(row.Prima_Iscrizione ?? row.PrimaIscrizione ?? row.primaIscrizione),
+    }
+  })
+
+  const groupsMap = new Map<string, CassaMovimentiUtentiGroup>()
+  for (const it of rows) {
+    const key = `${(it.cognome ?? "").trim().toLowerCase()}|${(it.nome ?? "").trim().toLowerCase()}|${(it.clienteId ?? "").trim()}`
+    const existing = groupsMap.get(key)
+    if (!existing) {
+      const { causale, importo, dataOperazioneIso, ...anagrafica } = it
+      groupsMap.set(key, {
+        key,
+        clienteId: it.clienteId,
+        nome: it.nome,
+        cognome: it.cognome,
+        email: it.email,
+        sms: it.sms,
+        totalImporto: it.importo,
+        rows: [it],
+        anagrafica,
+      })
+      continue
+    }
+    existing.totalImporto += it.importo
+    existing.rows.push(it)
+    // best-effort: riempi campi mancanti con i più completi
+    if (!existing.email && it.email) existing.email = it.email
+    if (!existing.sms && it.sms) existing.sms = it.sms
+    if (!existing.nome && it.nome) existing.nome = it.nome
+    if (!existing.cognome && it.cognome) existing.cognome = it.cognome
+    for (const k of Object.keys(existing.anagrafica) as (keyof typeof existing.anagrafica)[]) {
+      if ((existing.anagrafica as any)[k] == null && (it as any)[k] != null) (existing.anagrafica as any)[k] = (it as any)[k]
+    }
+  }
+
+  const groups = Array.from(groupsMap.values())
+    .map((g) => ({
+      ...g,
+      rows: g.rows.slice().sort((a, b) => String(b.dataOperazioneIso ?? "").localeCompare(String(a.dataOperazioneIso ?? ""))),
+    }))
+    .sort((a, b) => (b.totalImporto || 0) - (a.totalImporto || 0))
+
+  return {
+    view,
+    dateCol,
+    importoCol,
+    causaleCol,
+    fromIso: from.toISOString(),
+    toIso: to.toISOString(),
+    groups,
+  }
 }
 
 async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {

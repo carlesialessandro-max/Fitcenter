@@ -143,6 +143,60 @@ export const dataApi = {
     const query = q.toString()
     return api.get<ReportConsulentiResponse>(`/data/report-consulenti${query ? `?${query}` : ""}`)
   },
+  getCassaMovimentiUtenti: (params?: { asOf?: string; windowMinutes?: number; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.asOf) q.set("asOf", params.asOf)
+    if (params?.windowMinutes != null) q.set("windowMinutes", String(params.windowMinutes))
+    if (params?.limit != null) q.set("limit", String(params.limit))
+    const query = q.toString()
+    return api.get<CassaMovimentiUtentiResponse>(`/data/cassa-movimenti-utenti${query ? `?${query}` : ""}`)
+  },
+}
+
+export interface CassaMovimentoUtenteRow {
+  clienteId: string | null
+  nome: string | null
+  cognome: string | null
+  email: string | null
+  sms: string | null
+  causale: string | null
+  importo: number
+  dataOperazioneIso: string | null
+  sesso?: string | null
+  luogoNascita?: string | null
+  dataNascita?: string | null
+  professione?: string | null
+  indirizzoVia?: string | null
+  indirizzoNumero?: string | null
+  indirizzoCap?: string | null
+  indirizzoCitta?: string | null
+  indirizzoProvincia?: string | null
+  telefono1?: string | null
+  telefono2?: string | null
+  documento?: string | null
+  primaIscrizione?: string | null
+}
+
+export interface CassaMovimentiUtentiGroup {
+  key: string
+  clienteId: string | null
+  nome: string | null
+  cognome: string | null
+  email: string | null
+  sms: string | null
+  totalImporto: number
+  rows: CassaMovimentoUtenteRow[]
+  anagrafica: Omit<CassaMovimentoUtenteRow, "causale" | "importo" | "dataOperazioneIso">
+}
+
+export interface CassaMovimentiUtentiResponse {
+  view: string | null
+  dateCol: string | null
+  importoCol: string | null
+  causaleCol: string | null
+  fromIso: string
+  toIso: string
+  groups: CassaMovimentiUtentiGroup[]
 }
 
 export interface OraLavorata {

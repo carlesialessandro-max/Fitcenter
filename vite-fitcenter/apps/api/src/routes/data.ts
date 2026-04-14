@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti } from "../handlers/data.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const dataRouter = Router()
@@ -31,3 +31,4 @@ dataRouter.get("/ore-lavorate", getOreLavorate)
 dataRouter.post("/ore-lavorate", postOraLavorata)
 dataRouter.delete("/ore-lavorate/:id", deleteOraLavorata)
 dataRouter.get("/report-consulenti", requireAdmin, getReportConsulenti)
+dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)

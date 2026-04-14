@@ -60,6 +60,15 @@ function parseAsOf(req: Request): { date: Date; key: string } {
   return { date: dt, key }
 }
 
+function parseIntParam(v: unknown, min: number, max: number): number | null {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return null
+  const x = Math.floor(n)
+  if (x < min) return min
+  if (x > max) return max
+  return x
+}
+
 /** Importo e data da riga MovimentiVenduto (nomi colonne comuni). */
 function movimentoAmount(row: Record<string, unknown>): number {
   const v = row.Importo ?? row.Totale ?? row.ImportoVendita ?? row.Ammontare ?? row.Prezzo ?? 0
@@ -2293,6 +2302,23 @@ export async function getReportConsulenti(req: Request, res: Response) {
         percentualeOre: pctOre,
       },
     })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function getCassaMovimentiUtenti(req: Request, res: Response) {
+  try {
+    const rawAsOf = String(req.query.asOf ?? "").trim()
+    const asOfIso = rawAsOf && /^\d{4}-\d{2}-\d{2}$/.test(rawAsOf) ? rawAsOf : undefined
+    const windowMinutes = parseIntParam(req.query.windowMinutes, 1, 24 * 60)
+    const limit = parseIntParam(req.query.limit, 50, 2000) ?? undefined
+    const out = await gestionaleSql.queryCassaMovimentiUtenti({
+      asOfIso,
+      windowMinutes: windowMinutes ?? undefined,
+      limit,
+    })
+    res.json(out)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

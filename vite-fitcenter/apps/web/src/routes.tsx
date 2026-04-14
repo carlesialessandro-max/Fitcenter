@@ -14,6 +14,7 @@ import { Telefonate } from "@/pages/Telefonate"
 import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
+import { FirmaDaCassa } from "@/pages/FirmaDaCassa"
 import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi } from "@/pages/Corsi"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },
+      { path: "firma-cassa", element: <FirmaDaCassa /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

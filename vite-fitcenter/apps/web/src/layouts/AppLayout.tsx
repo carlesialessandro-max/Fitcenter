@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext"
 const navOperatore = [
   { to: "/", label: "Dashboard" },
   { to: "/firme", label: "Firme" },
+  { to: "/firma-cassa", label: "Firma Cassa" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
@@ -20,6 +21,7 @@ const navAdmin = [
   { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },
+  { to: "/firma-cassa", label: "Firma Cassa" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
