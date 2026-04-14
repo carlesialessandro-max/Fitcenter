@@ -26,6 +26,10 @@ function fmtDateOnly(v?: string | null) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("it-IT")
 }
 
+function todayIt(): string {
+  return new Date().toLocaleDateString("it-IT")
+}
+
 export function FirmaDaCassa() {
   const { role } = useAuth()
   const canUse = role === "admin" || role === "operatore"
@@ -72,6 +76,15 @@ export function FirmaDaCassa() {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
       const capCitta = [selected.anagrafica.indirizzoCap, selected.anagrafica.indirizzoCitta].filter(Boolean).join(" ").trim()
+      const movimentiLines = selected.rows
+        .map((r) => {
+          const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
+          const desc = (r.causale ?? "").trim()
+          const imp = fmtEuro(r.importo)
+          return `${desc} ${d ? `(${d})` : ""} — ${imp}`.trim()
+        })
+        .filter(Boolean)
+        .join("\n")
       const prefill: Record<string, string> = {
         nome: selected.nome ?? "",
         cognome: selected.cognome ?? "",
@@ -83,7 +96,12 @@ export function FirmaDaCassa() {
         data_nascita: selected.anagrafica.dataNascita ?? "",
         luogo_nascita: selected.anagrafica.luogoNascita ?? "",
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
-        servizi: `Movimenti: ${selected.rows.length} · Totale: ${fmtEuro(selected.totalImporto)}`,
+        data_oggi: todayIt(),
+        // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
+        asi_tessera: "",
+        legale_rappresentante: "",
+        movimenti: movimentiLines,
+        totale_generale: fmtEuro(selected.totalImporto),
       }
       const out = await signaturesApi.createFromTemplate({ templateId: effectiveTemplateId, customerEmail: email, customerName, prefill })
       const link = `${window.location.origin}/firma/${out.token}`

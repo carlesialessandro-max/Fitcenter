@@ -124,6 +124,42 @@ function clampTextToWidth(args: { text: string; maxWidth: number; font: any; siz
   }
 }
 
+function wrapTextToLines(args: { text: string; maxWidth: number; font: any; size: number; maxLines?: number }): string[] {
+  const raw = (args.text ?? "").trim()
+  if (!raw) return []
+  const words = raw.split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let current = ""
+  const pushLine = (s: string) => {
+    if (!s.trim()) return
+    lines.push(s.trim())
+  }
+  const fits = (s: string) => {
+    try {
+      return args.font.widthOfTextAtSize(s, args.size) <= args.maxWidth
+    } catch {
+      return s.length <= 80
+    }
+  }
+
+  for (const w of words) {
+    const cand = current ? `${current} ${w}` : w
+    if (!current) {
+      current = w
+      continue
+    }
+    if (fits(cand)) {
+      current = cand
+    } else {
+      pushLine(current)
+      current = w
+      if (args.maxLines && lines.length >= args.maxLines) break
+    }
+  }
+  if ((!args.maxLines || lines.length < args.maxLines) && current) pushLine(current)
+  return args.maxLines ? lines.slice(0, args.maxLines) : lines
+}
+
 async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], prefill: Record<string, string>): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
   const pages = pdfDoc.getPages()
@@ -136,8 +172,18 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const page = pages[pageIdx]
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
-    const drawText = maxWidth ? clampTextToWidth({ text, maxWidth, font, size }) : text
-    page.drawText(drawText, { x: f.x, y: f.y, size, font })
+    if (f.multiline && maxWidth) {
+      const lh = f.lineHeight != null ? Math.max(8, Number(f.lineHeight)) : Math.max(10, Math.round(size * 1.2))
+      const maxLines = f.maxLines != null ? Math.max(1, Math.floor(f.maxLines)) : undefined
+      const lines = wrapTextToLines({ text, maxWidth, font, size, maxLines })
+      for (let i = 0; i < lines.length; i++) {
+        // Coordinate PDF: y cresce verso l’alto → per andare “a capo” scendiamo di lh
+        page.drawText(lines[i] ?? "", { x: f.x, y: f.y - i * lh, size, font })
+      }
+    } else {
+      const drawText = maxWidth ? clampTextToWidth({ text, maxWidth, font, size }) : text
+      page.drawText(drawText, { x: f.x, y: f.y, size, font })
+    }
   }
   return await pdfDoc.save()
 }

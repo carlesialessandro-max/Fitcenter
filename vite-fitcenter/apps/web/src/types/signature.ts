@@ -48,6 +48,9 @@ export interface SignatureField {
   order: number
   size?: number
   maxWidth?: number
+  multiline?: boolean
+  lineHeight?: number
+  maxLines?: number
 }
 
 export interface SignatureTemplate {
