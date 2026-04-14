@@ -161,9 +161,9 @@ export function SignaturesAdmin() {
             const f = activeOnPage as SignatureField
             const x = f.x * scaleX
             const y = canvas.height - f.y * scaleY
-            ctx.lineWidth = 3
+            ctx.lineWidth = 2
             ctx.strokeStyle = "#22c55e"
-            ctx.fillStyle = "rgba(34,197,94,0.12)"
+            ctx.fillStyle = "rgba(34,197,94,0.08)"
             ctx.beginPath()
             ctx.arc(x, y, 10, 0, Math.PI * 2)
             ctx.fill()
@@ -198,7 +198,7 @@ export function SignaturesAdmin() {
     return () => {
       cancelled = true
     }
-  }, [templateId, previewPage, slotsDraft, selectedSlotId])
+  }, [templateId, previewPage, slotsDraft, selectedSlotId, fieldsDraft, selectedFieldId, editMode])
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
