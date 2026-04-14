@@ -26,6 +26,11 @@ function fmtDateOnly(v?: string | null) {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString("it-IT")
 }
 
+function toDateOnlyIt(v?: string | null): string {
+  const out = fmtDateOnly(v)
+  return out === "—" ? "" : out
+}
+
 function todayIt(): string {
   return new Date().toLocaleDateString("it-IT")
 }
@@ -82,7 +87,8 @@ export function FirmaDaCassa() {
           const imp = fmtEuro(r.importo)
           // Nel PDF: 2 righe (come tabella in pagina): descrizione+data, poi totale/versato.
           const line1 = `${desc} ${d ? `(${d})` : ""}`.trim()
-          const line2 = `Totale: ${imp} — Versato: ${imp}`.trim()
+          // In descrizione c'è già il totale: riportiamo solo il versato.
+          const line2 = `Versato: ${imp}`.trim()
           return [line1, line2].filter(Boolean).join("\n")
         })
         .filter(Boolean)
@@ -96,7 +102,7 @@ export function FirmaDaCassa() {
         cap: selected.anagrafica.indirizzoCap ?? "",
         citta: selected.anagrafica.indirizzoCitta ?? "",
         provincia: selected.anagrafica.indirizzoProvincia ?? "",
-        data_nascita: selected.anagrafica.dataNascita ?? "",
+        data_nascita: toDateOnlyIt(selected.anagrafica.dataNascita),
         luogo_nascita: selected.anagrafica.luogoNascita ?? "",
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),

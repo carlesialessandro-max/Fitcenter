@@ -187,9 +187,27 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
   const pages = pdfDoc.getPages()
   const font = await pdfDoc.embedFont("Helvetica")
+  const normalizeKey = (s: string) =>
+    s
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+  const prefillNorm = new Map<string, string>()
+  for (const [k, v] of Object.entries(prefill ?? {})) {
+    const nk = normalizeKey(String(k))
+    if (!nk) continue
+    if (!prefillNorm.has(nk)) prefillNorm.set(nk, v == null ? "" : String(v))
+  }
   for (const f of fields) {
-    const raw = prefill?.[f.id]
-    const text = String(raw ?? "").trim()
+    const id = String(f.id ?? "").trim()
+    const direct = (prefill as any)?.[id]
+    const alt =
+      direct ??
+      prefillNorm.get(normalizeKey(id)) ??
+      (f.label ? prefillNorm.get(normalizeKey(String(f.label))) : undefined)
+    const text = String(alt ?? "").trim()
     if (!text) continue
     const pageIdx = Math.max(0, Math.min(pages.length - 1, (f.page ?? 1) - 1))
     const page = pages[pageIdx]
@@ -218,7 +236,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
             lineNo++
             continue
           }
-          const m = t.match(/^Totale:\s*(.+?)\s*—\s*Versato:\s*(.+)$/i)
+          const m = t.match(/^(?:Totale:\s*(.+?)\s*—\s*)?Versato:\s*(.+)$/i)
           if (m) {
             const tot = toAmount(m[1] ?? "")
             const ver = toAmount(m[2] ?? "")
@@ -702,20 +720,10 @@ export async function confirmSignature(req: Request, res: Response) {
     const safeId = digitsOnly.length >= 8 ? digitsOnly : digitsOnly.padStart(8, "0")
     if (!safeId) return
     const destDirPreferred = path.join(allegatiBase, safeId, "Pdf Firmati")
-    const destDirFallback = path.join(allegatiBase, safeId)
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
-    try {
-      const destPath = path.join(destDirPreferred, destName)
-      fs.mkdirSync(destDirPreferred, { recursive: true })
-      fs.copyFileSync(signedPdfPath, destPath)
-      return
-    } catch (e) {
-      // Se non possiamo creare la sottocartella, ripieghiamo sulla cartella utente (compatibilità permessi share).
-      const destPath = path.join(destDirFallback, destName)
-      fs.mkdirSync(destDirFallback, { recursive: true })
-      fs.copyFileSync(signedPdfPath, destPath)
-      return
-    }
+    const destPath = path.join(destDirPreferred, destName)
+    fs.mkdirSync(destDirPreferred, { recursive: true })
+    fs.copyFileSync(signedPdfPath, destPath)
   }
 
   const completed = signedSteps.every((s) => !!s.signedAt)
