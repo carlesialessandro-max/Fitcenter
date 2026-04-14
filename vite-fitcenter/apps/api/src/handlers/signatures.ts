@@ -639,7 +639,7 @@ export async function confirmSignature(req: Request, res: Response) {
     const digitsOnly = utenteId.replace(/\D/g, "")
     const safeId = digitsOnly.length >= 8 ? digitsOnly : digitsOnly.padStart(8, "0")
     if (!safeId) return
-    const destDir = path.join(allegatiBase, safeId)
+    const destDir = path.join(allegatiBase, safeId, "Pdf Firmati")
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
     const destPath = path.join(destDir, destName)
     fs.mkdirSync(destDir, { recursive: true })

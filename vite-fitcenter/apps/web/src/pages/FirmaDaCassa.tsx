@@ -75,7 +75,6 @@ export function FirmaDaCassa() {
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
-      const capCitta = [selected.anagrafica.indirizzoCap, selected.anagrafica.indirizzoCitta].filter(Boolean).join(" ").trim()
       const movimentiLines = selected.rows
         .map((r) => {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
@@ -91,10 +90,9 @@ export function FirmaDaCassa() {
         email: selected.email ?? "",
         cellulare: selected.sms ?? "",
         indirizzo,
-        cap_citta: capCitta,
+        cap: selected.anagrafica.indirizzoCap ?? "",
+        citta: selected.anagrafica.indirizzoCitta ?? "",
         provincia: selected.anagrafica.indirizzoProvincia ?? "",
-        data_nascita: selected.anagrafica.dataNascita ?? "",
-        luogo_nascita: selected.anagrafica.luogoNascita ?? "",
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
