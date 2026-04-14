@@ -78,9 +78,19 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
     withMissing.push({ ...d, order: nextOrder++ })
   }
 
+  // Dedup: alcuni template possono contenere id duplicati (che portano a doppio rendering).
+  const seen = new Set<string>()
+  const unique = withMissing.filter((f) => {
+    const id = String(f.id ?? "").trim()
+    if (!id) return false
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+
   // Template salvato: usa l’elenco così com’è (più eventuali missing), ma completa proprietà mancanti con fallback dai default.
   const byId = new Map(defaults.map((d) => [d.id, d]))
-  return withMissing
+  return unique
     .slice()
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .map((f, i) => {

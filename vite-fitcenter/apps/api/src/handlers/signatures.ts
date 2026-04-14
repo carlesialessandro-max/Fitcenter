@@ -227,8 +227,8 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
         const colW = 80
         const xServizioLeft = 30
         const xDescLeft = 140
-        const xTotaleLeft = 440
-        const xVersatoLeft = 515
+        const xTotaleLeft = 420
+        const xVersatoLeft = 490
         const rightXTotale = xTotaleLeft + colW
         const rightXVersato = xVersatoLeft + colW
         const rightAlignX = (s: string, rightX: number) => {
@@ -310,6 +310,21 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       page.drawText(drawText, { x: f.x, y: f.y, size, font })
     }
   }
+
+  // Fallback finale: se la tessera ASI non è stata agganciata a nessun campo del template,
+  // proviamo comunque a disegnarla nel box ASI (usa Custom2/asi_tessera dal prefill).
+  const asiCandidate = (prefillNorm.get("custom2") ?? prefillNorm.get("asi_tessera") ?? "").trim()
+  if (asiCandidate) {
+    const hasAsiField = fields.some((f) => /asi/i.test(String(f.id ?? "")) || /asi/i.test(String(f.label ?? "")))
+    if (!hasAsiField) {
+      const page = pages[0]
+      const size = 9
+      const x = 140
+      const y = 285
+      page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
+    }
+  }
+
   return await pdfDoc.save()
 }
 
