@@ -239,14 +239,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const alt2 =
       alt ??
       (/asi/i.test(id) || /asi/i.test(String(f.label ?? "")) ? prefillNorm.get("custom2") ?? prefillNorm.get("asi_tessera") : undefined)
-    const textRaw = String((alt2 ?? alt) ?? "").trim()
-    // Sopprimi duplicati del totale generale in alto (alcuni template lo stampano anche nel testo sopra).
-    const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
-    const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
-    const isTopZone = Number(f.y ?? 0) >= 650
-    if (isTopZone && (textRaw === totalTxt || textRaw === versatoTxt)) continue
-
-    const text = textRaw
+    const text = String((alt2 ?? alt) ?? "").trim()
     if (!text) continue
     const pageIdx = Math.max(0, Math.min(pages.length - 1, (f.page ?? 1) - 1))
     const page = pages[pageIdx]
@@ -367,15 +360,15 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
     const size = 10
     if (totalTxt) {
-      const page = pages[(totalePos?.pageIdx ?? 0) as number] ?? pages[0]
-      const y = totalePos?.y ?? RIEPILOGO_TOTALI_Y
+      const page = pages[0]
+      const y = RIEPILOGO_TOTALI_Y
       const draw = clampTextToWidth({ text: totalTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
       const x = rightAlignX(draw, RIEPILOGO_TOTALE_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
       if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
     }
     if (versatoTxt) {
-      const page = pages[(versatoPos?.pageIdx ?? 0) as number] ?? pages[0]
-      const y = versatoPos?.y ?? RIEPILOGO_TOTALI_Y
+      const page = pages[0]
+      const y = RIEPILOGO_TOTALI_Y
       const draw = clampTextToWidth({ text: versatoTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
       const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
       if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
