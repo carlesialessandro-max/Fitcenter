@@ -94,12 +94,20 @@ async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], sign
     if (!signatureBase64) continue
     const signatureBytes = Buffer.from(signatureBase64, "base64")
     const png = await pdfDoc.embedPng(signatureBytes)
-    page.drawImage(png, {
-      x: step.x,
-      y: step.y,
-      width: step.width,
-      height: step.height,
-    })
+    // Firma: evitiamo l'effetto "stampino" troppo alto.
+    // Manteniamo il rapporto d'aspetto dell'immagine e la facciamo stare nel box,
+    // ma usando un'altezza massima più "da firma" (più larga, meno alta).
+    const boxW = Number(step.width) || 0
+    const boxH = Number(step.height) || 0
+    const maxH = boxH > 0 ? boxH * 0.6 : boxH
+    const imgW = (png as any).width ?? boxW
+    const imgH = (png as any).height ?? boxH
+    const scale = imgW > 0 && imgH > 0 ? Math.min(boxW / imgW, maxH / imgH) : 1
+    const drawW = imgW * scale
+    const drawH = imgH * scale
+    const dx = step.x + Math.max(0, (boxW - drawW) / 2)
+    const dy = step.y + Math.max(0, (boxH - drawH) / 2) // centrata nel box
+    page.drawImage(png, { x: dx, y: dy, width: drawW, height: drawH })
     if (signerName?.trim()) {
       const font = await pdfDoc.embedFont("Helvetica")
       page.drawText(signerName.trim(), { x: step.x, y: step.y + step.height + 8, size: 9, font })

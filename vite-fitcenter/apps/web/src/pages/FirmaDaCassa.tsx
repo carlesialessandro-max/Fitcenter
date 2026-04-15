@@ -59,6 +59,8 @@ export function FirmaDaCassa() {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
+  const [showDebug, setShowDebug] = useState(false)
+  const [createdKeys, setCreatedKeys] = useState<Record<string, true>>({})
 
   const movQ = useQuery({
     queryKey: ["cassa-movimenti-utenti", windowMode],
@@ -145,8 +147,10 @@ export function FirmaDaCassa() {
         prefill,
       })
       const link = `${window.location.origin}/firma/${out.token}`
-      setOk(`Richiesta creata. Apro la pagina firma: ${link}`)
+      setOk("Richiesta creata. Ho aperto la pagina firma in una nuova scheda.")
       window.open(link, "_blank", "noopener,noreferrer")
+      setCreatedKeys((prev) => ({ ...prev, [selected.key]: true }))
+      setTemplateId("")
     } catch (e) {
       setErr((e as Error).message)
     } finally {
@@ -197,10 +201,17 @@ export function FirmaDaCassa() {
             ))}
             {templates.length === 0 && <option value="">Nessun template</option>}
           </select>
+          <button
+            type="button"
+            onClick={() => setShowDebug((v) => !v)}
+            className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/60"
+          >
+            {showDebug ? "Nascondi dettagli" : "Mostra dettagli"}
+          </button>
         </div>
       </div>
 
-      {movQ.data && (
+      {showDebug && movQ.data && (
         <p className="mt-2 text-xs text-zinc-500">
           Vista: <span className="text-zinc-300">{movQ.data.view ?? "—"}</span> · dateCol:{" "}
           <span className="text-zinc-300">{movQ.data.dateCol ?? "—"}</span> · importoCol:{" "}
@@ -224,13 +235,18 @@ export function FirmaDaCassa() {
             {groups.map((g) => {
               const label = `${g.cognome ?? "—"} ${g.nome ?? ""}`.trim()
               const active = g.key === selectedKey
+              const created = !!createdKeys[g.key]
               return (
                 <button
                   key={g.key}
                   type="button"
                   onClick={() => setSelectedKey(g.key)}
                   className={`w-full rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    active ? "border-amber-500/60 bg-amber-500/10" : "border-zinc-800 hover:bg-zinc-900/50"
+                    active
+                      ? "border-amber-500/60 bg-amber-500/10"
+                      : created
+                        ? "border-emerald-500/40 bg-emerald-500/10"
+                        : "border-zinc-800 hover:bg-zinc-900/50"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
