@@ -280,6 +280,7 @@ export function FirmaDaCassa() {
                   <div>Data nascita: {fmtDateOnly(selected.anagrafica.dataNascita)}</div>
                   <div>Luogo nascita: {selected.anagrafica.luogoNascita ?? "—"}</div>
                   <div>Codice fiscale: {selected.anagrafica.codiceFiscale ?? "—"}</div>
+                  <div>ASI Tessera (Custom2): {selected.anagrafica.asiTesseraCustom2 ?? "—"}</div>
                   <div>Indirizzo: {[selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ") || "—"}</div>
                   <div>
                     CAP/Città/Prov:{" "}
