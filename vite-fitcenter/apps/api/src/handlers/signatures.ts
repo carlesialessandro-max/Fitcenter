@@ -7,7 +7,7 @@ import { sendMail } from "../services/mailer.js"
 import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
 import { defaultSignatureSlots, ensureSignatureSlots } from "../signature/defaultSlots.js"
 import { ensureSignatureFields } from "../signature/defaultFields.js"
-import { PDFDocument } from "pdf-lib"
+import { PDFDocument, rgb } from "pdf-lib"
 
 const OTP_TTL_MS = 10 * 60 * 1000
 const SESSION_TTL_MS = 20 * 60 * 1000
@@ -400,6 +400,21 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
       if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
     }
+  }
+
+  // Maschera i totali "stampati" nel template in alto (se presenti).
+  // Li copriamo con un rettangolo bianco per evitare doppioni/disallineamenti.
+  // Area: in alto a destra sopra "RIEPILOGO SERVIZI".
+  {
+    const page = pages[0]
+    page.drawRectangle({
+      x: 430,
+      y: 765,
+      width: 170,
+      height: 28,
+      color: rgb(1, 1, 1),
+      borderColor: rgb(1, 1, 1),
+    })
   }
 
   return await pdfDoc.save()
