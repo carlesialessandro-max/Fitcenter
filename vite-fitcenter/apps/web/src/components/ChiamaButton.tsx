@@ -1,10 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useConsulente } from "@/contexts/AuthContext"
 import { chiamateApi, type TipoContatto } from "@/api/chiamate"
+import { useAuth } from "@/contexts/AuthContext"
 
 function normalizeTel(tel: string): string {
   const n = tel.replace(/\s/g, "").replace(/^\+?39/, "")
   return n ? `+39${n}` : tel
+}
+
+function toWaMeNumber(tel: string): string {
+  // wa.me richiede solo cifre in formato internazionale, senza +
+  const normalized = normalizeTel(tel)
+  const digits = normalized.replace(/[^\d]/g, "")
+  return digits
 }
 
 type Props = {
@@ -29,6 +37,7 @@ export function ChiamaButton({
 }: Props) {
   const queryClient = useQueryClient()
   const { consulenteNome } = useConsulente()
+  const { role } = useAuth()
 
   const logChiamata = useMutation({
     mutationFn: () =>
@@ -47,7 +56,9 @@ export function ChiamaButton({
     },
   })
 
-  const href = telefono ? `tel:${normalizeTel(telefono)}` : "#"
+  const telHref = telefono ? `tel:${normalizeTel(telefono)}` : "#"
+  const waHref = telefono ? `https://wa.me/${toWaMeNumber(telefono)}` : "#"
+  const href = role === "operatore" ? waHref : telHref
 
   const handleClick = (e: React.MouseEvent) => {
     if (!telefono.trim()) {
@@ -58,7 +69,9 @@ export function ChiamaButton({
       e.preventDefault()
       logChiamata.mutate(undefined, {
         onSettled: () => {
-          window.location.href = href
+          // Operatori/consulenti: apri WhatsApp Web in nuova scheda (Chrome), Admin: tel:
+          if (role === "operatore") window.open(href, "_blank", "noopener,noreferrer")
+          else window.location.href = href
         },
       })
     }
@@ -72,7 +85,7 @@ export function ChiamaButton({
       title={`Chiama ${nomeContatto}`}
     >
       <span aria-hidden>📞</span>
-      Chiama
+      {role === "operatore" ? "WhatsApp" : "Chiama"}
     </a>
   )
 }
