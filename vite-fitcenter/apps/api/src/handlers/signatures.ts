@@ -202,6 +202,9 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     if (!prefillNorm.has(nk)) prefillNorm.set(nk, v == null ? "" : String(v))
   }
 
+  const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
+  const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
+
   // Coordinate "stabili" del riepilogo servizi sul template base.
   // Nota: alcuni template possono avere lo stesso campo (Totale Generale) anche più in alto.
   // Renderizziamo NOI solo la riga più in basso (vedi accumulo sotto).
@@ -245,6 +248,12 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const page = pages[pageIdx]
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
+
+    // Evita che campi "fuzzy" in alto mostrino i totali generali disallineati.
+    // I totali generali verranno renderizzati solo in basso sulla riga Totale Generale.
+    if (Number(f.y ?? 0) >= 650 && (text === totalTxt || text === versatoTxt)) {
+      continue
+    }
 
     // Totali generali: NON renderizziamo qui. Salviamo la posizione migliore e renderizziamo alla fine.
     if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
@@ -356,8 +365,6 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
 
   // Render totali generali in grassetto sotto le colonne (una volta sola).
   {
-    const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
-    const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
     const size = 10
     if (totalTxt) {
       const page = pages[0]
