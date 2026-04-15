@@ -1237,7 +1237,7 @@ export async function queryCassaMovimentiUtenti(args: {
       dataNascita: toIsoDateOnlyMaybe(rowGet(row, ["Data_Nascita", "DataNascita", "dataNascita"])),
       professione: safeStr(rowGet(row, ["Professione", "professione"])),
       indirizzoVia: safeStr(rowGet(row, ["Indirizzo_Via", "IndirizzoVia", "via"])),
-      indirizzoNumero: safeStr(rowGet(row, ["Indirizzo_N", "IndirizzoNumero", "numero"])),
+      indirizzoNumero: safeStr(rowGet(row, ["Indirizzo_NumeroCivico", "NumeroCivico", "Indirizzo_N", "IndirizzoNumero", "numero"])),
       indirizzoCap: safeStr(rowGet(row, ["Indirizzo_Cap", "CAP", "cap"])),
       indirizzoCitta: safeStr(rowGet(row, ["Indirizzo_Citta", "Indirizzo_Comune", "Citta", "citta", "comune"])),
       indirizzoProvincia: safeStr(rowGet(row, ["Indirizzo_Pv", "Provincia", "provincia"])),

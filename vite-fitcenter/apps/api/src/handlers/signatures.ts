@@ -204,6 +204,20 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
 
   const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
   const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
+  const parseEuro = (s: string): number | null => {
+    const raw = String(s ?? "").trim()
+    if (!raw) return null
+    // Tieni solo cifre e separatori
+    const cleaned = raw.replace(/[^\d.,-]/g, "")
+    if (!cleaned) return null
+    // Caso IT: 1.234,56 -> 1234.56
+    const hasComma = cleaned.includes(",")
+    const normalized = hasComma ? cleaned.replace(/\./g, "").replace(",", ".") : cleaned
+    const n = Number(normalized)
+    return Number.isFinite(n) ? n : null
+  }
+  const totalNum = parseEuro(totalTxt)
+  const versatoNum = parseEuro(versatoTxt)
 
   // Coordinate "stabili" del riepilogo servizi sul template base.
   // Nota: alcuni template possono avere lo stesso campo (Totale Generale) anche più in alto.
@@ -251,7 +265,13 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
 
     // Evita che campi "fuzzy" in alto mostrino i totali generali disallineati.
     // I totali generali verranno renderizzati solo in basso sulla riga Totale Generale.
-    if (Number(f.y ?? 0) >= 650 && (text === totalTxt || text === versatoTxt)) {
+    if (Number(f.y ?? 0) >= 650) {
+      const n = parseEuro(text)
+      const sameTotal = n != null && totalNum != null && Math.abs(n - totalNum) < 0.01
+      const sameVersato = n != null && versatoNum != null && Math.abs(n - versatoNum) < 0.01
+      if (sameTotal || sameVersato) continue
+      if (text === totalTxt || text === versatoTxt) continue
+    }
       continue
     }
 
