@@ -264,6 +264,15 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
 
+    // Se in alto ci sono campi che mostrano esattamente il totale/versato generale,
+    // non li renderizziamo: i totali devono comparire solo nella riga "Totale Generale".
+    if (Number(f.y ?? 0) >= 650) {
+      const n = parseEuro(text)
+      const sameTotal = n != null && totalNum != null && Math.abs(n - totalNum) < 0.01
+      const sameVersato = n != null && versatoNum != null && Math.abs(n - versatoNum) < 0.01
+      if (sameTotal || sameVersato) continue
+    }
+
     // Totali generali: non disegniamo qui, prendiamo solo il layout dal template.
     if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
       const y = Number(f.y ?? NaN)
@@ -395,17 +404,20 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   {
     const layout = totalsLayout ?? { ...fallback, totale: { ...fallback.totale, size: 10 }, versato: { ...fallback.versato, size: 10 } }
     const page = pages[Math.max(0, Math.min(pages.length - 1, layout.pageIdx))] ?? pages[0]
+    const { width } = page.getSize()
     const size = 10
     if (totalTxt) {
       const w = layout.totale.w || FALLBACK_COL_W
       const draw = clampTextToWidth({ text: totalTxt, maxWidth: w, font: boldFont, size })
-      const x = rightAlignX(draw, layout.totale.x + w, size, boldFont, w)
+      const rightX = Math.min(layout.totale.x + w, Math.max(0, width - 6))
+      const x = rightAlignX(draw, rightX, size, boldFont, w)
       if (x != null) page.drawText(draw, { x, y: layout.totale.y, size, font: boldFont })
     }
     if (versatoTxt) {
       const w = layout.versato.w || FALLBACK_COL_W
       const draw = clampTextToWidth({ text: versatoTxt, maxWidth: w, font: boldFont, size })
-      const x = rightAlignX(draw, layout.versato.x + w, size, boldFont, w)
+      const rightX = Math.min(layout.versato.x + w, Math.max(0, width - 6))
+      const x = rightAlignX(draw, rightX, size, boldFont, w)
       if (x != null) page.drawText(draw, { x, y: layout.versato.y, size, font: boldFont })
     }
   }
