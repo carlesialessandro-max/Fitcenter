@@ -1248,17 +1248,42 @@ export async function queryCassaMovimentiUtenti(args: {
     }
   })
 
-  // Dedup: alcune viste possono restituire righe duplicate identiche.
-  const seen = new Set<string>()
-  const rows: CassaMovimentoUtenteRow[] = []
+  // Dedup: alcune viste possono restituire righe duplicate quasi-identiche (es. stessa riga ma Custom2 NULL vs valorizzata).
+  // A parità di chiave, teniamo la riga "più completa".
+  const score = (it: CassaMovimentoUtenteRow): number => {
+    let s = 0
+    const bump = (v: unknown, w = 1) => {
+      if (v == null) return
+      const t = String(v).trim()
+      if (!t) return
+      s += w
+    }
+    bump(it.movimentoId, 3)
+    bump(it.asiTesseraCustom2, 6)
+    bump(it.codiceFiscale, 3)
+    bump(it.email, 2)
+    bump(it.sms, 2)
+    bump(it.indirizzoVia, 1)
+    bump(it.indirizzoCap, 1)
+    bump(it.indirizzoCitta, 1)
+    bump(it.documento, 1)
+    bump(it.dataNascita, 1)
+    bump(it.luogoNascita, 1)
+    // numeric presence
+    if (Number(it.iscrizioneTotale ?? 0) > 0) s += 2
+    if (Number(it.importo ?? 0) > 0) s += 1
+    return s
+  }
+
+  const bestByKey = new Map<string, CassaMovimentoUtenteRow>()
   for (const it of rowsRaw) {
     const k =
       (it.movimentoId && it.movimentoId.trim()) ||
       `${it.clienteId ?? ""}|${it.nome ?? ""}|${it.cognome ?? ""}|${it.importo}|${it.causale ?? ""}|${it.dataOperazioneIso ?? ""}`
-    if (seen.has(k)) continue
-    seen.add(k)
-    rows.push(it)
+    const prev = bestByKey.get(k)
+    if (!prev || score(it) > score(prev)) bestByKey.set(k, it)
   }
+  const rows: CassaMovimentoUtenteRow[] = Array.from(bestByKey.values())
 
   const groupsMap = new Map<string, CassaMovimentiUtentiGroup>()
   for (const it of rows) {
