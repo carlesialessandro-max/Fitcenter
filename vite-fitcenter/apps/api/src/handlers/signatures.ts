@@ -274,7 +274,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     }
 
     // Totali generali: non disegniamo qui, prendiamo solo il layout dal template.
-    if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
+    if (idNorm === "totale_generale" || labelNorm === "totale_generale") {
       const y = Number(f.y ?? NaN)
       if (Number.isFinite(y)) {
         const w = maxWidth ?? FALLBACK_COL_W
@@ -288,7 +288,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       }
       continue
     }
-    if (idNorm === "versato_generale" || labelNorm.includes("versato_generale")) {
+    if (idNorm === "versato_generale" || labelNorm === "versato_generale") {
       const y = Number(f.y ?? NaN)
       if (Number.isFinite(y)) {
         const w = maxWidth ?? FALLBACK_COL_W
