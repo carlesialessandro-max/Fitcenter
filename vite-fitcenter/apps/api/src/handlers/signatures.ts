@@ -403,18 +403,19 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   }
 
   // Maschera i totali "stampati" nel template in alto (se presenti).
-  // Li copriamo con un rettangolo bianco per evitare doppioni/disallineamenti.
-  // Area: in alto a destra sopra "RIEPILOGO SERVIZI".
+  // Li copriamo con un rettangolo bianco in alto a destra.
+  // Usiamo coordinate relative alla pagina per evitare differenze tra template/scale.
   {
     const page = pages[0]
+    const { width, height } = page.getSize()
+    const pad = 12
+    const boxW = 220
+    const boxH = 70
     page.drawRectangle({
-      // Rettangolo più ampio: copre entrambe le cifre (Totale + Versato) in alto.
-      // Ulteriore ampliamento: alcuni template posizionano i totali più in alto/destra.
-      // Copriamo solo la zona importi (evita di intaccare testo centrale).
-      x: 360,
-      y: 730,
-      width: 280,
-      height: 95,
+      x: Math.max(0, width - boxW - pad),
+      y: Math.max(0, height - boxH - 60),
+      width: boxW,
+      height: boxH,
       color: rgb(1, 1, 1),
       borderColor: rgb(1, 1, 1),
     })
