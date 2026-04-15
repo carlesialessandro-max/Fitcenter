@@ -408,10 +408,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   {
     const page = pages[0]
     page.drawRectangle({
-      x: 430,
-      y: 765,
-      width: 170,
-      height: 28,
+      // Rettangolo più ampio: copre entrambe le cifre (Totale + Versato) in alto.
+      x: 400,
+      y: 748,
+      width: 220,
+      height: 52,
       color: rgb(1, 1, 1),
       borderColor: rgb(1, 1, 1),
     })
@@ -745,7 +746,8 @@ export async function createSignatureTemplate(req: Request, res: Response) {
       mimeType: "application/pdf",
       createdAt: nowIso(),
       active: true,
-      slots: defaultSignatureSlots(),
+      // Nuovo template: 1 firma di default (poi l'admin può aggiungere slot se necessario).
+      slots: [{ id: "firma-1", label: "Firma", page: 1, x: 330, y: 90, width: 240, height: 80, order: 1 }],
       fields: ensureSignatureFields(null),
     })
     res.json(tpl)
