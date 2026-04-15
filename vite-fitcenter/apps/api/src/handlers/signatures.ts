@@ -7,7 +7,7 @@ import { sendMail } from "../services/mailer.js"
 import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
 import { defaultSignatureSlots, ensureSignatureSlots } from "../signature/defaultSlots.js"
 import { ensureSignatureFields } from "../signature/defaultFields.js"
-import { PDFDocument, rgb } from "pdf-lib"
+import { PDFDocument } from "pdf-lib"
 
 const OTP_TTL_MS = 10 * 60 * 1000
 const SESSION_TTL_MS = 20 * 60 * 1000
@@ -219,29 +219,30 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   const totalNum = parseEuro(totalTxt)
   const versatoNum = parseEuro(versatoTxt)
 
-  // Coordinate "stabili" del riepilogo servizi sul template base.
-  // Nota: alcuni template possono avere lo stesso campo (Totale Generale) anche più in alto.
-  // Renderizziamo NOI solo la riga più in basso (vedi accumulo sotto).
-  const RIEPILOGO_TOTALI_Y = 555
-  const RIEPILOGO_TOTALE_X_LEFT = 420
-  const RIEPILOGO_VERSATO_X_LEFT = 490
-  const RIEPILOGO_COL_W = 80
+  // Layout: prendiamo le coordinate dal template (campi totale/versato generale).
+  // In questo modo i totali risultano allineati dove li ha messi il PDF.
+  const FALLBACK_COL_W = 80
+  const fallback = {
+    totale: { x: 420, y: 555, w: FALLBACK_COL_W },
+    versato: { x: 490, y: 555, w: FALLBACK_COL_W },
+    pageIdx: 0,
+  }
+  let totalsLayout: {
+    pageIdx: number
+    totale: { x: number; y: number; w: number; size: number }
+    versato: { x: number; y: number; w: number; size: number }
+  } | null = null
 
-  const rightAlignX = (txt: string, rightX: number, size: number, fnt: any) => {
+  const rightAlignX = (txt: string, rightX: number, size: number, fnt: any, colW = FALLBACK_COL_W) => {
     const t = (txt ?? "").trim()
     if (!t) return null
     try {
       const w = fnt.widthOfTextAtSize(t, size)
       return Math.max(0, rightX - w)
     } catch {
-      return Math.max(0, rightX - Math.min(RIEPILOGO_COL_W, t.length * (size * 0.55)))
+      return Math.max(0, rightX - Math.min(colW, t.length * (size * 0.55)))
     }
   }
-
-  // Accumulo: prendiamo la posizione "più bassa" (y più piccolo) per i totali, per evitare duplicati in alto.
-  let totalePos: { pageIdx: number; x: number; y: number } | null = null
-  let versatoPos: { pageIdx: number; x: number; y: number } | null = null
-  const shouldReplacePos = (cur: { y: number } | null, nextY: number) => (cur == null ? true : nextY < cur.y)
 
   for (const f of fields) {
     const id = String(f.id ?? "").trim()
@@ -263,27 +264,33 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
 
-    // Evita che campi "fuzzy" in alto mostrino i totali generali disallineati.
-    // I totali generali verranno renderizzati solo in basso sulla riga Totale Generale.
-    // Evita che campi sopra il riepilogo mostrino totale/versato generale disallineati.
-    // (alcuni template hanno 2 campi totali in alto).
-    if (Number(f.y ?? 0) >= RIEPILOGO_TOTALI_Y + 40) {
-      const n = parseEuro(text)
-      const sameTotal = n != null && totalNum != null && Math.abs(n - totalNum) < 0.01
-      const sameVersato = n != null && versatoNum != null && Math.abs(n - versatoNum) < 0.01
-      if (sameTotal || sameVersato) continue
-      if (text === totalTxt || text === versatoTxt) continue
-    }
-
-    // Totali generali: NON renderizziamo qui. Salviamo la posizione migliore e renderizziamo alla fine.
+    // Totali generali: non disegniamo qui, prendiamo solo il layout dal template.
     if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
       const y = Number(f.y ?? NaN)
-      if (Number.isFinite(y) && shouldReplacePos(totalePos, y)) totalePos = { pageIdx, x: RIEPILOGO_TOTALE_X_LEFT, y }
+      if (Number.isFinite(y)) {
+        const w = maxWidth ?? FALLBACK_COL_W
+        totalsLayout = totalsLayout ?? {
+          pageIdx,
+          totale: { x: Number(f.x ?? fallback.totale.x), y, w, size: 10 },
+          versato: { x: fallback.versato.x, y: fallback.versato.y, w: FALLBACK_COL_W, size: 10 },
+        }
+        totalsLayout.totale = { x: Number(f.x ?? fallback.totale.x), y, w, size: 10 }
+        totalsLayout.pageIdx = pageIdx
+      }
       continue
     }
     if (idNorm === "versato_generale" || labelNorm.includes("versato_generale")) {
       const y = Number(f.y ?? NaN)
-      if (Number.isFinite(y) && shouldReplacePos(versatoPos, y)) versatoPos = { pageIdx, x: RIEPILOGO_VERSATO_X_LEFT, y }
+      if (Number.isFinite(y)) {
+        const w = maxWidth ?? FALLBACK_COL_W
+        totalsLayout = totalsLayout ?? {
+          pageIdx,
+          totale: { x: fallback.totale.x, y: fallback.totale.y, w: FALLBACK_COL_W, size: 10 },
+          versato: { x: Number(f.x ?? fallback.versato.x), y, w, size: 10 },
+        }
+        totalsLayout.versato = { x: Number(f.x ?? fallback.versato.x), y, w, size: 10 }
+        totalsLayout.pageIdx = pageIdx
+      }
       continue
     }
 
@@ -294,11 +301,12 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       if (String(f.id) === "movimenti") {
         const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
         // Coordinate coerenti col template: 4 colonne (Servizio | Descrizione | Totale | Versato)
-        const colW = RIEPILOGO_COL_W
+        const layout = totalsLayout ?? { ...fallback, totale: { ...fallback.totale, size: 10 }, versato: { ...fallback.versato, size: 10 } }
+        const colW = Math.max(60, Math.min(140, Math.floor(layout.totale.w)))
         const xServizioLeft = 30
         const xDescLeft = 140
-        const xTotaleLeft = RIEPILOGO_TOTALE_X_LEFT
-        const xVersatoLeft = RIEPILOGO_VERSATO_X_LEFT
+        const xTotaleLeft = layout.totale.x
+        const xVersatoLeft = layout.versato.x
         const rightXTotale = xTotaleLeft + colW
         const rightXVersato = xVersatoLeft + colW
         const toAmount = (s: string) => clampTextToWidth({ text: s.trim(), maxWidth: colW, font, size })
@@ -329,11 +337,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
           const tot = toAmount(totRaw)
           const ver = toAmount(verRaw)
           if (tot) {
-            const x = rightAlignX(tot, rightXTotale, size, font)
+            const x = rightAlignX(tot, rightXTotale, size, font, colW)
             if (x != null) page.drawText(tot, { x, y, size, font })
           }
           if (ver) {
-            const x = rightAlignX(ver, rightXVersato, size, font)
+            const x = rightAlignX(ver, rightXVersato, size, font, colW)
             if (x != null) page.drawText(ver, { x, y, size, font })
           }
 
@@ -383,42 +391,23 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
   }
 
-  // Render totali generali in grassetto sotto le colonne (una volta sola).
+  // Render totali generali in grassetto nelle coordinate del template (2 colonne).
   {
+    const layout = totalsLayout ?? { ...fallback, totale: { ...fallback.totale, size: 10 }, versato: { ...fallback.versato, size: 10 } }
+    const page = pages[Math.max(0, Math.min(pages.length - 1, layout.pageIdx))] ?? pages[0]
     const size = 10
     if (totalTxt) {
-      const page = pages[0]
-      const y = RIEPILOGO_TOTALI_Y
-      const draw = clampTextToWidth({ text: totalTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
-      const x = rightAlignX(draw, RIEPILOGO_TOTALE_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
-      if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
+      const w = layout.totale.w || FALLBACK_COL_W
+      const draw = clampTextToWidth({ text: totalTxt, maxWidth: w, font: boldFont, size })
+      const x = rightAlignX(draw, layout.totale.x + w, size, boldFont, w)
+      if (x != null) page.drawText(draw, { x, y: layout.totale.y, size, font: boldFont })
     }
     if (versatoTxt) {
-      const page = pages[0]
-      const y = RIEPILOGO_TOTALI_Y
-      const draw = clampTextToWidth({ text: versatoTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
-      const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
-      if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
+      const w = layout.versato.w || FALLBACK_COL_W
+      const draw = clampTextToWidth({ text: versatoTxt, maxWidth: w, font: boldFont, size })
+      const x = rightAlignX(draw, layout.versato.x + w, size, boldFont, w)
+      if (x != null) page.drawText(draw, { x, y: layout.versato.y, size, font: boldFont })
     }
-  }
-
-  // Maschera i totali "stampati" nel template in alto (se presenti).
-  // Li copriamo con un rettangolo bianco in alto a destra.
-  // Usiamo coordinate relative alla pagina per evitare differenze tra template/scale.
-  {
-    const page = pages[0]
-    const { width, height } = page.getSize()
-    const pad = 12
-    const boxW = 220
-    const boxH = 70
-    page.drawRectangle({
-      x: Math.max(0, width - boxW - pad),
-      y: Math.max(0, height - boxH - 60),
-      width: boxW,
-      height: boxH,
-      color: rgb(1, 1, 1),
-      borderColor: rgb(1, 1, 1),
-    })
   }
 
   return await pdfDoc.save()
