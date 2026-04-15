@@ -406,19 +406,21 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const page = pages[Math.max(0, Math.min(pages.length - 1, layout.pageIdx))] ?? pages[0]
     const { width } = page.getSize()
     const size = 10
+    // Alcuni template hanno y leggermente diverse tra i 2 campi: allineiamo sulla stessa riga.
+    const yRow = Math.min(layout.totale.y, layout.versato.y)
     if (totalTxt) {
       const w = layout.totale.w || FALLBACK_COL_W
       const draw = clampTextToWidth({ text: totalTxt, maxWidth: w, font: boldFont, size })
       const rightX = Math.min(layout.totale.x + w, Math.max(0, width - 6))
       const x = rightAlignX(draw, rightX, size, boldFont, w)
-      if (x != null) page.drawText(draw, { x, y: layout.totale.y, size, font: boldFont })
+      if (x != null) page.drawText(draw, { x, y: yRow, size, font: boldFont })
     }
     if (versatoTxt) {
       const w = layout.versato.w || FALLBACK_COL_W
       const draw = clampTextToWidth({ text: versatoTxt, maxWidth: w, font: boldFont, size })
       const rightX = Math.min(layout.versato.x + w, Math.max(0, width - 6))
       const x = rightAlignX(draw, rightX, size, boldFont, w)
-      if (x != null) page.drawText(draw, { x, y: layout.versato.y, size, font: boldFont })
+      if (x != null) page.drawText(draw, { x, y: yRow, size, font: boldFont })
     }
   }
 
