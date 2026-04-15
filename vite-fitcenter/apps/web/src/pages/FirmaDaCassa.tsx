@@ -80,7 +80,7 @@ export function FirmaDaCassa() {
   )
 
   const templates = tplQ.data ?? []
-  const effectiveTemplateId = templateId || templates[0]?.id || ""
+  const effectiveTemplateId = templateId
 
   async function onCreateFirma() {
     if (!selected) return
@@ -90,7 +90,7 @@ export function FirmaDaCassa() {
     if (!email || !email.includes("@")) {
       return setErr("Email mancante o non valida in RVW_CassaMovimentiUtenti. Serve Email per inviare OTP/link firma.")
     }
-    if (!effectiveTemplateId) return setErr("Nessun template firme configurato. Crea/abilita un template in pagina Firme.")
+    if (!effectiveTemplateId) return setErr("Obbligatorio selezionare template di firma.")
     setBusy(true)
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
@@ -168,7 +168,7 @@ export function FirmaDaCassa() {
     <div className="p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">Firma da Cassa</h1>
+          <h1 className="text-2xl font-semibold text-zinc-100">Firma contratto</h1>
           <p className="mt-1 text-sm text-zinc-500">
             Movimenti con importo &gt; 0 da <span className="text-zinc-300">RVW_CassaMovimentiUtenti</span>, raggruppati per cliente.
           </p>
@@ -189,6 +189,7 @@ export function FirmaDaCassa() {
             onChange={(e) => setTemplateId(e.target.value)}
             className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
           >
+            <option value="">— Seleziona template —</option>
             {templates.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}

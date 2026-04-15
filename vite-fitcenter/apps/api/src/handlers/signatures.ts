@@ -188,6 +188,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   const pages = pdfDoc.getPages()
   const font = await pdfDoc.embedFont("Helvetica")
   const boldFont = await pdfDoc.embedFont("Helvetica-Bold")
+  const pad2 = (n: number) => String(n).padStart(2, "0")
+  const nowItDateTime = () => {
+    const d = new Date()
+    return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  }
   const normalizeKey = (s: string) =>
     s
       .normalize("NFKD")
@@ -218,6 +223,13 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   }
   const totalNum = parseEuro(totalTxt)
   const versatoNum = parseEuro(versatoTxt)
+
+  // Footer automatico: data+ora generazione in fondo alla prima pagina.
+  if (pages[0]) {
+    const p0 = pages[0]
+    const footer = `Generato il ${nowItDateTime()}`
+    p0.drawText(footer, { x: 30, y: 14, size: 8, font })
+  }
 
   // Layout: prendiamo le coordinate dal template (campi totale/versato generale).
   // In questo modo i totali risultano allineati dove li ha messi il PDF.
