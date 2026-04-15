@@ -272,8 +272,6 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       if (sameTotal || sameVersato) continue
       if (text === totalTxt || text === versatoTxt) continue
     }
-      continue
-    }
 
     // Totali generali: NON renderizziamo qui. Salviamo la posizione migliore e renderizziamo alla fine.
     if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
