@@ -409,10 +409,12 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const page = pages[0]
     page.drawRectangle({
       // Rettangolo più ampio: copre entrambe le cifre (Totale + Versato) in alto.
-      x: 400,
-      y: 748,
-      width: 220,
-      height: 52,
+      // Ulteriore ampliamento: alcuni template posizionano i totali più in alto/destra.
+      // Copriamo solo la zona importi (evita di intaccare testo centrale).
+      x: 360,
+      y: 730,
+      width: 280,
+      height: 95,
       color: rgb(1, 1, 1),
       borderColor: rgb(1, 1, 1),
     })
