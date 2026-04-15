@@ -99,7 +99,7 @@ async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], sign
     // ma usando un'altezza massima più "da firma" (più larga, meno alta).
     const boxW = Number(step.width) || 0
     const boxH = Number(step.height) || 0
-    const maxH = boxH > 0 ? boxH * 0.6 : boxH
+    const maxH = boxH > 0 ? boxH * 0.8 : boxH
     const imgW = (png as any).width ?? boxW
     const imgH = (png as any).height ?? boxH
     const scale = imgW > 0 && imgH > 0 ? Math.min(boxW / imgW, maxH / imgH) : 1

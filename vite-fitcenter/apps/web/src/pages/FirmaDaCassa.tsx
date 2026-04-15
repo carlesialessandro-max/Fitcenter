@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { dataApi, type CassaMovimentiUtentiGroup } from "@/api/data"
 import { signaturesApi } from "@/api/signatures"
@@ -80,6 +80,12 @@ export function FirmaDaCassa() {
     () => groups.find((g) => g.key === selectedKey) ?? null,
     [groups, selectedKey]
   )
+
+  useEffect(() => {
+    // Quando cambio cliente/template, pulisco i messaggi per evitare confusione.
+    setOk(null)
+    setErr(null)
+  }, [selectedKey, templateId])
 
   const templates = tplQ.data ?? []
   const effectiveTemplateId = templateId
