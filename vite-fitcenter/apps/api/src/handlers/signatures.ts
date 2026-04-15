@@ -187,6 +187,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
   const pages = pdfDoc.getPages()
   const font = await pdfDoc.embedFont("Helvetica")
+  const boldFont = await pdfDoc.embedFont("Helvetica-Bold")
   const normalizeKey = (s: string) =>
     s
       .normalize("NFKD")
@@ -200,8 +201,28 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     if (!nk) continue
     if (!prefillNorm.has(nk)) prefillNorm.set(nk, v == null ? "" : String(v))
   }
+
+  // Coordinate "stabili" del riepilogo servizi sul template base.
+  const RIEPILOGO_TOTALI_Y = 555
+  const RIEPILOGO_TOTALE_X_LEFT = 420
+  const RIEPILOGO_VERSATO_X_LEFT = 490
+  const RIEPILOGO_COL_W = 80
+
+  const rightAlignX = (txt: string, rightX: number, size: number, fnt: any) => {
+    const t = (txt ?? "").trim()
+    if (!t) return null
+    try {
+      const w = fnt.widthOfTextAtSize(t, size)
+      return Math.max(0, rightX - w)
+    } catch {
+      return Math.max(0, rightX - Math.min(RIEPILOGO_COL_W, t.length * (size * 0.55)))
+    }
+  }
+
   for (const f of fields) {
     const id = String(f.id ?? "").trim()
+    const idNorm = normalizeKey(id)
+    const labelNorm = normalizeKey(String(f.label ?? ""))
     const direct = (prefill as any)?.[id]
     const alt =
       direct ??
@@ -217,6 +238,25 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const page = pages[pageIdx]
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
+
+    // Totali generali: rendiamo "autoritativo" solo il riepilogo (evita il 1,00€ sopra ai servizi).
+    if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
+      const near = Math.abs(Number(f.y ?? 0) - RIEPILOGO_TOTALI_Y) <= 10
+      if (!near) continue
+      const draw = clampTextToWidth({ text, maxWidth: RIEPILOGO_COL_W, font: boldFont, size: 10 })
+      const x = rightAlignX(draw, RIEPILOGO_TOTALE_X_LEFT + RIEPILOGO_COL_W, 10, boldFont)
+      if (x != null) page.drawText(draw, { x, y: RIEPILOGO_TOTALI_Y, size: 10, font: boldFont })
+      continue
+    }
+    if (idNorm === "versato_generale" || labelNorm.includes("versato_generale")) {
+      const near = Math.abs(Number(f.y ?? 0) - RIEPILOGO_TOTALI_Y) <= 10
+      if (!near) continue
+      const draw = clampTextToWidth({ text, maxWidth: RIEPILOGO_COL_W, font: boldFont, size: 10 })
+      const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, 10, boldFont)
+      if (x != null) page.drawText(draw, { x, y: RIEPILOGO_TOTALI_Y, size: 10, font: boldFont })
+      continue
+    }
+
     if (f.multiline && maxWidth) {
       const lh = f.lineHeight != null ? Math.max(8, Number(f.lineHeight)) : Math.max(10, Math.round(size * 1.2))
       const maxLines = f.maxLines != null ? Math.max(1, Math.floor(f.maxLines)) : undefined
@@ -224,23 +264,13 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       if (String(f.id) === "movimenti") {
         const blocks = String(text ?? "").replace(/\r\n/g, "\n").split("\n")
         // Coordinate coerenti col template: 4 colonne (Servizio | Descrizione | Totale | Versato)
-        const colW = 80
+        const colW = RIEPILOGO_COL_W
         const xServizioLeft = 30
         const xDescLeft = 140
-        const xTotaleLeft = 420
-        const xVersatoLeft = 490
+        const xTotaleLeft = RIEPILOGO_TOTALE_X_LEFT
+        const xVersatoLeft = RIEPILOGO_VERSATO_X_LEFT
         const rightXTotale = xTotaleLeft + colW
         const rightXVersato = xVersatoLeft + colW
-        const rightAlignX = (s: string, rightX: number) => {
-          const t = s.trim()
-          if (!t) return null
-          try {
-            const w = font.widthOfTextAtSize(t, size)
-            return Math.max(0, rightX - w)
-          } catch {
-            return Math.max(0, rightX - Math.min(colW, t.length * (size * 0.55)))
-          }
-        }
         const toAmount = (s: string) => clampTextToWidth({ text: s.trim(), maxWidth: colW, font, size })
         const toServizio = (s: string) =>
           clampTextToWidth({ text: s.trim(), maxWidth: Math.max(60, xDescLeft - xServizioLeft - 10), font, size })
@@ -269,11 +299,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
           const tot = toAmount(totRaw)
           const ver = toAmount(verRaw)
           if (tot) {
-            const x = rightAlignX(tot, rightXTotale)
+            const x = rightAlignX(tot, rightXTotale, size, font)
             if (x != null) page.drawText(tot, { x, y, size, font })
           }
           if (ver) {
-            const x = rightAlignX(ver, rightXVersato)
+            const x = rightAlignX(ver, rightXVersato, size, font)
             if (x != null) page.drawText(ver, { x, y, size, font })
           }
 
@@ -315,14 +345,12 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   // proviamo comunque a disegnarla nel box ASI (usa Custom2/asi_tessera dal prefill).
   const asiCandidate = (prefillNorm.get("custom2") ?? prefillNorm.get("asi_tessera") ?? "").trim()
   if (asiCandidate) {
-    const hasAsiField = fields.some((f) => /asi/i.test(String(f.id ?? "")) || /asi/i.test(String(f.label ?? "")))
-    if (!hasAsiField) {
-      const page = pages[0]
-      const size = 9
-      const x = 140
-      const y = 285
-      page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
-    }
+    // Disegniamo SEMPRE nel box ASI: così funziona anche se il template ha un campo ASI ma con coordinate errate.
+    const page = pages[0]
+    const size = 9
+    const x = 140
+    const y = 285
+    page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
   }
 
   return await pdfDoc.save()
