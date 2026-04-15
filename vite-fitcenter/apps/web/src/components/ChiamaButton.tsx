@@ -58,6 +58,7 @@ export function ChiamaButton({
 
   const telHref = telefono ? `tel:${normalizeTel(telefono)}` : "#"
   const waHref = telefono ? `https://wa.me/${toWaMeNumber(telefono)}` : "#"
+  const waAppHref = telefono ? `whatsapp://send?phone=${toWaMeNumber(telefono)}` : "#"
   const href = role === "operatore" ? waHref : telHref
 
   const handleClick = (e: React.MouseEvent) => {
@@ -69,9 +70,18 @@ export function ChiamaButton({
       e.preventDefault()
       logChiamata.mutate(undefined, {
         onSettled: () => {
-          // Operatori/consulenti: apri WhatsApp Web in nuova scheda (Chrome), Admin: tel:
-          if (role === "operatore") window.open(href, "_blank", "noopener,noreferrer")
-          else window.location.href = href
+          // Nota: WhatsApp Web non avvia chiamate; per chiamare serve WhatsApp Desktop/mobile.
+          // Qui proviamo ad aprire l'app desktop (protocollo whatsapp://). Se non disponibile, fallback a wa.me (chat web).
+          if (role === "operatore") {
+            try {
+              window.location.href = waAppHref
+              setTimeout(() => window.open(waHref, "_blank", "noopener,noreferrer"), 800)
+            } catch {
+              window.open(waHref, "_blank", "noopener,noreferrer")
+            }
+            return
+          }
+          window.location.href = href
         },
       })
     }
