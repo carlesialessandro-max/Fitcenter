@@ -203,6 +203,8 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   }
 
   // Coordinate "stabili" del riepilogo servizi sul template base.
+  // Nota: alcuni template possono avere lo stesso campo (Totale Generale) anche più in alto.
+  // Renderizziamo NOI solo la riga più in basso (vedi accumulo sotto).
   const RIEPILOGO_TOTALI_Y = 555
   const RIEPILOGO_TOTALE_X_LEFT = 420
   const RIEPILOGO_VERSATO_X_LEFT = 490
@@ -218,6 +220,11 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
       return Math.max(0, rightX - Math.min(RIEPILOGO_COL_W, t.length * (size * 0.55)))
     }
   }
+
+  // Accumulo: prendiamo la posizione "più bassa" per i totali, per evitare duplicati in alto.
+  let totalePos: { pageIdx: number; x: number; y: number } | null = null
+  let versatoPos: { pageIdx: number; x: number; y: number } | null = null
+  const shouldReplacePos = (cur: { y: number } | null, nextY: number) => (cur == null ? true : nextY < cur.y)
 
   for (const f of fields) {
     const id = String(f.id ?? "").trim()
@@ -239,21 +246,15 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const size = Math.max(7, Math.min(18, Number(f.size ?? 10)))
     const maxWidth = f.maxWidth != null ? Math.max(30, Number(f.maxWidth)) : null
 
-    // Totali generali: rendiamo "autoritativo" solo il riepilogo (evita il 1,00€ sopra ai servizi).
+    // Totali generali: NON renderizziamo qui. Salviamo la posizione migliore e renderizziamo alla fine.
     if (idNorm === "totale_generale" || labelNorm.includes("totale_generale")) {
-      const near = Math.abs(Number(f.y ?? 0) - RIEPILOGO_TOTALI_Y) <= 10
-      if (!near) continue
-      const draw = clampTextToWidth({ text, maxWidth: RIEPILOGO_COL_W, font: boldFont, size: 10 })
-      const x = rightAlignX(draw, RIEPILOGO_TOTALE_X_LEFT + RIEPILOGO_COL_W, 10, boldFont)
-      if (x != null) page.drawText(draw, { x, y: RIEPILOGO_TOTALI_Y, size: 10, font: boldFont })
+      const y = Number(f.y ?? NaN)
+      if (Number.isFinite(y) && shouldReplacePos(totalePos, y)) totalePos = { pageIdx, x: RIEPILOGO_TOTALE_X_LEFT, y }
       continue
     }
     if (idNorm === "versato_generale" || labelNorm.includes("versato_generale")) {
-      const near = Math.abs(Number(f.y ?? 0) - RIEPILOGO_TOTALI_Y) <= 10
-      if (!near) continue
-      const draw = clampTextToWidth({ text, maxWidth: RIEPILOGO_COL_W, font: boldFont, size: 10 })
-      const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, 10, boldFont)
-      if (x != null) page.drawText(draw, { x, y: RIEPILOGO_TOTALI_Y, size: 10, font: boldFont })
+      const y = Number(f.y ?? NaN)
+      if (Number.isFinite(y) && shouldReplacePos(versatoPos, y)) versatoPos = { pageIdx, x: RIEPILOGO_VERSATO_X_LEFT, y }
       continue
     }
 
@@ -351,6 +352,27 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const x = 140
     const y = 285
     page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
+  }
+
+  // Render totali generali in grassetto sotto le colonne (una volta sola).
+  {
+    const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
+    const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
+    const size = 10
+    if (totalTxt) {
+      const page = pages[(totalePos?.pageIdx ?? 0) as number] ?? pages[0]
+      const y = totalePos?.y ?? RIEPILOGO_TOTALI_Y
+      const draw = clampTextToWidth({ text: totalTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
+      const x = rightAlignX(draw, RIEPILOGO_TOTALE_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
+      if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
+    }
+    if (versatoTxt) {
+      const page = pages[(versatoPos?.pageIdx ?? 0) as number] ?? pages[0]
+      const y = versatoPos?.y ?? RIEPILOGO_TOTALI_Y
+      const draw = clampTextToWidth({ text: versatoTxt, maxWidth: RIEPILOGO_COL_W, font: boldFont, size })
+      const x = rightAlignX(draw, RIEPILOGO_VERSATO_X_LEFT + RIEPILOGO_COL_W, size, boldFont)
+      if (x != null) page.drawText(draw, { x, y, size, font: boldFont })
+    }
   }
 
   return await pdfDoc.save()

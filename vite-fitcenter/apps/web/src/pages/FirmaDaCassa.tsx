@@ -97,6 +97,10 @@ export function FirmaDaCassa() {
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
       const sumTotale = selected.rows.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
       const sumVersato = selected.rows.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
+      const asiFromRows = selected.rows.map((r) => (r as any).asiTesseraCustom2).find((x) => String(x ?? "").trim()) as
+        | string
+        | null
+        | undefined
       const movimentiLines = selected.rows
         .map((r) => {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
@@ -124,10 +128,10 @@ export function FirmaDaCassa() {
         codice_fiscale: selected.anagrafica.codiceFiscale ?? "",
         data_oggi: todayIt(),
         // Best-effort: se la vista non fornisce ASI/legale rappresentante restano vuoti
-        asi_tessera: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
+        asi_tessera: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2 ?? asiFromRows),
         // Alcuni template storici usano direttamente l'id colonna invece del campo prefill.
-        Custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
-        custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2),
+        Custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2 ?? asiFromRows),
+        custom2: normalizeAsiTessera(selected.anagrafica.asiTesseraCustom2 ?? asiFromRows),
         legale_rappresentante: [selected.anagrafica.paganteNome, selected.anagrafica.paganteCodiceFiscale].filter(Boolean).join(" · "),
         movimenti: movimentiLines,
         totale_generale: fmtEuro(sumTotale),
