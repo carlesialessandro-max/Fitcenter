@@ -221,7 +221,7 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     }
   }
 
-  // Accumulo: prendiamo la posizione "più bassa" per i totali, per evitare duplicati in alto.
+  // Accumulo: prendiamo la posizione "più bassa" (y più piccolo) per i totali, per evitare duplicati in alto.
   let totalePos: { pageIdx: number; x: number; y: number } | null = null
   let versatoPos: { pageIdx: number; x: number; y: number } | null = null
   const shouldReplacePos = (cur: { y: number } | null, nextY: number) => (cur == null ? true : nextY < cur.y)
@@ -239,7 +239,14 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     const alt2 =
       alt ??
       (/asi/i.test(id) || /asi/i.test(String(f.label ?? "")) ? prefillNorm.get("custom2") ?? prefillNorm.get("asi_tessera") : undefined)
-    const text = String((alt2 ?? alt) ?? "").trim()
+    const textRaw = String((alt2 ?? alt) ?? "").trim()
+    // Sopprimi duplicati del totale generale in alto (alcuni template lo stampano anche nel testo sopra).
+    const totalTxt = (prefillNorm.get("totale_generale") ?? "").trim()
+    const versatoTxt = (prefillNorm.get("versato_generale") ?? "").trim()
+    const isTopZone = Number(f.y ?? 0) >= 650
+    if (isTopZone && (textRaw === totalTxt || textRaw === versatoTxt)) continue
+
+    const text = textRaw
     if (!text) continue
     const pageIdx = Math.max(0, Math.min(pages.length - 1, (f.page ?? 1) - 1))
     const page = pages[pageIdx]
@@ -838,9 +845,25 @@ export async function confirmSignature(req: Request, res: Response) {
     const base = isUnc ? allegatiBase.replace(/\//g, "\\") : allegatiBase
     const destDirPreferred = joinFn(base, safeId, "Pdf Firmati")
     const destName = `Firmato-${baseRow.documentOriginalName?.replace(/[/\\\\]/g, "_") || "documento"}.pdf`
-    const destPath = joinFn(destDirPreferred, destName)
+    const basePath = joinFn(destDirPreferred, destName)
+    const makeUniquePath = (p: string): string => {
+      // Se esiste (o è bloccato), creiamo un nome univoco con timestamp.
+      if (!fs.existsSync(p)) return p
+      const dir = path.win32.dirname(p)
+      const ext = path.win32.extname(p) || ".pdf"
+      const base = path.win32.basename(p, ext)
+      const ts = new Date().toISOString().replace(/[:.]/g, "-")
+      return path.win32.join(dir, `${base}-${ts}${ext}`)
+    }
+    const destPath = makeUniquePath(basePath)
     fs.mkdirSync(destDirPreferred, { recursive: true })
-    fs.copyFileSync(signedPdfPath, destPath)
+    try {
+      fs.copyFileSync(signedPdfPath, destPath)
+    } catch (e) {
+      // Secondo tentativo: se il file è bloccato/permessi su un path specifico, prova un nome diverso.
+      const altPath = makeUniquePath(basePath)
+      fs.copyFileSync(signedPdfPath, altPath)
+    }
   }
 
   const completed = signedSteps.every((s) => !!s.signedAt)
