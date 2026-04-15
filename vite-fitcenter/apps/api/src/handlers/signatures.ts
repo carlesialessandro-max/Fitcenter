@@ -265,7 +265,9 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
 
     // Evita che campi "fuzzy" in alto mostrino i totali generali disallineati.
     // I totali generali verranno renderizzati solo in basso sulla riga Totale Generale.
-    if (Number(f.y ?? 0) >= 650) {
+    // Evita che campi sopra il riepilogo mostrino totale/versato generale disallineati.
+    // (alcuni template hanno 2 campi totali in alto).
+    if (Number(f.y ?? 0) >= RIEPILOGO_TOTALI_Y + 40) {
       const n = parseEuro(text)
       const sameTotal = n != null && totalNum != null && Math.abs(n - totalNum) < 0.01
       const sameVersato = n != null && versatoNum != null && Math.abs(n - versatoNum) < 0.01
