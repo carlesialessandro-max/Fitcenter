@@ -1,4 +1,5 @@
 import { Request, Response } from "express"
+import crypto from "crypto"
 import { store } from "../store/leads.js"
 import { importFromSqlServer } from "../services/sql-import.js"
 import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types/lead.js"
@@ -118,6 +119,28 @@ export async function webhookZapier(req: Request, res: Response) {
       example: { nome: "Mario", cognome: "Rossi", email: "mario@example.com", telefono: "3331234567", fonte: "website" },
     })
   }
+
+  // Firma HMAC opzionale (consigliata): header X-Zapier-Signature = sha256 hex del raw body.
+  // Serve per mitigare leakage del token o replay semplici.
+  const hmacSecret = (process.env.ZAPIER_WEBHOOK_HMAC_SECRET ?? "").trim()
+  if (hmacSecret) {
+    const provided = String(req.get("x-zapier-signature") ?? "").trim().toLowerCase()
+    const raw = (req as any).rawBody as Buffer | undefined
+    if (!provided || !raw || raw.length === 0) {
+      return res.status(401).json({ message: "Unauthorized" })
+    }
+    const expectedSig = crypto.createHmac("sha256", hmacSecret).update(raw).digest("hex")
+    try {
+      const a = Buffer.from(provided, "hex")
+      const b = Buffer.from(expectedSig, "hex")
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ message: "Unauthorized" })
+      }
+    } catch {
+      return res.status(401).json({ message: "Unauthorized" })
+    }
+  }
+
   const expected = (process.env.ZAPIER_WEBHOOK_TOKEN ?? "").trim()
   if (expected) {
     const provided =

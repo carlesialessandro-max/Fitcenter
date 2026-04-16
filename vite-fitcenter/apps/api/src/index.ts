@@ -12,6 +12,8 @@ if (rootEnvPath !== apiEnvPath) dotenv.config({ path: rootEnvPath })
 
 import express from "express"
 import cors from "cors"
+import helmet from "helmet"
+import rateLimit from "express-rate-limit"
 import { authRouter } from "./routes/auth.js"
 import { leadsRouter } from "./routes/leads.js"
 import { webhookZapier } from "./handlers/leads.js"
@@ -44,15 +46,66 @@ if (process.env.TRUST_PROXY !== "false") {
   app.set("trust proxy", 1)
 }
 
-app.use(cors({ origin: true }))
+// Security headers (dietro reverse proxy / HTTPS consigliato)
+app.use(
+  helmet({
+    // Serve anche la SPA dallo stesso processo: CSP la gestiamo lato Caddy oppure in un secondo step.
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+)
+
+// CORS: se non configurato, fallback permissivo (compatibilità).
+// In produzione imposta CORS_ORIGINS=https://crm.tuodominio.it,https://altro...
+const corsOrigins = (process.env.CORS_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+app.use(
+  cors({
+    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    credentials: true,
+  })
+)
+
+// Rate limit di base (difesa bruteforce/scan). Più stretto su login e webhook.
+app.use(
+  rateLimit({
+    windowMs: 60_000,
+    limit: 600,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  })
+)
+const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false })
+const zapierLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false })
+
 // Firma: inviamo immagini base64 (dataURL) -> aumenta limite JSON.
 const JSON_LIMIT = process.env.API_JSON_LIMIT?.trim() || "15mb"
-app.use(express.json({ limit: JSON_LIMIT }))
+// Per HMAC Zapier: conserviamo il raw body.
+app.use(
+  express.json({
+    limit: JSON_LIMIT,
+    verify: (req, _res, buf) => {
+      ;(req as any).rawBody = buf
+    },
+  })
+)
 // Zapier a volte invia payload come application/x-www-form-urlencoded
-app.use(express.urlencoded({ extended: true, limit: JSON_LIMIT }))
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: JSON_LIMIT,
+    verify: (req, _res, buf) => {
+      ;(req as any).rawBody = buf
+    },
+  })
+)
 app.use("/api", authRouter)
-app.get("/api/webhook/zapier", webhookZapier)
-app.post("/api/webhook/zapier", webhookZapier)
+app.post("/api/auth/login", authLimiter)
+app.post("/api/auth/login/otp", authLimiter)
+app.get("/api/webhook/zapier", zapierLimiter, webhookZapier)
+app.post("/api/webhook/zapier", zapierLimiter, webhookZapier)
 app.use("/api", leadsRouter)
 app.use("/api", chiamateRouter)
 app.use("/api/prenotazioni", prenotazioniRouter)
