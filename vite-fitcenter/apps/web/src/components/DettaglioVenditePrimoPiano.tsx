@@ -22,12 +22,13 @@ function CardVendite({
 }) {
   const percentuale = budget > 0 ? Math.min(100, Math.round((vendite / budget) * 1000) / 10) : 0
   const isOk = percentuale >= 100
+  const isNeg = vendite < 0
 
   return (
     <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/60 p-5 shadow-lg">
       <p className="text-sm font-medium uppercase tracking-wider text-zinc-500">{titolo}</p>
       {sottotitolo && <p className="mt-0.5 text-xs text-zinc-500">{sottotitolo}</p>}
-      <p className="mt-3 text-3xl font-bold tabular-nums text-amber-400">
+      <p className={`mt-3 text-3xl font-bold tabular-nums ${isNeg ? "text-red-400" : "text-amber-400"}`}>
         € {fmtEuro(vendite)}
       </p>
       <p className="mt-1 text-sm text-zinc-400">
@@ -36,20 +37,20 @@ function CardVendite({
       <div className="mt-4 flex items-center gap-3">
         <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
           <div
-            className="h-full rounded-full bg-amber-500/90 transition-all duration-500"
+            className={`h-full rounded-full transition-all duration-500 ${isNeg ? "bg-red-500/80" : "bg-amber-500/90"}`}
             style={{ width: `${Math.min(100, percentuale)}%` }}
           />
         </div>
         <span
           className={`min-w-[3rem] text-right text-sm font-semibold tabular-nums ${
-            isOk ? "text-emerald-400" : "text-zinc-300"
+            isNeg ? "text-red-400" : isOk ? "text-emerald-400" : "text-zinc-300"
           }`}
         >
           {percentuale}%
         </span>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        {isOk ? "Obiettivo raggiunto" : `Mancano € ${fmtEuro(Math.max(0, budget - vendite))} all'obiettivo`}
+        {isNeg ? "Importo negativo (storno/nota di credito)" : isOk ? "Obiettivo raggiunto" : `Mancano € ${fmtEuro(Math.max(0, budget - vendite))} all'obiettivo`}
       </p>
     </div>
   )

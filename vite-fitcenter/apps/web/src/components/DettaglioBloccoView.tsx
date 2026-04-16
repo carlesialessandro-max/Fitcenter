@@ -12,12 +12,14 @@ export function fmtPct(n: number) {
 }
 
 export function TrendCell({ trend }: { trend: number }) {
-  const isPos = trend >= 0
-  const isZero = trend === 0
+  // Evita casi limite come "-0,00%" dovuti a floating point.
+  const t = Number.isFinite(trend) ? trend : 0
+  const isZero = Math.abs(t) < 0.005
+  const isPos = t >= 0
   return (
     <span className={`inline-flex items-center gap-1 font-medium ${isZero ? "text-zinc-400" : isPos ? "text-emerald-400" : "text-red-400"}`}>
       {!isZero && (isPos ? "↑" : "↓")}
-      {fmtPct(trend)}
+      {fmtPct(isZero ? 0 : t)}
     </span>
   )
 }

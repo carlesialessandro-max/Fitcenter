@@ -216,6 +216,8 @@ export function Dashboard() {
     )
   }
 
+  const safeNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)
+
   const oggi = role === "admin"
     ? fmtDateIt(asOf)
     : (() => {
@@ -570,8 +572,12 @@ export function Dashboard() {
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Entrate mese (consuntivo a oggi)</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-400">
-            €{data.entrateMese.toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+          <p
+            className={`mt-1 text-2xl font-semibold ${
+              safeNum(data.entrateMese) < 0 ? "text-red-400" : "text-amber-400"
+            }`}
+          >
+            €{safeNum(data.entrateMese).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">{data.percentualeBudget}% del budget mese</p>
         </div>
