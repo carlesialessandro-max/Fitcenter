@@ -113,7 +113,7 @@ export async function getDepSig(): Promise<string> {
 export async function getBudgetDepSig(): Promise<string> {
   const b = await getMeta("v:budget")
   // Bump quando cambia la logica SQL vendite (invalida cache dashboard/dettaglio su SQLite).
-  const vendSig = "v16-exclude-danza-adulti-dashboard"
+  const vendSig = "v17-vendite-movimento-view-dashboard"
   return `${b}.${vendSig}`
 }
 

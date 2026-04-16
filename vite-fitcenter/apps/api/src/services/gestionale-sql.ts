@@ -1468,6 +1468,15 @@ function movimentoTipoServizioVendita(): string | null {
   return /^[A-Za-z0-9_]+$/.test(raw) ? raw : null
 }
 
+/** Stessi filtri TipoOperazione (e opz. TipoServizio) usati in Temp_Stampe per il report per iscrizione. */
+function sqlWhereTipoOperazioneMovimentoVendita(alias: string): string {
+  const tipoOp = movimentoTipoOperazioneVendita()
+  const tipoServ = movimentoTipoServizioVendita()
+  let s = ` AND ${alias}.[TipoOperazione] = '${tipoOp.replace(/'/g, "''")}'`
+  if (tipoServ) s += ` AND ${alias}.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'`
+  return s
+}
+
 function whereEsclusioniVenditeView(alias = "R"): string {
   // Regola richiesta: "DANZA ADULTI" è un falso positivo (altra azienda).
   // La escludiamo ovunque si usi la logica vendite/report (dashboard + andamento).
@@ -1626,6 +1635,51 @@ async function queryVenditeSum(
           fromParam: "@dataInizio",
           toParam: "@dataFine",
         })
+      )
+      const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+      return Number(row?.Totale ?? row?.totale) || 0
+    } catch {
+      return 0
+    }
+  }
+
+  // Somma Importo per movimento, con attribuzione consulente come in getVenditeTotaleRangeView (+ filtri tipo come Temp_Stampe).
+  // Allinea la dashboard alla colonna «Importo» della griglia «Abbonamenti venduti», non al Totale listino per iscrizione.
+  if (viewCfg && idConsultant && byMovimento) {
+    const ids = parseConsultantIds(idConsultant)
+    if (ids.length === 0) return 0
+    try {
+      const view = viewCfg.view
+      const colId = viewCfg.colId
+      const colJoin = viewCfg.colJoin
+      const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+      const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
+      const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
+      const tipoWhere = sqlWhereTipoOperazioneMovimentoVendita("M")
+      const ultimoGiorno = new Date(anno, mese, 0).getDate()
+      let fromStr: string
+      let toStr: string
+      if (giorno != null) {
+        fromStr = toStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
+      } else {
+        fromStr = `${anno}-${String(mese).padStart(2, "0")}-01`
+        toStr =
+          progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
+            ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
+            : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
+      }
+      let req = p.request().input("from", sql.VarChar(10), fromStr).input("to", sql.VarChar(10), toStr)
+      ids.forEach((id, i) => {
+        req = req.input(`id${i}`, sql.Int, id)
+      })
+      const r = await req.query(
+        `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+         FROM [${tbl}] M
+         WHERE M.[${COL_IMPORTO}] > 0
+           AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+           AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+           ${tipoWhere}
+           AND ${matchCons}`
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
