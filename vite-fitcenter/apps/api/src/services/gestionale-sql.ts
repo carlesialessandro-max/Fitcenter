@@ -1559,12 +1559,15 @@ async function queryVenditeSum(
 ): Promise<number> {
   const tbl = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditoreAbbonamento()
-  const byIscrizione = process.env.GESTIONALE_VENDITE_BY_ISCRIZIONE === "true"
+  // Allineamento gestionale: la query del gestionale somma RVW_AbbonamentiUtenti.Totale filtrata da Temp_Stampe
+  // (cioè "per iscrizione"). Questo deve essere il default quando la view è configurata.
+  // Se vuoi la somma dei movimenti (Importo) abilita: GESTIONALE_VENDITE_BY_MOVIMENTO=true
+  const byMovimento = process.env.GESTIONALE_VENDITE_BY_MOVIMENTO === "true"
+  const byIscrizione = !byMovimento
 
   // Dashboard: per default allineiamo al gestionale "Flusso movimenti abbonamenti venduti"
-  // sommando i movimenti (SUM Importo). Se serve la vecchia logica per iscrizione, abilita:
-  // GESTIONALE_VENDITE_BY_ISCRIZIONE=true
-  if (viewCfg && idConsultant) {
+  // usando la logica "per iscrizione" (SUM Totale su RVW_AbbonamentiUtenti join Temp_Stampe).
+  if (viewCfg && idConsultant && byIscrizione) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
     try {
@@ -1573,38 +1576,25 @@ async function queryVenditeSum(
       const colJoin = viewCfg.colJoin
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
       const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
-      const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
-
       if (giorno != null) {
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
         let req = p.request().input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
         ids.forEach((id, i) => {
           req = req.input(`id${i}`, sql.Int, id)
         })
-        const r = byIscrizione
-          ? await (async () => {
-              const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-              const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-              return req.query(
-                sqlTotaleReportPerIscrizione({
-                  tblMov: tbl,
-                  view,
-                  colJoin,
-                  idWhereR,
-                  colTotale,
-                  fromParam: "@dataInizio",
-                  toParam: "@dataFine",
-                })
-              )
-            })()
-          : await req.query(
-              `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
-               FROM [${tbl}] M
-               WHERE M.[${COL_IMPORTO}] > 0
-                 AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
-                 AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-                 AND ${matchCons}`
-            )
+        const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+        const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+        const r = await req.query(
+          sqlTotaleReportPerIscrizione({
+            tblMov: tbl,
+            view,
+            colJoin,
+            idWhereR,
+            colTotale,
+            fromParam: "@dataInizio",
+            toParam: "@dataFine",
+          })
+        )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         return Number(row?.Totale ?? row?.totale) || 0
       }
@@ -1624,30 +1614,19 @@ async function queryVenditeSum(
       ids.forEach((id, i) => {
         req = req.input(`id${i}`, sql.Int, id)
       })
-      const r = byIscrizione
-        ? await (async () => {
-            const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-            const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-            return req.query(
-              sqlTotaleReportPerIscrizione({
-                tblMov: tbl,
-                view,
-                colJoin,
-                idWhereR,
-                colTotale,
-                fromParam: "@dataInizio",
-                toParam: "@dataFine",
-              })
-            )
-          })()
-        : await req.query(
-            `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
-             FROM [${tbl}] M
-             WHERE M.[${COL_IMPORTO}] > 0
-               AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@dataInizio AS DATE)
-               AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@dataFine AS DATE)
-               AND ${matchCons}`
-          )
+      const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+      const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+      const r = await req.query(
+        sqlTotaleReportPerIscrizione({
+          tblMov: tbl,
+          view,
+          colJoin,
+          idWhereR,
+          colTotale,
+          fromParam: "@dataInizio",
+          toParam: "@dataFine",
+        })
+      )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       return Number(row?.Totale ?? row?.totale) || 0
     } catch {
