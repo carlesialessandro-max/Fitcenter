@@ -23,10 +23,12 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE}${path}`
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  }
+  const bodyIsFormData = typeof FormData !== "undefined" && options.body instanceof FormData
+  const baseHeaders = (options.headers as Record<string, string> | undefined) ?? {}
+  // Se il body è multipart (FormData), NON impostare Content-Type: lo gestisce il browser (boundary).
+  const headers: Record<string, string> = bodyIsFormData
+    ? { ...baseHeaders }
+    : { "Content-Type": "application/json", ...baseHeaders }
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
 
@@ -46,10 +48,19 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "POST", body: JSON.stringify(body) }),
+    request<T>(path, {
+      method: "POST",
+      body: typeof FormData !== "undefined" && body instanceof FormData ? body : JSON.stringify(body),
+    }),
   put: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+    request<T>(path, {
+      method: "PUT",
+      body: typeof FormData !== "undefined" && body instanceof FormData ? body : JSON.stringify(body),
+    }),
   patch: <T>(path: string, body: unknown) =>
-    request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+    request<T>(path, {
+      method: "PATCH",
+      body: typeof FormData !== "undefined" && body instanceof FormData ? body : JSON.stringify(body),
+    }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 }
