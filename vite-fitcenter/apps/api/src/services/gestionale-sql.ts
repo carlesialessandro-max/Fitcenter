@@ -2204,6 +2204,9 @@ export async function getReportConteggiAndamento(
 
     const upperCategoriaInvito =
       "UPPER(LTRIM(RTRIM(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], ''))))"
+    // Normalizza (toglie spazi e underscore) per confronti robusti con valori tipo "SETTIMANA PROVA INGRESSI".
+    const normMacroNoSpace = `REPLACE(REPLACE(${upperMacroExpr}, N' ', N''), N'_', N'')`
+    const normCatNoSpace = `REPLACE(REPLACE(${upperCategoriaInvito}, N' ', N''), N'_', N'')`
 
     const r = await req.query(
       `SELECT
@@ -2214,7 +2217,7 @@ export async function getReportConteggiAndamento(
           WHEN ${upperMacroExpr} = N'RINNOVI'
           THEN M.[${COL_ISCRIZIONE}] END) AS rinnovi,
         COUNT(DISTINCT CASE
-          WHEN ${upperCategoriaInvito} = N'INVITO' OR ${upperCategoriaInvito} LIKE N'INVITO %'
+          WHEN ${normMacroNoSpace} = N'INVITO' AND ${normCatNoSpace} = N'SETTIMANAPROVAINGRESSI'
           THEN M.[${COL_ISCRIZIONE}] END) AS invitoClienti
       FROM [${tblM}] M
       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]

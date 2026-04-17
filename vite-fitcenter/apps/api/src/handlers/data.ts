@@ -1900,10 +1900,12 @@ function isMacroRinnoviAbb(a: Abbonamento): boolean {
 }
 
 function isCategoriaInvitoAbb(a: Abbonamento): boolean {
-  const cat = normalizeCategoryToken(a.categoriaAbbonamentoDescrizione ?? "")
-  if (cat === "INVITO" || cat.includes("INVITO")) return true
+  // Richiesta: Invito clienti = MacroCategoria=INVITO e Categoria=settimanaprovaingressi
   const macro = normalizeCategoryToken(a.macroCategoriaDescrizione ?? "")
-  return macro.includes("INVITO")
+  const cat = normalizeCategoryToken(a.categoriaAbbonamentoDescrizione ?? "")
+  const macroKey = macro.replace(/[\s_]+/g, "")
+  const catKey = cat.replace(/[\s_]+/g, "")
+  return macroKey === "INVITO" && catKey === "SETTIMANAPROVAINGRESSI"
 }
 
 function toISODate(d: Date): string {

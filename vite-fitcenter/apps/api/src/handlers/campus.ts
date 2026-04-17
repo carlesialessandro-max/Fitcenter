@@ -82,6 +82,16 @@ function weeksForAbbonamento(aFrom: string, aTo: string, weeks: { from: string; 
   return out
 }
 
+function pickFirstNonEmpty(row: Record<string, unknown>, keys: string[]): string {
+  for (const k of keys) {
+    const v = (row as any)[k]
+    if (v == null) continue
+    const s = String(v).trim()
+    if (s) return s
+  }
+  return ""
+}
+
 export async function getCampus(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
@@ -91,16 +101,23 @@ export async function getCampus(req: Request, res: Response) {
     const rangeTo = String(req.query.to ?? DEFAULT_RANGE_TO).trim() || DEFAULT_RANGE_TO
 
     const rows = await gestionaleSql.queryAbbonamenti(undefined)
+    // Da RVW_AbbonamentiUtenti: genitore = PaganteNome, telefono = SMS
+    const paganteByClienteId = new Map<string, string>()
+    const smsByClienteId = new Map<string, string>()
+
     const campusAbbonamenti = rows
-      .map((r) => rowToAbbonamento(r))
+      .map((r) => {
+        const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
+        const paganteNome = pickFirstNonEmpty(r, ["PaganteNome", "Pagante", "Pagante_Nome"])
+        const sms = pickFirstNonEmpty(r, ["SMS", "Sms", "sms", "Cellulare", "cellulare", "Telefono", "telefono", "Telefono_1", "Telefono1"])
+        if (clienteId) {
+          if (paganteNome && !paganteByClienteId.has(clienteId)) paganteByClienteId.set(clienteId, paganteNome)
+          if (sms && !smsByClienteId.has(clienteId)) smsByClienteId.set(clienteId, sms)
+        }
+        return rowToAbbonamento(r)
+      })
       .filter(isCampusAbb)
       .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
-
-    // Anagrafica: telefono/città/email da Utenti
-    const clientiRows = await gestionaleSql.queryClienti()
-    const abbonamentiCount = new Map<string, number>()
-    const clienti = clientiRows.map((r) => rowToCliente(r, abbonamentiCount))
-    const clienteById = new Map(clienti.map((c) => [c.id, c]))
 
     const byCliente = new Map<
       string,
@@ -109,6 +126,7 @@ export async function getCampus(req: Request, res: Response) {
         clienteNome: string
         clienteEta?: number
         cellulare?: string
+        genitoreSql?: string
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
         totaleVenduto: number
         totalePagato: number
@@ -126,14 +144,14 @@ export async function getCampus(req: Request, res: Response) {
 
     for (const a of campusAbbonamenti) {
       const weeks = weeksForAbbonamento(a.dataInizio, a.dataFine, CAMPUS_WEEKS_2026)
-      const cli = clienteById.get(a.clienteId)
       const entry =
         byCliente.get(a.clienteId) ??
         {
           clienteId: a.clienteId,
           clienteNome: a.clienteNome,
           clienteEta: a.clienteEta,
-          cellulare: cli?.telefono || undefined,
+          cellulare: smsByClienteId.get(a.clienteId) || undefined,
+          genitoreSql: paganteByClienteId.get(a.clienteId) || undefined,
           items: [],
           totaleVenduto: 0,
           totalePagato: 0,
@@ -171,7 +189,7 @@ export async function getCampus(req: Request, res: Response) {
           allergie: saved?.allergie ?? "",
           note: saved?.note ?? "",
           gruppo: saved?.gruppo ?? "",
-          genitore: saved?.genitore ?? "",
+          genitore: saved?.genitore ?? c.genitoreSql ?? "",
           liv: saved?.liv ?? "",
           weekNotes: saved?.weeks ?? {},
         }
