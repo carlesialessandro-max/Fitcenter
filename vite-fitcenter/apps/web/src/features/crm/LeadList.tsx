@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { dataApi } from "@/api/data"
+import { leadsApi } from "@/api/leads"
 import type { Lead, LeadSource, LeadStatus } from "@/types/lead"
 import { LEAD_SOURCE_LABELS, LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { LeadSourceBadge } from "./LeadSourceBadge"
@@ -40,6 +41,13 @@ export function LeadList() {
 
   const assignToMe = useMutation({
     mutationFn: (leadId: string) => dataApi.assignLeadToMe(leadId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
+    },
+  })
+
+  const deleteLead = useMutation({
+    mutationFn: (leadId: string) => leadsApi.delete(leadId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
     },
@@ -170,9 +178,7 @@ export function LeadList() {
                 <th className="px-4 py-3 font-medium text-zinc-400">Stato</th>
                 <th className="px-4 py-3 font-medium text-zinc-400">Consulente</th>
                 <th className="px-4 py-3 font-medium text-zinc-400">Data</th>
-                {role !== "admin" && (
-                  <th className="px-4 py-3 font-medium text-zinc-400">Azioni</th>
-                )}
+                <th className="px-4 py-3 font-medium text-zinc-400">Azioni</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800">
@@ -203,33 +209,45 @@ export function LeadList() {
                   <td className="px-4 py-3 text-xs text-zinc-500">
                     {new Date(lead.createdAt).toLocaleDateString("it-IT")}
                   </td>
-                  {role !== "admin" && (
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {!lead.consulenteNome && (
-                          <button
-                            type="button"
-                            onClick={() => assignToMe.mutate(lead.id)}
-                            disabled={assignToMe.isPending}
-                            className="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20"
-                          >
-                            Assegna a me
-                          </button>
-                        )}
-                        {lead.telefono && (
-                          <ChiamaButton
-                            telefono={lead.telefono}
-                            nomeContatto={`${lead.nome} ${lead.cognome}`}
-                            tipo="lead"
-                            leadId={lead.id}
-                          />
-                        )}
-                        <Link to={`/crm/lead/${lead.id}`} className="text-zinc-400 hover:text-zinc-200" title="Dettaglio">
-                          👁
-                        </Link>
-                      </div>
-                    </td>
-                  )}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {role !== "admin" && !lead.consulenteNome && (
+                        <button
+                          type="button"
+                          onClick={() => assignToMe.mutate(lead.id)}
+                          disabled={assignToMe.isPending}
+                          className="rounded px-2 py-1 text-xs font-medium text-amber-400 hover:bg-amber-500/20 disabled:opacity-50"
+                        >
+                          Assegna a me
+                        </button>
+                      )}
+                      {lead.telefono && (
+                        <ChiamaButton
+                          telefono={lead.telefono}
+                          nomeContatto={`${lead.nome} ${lead.cognome}`}
+                          tipo="lead"
+                          leadId={lead.id}
+                        />
+                      )}
+                      <Link to={`/crm/lead/${lead.id}`} className="text-zinc-400 hover:text-zinc-200" title="Dettaglio">
+                        👁
+                      </Link>
+                      {role === "admin" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!confirm(`Eliminare definitivamente il lead "${lead.nome} ${lead.cognome}"?`)) return
+                            deleteLead.mutate(lead.id)
+                          }}
+                          disabled={deleteLead.isPending}
+                          className="rounded px-2 py-1 text-xs font-medium text-red-300 hover:bg-red-500/15 disabled:opacity-50"
+                          title="Elimina lead"
+                        >
+                          Elimina
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -49,6 +49,22 @@ export const dataApi = {
     }),
   getLeads: () => api.get<Lead[]>("/data/leads"),
   assignLeadToMe: (id: string) => api.post<Lead>(`/data/leads/${encodeURIComponent(id)}/assign-me`, {}),
+  getCampus: () =>
+    api.get<{
+      weeks: { key: string; label: string; from: string; to: string }[]
+      clienti: {
+        clienteId: string
+        clienteNome: string
+        allergie: string
+        note: string
+        weekNotes: Record<string, { note?: string }>
+        items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[] }[]
+      }[]
+    }>("/data/campus"),
+  patchCampusCliente: (clienteId: string, body: { allergie?: string; note?: string }) =>
+    api.patch(`/data/campus/${encodeURIComponent(clienteId)}`, body),
+  patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string }) =>
+    api.patch(`/data/campus/${encodeURIComponent(clienteId)}/weeks/${encodeURIComponent(weekKey)}`, body),
   getTotaliAnni: () =>
     api.get<{ totali: { anno: number; vendite: number; budget: number; percentuale: number }[] }>("/data/totali-anni"),
   getVenditeStorico: (anno: number, consulente?: string) => {

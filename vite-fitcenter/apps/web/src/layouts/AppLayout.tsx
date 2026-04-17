@@ -3,7 +3,9 @@ import { Outlet, Link, useLocation } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 
-const navOperatore = [
+type NavItem = { to: string; label: string; children?: NavItem[] }
+
+const navOperatore: NavItem[] = [
   { to: "/", label: "Dashboard" },
   { to: "/firme", label: "Firme" },
   { to: "/firma-cassa", label: "Firma Cassa" },
@@ -13,11 +15,12 @@ const navOperatore = [
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
-const navCorsi = [{ to: "/corsi", label: "Corsi" }] as const
-const navIstruttore = [{ to: "/corsi", label: "Corsi" }] as const
+const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
+const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
+const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 
-const navAdmin = [
-  { to: "/", label: "Dashboard" },
+const navAdmin: NavItem[] = [
+  { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
   { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },
@@ -32,7 +35,7 @@ export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const nav =
+  const nav: NavItem[] =
     leadFilter === "bambini"
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
       : role === "admin"
@@ -41,7 +44,9 @@ export function AppLayout() {
           ? navCorsi
           : role === "istruttore"
             ? navIstruttore
-          : navOperatore
+            : role === "campus"
+              ? navCampus
+              : navOperatore
 
   const Sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900/95 sm:w-56 sm:bg-zinc-900/50">
@@ -55,7 +60,7 @@ export function AppLayout() {
           {user?.nome ?? "—"}
         </p>
         <p className="text-xs text-zinc-500">
-          {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : role === "istruttore" ? "Istruttore" : "Operatore"}
+          {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : role === "istruttore" ? "Istruttore" : role === "campus" ? "Campus" : "Operatore"}
         </p>
         <button
           type="button"
@@ -66,20 +71,40 @@ export function AppLayout() {
         </button>
       </div>
       <nav className="flex flex-col gap-0.5 p-2">
-        {nav.map(({ to, label }) => (
-          <Link
-            key={to}
-            to={to}
-            onClick={() => setMobileOpen(false)}
-            className={cn(
-              "rounded-md px-3 py-2 text-sm font-medium transition-colors",
-              location.pathname === to || (to !== "/" && location.pathname.startsWith(to))
-                ? "bg-amber-500/20 text-amber-400"
-                : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-            )}
-          >
-            {label}
-          </Link>
+        {nav.map(({ to, label, children }) => (
+          <div key={to}>
+            <Link
+              to={to}
+              onClick={() => setMobileOpen(false)}
+              className={cn(
+                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                location.pathname === to || (to !== "/" && location.pathname.startsWith(to))
+                  ? "bg-amber-500/20 text-amber-400"
+                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+              )}
+            >
+              {label}
+            </Link>
+            {children?.length ? (
+              <div className="mt-1 flex flex-col gap-0.5 pl-2">
+                {children.map((c) => (
+                  <Link
+                    key={c.to}
+                    to={c.to}
+                    onClick={() => setMobileOpen(false)}
+                    className={cn(
+                      "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      location.pathname === c.to || (c.to !== "/" && location.pathname.startsWith(c.to))
+                        ? "bg-amber-500/20 text-amber-400"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    )}
+                  >
+                    {c.label}
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </div>
         ))}
       </nav>
     </aside>

@@ -18,11 +18,14 @@ import { FirmaDaCassa } from "@/pages/FirmaDaCassa"
 import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi } from "@/pages/Corsi"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
+import { StampaReport } from "@/pages/StampaReport"
+import { Campus } from "@/pages/Campus"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
   if (leadFilter === "bambini") return <Navigate to="/crm" replace />
   if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
+  if (role === "campus") return <Navigate to="/campus" replace />
   return <Dashboard />
 }
 
@@ -64,6 +67,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardOrRedirect /> },
       { path: "corsi", element: <Corsi /> },
+      { path: "campus", element: <Campus /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },
@@ -75,6 +79,7 @@ export const router = createBrowserRouter([
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },
       { path: "firma-cassa", element: <FirmaDaCassa /> },
+      { path: "stampa-report", element: <StampaReport /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],

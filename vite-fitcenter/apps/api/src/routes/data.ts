@@ -1,5 +1,6 @@
 import { Router } from "express"
 import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti } from "../handlers/data.js"
+import { getCampus, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 
 export const dataRouter = Router()
@@ -32,3 +33,6 @@ dataRouter.post("/ore-lavorate", postOraLavorata)
 dataRouter.delete("/ore-lavorate/:id", deleteOraLavorata)
 dataRouter.get("/report-consulenti", requireAdmin, getReportConsulenti)
 dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
+dataRouter.get("/campus", getCampus)
+dataRouter.patch("/campus/:clienteId", patchCampusCliente)
+dataRouter.patch("/campus/:clienteId/weeks/:weekKey", patchCampusWeekNote)
