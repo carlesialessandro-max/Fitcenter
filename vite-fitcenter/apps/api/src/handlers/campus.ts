@@ -234,7 +234,7 @@ function pickRowVal(row: Record<string, unknown>, key: string): string {
 export async function importCampusPlanningExcel(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
-    if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+    if (u.role !== "admin" && u.role !== "campus") return res.status(403).json({ message: "Permessi insufficienti" })
     const file = (req as any).file as { buffer?: Buffer } | undefined
     const buf = file?.buffer
     if (!buf || buf.length === 0) return res.status(400).json({ message: "File mancante" })

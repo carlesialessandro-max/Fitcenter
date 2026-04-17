@@ -244,7 +244,7 @@ export function Campus() {
           >
             Aggiorna
           </button>
-          {role === "admin" && (
+          {(role === "admin" || role === "campus") && (
             <>
               <input
                 ref={importRef}
@@ -351,8 +351,8 @@ export function Campus() {
               <th className="px-3 py-3 font-medium text-zinc-400">Genitore</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Cellulare</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Note</th>
-              <th className="px-3 py-3 font-medium text-zinc-400 text-right">Venduto</th>
-              <th className="px-3 py-3 font-medium text-zinc-400 text-right">Pagato</th>
+              <th className="px-3 py-3 w-28 font-medium text-zinc-400 text-right whitespace-nowrap">Venduto</th>
+              <th className="px-3 py-3 w-28 font-medium text-zinc-400 text-right whitespace-nowrap">Pagato</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Gruppo</th>
               {tab === "settimane" && <th className="px-3 py-3 font-medium text-zinc-400">Nota settimana</th>}
             </tr>
@@ -418,11 +418,11 @@ export function Campus() {
                         className="w-[28rem] rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
                       />
                     </td>
-                    <td className="px-3 py-3 text-right font-medium text-amber-300">
-                      € {Number(b.totaleVenduto ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                    <td className="px-3 py-3 text-right font-medium text-amber-300 tabular-nums whitespace-nowrap">
+                      €{Number(b.totaleVenduto ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
                     </td>
-                    <td className="px-3 py-3 text-right font-medium text-emerald-300">
-                      € {Number(b.totalePagato ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                    <td className="px-3 py-3 text-right font-medium text-emerald-300 tabular-nums whitespace-nowrap">
+                      €{Number(b.totalePagato ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
                     </td>
                     <td className="px-3 py-3">
                       <input
