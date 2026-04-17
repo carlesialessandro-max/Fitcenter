@@ -168,7 +168,8 @@ function isTesseramentoAbbForKpi(a: Abbonamento): boolean {
  * Non si applica al KPI «abbonamenti attivi» né alla pagina analisi attivi (lì: solo tesseramenti).
  */
 const EXCLUDE_MACRO_VENDITE_LISTE = new Set(["DANZA"])
-const EXCLUDE_CAT_DESC_VENDITE_LISTE = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI", "SCUOLA NUOTO"])
+// Non escludere "SCUOLA NUOTO": include anche vendite come "AGONISMO MASTER" e lezioni private adulti.
+const EXCLUDE_CAT_DESC_VENDITE_LISTE = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI"])
 
 function normalizeVenditeListeKey(s: string | undefined) {
   return (s ?? "")
