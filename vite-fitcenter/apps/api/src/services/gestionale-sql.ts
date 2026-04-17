@@ -1505,8 +1505,18 @@ function whereEsclusioniVenditeView(alias = "R"): string {
   // Regola richiesta: "DANZA ADULTI" è un falso positivo (altra azienda).
   // La escludiamo ovunque si usi la logica vendite/report (dashboard + andamento).
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
+  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], ''))))`
+  const catNorm = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${cat}, '.', ''), ' ', ''), '-', ''), '_', ''), '+', '')`
+  const macroNorm = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${macro}, '.', ''), ' ', ''), '-', ''), '_', ''), '+', '')`
+  // Esclusioni aggiuntive richieste (tesseramenti FIN/UISP 1 giorno gare/trasferta/rimborso)
   return `
     AND ${cat} <> 'DANZA ADULTI'
+    AND NOT (
+      ${catNorm} LIKE '%UISP%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
+    )
+    AND NOT (
+      ${macroNorm} LIKE '%FIN%' AND ${catNorm} LIKE '%ISCRIZIONE%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
+    )
   `
 }
 
@@ -1552,6 +1562,7 @@ function sqlTotaleReportPerIscrizione(args: {
     INNER JOIN [${args.view}] R ON R.[${args.colJoin}] = T.ID
     WHERE ${args.idWhereR}
       ${whereEsclusioniVenditeView("R")}
+      ${whereExcludeUispTesseramenti("R")}
     GROUP BY T.ID
   )
   SELECT COALESCE(SUM(Totale), 0) AS Totale FROM UnaPerIscrizione`

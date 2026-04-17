@@ -86,12 +86,24 @@ function isTesseramentoRow(row: Record<string, unknown>): boolean {
   const abbonDesc = str(
     row.AbbonamentoDescrizione ?? row.abbonamentoDescrizione ?? row.Abbonamento ?? row.abbonamento ?? ""
   ).trim().toUpperCase()
+  const blob = `${macroDesc} ${catDesc} ${abbonDesc}`.replace(/\s+/g, " ").trim()
+  const blobNorm = blob.replace(/[.\-_\s+]/g, "") // rimuove separatori per match robusti
   // IDCategoria = 19: VARIE/TESSERAMENTI da escludere
   if (!Number.isNaN(idCategoria) && idCategoria === 19) return true
   if (catDesc === "TESSERAMENTI") return true
   if (macroDesc === "VARIE") return true
   if (macroDesc.includes("ASI") && macroDesc.includes("ISCRIZIONE")) return true
   if (abbonDesc.includes("ASI") && abbonDesc.includes("ISCRIZIONE")) return true
+
+  // Richiesta: escludere dai totali anche
+  // - "FIN + ISCRIZIONE 1 giorno tesseramento gare"
+  // - "UISP 1 giorno rimborso gare/trasferta"
+  const isOneDay = blobNorm.includes("1GIORNO")
+  const isGareTrasferta = blobNorm.includes("GARE") || blobNorm.includes("TRASFERTA") || blobNorm.includes("RIMBORSO")
+  if (isOneDay && isGareTrasferta) {
+    if (blobNorm.includes("FIN") && blobNorm.includes("ISCRIZIONE")) return true
+    if (blobNorm.includes("UISP")) return true
+  }
   return false
 }
 
