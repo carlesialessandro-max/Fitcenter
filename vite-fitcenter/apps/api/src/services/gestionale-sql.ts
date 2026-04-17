@@ -572,6 +572,30 @@ export async function queryClienti(): Promise<Record<string, unknown>[]> {
   }
 }
 
+/** Somma incassi (Importo) per IDIscrizione nel range [from,to]. */
+export async function queryMovimentiVendutoSumByIscrizione(from: string, to: string): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const tbl = defaultTables.movimentiVenduto
+  try {
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    const tipoWhere = sqlWhereTipoOperazioneMovimentoVendita("M")
+    const r = await req.query(
+      `SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+       FROM [${tbl}] M
+       WHERE M.[${COL_IMPORTO}] > 0
+         AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+         ${tipoWhere}
+       GROUP BY M.[${COL_ISCRIZIONE}]
+       ORDER BY M.[${COL_ISCRIZIONE}]`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}
+
 function idParamType(id: string): { type: typeof sql.Int | typeof sql.VarChar; value: number | string } {
   const n = parseInt(id, 10)
   if (String(n) === id && !Number.isNaN(n)) return { type: sql.Int, value: n }

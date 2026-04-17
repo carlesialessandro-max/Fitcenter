@@ -51,17 +51,26 @@ export const dataApi = {
   assignLeadToMe: (id: string) => api.post<Lead>(`/data/leads/${encodeURIComponent(id)}/assign-me`, {}),
   getCampus: () =>
     api.get<{
+      range: { from: string; to: string }
       weeks: { key: string; label: string; from: string; to: string }[]
-      clienti: {
+      bambini: {
         clienteId: string
         clienteNome: string
+        cognomeNome: string
+        eta?: number
+        cellulare?: string
+        gruppo: string
+        genitore: string
+        liv: string
         allergie: string
         note: string
+        totaleVenduto: number
+        totalePagato: number
         weekNotes: Record<string, { note?: string }>
-        items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[] }[]
+        items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
       }[]
     }>("/data/campus"),
-  patchCampusCliente: (clienteId: string, body: { allergie?: string; note?: string }) =>
+  patchCampusCliente: (clienteId: string, body: { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}`, body),
   patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}/weeks/${encodeURIComponent(weekKey)}`, body),

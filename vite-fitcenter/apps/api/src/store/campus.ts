@@ -7,6 +7,9 @@ export type CampusWeekNote = {
 
 export type CampusRecord = {
   clienteId: string
+  gruppo?: string
+  genitore?: string
+  liv?: string
   allergie?: string
   note?: string
   weeks?: Record<string, { note?: string }>
@@ -39,11 +42,17 @@ export const campusStore = {
     return db.get(id) ?? null
   },
 
-  upsertCliente(clienteId: string, patch: { allergie?: string; note?: string }): CampusRecord {
+  upsertCliente(
+    clienteId: string,
+    patch: { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }
+  ): CampusRecord {
     const id = String(clienteId ?? "").trim()
     const curr = db.get(id)
     const next: CampusRecord = {
       clienteId: id,
+      gruppo: patch.gruppo != null ? String(patch.gruppo) : (curr?.gruppo ?? ""),
+      genitore: patch.genitore != null ? String(patch.genitore) : (curr?.genitore ?? ""),
+      liv: patch.liv != null ? String(patch.liv) : (curr?.liv ?? ""),
       allergie: patch.allergie != null ? String(patch.allergie) : (curr?.allergie ?? ""),
       note: patch.note != null ? String(patch.note) : (curr?.note ?? ""),
       weeks: curr?.weeks ?? {},
@@ -62,6 +71,9 @@ export const campusStore = {
     weeks[wk] = { ...(weeks[wk] ?? {}), note: String(note ?? "") }
     const next: CampusRecord = {
       clienteId: id,
+      gruppo: curr?.gruppo ?? "",
+      genitore: curr?.genitore ?? "",
+      liv: curr?.liv ?? "",
       allergie: curr?.allergie ?? "",
       note: curr?.note ?? "",
       weeks,

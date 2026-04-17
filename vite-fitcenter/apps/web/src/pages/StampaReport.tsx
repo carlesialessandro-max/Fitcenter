@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Navigate } from "react-router-dom"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
 import { dataApi } from "@/api/data"
+
+const DEFAULT_CONSULENTI = ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
 function localIsoDate(d = new Date()): string {
   const y = d.getFullYear()
@@ -41,31 +43,13 @@ export function StampaReport() {
   const [from, setFrom] = useState(() => monthStartIso(todayIso))
   const [to, setTo] = useState(() => todayIso)
 
-  // Consulenti: default (auto) -> quelli presenti nel dettaglio mese del giorno "to".
-  const toDate = new Date(`${to}T12:00:00Z`)
-  const annoTo = toDate.getFullYear()
-  const meseTo = toDate.getMonth() + 1
-  const giornoTo = toDate.getDate()
-  const { data: dettaglioTo } = useQuery({
-    queryKey: ["report-consulenti-source", annoTo, meseTo, giornoTo, to],
-    queryFn: () => dataApi.getDettaglioMese(annoTo, meseTo, giornoTo, undefined, to),
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    staleTime: 60_000,
-  })
-
   const allConsulenti = useMemo(() => {
-    const list = dettaglioTo?.dettaglioMese?.perConsulente?.map((x) => x.consulente) ?? []
-    return Array.from(new Set(list)).filter(Boolean).sort((a, b) => a.localeCompare(b))
-  }, [dettaglioTo?.dettaglioMese?.perConsulente])
+    // Evita attese: lista pronta subito (nessun “precalcolo”).
+    return [...DEFAULT_CONSULENTI].sort((a, b) => a.localeCompare(b))
+  }, [])
 
   const [consulentiSel, setConsulentiSel] = useState<string[]>([])
   const consulentiEffective = consulentiSel.length > 0 ? consulentiSel : allConsulenti
-
-  useEffect(() => {
-    // Se cambio range, non tocco selezione manuale; ma se non ho selezionato nulla, l'auto si aggiorna da solo.
-  }, [from, to])
 
   const reportQuery = useQuery({
     queryKey: ["report-consulenti", from, to, consulentiEffective.join("|")],

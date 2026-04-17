@@ -4,6 +4,8 @@ import { Navigate } from "react-router-dom"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 
+type Tab = "elenco" | "settimane"
+
 export function Campus() {
   const { role } = useAuth()
   const queryClient = useQueryClient()
@@ -18,10 +20,13 @@ export function Campus() {
   })
 
   const [search, setSearch] = useState("")
+  const [tab, setTab] = useState<Tab>("elenco")
+  const [weekKey, setWeekKey] = useState("")
+  const [groupFilter, setGroupFilter] = useState("")
 
   const patchCliente = useMutation({
-    mutationFn: (args: { clienteId: string; allergie?: string; note?: string }) =>
-      dataApi.patchCampusCliente(args.clienteId, { allergie: args.allergie, note: args.note }),
+    mutationFn: (args: { clienteId: string; gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }) =>
+      dataApi.patchCampusCliente(args.clienteId, { gruppo: args.gruppo, genitore: args.genitore, liv: args.liv, allergie: args.allergie, note: args.note }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["campus"] }),
   })
   const patchWeek = useMutation({
@@ -31,11 +36,20 @@ export function Campus() {
   })
 
   const filtered = useMemo(() => {
-    const list = data?.clienti ?? []
+    const list = data?.bambini ?? []
     if (!search.trim()) return list
     const s = search.trim().toLowerCase()
-    return list.filter((c) => c.clienteNome.toLowerCase().includes(s))
-  }, [data?.clienti, search])
+    return list.filter((c) => (c.cognomeNome || c.clienteNome).toLowerCase().includes(s))
+  }, [data?.bambini, search])
+
+  const groups = useMemo(() => {
+    const set = new Set<string>()
+    ;(data?.bambini ?? []).forEach((b) => {
+      const g = (b.gruppo ?? "").trim()
+      if (g) set.add(g)
+    })
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [data?.bambini])
 
   if (isLoading) return <div className="p-6 text-zinc-400">Caricamento...</div>
   if (error || !data) {
@@ -52,8 +66,10 @@ export function Campus() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Campus sportivi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Abbonamenti filtrati: <span className="text-zinc-300">MacroCategoria=Corsi</span> e{" "}
-            <span className="text-zinc-300">Categoria=Campus Sportivi</span>.
+            Periodo: <span className="text-zinc-300">{data.range.from}</span> →{" "}
+            <span className="text-zinc-300">{data.range.to}</span> · filtro:{" "}
+            <span className="text-zinc-300">MacroCategoria=Corsi</span> e{" "}
+            <span className="text-zinc-300">Categoria=Campus Sportivi</span>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -75,83 +91,182 @@ export function Campus() {
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setTab("elenco")}
+          className={`rounded border px-3 py-1.5 text-sm ${
+            tab === "elenco" ? "border-amber-500 bg-amber-500/20 text-amber-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+          }`}
+        >
+          Elenco bambini
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("settimane")}
+          className={`rounded border px-3 py-1.5 text-sm ${
+            tab === "settimane" ? "border-amber-500 bg-amber-500/20 text-amber-400" : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+          }`}
+        >
+          Campus per settimane
+        </button>
+      </div>
+
+      {tab === "settimane" && (
+        <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
+          <label className="text-sm text-zinc-400">
+            Settimana
+            <select
+              value={weekKey}
+              onChange={(e) => setWeekKey(e.target.value)}
+              className="ml-2 rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-sm text-zinc-100"
+            >
+              <option value="">— Seleziona —</option>
+              {data.weeks.map((w) => (
+                <option key={w.key} value={w.key}>{w.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm text-zinc-400">
+            Gruppo
+            <select
+              value={groupFilter}
+              onChange={(e) => setGroupFilter(e.target.value)}
+              className="ml-2 rounded border border-zinc-700 bg-zinc-800/50 px-2 py-1 text-sm text-zinc-100"
+            >
+              <option value="">Tutti</option>
+              {groups.map((g) => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+          </label>
+          <div className="text-xs text-zinc-500">
+            {weekKey ? `Filtro settimana: ${data.weeks.find((w) => w.key === weekKey)?.label ?? weekKey}` : "Seleziona una settimana"}
+          </div>
+        </div>
+      )}
+
       <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-800">
-        <table className="w-full min-w-[900px] text-left text-sm">
+        <table className="w-full min-w-[1200px] text-left text-sm">
           <thead className="border-b border-zinc-800 bg-zinc-900/50">
             <tr>
-              <th className="px-4 py-3 font-medium text-zinc-400">Nominativo</th>
-              <th className="px-4 py-3 font-medium text-zinc-400">Settimane</th>
-              <th className="px-4 py-3 font-medium text-zinc-400">Allergie</th>
-              <th className="px-4 py-3 font-medium text-zinc-400">Note</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Cognome e nome</th>
+              <th className="px-3 py-3 font-medium text-zinc-400 text-center">Età</th>
+              <th className="px-3 py-3 font-medium text-zinc-400 text-center">LIV</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Allergie</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Genitore</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Cellulare</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Note</th>
+              <th className="px-3 py-3 font-medium text-zinc-400 text-right">Venduto</th>
+              <th className="px-3 py-3 font-medium text-zinc-400 text-right">Pagato</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Gruppo</th>
+              {tab === "settimane" && <th className="px-3 py-3 font-medium text-zinc-400">Nota settimana</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-800">
-            {filtered.map((c) => {
-              const weeksForCliente = new Set<string>()
-              c.items.forEach((it) => it.settimane.forEach((w) => weeksForCliente.add(w)))
-              const weekLabels = data.weeks
-                .filter((w) => weeksForCliente.has(w.key))
-                .map((w) => w.label)
-                .join(", ")
-              return (
-                <tr key={c.clienteId} className="align-top hover:bg-zinc-800/20">
-                  <td className="px-4 py-3 font-medium text-zinc-200">{c.clienteNome}</td>
-                  <td className="px-4 py-3 text-zinc-300">
-                    <div className="flex flex-wrap gap-2">
-                      {data.weeks
-                        .filter((w) => weeksForCliente.has(w.key))
-                        .map((w) => {
-                          const val = c.weekNotes?.[w.key]?.note ?? ""
-                          return (
-                            <div key={w.key} className="min-w-[12rem]">
-                              <div className="mb-1 text-[11px] text-zinc-500">{w.label}</div>
-                              <input
-                                type="text"
-                                defaultValue={val}
-                                onBlur={(e) => {
-                                  const next = e.target.value
-                                  if (next !== val) patchWeek.mutate({ clienteId: c.clienteId, weekKey: w.key, note: next })
-                                }}
-                                placeholder="Nota settimana..."
-                                className="w-full rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none"
-                              />
-                            </div>
-                          )
-                        })}
-                      {!weekLabels && <span className="text-zinc-500">—</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <textarea
-                      defaultValue={c.allergie ?? ""}
-                      onBlur={(e) => {
-                        const v = e.target.value
-                        if (v !== (c.allergie ?? "")) patchCliente.mutate({ clienteId: c.clienteId, allergie: v })
-                      }}
-                      rows={2}
-                      placeholder="Allergie..."
-                      className="w-72 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none"
-                    />
-                  </td>
-                  <td className="px-4 py-3">
-                    <textarea
-                      defaultValue={c.note ?? ""}
-                      onBlur={(e) => {
-                        const v = e.target.value
-                        if (v !== (c.note ?? "")) patchCliente.mutate({ clienteId: c.clienteId, note: v })
-                      }}
-                      rows={2}
-                      placeholder="Note..."
-                      className="w-80 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none"
-                    />
-                  </td>
-                </tr>
-              )
-            })}
+            {filtered
+              .filter((b) => (groupFilter ? (b.gruppo ?? "").trim() === groupFilter : true))
+              .filter((b) => {
+                if (tab !== "settimane") return true
+                if (!weekKey) return true
+                const weeksForB = new Set<string>()
+                b.items.forEach((it) => it.settimane.forEach((w) => weeksForB.add(w)))
+                return weeksForB.has(weekKey)
+              })
+              .map((b) => {
+                const weekNoteVal = tab === "settimane" && weekKey ? (b.weekNotes?.[weekKey]?.note ?? "") : ""
+                return (
+                  <tr key={b.clienteId} className="hover:bg-zinc-800/20">
+                    <td className="px-3 py-3 font-medium text-zinc-200">{b.cognomeNome || b.clienteNome}</td>
+                    <td className="px-3 py-3 text-center text-zinc-300">{b.eta ?? "—"}</td>
+                    <td className="px-3 py-3 text-center">
+                      <input
+                        type="text"
+                        defaultValue={b.liv ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value
+                          if (v !== (b.liv ?? "")) patchCliente.mutate({ clienteId: b.clienteId, liv: v })
+                        }}
+                        className="w-16 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <input
+                        type="text"
+                        defaultValue={b.allergie ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value
+                          if (v !== (b.allergie ?? "")) patchCliente.mutate({ clienteId: b.clienteId, allergie: v })
+                        }}
+                        className="w-64 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-3">
+                      <input
+                        type="text"
+                        defaultValue={b.genitore ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value
+                          if (v !== (b.genitore ?? "")) patchCliente.mutate({ clienteId: b.clienteId, genitore: v })
+                        }}
+                        className="w-48 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-zinc-300">{b.cellulare ?? "—"}</td>
+                    <td className="px-3 py-3">
+                      <input
+                        type="text"
+                        defaultValue={b.note ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value
+                          if (v !== (b.note ?? "")) patchCliente.mutate({ clienteId: b.clienteId, note: v })
+                        }}
+                        className="w-[28rem] rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                      />
+                    </td>
+                    <td className="px-3 py-3 text-right font-medium text-amber-300">
+                      € {Number(b.totaleVenduto ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-3 text-right font-medium text-emerald-300">
+                      € {Number(b.totalePagato ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-3">
+                      <input
+                        type="text"
+                        defaultValue={b.gruppo ?? ""}
+                        onBlur={(e) => {
+                          const v = e.target.value
+                          if (v !== (b.gruppo ?? "")) patchCliente.mutate({ clienteId: b.clienteId, gruppo: v })
+                        }}
+                        className="w-28 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                        placeholder="Gruppo..."
+                      />
+                    </td>
+                    {tab === "settimane" && (
+                      <td className="px-3 py-3">
+                        {weekKey ? (
+                          <input
+                            type="text"
+                            defaultValue={weekNoteVal}
+                            onBlur={(e) => {
+                              const v = e.target.value
+                              if (v !== weekNoteVal) patchWeek.mutate({ clienteId: b.clienteId, weekKey, note: v })
+                            }}
+                            className="w-64 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                            placeholder="Nota settimana..."
+                          />
+                        ) : (
+                          <span className="text-zinc-500">Seleziona una settimana</span>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={4} className="px-4 py-10 text-center text-zinc-500">
-                  Nessun abbonamento Campus Sportivi trovato.
+                <td colSpan={tab === "settimane" ? 11 : 10} className="px-4 py-10 text-center text-zinc-500">
+                  Nessun bambino trovato.
                 </td>
               </tr>
             )}
