@@ -3,6 +3,7 @@ import * as gestionaleSql from "../services/gestionale-sql.js"
 import { rowToAbbonamento, rowToCliente } from "../data/map-sql-to-types.js"
 import { campusStore } from "../store/campus.js"
 import { getScopedUser } from "../middleware/auth.js"
+import XLSX from "xlsx"
 
 const DEFAULT_RANGE_FROM = "2026-03-01"
 const DEFAULT_RANGE_TO = "2026-09-13"
@@ -22,6 +23,22 @@ const CAMPUS_WEEKS_2026: { from: string; to: string }[] = [
   { from: "2026-08-31", to: "2026-09-04" },
   { from: "2026-09-07", to: "2026-09-11" },
 ]
+
+const EXCEL_WEEK_HEADERS: Record<string, string> = {
+  "2026-06-15": "15 - 19 GIUGNO",
+  "2026-06-22": "22 - 26 GIUGNO",
+  "2026-06-29": "29  GIUGNO - 03 LUGLIO",
+  "2026-07-06": " 06 - 10 LUGLIO",
+  "2026-07-13": "13 - 17 LUGLIO",
+  "2026-07-20": "20 - 24 LUGLIO",
+  "2026-07-27": "27   - 31 LUGLIO",
+  "2026-08-03": "03 - 07 AGOSTO",
+  "2026-08-10": "10 - 14 AGOSTO",
+  "2026-08-17": "17 - 21 AGOSTO",
+  "2026-08-24": "24 - 28 AGOSTO",
+  "2026-08-31": "31 AGOSTO - 04 SETTEMBRE",
+  "2026-09-07": "07 - 11 SETTEMBRE",
+}
 
 function normToken(s: string): string {
   return String(s ?? "")
@@ -193,9 +210,113 @@ export async function patchCampusWeekNote(req: Request, res: Response) {
     const clienteId = String(req.params.clienteId ?? "").trim()
     const weekKey = String(req.params.weekKey ?? "").trim()
     if (!clienteId || !weekKey) return res.status(400).json({ message: "parametri mancanti" })
-    const body = (req.body ?? {}) as { note?: string }
-    const updated = campusStore.upsertWeekNote(clienteId, weekKey, String(body.note ?? ""))
+    const body = (req.body ?? {}) as { note?: string; gruppo?: string }
+    const updated = campusStore.upsertWeek(clienteId, weekKey, { note: body.note, gruppo: body.gruppo })
     res.json(updated)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+function normNameKey(s: string): string {
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function pickRowVal(row: Record<string, unknown>, key: string): string {
+  const v = (row as any)[key]
+  if (v == null) return ""
+  return String(v).trim()
+}
+
+export async function importCampusPlanningExcel(req: Request, res: Response) {
+  try {
+    const u = getScopedUser(req)
+    if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+    const file = (req as any).file as { buffer?: Buffer } | undefined
+    const buf = file?.buffer
+    if (!buf || buf.length === 0) return res.status(400).json({ message: "File mancante" })
+
+    // Costruisco mappa nome->clienteId dagli attuali campus in range.
+    const rows = await gestionaleSql.queryAbbonamenti(undefined)
+    const rangeFrom = DEFAULT_RANGE_FROM
+    const rangeTo = DEFAULT_RANGE_TO
+    const campusAbbonamenti = rows
+      .map((r) => rowToAbbonamento(r))
+      .filter(isCampusAbb)
+      .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
+    const nameToClienteId = new Map<string, string>()
+    campusAbbonamenti.forEach((a) => {
+      const k = normNameKey(a.clienteNome)
+      if (k && !nameToClienteId.has(k)) nameToClienteId.set(k, a.clienteId)
+    })
+
+    const wb = XLSX.read(buf, { type: "buffer" })
+    const sheetName = wb.SheetNames[0]
+    const ws = wb.Sheets[sheetName]
+    const json = XLSX.utils.sheet_to_json(ws, { defval: "", raw: false }) as Record<string, unknown>[]
+    if (json.length === 0) return res.status(400).json({ message: "Foglio vuoto" })
+
+    // Trovo la riga header che contiene 'gruppo' (sotto le settimane) per mappare weekHeader -> groupCol.
+    const headerRow = json.find((r) => Object.values(r).some((v) => String(v).toLowerCase().includes("gruppo")))
+    const keys = Object.keys(json[0] ?? {})
+    const groupColByWeekStart = new Map<string, string>()
+    if (headerRow) {
+      for (const [weekStart, headerLabel] of Object.entries(EXCEL_WEEK_HEADERS)) {
+        const idx = keys.indexOf(headerLabel)
+        if (idx > 0) {
+          const prevKey = keys[idx - 1]
+          const prevVal = String((headerRow as any)[prevKey] ?? "").trim().toLowerCase()
+          if (prevVal === "gruppo") groupColByWeekStart.set(weekStart, prevKey)
+        }
+      }
+    }
+
+    let updated = 0
+    let skipped = 0
+
+    for (const r of json) {
+      const nome = pickRowVal(r, "COGNOME E NOME")
+      const liv = pickRowVal(r, "LIV")
+      const allergie = pickRowVal(r, "ALLERGIE")
+      const genitore = pickRowVal(r, "GENITORE")
+      const note = pickRowVal(r, "note")
+
+      // Salta righe intestazione/vuote.
+      const idxRaw = String((r as any).__EMPTY ?? "").trim()
+      const idxNum = Number(idxRaw)
+      if (!nome || !Number.isFinite(idxNum) || idxNum <= 0) continue
+
+      const clienteId = nameToClienteId.get(normNameKey(nome))
+      if (!clienteId) {
+        skipped += 1
+        continue
+      }
+
+      // Gruppo globale: primo gruppo trovato nelle settimane.
+      let gruppoGlobal = ""
+      for (const [weekStart, colKey] of groupColByWeekStart.entries()) {
+        const v = pickRowVal(r, colKey)
+        if (v) {
+          gruppoGlobal = v
+          // Salvo gruppo anche per la settimana specifica.
+          campusStore.upsertWeek(clienteId, weekStart, { gruppo: v })
+        }
+      }
+
+      campusStore.upsertCliente(clienteId, {
+        liv: liv || undefined,
+        allergie: allergie || undefined,
+        genitore: genitore || undefined,
+        note: note || undefined,
+        gruppo: gruppoGlobal || undefined,
+      })
+      updated += 1
+    }
+
+    res.json({ ok: true, updated, skipped })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

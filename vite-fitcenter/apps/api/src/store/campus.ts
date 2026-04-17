@@ -3,6 +3,7 @@ import { readJson, writeJson } from "./persist.js"
 export type CampusWeekNote = {
   weekKey: string
   note?: string
+  gruppo?: string
 }
 
 export type CampusRecord = {
@@ -12,7 +13,7 @@ export type CampusRecord = {
   liv?: string
   allergie?: string
   note?: string
-  weeks?: Record<string, { note?: string }>
+  weeks?: Record<string, { note?: string; gruppo?: string }>
   updatedAt: string
 }
 
@@ -63,12 +64,16 @@ export const campusStore = {
     return next
   },
 
-  upsertWeekNote(clienteId: string, weekKey: string, note: string): CampusRecord {
+  upsertWeek(clienteId: string, weekKey: string, patch: { note?: string; gruppo?: string }): CampusRecord {
     const id = String(clienteId ?? "").trim()
     const wk = String(weekKey ?? "").trim()
     const curr = db.get(id)
     const weeks = { ...(curr?.weeks ?? {}) }
-    weeks[wk] = { ...(weeks[wk] ?? {}), note: String(note ?? "") }
+    weeks[wk] = {
+      ...(weeks[wk] ?? {}),
+      ...(patch.note != null ? { note: String(patch.note) } : {}),
+      ...(patch.gruppo != null ? { gruppo: String(patch.gruppo) } : {}),
+    }
     const next: CampusRecord = {
       clienteId: id,
       gruppo: curr?.gruppo ?? "",

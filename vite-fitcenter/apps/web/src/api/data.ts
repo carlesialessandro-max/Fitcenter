@@ -66,14 +66,19 @@ export const dataApi = {
         note: string
         totaleVenduto: number
         totalePagato: number
-        weekNotes: Record<string, { note?: string }>
+        weekNotes: Record<string, { note?: string; gruppo?: string }>
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
       }[]
     }>("/data/campus"),
   patchCampusCliente: (clienteId: string, body: { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}`, body),
-  patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string }) =>
+  patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string; gruppo?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}/weeks/${encodeURIComponent(weekKey)}`, body),
+  importCampusPlanning: (file: File) => {
+    const form = new FormData()
+    form.append("file", file)
+    return api.post<{ ok: true; updated: number; skipped: number }>("/data/campus/import-planning", form)
+  },
   getTotaliAnni: () =>
     api.get<{ totali: { anno: number; vendite: number; budget: number; percentuale: number }[] }>("/data/totali-anni"),
   getVenditeStorico: (anno: number, consulente?: string) => {

@@ -1,7 +1,10 @@
 import { Router } from "express"
 import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti } from "../handlers/data.js"
-import { getCampus, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
+import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
+import multer from "multer"
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
 
 export const dataRouter = Router()
 
@@ -36,3 +39,4 @@ dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
 dataRouter.get("/campus", getCampus)
 dataRouter.patch("/campus/:clienteId", patchCampusCliente)
 dataRouter.patch("/campus/:clienteId/weeks/:weekKey", patchCampusWeekNote)
+dataRouter.post("/campus/import-planning", requireAdmin, upload.single("file"), importCampusPlanningExcel)
