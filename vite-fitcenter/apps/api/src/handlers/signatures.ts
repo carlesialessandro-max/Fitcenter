@@ -845,6 +845,94 @@ export async function deleteSignatureTemplate(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
+function privacyLastPageText(): { title1: string; body1: string; sig1: string; title2: string; body2: string; sig2: string } {
+  return {
+    title1: "1. INFORMATIVA E CONSENSO PRIVACY (GDPR 2016/679)",
+    body1:
+      "Il sottoscritto dichiara di aver ricevuto l’informativa ai sensi dell’art. 13 del Regolamento UE 679/2016. " +
+      "Prende atto che il trattamento dei propri dati personali (e del minore rappresentato) per le finalità connesse all’iscrizione, " +
+      "alla gestione del rapporto sportivo, alla copertura assicurativa e all’adempimento degli obblighi previsti dalla legge e dall’ordinamento sportivo " +
+      "(comunicazione a Federazioni/Enti/Registro Nazionale Attività Sportive) è necessario all'esecuzione del contratto.\n\n" +
+      "Consensi facoltativi: Il sottoscritto esprime altresì il proprio consenso specifico per l'invio di comunicazioni commerciali (Marketing) " +
+      "e per l'utilizzo/pubblicazione della propria immagine (Art. 11) sui canali social e web della Società per fini divulgativi e promozionali.",
+    sig1: "Firma per il trattamento dati : ________________________________________",
+    title2: "2. APPROVAZIONE CLAUSOLE VESSATORIE (Art. 1341 e 1342 c.c.)",
+    body2:
+      "Il sottoscritto dichiara di aver letto e di approvare specificamente, ai sensi e per gli effetti degli artt. 1341 e 1342 del Codice Civile, " +
+      "le seguenti clausole contrattuali contenute nel Regolamento a tergo:\n" +
+      "• Art. 2: Risoluzione immediata del contratto e penale per uso indebito del braccialetto d'accesso;\n" +
+      "• Art. 3: Limitazioni alla sospensione dell'abbonamento e rinuncia a pretese per chiusure imposte da Autorità o manutenzione;\n" +
+      "• Art. 4 e 5: Esonero di responsabilità della Società per infortuni derivanti da comportamenti del cliente o terzi e limitazione responsabilità danni;\n" +
+      "• Art. 6: Divieto di attività di personal training esterno e facoltà di sospensione/risoluzione per violazione norme di condotta;\n" +
+      "• Art. 10: Facoltà della Società di modifica unilaterale di strutture, orari, corsi e servizi;\n" +
+      "• Art. 11: Disciplina in caso di cessazione attività/forza maggiore e cessione diritti d'immagine.",
+    sig2: "Firma per clausole specifiche  _______________________________________",
+  }
+}
+
+async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(pdfBytes)
+  const pages = doc.getPages()
+  if (pages.length === 0) return pdfBytes
+  const lastIdx = pages.length - 1
+  const last = pages[lastIdx]
+  const { width, height } = last.getSize()
+
+  // Rimuovi ultima pagina e reinserisci una pagina “testo” con stessa dimensione.
+  doc.removePage(lastIdx)
+  const page = doc.addPage([width, height])
+  const font = await doc.embedFont("Helvetica")
+  const bold = await doc.embedFont("Helvetica-Bold")
+
+  const marginX = 40
+  let y = height - 60
+  const sizeTitle = 12
+  const sizeBody = 10
+  const lh = 13
+  const maxW = width - marginX * 2
+
+  const drawWrapped = (text: string, isBold = false) => {
+    const lines = wrapMultilineText({ text, maxWidth: maxW, font: isBold ? bold : font, size: isBold ? sizeTitle : sizeBody })
+    for (const line of lines) {
+      if (y < 60) break
+      page.drawText(line, { x: marginX, y, size: isBold ? sizeTitle : sizeBody, font: isBold ? bold : font })
+      y -= isBold ? lh + 2 : lh
+    }
+    y -= 6
+  }
+
+  const t = privacyLastPageText()
+  drawWrapped(t.title1, true)
+  drawWrapped(t.body1, false)
+  y -= 10
+  page.drawText(t.sig1, { x: marginX, y, size: 10, font })
+  y -= 34
+
+  drawWrapped(t.title2, true)
+  drawWrapped(t.body2, false)
+  y -= 10
+  page.drawText(t.sig2, { x: marginX, y, size: 10, font })
+
+  return await doc.save()
+}
+
+export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id template mancante" })
+    const tpl = signatureStore.getTemplateById(id)
+    if (!tpl) return res.status(404).json({ message: "Template non trovato" })
+    const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
+    if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
+    const base = fs.readFileSync(fp)
+    const out = await replaceLastPageWithPrivacyBytes(base)
+    fs.writeFileSync(fp, Buffer.from(out))
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function confirmSignature(req: Request, res: Response) {
   const token = String(req.params.token ?? "").trim()
   const signerToken = String(req.body?.signerToken ?? "").trim()

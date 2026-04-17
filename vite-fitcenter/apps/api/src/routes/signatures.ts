@@ -16,6 +16,7 @@ import {
   requestSignatureOtp,
   updateSignatureTemplateSlots,
   verifySignatureOtp,
+  replaceSignatureTemplateLastPagePrivacy,
 } from "../handlers/signatures.js"
 
 const upload = multer({
@@ -42,6 +43,7 @@ signaturesRouter.get("/admin/export-audit", requireAuth, requireAdmin, exportSig
 signaturesRouter.get("/admin/templates", requireAuth, listSignatureTemplates)
 signaturesRouter.post("/admin/templates", requireAuth, requireAdmin, upload.single("document"), createSignatureTemplate)
 signaturesRouter.put("/admin/templates/:id/slots", requireAuth, requireAdmin, updateSignatureTemplateSlots)
+signaturesRouter.put("/admin/templates/:id/replace-last-page-privacy", requireAuth, requireAdmin, replaceSignatureTemplateLastPagePrivacy)
 signaturesRouter.get("/admin/templates/:id/document", requireAuth, downloadSignatureTemplateDocument)
 signaturesRouter.delete("/admin/templates/:id", requireAuth, requireAdmin, deleteSignatureTemplate)
 

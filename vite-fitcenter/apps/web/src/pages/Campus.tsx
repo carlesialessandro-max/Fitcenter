@@ -338,6 +338,8 @@ export function Campus() {
         />
       ) : null}
 
+      {/* Quando lavoro per settimana, non mostro anche l'elenco completo sotto (evita doppio blocco). */}
+      {!(tab === "settimane" && weekKey) && (
       <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-800">
         <table className="w-full min-w-[1200px] text-left text-sm">
           <thead className="border-b border-zinc-800 bg-zinc-900/50">
@@ -465,6 +467,7 @@ export function Campus() {
           </tbody>
         </table>
       </div>
+      )}
 
       {(patchCliente.isPending || patchWeek.isPending) && (
         <div className="mt-3 text-xs text-zinc-500">Salvataggio...</div>

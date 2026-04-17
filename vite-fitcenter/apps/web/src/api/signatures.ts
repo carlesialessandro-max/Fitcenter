@@ -13,6 +13,8 @@ export const signaturesApi = {
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
   updateTemplateLayout: (id: string, input: { slots: SignatureSlot[]; fields?: SignatureField[] }) =>
     api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, input),
+  replaceTemplateLastPagePrivacy: (id: string) =>
+    api.put<{ ok: true }>(`/signatures/admin/templates/${encodeURIComponent(id)}/replace-last-page-privacy`, {}),
   getTemplateDocument: async (id: string) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const res = await fetch(`${API_BASE}/signatures/admin/templates/${encodeURIComponent(id)}/document`, {

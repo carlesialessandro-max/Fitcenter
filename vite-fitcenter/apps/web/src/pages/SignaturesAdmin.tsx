@@ -286,6 +286,29 @@ export function SignaturesAdmin() {
     }
   }
 
+  async function onReplaceLastPagePrivacy() {
+    if (!templateId) return
+    if (
+      !globalThis.confirm(
+        "Sostituire l'ultima pagina del template con la nuova Informativa/Clausole (senza cambiare i puntamenti delle altre pagine)?"
+      )
+    ) {
+      return
+    }
+    setErr(null)
+    setMsg(null)
+    try {
+      await signaturesApi.replaceTemplateLastPagePrivacy(templateId)
+      setMsg("Ultima pagina aggiornata (privacy/clausole).")
+      // Forzo refresh anteprima: cambio pagina e ritorno (trigger useEffect).
+      const curr = previewPage
+      setPreviewPage(1)
+      if (curr !== 1) setTimeout(() => setPreviewPage(curr), 0)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    }
+  }
+
   function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current || pageHeightPdf <= 0 || pageWidthPdf <= 0) return
     const rect = canvasRef.current.getBoundingClientRect()
@@ -643,6 +666,15 @@ export function SignaturesAdmin() {
                 className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
               >
                 {slotsBusy ? "Salvataggio..." : "Salva posizioni sul template"}
+              </button>
+              <button
+                type="button"
+                onClick={onReplaceLastPagePrivacy}
+                disabled={!templateId}
+                className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+                title="Aggiorna solo l’ultima pagina del PDF template"
+              >
+                Sostituisci ultima pagina (Privacy)
               </button>
             </div>
           </>
