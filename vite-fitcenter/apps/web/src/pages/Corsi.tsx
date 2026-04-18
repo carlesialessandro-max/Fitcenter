@@ -163,6 +163,48 @@ function hasAccessToday(p: PrenotazioneCorsoRow, giornoIso: string): boolean {
   return !!d && d === giornoIso
 }
 
+/** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
+function localYmd(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${mo}-${day}`
+}
+
+function hhmmToMinutes(hhmm: string | undefined): number | null {
+  if (!hhmm?.trim()) return null
+  const m = /^(\d{1,2})[:.](\d{2})/.exec(hhmm.trim())
+  if (!m) return null
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null
+  return h * 60 + min
+}
+
+/** Ora dell’ultimo accesso se coincide con il giorno del corso (fuso locale). */
+function getUltimoAccessoInfo(
+  p: PrenotazioneCorsoRow,
+  giornoIso: string
+): { timeLabel: string | null; minutes: number | null } {
+  const raw = p.dataUltimoAcesso ?? (p.raw as any)?.DataUltimoAcesso
+  if (raw == null) return { timeLabel: null, minutes: null }
+  const d = raw instanceof Date ? raw : new Date(raw as string)
+  if (Number.isNaN(d.getTime())) return { timeLabel: null, minutes: null }
+  if (localYmd(d) !== giornoIso) return { timeLabel: null, minutes: null }
+  const mins = d.getHours() * 60 + d.getMinutes()
+  const hh = String(d.getHours()).padStart(2, "0")
+  const mm = String(d.getMinutes()).padStart(2, "0")
+  return { timeLabel: `${hh}:${mm}`, minutes: mins }
+}
+
+/** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */
+function possibileUscitaAnticipata(g: CorsoGroup, p: PrenotazioneCorsoRow): boolean {
+  const end = hhmmToMinutes(g.oraFine)
+  const acc = getUltimoAccessoInfo(p, g.giorno).minutes
+  if (end == null || acc == null) return false
+  return acc < end
+}
+
 function hasWhatsAppableContacts(g: CorsoGroup): boolean {
   for (const p of g.partecipanti) {
     const raw = (p.sms ?? "").trim()
@@ -241,6 +283,19 @@ export function Corsi() {
     if (!q) return gruppi
     return gruppi.filter((g) => g.servizio.toLocaleLowerCase().includes(q))
   }, [gruppi, search])
+
+  /** Quante prenotazioni (corsi distinti) ha lo stesso partecipante nello stesso giorno. */
+  const prenotazioniPerPartecipante = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const g of gruppi) {
+      if (g.giorno !== giorno) continue
+      g.partecipanti.forEach((p, idx) => {
+        const k = participantStableKey(p, idx)
+        m.set(k, (m.get(k) ?? 0) + 1)
+      })
+    }
+    return m
+  }, [gruppi, giorno])
   const totalePartecipanti = useMemo(
     () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
     [gruppi]
@@ -591,6 +646,9 @@ export function Corsi() {
                         const okAccesso = hasAccessToday(p, g.giorno)
                         const okAppello = isAppelloChecked(g.key, p, idx)
                         const presente = okAccesso || okAppello
+                        const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
+                        const uscitaAnt = possibileUscitaAnticipata(g, p)
+                        const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                         return (
                           <div key={idx} className="px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
@@ -606,6 +664,28 @@ export function Corsi() {
                                 <div className="mt-0.5 text-xs text-zinc-400">
                                   Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
                                 </div>
+                                {accessoInfo.timeLabel || uscitaAnt || nCorsiOggi > 1 ? (
+                                  <div className="mt-1 flex flex-wrap gap-1 text-[10px] leading-tight">
+                                    {accessoInfo.timeLabel ? (
+                                      <span className="rounded border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-sky-200">
+                                        Ultimo accesso {accessoInfo.timeLabel}
+                                      </span>
+                                    ) : null}
+                                    {uscitaAnt ? (
+                                      <span
+                                        className="rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-amber-200"
+                                        title="Passaggio in palestra prima della fine della lezione: possibile uscita anticipata o altro corso dopo."
+                                      >
+                                        Possibile uscita anticipata
+                                      </span>
+                                    ) : null}
+                                    {nCorsiOggi > 1 ? (
+                                      <span className="rounded border border-zinc-600 bg-zinc-800/80 px-1.5 py-0.5 text-zinc-400">
+                                        {nCorsiOggi} corsi oggi
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                               <div className="flex shrink-0 items-center gap-2">
                                 <button
@@ -646,6 +726,7 @@ export function Corsi() {
                         <tr className="border-b border-zinc-800 bg-zinc-950/40">
                           <th className="px-5 py-3 font-medium text-zinc-400">#</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Presente</th>
+                          <th className="px-5 py-3 font-medium text-zinc-400">Accesso / uscita</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
                           <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
@@ -667,6 +748,9 @@ export function Corsi() {
                           const okAccesso = hasAccessToday(p, g.giorno)
                           const okAppello = isAppelloChecked(g.key, p, idx)
                           const presente = okAccesso || okAppello
+                          const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
+                          const uscitaAnt = possibileUscitaAnticipata(g, p)
+                          const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                           return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
                               <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
@@ -689,6 +773,26 @@ export function Corsi() {
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
                                   } ${okAccesso ? "cursor-not-allowed opacity-90" : ""}`}
                                 />
+                              </td>
+                              <td className="max-w-[11rem] px-5 py-3 align-top text-xs text-zinc-400">
+                                <div className="flex flex-col gap-1">
+                                  {accessoInfo.timeLabel ? (
+                                    <span className="text-sky-200/95">{accessoInfo.timeLabel}</span>
+                                  ) : (
+                                    <span className="text-zinc-600">—</span>
+                                  )}
+                                  {uscitaAnt ? (
+                                    <span
+                                      className="inline-flex w-fit rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
+                                      title="Passaggio prima della fine lezione: possibile uscita anticipata o altro corso dopo."
+                                    >
+                                      Uscita anticipata?
+                                    </span>
+                                  ) : null}
+                                  {nCorsiOggi > 1 ? (
+                                    <span className="text-[10px] text-zinc-500">{nCorsiOggi} corsi oggi</span>
+                                  ) : null}
+                                </div>
                               </td>
                               <td className="px-5 py-3 font-medium text-zinc-100">
                                 {nome}

@@ -186,6 +186,14 @@ function getCassaMovimentiViewName(): string {
   return raw
 }
 
+/** Vista log applicativo (es. RVW_LogUtenti): DataOperazione, AppLogDescrizione, IDUtente, Cognome, Nome. */
+function getLogUtentiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_LOG_UTENTI ?? "RVW_LogUtenti").trim()
+  if (!raw) return "RVW_LogUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_LogUtenti"
+  return raw
+}
+
 async function resolvePrenotazioniViewName(): Promise<string> {
   const preferred = getPrenotazioniViewName()
   const candidates = [
@@ -603,7 +611,7 @@ function idParamType(id: string): { type: typeof sql.Int | typeof sql.VarChar; v
 }
 
 /** Se idConsultant è "312,352,73" restituisce [312,352,73]; altrimenti [id] singolo. */
-function parseConsultantIds(idConsultant: string): number[] {
+export function parseConsultantIds(idConsultant: string): number[] {
   const parts = idConsultant.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !Number.isNaN(n))
   if (parts.length > 0) return parts
   const single = parseInt(idConsultant.trim(), 10)
@@ -2273,6 +2281,79 @@ export async function getReportConteggiAndamento(
   } catch (e) {
     if (strict) throw e
     return ZERI_CONTEGGI_REPORT
+  }
+}
+
+const ZERO_CROSS_LOG = { ok: false as const, rows: [] as { idVenditore: number; cnt: number }[] }
+
+/**
+ * Conteggi "passaggio a CROSS" da log gestionale: righe in RVW_LogUtenti con modifica tipo abbonamento
+ * e testo che contiene CROSS, aggregate per ID venditore (stessa view di `getReportConteggiAndamento`).
+ * Attribuzione: ultima iscrizione (IDIscrizione DESC) del cliente collegato al log.
+ */
+export async function getCrossAbbonamentiDaLogByVenditore(
+  from: string,
+  to: string
+): Promise<{ ok: true; rows: { idVenditore: number; cnt: number }[] } | typeof ZERO_CROSS_LOG> {
+  const p = await getPool()
+  if (!p) return ZERO_CROSS_LOG
+  const viewCfg = getViewVenditoreAbbonamento()
+  if (!viewCfg) return ZERO_CROSS_LOG
+  const tblA = getAbbonamentiTableName()
+  const tblU = defaultTables.clienti
+  const logName = getLogUtentiViewName()
+  const lq = qualifySqlObject(logName)
+  const colId = viewCfg.colId
+  const colJoin = viewCfg.colJoin
+  const strict = (process.env.GESTIONALE_LOG_CROSS_STRICT ?? "true").toLowerCase() !== "false"
+  try {
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    const r = await req.query(
+      `;WITH LF AS (
+        SELECT
+          L.[IDUtente],
+          L.[Cognome],
+          L.[Nome],
+          L.[DataOperazione],
+          L.[AppLogDescrizione]
+        FROM ${lq.query} L
+        WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
+          AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
+          AND (
+            L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
+            OR L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
+          )
+          AND UPPER(L.[AppLogDescrizione]) LIKE N'%CROSS%'
+      )
+      SELECT x._vid AS idVenditore, COUNT(*) AS cnt
+      FROM LF
+      CROSS APPLY (
+        SELECT TOP 1 v.[${colId}] AS _vid
+        FROM [${tblU}] u
+        INNER JOIN [${tblA}] a ON a.[IDUtente] = u.[IDUtente]
+        INNER JOIN [${viewCfg.view}] v ON v.[${colJoin}] = a.[IDIscrizione]
+        WHERE (
+            (LF.[IDUtente] IS NOT NULL AND u.[IDUtente] = LF.[IDUtente])
+            OR (
+              (LF.[IDUtente] IS NULL OR LTRIM(RTRIM(CAST(LF.[IDUtente] AS NVARCHAR(64)))) = N'')
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(LF.[Cognome], N''))))
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(LF.[Nome], N''))))
+            )
+          )
+          AND v.[${colId}] IS NOT NULL
+        ORDER BY a.[IDIscrizione] DESC
+      ) x
+      GROUP BY x._vid`
+    )
+    const recordset = (r.recordset ?? []) as Record<string, unknown>[]
+    const rows = recordset.map((row) => ({
+      idVenditore: Number(row.idVenditore ?? row.IDVenditore ?? row.IdVenditore ?? 0) || 0,
+      cnt: Number(row.cnt ?? row.Cnt ?? 0) || 0,
+    })).filter((row) => row.idVenditore > 0)
+    return { ok: true, rows }
+  } catch (e) {
+    if (strict) throw e
+    return ZERO_CROSS_LOG
   }
 }
 

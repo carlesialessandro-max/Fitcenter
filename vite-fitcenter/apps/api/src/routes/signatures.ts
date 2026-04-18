@@ -18,6 +18,9 @@ import {
   verifySignatureOtp,
   replaceSignatureTemplateLastPagePrivacy,
   appendSignatureTemplatePrivacyPage,
+  getSignaturePrivacyPageText,
+  putSignaturePrivacyPageText,
+  resetSignaturePrivacyPageText,
 } from "../handlers/signatures.js"
 
 const upload = multer({
@@ -41,6 +44,9 @@ signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
 signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
 signaturesRouter.delete("/admin/:id", requireAuth, deleteSignatureRequest)
 signaturesRouter.get("/admin/export-audit", requireAuth, requireAdmin, exportSignatureAudit)
+signaturesRouter.get("/admin/privacy-page-text", requireAuth, requireAdmin, getSignaturePrivacyPageText)
+signaturesRouter.put("/admin/privacy-page-text", requireAuth, requireAdmin, putSignaturePrivacyPageText)
+signaturesRouter.post("/admin/privacy-page-text/reset", requireAuth, requireAdmin, resetSignaturePrivacyPageText)
 signaturesRouter.get("/admin/templates", requireAuth, listSignatureTemplates)
 signaturesRouter.post("/admin/templates", requireAuth, requireAdmin, upload.single("document"), createSignatureTemplate)
 signaturesRouter.put("/admin/templates/:id/slots", requireAuth, requireAdmin, updateSignatureTemplateSlots)

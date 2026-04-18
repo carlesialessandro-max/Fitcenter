@@ -256,6 +256,8 @@ export interface ReportConsulenteRow {
   clientiNuovi: number
   rinnovi: number
   invitoClienti: number
+  /** Passaggi a CROSS (log RVW_LogUtenti). */
+  crossAbbonamenti: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
@@ -271,6 +273,7 @@ export interface ReportConsulentiTotals {
   clientiNuovi: number
   rinnovi: number
   invitoClienti: number
+  crossAbbonamenti: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number

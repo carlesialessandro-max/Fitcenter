@@ -114,7 +114,7 @@ export async function getBudgetDepSig(): Promise<string> {
   const b = await getMeta("v:budget")
   // Bump quando cambia la logica SQL vendite (invalida cache dashboard/dettaglio su SQLite).
   // La cache resta persistente su app.sqlite; solo la chiave dep_sig cambia così i totali si ricalcolano.
-  const vendSig = "v19-escludi-durata-tesseramento-gare"
+  const vendSig = "v20-cross-da-rvw-log-utenti"
   return `${b}.${vendSig}`
 }
 

@@ -144,6 +144,18 @@ export function StampaReport() {
     y = autoTableNextY(doc, y + 25)
 
     doc.setFontSize(11)
+    doc.text("ABBONAMENTI CROSS (da log modifiche tipo)", 10, y)
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["Consulente", "Passaggi a CROSS (log)"]],
+      body: rows.map((r) => [r.consulenteNome, String(r.crossAbbonamenti ?? 0)]),
+      foot: [["TOTALE", String(totals.crossAbbonamenti ?? 0)]],
+      footStyles,
+      styles: { fontSize: 8 },
+    })
+    y = autoTableNextY(doc, y + 25)
+
+    doc.setFontSize(11)
     doc.text("CONTATTI TELEFONICI", 10, y)
     autoTable(doc, {
       startY: y + 2,

@@ -3,9 +3,24 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { readJson, writeJson } from "./persist.js"
 import type { SignatureRequest, SignatureTemplate } from "../types/esign.js"
+import { PRIVACY_PAGE_TEXT_DEFAULT, type PrivacyPageText } from "../signature/privacy-page-defaults.js"
 
 const FILE_NAME = "signature-requests.json"
 const TEMPLATES_FILE = "signature-templates.json"
+const PRIVACY_PAGE_TEXT_FILE = "signature-privacy-page-text.json"
+
+function mergePrivacyPageText(partial: Partial<PrivacyPageText> | Record<string, unknown>): PrivacyPageText {
+  const p = partial as Record<string, unknown>
+  const s = (k: keyof PrivacyPageText) => (typeof p[k] === "string" ? (p[k] as string) : PRIVACY_PAGE_TEXT_DEFAULT[k])
+  return {
+    title1: s("title1"),
+    body1: s("body1"),
+    sig1: s("sig1"),
+    title2: s("title2"),
+    body2: s("body2"),
+    sig2: s("sig2"),
+  }
+}
 
 function resolveSignatureDir(): string {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -118,6 +133,19 @@ export const signatureStore = {
     const [deleted] = rows.splice(idx, 1)
     writeTemplates(rows)
     return deleted ?? null
+  },
+
+  getPrivacyPageText(): PrivacyPageText {
+    const raw = readJson<Partial<PrivacyPageText>>(PRIVACY_PAGE_TEXT_FILE, {})
+    return mergePrivacyPageText(raw)
+  },
+
+  savePrivacyPageText(next: PrivacyPageText): void {
+    writeJson(PRIVACY_PAGE_TEXT_FILE, next)
+  },
+
+  resetPrivacyPageText(): void {
+    writeJson(PRIVACY_PAGE_TEXT_FILE, { ...PRIVACY_PAGE_TEXT_DEFAULT })
   },
 }
 

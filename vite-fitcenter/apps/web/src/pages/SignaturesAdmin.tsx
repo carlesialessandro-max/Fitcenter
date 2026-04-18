@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
-import type { SignatureField, SignatureSlot } from "@/types/signature"
+import type { PrivacyPageText, SignatureField, SignatureSlot } from "@/types/signature"
 import { DEFAULT_SIGNATURE_FIELDS, DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
 
 function fmtDate(v?: string) {
@@ -39,6 +39,8 @@ export function SignaturesAdmin() {
   const [pageHeightPdf, setPageHeightPdf] = useState(0)
   const [pageWidthPdf, setPageWidthPdf] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const [privacyDraft, setPrivacyDraft] = useState<PrivacyPageText | null>(null)
+  const [privacyBusy, setPrivacyBusy] = useState(false)
 
   const listQ = useQuery({
     queryKey: ["signatures-admin"],
@@ -50,6 +52,15 @@ export function SignaturesAdmin() {
     queryFn: () => signaturesApi.listTemplates(),
     enabled: true,
   })
+  const privacyTextQ = useQuery({
+    queryKey: ["signature-privacy-page-text"],
+    queryFn: () => signaturesApi.getPrivacyPageText(),
+    enabled: isAdmin,
+  })
+
+  useEffect(() => {
+    if (privacyTextQ.data) setPrivacyDraft({ ...privacyTextQ.data })
+  }, [privacyTextQ.data])
 
   useEffect(() => {
     if (!templateId) {
@@ -309,6 +320,40 @@ export function SignaturesAdmin() {
     }
   }
 
+  async function onSavePrivacyPageText() {
+    if (!privacyDraft) return
+    setErr(null)
+    setMsg(null)
+    setPrivacyBusy(true)
+    try {
+      const next = await signaturesApi.putPrivacyPageText(privacyDraft)
+      setPrivacyDraft(next)
+      setMsg("Testo pagina Privacy (PDF) salvato.")
+      await privacyTextQ.refetch()
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setPrivacyBusy(false)
+    }
+  }
+
+  async function onResetPrivacyPageText() {
+    if (!globalThis.confirm("Ripristinare il testo predefinito (FitCenter) per la pagina Privacy nei PDF?")) return
+    setErr(null)
+    setMsg(null)
+    setPrivacyBusy(true)
+    try {
+      const next = await signaturesApi.resetPrivacyPageText()
+      setPrivacyDraft(next)
+      setMsg("Testo privacy ripristinato ai valori predefiniti.")
+      await privacyTextQ.refetch()
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setPrivacyBusy(false)
+    }
+  }
+
   async function onAppendPrivacyPage() {
     if (!templateId) return
     if (!globalThis.confirm("Aggiungere una nuova pagina Privacy/Clausole in coda al template (senza modificare le pagine esistenti)?")) {
@@ -439,6 +484,88 @@ export function SignaturesAdmin() {
             >
               {exportBusy ? "Esportazione..." : "Esporta audit (JSON)"}
             </button>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <h2 className="text-sm font-medium text-zinc-300">Testo pagina Privacy (PDF)</h2>
+            <p className="mt-1 text-xs text-zinc-500">
+              Contenuto usato per &quot;Sostituisci ultima pagina (Privacy)&quot; e &quot;Aggiungi pagina Privacy&quot;. Salva prima di rigenerare il PDF
+              del template.
+            </p>
+            {privacyTextQ.isLoading || !privacyDraft ? (
+              <p className="mt-3 text-sm text-zinc-500">Caricamento testo…</p>
+            ) : (
+              <div className="mt-3 grid gap-3">
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Titolo sezione 1
+                  <input
+                    value={privacyDraft.title1}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, title1: e.target.value } : p))}
+                    className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Corpo 1 (usa righe vuote per paragrafi)
+                  <textarea
+                    value={privacyDraft.body1}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, body1: e.target.value } : p))}
+                    rows={5}
+                    className="resize-y rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-sm text-zinc-100"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Riga firma 1
+                  <input
+                    value={privacyDraft.sig1}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, sig1: e.target.value } : p))}
+                    className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Titolo sezione 2
+                  <input
+                    value={privacyDraft.title2}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, title2: e.target.value } : p))}
+                    className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Corpo 2
+                  <textarea
+                    value={privacyDraft.body2}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, body2: e.target.value } : p))}
+                    rows={8}
+                    className="resize-y rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 font-mono text-sm text-zinc-100"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs text-zinc-400">
+                  Riga firma 2
+                  <input
+                    value={privacyDraft.sig2}
+                    onChange={(e) => setPrivacyDraft((p) => (p ? { ...p, sig2: e.target.value } : p))}
+                    className="rounded border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={privacyBusy}
+                    onClick={() => void onSavePrivacyPageText()}
+                    className="rounded bg-amber-600 px-4 py-2 text-sm font-medium text-zinc-950 disabled:opacity-50"
+                  >
+                    {privacyBusy ? "Salvataggio…" : "Salva testo Privacy"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={privacyBusy}
+                    onClick={() => void onResetPrivacyPageText()}
+                    className="rounded border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+                  >
+                    Ripristina predefinito
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <form onSubmit={onCreateTemplate} className="mt-4 grid gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 md:grid-cols-4">

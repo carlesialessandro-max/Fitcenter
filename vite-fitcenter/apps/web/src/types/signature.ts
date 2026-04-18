@@ -65,3 +65,13 @@ export interface SignatureTemplate {
   fields?: SignatureField[]
 }
 
+/** Testo della pagina Privacy/Clausole generata nei PDF (admin). */
+export interface PrivacyPageText {
+  title1: string
+  body1: string
+  sig1: string
+  title2: string
+  body2: string
+  sig2: string
+}
+

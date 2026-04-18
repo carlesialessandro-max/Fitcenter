@@ -1,4 +1,11 @@
-import type { SignatureAdminItem, SignatureField, SignaturePublicInfo, SignatureSlot, SignatureTemplate } from "@/types/signature"
+import type {
+  PrivacyPageText,
+  SignatureAdminItem,
+  SignatureField,
+  SignaturePublicInfo,
+  SignatureSlot,
+  SignatureTemplate,
+} from "@/types/signature"
 import { getApiBase } from "./baseUrl"
 import { api } from "./client"
 
@@ -6,6 +13,10 @@ const API_BASE = getApiBase()
 const TOKEN_KEY = "fitcenter-token"
 
 export const signaturesApi = {
+  getPrivacyPageText: () => api.get<PrivacyPageText>("/signatures/admin/privacy-page-text"),
+  putPrivacyPageText: (body: PrivacyPageText) =>
+    api.put<PrivacyPageText>("/signatures/admin/privacy-page-text", body),
+  resetPrivacyPageText: () => api.post<PrivacyPageText>("/signatures/admin/privacy-page-text/reset", {}),
   listAdmin: () => api.get<SignatureAdminItem[]>("/signatures/admin"),
   exportAudit: () => api.get<{ rows: unknown[]; exportedAt: string }>("/signatures/admin/export-audit"),
   deleteAdmin: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}`),

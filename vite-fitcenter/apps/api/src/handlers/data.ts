@@ -1835,6 +1835,8 @@ type ReportRow = {
   clientiNuovi: number
   rinnovi: number
   invitoClienti: number
+  /** Passaggi a CROSS da dbo.RVW_LogUtenti (modifica tipo abbonamento + testo CROSS). */
+  crossAbbonamenti: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
@@ -2089,6 +2091,22 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const rows: ReportRow[] = []
     let cachedMockAbbonamenti: Abbonamento[] | null = null
 
+    const crossByVenditore = new Map<number, number>()
+    if (gestionaleSql.isGestionaleConfigured()) {
+      try {
+        const cr = await withReportConsulentiSqlTimeout(
+          gestionaleSql.getCrossAbbonamentiDaLogByVenditore(fromIso, toIso)
+        )
+        if (cr.ok) {
+          for (const row of cr.rows) {
+            crossByVenditore.set(row.idVenditore, row.cnt)
+          }
+        }
+      } catch {
+        /* report resta con cross a 0 */
+      }
+    }
+
     const ensureMockLoaded = async () => {
       if (cachedMockAbbonamenti) return cachedMockAbbonamenti
       const mod = await import("../data/mock-gestionale.js")
@@ -2248,6 +2266,13 @@ export async function getReportConsulenti(req: Request, res: Response) {
         invitoClienti = reportCountRows.filter((a) => isCategoriaInvitoAbb(a)).length
       }
 
+      let crossAbbonamenti = 0
+      if (idUtente) {
+        for (const vid of gestionaleSql.parseConsultantIds(idUtente)) {
+          crossAbbonamenti += crossByVenditore.get(vid) ?? 0
+        }
+      }
+
       rows.push({
         consulenteNome,
         vendite: Math.round(vendite * 100) / 100,
@@ -2258,6 +2283,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         clientiNuovi,
         rinnovi,
         invitoClienti,
+        crossAbbonamenti,
         oreLavorate: Math.round(oreLavorate * 10) / 10,
         oreAttese,
         percentualeOre,
@@ -2273,6 +2299,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const sumNuovi = rows.reduce((s, r) => s + r.clientiNuovi, 0)
     const sumRin = rows.reduce((s, r) => s + r.rinnovi, 0)
     const sumInv = rows.reduce((s, r) => s + r.invitoClienti, 0)
+    const sumCross = rows.reduce((s, r) => s + r.crossAbbonamenti, 0)
     const sumOre = rows.reduce((s, r) => s + r.oreLavorate, 0)
     const scost = Math.round((sumV - sumB) * 100) / 100
     const pctB = sumB > 0 ? Math.round((sumV / sumB) * 1000) / 10 : 0
@@ -2300,6 +2327,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         clientiNuovi: sumNuovi,
         rinnovi: sumRin,
         invitoClienti: sumInv,
+        crossAbbonamenti: sumCross,
         oreLavorate: Math.round(sumOre * 10) / 10,
         oreAttese: oreAtteseRiga,
         percentualeOre: pctOre,
