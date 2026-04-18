@@ -309,6 +309,64 @@ export function SignaturesAdmin() {
     }
   }
 
+  async function onAppendPrivacyPage() {
+    if (!templateId) return
+    if (!globalThis.confirm("Aggiungere una nuova pagina Privacy/Clausole in coda al template (senza modificare le pagine esistenti)?")) {
+      return
+    }
+    setErr(null)
+    setMsg(null)
+    try {
+      await signaturesApi.appendTemplatePrivacyPage(templateId)
+      setMsg("Pagina Privacy aggiunta in coda al template.")
+      // Forzo refresh anteprima: vai all'ultima pagina (dopo refresh pageCount verrà aggiornato).
+      setPreviewPage(1)
+      setTimeout(() => setPreviewPage(Math.max(1, pageCount + 1)), 0)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    }
+  }
+
+  function duplicateSlotsFromPage1To(page: number) {
+    if (page <= 1) return
+    const base = slotsDraft.filter((s) => (s.page || 1) === 1)
+    if (base.length === 0) return
+    const existingIds = new Set(slotsDraft.map((s) => s.id))
+    let maxOrder = slotsDraft.reduce((m, s) => Math.max(m, s.order || 0), 0)
+    const clones: SignatureSlot[] = base.map((s) => {
+      const idBase = `${s.id}-p${page}`
+      let id = idBase
+      let n = 2
+      while (existingIds.has(id)) {
+        id = `${idBase}-${n++}`
+      }
+      existingIds.add(id)
+      maxOrder += 1
+      return { ...s, id, page, order: maxOrder, label: `${s.label} (p${page})` }
+    })
+    setSlotsDraft((prev) => [...prev, ...clones])
+  }
+
+  function duplicateFieldsFromPage1To(page: number) {
+    if (page <= 1) return
+    const base = fieldsDraft.filter((f) => (f.page || 1) === 1)
+    if (base.length === 0) return
+    const existingIds = new Set(fieldsDraft.map((f) => f.id))
+    let maxOrder = fieldsDraft.reduce((m, f) => Math.max(m, f.order || 0), 0)
+    const clones: SignatureField[] = base.map((f) => {
+      const idBase = `${f.id}-p${page}`
+      let id = idBase
+      let n = 2
+      while (existingIds.has(id)) {
+        id = `${idBase}-${n++}`
+      }
+      existingIds.add(id)
+      maxOrder += 1
+      return { ...f, id, page, order: maxOrder, label: `${f.label} (p${page})` }
+    })
+    setFieldsDraft((prev) => [...prev, ...clones])
+  }
+
   function onCanvasClick(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!canvasRef.current || pageHeightPdf <= 0 || pageWidthPdf <= 0) return
     const rect = canvasRef.current.getBoundingClientRect()
@@ -669,12 +727,30 @@ export function SignaturesAdmin() {
               </button>
               <button
                 type="button"
+                onClick={() => (editMode === "fields" ? duplicateFieldsFromPage1To(previewPage) : duplicateSlotsFromPage1To(previewPage))}
+                disabled={!templateId || previewPage <= 1}
+                className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+                title="Duplica tutti i puntamenti della pagina 1 sulla pagina corrente"
+              >
+                Duplica puntatori pag. 1 → pag. {previewPage}
+              </button>
+              <button
+                type="button"
                 onClick={onReplaceLastPagePrivacy}
                 disabled={!templateId}
                 className="ml-2 rounded border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
                 title="Aggiorna solo l’ultima pagina del PDF template"
               >
                 Sostituisci ultima pagina (Privacy)
+              </button>
+              <button
+                type="button"
+                onClick={onAppendPrivacyPage}
+                disabled={!templateId}
+                className="ml-2 rounded border border-emerald-700/60 bg-emerald-950/20 px-4 py-2 text-sm font-medium text-emerald-200 hover:bg-emerald-950/30 disabled:opacity-50"
+                title="Aggiunge una nuova pagina Privacy in fondo (utile per template da 1 pagina, es. ASI)"
+              >
+                Aggiungi pagina Privacy (in coda)
               </button>
             </div>
           </>

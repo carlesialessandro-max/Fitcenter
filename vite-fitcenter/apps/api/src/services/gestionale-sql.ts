@@ -1501,6 +1501,25 @@ function sqlWhereTipoOperazioneMovimentoVendita(alias: string): string {
   return s
 }
 
+/** Colonna vista: durata abbonamento (es. "TESSERAMENTO GARE" da escludere dai totali). */
+function colAbbonamentoDurataDescrizione(): string {
+  const raw = (process.env.GESTIONALE_VIEW_COL_ABBONAMENTO_DURATA_DESC ?? "AbbonamentoDurataDescrizione").trim()
+  const cleaned = raw.replace(/[\[\]]/g, "")
+  return /^[A-Za-z0-9_]+$/.test(cleaned) ? cleaned : "AbbonamentoDurataDescrizione"
+}
+
+/**
+ * Esclude righe con AbbondamentoDurataDescrizione = TESSERAMENTO GARE (gestionale).
+ * Disabilitabile con GESTIONALE_EXCLUDE_DURATA_TESSERAMENTO_GARE=false se la colonna non esiste nella view.
+ */
+function whereExcludeAbbonamentoDurataTesseramentoGare(alias = "R"): string {
+  if ((process.env.GESTIONALE_EXCLUDE_DURATA_TESSERAMENTO_GARE ?? "true").toLowerCase() === "false") return ""
+  const c = colAbbonamentoDurataDescrizione()
+  return `
+    AND UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${c}], N'')))) <> N'TESSERAMENTO GARE'
+  `
+}
+
 function whereEsclusioniVenditeView(alias = "R"): string {
   // Regola richiesta: "DANZA ADULTI" è un falso positivo (altra azienda).
   // La escludiamo ovunque si usi la logica vendite/report (dashboard + andamento).
@@ -1517,6 +1536,7 @@ function whereEsclusioniVenditeView(alias = "R"): string {
     AND NOT (
       ${macroNorm} LIKE '%FIN%' AND ${catNorm} LIKE '%ISCRIZIONE%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
     )
+    ${whereExcludeAbbonamentoDurataTesseramentoGare(alias)}
   `
 }
 
@@ -1578,10 +1598,12 @@ function sqlMovimentoAttribuitoConsulente(
   idWhereR: string,
   idParams: string
 ): string {
+  const dur = whereExcludeAbbonamentoDurataTesseramentoGare("R")
   return `(
     EXISTS (
       SELECT 1 FROM [${view}] R
       WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
+      ${dur}
     )
     OR ${sqlMovimentoAttribuitoIdsSuMovimento(idParams)}
   )`
@@ -2025,6 +2047,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereCategoriaDanzaAdulti}
+          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
        ),
        PerIscrizione AS (
          SELECT
@@ -2057,6 +2080,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereCategoriaDanzaAdulti}
+          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
        ),
        PerIscrizione AS (
          SELECT
@@ -2235,7 +2259,8 @@ export async function getReportConteggiAndamento(
       ${whereBase}
       ${consultantFilter}
       ${whereTesseramento}
-      ${whereCategorieEscluse}`
+      ${whereCategorieEscluse}
+      ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}`
     )
 
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined

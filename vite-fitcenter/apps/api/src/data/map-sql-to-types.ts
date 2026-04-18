@@ -86,8 +86,14 @@ function isTesseramentoRow(row: Record<string, unknown>): boolean {
   const abbonDesc = str(
     row.AbbonamentoDescrizione ?? row.abbonamentoDescrizione ?? row.Abbonamento ?? row.abbonamento ?? ""
   ).trim().toUpperCase()
+  const durataDesc = str(
+    row.AbbonamentoDurataDescrizione ?? row.abbonamentoDurataDescrizione ?? row.Abbonamento_Durata_Descrizione ?? ""
+  )
+    .trim()
+    .toUpperCase()
   const blob = `${macroDesc} ${catDesc} ${abbonDesc}`.replace(/\s+/g, " ").trim()
   const blobNorm = blob.replace(/[.\-_\s+]/g, "") // rimuove separatori per match robusti
+  if (durataDesc === "TESSERAMENTO GARE") return true
   // IDCategoria = 19: VARIE/TESSERAMENTI da escludere
   if (!Number.isNaN(idCategoria) && idCategoria === 19) return true
   if (catDesc === "TESSERAMENTI") return true

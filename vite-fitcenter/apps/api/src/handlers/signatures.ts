@@ -916,6 +916,49 @@ async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array): Promise<Ui
   return await doc.save()
 }
 
+async function appendPrivacyPageBytes(pdfBytes: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(pdfBytes)
+  const pages = doc.getPages()
+  if (pages.length === 0) return pdfBytes
+  const last = pages[pages.length - 1]
+  const { width, height } = last.getSize()
+
+  const page = doc.addPage([width, height])
+  const font = await doc.embedFont("Helvetica")
+  const bold = await doc.embedFont("Helvetica-Bold")
+
+  const marginX = 40
+  let y = height - 60
+  const sizeTitle = 12
+  const sizeBody = 10
+  const lh = 13
+  const maxW = width - marginX * 2
+
+  const drawWrapped = (text: string, isBold = false) => {
+    const lines = wrapMultilineText({ text, maxWidth: maxW, font: isBold ? bold : font, size: isBold ? sizeTitle : sizeBody })
+    for (const line of lines) {
+      if (y < 60) break
+      page.drawText(line, { x: marginX, y, size: isBold ? sizeTitle : sizeBody, font: isBold ? bold : font })
+      y -= isBold ? lh + 2 : lh
+    }
+    y -= 6
+  }
+
+  const t = privacyLastPageText()
+  drawWrapped(t.title1, true)
+  drawWrapped(t.body1, false)
+  y -= 10
+  page.drawText(t.sig1, { x: marginX, y, size: 10, font })
+  y -= 34
+
+  drawWrapped(t.title2, true)
+  drawWrapped(t.body2, false)
+  y -= 10
+  page.drawText(t.sig2, { x: marginX, y, size: 10, font })
+
+  return await doc.save()
+}
+
 export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res: Response) {
   try {
     const id = String(req.params.id ?? "").trim()
@@ -926,6 +969,23 @@ export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res:
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
     const out = await replaceLastPageWithPrivacyBytes(base)
+    fs.writeFileSync(fp, Buffer.from(out))
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function appendSignatureTemplatePrivacyPage(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id template mancante" })
+    const tpl = signatureStore.getTemplateById(id)
+    if (!tpl) return res.status(404).json({ message: "Template non trovato" })
+    const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
+    if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
+    const base = fs.readFileSync(fp)
+    const out = await appendPrivacyPageBytes(base)
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {
