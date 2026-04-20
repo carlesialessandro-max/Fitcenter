@@ -384,11 +384,13 @@ export function Corsi() {
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
   const canManageNoShow = canSendMessages
-  const debugCorsi = useMemo(() => {
+  const [debugCorsi, setDebugCorsi] = useState(false)
+
+  useEffect(() => {
     try {
-      return localStorage.getItem("fitcenter-debug-corsi") === "1"
+      setDebugCorsi(localStorage.getItem("fitcenter-debug-corsi") === "1")
     } catch {
-      return false
+      setDebugCorsi(false)
     }
   }, [])
 
@@ -924,6 +926,22 @@ export function Corsi() {
               className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30 sm:w-56"
             />
           </label>
+          {canManageNoShow ? (
+            <label className="flex items-center gap-2 text-xs text-zinc-400 sm:col-span-2 sm:justify-end">
+              <input
+                type="checkbox"
+                checked={debugCorsi}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setDebugCorsi(v)
+                  try {
+                    localStorage.setItem("fitcenter-debug-corsi", v ? "1" : "0")
+                  } catch {}
+                }}
+              />
+              Debug
+            </label>
+          ) : null}
         </div>
       </div>
 
