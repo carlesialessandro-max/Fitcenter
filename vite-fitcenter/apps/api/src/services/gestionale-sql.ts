@@ -2360,6 +2360,9 @@ export async function getCrossAbbonamentiDaLogByVenditore(
             L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
             OR L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
           )
+          -- Escludi tesseramenti / iscrizioni (non sono passaggi CROSS utili al report)
+          AND UPPER(L.[AppLogDescrizione]) NOT LIKE N'%TESSERAMENT%'
+          AND NOT (UPPER(L.[AppLogDescrizione]) LIKE N'%ASI%' AND UPPER(L.[AppLogDescrizione]) LIKE N'%ISCRIZIONE%')
           ${tokenWhere}
       )
       SELECT x._vid AS idVenditore, COUNT(*) AS cnt

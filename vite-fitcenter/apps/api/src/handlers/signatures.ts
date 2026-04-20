@@ -1134,11 +1134,14 @@ export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res:
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const prof = signatureStore.getPrivacyProfileById((tpl as any).privacyProfileId ?? "default")
+    // Permetti override temporaneo (UI) senza salvare layout template.
+    const overrideProfileId = String((req.body as any)?.privacyProfileId ?? "").trim()
+    const profileId = overrideProfileId || String((tpl as any).privacyProfileId ?? "default").trim() || "default"
+    const prof = signatureStore.getPrivacyProfileById(profileId)
     const out =
       prof?.pdfFileName && fs.existsSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName))
         ? await replaceLastPageWithPrivacyPdfBytes(base, fs.readFileSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName)))
-        : await replaceLastPageWithPrivacyBytes(base, privacyLastPageText((tpl as any).privacyProfileId))
+        : await replaceLastPageWithPrivacyBytes(base, privacyLastPageText(profileId))
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {
@@ -1155,11 +1158,13 @@ export async function appendSignatureTemplatePrivacyPage(req: Request, res: Resp
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const prof = signatureStore.getPrivacyProfileById((tpl as any).privacyProfileId ?? "default")
+    const overrideProfileId = String((req.body as any)?.privacyProfileId ?? "").trim()
+    const profileId = overrideProfileId || String((tpl as any).privacyProfileId ?? "default").trim() || "default"
+    const prof = signatureStore.getPrivacyProfileById(profileId)
     const out =
       prof?.pdfFileName && fs.existsSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName))
         ? await appendPrivacyPdfPageBytes(base, fs.readFileSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName)))
-        : await appendPrivacyPageBytes(base, privacyLastPageText((tpl as any).privacyProfileId))
+        : await appendPrivacyPageBytes(base, privacyLastPageText(profileId))
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {

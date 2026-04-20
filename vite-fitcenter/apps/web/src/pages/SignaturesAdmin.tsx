@@ -374,7 +374,7 @@ export function SignaturesAdmin() {
     setErr(null)
     setMsg(null)
     try {
-      await signaturesApi.replaceTemplateLastPagePrivacy(templateId)
+      await signaturesApi.replaceTemplateLastPagePrivacy(templateId, { privacyProfileId: privacyProfileIdDraft || "default" })
       setMsg("Ultima pagina aggiornata (privacy/clausole).")
       // Forzo refresh anteprima: cambio pagina e ritorno (trigger useEffect).
       const curr = previewPage
@@ -427,7 +427,7 @@ export function SignaturesAdmin() {
     setErr(null)
     setMsg(null)
     try {
-      await signaturesApi.appendTemplatePrivacyPage(templateId)
+      await signaturesApi.appendTemplatePrivacyPage(templateId, { privacyProfileId: privacyProfileIdDraft || "default" })
       setMsg("Pagina Privacy aggiunta in coda al template.")
       // Forzo refresh anteprima: vai all'ultima pagina (dopo refresh pageCount verrà aggiornato).
       setPreviewPage(1)
