@@ -1,6 +1,8 @@
 import bcrypt from "bcrypt"
 import type { Role } from "../types/auth.js"
 import { isEmailOtpEnabled, maskEmail, sendLoginOtpEmail } from "../services/mail-otp.js"
+import { readJson, writeJson } from "./persist.js"
+import crypto from "crypto"
 
 export interface User {
   username: string
@@ -142,7 +144,34 @@ async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   return plain === stored
 }
 
-const sessions = new Map<string, { user: User; expiresAt: number }>()
+const SESSIONS_FILE = "auth-sessions.json"
+
+type SessionRow = { token: string; user: User; expiresAt: number }
+
+function loadSessionsFromDisk(): Map<string, { user: User; expiresAt: number }> {
+  const rows = readJson<SessionRow[]>(SESSIONS_FILE, [])
+  const m = new Map<string, { user: User; expiresAt: number }>()
+  const now = Date.now()
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const token = String((r as any)?.token ?? "").trim()
+    const expiresAt = Number((r as any)?.expiresAt ?? 0)
+    const user = (r as any)?.user as User | undefined
+    if (!token || !user || !Number.isFinite(expiresAt)) continue
+    if (expiresAt <= now) continue
+    m.set(token, { user, expiresAt })
+  }
+  return m
+}
+
+function saveSessionsToDisk(): void {
+  const rows: SessionRow[] = []
+  for (const [token, s] of sessions.entries()) {
+    rows.push({ token, user: s.user, expiresAt: s.expiresAt })
+  }
+  writeJson(SESSIONS_FILE, rows)
+}
+
+const sessions = loadSessionsFromDisk()
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000 // 24 ore
 
 const otpPending = new Map<
@@ -169,6 +198,7 @@ function toPublicUser(u: UserRecord): User {
 function issueSession(user: User): { token: string; user: User } {
   const t = token()
   sessions.set(t, { user, expiresAt: Date.now() + SESSION_TTL_MS })
+  saveSessionsToDisk()
   return { token: t, user }
 }
 
@@ -241,6 +271,7 @@ export const authStore = {
     if (!s) return null
     if (Date.now() > s.expiresAt) {
       sessions.delete(tokenValue)
+      saveSessionsToDisk()
       return null
     }
     return s.user
@@ -248,5 +279,6 @@ export const authStore = {
 
   logout(tokenValue: string): void {
     sessions.delete(tokenValue)
+    saveSessionsToDisk()
   },
 }
