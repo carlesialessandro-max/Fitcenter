@@ -497,8 +497,16 @@ export function Corsi() {
     if (!rangeQ.data || !accessiRangeQ.data) return []
     // index: giornoIso -> idKey -> access times
     const byDay = new Map<string, AccessIndex>()
-    for (const dayIso of new Set(all.map((x) => String(x.giorno ?? "").trim()).filter(Boolean))) {
-      const dayRows = (accessiRangeQ.data?.rows ?? []).filter((a) => {
+    // Index accessi per giorno (derivato da AccessiDataOra).
+    const allAccessRows = accessiRangeQ.data?.rows ?? []
+    const daySet = new Set<string>()
+    for (const a of allAccessRows) {
+      const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
+      if (!dt) continue
+      daySet.add(isoDayLocal(dt))
+    }
+    for (const dayIso of daySet) {
+      const dayRows = allAccessRows.filter((a) => {
         const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
         return dt ? isoDayLocal(dt) === dayIso : false
       })
@@ -510,7 +518,8 @@ export function Corsi() {
     >()
     for (const p of all) {
       if (p.inAttesa) continue
-      const day = String(p.giorno ?? "").trim()
+      const w = getLessonWindow(p)
+      const day = w.start ? isoDayLocal(w.start) : ""
       if (!day) continue
       const key = participantStableKey(p, 0)
       const email = (p.email ?? "").trim().toLowerCase()
@@ -950,14 +959,14 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
-                        const access = isPresentByAccess(accessIdxDay, p, g.giorno)
+                        const access = isPresentByAccess(accessIdxDay, p, giorno)
                         const okAccesso = access.present
                         const okAppello = isAppelloChecked(g.key, p, idx)
                         const presente = okAccesso || okAppello
                         const accessoInfo = access.entry
                           ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                           : { timeLabel: null, minutes: null }
-                        const uscitaAnt = possibileUscitaAnticipata(g, p)
+                        const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p)
                         const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                         return (
                           <div key={idx} className="px-4 py-3">
@@ -1061,14 +1070,14 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
-                          const access = isPresentByAccess(accessIdxDay, p, g.giorno)
+                          const access = isPresentByAccess(accessIdxDay, p, giorno)
                           const okAccesso = access.present
                           const okAppello = isAppelloChecked(g.key, p, idx)
                           const presente = okAccesso || okAppello
                           const accessoInfo = access.entry
                             ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                             : { timeLabel: null, minutes: null }
-                          const uscitaAnt = possibileUscitaAnticipata(g, p)
+                          const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p)
                           const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                           return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
