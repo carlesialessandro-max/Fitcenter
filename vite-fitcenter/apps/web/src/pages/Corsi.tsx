@@ -384,6 +384,13 @@ export function Corsi() {
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
   const canManageNoShow = canSendMessages
+  const debugCorsi = useMemo(() => {
+    try {
+      return localStorage.getItem("fitcenter-debug-corsi") === "1"
+    } catch {
+      return false
+    }
+  }, [])
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["prenotazioni-corsi", giorno],
@@ -555,6 +562,33 @@ export function Corsi() {
     out.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name) || a.email.localeCompare(b.email))
     return out.filter((x) => x.count >= 3)
   }, [rangeQ.data, accessiRangeQ.data, giorno])
+
+  function debugPresence(p: PrenotazioneCorsoRow): string {
+    const raw = (p.raw ?? {}) as any
+    const stable = participantStableKey(p, 0)
+    const w = getLessonWindow(p)
+    const accessTimes = stable.startsWith("id:") ? (accessIdxDay.get(stable) ?? []) : []
+    const accessCount = accessTimes.length
+    const firstAccess = accessTimes[0]
+    const lastAccess = accessCount > 0 ? accessTimes[accessCount - 1] : undefined
+    const startIso = w.start ? w.start.toISOString() : "null"
+    const endIso = w.end ? w.end.toISOString() : "null"
+    const rawStart = String(raw?.DataInizioPrenotazioneIscrizione ?? raw?.InizioPrenotazioneIscrizione ?? raw?.DataInizio ?? "")
+    const rawEnd = String(raw?.DataFinePrenotazioneIscrizione ?? raw?.DataFine ?? "")
+    const accessRawSample = String((accessiDayQ.data?.rows?.[0] as any)?.raw?.AccessiDataOra ?? "")
+    return [
+      `DBG giorno=${giorno}`,
+      `stable=${stable}`,
+      `rawStart=${rawStart || "—"}`,
+      `rawEnd=${rawEnd || "—"}`,
+      `start=${startIso}`,
+      `end=${endIso}`,
+      `accessCount=${accessCount}`,
+      `firstAccess=${firstAccess ? firstAccess.toISOString() : "—"}`,
+      `lastAccess=${lastAccess ? lastAccess.toISOString() : "—"}`,
+      `sampleAccessRaw=${accessRawSample || "—"}`,
+    ].join(" | ")
+  }
 
   useEffect(() => {
     try {
@@ -999,6 +1033,11 @@ export function Corsi() {
                                 <div className="mt-0.5 text-xs text-zinc-400">
                                   Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
                                 </div>
+                                {debugCorsi ? (
+                                  <div className="mt-1 text-[10px] text-zinc-600" title={debugPresence(p)}>
+                                    DBG
+                                  </div>
+                                ) : null}
                                 {accessoInfo.timeLabel || uscitaAnt || nCorsiOggi > 1 ? (
                                   <div className="mt-1 flex flex-wrap gap-1 text-[10px] leading-tight">
                                     {accessoInfo.timeLabel ? (
@@ -1120,6 +1159,11 @@ export function Corsi() {
                                   ) : (
                                     <span className="text-zinc-600">—</span>
                                   )}
+                                  {debugCorsi ? (
+                                    <span className="text-[10px] text-zinc-600" title={debugPresence(p)}>
+                                      DBG
+                                    </span>
+                                  ) : null}
                                   {uscitaAnt ? (
                                     <span
                                       className="inline-flex w-fit rounded border border-amber-500/35 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-200"
