@@ -205,6 +205,19 @@ function parseDateAny(val: unknown): Date | null {
   if (!s) return null
   // Supporta formato IT dd/MM/yyyy HH:mm(:ss) o HH.mm(.ss)
   const sNorm = s.replace(/(\d{1,2})\.(\d{2})(?:\.(\d{2}))?$/, (_m, h, mi, ss) => `${h}:${mi}${ss ? `:${ss}` : ""}`)
+  // Supporta formato SQL: YYYY-MM-DD HH:mm:ss(.ms) oppure YYYY-MM-DD HH.mm.ss(.ms)
+  const sql = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?(?:\.(\d{1,3}))?$/.exec(sNorm)
+  if (sql) {
+    const yyyy = Number(sql[1])
+    const mm = Number(sql[2])
+    const dd = Number(sql[3])
+    const hh = Number(sql[4] ?? 0)
+    const mi = Number(sql[5] ?? 0)
+    const ss = Number(sql[6] ?? 0)
+    const ms = Number((sql[7] ?? "0").padEnd(3, "0"))
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?)?$/.exec(sNorm)
   if (m) {
     const dd = Number(m[1])
@@ -220,11 +233,8 @@ function parseDateAny(val: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function isoDayLocal(d: Date): string {
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${mo}-${day}`
+function isoDayUtc(d: Date): string {
+  return d.toISOString().slice(0, 10)
 }
 
 function getLessonWindow(p: PrenotazioneCorsoRow): { start: Date | null; end: Date | null } {
@@ -251,7 +261,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     if (!id) continue
     const dt = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (!dt) continue
-    if (isoDayLocal(dt) !== giornoIso) continue
+    if (isoDayUtc(dt) !== giornoIso) continue
     const k = `id:${id}`
     const list = m.get(k) ?? []
     list.push(dt)
@@ -272,7 +282,7 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   const w = getLessonWindow(p)
   if (!w.start) return { present: false, entry: null, exit: null }
   // Day guard
-  if (isoDayLocal(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
+  if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
   const startMs = w.start.getTime()
   const endMs = (w.end ?? w.start).getTime()
   let entry: Date | null = null
@@ -504,12 +514,12 @@ export function Corsi() {
     for (const a of allAccessRows) {
       const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
       if (!dt) continue
-      daySet.add(isoDayLocal(dt))
+      daySet.add(isoDayUtc(dt))
     }
     for (const dayIso of daySet) {
       const dayRows = allAccessRows.filter((a) => {
         const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
-        return dt ? isoDayLocal(dt) === dayIso : false
+        return dt ? isoDayUtc(dt) === dayIso : false
       })
       byDay.set(dayIso, buildAccessIndexForDay(dayRows, dayIso))
     }
@@ -520,7 +530,7 @@ export function Corsi() {
     for (const p of all) {
       if (p.inAttesa) continue
       const w = getLessonWindow(p)
-      const day = w.start ? isoDayLocal(w.start) : ""
+      const day = w.start ? isoDayUtc(w.start) : ""
       if (!day) continue
       const key = participantStableKey(p, 0)
       const email = (p.email ?? "").trim().toLowerCase()
