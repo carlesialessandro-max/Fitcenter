@@ -17,6 +17,14 @@ export type PrenotazioneCorsoRow = {
   raw: Record<string, unknown>
 }
 
+export type AccessoUtenteRow = {
+  cognome?: string
+  nome?: string
+  dataEntrata?: string
+  dataUscita?: string
+  raw: Record<string, unknown>
+}
+
 export const prenotazioniApi = {
   listPrenotazioni: (giorno?: string) => {
     const qs = giorno ? `?giorno=${encodeURIComponent(giorno)}` : ""
@@ -28,6 +36,12 @@ export const prenotazioniApi = {
     const qs = `?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`
     return api.get<{ rows: PrenotazioneCorsoRow[]; meta?: { fromSql?: boolean; from?: string; to?: string; days?: number; count?: number } }>(
       `/prenotazioni/prenotazioni-range${qs}`
+    )
+  },
+  listAccessiRange: (params: { from: string; to: string }) => {
+    const qs = `?from=${encodeURIComponent(params.from)}&to=${encodeURIComponent(params.to)}`
+    return api.get<{ rows: AccessoUtenteRow[]; meta?: { fromSql?: boolean; from?: string; to?: string; days?: number; count?: number } }>(
+      `/prenotazioni/accessi-range${qs}`
     )
   },
   notifyEmail: (body: { giorno: string; groupKey: string; subject: string; text: string }) =>

@@ -3,6 +3,7 @@ import { requireAdminOrCorsi, requireAdminOrCorsiOrIstruttore, requireAuth } fro
 import { getPrenotazioniCorsi } from "../handlers/prenotazioni.js"
 import { postNotifyPrenotazioniCorsi } from "../handlers/prenotazioniNotify.js"
 import { getPrenotazioniCorsiRange } from "../handlers/prenotazioniRange.js"
+import { getAccessiUtentiRange } from "../handlers/accessiRange.js"
 import { deleteCorsiNoShowBlock, listCorsiNoShowBlocks, postCorsiNoShowBlock, postCorsiNoShowNotifyAndBlock } from "../handlers/corsiNoShow.js"
 
 export const prenotazioniRouter = Router()
@@ -14,6 +15,9 @@ prenotazioniRouter.get("/prenotazioni", requireAdminOrCorsiOrIstruttore, getPren
 
 // GET /api/prenotazioni/prenotazioni-range?from=YYYY-MM-DD&to=YYYY-MM-DD
 prenotazioniRouter.get("/prenotazioni-range", requireAdminOrCorsiOrIstruttore, getPrenotazioniCorsiRange)
+
+// GET /api/prenotazioni/accessi-range?from=YYYY-MM-DD&to=YYYY-MM-DD
+prenotazioniRouter.get("/accessi-range", requireAdminOrCorsiOrIstruttore, getAccessiUtentiRange)
 
 // POST /api/prenotazioni/notify-email  { giorno, groupKey, subject, text }
 prenotazioniRouter.post("/notify-email", requireAdminOrCorsi, postNotifyPrenotazioniCorsi)

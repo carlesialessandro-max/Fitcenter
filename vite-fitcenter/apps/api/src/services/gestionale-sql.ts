@@ -194,6 +194,14 @@ function getLogUtentiViewName(): string {
   return raw
 }
 
+/** Vista accessi utenti (es. RVW_AccessiUtenti): Nome utente, data/ora entrata+uscita. */
+function getAccessiUtentiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_ACCESSI_UTENTI ?? "RVW_AccessiUtenti").trim()
+  if (!raw) return "RVW_AccessiUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_AccessiUtenti"
+  return raw
+}
+
 async function resolvePrenotazioniViewName(): Promise<string> {
   const preferred = getPrenotazioniViewName()
   const candidates = [
@@ -938,6 +946,35 @@ function sqlDateEqualsFastExpr(col: string, param: string): string {
   const c = bracketCol(col)
   const p = `CAST(${param} AS DATE)`
   return `TRY_CONVERT(date, ${c}) = ${p}`
+}
+
+function sqlDateBetweenFastExpr(col: string, fromParam: string, toParam: string): string {
+  const c = bracketCol(col)
+  const f = `CAST(${fromParam} AS DATE)`
+  const t = `CAST(${toParam} AS DATE)`
+  return `TRY_CONVERT(date, ${c}) >= ${f} AND TRY_CONVERT(date, ${c}) <= ${t}`
+}
+
+function sqlDateBetweenExpr(col: string, fromParam: string, toParam: string): string {
+  const c = bracketCol(col)
+  const s = `CAST(${c} AS NVARCHAR(256))`
+  const f = `CAST(${fromParam} AS DATE)`
+  const t = `CAST(${toParam} AS DATE)`
+  const parsed = `
+    COALESCE(
+      TRY_CONVERT(date, ${c}),
+      TRY_CONVERT(date, ${s}, 23),
+      TRY_CONVERT(date, ${s}, 103),
+      TRY_CONVERT(date, LEFT(${s}, 10), 23),
+      TRY_CONVERT(date, LEFT(${s}, 10), 103),
+      TRY_CONVERT(
+        date,
+        SUBSTRING(${s}, NULLIF(PATINDEX('%[0-9][0-9]/[0-9][0-9]/[0-9][0-9][0-9][0-9]%', ${s}), 0), 10),
+        103
+      )
+    )
+  `
+  return `(${parsed}) >= ${f} AND (${parsed}) <= ${t}`
 }
 
 function bracketCol(col: string): string {
@@ -2330,21 +2367,8 @@ export async function getCrossAbbonamentiDaLogByVenditore(
   const colJoin = viewCfg.colJoin
   const strict = (process.env.GESTIONALE_LOG_CROSS_STRICT ?? "true").toLowerCase() !== "false"
   try {
-    const tokensRaw = (process.env.GESTIONALE_LOG_CROSS_TOKENS ?? "GYM-GYM,CROSS").trim()
-    const tokens = tokensRaw
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .slice(0, 12)
-    const reqBase = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
-    let req = reqBase
-    tokens.forEach((t, i) => {
-      req = req.input(`tok${i}`, sql.NVarChar(200), `%${t}%`)
-    })
-    const tokenWhere =
-      tokens.length > 0
-        ? ` AND (${tokens.map((_, i) => `L.[AppLogDescrizione] LIKE @tok${i}`).join(" OR ")})`
-        : ""
+    // Opzione A: tutti i cambi tipo abbonamento (esclusi tesseramenti), senza token dedicati.
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     const r = await req.query(
       `;WITH LF AS (
         SELECT
@@ -2363,7 +2387,6 @@ export async function getCrossAbbonamentiDaLogByVenditore(
           -- Escludi tesseramenti / iscrizioni (non sono passaggi CROSS utili al report)
           AND UPPER(L.[AppLogDescrizione]) NOT LIKE N'%TESSERAMENT%'
           AND NOT (UPPER(L.[AppLogDescrizione]) LIKE N'%ASI%' AND UPPER(L.[AppLogDescrizione]) LIKE N'%ISCRIZIONE%')
-          ${tokenWhere}
       )
       SELECT x._vid AS idVenditore, COUNT(*) AS cnt
       FROM LF
@@ -2394,6 +2417,45 @@ export async function getCrossAbbonamentiDaLogByVenditore(
   } catch (e) {
     if (strict) throw e
     return ZERO_CROSS_LOG
+  }
+}
+
+export type AccessoUtenteRow = {
+  cognome?: string
+  nome?: string
+  dataEntrata?: string
+  dataUscita?: string
+  raw: Record<string, unknown>
+}
+
+export async function queryAccessiUtenti(params: { from: string; to: string }): Promise<AccessoUtenteRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getAccessiUtentiViewName()
+  const vq = qualifySqlObject(view).query
+  const strict = (process.env.ACCESSI_STRICT ?? "true").toLowerCase() !== "false"
+  try {
+    const dateCandidates = ["DataEntrata", "DataIngresso", "Entrata", "DataOraEntrata", "DataOraIngresso", "Data"]
+    const dateCol = await pickBestDateColForView(view, dateCandidates)
+    // Se non troviamo una colonna data affidabile, evitiamo query enorme.
+    if (!dateCol) return []
+    const req = p.request().input("from", sql.VarChar(10), params.from).input("to", sql.VarChar(10), params.to)
+    const r = await req.query(
+      `SELECT * FROM ${vq}
+       WHERE (${sqlDateBetweenFastExpr(dateCol, "@from", "@to")} OR ${sqlDateBetweenExpr(dateCol, "@from", "@to")});`
+    )
+    const recordset = (r.recordset ?? []) as Record<string, unknown>[]
+    const pick = (row: Record<string, unknown>, keys: string[]) => firstNonEmpty(row, keys)
+    return recordset.map((row) => ({
+      cognome: pick(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome", "Nome utente", "NomeUtente"]),
+      nome: pick(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]),
+      dataEntrata: firstNonEmpty(row, ["Entrata", "DataEntrata", "DataIngresso", "Ingresso", "DataOraEntrata", "DataOraIngresso", "Data"]),
+      dataUscita: firstNonEmpty(row, ["Uscita", "DataUscita", "DataOraUscita", "UscitaOra"]),
+      raw: row,
+    }))
+  } catch (e) {
+    if (strict) throw e
+    return []
   }
 }
 

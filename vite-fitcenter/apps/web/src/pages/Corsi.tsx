@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { prenotazioniApi, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
+import { prenotazioniApi, type AccessoUtenteRow, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
@@ -127,6 +127,12 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       const wx = x.inAttesa ? 1 : 0
       const wy = y.inAttesa ? 1 : 0
       if (wx !== wy) return wx - wy
+      // In lista d'attesa, ordina per data prenotazione (non alfabetico).
+      if (x.inAttesa && y.inAttesa) {
+        const dx = x.prenotatoIl ? new Date(x.prenotatoIl).getTime() : Number.POSITIVE_INFINITY
+        const dy = y.prenotatoIl ? new Date(y.prenotatoIl).getTime() : Number.POSITIVE_INFINITY
+        if (Number.isFinite(dx) && Number.isFinite(dy) && dx !== dy) return dx - dy
+      }
       const cx = (x.cognome ?? "").localeCompare(y.cognome ?? "")
       if (cx) return cx
       return (x.nome ?? "").localeCompare(y.nome ?? "")
@@ -166,12 +172,103 @@ function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
   const nome = `${p.cognome ?? ""}|${p.nome ?? ""}`.trim()
   const em = (p.email ?? "").trim().toLowerCase()
   const sms = (p.sms ?? "").trim().replace(/\s+/g, "")
-  return `fallback:${nome}|${em}|${sms}|${idx}`
+  // Nota: non includiamo più idx per rendere la chiave stabile tra viste/ordinamenti (serve anche per analisi mese).
+  // Possibili collisioni sono rare (nome+email/sms).
+  void idx
+  return `fallback:${nome}|${em}|${sms}`
 }
 
-function hasAccessToday(p: PrenotazioneCorsoRow, giornoIso: string): boolean {
-  const d = toIsoDay(p.dataUltimoAcesso) ?? toIsoDay((p.raw as any)?.DataUltimoAcesso)
-  return !!d && d === giornoIso
+function groupKeyForRow(p: PrenotazioneCorsoRow): string {
+  const servizio = getCorsoTitolo(p)
+  const giorno = (p.giorno ?? "").trim() || "—"
+  const oraInizio = (p.oraInizio ?? "").trim() || ""
+  const oraFine = (p.oraFine ?? "").trim() || ""
+  return `${servizio}__${giorno}__${oraInizio}__${oraFine}`
+}
+
+function readAppelloForDay(giornoIso: string): Record<string, true> {
+  try {
+    const raw = localStorage.getItem(`fitcenter-corsi-appello:${giornoIso}`)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, true>
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function normNameKey(cognome?: string, nome?: string): string {
+  const c = String(cognome ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+  const n = String(nome ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\s+/g, " ")
+  return `${c}|${n}`.trim()
+}
+
+function parseToDate(val: unknown): Date | null {
+  if (val == null) return null
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val
+  const s = String(val).trim()
+  if (!s) return null
+  // Supporta: "DD/MM/YYYY HH:mm(:ss)" (export italiano) e ISO.
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s)
+  if (m) {
+    const dd = Number(m[1])
+    const mm = Number(m[2])
+    const yyyy = Number(m[3])
+    const hh = m[4] != null ? Number(m[4]) : 0
+    const mi = m[5] != null ? Number(m[5]) : 0
+    const ss = m[6] != null ? Number(m[6]) : 0
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+type AccessInterval = { inMin: number; outMin: number | null }
+
+function buildAccessIndex(rows: AccessoUtenteRow[]): Map<string, Map<string, AccessInterval[]>> {
+  // dayIso -> nameKey -> intervals[]
+  const byDay = new Map<string, Map<string, AccessInterval[]>>()
+  for (const r of rows) {
+    const inD = parseToDate(r.dataEntrata ?? (r.raw as any)?.DataEntrata ?? (r.raw as any)?.Entrata ?? (r.raw as any)?.Ingresso)
+    if (!inD) continue
+    const dayIso = toIsoDay(inD)
+    if (!dayIso) continue
+    const key = normNameKey(r.cognome ?? (r.raw as any)?.Cognome, r.nome ?? (r.raw as any)?.Nome)
+    if (!key) continue
+    const outD = parseToDate(r.dataUscita ?? (r.raw as any)?.DataUscita ?? (r.raw as any)?.Uscita)
+    const inMin = inD.getHours() * 60 + inD.getMinutes()
+    const outMin = outD && localYmd(outD) === dayIso ? outD.getHours() * 60 + outD.getMinutes() : null
+    const dayMap = byDay.get(dayIso) ?? new Map<string, AccessInterval[]>()
+    const list = dayMap.get(key) ?? []
+    list.push({ inMin, outMin })
+    dayMap.set(key, list)
+    byDay.set(dayIso, dayMap)
+  }
+  return byDay
+}
+
+function isPresentAtCourseStart(accessIdx: Map<string, Map<string, AccessInterval[]>>, p: PrenotazioneCorsoRow, giornoIso: string, oraInizio?: string): boolean {
+  const start = hhmmToMinutes(oraInizio)
+  if (start == null) return false
+  const key = normNameKey(p.cognome, p.nome)
+  if (!key) return false
+  const dayMap = accessIdx.get(giornoIso)
+  const intervals = dayMap?.get(key) ?? []
+  for (const it of intervals) {
+    if (it.inMin <= start && (it.outMin == null || it.outMin >= start)) return true
+  }
+  return false
 }
 
 /** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
@@ -271,6 +368,15 @@ export function Corsi() {
     staleTime: 30_000,
   })
 
+  const accessiDayQ = useQuery({
+    queryKey: ["accessi-utenti", giorno],
+    queryFn: () => prenotazioniApi.listAccessiRange({ from: giorno, to: giorno }),
+    enabled,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
+  })
+
   const blocksQ = useQuery({
     queryKey: ["corsi-no-show-blocks"],
     queryFn: () => prenotazioniApi.listNoShowBlocks(),
@@ -283,6 +389,17 @@ export function Corsi() {
     queryFn: () => {
       const r = monthRangeFromDay(giorno)
       return prenotazioniApi.listPrenotazioniRange({ from: r.from, to: r.to })
+    },
+    enabled: false,
+    retry: false,
+    staleTime: 0,
+  })
+
+  const accessiRangeQ = useQuery({
+    queryKey: ["accessi-utenti-range", giorno],
+    queryFn: () => {
+      const r = monthRangeFromDay(giorno)
+      return prenotazioniApi.listAccessiRange({ from: r.from, to: r.to })
     },
     enabled: false,
     retry: false,
@@ -325,6 +442,7 @@ export function Corsi() {
 
   const rows = data?.rows ?? []
   const gruppi = useMemo(() => groupByCorso(rows), [rows])
+  const accessIdxDay = useMemo(() => buildAccessIndex(accessiDayQ.data?.rows ?? []), [accessiDayQ.data])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
     if (!q) return gruppi
@@ -361,19 +479,26 @@ export function Corsi() {
   const noShowCandidates = useMemo(() => {
     const r = monthRangeFromDay(giorno)
     const all = rangeQ.data?.rows ?? []
+    const accessIdx = buildAccessIndex(accessiRangeQ.data?.rows ?? [])
+    if (!rangeQ.data || !accessiRangeQ.data) return []
     const counts = new Map<string, number>()
     for (const p of all) {
       if (p.inAttesa) continue
       const email = (p.email ?? "").trim().toLowerCase()
       if (!email) continue
-      const d = toIsoDay(p.dataUltimoAcesso) ?? toIsoDay((p.raw as any)?.DataUltimoAcesso)
-      const presente = !!d && d === (p.giorno ?? "").trim()
+      const day = String(p.giorno ?? "").trim()
+      if (!day) continue
+      const gk = groupKeyForRow(p)
+      const pk = participantStableKey(p, 0)
+      const appello = readAppelloForDay(day)
+      const presenteAppello = !!appello[`${gk}::${pk}`]
+      const presente = presenteAppello || isPresentAtCourseStart(accessIdx, p, day, p.oraInizio)
       if (!presente) counts.set(email, (counts.get(email) ?? 0) + 1)
     }
     const out = [...counts.entries()].map(([email, count]) => ({ email, count, monthKey: r.monthKey }))
     out.sort((a, b) => b.count - a.count || a.email.localeCompare(b.email))
     return out.filter((x) => x.count >= 3)
-  }, [rangeQ.data, giorno])
+  }, [rangeQ.data, accessiRangeQ.data, giorno])
 
   useEffect(() => {
     try {
@@ -457,20 +582,22 @@ export function Corsi() {
             <div>
               <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
               <div className="mt-0.5 text-xs text-zinc-500">
-                Regola: conta prenotazioni senza accesso nello stesso giorno. Soglia: 3 nel mese.
+                Regola: conta prenotazioni senza accesso che copre l’ora di inizio corso. Soglia: 3 nel mese.
               </div>
             </div>
             <button
               type="button"
-              onClick={() => void rangeQ.refetch()}
-              disabled={rangeQ.isFetching}
+              onClick={() => void Promise.all([rangeQ.refetch(), accessiRangeQ.refetch()])}
+              disabled={rangeQ.isFetching || accessiRangeQ.isFetching}
               className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/30 disabled:opacity-50"
             >
-              {rangeQ.isFetching ? "Analisi…" : "Analizza mese"}
+              {rangeQ.isFetching || accessiRangeQ.isFetching ? "Analisi…" : "Analizza mese"}
             </button>
           </div>
-          {rangeQ.isError ? (
-            <p className="mt-2 text-sm text-red-400">Errore analisi: {(rangeQ.error as Error).message}</p>
+          {rangeQ.isError || accessiRangeQ.isError ? (
+            <p className="mt-2 text-sm text-red-400">
+              Errore analisi: {String(((rangeQ.error as Error) ?? (accessiRangeQ.error as Error))?.message ?? "Errore")}
+            </p>
           ) : null}
           {!rangeQ.data ? null : noShowCandidates.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-500">Nessun cliente con 3+ no-show nel mese selezionato.</p>
@@ -777,7 +904,7 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
-                        const okAccesso = hasAccessToday(p, g.giorno)
+                        const okAccesso = isPresentAtCourseStart(accessIdxDay, p, g.giorno, g.oraInizio ?? p.oraInizio)
                         const okAppello = isAppelloChecked(g.key, p, idx)
                         const presente = okAccesso || okAppello
                         const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
@@ -885,7 +1012,7 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
-                          const okAccesso = hasAccessToday(p, g.giorno)
+                          const okAccesso = isPresentAtCourseStart(accessIdxDay, p, g.giorno, g.oraInizio ?? p.oraInizio)
                           const okAppello = isAppelloChecked(g.key, p, idx)
                           const presente = okAccesso || okAppello
                           const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
