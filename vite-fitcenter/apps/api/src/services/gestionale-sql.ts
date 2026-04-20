@@ -2274,8 +2274,11 @@ export async function getReportConteggiAndamento(
     // Li contiamo da tabella/vista abbonamenti (es. RVW_AbbonamentiUtenti) join view venditore.
     // Nota DB: su RVW_AbbonamentiUtenti la data è spesso DataOperazione (non DataInizio).
     const tblA = getAbbonamentiTableName()
-    const upperMacroAExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], A.[${colMacro}], A.[MacroCategoriaAbbonamentoDescrizione], ''))))`
-    const normMacroANoSpace = `REPLACE(REPLACE(${upperMacroAExpr}, N' ', N''), N'_', N'')`
+    // In RVW_AbbonamentiUtenti: MacroCategoriaAbbonamentoDescrizione può essere "NUOVI",
+    // mentre CategoriaAbbonamentoDescrizione è "INVITO" (come da export gestionale).
+    const upperCatAbbExpr =
+      "UPPER(LTRIM(RTRIM(COALESCE(A.[CategoriaAbbonamentoDescrizione], A.[CategoriaDescrizione], R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], ''))))"
+    const normCatAbbNoSpace = `REPLACE(REPLACE(${upperCatAbbExpr}, N' ', N''), N'_', N'')`
     const upperAbbDescExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDescrizione], ''))))"
     const upperDurataExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDurataDescrizione], ''))))"
     const totExpr = "TRY_CONVERT(float, COALESCE(A.[Totale], A.[Importo], 0))"
@@ -2286,7 +2289,7 @@ export async function getReportConteggiAndamento(
        WHERE CAST(A.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
          AND CAST(A.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
          AND ${totExpr} = 0
-         AND ${normMacroANoSpace} = N'INVITO'
+         AND ${normCatAbbNoSpace} = N'INVITO'
          AND ${upperAbbDescExpr} = N'PROVE'
          AND ${upperDurataExpr} = N'SETTIMANA PROVA INGRESSI'` +
         (idConsultant && ids.length > 0 ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})` : "")
