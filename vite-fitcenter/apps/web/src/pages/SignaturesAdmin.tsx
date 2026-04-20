@@ -234,7 +234,10 @@ export function SignaturesAdmin() {
           const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
           pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
         }
-        const task = pdfjsLib.getDocument({ data: templatePdfBytes })
+        // pdf.js può "detached" l'ArrayBuffer quando lo passa al worker.
+        // Quindi passiamo sempre una copia fresca.
+        const dataCopy = templatePdfBytes.slice(0)
+        const task = pdfjsLib.getDocument({ data: dataCopy })
         const pdf = await task.promise
         if (cancelled) return
         setPageCount(pdf.numPages)

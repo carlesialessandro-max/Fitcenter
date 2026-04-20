@@ -256,21 +256,29 @@ function buildAccessIndex(rows: AccessoUtenteRow[]): Map<string, Map<string, Acc
     const id =
       String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? raw?.IDCliente ?? raw?.IdCliente ?? raw?.ClienteId ?? "")
         .trim()
-    const key =
-      id
-        ? `id:${id}`
-        : normNameKey(
-            r.cognome ?? raw?.Cognome ?? raw?.CognomeUtente ?? raw?.UtenteCognome,
-            r.nome ?? raw?.Nome ?? raw?.NomeUtente ?? raw?.UtenteNome
-          )
-    if (!key) continue
+    const idKey = id ? `id:${id}` : ""
+    const nameKey = normNameKey(
+      r.cognome ?? raw?.Cognome ?? raw?.CognomeUtente ?? raw?.UtenteCognome,
+      r.nome ?? raw?.Nome ?? raw?.NomeUtente ?? raw?.UtenteNome
+    )
+    // Inseriamo sempre anche il match per nome (quando presente), così il pallino verde funziona
+    // anche se la vista accessi non espone ID oppure l'ID non coincide con la vista prenotazioni.
+    if (!idKey && !nameKey) continue
     const outD = parseToDate(r.dataUscita ?? (r.raw as any)?.DataUscita ?? (r.raw as any)?.Uscita)
     const inMin = inD.getHours() * 60 + inD.getMinutes()
     const outMin = outD && localYmd(outD) === dayIso ? outD.getHours() * 60 + outD.getMinutes() : null
     const dayMap = byDay.get(dayIso) ?? new Map<string, AccessInterval[]>()
-    const list = dayMap.get(key) ?? []
-    list.push({ inMin, outMin })
-    dayMap.set(key, list)
+    const interval = { inMin, outMin }
+    if (idKey) {
+      const listId = dayMap.get(idKey) ?? []
+      listId.push(interval)
+      dayMap.set(idKey, listId)
+    }
+    if (nameKey) {
+      const listName = dayMap.get(nameKey) ?? []
+      listName.push(interval)
+      dayMap.set(nameKey, listName)
+    }
     byDay.set(dayIso, dayMap)
   }
   return byDay
@@ -278,13 +286,12 @@ function buildAccessIndex(rows: AccessoUtenteRow[]): Map<string, Map<string, Acc
 
 function isPresentAtCourseStart(accessIdx: Map<string, Map<string, AccessInterval[]>>, p: PrenotazioneCorsoRow, giornoIso: string, oraInizio?: string): boolean {
   const start = hhmmToMinutes(oraInizio)
-  const key = normNameKey(p.cognome, p.nome)
-  // Se abbiamo un ID stabile, usa quello (match più affidabile del nome).
   const stable = participantStableKey(p, 0)
-  const k = stable.startsWith("id:") ? stable : key
-  if (!k) return false
+  const idKey = stable.startsWith("id:") ? stable : ""
+  const nameKey = normNameKey(p.cognome, p.nome)
+  if (!idKey && !nameKey) return false
   const dayMap = accessIdx.get(giornoIso)
-  const intervals = dayMap?.get(k) ?? []
+  const intervals = [...(idKey ? dayMap?.get(idKey) ?? [] : []), ...(nameKey ? dayMap?.get(nameKey) ?? [] : [])]
   // Se non abbiamo orario inizio corso, consideriamo presente se ha almeno un accesso nel giorno.
   if (start == null) return intervals.length > 0
   for (const it of intervals) {
