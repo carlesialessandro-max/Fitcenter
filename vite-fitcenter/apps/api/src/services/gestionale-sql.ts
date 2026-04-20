@@ -2436,7 +2436,17 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
   const vq = qualifySqlObject(view).query
   const strict = (process.env.ACCESSI_STRICT ?? "true").toLowerCase() !== "false"
   try {
-    const dateCandidates = ["DataEntrata", "DataIngresso", "Entrata", "DataOraEntrata", "DataOraIngresso", "Data"]
+    // Nel gestionale: vista accessi può esporre AccessiDataOra / AccessiData / AccessiOra.
+    const dateCandidates = [
+      "AccessiDataOra",
+      "AccessiData",
+      "DataEntrata",
+      "DataIngresso",
+      "Entrata",
+      "DataOraEntrata",
+      "DataOraIngresso",
+      "Data",
+    ]
     const dateCol = await pickBestDateColForView(view, dateCandidates)
     // Se non troviamo una colonna data affidabile, evitiamo query enorme.
     if (!dateCol) return []
@@ -2451,7 +2461,18 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
       idUtente: pick(row, ["IDUtente", "IdUtente", "UtenteId", "IDCliente", "IdCliente", "ClienteId", "IDAnagrafica", "IdAnagrafica", "AnagraficaId"]),
       cognome: pick(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome", "Nome utente", "NomeUtente"]),
       nome: pick(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]),
-      dataEntrata: firstNonEmpty(row, ["Entrata", "DataEntrata", "DataIngresso", "Ingresso", "DataOraEntrata", "DataOraIngresso", "Data"]),
+      dataEntrata: firstNonEmpty(row, [
+        "AccessiDataOra",
+        "DataEntrata",
+        "DataIngresso",
+        "Entrata",
+        "Ingresso",
+        "DataOraEntrata",
+        "DataOraIngresso",
+        "AccessiData",
+        "AccessiOra",
+        "Data",
+      ]),
       dataUscita: firstNonEmpty(row, ["Uscita", "DataUscita", "DataOraUscita", "UscitaOra"]),
       raw: row,
     }))

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { prenotazioniApi, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
+import { prenotazioniApi, type AccessoUtenteRow, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
@@ -198,6 +198,94 @@ function readAppelloForDay(giornoIso: string): Record<string, true> {
   }
 }
 
+function parseDateAny(val: unknown): Date | null {
+  if (val == null) return null
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val
+  const s = String(val).trim()
+  if (!s) return null
+  // Supporta formato IT dd/MM/yyyy HH:mm(:ss)
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s)
+  if (m) {
+    const dd = Number(m[1])
+    const mm = Number(m[2])
+    const yyyy = Number(m[3])
+    const hh = m[4] != null ? Number(m[4]) : 0
+    const mi = m[5] != null ? Number(m[5]) : 0
+    const ss = m[6] != null ? Number(m[6]) : 0
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function isoDayLocal(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${mo}-${day}`
+}
+
+function getLessonWindow(p: PrenotazioneCorsoRow): { start: Date | null; end: Date | null } {
+  const raw = (p.raw ?? {}) as any
+  const start =
+    parseDateAny(raw?.DataInizioPrenotazioneIscrizione) ??
+    parseDateAny(raw?.InizioPrenotazioneIscrizione) ??
+    parseDateAny(raw?.DataInizio) ??
+    null
+  const end =
+    parseDateAny(raw?.DataFinePrenotazioneIscrizione) ??
+    parseDateAny(raw?.DataFine) ??
+    null
+  return { start, end }
+}
+
+type AccessIndex = Map<string, Date[]> // idKey -> access times (Date)
+
+function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
+  const m = new Map<string, Date[]>()
+  for (const r of rows) {
+    const raw = (r.raw ?? {}) as any
+    const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
+    if (!id) continue
+    const dt = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
+    if (!dt) continue
+    if (isoDayLocal(dt) !== giornoIso) continue
+    const k = `id:${id}`
+    const list = m.get(k) ?? []
+    list.push(dt)
+    m.set(k, list)
+  }
+  for (const [k, list] of m.entries()) {
+    list.sort((a, b) => a.getTime() - b.getTime())
+    m.set(k, list)
+  }
+  return m
+}
+
+function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
+  const stable = participantStableKey(p, 0)
+  if (!stable.startsWith("id:")) return { present: false, entry: null, exit: null }
+  const times = accessIdx.get(stable) ?? []
+  if (times.length === 0) return { present: false, entry: null, exit: null }
+  const w = getLessonWindow(p)
+  if (!w.start) return { present: false, entry: null, exit: null }
+  // Day guard
+  if (isoDayLocal(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
+  const startMs = w.start.getTime()
+  const endMs = (w.end ?? w.start).getTime()
+  let entry: Date | null = null
+  let exit: Date | null = null
+  for (const t of times) {
+    const ms = t.getTime()
+    if (ms < startMs) continue
+    if (ms > endMs) break
+    if (!entry) entry = t
+    exit = t
+  }
+  return { present: !!entry, entry, exit }
+}
+
 /** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
 function localYmd(d: Date): string {
   const y = d.getFullYear()
@@ -313,6 +401,26 @@ export function Corsi() {
     staleTime: 0,
   })
 
+  const accessiDayQ = useQuery({
+    queryKey: ["accessi-utenti", giorno],
+    queryFn: () => prenotazioniApi.listAccessiRange({ from: giorno, to: giorno }),
+    enabled,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 30_000,
+  })
+
+  const accessiRangeQ = useQuery({
+    queryKey: ["accessi-utenti-range", giorno],
+    queryFn: () => {
+      const r = monthRangeFromDay(giorno)
+      return prenotazioniApi.listAccessiRange({ from: r.from, to: r.to })
+    },
+    enabled: false,
+    retry: false,
+    staleTime: 0,
+  })
+
   const notifyBlockMutation = useMutation({
     mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
@@ -349,6 +457,7 @@ export function Corsi() {
 
   const rows = data?.rows ?? []
   const gruppi = useMemo(() => groupByCorso(rows), [rows])
+  const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
     if (!q) return gruppi
@@ -385,7 +494,16 @@ export function Corsi() {
   const noShowCandidates = useMemo(() => {
     const r = monthRangeFromDay(giorno)
     const all = rangeQ.data?.rows ?? []
-    if (!rangeQ.data) return []
+    if (!rangeQ.data || !accessiRangeQ.data) return []
+    // index: giornoIso -> idKey -> access times
+    const byDay = new Map<string, AccessIndex>()
+    for (const dayIso of new Set(all.map((x) => String(x.giorno ?? "").trim()).filter(Boolean))) {
+      const dayRows = (accessiRangeQ.data?.rows ?? []).filter((a) => {
+        const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
+        return dt ? isoDayLocal(dt) === dayIso : false
+      })
+      byDay.set(dayIso, buildAccessIndexForDay(dayRows, dayIso))
+    }
     const counts = new Map<
       string,
       { key: string; email: string; name: string; count: number }
@@ -401,8 +519,9 @@ export function Corsi() {
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
       const presenteAppello = !!appello[`${gk}::${pk}`]
-      const presenteUltimoAccesso = getUltimoAccessoInfo(p, day).minutes != null
-      const presente = presenteAppello || presenteUltimoAccesso
+      const accIdx = byDay.get(day) ?? new Map()
+      const presenteAccessi = isPresentByAccess(accIdx, p, day).present
+      const presente = presenteAppello || presenteAccessi
       if (!presente) {
         const cur = counts.get(key) ?? { key, email, name, count: 0 }
         cur.count += 1
@@ -415,7 +534,7 @@ export function Corsi() {
     const out = [...counts.values()].map((x) => ({ ...x, monthKey: r.monthKey }))
     out.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name) || a.email.localeCompare(b.email))
     return out.filter((x) => x.count >= 3)
-  }, [rangeQ.data, giorno])
+  }, [rangeQ.data, accessiRangeQ.data, giorno])
 
   useEffect(() => {
     try {
@@ -509,21 +628,21 @@ export function Corsi() {
             <div>
               <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
               <div className="mt-0.5 text-xs text-zinc-500">
-                Regola: conta prenotazioni senza ultimo accesso nel giorno (badge “Ultimo accesso …”) né appello. Soglia: 3 nel mese.
+                Regola: conta prenotazioni senza accessi (AccessiDataOra) dentro la finestra lezione (DataInizio/FinePrenotazioneIscrizione) né appello. Soglia: 3 nel mese.
               </div>
             </div>
             <button
               type="button"
-              onClick={() => void rangeQ.refetch()}
+              onClick={() => void Promise.all([rangeQ.refetch(), accessiRangeQ.refetch()])}
               disabled={rangeQ.isFetching}
               className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/30 disabled:opacity-50"
             >
               {rangeQ.isFetching ? "Analisi…" : "Analizza mese"}
             </button>
           </div>
-          {rangeQ.isError ? (
+          {rangeQ.isError || accessiRangeQ.isError ? (
             <p className="mt-2 text-sm text-red-400">
-              Errore analisi: {String((rangeQ.error as Error)?.message ?? "Errore")}
+              Errore analisi: {String(((rangeQ.error as Error) ?? (accessiRangeQ.error as Error))?.message ?? "Errore")}
             </p>
           ) : null}
           {!rangeQ.data ? null : noShowCandidates.length === 0 ? (
@@ -831,10 +950,13 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
-                        const okAccesso = getUltimoAccessoInfo(p, g.giorno).minutes != null
+                        const access = isPresentByAccess(accessIdxDay, p, g.giorno)
+                        const okAccesso = access.present
                         const okAppello = isAppelloChecked(g.key, p, idx)
                         const presente = okAccesso || okAppello
-                        const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
+                        const accessoInfo = access.entry
+                          ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
+                          : { timeLabel: null, minutes: null }
                         const uscitaAnt = possibileUscitaAnticipata(g, p)
                         const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                         return (
@@ -939,10 +1061,13 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
-                          const okAccesso = getUltimoAccessoInfo(p, g.giorno).minutes != null
+                          const access = isPresentByAccess(accessIdxDay, p, g.giorno)
+                          const okAccesso = access.present
                           const okAppello = isAppelloChecked(g.key, p, idx)
                           const presente = okAccesso || okAppello
-                          const accessoInfo = getUltimoAccessoInfo(p, g.giorno)
+                          const accessoInfo = access.entry
+                            ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
+                            : { timeLabel: null, minutes: null }
                           const uscitaAnt = possibileUscitaAnticipata(g, p)
                           const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                           return (
