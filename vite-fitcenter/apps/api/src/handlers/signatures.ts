@@ -776,10 +776,13 @@ export async function createSignatureTemplate(req: Request, res: Response) {
   try {
     const f = req.file
     const name = String(req.body.name ?? "").trim()
+    const privacyProfileIdRaw = String(req.body.privacyProfileId ?? "").trim()
     if (!f) return res.status(400).json({ message: "PDF template obbligatorio" })
     if (!name) return res.status(400).json({ message: "Nome template obbligatorio" })
     const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
     if (!isPdf) return res.status(400).json({ message: "Caricare un PDF" })
+    const privacyProfileId =
+      privacyProfileIdRaw && signatureStore.getPrivacyProfileById(privacyProfileIdRaw) ? privacyProfileIdRaw : "default"
 
     const id = crypto.randomUUID()
     const ext = path.extname(f.originalname || "").toLowerCase() || ".pdf"
@@ -794,6 +797,7 @@ export async function createSignatureTemplate(req: Request, res: Response) {
       mimeType: "application/pdf",
       createdAt: nowIso(),
       active: true,
+      privacyProfileId,
       // Nuovo template: 1 firma di default (poi l'admin può aggiungere slot se necessario).
       slots: [{ id: "firma-1", label: "Firma", page: 1, x: 330, y: 90, width: 240, height: 80, order: 1 }],
       fields: ensureSignatureFields(null),
@@ -834,7 +838,15 @@ export async function updateSignatureTemplateSlots(req: Request, res: Response) 
         maxWidth: f.maxWidth != null ? Number(f.maxWidth) : undefined,
       }))
     : undefined
-  const next = signatureStore.updateTemplateById(id, (r) => ({ ...r, slots, fields: ensureSignatureFields(fields ?? (r as any).fields) }))
+  const privacyProfileIdRaw = String(req.body?.privacyProfileId ?? "").trim()
+  const privacyProfileId =
+    privacyProfileIdRaw && signatureStore.getPrivacyProfileById(privacyProfileIdRaw) ? privacyProfileIdRaw : (tpl as any).privacyProfileId ?? "default"
+  const next = signatureStore.updateTemplateById(id, (r) => ({
+    ...r,
+    slots,
+    fields: ensureSignatureFields(fields ?? (r as any).fields),
+    privacyProfileId,
+  }))
   if (!next) return res.status(500).json({ message: "Errore aggiornamento template" })
   res.json(next)
 }
@@ -867,8 +879,8 @@ export async function deleteSignatureTemplate(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
-function privacyLastPageText() {
-  return signatureStore.getPrivacyPageText()
+function privacyLastPageText(profileId?: string) {
+  return signatureStore.getPrivacyProfileText(profileId)
 }
 
 const MAX_PRIVACY_FIELD_LEN = 32_000
@@ -917,7 +929,52 @@ export async function resetSignaturePrivacyPageText(req: Request, res: Response)
   }
 }
 
-async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array): Promise<Uint8Array> {
+export async function listSignaturePrivacyProfiles(_req: Request, res: Response) {
+  res.json(signatureStore.listPrivacyProfiles())
+}
+
+export async function createSignaturePrivacyProfile(req: Request, res: Response) {
+  try {
+    const name = String(req.body?.name ?? "").trim()
+    const parsed = parsePrivacyPageBody(req)
+    if (!name) return res.status(400).json({ message: "Nome profilo obbligatorio" })
+    if (!parsed.ok) return res.status(400).json({ message: parsed.message })
+    const created = signatureStore.createPrivacyProfile({ name, text: parsed.text })
+    res.status(201).json(created)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function updateSignaturePrivacyProfile(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id profilo mancante" })
+    const name = String(req.body?.name ?? "").trim()
+    const parsed = parsePrivacyPageBody(req)
+    if (!name) return res.status(400).json({ message: "Nome profilo obbligatorio" })
+    if (!parsed.ok) return res.status(400).json({ message: parsed.message })
+    const updated = signatureStore.updatePrivacyProfile(id, { name, text: parsed.text })
+    if (!updated) return res.status(404).json({ message: "Profilo non trovato" })
+    res.json(updated)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function deleteSignaturePrivacyProfile(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id profilo mancante" })
+    const ok = signatureStore.deletePrivacyProfile(id)
+    if (!ok) return res.status(400).json({ message: "Impossibile eliminare questo profilo (forse è default o non esiste)" })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array, t: ReturnType<typeof privacyLastPageText>): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes)
   const pages = doc.getPages()
   if (pages.length === 0) return pdfBytes
@@ -948,7 +1005,6 @@ async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array): Promise<Ui
     y -= 6
   }
 
-  const t = privacyLastPageText()
   drawWrapped(t.title1, true)
   drawWrapped(t.body1, false)
   y -= 10
@@ -963,7 +1019,7 @@ async function replaceLastPageWithPrivacyBytes(pdfBytes: Uint8Array): Promise<Ui
   return await doc.save()
 }
 
-async function appendPrivacyPageBytes(pdfBytes: Uint8Array): Promise<Uint8Array> {
+async function appendPrivacyPageBytes(pdfBytes: Uint8Array, t: ReturnType<typeof privacyLastPageText>): Promise<Uint8Array> {
   const doc = await PDFDocument.load(pdfBytes)
   const pages = doc.getPages()
   if (pages.length === 0) return pdfBytes
@@ -991,7 +1047,6 @@ async function appendPrivacyPageBytes(pdfBytes: Uint8Array): Promise<Uint8Array>
     y -= 6
   }
 
-  const t = privacyLastPageText()
   drawWrapped(t.title1, true)
   drawWrapped(t.body1, false)
   y -= 10
@@ -1015,7 +1070,8 @@ export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res:
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const out = await replaceLastPageWithPrivacyBytes(base)
+    const t = privacyLastPageText((tpl as any).privacyProfileId)
+    const out = await replaceLastPageWithPrivacyBytes(base, t)
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {
@@ -1032,7 +1088,8 @@ export async function appendSignatureTemplatePrivacyPage(req: Request, res: Resp
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const out = await appendPrivacyPageBytes(base)
+    const t = privacyLastPageText((tpl as any).privacyProfileId)
+    const out = await appendPrivacyPageBytes(base, t)
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {

@@ -25,6 +25,8 @@ export interface SignatureTemplate {
   active: boolean
   slots: SignatureSlot[]
   fields?: SignatureField[]
+  /** Id profilo Privacy/Clausole da usare quando si genera l'ultima pagina (append/replace). */
+  privacyProfileId?: string
 }
 
 export interface SignatureSlot {

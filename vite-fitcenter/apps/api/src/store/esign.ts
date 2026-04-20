@@ -1,6 +1,7 @@
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import crypto from "crypto"
 import { readJson, writeJson } from "./persist.js"
 import type { SignatureRequest, SignatureTemplate } from "../types/esign.js"
 import { PRIVACY_PAGE_TEXT_DEFAULT, type PrivacyPageText } from "../signature/privacy-page-defaults.js"
@@ -8,6 +9,14 @@ import { PRIVACY_PAGE_TEXT_DEFAULT, type PrivacyPageText } from "../signature/pr
 const FILE_NAME = "signature-requests.json"
 const TEMPLATES_FILE = "signature-templates.json"
 const PRIVACY_PAGE_TEXT_FILE = "signature-privacy-page-text.json"
+const PRIVACY_PROFILES_FILE = "signature-privacy-profiles.json"
+
+export type PrivacyProfile = {
+  id: string
+  name: string
+  createdAt: string
+  text: PrivacyPageText
+}
 
 function mergePrivacyPageText(partial: Partial<PrivacyPageText> | Record<string, unknown>): PrivacyPageText {
   const p = partial as Record<string, unknown>
@@ -70,6 +79,32 @@ function updateById(id: string, updater: (row: SignatureRequest) => SignatureReq
   rows[idx] = next
   writeAll(rows)
   return next
+}
+
+function defaultPrivacyProfile(): PrivacyProfile {
+  return {
+    id: "default",
+    name: "Default",
+    createdAt: new Date().toISOString(),
+    text: { ...PRIVACY_PAGE_TEXT_DEFAULT },
+  }
+}
+
+function readPrivacyProfiles(): PrivacyProfile[] {
+  const rows = readJson<PrivacyProfile[]>(PRIVACY_PROFILES_FILE, [])
+  const list = Array.isArray(rows) ? rows : []
+  // Garantiamo sempre un profilo "default".
+  const hasDefault = list.some((p) => p && p.id === "default")
+  if (!hasDefault) {
+    const next = [defaultPrivacyProfile(), ...list.filter(Boolean)]
+    writeJson(PRIVACY_PROFILES_FILE, next)
+    return next
+  }
+  return list
+}
+
+function writePrivacyProfiles(rows: PrivacyProfile[]): void {
+  writeJson(PRIVACY_PROFILES_FILE, rows)
 }
 
 export const signatureStore = {
@@ -135,17 +170,91 @@ export const signatureStore = {
     return deleted ?? null
   },
 
+  /** Compat: testo privacy "globale" (profilo default). */
   getPrivacyPageText(): PrivacyPageText {
     const raw = readJson<Partial<PrivacyPageText>>(PRIVACY_PAGE_TEXT_FILE, {})
     return mergePrivacyPageText(raw)
   },
 
+  /** Compat: salva testo privacy "globale" (profilo default) + file legacy. */
   savePrivacyPageText(next: PrivacyPageText): void {
     writeJson(PRIVACY_PAGE_TEXT_FILE, next)
+    // Mantieni anche il profilo default allineato, se esiste.
+    const rows = readPrivacyProfiles()
+    const idx = rows.findIndex((p) => p.id === "default")
+    if (idx >= 0) {
+      rows[idx] = { ...rows[idx]!, text: next }
+      writePrivacyProfiles(rows)
+    }
   },
 
+  /** Compat: reset testo privacy "globale" (profilo default) + file legacy. */
   resetPrivacyPageText(): void {
     writeJson(PRIVACY_PAGE_TEXT_FILE, { ...PRIVACY_PAGE_TEXT_DEFAULT })
+    const rows = readPrivacyProfiles()
+    const idx = rows.findIndex((p) => p.id === "default")
+    if (idx >= 0) {
+      rows[idx] = { ...rows[idx]!, text: { ...PRIVACY_PAGE_TEXT_DEFAULT } }
+      writePrivacyProfiles(rows)
+    }
+  },
+
+  listPrivacyProfiles(): PrivacyProfile[] {
+    return readPrivacyProfiles()
+      .slice()
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+  },
+
+  getPrivacyProfileById(id: string): PrivacyProfile | null {
+    const x = String(id ?? "").trim()
+    if (!x) return null
+    return readPrivacyProfiles().find((p) => p.id === x) ?? null
+  },
+
+  /** Ritorna sempre un testo valido: profilo selezionato oppure default. */
+  getPrivacyProfileText(id?: string): PrivacyPageText {
+    const prof = id ? signatureStore.getPrivacyProfileById(id) : null
+    return prof?.text ?? signatureStore.getPrivacyProfileById("default")?.text ?? { ...PRIVACY_PAGE_TEXT_DEFAULT }
+  },
+
+  createPrivacyProfile(input: { name: string; text: PrivacyPageText }): PrivacyProfile {
+    const rows = readPrivacyProfiles()
+    const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    const next: PrivacyProfile = { id, name: input.name.trim() || "Privacy", createdAt: new Date().toISOString(), text: input.text }
+    rows.push(next)
+    writePrivacyProfiles(rows)
+    return next
+  },
+
+  updatePrivacyProfile(id: string, patch: { name?: string; text?: PrivacyPageText }): PrivacyProfile | null {
+    const rows = readPrivacyProfiles()
+    const idx = rows.findIndex((p) => p.id === id)
+    if (idx < 0) return null
+    const prev = rows[idx]!
+    // Il profilo default non si cancella, ma si può rinominare/modificare.
+    const next: PrivacyProfile = {
+      ...prev,
+      name: patch.name != null ? String(patch.name).trim() || prev.name : prev.name,
+      text: patch.text ?? prev.text,
+    }
+    rows[idx] = next
+    writePrivacyProfiles(rows)
+    // Mantieni file legacy allineato se tocchiamo "default".
+    if (id === "default" && patch.text) {
+      writeJson(PRIVACY_PAGE_TEXT_FILE, patch.text)
+    }
+    return next
+  },
+
+  deletePrivacyProfile(id: string): boolean {
+    const x = String(id ?? "").trim()
+    if (!x || x === "default") return false
+    const rows = readPrivacyProfiles()
+    const idx = rows.findIndex((p) => p.id === x)
+    if (idx < 0) return false
+    rows.splice(idx, 1)
+    writePrivacyProfiles(rows)
+    return true
   },
 }
 

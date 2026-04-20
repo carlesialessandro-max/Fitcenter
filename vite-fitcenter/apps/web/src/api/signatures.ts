@@ -1,4 +1,5 @@
 import type {
+  PrivacyProfile,
   PrivacyPageText,
   SignatureAdminItem,
   SignatureField,
@@ -17,12 +18,19 @@ export const signaturesApi = {
   putPrivacyPageText: (body: PrivacyPageText) =>
     api.put<PrivacyPageText>("/signatures/admin/privacy-page-text", body),
   resetPrivacyPageText: () => api.post<PrivacyPageText>("/signatures/admin/privacy-page-text/reset", {}),
+  listPrivacyProfiles: () => api.get<PrivacyProfile[]>("/signatures/admin/privacy-profiles"),
+  createPrivacyProfile: (body: { name: string; text: PrivacyPageText }) =>
+    api.post<PrivacyProfile>("/signatures/admin/privacy-profiles", body),
+  updatePrivacyProfile: (id: string, body: { name: string; text: PrivacyPageText }) =>
+    api.put<PrivacyProfile>(`/signatures/admin/privacy-profiles/${encodeURIComponent(id)}`, body),
+  deletePrivacyProfile: (id: string) =>
+    api.delete<{ ok: true }>(`/signatures/admin/privacy-profiles/${encodeURIComponent(id)}`),
   listAdmin: () => api.get<SignatureAdminItem[]>("/signatures/admin"),
   exportAudit: () => api.get<{ rows: unknown[]; exportedAt: string }>("/signatures/admin/export-audit"),
   deleteAdmin: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
-  updateTemplateLayout: (id: string, input: { slots: SignatureSlot[]; fields?: SignatureField[] }) =>
+  updateTemplateLayout: (id: string, input: { slots: SignatureSlot[]; fields?: SignatureField[]; privacyProfileId?: string }) =>
     api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, input),
   replaceTemplateLastPagePrivacy: (id: string) =>
     api.put<{ ok: true }>(`/signatures/admin/templates/${encodeURIComponent(id)}/replace-last-page-privacy`, {}),
@@ -69,11 +77,12 @@ export const signaturesApi = {
     }>
   },
 
-  createTemplate: async (body: { name: string; document: File }) => {
+  createTemplate: async (body: { name: string; document: File; privacyProfileId?: string }) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const fd = new FormData()
     fd.append("name", body.name)
     fd.append("document", body.document)
+    if (body.privacyProfileId) fd.append("privacyProfileId", body.privacyProfileId)
     const res = await fetch(`${API_BASE}/signatures/admin/templates`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,

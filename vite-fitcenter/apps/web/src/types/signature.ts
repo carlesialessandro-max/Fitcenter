@@ -63,6 +63,7 @@ export interface SignatureTemplate {
   active: boolean
   slots: SignatureSlot[]
   fields?: SignatureField[]
+  privacyProfileId?: string
 }
 
 /** Testo della pagina Privacy/Clausole generata nei PDF (admin). */
@@ -73,5 +74,12 @@ export interface PrivacyPageText {
   title2: string
   body2: string
   sig2: string
+}
+
+export interface PrivacyProfile {
+  id: string
+  name: string
+  createdAt: string
+  text: PrivacyPageText
 }
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
-import type { PrivacyPageText, SignatureField, SignatureSlot } from "@/types/signature"
+import type { PrivacyPageText, PrivacyProfile, SignatureField, SignatureSlot } from "@/types/signature"
 import { DEFAULT_SIGNATURE_FIELDS, DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
 
 function fmtDate(v?: string) {
@@ -41,6 +41,10 @@ export function SignaturesAdmin() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [privacyDraft, setPrivacyDraft] = useState<PrivacyPageText | null>(null)
   const [privacyBusy, setPrivacyBusy] = useState(false)
+  const [privacyProfileIdDraft, setPrivacyProfileIdDraft] = useState<string>("default")
+  const [newTemplatePrivacyProfileId, setNewTemplatePrivacyProfileId] = useState<string>("default")
+  const [newPrivacyProfileName, setNewPrivacyProfileName] = useState("")
+  const [newPrivacyProfileBusy, setNewPrivacyProfileBusy] = useState(false)
 
   const listQ = useQuery({
     queryKey: ["signatures-admin"],
@@ -52,6 +56,12 @@ export function SignaturesAdmin() {
     queryFn: () => signaturesApi.listTemplates(),
     enabled: true,
   })
+  const privacyProfilesQ = useQuery({
+    queryKey: ["signature-privacy-profiles"],
+    queryFn: () => signaturesApi.listPrivacyProfiles(),
+    enabled: isAdmin,
+    staleTime: 30_000,
+  })
   const privacyTextQ = useQuery({
     queryKey: ["signature-privacy-page-text"],
     queryFn: () => signaturesApi.getPrivacyPageText(),
@@ -62,6 +72,27 @@ export function SignaturesAdmin() {
     if (privacyTextQ.data) setPrivacyDraft({ ...privacyTextQ.data })
   }, [privacyTextQ.data])
 
+  async function onCreatePrivacyProfile() {
+    if (!isAdmin) return
+    if (!privacyDraft) return
+    if (!newPrivacyProfileName.trim()) return setErr("Nome profilo privacy obbligatorio")
+    setErr(null)
+    setMsg(null)
+    setNewPrivacyProfileBusy(true)
+    try {
+      const created = await signaturesApi.createPrivacyProfile({ name: newPrivacyProfileName.trim(), text: privacyDraft })
+      setMsg(`Profilo privacy creato: ${created.name}`)
+      setNewPrivacyProfileName("")
+      await privacyProfilesQ.refetch()
+      setNewTemplatePrivacyProfileId(created.id)
+      setPrivacyProfileIdDraft(created.id)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setNewPrivacyProfileBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (!templateId) {
       setSlotsDraft([])
@@ -69,6 +100,7 @@ export function SignaturesAdmin() {
       return
     }
     const t = (templatesQ.data ?? []).find((x) => x.id === templateId)
+    setPrivacyProfileIdDraft(t?.privacyProfileId ?? "default")
     const slots = t?.slots && t.slots.length > 0 ? t.slots : DEFAULT_SIGNATURE_SLOTS
     setSlotsDraft(slots.map((s) => ({ ...s })))
     const fields = t?.fields && t.fields.length > 0 ? t.fields : DEFAULT_SIGNATURE_FIELDS
@@ -254,7 +286,11 @@ export function SignaturesAdmin() {
     if (!templateFile) return setErr("Seleziona il PDF template")
     setTemplateBusy(true)
     try {
-      const tpl = await signaturesApi.createTemplate({ name: templateName.trim(), document: templateFile })
+      const tpl = await signaturesApi.createTemplate({
+        name: templateName.trim(),
+        document: templateFile,
+        privacyProfileId: newTemplatePrivacyProfileId || "default",
+      })
       setMsg(`Template creato: ${tpl.name}`)
       setTemplateName("")
       setTemplateFile(null)
@@ -287,7 +323,11 @@ export function SignaturesAdmin() {
     setMsg(null)
     setSlotsBusy(true)
     try {
-      await signaturesApi.updateTemplateLayout(templateId, { slots: slotsDraft, fields: fieldsDraft })
+      await signaturesApi.updateTemplateLayout(templateId, {
+        slots: slotsDraft,
+        fields: fieldsDraft,
+        privacyProfileId: privacyProfileIdDraft || "default",
+      })
       setMsg("Layout (firme + campi) salvato sul template.")
       await templatesQ.refetch()
     } catch (e2) {
@@ -496,6 +536,46 @@ export function SignaturesAdmin() {
               <p className="mt-3 text-sm text-zinc-500">Caricamento testo…</p>
             ) : (
               <div className="mt-3 grid gap-3">
+                <div className="grid gap-2 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
+                  <div className="grid gap-1 text-xs text-zinc-400">
+                    <span>Profili Privacy disponibili</span>
+                    <select
+                      value={privacyProfileIdDraft}
+                      onChange={(e) => setPrivacyProfileIdDraft(e.target.value)}
+                      className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+                      title="Profilo associato al template selezionato (si salva con 'Salva posizioni sul template')"
+                    >
+                      {(privacyProfilesQ.data ?? ([] as PrivacyProfile[])).map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                      {(privacyProfilesQ.data ?? []).length === 0 ? <option value="default">Default</option> : null}
+                    </select>
+                  </div>
+                  <div className="grid gap-1 text-xs text-zinc-400">
+                    <span>Crea nuovo profilo (partendo dal testo sotto)</span>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        value={newPrivacyProfileName}
+                        onChange={(e) => setNewPrivacyProfileName(e.target.value)}
+                        placeholder="Nome profilo (es. Bambini / Adulti)"
+                        className="min-w-[14rem] flex-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+                      />
+                      <button
+                        type="button"
+                        disabled={newPrivacyProfileBusy || !newPrivacyProfileName.trim()}
+                        onClick={() => void onCreatePrivacyProfile()}
+                        className="rounded border border-emerald-700/60 bg-emerald-950/20 px-4 py-2 text-sm font-medium text-emerald-200 disabled:opacity-50"
+                      >
+                        {newPrivacyProfileBusy ? "Creazione…" : "Crea profilo"}
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Nota: la modifica del testo qui sotto aggiorna il testo “default”. I profili nuovi vengono creati come copia del testo corrente.
+                  </p>
+                </div>
                 <label className="grid gap-1 text-xs text-zinc-400">
                   Titolo sezione 1
                   <input
@@ -582,6 +662,19 @@ export function SignaturesAdmin() {
               onChange={(e) => setTemplateFile(e.target.files?.[0] ?? null)}
               className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300"
             />
+            <select
+              value={newTemplatePrivacyProfileId}
+              onChange={(e) => setNewTemplatePrivacyProfileId(e.target.value)}
+              className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+              title="Profilo Privacy/Clausole da associare al template (usato per append/replace pagina Privacy)"
+            >
+              {(privacyProfilesQ.data ?? ([] as PrivacyProfile[])).map((p) => (
+                <option key={p.id} value={p.id}>
+                  Privacy: {p.name}
+                </option>
+              ))}
+              {(privacyProfilesQ.data ?? []).length === 0 ? <option value="default">Privacy: Default</option> : null}
+            </select>
             <div className="md:col-span-2">
               <button
                 type="submit"
