@@ -81,5 +81,7 @@ export interface PrivacyProfile {
   name: string
   createdAt: string
   text: PrivacyPageText
+  pdfFileName?: string
+  pdfOriginalName?: string
 }
 

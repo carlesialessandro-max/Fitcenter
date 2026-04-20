@@ -1061,6 +1061,70 @@ async function appendPrivacyPageBytes(pdfBytes: Uint8Array, t: ReturnType<typeof
   return await doc.save()
 }
 
+async function replaceLastPageWithPrivacyPdfBytes(templateBytes: Uint8Array, privacyPdfBytes: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(templateBytes)
+  const pages = doc.getPages()
+  if (pages.length === 0) return templateBytes
+  const src = await PDFDocument.load(privacyPdfBytes)
+  const srcPages = src.getPages()
+  if (srcPages.length === 0) return templateBytes
+  const [copied] = await doc.copyPages(src, [0])
+  const lastIdx = pages.length - 1
+  doc.removePage(lastIdx)
+  doc.addPage(copied)
+  return await doc.save()
+}
+
+async function appendPrivacyPdfPageBytes(templateBytes: Uint8Array, privacyPdfBytes: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.load(templateBytes)
+  const src = await PDFDocument.load(privacyPdfBytes)
+  const srcPages = src.getPages()
+  if (srcPages.length === 0) return templateBytes
+  const [copied] = await doc.copyPages(src, [0])
+  doc.addPage(copied)
+  return await doc.save()
+}
+
+export async function postSignaturePrivacyProfilePdf(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id profilo mancante" })
+    const prof = signatureStore.getPrivacyProfileById(id)
+    if (!prof) return res.status(404).json({ message: "Profilo non trovato" })
+    const f = (req as any).file as { buffer: Buffer; originalname: string; mimetype: string } | undefined
+    if (!f) return res.status(400).json({ message: "PDF informativa obbligatorio" })
+    const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
+    if (!isPdf) return res.status(400).json({ message: "Caricare un PDF" })
+    const dir = signatureStore.resolveSignatureDir()
+    const fileName = `privacy-${id}-${crypto.randomUUID()}.pdf`
+    fs.writeFileSync(path.join(dir, fileName), f.buffer)
+    const updated = signatureStore.attachPrivacyProfilePdf(id, { pdfFileName: fileName, pdfOriginalName: f.originalname || "privacy.pdf" })
+    if (!updated) return res.status(500).json({ message: "Errore aggiornamento profilo" })
+    res.json(updated)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export async function createSignaturePrivacyProfilePdf(req: Request, res: Response) {
+  try {
+    const name = String(req.body?.name ?? "").trim()
+    const f = (req as any).file as { buffer: Buffer; originalname: string; mimetype: string } | undefined
+    if (!name) return res.status(400).json({ message: "Nome profilo obbligatorio" })
+    if (!f) return res.status(400).json({ message: "PDF informativa obbligatorio" })
+    const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
+    if (!isPdf) return res.status(400).json({ message: "Caricare un PDF" })
+    const created = signatureStore.createPrivacyProfile({ name, text: signatureStore.getPrivacyProfileText("default") })
+    const dir = signatureStore.resolveSignatureDir()
+    const fileName = `privacy-${created.id}-${crypto.randomUUID()}.pdf`
+    fs.writeFileSync(path.join(dir, fileName), f.buffer)
+    const updated = signatureStore.attachPrivacyProfilePdf(created.id, { pdfFileName: fileName, pdfOriginalName: f.originalname || "privacy.pdf" })
+    res.status(201).json(updated ?? created)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res: Response) {
   try {
     const id = String(req.params.id ?? "").trim()
@@ -1070,8 +1134,11 @@ export async function replaceSignatureTemplateLastPagePrivacy(req: Request, res:
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const t = privacyLastPageText((tpl as any).privacyProfileId)
-    const out = await replaceLastPageWithPrivacyBytes(base, t)
+    const prof = signatureStore.getPrivacyProfileById((tpl as any).privacyProfileId ?? "default")
+    const out =
+      prof?.pdfFileName && fs.existsSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName))
+        ? await replaceLastPageWithPrivacyPdfBytes(base, fs.readFileSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName)))
+        : await replaceLastPageWithPrivacyBytes(base, privacyLastPageText((tpl as any).privacyProfileId))
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {
@@ -1088,8 +1155,11 @@ export async function appendSignatureTemplatePrivacyPage(req: Request, res: Resp
     const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
     if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
     const base = fs.readFileSync(fp)
-    const t = privacyLastPageText((tpl as any).privacyProfileId)
-    const out = await appendPrivacyPageBytes(base, t)
+    const prof = signatureStore.getPrivacyProfileById((tpl as any).privacyProfileId ?? "default")
+    const out =
+      prof?.pdfFileName && fs.existsSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName))
+        ? await appendPrivacyPdfPageBytes(base, fs.readFileSync(path.join(signatureStore.resolveSignatureDir(), prof.pdfFileName)))
+        : await appendPrivacyPageBytes(base, privacyLastPageText((tpl as any).privacyProfileId))
     fs.writeFileSync(fp, Buffer.from(out))
     res.json({ ok: true })
   } catch (e) {

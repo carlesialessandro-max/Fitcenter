@@ -45,6 +45,9 @@ export function SignaturesAdmin() {
   const [newTemplatePrivacyProfileId, setNewTemplatePrivacyProfileId] = useState<string>("default")
   const [newPrivacyProfileName, setNewPrivacyProfileName] = useState("")
   const [newPrivacyProfileBusy, setNewPrivacyProfileBusy] = useState(false)
+  const [newPrivacyPdfName, setNewPrivacyPdfName] = useState("")
+  const [newPrivacyPdfFile, setNewPrivacyPdfFile] = useState<File | null>(null)
+  const [newPrivacyPdfBusy, setNewPrivacyPdfBusy] = useState(false)
 
   const listQ = useQuery({
     queryKey: ["signatures-admin"],
@@ -90,6 +93,28 @@ export function SignaturesAdmin() {
       setErr((e2 as Error).message)
     } finally {
       setNewPrivacyProfileBusy(false)
+    }
+  }
+
+  async function onCreatePrivacyProfilePdf() {
+    if (!isAdmin) return
+    if (!newPrivacyPdfName.trim()) return setErr("Nome profilo privacy (PDF) obbligatorio")
+    if (!newPrivacyPdfFile) return setErr("Seleziona il PDF informativa")
+    setErr(null)
+    setMsg(null)
+    setNewPrivacyPdfBusy(true)
+    try {
+      const created = await signaturesApi.createPrivacyProfilePdf({ name: newPrivacyPdfName.trim(), document: newPrivacyPdfFile })
+      setMsg(`Profilo privacy (PDF) creato: ${created.name}`)
+      setNewPrivacyPdfName("")
+      setNewPrivacyPdfFile(null)
+      await privacyProfilesQ.refetch()
+      setNewTemplatePrivacyProfileId(created.id)
+      setPrivacyProfileIdDraft(created.id)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setNewPrivacyPdfBusy(false)
     }
   }
 
@@ -547,11 +572,39 @@ export function SignaturesAdmin() {
                     >
                       {(privacyProfilesQ.data ?? ([] as PrivacyProfile[])).map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name}
+                          {p.name}{p.pdfOriginalName ? " (PDF)" : ""}
                         </option>
                       ))}
                       {(privacyProfilesQ.data ?? []).length === 0 ? <option value="default">Default</option> : null}
                     </select>
+                  </div>
+                  <div className="grid gap-1 text-xs text-zinc-400">
+                    <span>Crea nuovo profilo da PDF (informativa già impaginata)</span>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        value={newPrivacyPdfName}
+                        onChange={(e) => setNewPrivacyPdfName(e.target.value)}
+                        placeholder="Nome profilo (es. Informativa Bambini)"
+                        className="min-w-[14rem] flex-1 rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+                      />
+                      <input
+                        type="file"
+                        accept="application/pdf,.pdf"
+                        onChange={(e) => setNewPrivacyPdfFile(e.target.files?.[0] ?? null)}
+                        className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-300"
+                      />
+                      <button
+                        type="button"
+                        disabled={newPrivacyPdfBusy || !newPrivacyPdfName.trim() || !newPrivacyPdfFile}
+                        onClick={() => void onCreatePrivacyProfilePdf()}
+                        className="rounded border border-sky-700/60 bg-sky-950/20 px-4 py-2 text-sm font-medium text-sky-200 disabled:opacity-50"
+                      >
+                        {newPrivacyPdfBusy ? "Upload…" : "Crea profilo PDF"}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      Quando un profilo è PDF, i bottoni “Sostituisci ultima pagina (Privacy)” / “Aggiungi pagina Privacy” copieranno la prima pagina del PDF.
+                    </p>
                   </div>
                   <div className="grid gap-1 text-xs text-zinc-400">
                     <span>Crea nuovo profilo (partendo dal testo sotto)</span>

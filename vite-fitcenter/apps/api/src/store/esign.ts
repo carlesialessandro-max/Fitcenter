@@ -16,6 +16,9 @@ export type PrivacyProfile = {
   name: string
   createdAt: string
   text: PrivacyPageText
+  /** Se presente, questo profilo usa un PDF informativa (prima pagina) invece del testo generato. */
+  pdfFileName?: string
+  pdfOriginalName?: string
 }
 
 function mergePrivacyPageText(partial: Partial<PrivacyPageText> | Record<string, unknown>): PrivacyPageText {
@@ -222,6 +225,17 @@ export const signatureStore = {
     const id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`
     const next: PrivacyProfile = { id, name: input.name.trim() || "Privacy", createdAt: new Date().toISOString(), text: input.text }
     rows.push(next)
+    writePrivacyProfiles(rows)
+    return next
+  },
+
+  attachPrivacyProfilePdf(id: string, input: { pdfFileName: string; pdfOriginalName: string }): PrivacyProfile | null {
+    const rows = readPrivacyProfiles()
+    const idx = rows.findIndex((p) => p.id === id)
+    if (idx < 0) return null
+    const prev = rows[idx]!
+    const next: PrivacyProfile = { ...prev, pdfFileName: input.pdfFileName, pdfOriginalName: input.pdfOriginalName }
+    rows[idx] = next
     writePrivacyProfiles(rows)
     return next
   },

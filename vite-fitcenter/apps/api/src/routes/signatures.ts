@@ -23,8 +23,10 @@ import {
   resetSignaturePrivacyPageText,
   listSignaturePrivacyProfiles,
   createSignaturePrivacyProfile,
+  createSignaturePrivacyProfilePdf,
   updateSignaturePrivacyProfile,
   deleteSignaturePrivacyProfile,
+  postSignaturePrivacyProfilePdf,
 } from "../handlers/signatures.js"
 
 const upload = multer({
@@ -53,6 +55,8 @@ signaturesRouter.put("/admin/privacy-page-text", requireAuth, requireAdmin, putS
 signaturesRouter.post("/admin/privacy-page-text/reset", requireAuth, requireAdmin, resetSignaturePrivacyPageText)
 signaturesRouter.get("/admin/privacy-profiles", requireAuth, requireAdmin, listSignaturePrivacyProfiles)
 signaturesRouter.post("/admin/privacy-profiles", requireAuth, requireAdmin, createSignaturePrivacyProfile)
+signaturesRouter.post("/admin/privacy-profiles/pdf", requireAuth, requireAdmin, upload.single("document"), createSignaturePrivacyProfilePdf)
+signaturesRouter.post("/admin/privacy-profiles/:id/pdf", requireAuth, requireAdmin, upload.single("document"), postSignaturePrivacyProfilePdf)
 signaturesRouter.put("/admin/privacy-profiles/:id", requireAuth, requireAdmin, updateSignaturePrivacyProfile)
 signaturesRouter.delete("/admin/privacy-profiles/:id", requireAuth, requireAdmin, deleteSignaturePrivacyProfile)
 signaturesRouter.get("/admin/templates", requireAuth, listSignatureTemplates)

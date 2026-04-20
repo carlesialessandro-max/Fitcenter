@@ -21,6 +21,37 @@ export const signaturesApi = {
   listPrivacyProfiles: () => api.get<PrivacyProfile[]>("/signatures/admin/privacy-profiles"),
   createPrivacyProfile: (body: { name: string; text: PrivacyPageText }) =>
     api.post<PrivacyProfile>("/signatures/admin/privacy-profiles", body),
+  createPrivacyProfilePdf: async (body: { name: string; document: File }) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const fd = new FormData()
+    fd.append("name", body.name)
+    fd.append("document", body.document)
+    const res = await fetch(`${API_BASE}/signatures/admin/privacy-profiles/pdf`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }))
+      throw new Error((err as { message?: string }).message ?? "Errore creazione profilo privacy (PDF)")
+    }
+    return res.json() as Promise<PrivacyProfile>
+  },
+  uploadPrivacyProfilePdf: async (id: string, document: File) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const fd = new FormData()
+    fd.append("document", document)
+    const res = await fetch(`${API_BASE}/signatures/admin/privacy-profiles/${encodeURIComponent(id)}/pdf`, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }))
+      throw new Error((err as { message?: string }).message ?? "Errore upload PDF privacy")
+    }
+    return res.json() as Promise<PrivacyProfile>
+  },
   updatePrivacyProfile: (id: string, body: { name: string; text: PrivacyPageText }) =>
     api.put<PrivacyProfile>(`/signatures/admin/privacy-profiles/${encodeURIComponent(id)}`, body),
   deletePrivacyProfile: (id: string) =>
