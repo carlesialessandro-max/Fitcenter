@@ -283,18 +283,16 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   if (!w.start) return { present: false, entry: null, exit: null }
   // Day guard
   if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
-  const startMs = w.start.getTime()
-  const endMs = (w.end ?? w.start).getTime()
-  let entry: Date | null = null
-  let exit: Date | null = null
-  for (const t of times) {
-    const ms = t.getTime()
-    if (ms < startMs) continue
-    if (ms > endMs) break
-    if (!entry) entry = t
-    exit = t
-  }
-  return { present: !!entry, entry, exit }
+  const end = w.end ?? w.start
+  const first = times[0] ?? null
+  const last = times[times.length - 1] ?? null
+  if (!first || !last) return { present: false, entry: null, exit: null }
+
+  // Regola presenza (coerente con "entrata/uscita"):
+  // Presente se la finestra lezione [start,end] interseca l'intervallo accessi [first,last].
+  // (es. entrato prima dell'inizio e uscito dopo la fine → presente).
+  const present = first.getTime() <= end.getTime() && last.getTime() >= w.start.getTime()
+  return { present, entry: present ? first : null, exit: present ? last : null }
 }
 
 /** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */

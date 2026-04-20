@@ -33,3 +33,9 @@ vite-fitcenter/apps/api/**/app.sqlite
 
 # Export Excel locale
 vite-fitcenter/attivi.xlsx
+
+# Appunti/credenziali/artefatti locali (non committare)
+vite-fitcenter/apps/api/credenziali.txt
+vite-fitcenter/apps/api/stop processo.txt
+vite-fitcenter/apps/api/Select  from dbo.RVW_PrenotazioniUt.txt
+vite-fitcenter/apps/api/*.tsbuildinfo
