@@ -49,6 +49,8 @@ export function Dashboard() {
   const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
   const [budgetPerConsulente, setBudgetPerConsulente] = useState<Record<string, number>>({})
   const now = new Date()
+  const [annoConsulente, setAnnoConsulente] = useState(now.getFullYear())
+  const [meseConsulente, setMeseConsulente] = useState(now.getMonth() + 1)
   const [giornoConsulente, setGiornoConsulente] = useState(now.getDate())
   const todayStr = localIsoDate(now)
   const [oraLavorataGiorno, setOraLavorataGiorno] = useState(todayStr)
@@ -103,10 +105,11 @@ export function Dashboard() {
     setBudgetPerConsulente((prev) => ({ ...byLabel, ...prev }))
   }, [budgetModal, budgetData?.perConsulente, budgetAnno, budgetMese])
 
-  const oggiDate = role === "admin" ? new Date(`${asOf}T12:00:00Z`) : new Date()
-  const annoOggi = oggiDate.getFullYear()
-  const meseOggi = oggiDate.getMonth() + 1
-  const giornoOggi = role === "admin" ? oggiDate.getDate() : giornoConsulente
+  const oggiDate = role === "admin" ? new Date(`${asOf}T12:00:00Z`) : new Date(annoConsulente, meseConsulente - 1, 15)
+  const annoOggi = role === "admin" ? oggiDate.getFullYear() : annoConsulente
+  const meseOggi = role === "admin" ? (oggiDate.getMonth() + 1) : meseConsulente
+  const giorniNelMeseSel = new Date(annoOggi, meseOggi, 0).getDate()
+  const giornoOggi = role === "admin" ? oggiDate.getDate() : Math.min(giornoConsulente, giorniNelMeseSel)
 
   const { data: dettaglioGiornoMese } = useQuery({
     queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null],
@@ -222,6 +225,10 @@ export function Dashboard() {
       {role === "operatore" && (
         <div className="mt-6">
           <DettaglioVenditePrimoPiano
+            annoSelezionato={annoConsulente}
+            meseSelezionato={meseConsulente}
+            onAnnoChange={(y) => setAnnoConsulente(Number.isFinite(y) ? y : new Date().getFullYear())}
+            onMeseChange={(m) => setMeseConsulente(Math.max(1, Math.min(12, Math.floor(m))))}
             giornoSelezionato={giornoConsulente}
             onGiornoChange={setGiornoConsulente}
           />

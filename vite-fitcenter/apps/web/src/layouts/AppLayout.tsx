@@ -21,6 +21,7 @@ const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
+  { to: "/corsi", label: "Corsi" },
   { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },

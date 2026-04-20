@@ -12,6 +12,17 @@ function isoToday(): string {
   return `${y}-${m}-${day}`
 }
 
+function monthRangeFromDay(dayIso: string): { from: string; to: string; monthKey: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayIso)
+  if (!m) return { from: dayIso, to: dayIso, monthKey: dayIso.slice(0, 7) }
+  const y = Number(m[1])
+  const mo = Number(m[2]) // 1..12
+  const from = `${m[1]}-${m[2]}-01`
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate() // day 0 of next month = last day of current month
+  const to = `${m[1]}-${m[2]}-${String(lastDay).padStart(2, "0")}`
+  return { from, to, monthKey: `${m[1]}-${m[2]}` }
+}
+
 function fmtDateIt(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (!m) return iso
@@ -249,6 +260,7 @@ export function Corsi() {
 
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
+  const canManageNoShow = canSendMessages
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["prenotazioni-corsi", giorno],
@@ -257,6 +269,41 @@ export function Corsi() {
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: 30_000,
+  })
+
+  const blocksQ = useQuery({
+    queryKey: ["corsi-no-show-blocks"],
+    queryFn: () => prenotazioniApi.listNoShowBlocks(),
+    enabled: canManageNoShow,
+    staleTime: 20_000,
+  })
+
+  const rangeQ = useQuery({
+    queryKey: ["prenotazioni-corsi-range", giorno],
+    queryFn: () => {
+      const r = monthRangeFromDay(giorno)
+      return prenotazioniApi.listPrenotazioniRange({ from: r.from, to: r.to })
+    },
+    enabled: false,
+    retry: false,
+    staleTime: 0,
+  })
+
+  const notifyBlockMutation = useMutation({
+    mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
+      if (!canManageNoShow) throw new Error("Permessi insufficienti")
+      const subject = "Prenotazioni corsi: sospensione per assenze ripetute"
+      const text =
+        `Gentile socio,\\n\\n` +
+        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
+        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa.\\n\\n` +
+        `Per informazioni o sblocco, contatta la segreteria.\\n\\n` +
+        `Cordiali saluti.`
+      return prenotazioniApi.notifyAndBlockNoShow({ email: input.email, subject, text, monthKey: input.monthKey, count: input.count })
+    },
+    onSuccess: async () => {
+      await blocksQ.refetch()
+    },
   })
 
   const notifyMutation = useMutation({
@@ -301,6 +348,32 @@ export function Corsi() {
     [gruppi]
   )
   void data?.meta
+
+  const blockedByEmail = useMemo(() => {
+    const m = new Map<string, true>()
+    for (const b of blocksQ.data?.rows ?? []) {
+      const e = String(b.email ?? "").trim().toLowerCase()
+      if (e) m.set(e, true)
+    }
+    return m
+  }, [blocksQ.data])
+
+  const noShowCandidates = useMemo(() => {
+    const r = monthRangeFromDay(giorno)
+    const all = rangeQ.data?.rows ?? []
+    const counts = new Map<string, number>()
+    for (const p of all) {
+      if (p.inAttesa) continue
+      const email = (p.email ?? "").trim().toLowerCase()
+      if (!email) continue
+      const d = toIsoDay(p.dataUltimoAcesso) ?? toIsoDay((p.raw as any)?.DataUltimoAcesso)
+      const presente = !!d && d === (p.giorno ?? "").trim()
+      if (!presente) counts.set(email, (counts.get(email) ?? 0) + 1)
+    }
+    const out = [...counts.entries()].map(([email, count]) => ({ email, count, monthKey: r.monthKey }))
+    out.sort((a, b) => b.count - a.count || a.email.localeCompare(b.email))
+    return out.filter((x) => x.count >= 3)
+  }, [rangeQ.data, giorno])
 
   useEffect(() => {
     try {
@@ -378,6 +451,66 @@ export function Corsi() {
 
   return (
     <div className="p-4 sm:p-6">
+      {canManageNoShow ? (
+        <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
+              <div className="mt-0.5 text-xs text-zinc-500">
+                Regola: conta prenotazioni senza accesso nello stesso giorno. Soglia: 3 nel mese.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => void rangeQ.refetch()}
+              disabled={rangeQ.isFetching}
+              className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/30 disabled:opacity-50"
+            >
+              {rangeQ.isFetching ? "Analisi…" : "Analizza mese"}
+            </button>
+          </div>
+          {rangeQ.isError ? (
+            <p className="mt-2 text-sm text-red-400">Errore analisi: {(rangeQ.error as Error).message}</p>
+          ) : null}
+          {!rangeQ.data ? null : noShowCandidates.length === 0 ? (
+            <p className="mt-2 text-sm text-zinc-500">Nessun cliente con 3+ no-show nel mese selezionato.</p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 bg-zinc-950/40">
+                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">Email</th>
+                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">No-show</th>
+                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">Azione</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {noShowCandidates.map((x) => {
+                    const isBlocked = blockedByEmail.has(x.email)
+                    return (
+                      <tr key={x.email} className="border-b border-zinc-800/50 last:border-0">
+                        <td className="px-3 py-2 font-mono text-xs text-zinc-200">{x.email}</td>
+                        <td className="px-3 py-2 text-zinc-200">{x.count}</td>
+                        <td className="px-3 py-2">
+                          <button
+                            type="button"
+                            disabled={notifyBlockMutation.isPending || isBlocked}
+                            onClick={() => notifyBlockMutation.mutate({ email: x.email, monthKey: x.monthKey, count: x.count })}
+                            className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
+                            title={isBlocked ? "Già bloccato" : "Invia email e marca come bloccato"}
+                          >
+                            {isBlocked ? "Bloccato" : notifyBlockMutation.isPending ? "Invio…" : "Invia mail + blocca"}
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
       {messaggiGroup ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
@@ -633,6 +766,7 @@ export function Corsi() {
                       {g.partecipanti.map((p, idx) => {
                         const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                         const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
+                        const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
                         const pren = p.prenotatoIl
                           ? new Date(p.prenotatoIl).toLocaleString("it-IT", {
                               day: "2-digit",
@@ -658,6 +792,11 @@ export function Corsi() {
                                   {p.inAttesa ? (
                                     <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
                                       ATTESA
+                                    </span>
+                                  ) : null}
+                                  {blocked ? (
+                                    <span className="ml-2 inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+                                      BLOCCATO
                                     </span>
                                   ) : null}
                                 </div>
@@ -736,6 +875,7 @@ export function Corsi() {
                         {g.partecipanti.map((p, idx) => {
                           const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                           const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
+                          const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
                           const pren = p.prenotatoIl
                             ? new Date(p.prenotatoIl).toLocaleString("it-IT", {
                                 day: "2-digit",
@@ -799,6 +939,11 @@ export function Corsi() {
                                 {p.inAttesa ? (
                                   <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
                                     ATTESA
+                                  </span>
+                                ) : null}
+                                {blocked ? (
+                                  <span className="ml-2 inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+                                    BLOCCATO
                                   </span>
                                 ) : null}
                               </td>

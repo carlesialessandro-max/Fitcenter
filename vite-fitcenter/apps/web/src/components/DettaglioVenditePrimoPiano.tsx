@@ -58,16 +58,24 @@ function CardVendite({
 
 /** Dashboard vendite in primo piano per consulenti: solo le proprie vendite, layout chiaro. */
 export function DettaglioVenditePrimoPiano({
+  annoSelezionato,
+  meseSelezionato,
+  onAnnoChange,
+  onMeseChange,
   giornoSelezionato: giornoControlled,
   onGiornoChange,
 }: {
+  annoSelezionato?: number
+  meseSelezionato?: number
+  onAnnoChange?: (year: number) => void
+  onMeseChange?: (month: number) => void
   giornoSelezionato?: number
   onGiornoChange?: (day: number) => void
 } = {}) {
   const { consulenteFilter } = useAuth()
   const now = new Date()
-  const anno = now.getFullYear()
-  const mese = now.getMonth() + 1
+  const anno = annoSelezionato ?? now.getFullYear()
+  const mese = meseSelezionato ?? (now.getMonth() + 1)
   const giornoOggi = now.getDate()
   const [giornoInternal, setGiornoInternal] = useState(giornoOggi)
   const [mostraAltroGiorno, setMostraAltroGiorno] = useState(false)
@@ -135,6 +143,29 @@ export function DettaglioVenditePrimoPiano({
 
       {mostraAltroGiorno && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/40 px-4 py-3">
+          {onAnnoChange && onMeseChange ? (
+            <>
+              <label className="text-sm text-zinc-400">Mese:</label>
+              <select
+                value={mese}
+                onChange={(e) => onMeseChange(Number(e.target.value))}
+                className="rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100"
+              >
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <option key={m} value={m}>
+                    {m}/{anno}
+                  </option>
+                ))}
+              </select>
+              <label className="text-sm text-zinc-400">Anno:</label>
+              <input
+                type="number"
+                value={anno}
+                onChange={(e) => onAnnoChange(Number(e.target.value))}
+                className="w-24 rounded border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-100"
+              />
+            </>
+          ) : null}
           <label className="text-sm text-zinc-400">Giorno:</label>
           <select
             value={giornoSafe}
