@@ -40,6 +40,9 @@ export function SignaturesAdmin() {
   const [pageHeightPdf, setPageHeightPdf] = useState(0)
   const [pageWidthPdf, setPageWidthPdf] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const pdfBytesCacheRef = useRef<Map<string, ArrayBuffer>>(new Map())
+  const pdfjsRef = useRef<any>(null)
+  const [templatePdfBytes, setTemplatePdfBytes] = useState<ArrayBuffer | null>(null)
   const [privacyDraft, setPrivacyDraft] = useState<PrivacyPageText | null>(null)
   const [privacyBusy, setPrivacyBusy] = useState(false)
   const [privacyProfileIdDraft, setPrivacyProfileIdDraft] = useState<string>("default")
@@ -191,17 +194,47 @@ export function SignaturesAdmin() {
     setFieldsDraft(DEFAULT_SIGNATURE_FIELDS.map((f) => ({ ...f })))
   }
 
+  // Scarica bytes PDF solo quando cambia templateId (cache in memoria).
   useEffect(() => {
     let cancelled = false
-    async function renderPreview() {
-      if (!templateId || !canvasRef.current) return
+    async function loadBytes() {
+      if (!templateId) return setTemplatePdfBytes(null)
+      const cached = pdfBytesCacheRef.current.get(templateId)
+      if (cached) return setTemplatePdfBytes(cached)
       setPreviewErr(null)
       setPreviewLoading(true)
       try {
-        const [pdfjsLib, bytes] = await Promise.all([import("pdfjs-dist"), signaturesApi.getTemplateDocument(templateId)])
-        const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
-        pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-        const task = pdfjsLib.getDocument({ data: bytes })
+        const bytes = await signaturesApi.getTemplateDocument(templateId)
+        if (cancelled) return
+        pdfBytesCacheRef.current.set(templateId, bytes)
+        setTemplatePdfBytes(bytes)
+      } catch (e) {
+        if (!cancelled) setPreviewErr((e as Error).message)
+      } finally {
+        if (!cancelled) setPreviewLoading(false)
+      }
+    }
+    void loadBytes()
+    return () => {
+      cancelled = true
+    }
+  }, [templateId])
+
+  // Render preview quando cambiano bytes o pagina (no refetch).
+  useEffect(() => {
+    let cancelled = false
+    async function renderPreview() {
+      if (!templateId || !canvasRef.current || !templatePdfBytes) return
+      setPreviewErr(null)
+      setPreviewLoading(true)
+      try {
+        const pdfjsLib = pdfjsRef.current ?? (await import("pdfjs-dist"))
+        pdfjsRef.current = pdfjsLib
+        if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+          const workerUrl = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+          pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
+        }
+        const task = pdfjsLib.getDocument({ data: templatePdfBytes })
         const pdf = await task.promise
         if (cancelled) return
         setPageCount(pdf.numPages)
@@ -267,7 +300,7 @@ export function SignaturesAdmin() {
     return () => {
       cancelled = true
     }
-  }, [templateId, previewPage, slotsDraft, selectedSlotId, fieldsDraft, selectedFieldId, editMode])
+  }, [templateId, templatePdfBytes, previewPage, slotsDraft, selectedSlotId, fieldsDraft, selectedFieldId, editMode])
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()

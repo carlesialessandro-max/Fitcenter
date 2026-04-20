@@ -18,6 +18,7 @@ export type PrenotazioneCorsoRow = {
 }
 
 export type AccessoUtenteRow = {
+  idUtente?: string
   cognome?: string
   nome?: string
   dataEntrata?: string

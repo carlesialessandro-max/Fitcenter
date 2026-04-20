@@ -1113,10 +1113,11 @@ async function replaceLastPageWithPrivacyPdfBytes(templateBytes: Uint8Array, pri
   const src = await PDFDocument.load(privacyPdfBytes)
   const srcPages = src.getPages()
   if (srcPages.length === 0) return templateBytes
-  const [copied] = await doc.copyPages(src, [0])
   const lastIdx = pages.length - 1
   doc.removePage(lastIdx)
-  doc.addPage(copied)
+  const indices = srcPages.map((_, i) => i)
+  const copied = await doc.copyPages(src, indices)
+  for (const p of copied) doc.addPage(p)
   return await doc.save()
 }
 
@@ -1125,8 +1126,9 @@ async function appendPrivacyPdfPageBytes(templateBytes: Uint8Array, privacyPdfBy
   const src = await PDFDocument.load(privacyPdfBytes)
   const srcPages = src.getPages()
   if (srcPages.length === 0) return templateBytes
-  const [copied] = await doc.copyPages(src, [0])
-  doc.addPage(copied)
+  const indices = srcPages.map((_, i) => i)
+  const copied = await doc.copyPages(src, indices)
+  for (const p of copied) doc.addPage(p)
   return await doc.save()
 }
 

@@ -252,7 +252,17 @@ function buildAccessIndex(rows: AccessoUtenteRow[]): Map<string, Map<string, Acc
     if (!inD) continue
     const dayIso = toIsoDay(inD)
     if (!dayIso) continue
-    const key = normNameKey(r.cognome ?? (r.raw as any)?.Cognome, r.nome ?? (r.raw as any)?.Nome)
+    const raw = (r.raw ?? {}) as any
+    const id =
+      String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? raw?.IDCliente ?? raw?.IdCliente ?? raw?.ClienteId ?? "")
+        .trim()
+    const key =
+      id
+        ? `id:${id}`
+        : normNameKey(
+            r.cognome ?? raw?.Cognome ?? raw?.CognomeUtente ?? raw?.UtenteCognome,
+            r.nome ?? raw?.Nome ?? raw?.NomeUtente ?? raw?.UtenteNome
+          )
     if (!key) continue
     const outD = parseToDate(r.dataUscita ?? (r.raw as any)?.DataUscita ?? (r.raw as any)?.Uscita)
     const inMin = inD.getHours() * 60 + inD.getMinutes()
@@ -268,11 +278,15 @@ function buildAccessIndex(rows: AccessoUtenteRow[]): Map<string, Map<string, Acc
 
 function isPresentAtCourseStart(accessIdx: Map<string, Map<string, AccessInterval[]>>, p: PrenotazioneCorsoRow, giornoIso: string, oraInizio?: string): boolean {
   const start = hhmmToMinutes(oraInizio)
-  if (start == null) return false
   const key = normNameKey(p.cognome, p.nome)
-  if (!key) return false
+  // Se abbiamo un ID stabile, usa quello (match più affidabile del nome).
+  const stable = participantStableKey(p, 0)
+  const k = stable.startsWith("id:") ? stable : key
+  if (!k) return false
   const dayMap = accessIdx.get(giornoIso)
-  const intervals = dayMap?.get(key) ?? []
+  const intervals = dayMap?.get(k) ?? []
+  // Se non abbiamo orario inizio corso, consideriamo presente se ha almeno un accesso nel giorno.
+  if (start == null) return intervals.length > 0
   for (const it of intervals) {
     if (it.inMin <= start && (it.outMin == null || it.outMin >= start)) return true
   }

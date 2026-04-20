@@ -2421,6 +2421,7 @@ export async function getCrossAbbonamentiDaLogByVenditore(
 }
 
 export type AccessoUtenteRow = {
+  idUtente?: string
   cognome?: string
   nome?: string
   dataEntrata?: string
@@ -2447,6 +2448,7 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
     const recordset = (r.recordset ?? []) as Record<string, unknown>[]
     const pick = (row: Record<string, unknown>, keys: string[]) => firstNonEmpty(row, keys)
     return recordset.map((row) => ({
+      idUtente: pick(row, ["IDUtente", "IdUtente", "UtenteId", "IDCliente", "IdCliente", "ClienteId", "IDAnagrafica", "IdAnagrafica", "AnagraficaId"]),
       cognome: pick(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome", "Nome utente", "NomeUtente"]),
       nome: pick(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]),
       dataEntrata: firstNonEmpty(row, ["Entrata", "DataEntrata", "DataIngresso", "Ingresso", "DataOraEntrata", "DataOraIngresso", "Data"]),
