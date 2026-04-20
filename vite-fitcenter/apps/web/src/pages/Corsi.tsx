@@ -186,6 +186,14 @@ function groupKeyForRow(p: PrenotazioneCorsoRow): string {
   return `${servizio}__${giorno}__${oraInizio}__${oraFine}`
 }
 
+function legacyParticipantKey(p: PrenotazioneCorsoRow, idx: number): string {
+  // Chiave usata nelle versioni precedenti (includeva idx sempre).
+  const nome = `${p.cognome ?? ""}|${p.nome ?? ""}`.trim()
+  const em = (p.email ?? "").trim().toLowerCase()
+  const sms = (p.sms ?? "").trim().replace(/\s+/g, "")
+  return `fallback:${nome}|${em}|${sms}|${idx}`
+}
+
 function readAppelloForDay(giornoIso: string): Record<string, true> {
   try {
     const raw = localStorage.getItem(`fitcenter-corsi-appello:${giornoIso}`)
@@ -481,22 +489,33 @@ export function Corsi() {
     const all = rangeQ.data?.rows ?? []
     const accessIdx = buildAccessIndex(accessiRangeQ.data?.rows ?? [])
     if (!rangeQ.data || !accessiRangeQ.data) return []
-    const counts = new Map<string, number>()
+    const counts = new Map<
+      string,
+      { key: string; email: string; name: string; count: number }
+    >()
     for (const p of all) {
       if (p.inAttesa) continue
-      const email = (p.email ?? "").trim().toLowerCase()
-      if (!email) continue
       const day = String(p.giorno ?? "").trim()
       if (!day) continue
+      const key = participantStableKey(p, 0)
+      const email = (p.email ?? "").trim().toLowerCase()
+      const name = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || email || "—"
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
       const presenteAppello = !!appello[`${gk}::${pk}`]
       const presente = presenteAppello || isPresentAtCourseStart(accessIdx, p, day, p.oraInizio)
-      if (!presente) counts.set(email, (counts.get(email) ?? 0) + 1)
+      if (!presente) {
+        const cur = counts.get(key) ?? { key, email, name, count: 0 }
+        cur.count += 1
+        // tieni email se prima vuota e poi appare
+        if (!cur.email && email) cur.email = email
+        if (cur.name === "—" && name && name !== "—") cur.name = name
+        counts.set(key, cur)
+      }
     }
-    const out = [...counts.entries()].map(([email, count]) => ({ email, count, monthKey: r.monthKey }))
-    out.sort((a, b) => b.count - a.count || a.email.localeCompare(b.email))
+    const out = [...counts.values()].map((x) => ({ ...x, monthKey: r.monthKey }))
+    out.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name) || a.email.localeCompare(b.email))
     return out.filter((x) => x.count >= 3)
   }, [rangeQ.data, accessiRangeQ.data, giorno])
 
@@ -513,15 +532,25 @@ export function Corsi() {
 
   function isAppelloChecked(groupKey: string, p: PrenotazioneCorsoRow, idx: number): boolean {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
-    return !!appello[k]
+    if (appello[k]) return true
+    // Compatibilità: chiavi salvate con versione precedente (include idx sempre).
+    const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
+    return !!appello[old]
   }
 
   function toggleAppello(groupKey: string, p: PrenotazioneCorsoRow, idx: number): void {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
+    const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
     setAppello((prev) => {
       const next = { ...prev }
-      if (next[k]) delete next[k]
-      else next[k] = true
+      const has = !!next[k] || !!next[old]
+      if (has) {
+        delete next[k]
+        delete next[old]
+      } else {
+        next[k] = true
+        next[old] = true
+      }
       try {
         localStorage.setItem(`fitcenter-corsi-appello:${giorno}`, JSON.stringify(next))
       } catch {}

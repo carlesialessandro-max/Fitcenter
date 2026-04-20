@@ -7,6 +7,7 @@ import {
   createSignatureTemplate,
   deleteSignatureRequest,
   deleteSignatureTemplate,
+  deleteSignatureTemplatePage,
   downloadSignatureTemplateDocument,
   downloadPublicSignatureDocument,
   exportSignatureAudit,
@@ -64,6 +65,7 @@ signaturesRouter.post("/admin/templates", requireAuth, requireAdmin, upload.sing
 signaturesRouter.put("/admin/templates/:id/slots", requireAuth, requireAdmin, updateSignatureTemplateSlots)
 signaturesRouter.put("/admin/templates/:id/replace-last-page-privacy", requireAuth, requireAdmin, replaceSignatureTemplateLastPagePrivacy)
 signaturesRouter.put("/admin/templates/:id/append-privacy-page", requireAuth, requireAdmin, appendSignatureTemplatePrivacyPage)
+signaturesRouter.put("/admin/templates/:id/delete-page", requireAuth, requireAdmin, deleteSignatureTemplatePage)
 signaturesRouter.get("/admin/templates/:id/document", requireAuth, downloadSignatureTemplateDocument)
 signaturesRouter.delete("/admin/templates/:id", requireAuth, requireAdmin, deleteSignatureTemplate)
 

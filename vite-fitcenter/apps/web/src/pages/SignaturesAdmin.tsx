@@ -36,6 +36,7 @@ export function SignaturesAdmin() {
   const [previewErr, setPreviewErr] = useState<string | null>(null)
   const [pageCount, setPageCount] = useState(1)
   const [previewPage, setPreviewPage] = useState(1)
+  const [deletePageNum, setDeletePageNum] = useState<number | "">("")
   const [pageHeightPdf, setPageHeightPdf] = useState(0)
   const [pageWidthPdf, setPageWidthPdf] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -434,6 +435,22 @@ export function SignaturesAdmin() {
       setTimeout(() => setPreviewPage(Math.max(1, pageCount + 1)), 0)
     } catch (e2) {
       setErr((e2 as Error).message)
+    }
+  }
+
+  async function onDeleteTemplatePage() {
+    if (!templateId) return setErr("Seleziona un template")
+    const page = deletePageNum === "" ? undefined : Number(deletePageNum)
+    const label = page ? `pagina ${page}` : "ultima pagina"
+    if (!globalThis.confirm(`Cancellare ${label} dal template? (le pagine successive scaleranno di -1)`)) return
+    setErr("")
+    try {
+      await signaturesApi.deleteTemplatePage(templateId, page ? { page } : { which: "last" })
+      setMsg(page ? `Pagina ${page} cancellata dal template.` : "Ultima pagina cancellata dal template.")
+      setPreviewPage(1)
+      await templatesQ.refetch()
+    } catch (e) {
+      setErr((e as Error).message)
     }
   }
 
@@ -1025,6 +1042,26 @@ export function SignaturesAdmin() {
               >
                 Aggiungi pagina Privacy (in coda)
               </button>
+              <span className="ml-2 inline-flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="Pag."
+                  value={deletePageNum}
+                  onChange={(e) => setDeletePageNum(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="w-20 rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
+                  title="Pagina da cancellare (vuoto = ultima)"
+                />
+                <button
+                  type="button"
+                  onClick={onDeleteTemplatePage}
+                  disabled={!templateId}
+                  className="rounded border border-red-700/60 bg-red-950/20 px-4 py-2 text-sm font-medium text-red-200 hover:bg-red-950/30 disabled:opacity-50"
+                  title="Cancella una pagina dal PDF del template"
+                >
+                  Cancella pagina
+                </button>
+              </span>
             </div>
           </>
         )}

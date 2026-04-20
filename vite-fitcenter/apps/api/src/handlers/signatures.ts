@@ -879,6 +879,51 @@ export async function deleteSignatureTemplate(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
+export async function deleteSignatureTemplatePage(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id template mancante" })
+    const tpl = signatureStore.getTemplateById(id)
+    if (!tpl) return res.status(404).json({ message: "Template non trovato" })
+
+    const pageRaw = (req.body as any)?.page
+    const which = String((req.body as any)?.which ?? "").trim().toLowerCase()
+    const wantLast = which === "last" || pageRaw == null || String(pageRaw).trim() === ""
+
+    const fp = path.join(signatureStore.resolveSignatureDir(), tpl.fileName)
+    if (!fs.existsSync(fp)) return res.status(404).json({ message: "File template non trovato" })
+
+    const bytes = fs.readFileSync(fp)
+    const doc = await PDFDocument.load(bytes)
+    const total = doc.getPageCount()
+    if (total <= 1) return res.status(400).json({ message: "Il template ha 1 sola pagina: non cancellabile" })
+
+    const page = wantLast ? total : Math.floor(Number(pageRaw))
+    if (!Number.isFinite(page) || page < 1 || page > total) {
+      return res.status(400).json({ message: `Pagina non valida (1..${total})` })
+    }
+
+    doc.removePage(page - 1)
+    const out = await doc.save()
+    fs.writeFileSync(fp, Buffer.from(out))
+
+    // Aggiorna layout: pagine dopo quella cancellata scalano di -1.
+    signatureStore.updateTemplateById(id, (r) => {
+      const dec = (n: unknown) => {
+        const x = Math.max(1, Math.floor(Number(n ?? 1) || 1))
+        return x > page ? x - 1 : x
+      }
+      const slots = ensureSignatureSlots((r as any).slots as SignatureSlot[] | undefined).map((s) => ({ ...s, page: dec(s.page) }))
+      const fields = ensureSignatureFields((r as any).fields as SignatureField[] | undefined).map((f) => ({ ...f, page: dec(f.page) }))
+      return { ...r, slots, fields }
+    })
+
+    res.json({ ok: true, pageDeleted: page, pagesBefore: total, pagesAfter: total - 1 })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 function privacyLastPageText(profileId?: string) {
   return signatureStore.getPrivacyProfileText(profileId)
 }

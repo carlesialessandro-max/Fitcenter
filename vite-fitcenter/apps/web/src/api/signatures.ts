@@ -61,6 +61,11 @@ export const signaturesApi = {
   deleteAdmin: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
+  deleteTemplatePage: (id: string, body?: { page?: number; which?: "last" }) =>
+    api.put<{ ok: true; pageDeleted: number; pagesBefore: number; pagesAfter: number }>(
+      `/signatures/admin/templates/${encodeURIComponent(id)}/delete-page`,
+      body ?? { which: "last" }
+    ),
   updateTemplateLayout: (id: string, input: { slots: SignatureSlot[]; fields?: SignatureField[]; privacyProfileId?: string }) =>
     api.put<SignatureTemplate>(`/signatures/admin/templates/${encodeURIComponent(id)}/slots`, input),
   replaceTemplateLastPagePrivacy: (id: string, body?: { privacyProfileId?: string }) =>

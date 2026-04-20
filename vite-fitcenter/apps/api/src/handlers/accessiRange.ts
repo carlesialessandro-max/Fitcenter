@@ -30,17 +30,14 @@ export async function getAccessiUtentiRange(req: Request, res: Response) {
     if (from > to) return res.status(400).json({ message: "Intervallo non valido (from > to)" })
 
     const maxDays = 31
-    let countDays = 0
-    const rows: gestionaleSql.AccessoUtenteRow[] = []
-    for (let d = new Date(from); d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
-      countDays += 1
-      if (countDays > maxDays) return res.status(400).json({ message: `Range troppo lungo (max ${maxDays} giorni)` })
-      const iso = toIso(d)
-      const dayRows = await gestionaleSql.queryAccessiUtenti({ from: iso, to: iso })
-      rows.push(...dayRows)
-    }
+    const days = Math.floor((Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()) - Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate())) / 86_400_000) + 1
+    if (!Number.isFinite(days) || days <= 0) return res.status(400).json({ message: "Intervallo non valido" })
+    if (days > maxDays) return res.status(400).json({ message: `Range troppo lungo (max ${maxDays} giorni)` })
 
-    res.json({ rows, meta: { fromSql: true, from: fromRaw, to: toRaw, days: countDays, count: rows.length } })
+    // Query unica: la vista accessi espone datetime → possiamo filtrare con BETWEEN senza ciclare giorno-per-giorno.
+    const rows = await gestionaleSql.queryAccessiUtenti({ from: fromRaw, to: toRaw })
+
+    res.json({ rows, meta: { fromSql: true, from: fromRaw, to: toRaw, days, count: rows.length } })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
