@@ -2259,9 +2259,7 @@ export async function getReportConteggiAndamento(
         COUNT(DISTINCT CASE
           WHEN ${upperMacroExpr} = N'RINNOVI'
           THEN M.[${COL_ISCRIZIONE}] END) AS rinnovi,
-        COUNT(DISTINCT CASE
-          WHEN ${normMacroNoSpace} = N'INVITO' AND ${normCatNoSpace} = N'SETTIMANAPROVAINGRESSI'
-          THEN M.[${COL_ISCRIZIONE}] END) AS invitoClienti
+        0 AS invitoClienti
       FROM [${tblM}] M
       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
       ${whereBase}
@@ -2272,11 +2270,30 @@ export async function getReportConteggiAndamento(
     )
 
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+    // INVITO: sono abbonamenti a importo 0 (es. PROVE), quindi NON passano da MovimentiVenduto.Importo > 0.
+    // Li contiamo da tabella abbonamenti join view venditore.
+    const tblA = getAbbonamentiTableName()
+    const upperMacroAExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], A.[${colMacro}], ''))))`
+    const upperCatAExpr = "UPPER(LTRIM(RTRIM(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], A.[CategoriaAbbonamentoDescrizione], A.[CategoriaDescrizione], ''))))"
+    const normMacroANoSpace = `REPLACE(REPLACE(${upperMacroAExpr}, N' ', N''), N'_', N'')`
+    const normCatANoSpace = `REPLACE(REPLACE(${upperCatAExpr}, N' ', N''), N'_', N'')`
+    const inv = await req.query(
+      `SELECT COUNT(DISTINCT A.[IDIscrizione]) AS invitoClienti
+       FROM [${tblA}] A
+       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = A.[IDIscrizione]
+       WHERE CAST(A.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+         AND CAST(A.[DataInizio] AS DATE) <= CAST(@to AS DATE)
+         AND TRY_CONVERT(float, A.[Totale]) = 0
+         AND ${normMacroANoSpace} = N'INVITO'
+         AND ${normCatANoSpace} LIKE N'%PROVE%'` +
+        (idConsultant && ids.length > 0 ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})` : "")
+    )
+    const invRow = (inv.recordset ?? [])[0] as Record<string, unknown> | undefined
     return {
       ok: true,
       clientiNuovi: Number(row?.clientiNuovi ?? row?.ClientiNuovi ?? 0) || 0,
       rinnovi: Number(row?.rinnovi ?? row?.Rinnovi ?? 0) || 0,
-      invitoClienti: Number(row?.invitoClienti ?? row?.InvitoClienti ?? 0) || 0,
+      invitoClienti: Number(invRow?.invitoClienti ?? invRow?.InvitoClienti ?? 0) || 0,
     }
   } catch (e) {
     if (strict) throw e
@@ -2307,7 +2324,21 @@ export async function getCrossAbbonamentiDaLogByVenditore(
   const colJoin = viewCfg.colJoin
   const strict = (process.env.GESTIONALE_LOG_CROSS_STRICT ?? "true").toLowerCase() !== "false"
   try {
-    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    const tokensRaw = (process.env.GESTIONALE_LOG_CROSS_TOKENS ?? "GYM-GYM,CROSS").trim()
+    const tokens = tokensRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .slice(0, 12)
+    const reqBase = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    let req = reqBase
+    tokens.forEach((t, i) => {
+      req = req.input(`tok${i}`, sql.NVarChar(200), `%${t}%`)
+    })
+    const tokenWhere =
+      tokens.length > 0
+        ? ` AND (${tokens.map((_, i) => `L.[AppLogDescrizione] LIKE @tok${i}`).join(" OR ")})`
+        : ""
     const r = await req.query(
       `;WITH LF AS (
         SELECT
@@ -2323,7 +2354,7 @@ export async function getCrossAbbonamentiDaLogByVenditore(
             L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
             OR L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
           )
-          AND UPPER(L.[AppLogDescrizione]) LIKE N'%CROSS%'
+          ${tokenWhere}
       )
       SELECT x._vid AS idVenditore, COUNT(*) AS cnt
       FROM LF

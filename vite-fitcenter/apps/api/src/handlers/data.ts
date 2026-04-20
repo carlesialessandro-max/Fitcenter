@@ -2088,6 +2088,21 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const faCal = hasCustomRange ? parseIsoDatePartsCalendar(fromRaw) : null
     const taCal = hasCustomRange ? parseIsoDatePartsCalendar(toRaw) : null
 
+    // Cache persistente (admin): utile per report storici e per precompute one-shot.
+    // asOfKey: usiamo "toIso" perché identifica il punto temporale del report.
+    const scope = cacheScope(req)
+    const depSig = await getBudgetDepSig()
+    const consulentiKey = labelsFiltered.join("|")
+    const cacheKeyParams = { from: fromIso, to: toIso, consulenti: consulentiKey || null }
+    const cached = await cacheGet<any>({
+      name: "data.report-consulenti",
+      scope,
+      params: cacheKeyParams,
+      asOf: toIso,
+      depSig,
+    })
+    if (cached) return res.json(cached)
+
     const rows: ReportRow[] = []
     let cachedMockAbbonamenti: Abbonamento[] | null = null
 
@@ -2311,7 +2326,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
     res.setHeader("Pragma", "no-cache")
-    res.json({
+    const payload = {
       periodo,
       from: fromIso,
       to: toIso,
@@ -2332,7 +2347,19 @@ export async function getReportConsulenti(req: Request, res: Response) {
         oreAttese: oreAtteseRiga,
         percentualeOre: pctOre,
       },
+    }
+
+    await cacheSet({
+      name: "data.report-consulenti",
+      scope,
+      params: cacheKeyParams,
+      asOf: toIso,
+      depSig,
+      ttlMs: getCacheTtlMsForAsOf(toIso, 60_000),
+      value: payload,
     })
+
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

@@ -6,7 +6,7 @@
  * Eseguire dalla root monorepo:
  *   pnpm exec tsx apps/api/scripts/precompute-dashboard-cache.ts
  */
-import { getDashboard, getDettaglioAnno, getDettaglioMese } from "../src/handlers/data.js"
+import { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } from "../src/handlers/data.js"
 import { cacheGet, getBudgetDepSig } from "../src/services/persistent-cache.js"
 import dotenv from "dotenv"
 import path from "path"
@@ -40,6 +40,45 @@ function ymdToAsOfKey(year: number, month: number, day: number) {
 function daysInMonth(year: number, month: number) {
   // month: 1..12 -> ultimo giorno del mese
   return new Date(Date.UTC(year, month, 0, 12, 0, 0)).getUTCDate()
+}
+
+function parseYearsArg(raw: string | undefined): number[] | null {
+  const t = String(raw ?? "").trim()
+  if (!t) return null
+  const parts = t
+    .split(",")
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n >= 2000 && n <= 2100)
+  return parts.length ? Array.from(new Set(parts)).sort((a, b) => a - b) : null
+}
+
+function parseArgValue(key: string): string | null {
+  const idx = process.argv.findIndex((a) => a === key)
+  if (idx < 0) return null
+  return process.argv[idx + 1] ?? null
+}
+
+function computeMonthRange(now: Date, yearsBack: number, yearsOverride: number[] | null) {
+  if (yearsOverride && yearsOverride.length) {
+    const startYear = yearsOverride[0]!
+    const endYear = yearsOverride[yearsOverride.length - 1]!
+    // Di default scaldiamo fino al mese precedente (dati "stabili").
+    const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+    const yNow = useLocal ? now.getFullYear() : now.getUTCFullYear()
+    const mNow = (useLocal ? now.getMonth() : now.getUTCMonth()) + 1
+    const prevMonth = mNow - 1
+    const prevYear = prevMonth >= 1 ? yNow : yNow - 1
+    const prevMonthClamped = prevMonth >= 1 ? prevMonth : 12
+    const endDay = daysInMonth(prevYear, prevMonthClamped)
+    const end = { year: prevYear, month: prevMonthClamped, day: endDay }
+    const start = { year: startYear, month: 1, day: 1 }
+    // Se endYear è nel passato rispetto a prevYear, chiudiamo al 31/12 endYear.
+    if (endYear < end.year) {
+      return { start, end: { year: endYear, month: 12, day: 31 } }
+    }
+    return { start, end }
+  }
+  return monthRangeLastDay(now, yearsBack)
 }
 
 function monthRangeLastDay(now: Date, yearsBack: number) {
@@ -92,14 +131,19 @@ async function main() {
   dotenv.config({ path: apiEnvPath })
 
   const now = new Date()
-  const yearsBack = Number(process.env.PRECOMPUTE_YEARS_BACK ?? 3)
+  const yearsBack = Number(parseArgValue("--years-back") ?? process.env.PRECOMPUTE_YEARS_BACK ?? 3)
+  const yearsOverride = parseYearsArg(parseArgValue("--years") ?? undefined)
   const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "true").toLowerCase() !== "false"
   const depSig = await getBudgetDepSig()
   const scope = "admin"
   const consulenteParams = { consulente: null }
 
-  const { start, end } = monthRangeLastDay(now, yearsBack)
-  console.log(`[precompute] anni back=${yearsBack} (start=${start.year}-${pad2(start.month)}-${pad2(start.day)} end=${end.year}-${pad2(end.month)}-${pad2(end.day)})`)
+  const { start, end } = computeMonthRange(now, yearsBack, yearsOverride)
+  console.log(
+    `[precompute] ${
+      yearsOverride?.length ? `years=${yearsOverride.join(",")}` : `years-back=${yearsBack}`
+    } (start=${start.year}-${pad2(start.month)}-${pad2(start.day)} end=${end.year}-${pad2(end.month)}-${pad2(end.day)})`
+  )
 
   const yearsSeen = new Set<number>()
 
@@ -110,6 +154,8 @@ async function main() {
     for (let m = mStart; m <= mEnd; m++) {
       const lastDay = daysInMonth(y, m)
       const asOf = ymdToAsOfKey(y, m, lastDay)
+      const fromIso = `${y}-${pad2(m)}-01`
+      const toIso = `${y}-${pad2(m)}-${pad2(lastDay)}`
 
       yearsSeen.add(y)
 
@@ -160,6 +206,21 @@ async function main() {
         const msg = `[precompute] storico data.dettaglio-mese NON salvato per asOf=${asOf} (anno=${y}, mese=${m}).`
         if (strictSql) throw new Error(msg)
         console.warn(msg)
+      }
+
+      // Report consulenti per il mese (range custom): cached su data.report-consulenti.
+      const repCached = await cacheGet({
+        name: "data.report-consulenti",
+        scope,
+        params: { from: fromIso, to: toIso, consulenti: null },
+        asOf: toIso,
+        depSig,
+      })
+      if (repCached) {
+        console.log(`[precompute] skip report-consulenti ${y}-${pad2(m)} cache HIT`)
+      } else {
+        console.log(`[precompute] report-consulenti ${y}-${pad2(m)} cache MISS -> calcolo`)
+        await call(getReportConsulenti as any, { from: fromIso, to: toIso, asOf: toIso })
       }
     }
   }
