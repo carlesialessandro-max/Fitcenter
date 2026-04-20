@@ -2437,17 +2437,24 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
   const strict = (process.env.ACCESSI_STRICT ?? "true").toLowerCase() !== "false"
   try {
     // Nel gestionale: vista accessi può esporre AccessiDataOra / AccessiData / AccessiOra.
-    const dateCandidates = [
-      "AccessiDataOra",
-      "AccessiData",
-      "DataEntrata",
-      "DataIngresso",
-      "Entrata",
-      "DataOraEntrata",
-      "DataOraIngresso",
-      "Data",
-    ]
-    const dateCol = await pickBestDateColForView(view, dateCandidates)
+    // ATTENZIONE: AccessiOra è solo time → non va usata per filtri date-range.
+    const forced = (process.env.GESTIONALE_ACCESSI_COL_DATA ?? "").trim()
+    const cols = await prenGetCols(view) // lower-case
+    const set = new Set(cols)
+    const dateCol =
+      (forced && set.has(forced.toLowerCase()) ? forced : null) ??
+      (set.has("accessidataora") ? "AccessiDataOra" : null) ??
+      (set.has("accessidata") ? "AccessiData" : null) ??
+      (await pickBestDateColForView(view, [
+        "AccessiDataOra",
+        "AccessiData",
+        "DataEntrata",
+        "DataIngresso",
+        "Entrata",
+        "DataOraEntrata",
+        "DataOraIngresso",
+        "Data",
+      ]))
     // Se non troviamo una colonna data affidabile, evitiamo query enorme.
     if (!dateCol) return []
     const req = p.request().input("from", sql.VarChar(10), params.from).input("to", sql.VarChar(10), params.to)
