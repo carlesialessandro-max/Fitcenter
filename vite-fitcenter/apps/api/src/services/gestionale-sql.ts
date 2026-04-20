@@ -2271,21 +2271,24 @@ export async function getReportConteggiAndamento(
 
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
     // INVITO: sono abbonamenti a importo 0 (es. PROVE), quindi NON passano da MovimentiVenduto.Importo > 0.
-    // Li contiamo da tabella abbonamenti join view venditore.
+    // Li contiamo da tabella/vista abbonamenti (es. RVW_AbbonamentiUtenti) join view venditore.
+    // Nota DB: su RVW_AbbonamentiUtenti la data è spesso DataOperazione (non DataInizio).
     const tblA = getAbbonamentiTableName()
-    const upperMacroAExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], A.[${colMacro}], ''))))`
-    const upperCatAExpr = "UPPER(LTRIM(RTRIM(COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], A.[CategoriaAbbonamentoDescrizione], A.[CategoriaDescrizione], ''))))"
+    const upperMacroAExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], A.[${colMacro}], A.[MacroCategoriaAbbonamentoDescrizione], ''))))`
     const normMacroANoSpace = `REPLACE(REPLACE(${upperMacroAExpr}, N' ', N''), N'_', N'')`
-    const normCatANoSpace = `REPLACE(REPLACE(${upperCatAExpr}, N' ', N''), N'_', N'')`
+    const upperAbbDescExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDescrizione], ''))))"
+    const upperDurataExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDurataDescrizione], ''))))"
+    const totExpr = "TRY_CONVERT(float, COALESCE(A.[Totale], A.[Importo], 0))"
     const inv = await req.query(
       `SELECT COUNT(DISTINCT A.[IDIscrizione]) AS invitoClienti
        FROM [${tblA}] A
        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = A.[IDIscrizione]
-       WHERE CAST(A.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-         AND CAST(A.[DataInizio] AS DATE) <= CAST(@to AS DATE)
-         AND TRY_CONVERT(float, A.[Totale]) = 0
+       WHERE CAST(A.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
+         AND CAST(A.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
+         AND ${totExpr} = 0
          AND ${normMacroANoSpace} = N'INVITO'
-         AND ${normCatANoSpace} LIKE N'%PROVE%'` +
+         AND ${upperAbbDescExpr} = N'PROVE'
+         AND ${upperDurataExpr} = N'SETTIMANA PROVA INGRESSI'` +
         (idConsultant && ids.length > 0 ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})` : "")
     )
     const invRow = (inv.recordset ?? [])[0] as Record<string, unknown> | undefined
