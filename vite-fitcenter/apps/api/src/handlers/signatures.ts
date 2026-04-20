@@ -84,9 +84,31 @@ function toSteps(slots: SignatureSlot[]): SignatureStep[] {
     .map((s) => ({ ...s }))
 }
 
-async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], signerName?: string): Promise<Uint8Array> {
+function fmtItDateTimeFromIso(iso: string | undefined | null): string | null {
+  const s = String(iso ?? "").trim()
+  if (!s) return null
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  const pad2 = (n: number) => String(n).padStart(2, "0")
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+async function renderPdfWithSteps(
+  basePath: string,
+  steps: SignatureStep[],
+  signerName?: string,
+  meta?: { otpVerifiedAt?: string | null }
+): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.load(fs.readFileSync(basePath))
   const pages = pdfDoc.getPages()
+  const font = await pdfDoc.embedFont("Helvetica")
+
+  const otpIt = fmtItDateTimeFromIso(meta?.otpVerifiedAt)
+  if (otpIt && pages.length > 0) {
+    // Footer minimale nel PDF firmato: timestamp OTP dentro al file generato.
+    pages[0]!.drawText(`OTP verificato: ${otpIt}`, { x: 30, y: 14, size: 7, font })
+  }
+
   for (const step of steps) {
     if (!step.signatureDataUrl) continue
     const pageIdx = Math.max(0, Math.min(pages.length - 1, (step.page ?? 1) - 1))
@@ -110,7 +132,6 @@ async function renderPdfWithSteps(basePath: string, steps: SignatureStep[], sign
     const dy = step.y + Math.max(0, (boxH - drawH) / 2) // centrata nel box
     page.drawImage(png, { x: dx, y: dy, width: drawW, height: drawH })
     if (signerName?.trim()) {
-      const font = await pdfDoc.embedFont("Helvetica")
       page.drawText(signerName.trim(), { x: step.x, y: step.y + step.height + 8, size: 9, font })
     }
   }
@@ -1056,7 +1077,9 @@ export async function confirmSignature(req: Request, res: Response) {
   )
 
   const origPdfPath = path.join(signatureStore.resolveSignatureDir(), row.documentFileName)
-  const signedPdfBytes = await renderPdfWithSteps(origPdfPath, signedSteps, fullName || row.customerName)
+  const signedPdfBytes = await renderPdfWithSteps(origPdfPath, signedSteps, fullName || row.customerName, {
+    otpVerifiedAt: row.otpVerifiedAt,
+  })
 
   const signedFileName = `signed-${row.id}.pdf`
   const signedPdfPath = path.join(signatureStore.resolveSignatureDir(), signedFileName)
