@@ -203,8 +203,9 @@ function parseDateAny(val: unknown): Date | null {
   if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val
   const s = String(val).trim()
   if (!s) return null
-  // Supporta formato IT dd/MM/yyyy HH:mm(:ss)
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(s)
+  // Supporta formato IT dd/MM/yyyy HH:mm(:ss) o HH.mm(.ss)
+  const sNorm = s.replace(/(\d{1,2})\.(\d{2})(?:\.(\d{2}))?$/, (_m, h, mi, ss) => `${h}:${mi}${ss ? `:${ss}` : ""}`)
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?)?$/.exec(sNorm)
   if (m) {
     const dd = Number(m[1])
     const mm = Number(m[2])
@@ -215,7 +216,7 @@ function parseDateAny(val: unknown): Date | null {
     const d = new Date(yyyy, mm - 1, dd, hh, mi, ss)
     return Number.isNaN(d.getTime()) ? null : d
   }
-  const d = new Date(s)
+  const d = new Date(sNorm)
   return Number.isNaN(d.getTime()) ? null : d
 }
 
