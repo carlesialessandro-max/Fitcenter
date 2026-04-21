@@ -2489,6 +2489,50 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
   }
 }
 
+/**
+ * Imposta "Blocca prenotazioni fino al" nel gestionale.
+ *
+ * Implementazione configurabile via env perché la tabella/colonna cambiano tra installazioni.
+ *
+ * Env:
+ * - GESTIONALE_BLOCK_PRENOT_TABLE (es. dbo.UtentiWeb)
+ * - GESTIONALE_BLOCK_PRENOT_COL_EMAIL (default: Email)
+ * - GESTIONALE_BLOCK_PRENOT_COL_UNTIL (default: BloccaPrenotazioniFinoAl)
+ *
+ * untilIso: YYYY-MM-DD
+ */
+export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string; untilIso: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
+  const p = await getPool()
+  if (!p) return { ok: false, message: "DB gestionale non configurato" }
+
+  const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
+  if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
+  const colEmail = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_EMAIL ?? "Email").trim()
+  const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colEmail)) return { ok: false, message: "Colonna email non valida" }
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+
+  const q = qualifySqlObject(table).query
+  const email = String(params.email ?? "").trim()
+  const untilIso = String(params.untilIso ?? "").trim()
+  if (!email) return { ok: false, message: "Email vuota" }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(untilIso)) return { ok: false, message: "untilIso non valido" }
+
+  try {
+    const req = p.request().input("email", sql.NVarChar(320), email).input("until", sql.VarChar(10), untilIso)
+    const r = await req.query(
+      `UPDATE ${q}
+       SET [${colUntil}] = TRY_CONVERT(date, @until)
+       WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+    )
+    const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
+    return { ok: true, rowsAffected: affected }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 export function isGestionaleConfigured(): boolean {
   return !!getConnectionString()
 }

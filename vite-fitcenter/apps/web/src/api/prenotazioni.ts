@@ -47,9 +47,20 @@ export const prenotazioniApi = {
   },
   notifyEmail: (body: { giorno: string; groupKey: string; subject: string; text: string }) =>
     api.post<{ ok: boolean; recipients: number }>("/prenotazioni/notify-email", body),
-  listNoShowBlocks: () => api.get<{ rows: { email: string; blockedAt: string; reason: string; monthKey: string; count: number }[] }>("/prenotazioni/no-show/blocks"),
-  notifyAndBlockNoShow: (body: { email: string; subject: string; text: string; monthKey: string; count: number }) =>
-    api.post<{ ok: boolean; blocked: { email: string; blockedAt: string; reason: string; monthKey: string; count: number } }>(
+  listNoShowBlocks: () =>
+    api.get<{ rows: { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }[] }>(
+      "/prenotazioni/no-show/blocks"
+    ),
+  notifyAndBlockNoShow: (body: {
+    email: string
+    subject: string
+    text: string
+    monthKey: string
+    count: number
+    blockDays?: number
+    absences?: { day: string; servizio: string; oraInizio?: string; oraFine?: string }[]
+  }) =>
+    api.post<{ ok: boolean; blocked: { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number } }>(
       "/prenotazioni/no-show/notify-and-block",
       body
     ),

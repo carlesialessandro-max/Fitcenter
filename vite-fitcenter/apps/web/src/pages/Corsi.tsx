@@ -1219,10 +1219,24 @@ export function CorsiNoShow() {
       const text =
         `Gentile socio,\\n\\n` +
         `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
-        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa.\\n\\n` +
+        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa per 3 giorni.\\n\\n` +
         `Per informazioni o sblocco, contatta la segreteria.\\n\\n` +
         `Cordiali saluti.`
-      return prenotazioniApi.notifyAndBlockNoShow({ email: input.email, subject, text, monthKey: input.monthKey, count: input.count })
+      const absences = missedForSelected.map((m) => ({
+        day: m.day,
+        servizio: m.servizio,
+        oraInizio: m.oraInizio,
+        oraFine: m.oraFine,
+      }))
+      return prenotazioniApi.notifyAndBlockNoShow({
+        email: input.email,
+        subject,
+        text,
+        monthKey: input.monthKey,
+        count: input.count,
+        blockDays: 3,
+        absences,
+      })
     },
     onSuccess: async () => {
       await blocksQ.refetch()

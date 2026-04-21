@@ -3,6 +3,8 @@ import { readJson, writeJson } from "./persist.js"
 export type NoShowBlock = {
   email: string
   blockedAt: string
+  /** Blocco prenotazioni fino a (YYYY-MM-DD), se applicabile */
+  until?: string
   reason: string
   monthKey: string
   count: number
