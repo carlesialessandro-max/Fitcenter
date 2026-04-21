@@ -249,11 +249,28 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
     parseDateAny(raw?.DataFine) ??
     null
 
+  const oi = (p.oraInizio ?? "").trim()
+  const of = (p.oraFine ?? "").trim()
+
+  // Alcune viste espongono Inizio/Fine con data corretta ma ORA = 00:00:00.
+  // In questo caso, se abbiamo oraInizio/oraFine, correggiamo l'orario.
+  if (start && start.getHours() === 0 && start.getMinutes() === 0 && /^\d{1,2}:\d{2}$/.test(oi)) {
+    const [hh, mm] = oi.split(":").map((x) => Number(x))
+    const d = new Date(start)
+    d.setHours(hh, mm, 0, 0)
+    if (!Number.isNaN(d.getTime())) start = d
+  }
+  if (end && end.getHours() === 0 && end.getMinutes() === 0 && /^\d{1,2}:\d{2}$/.test(of)) {
+    const [hh, mm] = of.split(":").map((x) => Number(x))
+    const d = new Date(end)
+    d.setHours(hh, mm, 0, 0)
+    if (!Number.isNaN(d.getTime())) end = d
+  }
+
   // Fallback: alcune viste non espongono le colonne DataInizio/FinePrenotazioneIscrizione.
   // In quel caso ricostruiamo dalla coppia (giorno + oraInizio/oraFine) della prenotazione.
   if (!start) {
     const dayIso = String((p.giorno ?? "").trim() || fallbackDayIso || "").trim()
-    const oi = (p.oraInizio ?? "").trim()
     if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi)) {
       const [hh, mm] = oi.split(":").map((x) => Number(x))
       const d = new Date(dayIso)
@@ -262,7 +279,6 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
     }
   }
   if (!end && start) {
-    const of = (p.oraFine ?? "").trim()
     if (/^\d{1,2}:\d{2}$/.test(of)) {
       const [hh, mm] = of.split(":").map((x) => Number(x))
       const d = new Date(start)
@@ -1096,6 +1112,8 @@ export function CorsiNoShow() {
 
   const [dayInMonth, setDayInMonth] = useState(() => isoToday())
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  const [q, setQ] = useState("")
 
   const r = useMemo(() => monthRangeFromDay(dayInMonth), [dayInMonth])
 
@@ -1153,13 +1171,13 @@ export function CorsiNoShow() {
 
   type NoShowRow = { key: string; cognome: string; nome: string; email: string; count: number; monthKey: string }
 
-  const noShowCandidates = useMemo((): NoShowRow[] => {
+  const allCandidates = useMemo((): NoShowRow[] => {
     if (!rangeQ.data || !accessiRangeQ.data) return []
     const all = rangeQ.data?.rows ?? []
     const counts = new Map<string, NoShowRow>()
     for (const p of all) {
       if (p.inAttesa) continue
-      const w = getLessonWindow(p)
+      const w = getLessonWindow(p, (p.giorno ?? "").trim())
       const day = w.start ? isoDayUtc(w.start) : ""
       if (!day) continue
       const key = participantStableKey(p, 0)
@@ -1185,13 +1203,20 @@ export function CorsiNoShow() {
     }
     const out = [...counts.values()]
     out.sort((a, b) => b.count - a.count || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome) || a.email.localeCompare(b.email))
-    return out.filter((x) => x.count >= 3)
+    return out
   }, [rangeQ.data, accessiRangeQ.data, byDay, r.monthKey])
+
+  const noShowCandidates = useMemo((): NoShowRow[] => {
+    const needle = q.trim().toLowerCase()
+    const base = showAll ? allCandidates : allCandidates.filter((x) => x.count >= 3)
+    if (!needle) return base
+    return base.filter((x) => `${x.cognome} ${x.nome} ${x.email}`.toLowerCase().includes(needle))
+  }, [allCandidates, showAll, q])
 
   const selected = useMemo(() => {
     if (!selectedKey) return null
-    return noShowCandidates.find((x) => x.key === selectedKey) ?? null
-  }, [noShowCandidates, selectedKey])
+    return allCandidates.find((x) => x.key === selectedKey) ?? null
+  }, [allCandidates, selectedKey])
 
   const missedForSelected = useMemo(() => {
     if (!selected) return []
@@ -1271,7 +1296,22 @@ export function CorsiNoShow() {
               Soglia: 3 nel mese.
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 text-xs text-zinc-500">
+              <input
+                type="checkbox"
+                checked={showAll}
+                onChange={(e) => setShowAll(e.target.checked)}
+                className="h-4 w-4 rounded border border-zinc-600 bg-zinc-950/30"
+              />
+              Mostra anche &lt;3
+            </label>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Cerca nome/email…"
+              className="w-44 rounded-lg border border-zinc-700 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200 placeholder:text-zinc-600"
+            />
             <label className="text-xs text-zinc-500">Mese</label>
             <input
               type="date"
@@ -1293,7 +1333,9 @@ export function CorsiNoShow() {
             {!rangeQ.data || rangeQ.isFetching || accessiRangeQ.isFetching ? (
               <p className="text-sm text-zinc-500">Analisi in corso…</p>
             ) : noShowCandidates.length === 0 ? (
-              <p className="text-sm text-zinc-500">Nessun cliente con 3+ no-show nel mese selezionato.</p>
+              <p className="text-sm text-zinc-500">
+                {showAll ? "Nessun cliente trovato per il filtro." : "Nessun cliente con 3+ no-show nel mese selezionato."}
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="min-w-full text-left text-sm">
