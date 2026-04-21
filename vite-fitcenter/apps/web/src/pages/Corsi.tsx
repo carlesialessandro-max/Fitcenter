@@ -599,8 +599,8 @@ export function Corsi() {
       `start=${startIso}`,
       `end=${endIso}`,
       `accessCount=${accessCount}`,
-      `firstAccess=${firstAccess ? firstAccess.toISOString() : "—"}`,
-      `lastAccess=${lastAccess ? lastAccess.toISOString() : "—"}`,
+      `firstAccess=${firstAccess ? `${firstAccess.kind}:${firstAccess.t.toISOString()}` : "—"}`,
+      `lastAccess=${lastAccess ? `${lastAccess.kind}:${lastAccess.t.toISOString()}` : "—"}`,
       `sampleAccessRaw=${accessRawSample || "—"}`,
     ].join(" | ")
   }
