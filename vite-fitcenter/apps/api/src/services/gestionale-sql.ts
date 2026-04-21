@@ -2954,15 +2954,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
     const idUtente = firstNonEmpty(raw, [
       // ID utente/anagrafica: alcune viste usano nomi diversi
-      "IDUtentePrenotazioneIscrizione",
-      "IdUtentePrenotazioneIscrizione",
-      "PrenotazioniIscrizioneIDUtente",
-      "PrenotazioneIDUtente",
-      "IDUtenteIscrizione",
-      "IdUtenteIscrizione",
-      "IDUtente",
-      "IdUtente",
-      "UtenteId",
+      // Priorità cliente/anagrafica (evita prendere ID operatore/altro)
       "IDCliente",
       "IdCliente",
       "ClienteId",
@@ -2972,6 +2964,17 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "IDSocio",
       "IdSocio",
       "SocioId",
+      // Alcune viste mettono l'ID cliente dentro colonne "prenotazione/iscrizione"
+      "IDUtentePrenotazioneIscrizione",
+      "IdUtentePrenotazioneIscrizione",
+      "PrenotazioniIscrizioneIDUtente",
+      "PrenotazioneIDUtente",
+      "IDUtenteIscrizione",
+      "IdUtenteIscrizione",
+      // Fallback: IDUtente generico (a volte è operatore)
+      "IDUtente",
+      "IdUtente",
+      "UtenteId",
     ])
     const dataUltimoAcessoRaw = firstNonEmpty(raw, [
       "DataUltimoAccesso",
