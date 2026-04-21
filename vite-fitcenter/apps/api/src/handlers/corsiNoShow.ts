@@ -1,7 +1,12 @@
 import { Request, Response } from "express"
 import { corsiNoShowStore } from "../store/corsi-no-show.js"
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
-import { clearBloccaPrenotazioniFinoAlByEmail, setBloccaPrenotazioniFinoAlByEmail } from "../services/gestionale-sql.js"
+import {
+  clearBloccaPrenotazioniFinoAlByEmail,
+  clearBloccaPrenotazioniFinoAlByIdUtente,
+  setBloccaPrenotazioniFinoAlByEmail,
+  setBloccaPrenotazioniFinoAlByIdUtente,
+} from "../services/gestionale-sql.js"
 
 function pad2(n: number) {
   return String(n).padStart(2, "0")
@@ -31,10 +36,11 @@ export async function postCorsiNoShowBlock(req: Request, res: Response) {
 export async function deleteCorsiNoShowBlock(req: Request, res: Response) {
   try {
     const email = String(req.params.email ?? "").trim()
+    const idUtente = String(req.query.idUtente ?? "").trim()
     const norm = corsiNoShowStore.normalizeEmail(email)
     if (!norm) return res.status(400).json({ message: "Email non valida" })
 
-    const gestionale = await clearBloccaPrenotazioniFinoAlByEmail({ email: norm })
+    const gestionale = idUtente ? await clearBloccaPrenotazioniFinoAlByIdUtente({ idUtente }) : await clearBloccaPrenotazioniFinoAlByEmail({ email: norm })
     if (!gestionale.ok) {
       // eslint-disable-next-line no-console
       console.warn("[no-show] sblocco gestionale fallito:", gestionale.message)
@@ -51,6 +57,7 @@ export async function deleteCorsiNoShowBlock(req: Request, res: Response) {
 export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response) {
   try {
     const email = String(req.body?.email ?? "").trim()
+    const idUtente = String(req.body?.idUtente ?? "").trim()
     const subject = String(req.body?.subject ?? "").trim().slice(0, 300)
     const textBase = String(req.body?.text ?? "").trim().slice(0, 20_000)
     const monthKey = String(req.body?.monthKey ?? "").trim()
@@ -93,7 +100,9 @@ export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response)
     const until = new Date()
     until.setDate(until.getDate() + blockDays)
     const untilIso = toIsoDateLocal(until)
-    const gestionale = await setBloccaPrenotazioniFinoAlByEmail({ email: norm, untilIso })
+    const gestionale = idUtente
+      ? await setBloccaPrenotazioniFinoAlByIdUtente({ idUtente, untilIso })
+      : await setBloccaPrenotazioniFinoAlByEmail({ email: norm, untilIso })
     if (!gestionale.ok) {
       // Non blocchiamo l'email, ma avvisiamo il client: configurazione mancante o errore SQL.
       // Il blocco locale serve solo come storico UI.

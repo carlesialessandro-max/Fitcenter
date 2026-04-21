@@ -2647,6 +2647,68 @@ export async function clearBloccaPrenotazioniFinoAlByEmail(params: { email: stri
   }
 }
 
+export async function setBloccaPrenotazioniFinoAlByIdUtente(params: { idUtente: string; untilIso: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
+  const p = await getPoolWrite()
+  if (!p) return { ok: false, message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" }
+
+  const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
+  if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
+  const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+  const targetIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_TARGET_COL_ID ?? "IDUtente").trim()
+
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(targetIdCol)) return { ok: false, message: "Colonna target id non valida" }
+
+  const q = qualifySqlObject(table).query
+  const idUtente = String(params.idUtente ?? "").trim()
+  const untilIso = String(params.untilIso ?? "").trim()
+  if (!idUtente) return { ok: false, message: "idUtente vuoto" }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(untilIso)) return { ok: false, message: "untilIso non valido" }
+
+  try {
+    const req = p.request().input("idUtente", sql.NVarChar(64), idUtente).input("until", sql.VarChar(10), untilIso)
+    const r = await req.query(
+      `UPDATE ${q}
+       SET [${colUntil}] = TRY_CONVERT(date, @until)
+       WHERE LTRIM(RTRIM(COALESCE(CAST([${targetIdCol}] AS NVARCHAR(64)), N''))) = LTRIM(RTRIM(@idUtente));`
+    )
+    const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
+    return { ok: true, rowsAffected: affected }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
+export async function clearBloccaPrenotazioniFinoAlByIdUtente(params: { idUtente: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
+  const p = await getPoolWrite()
+  if (!p) return { ok: false, message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" }
+
+  const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
+  if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
+  const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+  const targetIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_TARGET_COL_ID ?? "IDUtente").trim()
+
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(targetIdCol)) return { ok: false, message: "Colonna target id non valida" }
+
+  const q = qualifySqlObject(table).query
+  const idUtente = String(params.idUtente ?? "").trim()
+  if (!idUtente) return { ok: false, message: "idUtente vuoto" }
+
+  try {
+    const req = p.request().input("idUtente", sql.NVarChar(64), idUtente)
+    const r = await req.query(
+      `UPDATE ${q}
+       SET [${colUntil}] = NULL
+       WHERE LTRIM(RTRIM(COALESCE(CAST([${targetIdCol}] AS NVARCHAR(64)), N''))) = LTRIM(RTRIM(@idUtente));`
+    )
+    const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
+    return { ok: true, rowsAffected: affected }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 export function isGestionaleConfigured(): boolean {
   return !!getConnectionString()
 }

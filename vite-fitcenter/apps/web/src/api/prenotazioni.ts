@@ -53,6 +53,7 @@ export const prenotazioniApi = {
     ),
   notifyAndBlockNoShow: (body: {
     email: string
+    idUtente?: string
     subject: string
     text: string
     monthKey: string
@@ -68,7 +69,11 @@ export const prenotazioniApi = {
       "/prenotazioni/no-show/notify-and-block",
       body
     ),
-  unblockNoShow: (email: string) =>
-    api.delete<{ ok: boolean; gestionale?: { ok: boolean; rowsAffected?: number; message?: string } }>(`/prenotazioni/no-show/blocks/${encodeURIComponent(email)}`),
+  unblockNoShow: (params: { email: string; idUtente?: string }) => {
+    const qs = params.idUtente ? `?idUtente=${encodeURIComponent(params.idUtente)}` : ""
+    return api.delete<{ ok: boolean; gestionale?: { ok: boolean; rowsAffected?: number; message?: string } }>(
+      `/prenotazioni/no-show/blocks/${encodeURIComponent(params.email)}${qs}`
+    )
+  },
 }
 

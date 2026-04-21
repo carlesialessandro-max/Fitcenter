@@ -1322,8 +1322,10 @@ export function CorsiNoShow() {
         oraInizio: m.oraInizio,
         oraFine: m.oraFine,
       }))
+      const idUtente = selected?.key?.startsWith("id:") ? selected.key.slice(3) : undefined
       return prenotazioniApi.notifyAndBlockNoShow({
         email: input.email,
+        idUtente,
         subject,
         text,
         monthKey: input.monthKey,
@@ -1341,7 +1343,8 @@ export function CorsiNoShow() {
   const unblockMutation = useMutation({
     mutationFn: async (email: string) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
-      return prenotazioniApi.unblockNoShow(email)
+      const idUtente = selected?.key?.startsWith("id:") ? selected.key.slice(3) : undefined
+      return prenotazioniApi.unblockNoShow({ email, idUtente })
     },
     onSuccess: async () => {
       await blocksQ.refetch()
