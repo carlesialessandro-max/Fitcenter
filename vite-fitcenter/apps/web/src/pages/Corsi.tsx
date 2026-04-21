@@ -266,7 +266,9 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (dtIn && isoDayUtc(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
-      const desc = String(raw?.Descrizione ?? raw?.descrizione ?? raw?.Terminale ?? raw?.terminal ?? "").toLowerCase()
+      const desc = `${String(raw?.Descrizione ?? raw?.descrizione ?? "")} ${String(raw?.Terminale ?? raw?.terminale ?? "")} ${String(
+        raw?.Varco ?? raw?.varco ?? ""
+      )}`.toLowerCase()
       const kind: AccessEvent["kind"] = desc.includes("uscita") ? "out" : "in"
       list.push({ t: dtIn, kind })
     }
