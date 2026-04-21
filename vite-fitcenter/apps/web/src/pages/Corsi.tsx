@@ -357,17 +357,22 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // Day guard
   if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
 
-  // Regola per più corsi nello stesso giorno:
-  // - cerchiamo l'ultimo evento (in/out) PRIMA dell'inizio lezione.
-  // - se l'ultimo evento è "out" => NON presente nei corsi successivi (finché non rientra).
+  // Regola presenza:
+  // - presente se c'è una "entrata" prima o durante la lezione
+  // - se l'ultimo evento prima dell'inizio è "out", rimane assente finché non rientra (entrata durante la lezione)
   const startMs = w.start.getTime()
+  const endMs = (w.end ?? w.start).getTime()
   let lastBefore: AccessEvent | null = null
   for (const e of evs) {
     const ms = e.t.getTime()
     if (ms > startMs) break
     lastBefore = e
   }
-  const present = lastBefore ? lastBefore.kind === "in" : false
+  if (lastBefore?.kind === "in") return { present: true, entry: firstIn, exit: lastOut }
+
+  // Se è uscita prima dell'inizio (o non c'è nessun evento prima), conta come presente solo se rientra durante la lezione.
+  const enteredDuring = evs.some((e) => e.kind === "in" && e.t.getTime() >= startMs && e.t.getTime() <= endMs)
+  const present = enteredDuring
   return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
 }
 
@@ -1262,10 +1267,10 @@ export function CorsiNoShow() {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
       const subject = "Prenotazioni corsi: sospensione per assenze ripetute"
       const text =
-        `Gentile socio,\\n\\n` +
+        `Gentile socio,\\n` +
         `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
-        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa per 3 giorni.\\n\\n` +
-        `Per informazioni o sblocco, contatta la segreteria.\\n\\n` +
+        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa per 3 giorni.\\n` +
+        `Per informazioni o sblocco, chiama la segreteria 0573 572649 oppure rispondi a questa email.\\n` +
         `Cordiali saluti.`
       const absences = missedForSelected.map((m) => ({
         day: m.day,
