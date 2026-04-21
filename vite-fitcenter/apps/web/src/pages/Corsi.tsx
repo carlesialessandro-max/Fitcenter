@@ -423,17 +423,6 @@ export function Corsi() {
     staleTime: 20_000,
   })
 
-  const rangeQ = useQuery({
-    queryKey: ["prenotazioni-corsi-range", giorno],
-    queryFn: () => {
-      const r = monthRangeFromDay(giorno)
-      return prenotazioniApi.listPrenotazioniRange({ from: r.from, to: r.to })
-    },
-    enabled: false,
-    retry: false,
-    staleTime: 0,
-  })
-
   const accessiDayQ = useQuery({
     queryKey: ["accessi-utenti", giorno],
     queryFn: () => prenotazioniApi.listAccessiRange({ from: giorno, to: giorno }),
@@ -441,34 +430,6 @@ export function Corsi() {
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: 30_000,
-  })
-
-  const accessiRangeQ = useQuery({
-    queryKey: ["accessi-utenti-range", giorno],
-    queryFn: () => {
-      const r = monthRangeFromDay(giorno)
-      return prenotazioniApi.listAccessiRange({ from: r.from, to: r.to })
-    },
-    enabled: false,
-    retry: false,
-    staleTime: 0,
-  })
-
-  const notifyBlockMutation = useMutation({
-    mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
-      if (!canManageNoShow) throw new Error("Permessi insufficienti")
-      const subject = "Prenotazioni corsi: sospensione per assenze ripetute"
-      const text =
-        `Gentile socio,\\n\\n` +
-        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
-        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa.\\n\\n` +
-        `Per informazioni o sblocco, contatta la segreteria.\\n\\n` +
-        `Cordiali saluti.`
-      return prenotazioniApi.notifyAndBlockNoShow({ email: input.email, subject, text, monthKey: input.monthKey, count: input.count })
-    },
-    onSuccess: async () => {
-      await blocksQ.refetch()
-    },
   })
 
   const notifyMutation = useMutation({
@@ -523,60 +484,6 @@ export function Corsi() {
     }
     return m
   }, [blocksQ.data])
-
-  const noShowCandidates = useMemo(() => {
-    const r = monthRangeFromDay(giorno)
-    const all = rangeQ.data?.rows ?? []
-    if (!rangeQ.data || !accessiRangeQ.data) return []
-    // index: giornoIso -> idKey -> access times
-    const byDay = new Map<string, AccessIndex>()
-    // Index accessi per giorno (derivato da AccessiDataOra).
-    const allAccessRows = accessiRangeQ.data?.rows ?? []
-    const daySet = new Set<string>()
-    for (const a of allAccessRows) {
-      const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
-      if (!dt) continue
-      daySet.add(isoDayUtc(dt))
-    }
-    for (const dayIso of daySet) {
-      const dayRows = allAccessRows.filter((a) => {
-        const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata)
-        return dt ? isoDayUtc(dt) === dayIso : false
-      })
-      byDay.set(dayIso, buildAccessIndexForDay(dayRows, dayIso))
-    }
-    const counts = new Map<
-      string,
-      { key: string; email: string; name: string; count: number }
-    >()
-    for (const p of all) {
-      if (p.inAttesa) continue
-      const w = getLessonWindow(p)
-      const day = w.start ? isoDayUtc(w.start) : ""
-      if (!day) continue
-      const key = participantStableKey(p, 0)
-      const email = (p.email ?? "").trim().toLowerCase()
-      const name = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || email || "—"
-      const gk = groupKeyForRow(p)
-      const pk = participantStableKey(p, 0)
-      const appello = readAppelloForDay(day)
-      const presenteAppello = !!appello[`${gk}::${pk}`]
-      const accIdx = byDay.get(day) ?? new Map()
-      const presenteAccessi = isPresentByAccess(accIdx, p, day).present
-      const presente = presenteAppello || presenteAccessi
-      if (!presente) {
-        const cur = counts.get(key) ?? { key, email, name, count: 0 }
-        cur.count += 1
-        // tieni email se prima vuota e poi appare
-        if (!cur.email && email) cur.email = email
-        if (cur.name === "—" && name && name !== "—") cur.name = name
-        counts.set(key, cur)
-      }
-    }
-    const out = [...counts.values()].map((x) => ({ ...x, monthKey: r.monthKey }))
-    out.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name) || a.email.localeCompare(b.email))
-    return out.filter((x) => x.count >= 3)
-  }, [rangeQ.data, accessiRangeQ.data, giorno])
 
   function debugPresence(p: PrenotazioneCorsoRow): string {
     const raw = (p.raw ?? {}) as any
@@ -691,68 +598,6 @@ export function Corsi() {
 
   return (
     <div className="p-4 sm:p-6">
-      {canManageNoShow ? (
-        <div className="mb-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
-              <div className="mt-0.5 text-xs text-zinc-500">
-                Regola: conta prenotazioni senza accessi (AccessiDataOra) dentro la finestra lezione (DataInizio/FinePrenotazioneIscrizione) né appello. Soglia: 3 nel mese.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => void Promise.all([rangeQ.refetch(), accessiRangeQ.refetch()])}
-              disabled={rangeQ.isFetching}
-              className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-4 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/30 disabled:opacity-50"
-            >
-              {rangeQ.isFetching ? "Analisi…" : "Analizza mese"}
-            </button>
-          </div>
-          {rangeQ.isError || accessiRangeQ.isError ? (
-            <p className="mt-2 text-sm text-red-400">
-              Errore analisi: {String(((rangeQ.error as Error) ?? (accessiRangeQ.error as Error))?.message ?? "Errore")}
-            </p>
-          ) : null}
-          {!rangeQ.data ? null : noShowCandidates.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Nessun cliente con 3+ no-show nel mese selezionato.</p>
-          ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/40">
-                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">Email</th>
-                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">No-show</th>
-                    <th className="px-3 py-2 text-xs font-medium text-zinc-400">Azione</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {noShowCandidates.map((x) => {
-                    const isBlocked = blockedByEmail.has(x.email)
-                    return (
-                      <tr key={x.email} className="border-b border-zinc-800/50 last:border-0">
-                        <td className="px-3 py-2 font-mono text-xs text-zinc-200">{x.email}</td>
-                        <td className="px-3 py-2 text-zinc-200">{x.count}</td>
-                        <td className="px-3 py-2">
-                          <button
-                            type="button"
-                            disabled={notifyBlockMutation.isPending || isBlocked}
-                            onClick={() => notifyBlockMutation.mutate({ email: x.email, monthKey: x.monthKey, count: x.count })}
-                            className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
-                            title={isBlocked ? "Già bloccato" : "Invia email e marca come bloccato"}
-                          >
-                            {isBlocked ? "Bloccato" : notifyBlockMutation.isPending ? "Invio…" : "Invia mail + blocca"}
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      ) : null}
       {messaggiGroup ? (
         <div
           className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
@@ -1234,6 +1079,289 @@ export function Corsi() {
             })}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+export function CorsiNoShow() {
+  const queryClient = useQueryClient()
+  const { role } = useAuth()
+  const canManageNoShow = role === "admin" || role === "corsi"
+
+  const [dayInMonth, setDayInMonth] = useState(() => isoToday())
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+
+  const r = useMemo(() => monthRangeFromDay(dayInMonth), [dayInMonth])
+
+  const blocksQ = useQuery({
+    queryKey: ["corsi-no-show-blocks"],
+    queryFn: () => prenotazioniApi.listNoShowBlocks(),
+    enabled: canManageNoShow,
+    staleTime: 20_000,
+  })
+
+  const rangeQ = useQuery({
+    queryKey: ["prenotazioni-corsi-range", r.from, r.to],
+    queryFn: () => prenotazioniApi.listPrenotazioniRange({ from: r.from, to: r.to }),
+    enabled: canManageNoShow,
+    retry: false,
+    staleTime: 0,
+  })
+
+  const accessiRangeQ = useQuery({
+    queryKey: ["accessi-utenti-range", r.from, r.to],
+    queryFn: () => prenotazioniApi.listAccessiRange({ from: r.from, to: r.to }),
+    enabled: canManageNoShow,
+    retry: false,
+    staleTime: 0,
+  })
+
+  const blockedByEmail = useMemo(() => {
+    const m = new Map<string, true>()
+    for (const b of blocksQ.data?.rows ?? []) {
+      const e = String(b.email ?? "").trim().toLowerCase()
+      if (e) m.set(e, true)
+    }
+    return m
+  }, [blocksQ.data])
+
+  const byDay = useMemo(() => {
+    if (!accessiRangeQ.data) return new Map<string, AccessIndex>()
+    const allAccessRows = accessiRangeQ.data?.rows ?? []
+    const daySet = new Set<string>()
+    for (const a of allAccessRows) {
+      const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata ?? a.dataUscita)
+      if (!dt) continue
+      daySet.add(isoDayUtc(dt))
+    }
+    const m = new Map<string, AccessIndex>()
+    for (const dayIso of daySet) {
+      const dayRows = allAccessRows.filter((a) => {
+        const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata ?? a.dataUscita)
+        return dt ? isoDayUtc(dt) === dayIso : false
+      })
+      m.set(dayIso, buildAccessIndexForDay(dayRows, dayIso))
+    }
+    return m
+  }, [accessiRangeQ.data])
+
+  type NoShowRow = { key: string; cognome: string; nome: string; email: string; count: number; monthKey: string }
+
+  const noShowCandidates = useMemo((): NoShowRow[] => {
+    if (!rangeQ.data || !accessiRangeQ.data) return []
+    const all = rangeQ.data?.rows ?? []
+    const counts = new Map<string, NoShowRow>()
+    for (const p of all) {
+      if (p.inAttesa) continue
+      const w = getLessonWindow(p)
+      const day = w.start ? isoDayUtc(w.start) : ""
+      if (!day) continue
+      const key = participantStableKey(p, 0)
+      const email = (p.email ?? "").trim().toLowerCase()
+      const cognome = String(p.cognome ?? "").trim()
+      const nome = String(p.nome ?? "").trim()
+
+      const gk = groupKeyForRow(p)
+      const pk = participantStableKey(p, 0)
+      const appello = readAppelloForDay(day)
+      const presenteAppello = !!appello[`${gk}::${pk}`]
+      const accIdx = byDay.get(day) ?? new Map()
+      const presenteAccessi = isPresentByAccess(accIdx, p, day).present
+      const presente = presenteAppello || presenteAccessi
+      if (presente) continue
+
+      const cur = counts.get(key) ?? { key, cognome, nome, email, count: 0, monthKey: r.monthKey }
+      cur.count += 1
+      if (!cur.email && email) cur.email = email
+      if (!cur.cognome && cognome) cur.cognome = cognome
+      if (!cur.nome && nome) cur.nome = nome
+      counts.set(key, cur)
+    }
+    const out = [...counts.values()]
+    out.sort((a, b) => b.count - a.count || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome) || a.email.localeCompare(b.email))
+    return out.filter((x) => x.count >= 3)
+  }, [rangeQ.data, accessiRangeQ.data, byDay, r.monthKey])
+
+  const selected = useMemo(() => {
+    if (!selectedKey) return null
+    return noShowCandidates.find((x) => x.key === selectedKey) ?? null
+  }, [noShowCandidates, selectedKey])
+
+  const missedForSelected = useMemo(() => {
+    if (!selected) return []
+    const all = rangeQ.data?.rows ?? []
+    const out: { day: string; servizio: string; oraInizio?: string; oraFine?: string }[] = []
+    for (const p of all) {
+      if (p.inAttesa) continue
+      const key = participantStableKey(p, 0)
+      if (key !== selected.key) continue
+      const w = getLessonWindow(p)
+      const day = w.start ? isoDayUtc(w.start) : ""
+      if (!day) continue
+      const gk = groupKeyForRow(p)
+      const pk = participantStableKey(p, 0)
+      const appello = readAppelloForDay(day)
+      const presenteAppello = !!appello[`${gk}::${pk}`]
+      const accIdx = byDay.get(day) ?? new Map()
+      const presenteAccessi = isPresentByAccess(accIdx, p, day).present
+      if (presenteAppello || presenteAccessi) continue
+      out.push({ day, servizio: getCorsoTitolo(p), oraInizio: (p.oraInizio ?? "").trim() || undefined, oraFine: (p.oraFine ?? "").trim() || undefined })
+    }
+    out.sort((a, b) => a.day.localeCompare(b.day) || (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "") || a.servizio.localeCompare(b.servizio))
+    return out
+  }, [selected, rangeQ.data, byDay])
+
+  const notifyBlockMutation = useMutation({
+    mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
+      if (!canManageNoShow) throw new Error("Permessi insufficienti")
+      const subject = "Prenotazioni corsi: sospensione per assenze ripetute"
+      const text =
+        `Gentile socio,\\n\\n` +
+        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
+        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa.\\n\\n` +
+        `Per informazioni o sblocco, contatta la segreteria.\\n\\n` +
+        `Cordiali saluti.`
+      return prenotazioniApi.notifyAndBlockNoShow({ email: input.email, subject, text, monthKey: input.monthKey, count: input.count })
+    },
+    onSuccess: async () => {
+      await blocksQ.refetch()
+      void queryClient.invalidateQueries({ queryKey: ["prenotazioni-corsi-range"] })
+    },
+  })
+
+  if (!canManageNoShow) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center p-6">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
+          <h2 className="text-lg font-semibold text-zinc-200">No-show (mese)</h2>
+          <p className="mt-2 text-sm text-zinc-500">Permessi insufficienti.</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 sm:p-6">
+      <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
+            <div className="mt-0.5 text-xs text-zinc-500">
+              Regola: conta prenotazioni senza entrata nel giorno (o appello). Assente solo se si vede uscita prima dell’inizio e nessuna entrata dopo.
+              Soglia: 3 nel mese.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-zinc-500">Mese</label>
+            <input
+              type="date"
+              value={dayInMonth}
+              onChange={(e) => setDayInMonth(e.target.value)}
+              className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-3 py-2 text-xs text-zinc-200"
+            />
+          </div>
+        </div>
+
+        {rangeQ.isError || accessiRangeQ.isError ? (
+          <p className="mt-2 text-sm text-red-400">
+            Errore analisi: {String(((rangeQ.error as Error) ?? (accessiRangeQ.error as Error))?.message ?? "Errore")}
+          </p>
+        ) : null}
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            {!rangeQ.data || rangeQ.isFetching || accessiRangeQ.isFetching ? (
+              <p className="text-sm text-zinc-500">Analisi in corso…</p>
+            ) : noShowCandidates.length === 0 ? (
+              <p className="text-sm text-zinc-500">Nessun cliente con 3+ no-show nel mese selezionato.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-800 bg-zinc-950/40">
+                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">Cognome</th>
+                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">Nome</th>
+                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">Email</th>
+                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">No-show</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {noShowCandidates.map((x) => {
+                      const active = selectedKey === x.key
+                      const isBlocked = x.email ? blockedByEmail.has(x.email) : false
+                      return (
+                        <tr
+                          key={x.key}
+                          className={`border-b border-zinc-800/50 last:border-0 ${active ? "bg-amber-500/10" : "hover:bg-zinc-800/20"} cursor-pointer`}
+                          onClick={() => setSelectedKey(x.key)}
+                          title={isBlocked ? "Già bloccato" : "Apri dettaglio"}
+                        >
+                          <td className="px-3 py-2 text-zinc-200">{x.cognome || "—"}</td>
+                          <td className="px-3 py-2 text-zinc-200">{x.nome || "—"}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-zinc-200">{x.email || "—"}</td>
+                          <td className="px-3 py-2 text-zinc-200">{x.count}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-zinc-800 bg-zinc-950/30 p-3">
+            {!selected ? (
+              <div className="text-sm text-zinc-500">Seleziona un cliente per vedere i corsi non usufruiti.</div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-zinc-100">
+                    {`${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || "Cliente"}
+                  </div>
+                  <div className="text-xs text-zinc-500">
+                    {selected.email ? <span className="font-mono">{selected.email}</span> : "Email non disponibile"}
+                    <span className="mx-2 text-zinc-700">·</span>
+                    {selected.count} no-show ({selected.monthKey})
+                  </div>
+                </div>
+
+                <div className="max-h-[40vh] overflow-auto rounded-lg border border-zinc-800">
+                  {missedForSelected.length === 0 ? (
+                    <div className="p-3 text-sm text-zinc-500">Nessun dettaglio trovato.</div>
+                  ) : (
+                    <ul className="divide-y divide-zinc-800 text-sm">
+                      {missedForSelected.map((m, i) => (
+                        <li key={`${m.day}-${m.servizio}-${i}`} className="p-3">
+                          <div className="font-medium text-zinc-100">{m.servizio}</div>
+                          <div className="text-xs text-zinc-500">
+                            {fmtDateIt(m.day)}
+                            {m.oraInizio ? ` · ${fmtTimeDot(m.oraInizio)}` : ""}
+                            {m.oraFine ? `–${fmtTimeDot(m.oraFine)}` : ""}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={!selected.email || notifyBlockMutation.isPending || blockedByEmail.has((selected.email ?? "").trim().toLowerCase())}
+                  onClick={() => selected.email && notifyBlockMutation.mutate({ email: selected.email, monthKey: selected.monthKey, count: selected.count })}
+                  className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
+                  title={!selected.email ? "Email mancante" : blockedByEmail.has((selected.email ?? "").trim().toLowerCase()) ? "Già bloccato" : "Invia email e marca come bloccato"}
+                >
+                  {blockedByEmail.has((selected.email ?? "").trim().toLowerCase())
+                    ? "Bloccato"
+                    : notifyBlockMutation.isPending
+                      ? "Invio…"
+                      : "Invia mail + blocca"}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

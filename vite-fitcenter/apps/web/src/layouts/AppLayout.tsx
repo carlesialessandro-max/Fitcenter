@@ -15,13 +15,13 @@ const navOperatore: NavItem[] = [
   { to: "/andamento-vendite", label: "Andamento Vendite" },
 ] as const
 
-const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
+const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/corsi/no-show", label: "No-show (mese)" }] }] as const
 const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
 const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
-  { to: "/corsi", label: "Corsi" },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/no-show", label: "No-show (mese)" }] },
   { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
   { to: "/firme", label: "Firme" },

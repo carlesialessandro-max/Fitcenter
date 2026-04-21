@@ -16,7 +16,7 @@ import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
 import { FirmaDaCassa } from "@/pages/FirmaDaCassa"
 import { SignPublicPage } from "@/pages/SignPublic"
-import { Corsi } from "@/pages/Corsi"
+import { Corsi, CorsiNoShow } from "@/pages/Corsi"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
@@ -67,6 +67,7 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardOrRedirect /> },
       { path: "corsi", element: <Corsi /> },
+      { path: "corsi/no-show", element: <CorsiNoShow /> },
       { path: "campus", element: <Campus /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
