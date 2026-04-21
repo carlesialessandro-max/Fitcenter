@@ -1493,6 +1493,14 @@ export function CorsiNoShow() {
                       ? "Invio…"
                       : "Invia mail + blocca"}
                 </button>
+                {notifyBlockMutation.isSuccess ? (
+                  <div className="text-xs text-zinc-500">
+                    Gestionale:{" "}
+                    {notifyBlockMutation.data?.gestionale?.ok
+                      ? `OK (rows=${notifyBlockMutation.data?.gestionale?.rowsAffected ?? 0})`
+                      : `KO (${notifyBlockMutation.data?.gestionale?.message ?? "errore"})`}
+                  </div>
+                ) : null}
 
                 {selected.email && blockedByEmail.has(selected.email.trim().toLowerCase()) ? (
                   <button
@@ -1504,6 +1512,14 @@ export function CorsiNoShow() {
                   >
                     {unblockMutation.isPending ? "Sblocco…" : "Sblocca"}
                   </button>
+                ) : null}
+                {unblockMutation.isSuccess ? (
+                  <div className="text-xs text-zinc-500">
+                    Sblocco gestionale:{" "}
+                    {unblockMutation.data?.gestionale?.ok
+                      ? `OK (rows=${unblockMutation.data?.gestionale?.rowsAffected ?? 0})`
+                      : `KO (${unblockMutation.data?.gestionale?.message ?? "errore"})`}
+                  </div>
                 ) : null}
                 {unblockMutation.isError ? (
                   <div className="text-xs text-red-400">Errore sblocco: {String((unblockMutation.error as Error)?.message ?? "Errore")}</div>

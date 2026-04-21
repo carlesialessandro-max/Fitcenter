@@ -108,7 +108,7 @@ export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response)
       count,
     })
     blocked.until = untilIso
-    res.json({ ok: true, blocked })
+    res.json({ ok: true, blocked, gestionale })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

@@ -60,10 +60,15 @@ export const prenotazioniApi = {
     blockDays?: number
     absences?: { day: string; servizio: string; oraInizio?: string; oraFine?: string }[]
   }) =>
-    api.post<{ ok: boolean; blocked: { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number } }>(
+    api.post<{
+      ok: boolean
+      blocked: { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }
+      gestionale?: { ok: boolean; rowsAffected?: number; message?: string }
+    }>(
       "/prenotazioni/no-show/notify-and-block",
       body
     ),
-  unblockNoShow: (email: string) => api.delete<{ ok: boolean }> (`/prenotazioni/no-show/blocks/${encodeURIComponent(email)}`),
+  unblockNoShow: (email: string) =>
+    api.delete<{ ok: boolean; gestionale?: { ok: boolean; rowsAffected?: number; message?: string } }>(`/prenotazioni/no-show/blocks/${encodeURIComponent(email)}`),
 }
 
