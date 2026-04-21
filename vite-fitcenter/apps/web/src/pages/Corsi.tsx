@@ -264,7 +264,12 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const list = m.get(k) ?? []
 
     const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
-    if (dtIn && isoDayUtc(dtIn) === giornoIso) list.push({ t: dtIn, kind: "in" })
+    if (dtIn && isoDayUtc(dtIn) === giornoIso) {
+      // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
+      const desc = String(raw?.Descrizione ?? raw?.descrizione ?? raw?.Terminale ?? raw?.terminal ?? "").toLowerCase()
+      const kind: AccessEvent["kind"] = desc.includes("uscita") ? "out" : "in"
+      list.push({ t: dtIn, kind })
+    }
 
     const dtOut = parseDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
     if (dtOut && isoDayUtc(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
@@ -297,16 +302,17 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // Day guard
   if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
 
-  // Regola richiesta:
-  // Presente se c'è almeno una "entrata" nel giorno,
-  // a meno che si veda un'uscita prima dell'inizio e NON ci sia una entrata dopo quell'uscita.
+  // Regola per più corsi nello stesso giorno:
+  // - cerchiamo l'ultimo evento (in/out) PRIMA dell'inizio lezione.
+  // - se l'ultimo evento è "out" => NON presente nei corsi successivi (finché non rientra).
   const startMs = w.start.getTime()
-  const exitsBefore = outs.filter((d) => d.getTime() < startMs)
-  if (exitsBefore.length === 0) return { present: true, entry: firstIn, exit: lastOut }
-
-  const lastExitBefore = exitsBefore[exitsBefore.length - 1]!
-  const reEntryAfterExit = ins.some((d) => d.getTime() >= lastExitBefore.getTime())
-  const present = reEntryAfterExit
+  let lastBefore: AccessEvent | null = null
+  for (const e of evs) {
+    const ms = e.t.getTime()
+    if (ms > startMs) break
+    lastBefore = e
+  }
+  const present = lastBefore ? lastBefore.kind === "in" : false
   return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
 }
 
