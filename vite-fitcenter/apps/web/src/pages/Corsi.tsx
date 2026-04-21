@@ -150,7 +150,10 @@ function uniqueValidEmails(part: PrenotazioneCorsoRow[]): string[] {
 
 function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
   const raw = (p.raw ?? {}) as any
+  // Priorità: ID già normalizzato dalla API (evita mismatch/collisioni su viste diverse).
+  const idFromRow = firstNonEmptyStr((p as any)?.idUtente)
   const id =
+    idFromRow ??
     firstNonEmptyStr(raw?.IDCliente) ??
     firstNonEmptyStr(raw?.ClienteId) ??
     firstNonEmptyStr(raw?.IdCliente) ??
@@ -1365,6 +1368,26 @@ export function CorsiNoShow() {
     },
   })
 
+  const notifyOnlyMutation = useMutation({
+    mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
+      if (!canManageNoShow) throw new Error("Permessi insufficienti")
+      const subject = "Prenotazioni corsi: assenze ripetute"
+      const text =
+        `Gentile socio,\n` +
+        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato.\n` +
+        `Ti chiediamo di avvisare la segreteria in caso di impossibilità a partecipare.\n` +
+        `Per informazioni chiama la segreteria 0573 572649 oppure rispondi a questa email.\n` +
+        `Cordiali saluti.`
+      const absences = missedForSelected.map((m) => ({
+        day: m.day,
+        servizio: m.servizio,
+        oraInizio: m.oraInizio,
+        oraFine: m.oraFine,
+      }))
+      return prenotazioniApi.notifyNoShow({ email: input.email, subject, text, absences })
+    },
+  })
+
   const unblockMutation = useMutation({
     mutationFn: async (email: string) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
@@ -1373,6 +1396,15 @@ export function CorsiNoShow() {
     },
     onSuccess: async () => {
       await blocksQ.refetch()
+      if (selected?.email) {
+        const subject = "Prenotazioni corsi: sblocco confermato"
+        const text =
+          `Gentile socio,\n` +
+          `ti confermiamo che la sospensione delle prenotazioni corsi è stata rimossa.\n` +
+          `Per informazioni chiama la segreteria 0573 572649 oppure rispondi a questa email.\n` +
+          `Cordiali saluti.`
+        void prenotazioniApi.notifyNoShow({ email: selected.email, subject, text, absences: [] })
+      }
     },
   })
 
@@ -1517,19 +1549,27 @@ export function CorsiNoShow() {
                   )}
                 </div>
 
-                <button
-                  type="button"
-                  disabled={!selected.email || notifyBlockMutation.isPending || !!selectedBlock}
-                  onClick={() => selected.email && notifyBlockMutation.mutate({ email: selected.email, monthKey: selected.monthKey, count: selected.count })}
-                  className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
-                  title={!selected.email ? "Email mancante" : selectedBlock ? "Già bloccato" : "Invia email e marca come bloccato"}
-                >
-                  {!!selectedBlock
-                    ? "Bloccato"
-                    : notifyBlockMutation.isPending
-                      ? "Invio…"
-                      : "Invia mail + blocca"}
-                </button>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    type="button"
+                    disabled={!selected.email || notifyOnlyMutation.isPending}
+                    onClick={() => selected.email && notifyOnlyMutation.mutate({ email: selected.email, monthKey: selected.monthKey, count: selected.count })}
+                    className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-3 py-2 text-xs font-medium text-zinc-200 disabled:opacity-50"
+                    title={!selected.email ? "Email mancante" : "Invia solo email"}
+                  >
+                    {notifyOnlyMutation.isPending ? "Invio…" : "Invia mail"}
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={!selected.email || notifyBlockMutation.isPending || !!selectedBlock}
+                    onClick={() => selected.email && notifyBlockMutation.mutate({ email: selected.email, monthKey: selected.monthKey, count: selected.count })}
+                    className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
+                    title={!selected.email ? "Email mancante" : selectedBlock ? "Già bloccato" : "Invia email e blocca per 3 giorni"}
+                  >
+                    {!!selectedBlock ? "Bloccato" : notifyBlockMutation.isPending ? "Invio…" : "Invia mail + blocca"}
+                  </button>
+                </div>
                 {notifyBlockMutation.isSuccess ? (
                   <div className="text-xs text-zinc-500">
                     Gestionale:{" "}

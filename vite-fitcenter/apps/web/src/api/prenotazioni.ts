@@ -52,6 +52,12 @@ export const prenotazioniApi = {
     api.get<{ rows: { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }[] }>(
       "/prenotazioni/no-show/blocks"
     ),
+  notifyNoShow: (body: {
+    email: string
+    subject: string
+    text: string
+    absences?: { day: string; servizio: string; oraInizio?: string; oraFine?: string }[]
+  }) => api.post<{ ok: boolean }>("/prenotazioni/no-show/notify", body),
   notifyAndBlockNoShow: (body: {
     email: string
     idUtente?: string

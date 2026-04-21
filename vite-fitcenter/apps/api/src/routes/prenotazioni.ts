@@ -4,7 +4,13 @@ import { getPrenotazioniCorsi } from "../handlers/prenotazioni.js"
 import { postNotifyPrenotazioniCorsi } from "../handlers/prenotazioniNotify.js"
 import { getPrenotazioniCorsiRange } from "../handlers/prenotazioniRange.js"
 import { getAccessiUtentiRange } from "../handlers/accessiRange.js"
-import { deleteCorsiNoShowBlock, listCorsiNoShowBlocks, postCorsiNoShowBlock, postCorsiNoShowNotifyAndBlock } from "../handlers/corsiNoShow.js"
+import {
+  deleteCorsiNoShowBlock,
+  listCorsiNoShowBlocks,
+  postCorsiNoShowBlock,
+  postCorsiNoShowNotify,
+  postCorsiNoShowNotifyAndBlock,
+} from "../handlers/corsiNoShow.js"
 
 export const prenotazioniRouter = Router()
 
@@ -26,5 +32,6 @@ prenotazioniRouter.post("/notify-email", requireAdminOrCorsi, postNotifyPrenotaz
 prenotazioniRouter.get("/no-show/blocks", requireAdminOrCorsi, listCorsiNoShowBlocks)
 prenotazioniRouter.post("/no-show/blocks", requireAdminOrCorsi, postCorsiNoShowBlock)
 prenotazioniRouter.delete("/no-show/blocks/:email", requireAdminOrCorsi, deleteCorsiNoShowBlock)
+prenotazioniRouter.post("/no-show/notify", requireAdminOrCorsi, postCorsiNoShowNotify)
 prenotazioniRouter.post("/no-show/notify-and-block", requireAdminOrCorsi, postCorsiNoShowNotifyAndBlock)
 

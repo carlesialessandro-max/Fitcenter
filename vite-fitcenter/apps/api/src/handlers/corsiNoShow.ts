@@ -55,6 +55,48 @@ export async function deleteCorsiNoShowBlock(req: Request, res: Response) {
   }
 }
 
+export async function postCorsiNoShowNotify(req: Request, res: Response) {
+  try {
+    const email = String(req.body?.email ?? "").trim()
+    const subject = String(req.body?.subject ?? "").trim().slice(0, 300)
+    const textBase = String(req.body?.text ?? "").trim().slice(0, 20_000)
+    const absencesRaw = Array.isArray(req.body?.absences) ? (req.body.absences as any[]) : []
+    const absences = absencesRaw
+      .map((a) => ({
+        day: String(a?.day ?? "").trim(),
+        servizio: String(a?.servizio ?? "").trim(),
+        oraInizio: a?.oraInizio != null ? String(a.oraInizio).trim() : "",
+        oraFine: a?.oraFine != null ? String(a.oraFine).trim() : "",
+      }))
+      .filter((a) => /^\d{4}-\d{2}-\d{2}$/.test(a.day) && !!a.servizio)
+      .slice(0, 200)
+
+    const norm = corsiNoShowStore.normalizeEmail(email)
+    if (!norm) return res.status(400).json({ message: "Email non valida" })
+    if (!subject) return res.status(400).json({ message: "Oggetto obbligatorio" })
+    if (!textBase) return res.status(400).json({ message: "Testo obbligatorio" })
+    if (!isSmtpConfigured()) return res.status(503).json({ message: "SMTP non configurato (SMTP_HOST, …)" })
+
+    const details =
+      absences.length > 0
+        ? `\nAssenze rilevate:\n` +
+          absences
+            .map((a) => {
+              const hh = [a.oraInizio, a.oraFine].filter(Boolean).join("–")
+              return `- ${a.day}${hh ? ` ${hh}` : ""} · ${a.servizio}`
+            })
+            .join("\n")
+        : ""
+
+    const text = (textBase + details).slice(0, 20_000)
+    const { sent } = await sendMail({ to: norm, subject, text })
+    if (!sent) return res.status(502).json({ message: "Invio email non riuscito (vedi log server)" })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response) {
   try {
     const email = String(req.body?.email ?? "").trim()
