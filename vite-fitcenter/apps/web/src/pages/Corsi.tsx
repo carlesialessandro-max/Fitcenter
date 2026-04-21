@@ -288,11 +288,30 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   const last = times[times.length - 1] ?? null
   if (!first || !last) return { present: false, entry: null, exit: null }
 
-  // Regola presenza (coerente con "entrata/uscita"):
-  // Presente se la finestra lezione [start,end] interseca l'intervallo accessi [first,last].
-  // (es. entrato prima dell'inizio e uscito dopo la fine → presente).
-  const present = first.getTime() <= end.getTime() && last.getTime() >= w.start.getTime()
-  return { present, entry: present ? first : null, exit: present ? last : null }
+  // Regola presenza:
+  // - tipicamente abbiamo solo "entrate" (non vere uscite), quindi chi entra poco prima dell'inizio risulta con accessi < start
+  // - applichiamo una tolleranza prima dell'inizio per considerarlo presente
+  const graceBeforeMs = 30 * 60 * 1000 // 30 min
+  const graceAfterMs = 10 * 60 * 1000 // 10 min
+  const startMs = w.start.getTime()
+  const endMs = end.getTime()
+
+  // Caso forte: intervallo accessi interseca la finestra lezione.
+  if (first.getTime() <= endMs && last.getTime() >= startMs) {
+    return { present: true, entry: first, exit: last }
+  }
+
+  // Caso con tolleranza: qualunque accesso nel range [start-graceBefore, end+graceAfter].
+  const lo = startMs - graceBeforeMs
+  const hi = endMs + graceAfterMs
+  for (const t of times) {
+    const ms = t.getTime()
+    if (ms < lo) continue
+    if (ms > hi) break
+    return { present: true, entry: t, exit: last }
+  }
+
+  return { present: false, entry: null, exit: null }
 }
 
 /** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
