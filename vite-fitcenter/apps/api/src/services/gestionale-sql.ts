@@ -116,7 +116,9 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
       const trustCert = params.get("trustservercertificate")?.toLowerCase() === "true"
       try {
         const sqlWin = await import("mssql/msnodesqlv8")
-        pool = await sqlWin.default.connect({
+        // Il modulo msnodesqlv8 non espone ConnectionPool in typing; fallback a connect().
+        // Nota: per SQL auth (caso più comune) usiamo ConnectionPool esplicito sotto.
+        pool = await (sqlWin.default as any).connect({
           server,
           database,
           options: {
@@ -136,7 +138,9 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
         throw e
       }
     } else {
-      pool = await sql.connect(ensureSqlTimeouts(cs))
+      // Evita pool globale condiviso: usa ConnectionPool esplicito.
+      const p = new sql.ConnectionPool(ensureSqlTimeouts(cs))
+      pool = await p.connect()
     }
     return pool
   } catch (e) {
@@ -157,7 +161,7 @@ export async function getPoolWrite(): Promise<sql.ConnectionPool | null> {
       const database = params.get("database") ?? params.get("initial catalog") ?? ""
       const trustCert = params.get("trustservercertificate")?.toLowerCase() === "true"
       const sqlWin = await import("mssql/msnodesqlv8")
-      poolWrite = await sqlWin.default.connect({
+      poolWrite = await (sqlWin.default as any).connect({
         server,
         database,
         options: {
@@ -167,7 +171,8 @@ export async function getPoolWrite(): Promise<sql.ConnectionPool | null> {
         },
       })
     } else {
-      poolWrite = await sql.connect(ensureSqlTimeouts(cs))
+      const p = new sql.ConnectionPool(ensureSqlTimeouts(cs))
+      poolWrite = await p.connect()
     }
     return poolWrite
   } catch (e) {
