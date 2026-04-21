@@ -378,6 +378,14 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // - se l'ultimo evento prima dell'inizio è "out", rimane assente finché non rientra (entrata durante la lezione)
   const startMs = w.start.getTime()
   const endMs = (w.end ?? w.start).getTime()
+  const graceBeforeMs = 30 * 60 * 1000
+  const graceAfterMs = 60 * 60 * 1000
+  const lo = startMs - graceBeforeMs
+  const hi = endMs + graceAfterMs
+
+  const hasEntryAround = evs.some((e) => e.kind === "in" && e.t.getTime() >= lo && e.t.getTime() <= hi)
+  if (!hasEntryAround) return { present: false, entry: null, exit: null }
+
   let lastBefore: AccessEvent | null = null
   for (const e of evs) {
     const ms = e.t.getTime()
@@ -387,7 +395,7 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   if (lastBefore?.kind === "in") return { present: true, entry: firstIn, exit: lastOut }
 
   // Se è uscita prima dell'inizio (o non c'è nessun evento prima), conta come presente solo se rientra durante la lezione.
-  const enteredDuring = evs.some((e) => e.kind === "in" && e.t.getTime() >= startMs && e.t.getTime() <= endMs)
+  const enteredDuring = evs.some((e) => e.kind === "in" && e.t.getTime() >= startMs && e.t.getTime() <= hi)
   const present = enteredDuring
   return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
 }
@@ -1150,6 +1158,7 @@ export function CorsiNoShow() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
   const [q, setQ] = useState("")
+  const testEmail = "carlesi.alessandro@gmail.com"
 
   const r = useMemo(() => monthRangeFromDay(dayInMonth), [dayInMonth])
 
@@ -1218,8 +1227,8 @@ export function CorsiNoShow() {
       if (!day) continue
       const key = participantStableKey(p, 0)
       const email = (p.email ?? "").trim().toLowerCase()
-      const cognome = String(p.cognome ?? "").trim()
-      const nome = String(p.nome ?? "").trim()
+      const cognome = email === testEmail ? "test" : String(p.cognome ?? "").trim()
+      const nome = email === testEmail ? "prova" : String(p.nome ?? "").trim()
 
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
@@ -1251,7 +1260,10 @@ export function CorsiNoShow() {
 
   const selected = useMemo(() => {
     if (!selectedKey) return null
-    return allCandidates.find((x) => x.key === selectedKey) ?? null
+    const s = allCandidates.find((x) => x.key === selectedKey) ?? null
+    if (!s) return null
+    if ((s.email ?? "").trim().toLowerCase() !== testEmail) return s
+    return { ...s, cognome: "test", nome: "prova" }
   }, [allCandidates, selectedKey])
 
   const missedForSelected = useMemo(() => {
