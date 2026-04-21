@@ -218,6 +218,22 @@ function parseDateAny(val: unknown): Date | null {
     const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
     return Number.isNaN(d.getTime()) ? null : d
   }
+
+  // Gestionali/driver a volte serializzano orari locali aggiungendo "Z" (UTC) erroneamente.
+  // Se vediamo ISO con Z, reinterpretalo come locale (non UTC) per allineare con gli orari lezione.
+  const isoZ = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d{1,3}))?Z$/.exec(sNorm)
+  if (isoZ) {
+    const yyyy = Number(isoZ[1])
+    const mm = Number(isoZ[2])
+    const dd = Number(isoZ[3])
+    const hh = Number(isoZ[4] ?? 0)
+    const mi = Number(isoZ[5] ?? 0)
+    const ss = Number(isoZ[6] ?? 0)
+    const ms = Number((isoZ[7] ?? "0").padEnd(3, "0"))
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+
   const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?)?$/.exec(sNorm)
   if (m) {
     const dd = Number(m[1])

@@ -23,6 +23,7 @@
 import sql from "mssql"
 
 let pool: sql.ConnectionPool | null = null
+let poolWrite: sql.ConnectionPool | null = null
 let lastConnectionError: string | null = null
 let lastPrenotazioniQueryError: string | null = null
 let lastPrenotazioniWaitlistError: string | null = null
@@ -50,6 +51,10 @@ function qualifySqlObject(name: string): { query: string; objectId: string } {
 
 function getConnectionString(): string | undefined {
   return process.env.SQL_CONNECTION_STRING
+}
+
+function getConnectionStringWrite(): string | undefined {
+  return process.env.SQL_CONNECTION_STRING_WRITE
 }
 
 /** Estrae coppie chiave=valore dalla connection string (case-insensitive per chiavi). */
@@ -137,6 +142,38 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
   } catch (e) {
     lastConnectionError = (e as Error)?.message ?? String(e)
     if (isWindowsAuth(cs)) throw e
+    return null
+  }
+}
+
+export async function getPoolWrite(): Promise<sql.ConnectionPool | null> {
+  const cs = getConnectionStringWrite()
+  if (!cs) return null
+  if (poolWrite) return poolWrite
+  try {
+    if (isWindowsAuth(cs)) {
+      const params = parseConnectionString(cs)
+      const server = params.get("server") ?? params.get("data source") ?? "."
+      const database = params.get("database") ?? params.get("initial catalog") ?? ""
+      const trustCert = params.get("trustservercertificate")?.toLowerCase() === "true"
+      const sqlWin = await import("mssql/msnodesqlv8")
+      poolWrite = await sqlWin.default.connect({
+        server,
+        database,
+        options: {
+          trustedConnection: true,
+          trustServerCertificate: trustCert,
+          enableArithAbort: true,
+        },
+      })
+    } else {
+      poolWrite = await sql.connect(ensureSqlTimeouts(cs))
+    }
+    return poolWrite
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e)
+    // eslint-disable-next-line no-console
+    console.warn("[gestionale-sql] connessione write fallita:", msg)
     return null
   }
 }
@@ -2508,8 +2545,8 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
  * untilIso: YYYY-MM-DD
  */
 export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string; untilIso: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
-  const p = await getPool()
-  if (!p) return { ok: false, message: "DB gestionale non configurato" }
+  const p = await getPoolWrite()
+  if (!p) return { ok: false, message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" }
 
   const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
   if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
@@ -2558,8 +2595,8 @@ export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string
 }
 
 export async function clearBloccaPrenotazioniFinoAlByEmail(params: { email: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
-  const p = await getPool()
-  if (!p) return { ok: false, message: "DB gestionale non configurato" }
+  const p = await getPoolWrite()
+  if (!p) return { ok: false, message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" }
 
   const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
   if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
