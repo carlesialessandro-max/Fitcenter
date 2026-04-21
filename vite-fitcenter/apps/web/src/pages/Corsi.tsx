@@ -237,17 +237,39 @@ function isoDayUtc(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
-function getLessonWindow(p: PrenotazioneCorsoRow): { start: Date | null; end: Date | null } {
+function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { start: Date | null; end: Date | null } {
   const raw = (p.raw ?? {}) as any
-  const start =
+  let start =
     parseDateAny(raw?.DataInizioPrenotazioneIscrizione) ??
     parseDateAny(raw?.InizioPrenotazioneIscrizione) ??
     parseDateAny(raw?.DataInizio) ??
     null
-  const end =
+  let end =
     parseDateAny(raw?.DataFinePrenotazioneIscrizione) ??
     parseDateAny(raw?.DataFine) ??
     null
+
+  // Fallback: alcune viste non espongono le colonne DataInizio/FinePrenotazioneIscrizione.
+  // In quel caso ricostruiamo dalla coppia (giorno + oraInizio/oraFine) della prenotazione.
+  if (!start) {
+    const dayIso = String((p.giorno ?? "").trim() || fallbackDayIso || "").trim()
+    const oi = (p.oraInizio ?? "").trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi)) {
+      const [hh, mm] = oi.split(":").map((x) => Number(x))
+      const d = new Date(dayIso)
+      d.setHours(hh, mm, 0, 0)
+      if (!Number.isNaN(d.getTime())) start = d
+    }
+  }
+  if (!end && start) {
+    const of = (p.oraFine ?? "").trim()
+    if (/^\d{1,2}:\d{2}$/.test(of)) {
+      const [hh, mm] = of.split(":").map((x) => Number(x))
+      const d = new Date(start)
+      d.setHours(hh, mm, 0, 0)
+      if (!Number.isNaN(d.getTime())) end = d
+    }
+  }
   return { start, end }
 }
 
@@ -298,7 +320,7 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   const firstIn = ins[0] ?? null
   const lastOut = outs.length > 0 ? outs[outs.length - 1] : null
 
-  const w = getLessonWindow(p)
+  const w = getLessonWindow(p, giornoIso)
   // Se non abbiamo orario lezione, applichiamo regola semplice: entrata nel giorno => presente.
   if (!w.start) return { present: true, entry: firstIn, exit: lastOut }
   // Day guard
@@ -318,46 +340,21 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
 }
 
-/** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
-function localYmd(d: Date): string {
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${mo}-${day}`
-}
-
-function hhmmToMinutes(hhmm: string | undefined): number | null {
-  if (!hhmm?.trim()) return null
-  const m = /^(\d{1,2})[:.](\d{2})/.exec(hhmm.trim())
-  if (!m) return null
-  const h = Number(m[1])
-  const min = Number(m[2])
-  if (!Number.isFinite(h) || !Number.isFinite(min)) return null
-  return h * 60 + min
-}
-
-/** Ora dell’ultimo accesso se coincide con il giorno del corso (fuso locale). */
-function getUltimoAccessoInfo(
-  p: PrenotazioneCorsoRow,
-  giornoIso: string
-): { timeLabel: string | null; minutes: number | null } {
-  const raw = p.dataUltimoAcesso ?? (p.raw as any)?.DataUltimoAcesso
-  if (raw == null) return { timeLabel: null, minutes: null }
-  const d = raw instanceof Date ? raw : new Date(raw as string)
-  if (Number.isNaN(d.getTime())) return { timeLabel: null, minutes: null }
-  if (localYmd(d) !== giornoIso) return { timeLabel: null, minutes: null }
-  const mins = d.getHours() * 60 + d.getMinutes()
-  const hh = String(d.getHours()).padStart(2, "0")
-  const mm = String(d.getMinutes()).padStart(2, "0")
-  return { timeLabel: `${hh}:${mm}`, minutes: mins }
-}
-
 /** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */
-function possibileUscitaAnticipata(g: CorsoGroup, p: PrenotazioneCorsoRow): boolean {
-  const end = hhmmToMinutes(g.oraFine)
-  const acc = getUltimoAccessoInfo(p, g.giorno).minutes
-  if (end == null || acc == null) return false
-  return acc < end
+function possibileUscitaAnticipata(g: CorsoGroup, p: PrenotazioneCorsoRow, accessIdx: AccessIndex): boolean {
+  // Mostra solo quando vediamo una vera "uscita" prima della fine lezione.
+  const stable = participantStableKey(p, 0)
+  if (!stable.startsWith("id:")) return false
+  const evs = accessIdx.get(stable) ?? []
+  if (evs.length === 0) return false
+
+  const w = getLessonWindow(p, g.giorno)
+  if (!w.start || !w.end) return false
+  const startMs = w.start.getTime()
+  const endMs = w.end.getTime()
+
+  // Cerca una uscita (out) dopo l'inizio e prima della fine.
+  return evs.some((e) => e.kind === "out" && e.t.getTime() >= startMs && e.t.getTime() < endMs)
 }
 
 function hasWhatsAppableContacts(g: CorsoGroup): boolean {
@@ -895,7 +892,7 @@ export function Corsi() {
                         const accessoInfo = access.entry
                           ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                           : { timeLabel: null, minutes: null }
-                        const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p)
+                        const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p, accessIdxDay)
                         const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                         return (
                           <div key={idx} className="px-4 py-3">
@@ -1011,7 +1008,7 @@ export function Corsi() {
                           const accessoInfo = access.entry
                             ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                             : { timeLabel: null, minutes: null }
-                          const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p)
+                          const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p, accessIdxDay)
                           const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
                           return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
