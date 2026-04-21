@@ -58,19 +58,28 @@ function parseArgValue(key: string): string | null {
   return process.argv[idx + 1] ?? null
 }
 
-function computeMonthRange(now: Date, yearsBack: number, yearsOverride: number[] | null) {
+function parseBoolFlag(key: string): boolean {
+  return process.argv.includes(key)
+}
+
+function computeMonthRange(now: Date, yearsBack: number, yearsOverride: number[] | null, includeCurrentMonth: boolean) {
   if (yearsOverride && yearsOverride.length) {
     const startYear = yearsOverride[0]!
     const endYear = yearsOverride[yearsOverride.length - 1]!
     // Di default scaldiamo fino al mese precedente (dati "stabili").
     const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
-    const yNow = useLocal ? now.getFullYear() : now.getUTCFullYear()
-    const mNow = (useLocal ? now.getMonth() : now.getUTCMonth()) + 1
-    const prevMonth = mNow - 1
-    const prevYear = prevMonth >= 1 ? yNow : yNow - 1
-    const prevMonthClamped = prevMonth >= 1 ? prevMonth : 12
-    const endDay = daysInMonth(prevYear, prevMonthClamped)
-    const end = { year: prevYear, month: prevMonthClamped, day: endDay }
+    const endBase = new Date(now)
+    if (includeCurrentMonth) {
+      // Include mese corrente fino a ieri (assumiamo che cambi solo il giorno corrente).
+      if (useLocal) endBase.setDate(endBase.getDate() - 1)
+      else endBase.setUTCDate(endBase.getUTCDate() - 1)
+    } else {
+      // Default: ultimo giorno del mese precedente (evita "today").
+      if (useLocal) endBase.setMonth(endBase.getMonth(), 0)
+      else endBase.setUTCMonth(endBase.getUTCMonth(), 0)
+    }
+    const endParts = toDateParts(endBase)
+    const end = { year: endParts.year, month: endParts.month, day: endParts.day }
     const start = { year: startYear, month: 1, day: 1 }
     // Se endYear è nel passato rispetto a prevYear, chiudiamo al 31/12 endYear.
     if (endYear < end.year) {
@@ -78,20 +87,21 @@ function computeMonthRange(now: Date, yearsBack: number, yearsOverride: number[]
     }
     return { start, end }
   }
-  return monthRangeLastDay(now, yearsBack)
+  return monthRangeLastDay(now, yearsBack, includeCurrentMonth)
 }
 
-function monthRangeLastDay(now: Date, yearsBack: number) {
+function monthRangeLastDay(now: Date, yearsBack: number, includeCurrentMonth: boolean) {
   const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
-  const y = useLocal ? now.getFullYear() : now.getUTCFullYear()
-  const m = (useLocal ? now.getMonth() : now.getUTCMonth()) + 1 // 1..12
-
-  // ultimo giorno del mese precedente (evita "today")
-  const prevMonth = m - 1
-  const prevYear = prevMonth >= 1 ? y : y - 1
-  const prevMonthClamped = prevMonth >= 1 ? prevMonth : 12
-  const endDay = daysInMonth(prevYear, prevMonthClamped)
-  const end = { year: prevYear, month: prevMonthClamped, day: endDay }
+  const endBase = new Date(now)
+  if (includeCurrentMonth) {
+    if (useLocal) endBase.setDate(endBase.getDate() - 1)
+    else endBase.setUTCDate(endBase.getUTCDate() - 1)
+  } else {
+    if (useLocal) endBase.setMonth(endBase.getMonth(), 0)
+    else endBase.setUTCMonth(endBase.getUTCMonth(), 0)
+  }
+  const endParts = toDateParts(endBase)
+  const end = { year: endParts.year, month: endParts.month, day: endParts.day }
 
   // start: stesso mese/della data "ora - yearsBack", poi prendiamo il 1° del mese (intervallo di mesi completo)
   const startBase = new Date(now)
@@ -133,16 +143,17 @@ async function main() {
   const now = new Date()
   const yearsBack = Number(parseArgValue("--years-back") ?? process.env.PRECOMPUTE_YEARS_BACK ?? 3)
   const yearsOverride = parseYearsArg(parseArgValue("--years") ?? undefined)
+  const includeCurrentMonth = parseBoolFlag("--include-current-month") || (process.env.PRECOMPUTE_INCLUDE_CURRENT_MONTH ?? "false").toLowerCase() === "true"
   const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "true").toLowerCase() !== "false"
   const depSig = await getBudgetDepSig()
   const scope = "admin"
   const consulenteParams = { consulente: null }
 
-  const { start, end } = computeMonthRange(now, yearsBack, yearsOverride)
+  const { start, end } = computeMonthRange(now, yearsBack, yearsOverride, includeCurrentMonth)
   console.log(
     `[precompute] ${
       yearsOverride?.length ? `years=${yearsOverride.join(",")}` : `years-back=${yearsBack}`
-    } (start=${start.year}-${pad2(start.month)}-${pad2(start.day)} end=${end.year}-${pad2(end.month)}-${pad2(end.day)})`
+    }${includeCurrentMonth ? " include-current-month" : ""} (start=${start.year}-${pad2(start.month)}-${pad2(start.day)} end=${end.year}-${pad2(end.month)}-${pad2(end.day)})`
   )
 
   const yearsSeen = new Set<number>()
@@ -152,7 +163,7 @@ async function main() {
     const mStart = y === start.year ? start.month : 1
     const mEnd = y === end.year ? end.month : 12
     for (let m = mStart; m <= mEnd; m++) {
-      const lastDay = daysInMonth(y, m)
+      const lastDay = y === end.year && m === end.month ? end.day : daysInMonth(y, m)
       const asOf = ymdToAsOfKey(y, m, lastDay)
       const fromIso = `${y}-${pad2(m)}-01`
       const toIso = `${y}-${pad2(m)}-${pad2(lastDay)}`
