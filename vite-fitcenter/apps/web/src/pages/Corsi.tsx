@@ -251,6 +251,22 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
 
   const oi = (p.oraInizio ?? "").trim()
   const of = (p.oraFine ?? "").trim()
+  const dayIso = String((p.giorno ?? "").trim() || fallbackDayIso || "").trim()
+
+  // PRIORITÀ: se abbiamo (giorno ISO + oraInizio/oraFine) affidabili, usali sempre.
+  // Nel gestionale alcune viste mettono InizioPrenotazioneIscrizione a 00:00:00 e "sporcono" lo start.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi) && oi !== "00:00") {
+    const [hh, mm] = oi.split(":").map((x) => Number(x))
+    const d = new Date(dayIso)
+    d.setHours(hh, mm, 0, 0)
+    if (!Number.isNaN(d.getTime())) start = d
+  }
+  if (start && /^\d{1,2}:\d{2}$/.test(of) && of !== "00:00") {
+    const [hh, mm] = of.split(":").map((x) => Number(x))
+    const d = new Date(start)
+    d.setHours(hh, mm, 0, 0)
+    if (!Number.isNaN(d.getTime())) end = d
+  }
 
   // Alcune viste espongono Inizio/Fine con data corretta ma ORA = 00:00:00.
   // In questo caso, se abbiamo oraInizio/oraFine, correggiamo l'orario.
@@ -270,7 +286,6 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
   // Fallback: alcune viste non espongono le colonne DataInizio/FinePrenotazioneIscrizione.
   // In quel caso ricostruiamo dalla coppia (giorno + oraInizio/oraFine) della prenotazione.
   if (!start) {
-    const dayIso = String((p.giorno ?? "").trim() || fallbackDayIso || "").trim()
     if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi)) {
       const [hh, mm] = oi.split(":").map((x) => Number(x))
       const d = new Date(dayIso)
