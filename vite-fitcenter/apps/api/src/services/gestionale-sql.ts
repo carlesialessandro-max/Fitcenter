@@ -2812,6 +2812,7 @@ function toIsoDateTime(val: unknown): string | undefined {
 export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Promise<PrenotazioneCorsoRow[]> {
   const p = await getPool()
   if (!p) return []
+  const pool = p
   const view = await resolvePrenotazioniViewName()
   const vq = qualifySqlObject(view).query
   const giorno = params?.giorno?.trim()
@@ -2872,6 +2873,39 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
   const req = p.request()
   if (giornoOk && dateCol) req.input("giorno", sql.VarChar(32), giorno)
+
+  async function applyIdByEmail(rows: PrenotazioneCorsoRow[]): Promise<PrenotazioneCorsoRow[]> {
+    // Se abbiamo email, l'unico modo davvero robusto per risalire all'ID cliente è la tabella Utenti.
+    const emails = [...new Set(rows.map((r) => String(r.email ?? "").trim().toLowerCase()).filter(Boolean))].slice(0, 400)
+    if (emails.length === 0) return rows
+    try {
+      const tblU = qualifySqlObject(defaultTables.clienti).query
+      const cond: string[] = []
+        const rq = pool.request()
+      for (let i = 0; i < emails.length; i++) {
+        const k = `e${i}`
+        rq.input(k, sql.NVarChar(256), emails[i])
+        cond.push(`LOWER(LTRIM(RTRIM(COALESCE(CAST([Email] AS NVARCHAR(256)), N''))))) = @${k}`)
+      }
+      const sqlq = `SELECT IDUtente, Email FROM ${tblU} WHERE (${cond.join(" OR ")})`
+      const r = await rq.query(sqlq)
+      const map = new Map<string, string>()
+      for (const row of (r.recordset ?? []) as any[]) {
+        const em = String(row?.Email ?? "").trim().toLowerCase()
+        const id = String(row?.IDUtente ?? "").trim()
+        if (em && id) map.set(em, id)
+      }
+      if (map.size === 0) return rows
+      for (const rr of rows) {
+        const em = String(rr.email ?? "").trim().toLowerCase()
+        const id = map.get(em)
+        if (id) rr.idUtente = id
+      }
+      return rows
+    } catch {
+      return rows
+    }
+  }
 
   const enrich = (
     raw: Record<string, unknown>,
@@ -3048,10 +3082,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         }
         return row
       })
-      return [...base, ...wait]
+      return await applyIdByEmail([...base, ...wait])
     } catch (e) {
       lastPrenotazioniWaitlistError = (e as Error)?.message ?? String(e)
-      return base
+      return await applyIdByEmail(base)
     }
   } catch (e) {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
