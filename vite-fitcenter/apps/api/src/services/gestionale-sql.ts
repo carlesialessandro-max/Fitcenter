@@ -2495,9 +2495,15 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
  * Implementazione configurabile via env perché la tabella/colonna cambiano tra installazioni.
  *
  * Env:
- * - GESTIONALE_BLOCK_PRENOT_TABLE (es. dbo.UtentiWeb)
- * - GESTIONALE_BLOCK_PRENOT_COL_EMAIL (default: Email)
+ * - GESTIONALE_BLOCK_PRENOT_TABLE (target, es. dbo.UtentiWeb oppure dbo.UtenteCustom)
+ * - GESTIONALE_BLOCK_PRENOT_COL_EMAIL (default: Email)  (solo se la target contiene l'email)
  * - GESTIONALE_BLOCK_PRENOT_COL_UNTIL (default: BloccaPrenotazioniFinoAl)
+ *
+ * Modalità JOIN (per target senza email, es. dbo.UtenteCustom.PrenotazioniDataBlocco):
+ * - GESTIONALE_BLOCK_PRENOT_JOIN_TABLE (es. dbo.Utenti)
+ * - GESTIONALE_BLOCK_PRENOT_TARGET_COL_ID (default: IDUtente)
+ * - GESTIONALE_BLOCK_PRENOT_JOIN_COL_ID (default: IDUtente)
+ * - GESTIONALE_BLOCK_PRENOT_JOIN_COL_EMAIL (default: Email)
  *
  * untilIso: YYYY-MM-DD
  */
@@ -2509,11 +2515,21 @@ export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string
   if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
   const colEmail = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_EMAIL ?? "Email").trim()
   const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+  const joinTable = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_TABLE ?? "").trim()
+  const targetIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_TARGET_COL_ID ?? "IDUtente").trim()
+  const joinIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_COL_ID ?? "IDUtente").trim()
+  const joinEmailCol = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_COL_EMAIL ?? "Email").trim()
 
   if (!/^[A-Za-z0-9_.\[\]]+$/.test(colEmail)) return { ok: false, message: "Colonna email non valida" }
   if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+  if (joinTable) {
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(targetIdCol)) return { ok: false, message: "Colonna target id non valida" }
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(joinIdCol)) return { ok: false, message: "Colonna join id non valida" }
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(joinEmailCol)) return { ok: false, message: "Colonna join email non valida" }
+  }
 
   const q = qualifySqlObject(table).query
+  const jq = joinTable ? qualifySqlObject(joinTable).query : null
   const email = String(params.email ?? "").trim()
   const untilIso = String(params.untilIso ?? "").trim()
   if (!email) return { ok: false, message: "Email vuota" }
@@ -2521,11 +2537,19 @@ export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string
 
   try {
     const req = p.request().input("email", sql.NVarChar(320), email).input("until", sql.VarChar(10), untilIso)
-    const r = await req.query(
-      `UPDATE ${q}
-       SET [${colUntil}] = TRY_CONVERT(date, @until)
-       WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
-    )
+    const r = jq
+      ? await req.query(
+          `UPDATE T
+           SET T.[${colUntil}] = TRY_CONVERT(date, @until)
+           FROM ${q} AS T
+           JOIN ${jq} AS U ON T.[${targetIdCol}] = U.[${joinIdCol}]
+           WHERE LOWER(LTRIM(RTRIM(COALESCE(U.[${joinEmailCol}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+        )
+      : await req.query(
+          `UPDATE ${q}
+           SET [${colUntil}] = TRY_CONVERT(date, @until)
+           WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+        )
     const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
     return { ok: true, rowsAffected: affected }
   } catch (e) {
@@ -2541,21 +2565,39 @@ export async function clearBloccaPrenotazioniFinoAlByEmail(params: { email: stri
   if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
   const colEmail = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_EMAIL ?? "Email").trim()
   const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+  const joinTable = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_TABLE ?? "").trim()
+  const targetIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_TARGET_COL_ID ?? "IDUtente").trim()
+  const joinIdCol = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_COL_ID ?? "IDUtente").trim()
+  const joinEmailCol = String(process.env.GESTIONALE_BLOCK_PRENOT_JOIN_COL_EMAIL ?? "Email").trim()
 
   if (!/^[A-Za-z0-9_.\[\]]+$/.test(colEmail)) return { ok: false, message: "Colonna email non valida" }
   if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+  if (joinTable) {
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(targetIdCol)) return { ok: false, message: "Colonna target id non valida" }
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(joinIdCol)) return { ok: false, message: "Colonna join id non valida" }
+    if (!/^[A-Za-z0-9_.\[\]]+$/.test(joinEmailCol)) return { ok: false, message: "Colonna join email non valida" }
+  }
 
   const q = qualifySqlObject(table).query
+  const jq = joinTable ? qualifySqlObject(joinTable).query : null
   const email = String(params.email ?? "").trim()
   if (!email) return { ok: false, message: "Email vuota" }
 
   try {
     const req = p.request().input("email", sql.NVarChar(320), email)
-    const r = await req.query(
-      `UPDATE ${q}
-       SET [${colUntil}] = NULL
-       WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
-    )
+    const r = jq
+      ? await req.query(
+          `UPDATE T
+           SET T.[${colUntil}] = NULL
+           FROM ${q} AS T
+           JOIN ${jq} AS U ON T.[${targetIdCol}] = U.[${joinIdCol}]
+           WHERE LOWER(LTRIM(RTRIM(COALESCE(U.[${joinEmailCol}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+        )
+      : await req.query(
+          `UPDATE ${q}
+           SET [${colUntil}] = NULL
+           WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+        )
     const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
     return { ok: true, rowsAffected: affected }
   } catch (e) {
