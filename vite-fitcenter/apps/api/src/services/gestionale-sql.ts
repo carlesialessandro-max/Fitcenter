@@ -2953,6 +2953,13 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
     const idUtente = firstNonEmpty(raw, [
+      // ID utente/anagrafica: alcune viste usano nomi diversi
+      "IDUtentePrenotazioneIscrizione",
+      "IdUtentePrenotazioneIscrizione",
+      "PrenotazioniIscrizioneIDUtente",
+      "PrenotazioneIDUtente",
+      "IDUtenteIscrizione",
+      "IdUtenteIscrizione",
       "IDUtente",
       "IdUtente",
       "UtenteId",
@@ -2962,6 +2969,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "IDAnagrafica",
       "IdAnagrafica",
       "AnagraficaId",
+      "IDSocio",
+      "IdSocio",
+      "SocioId",
     ])
     const dataUltimoAcessoRaw = firstNonEmpty(raw, [
       "DataUltimoAccesso",

@@ -1,6 +1,8 @@
 import { readJson, writeJson } from "./persist.js"
 
 export type NoShowBlock = {
+  /** Se disponibile, blocco legato all'utente specifico (evita conflitti email condivisa). */
+  idUtente?: string
   email: string
   blockedAt: string
   /** Blocco prenotazioni fino a (YYYY-MM-DD), se applicabile */
@@ -16,6 +18,22 @@ function normalizeEmail(s: string): string | null {
   const t = String(s ?? "").trim().toLowerCase()
   if (!t || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) return null
   return t
+}
+
+function normalizeIdUtente(s: string | undefined): string | null {
+  const t = String(s ?? "").trim()
+  if (!t) return null
+  // evitiamo injection nel file: teniamo solo token semplice
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(t)) return null
+  return t
+}
+
+function blockKey(input: { email: string; idUtente?: string }): string | null {
+  const id = normalizeIdUtente(input.idUtente)
+  if (id) return `id:${id}`
+  const e = normalizeEmail(input.email)
+  if (!e) return null
+  return `email:${e}`
 }
 
 export const corsiNoShowStore = {
@@ -35,20 +53,23 @@ export const corsiNoShowStore = {
     return filtered.slice().sort((a, b) => (a.blockedAt < b.blockedAt ? 1 : -1))
   },
 
-  isBlocked(email: string): NoShowBlock | null {
-    const e = normalizeEmail(email)
-    if (!e) return null
-    return corsiNoShowStore.list().find((r) => normalizeEmail(r.email) === e) ?? null
+  isBlocked(params: { email: string; idUtente?: string }): NoShowBlock | null {
+    const k = blockKey(params)
+    if (!k) return null
+    return corsiNoShowStore.list().find((r) => blockKey({ email: r.email, idUtente: r.idUtente }) === k) ?? null
   },
 
-  block(input: { email: string; reason: string; monthKey: string; count: number; until?: string }): NoShowBlock {
+  block(input: { email: string; idUtente?: string; reason: string; monthKey: string; count: number; until?: string }): NoShowBlock {
     const e = normalizeEmail(input.email)
     if (!e) throw new Error("Email non valida")
+    const idUtente = normalizeIdUtente(input.idUtente) ?? undefined
     const now = new Date().toISOString()
     const rows = corsiNoShowStore.list()
-    const existingIdx = rows.findIndex((r) => normalizeEmail(r.email) === e)
+    const k = blockKey({ email: e, idUtente })!
+    const existingIdx = rows.findIndex((r) => blockKey({ email: r.email, idUtente: r.idUtente }) === k)
     const until = String(input.until ?? "").trim()
     const next: NoShowBlock = {
+      idUtente,
       email: e,
       blockedAt: now,
       until: /^\d{4}-\d{2}-\d{2}$/.test(until) ? until : undefined,
@@ -62,11 +83,11 @@ export const corsiNoShowStore = {
     return next
   },
 
-  unblock(email: string): boolean {
-    const e = normalizeEmail(email)
-    if (!e) return false
+  unblock(params: { email: string; idUtente?: string }): boolean {
+    const k = blockKey(params)
+    if (!k) return false
     const rows = corsiNoShowStore.list()
-    const next = rows.filter((r) => normalizeEmail(r.email) !== e)
+    const next = rows.filter((r) => blockKey({ email: r.email, idUtente: r.idUtente }) !== k)
     if (next.length === rows.length) return false
     writeJson(FILE, next)
     return true

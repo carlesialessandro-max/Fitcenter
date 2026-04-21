@@ -47,7 +47,7 @@ export async function deleteCorsiNoShowBlock(req: Request, res: Response) {
       console.warn("[no-show] sblocco gestionale fallito:", gestionale.message)
     }
 
-    const ok = corsiNoShowStore.unblock(norm)
+    const ok = corsiNoShowStore.unblock({ email: norm, idUtente: idUtente || undefined })
     if (!ok) return res.status(404).json({ message: "Non presente in blocchi" })
     res.json({ ok: true, gestionale })
   } catch (e) {
@@ -155,6 +155,7 @@ export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response)
 
     const blocked = corsiNoShowStore.block({
       email: norm,
+      idUtente: idUtente || undefined,
       reason: "No-show ripetuti (auto)",
       monthKey,
       count,

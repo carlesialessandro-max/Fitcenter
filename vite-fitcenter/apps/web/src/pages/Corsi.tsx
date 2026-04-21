@@ -1516,6 +1516,12 @@ export function CorsiNoShow() {
                   </div>
                   <div className="text-xs text-zinc-500">
                     {selected.email ? <span className="font-mono">{selected.email}</span> : "Email non disponibile"}
+                    {selected.idUtente ? (
+                      <>
+                        <span className="mx-2 text-zinc-700">·</span>
+                        ID: <span className="font-mono text-zinc-200">{selected.idUtente}</span>
+                      </>
+                    ) : null}
                     <span className="mx-2 text-zinc-700">·</span>
                     {selected.count} assenze ({selected.monthKey})
                   </div>
