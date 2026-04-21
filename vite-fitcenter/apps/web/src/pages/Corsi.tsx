@@ -251,24 +251,28 @@ function getLessonWindow(p: PrenotazioneCorsoRow): { start: Date | null; end: Da
   return { start, end }
 }
 
-type AccessIndex = Map<string, Date[]> // idKey -> access times (Date)
+type AccessEvent = { t: Date; kind: "in" | "out" }
+type AccessIndex = Map<string, AccessEvent[]> // idKey -> access events (sorted by time)
 
 function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
-  const m = new Map<string, Date[]>()
+  const m = new Map<string, AccessEvent[]>()
   for (const r of rows) {
     const raw = (r.raw ?? {}) as any
     const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
     if (!id) continue
-    const dt = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
-    if (!dt) continue
-    if (isoDayUtc(dt) !== giornoIso) continue
     const k = `id:${id}`
     const list = m.get(k) ?? []
-    list.push(dt)
-    m.set(k, list)
+
+    const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
+    if (dtIn && isoDayUtc(dtIn) === giornoIso) list.push({ t: dtIn, kind: "in" })
+
+    const dtOut = parseDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
+    if (dtOut && isoDayUtc(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
+
+    if (list.length > 0) m.set(k, list)
   }
   for (const [k, list] of m.entries()) {
-    list.sort((a, b) => a.getTime() - b.getTime())
+    list.sort((a, b) => a.t.getTime() - b.t.getTime())
     m.set(k, list)
   }
   return m
@@ -277,41 +281,33 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
 function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
   const stable = participantStableKey(p, 0)
   if (!stable.startsWith("id:")) return { present: false, entry: null, exit: null }
-  const times = accessIdx.get(stable) ?? []
-  if (times.length === 0) return { present: false, entry: null, exit: null }
+  const evs = accessIdx.get(stable) ?? []
+  if (evs.length === 0) return { present: false, entry: null, exit: null }
+
+  const ins = evs.filter((e) => e.kind === "in").map((e) => e.t)
+  const outs = evs.filter((e) => e.kind === "out").map((e) => e.t)
+  if (ins.length === 0) return { present: false, entry: null, exit: null }
+
+  const firstIn = ins[0] ?? null
+  const lastOut = outs.length > 0 ? outs[outs.length - 1] : null
+
   const w = getLessonWindow(p)
-  if (!w.start) return { present: false, entry: null, exit: null }
+  // Se non abbiamo orario lezione, applichiamo regola semplice: entrata nel giorno => presente.
+  if (!w.start) return { present: true, entry: firstIn, exit: lastOut }
   // Day guard
   if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
-  const end = w.end ?? w.start
-  const first = times[0] ?? null
-  const last = times[times.length - 1] ?? null
-  if (!first || !last) return { present: false, entry: null, exit: null }
 
-  // Regola presenza:
-  // - tipicamente abbiamo solo "entrate" (non vere uscite), quindi chi entra poco prima dell'inizio risulta con accessi < start
-  // - applichiamo una tolleranza prima dell'inizio per considerarlo presente
-  const graceBeforeMs = 30 * 60 * 1000 // 30 min
-  const graceAfterMs = 10 * 60 * 1000 // 10 min
+  // Regola richiesta:
+  // Presente se c'è almeno una "entrata" nel giorno,
+  // a meno che si veda un'uscita prima dell'inizio e NON ci sia una entrata dopo quell'uscita.
   const startMs = w.start.getTime()
-  const endMs = end.getTime()
+  const exitsBefore = outs.filter((d) => d.getTime() < startMs)
+  if (exitsBefore.length === 0) return { present: true, entry: firstIn, exit: lastOut }
 
-  // Caso forte: intervallo accessi interseca la finestra lezione.
-  if (first.getTime() <= endMs && last.getTime() >= startMs) {
-    return { present: true, entry: first, exit: last }
-  }
-
-  // Caso con tolleranza: qualunque accesso nel range [start-graceBefore, end+graceAfter].
-  const lo = startMs - graceBeforeMs
-  const hi = endMs + graceAfterMs
-  for (const t of times) {
-    const ms = t.getTime()
-    if (ms < lo) continue
-    if (ms > hi) break
-    return { present: true, entry: t, exit: last }
-  }
-
-  return { present: false, entry: null, exit: null }
+  const lastExitBefore = exitsBefore[exitsBefore.length - 1]!
+  const reEntryAfterExit = ins.some((d) => d.getTime() >= lastExitBefore.getTime())
+  const present = reEntryAfterExit
+  return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
 }
 
 /** Data locale YYYY-MM-DD (allineata al date picker «Giorno»). */
