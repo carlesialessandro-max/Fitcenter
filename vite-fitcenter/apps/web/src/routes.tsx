@@ -67,7 +67,8 @@ export const router = createBrowserRouter([
     children: [
       { index: true, element: <DashboardOrRedirect /> },
       { path: "corsi", element: <Corsi /> },
-      { path: "corsi/no-show", element: <CorsiNoShow /> },
+      { path: "corsi/assenze", element: <CorsiNoShow /> },
+      { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },

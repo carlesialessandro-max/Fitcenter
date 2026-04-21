@@ -23,7 +23,16 @@ export const corsiNoShowStore = {
 
   list(): NoShowBlock[] {
     const rows = readJson<NoShowBlock[]>(FILE, [])
-    return (Array.isArray(rows) ? rows : []).slice().sort((a, b) => (a.blockedAt < b.blockedAt ? 1 : -1))
+    const arr = (Array.isArray(rows) ? rows : []).slice()
+    const todayIso = new Date().toISOString().slice(0, 10)
+    // Pulizia automatica: se abbiamo una data "until" e ormai è passata, rimuoviamo il blocco locale.
+    const filtered = arr.filter((r) => {
+      const until = String(r.until ?? "").trim()
+      if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until)) return true
+      return until >= todayIso
+    })
+    if (filtered.length !== arr.length) writeJson(FILE, filtered)
+    return filtered.slice().sort((a, b) => (a.blockedAt < b.blockedAt ? 1 : -1))
   },
 
   isBlocked(email: string): NoShowBlock | null {
@@ -32,15 +41,17 @@ export const corsiNoShowStore = {
     return corsiNoShowStore.list().find((r) => normalizeEmail(r.email) === e) ?? null
   },
 
-  block(input: { email: string; reason: string; monthKey: string; count: number }): NoShowBlock {
+  block(input: { email: string; reason: string; monthKey: string; count: number; until?: string }): NoShowBlock {
     const e = normalizeEmail(input.email)
     if (!e) throw new Error("Email non valida")
     const now = new Date().toISOString()
     const rows = corsiNoShowStore.list()
     const existingIdx = rows.findIndex((r) => normalizeEmail(r.email) === e)
+    const until = String(input.until ?? "").trim()
     const next: NoShowBlock = {
       email: e,
       blockedAt: now,
+      until: /^\d{4}-\d{2}-\d{2}$/.test(until) ? until : undefined,
       reason: String(input.reason ?? "").trim().slice(0, 500) || "No-show ripetuti",
       monthKey: String(input.monthKey ?? "").trim().slice(0, 16) || "—",
       count: Math.max(0, Math.floor(Number(input.count ?? 0) || 0)),

@@ -558,10 +558,18 @@ export function Corsi() {
   void data?.meta
 
   const blockedByEmail = useMemo(() => {
-    const m = new Map<string, true>()
+    const m = new Map<string, { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }>()
     for (const b of blocksQ.data?.rows ?? []) {
       const e = String(b.email ?? "").trim().toLowerCase()
-      if (e) m.set(e, true)
+      if (!e) continue
+      m.set(e, {
+        email: e,
+        blockedAt: String((b as any)?.blockedAt ?? ""),
+        until: (b as any)?.until ? String((b as any).until) : undefined,
+        reason: String((b as any)?.reason ?? ""),
+        monthKey: String((b as any)?.monthKey ?? ""),
+        count: Number((b as any)?.count ?? 0),
+      })
     }
     return m
   }, [blocksQ.data])
@@ -1202,10 +1210,18 @@ export function CorsiNoShow() {
   })
 
   const blockedByEmail = useMemo(() => {
-    const m = new Map<string, true>()
+    const m = new Map<string, { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }>()
     for (const b of blocksQ.data?.rows ?? []) {
       const e = String(b.email ?? "").trim().toLowerCase()
-      if (e) m.set(e, true)
+      if (!e) continue
+      m.set(e, {
+        email: e,
+        blockedAt: String((b as any)?.blockedAt ?? ""),
+        until: (b as any)?.until ? String((b as any).until) : undefined,
+        reason: String((b as any)?.reason ?? ""),
+        monthKey: String((b as any)?.monthKey ?? ""),
+        count: Number((b as any)?.count ?? 0),
+      })
     }
     return m
   }, [blocksQ.data])
@@ -1230,7 +1246,7 @@ export function CorsiNoShow() {
     return m
   }, [accessiRangeQ.data])
 
-  type NoShowRow = { key: string; cognome: string; nome: string; email: string; count: number; monthKey: string }
+  type NoShowRow = { key: string; idUtente?: string; cognome: string; nome: string; email: string; count: number; monthKey: string }
 
   const allCandidates = useMemo((): NoShowRow[] => {
     if (!rangeQ.data || !accessiRangeQ.data) return []
@@ -1243,6 +1259,8 @@ export function CorsiNoShow() {
       if (!day) continue
       const key = participantStableKey(p, 0)
       const email = (p.email ?? "").trim().toLowerCase()
+      const idUtente =
+        String(p.idUtente ?? (p.raw as any)?.IDUtente ?? (p.raw as any)?.IdUtente ?? (p.raw as any)?.UtenteId ?? "").trim() || undefined
       const cognome = email === testEmail ? "test" : String(p.cognome ?? "").trim()
       const nome = email === testEmail ? "prova" : String(p.nome ?? "").trim()
 
@@ -1255,9 +1273,10 @@ export function CorsiNoShow() {
       const presente = presenteAppello || presenteAccessi
       if (presente) continue
 
-      const cur = counts.get(key) ?? { key, cognome, nome, email, count: 0, monthKey: r.monthKey }
+      const cur = counts.get(key) ?? { key, idUtente, cognome, nome, email, count: 0, monthKey: r.monthKey }
       cur.count += 1
       if (!cur.email && email) cur.email = email
+      if (!cur.idUtente && idUtente) cur.idUtente = idUtente
       if (!cur.cognome && cognome) cur.cognome = cognome
       if (!cur.nome && nome) cur.nome = nome
       counts.set(key, cur)
@@ -1281,6 +1300,12 @@ export function CorsiNoShow() {
     if ((s.email ?? "").trim().toLowerCase() !== testEmail) return s
     return { ...s, cognome: "test", nome: "prova" }
   }, [allCandidates, selectedKey])
+
+  const selectedBlock = useMemo(() => {
+    const e = String(selected?.email ?? "").trim().toLowerCase()
+    if (!e) return null
+    return blockedByEmail.get(e) ?? null
+  }, [blockedByEmail, selected?.email])
 
   const missedForSelected = useMemo(() => {
     if (!selected) return []
@@ -1322,7 +1347,7 @@ export function CorsiNoShow() {
         oraInizio: m.oraInizio,
         oraFine: m.oraFine,
       }))
-      const idUtente = selected?.key?.startsWith("id:") ? selected.key.slice(3) : undefined
+      const idUtente = selected?.idUtente
       return prenotazioniApi.notifyAndBlockNoShow({
         email: input.email,
         idUtente,
@@ -1343,7 +1368,7 @@ export function CorsiNoShow() {
   const unblockMutation = useMutation({
     mutationFn: async (email: string) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
-      const idUtente = selected?.key?.startsWith("id:") ? selected.key.slice(3) : undefined
+      const idUtente = selected?.idUtente
       return prenotazioniApi.unblockNoShow({ email, idUtente })
     },
     onSuccess: async () => {
@@ -1355,7 +1380,7 @@ export function CorsiNoShow() {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-6">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
-          <h2 className="text-lg font-semibold text-zinc-200">No-show (mese)</h2>
+          <h2 className="text-lg font-semibold text-zinc-200">Assenze (mese)</h2>
           <p className="mt-2 text-sm text-zinc-500">Permessi insufficienti.</p>
         </div>
       </div>
@@ -1367,7 +1392,7 @@ export function CorsiNoShow() {
       <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-100">No-show (mese)</div>
+            <div className="text-sm font-semibold text-zinc-100">Assenze (mese)</div>
             <div className="mt-0.5 text-xs text-zinc-500">
               Regola: conta prenotazioni senza entrata nel giorno (o appello). Assente solo se si vede uscita prima dell’inizio e nessuna entrata dopo.
               Soglia: 3 nel mese.
@@ -1421,13 +1446,13 @@ export function CorsiNoShow() {
                       <th className="px-3 py-2 text-xs font-medium text-zinc-400">Cognome</th>
                       <th className="px-3 py-2 text-xs font-medium text-zinc-400">Nome</th>
                       <th className="px-3 py-2 text-xs font-medium text-zinc-400">Email</th>
-                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">No-show</th>
+                      <th className="px-3 py-2 text-xs font-medium text-zinc-400">Assenze</th>
                     </tr>
                   </thead>
                   <tbody>
                     {noShowCandidates.map((x) => {
                       const active = selectedKey === x.key
-                      const isBlocked = x.email ? blockedByEmail.has(x.email) : false
+                      const isBlocked = !!(x.email ? blockedByEmail.get(String(x.email ?? "").trim().toLowerCase()) : null)
                       return (
                         <tr
                           key={x.key}
@@ -1460,9 +1485,18 @@ export function CorsiNoShow() {
                   <div className="text-xs text-zinc-500">
                     {selected.email ? <span className="font-mono">{selected.email}</span> : "Email non disponibile"}
                     <span className="mx-2 text-zinc-700">·</span>
-                    {selected.count} no-show ({selected.monthKey})
+                    {selected.count} assenze ({selected.monthKey})
                   </div>
                 </div>
+
+                {selectedBlock ? (
+                  <div className="rounded-lg border border-zinc-800 bg-zinc-950/40 p-2 text-xs text-zinc-300">
+                    <div className="font-medium text-zinc-200">Blocco prenotazioni</div>
+                    <div className="mt-0.5 text-zinc-500">
+                      Fino al: <span className="font-mono text-zinc-200">{selectedBlock.until ?? "—"}</span>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="max-h-[40vh] overflow-auto rounded-lg border border-zinc-800">
                   {missedForSelected.length === 0 ? (
@@ -1485,12 +1519,12 @@ export function CorsiNoShow() {
 
                 <button
                   type="button"
-                  disabled={!selected.email || notifyBlockMutation.isPending || blockedByEmail.has((selected.email ?? "").trim().toLowerCase())}
+                  disabled={!selected.email || notifyBlockMutation.isPending || !!selectedBlock}
                   onClick={() => selected.email && notifyBlockMutation.mutate({ email: selected.email, monthKey: selected.monthKey, count: selected.count })}
                   className="rounded-lg border border-amber-700/60 bg-amber-950/20 px-3 py-2 text-xs font-medium text-amber-200 disabled:opacity-50"
-                  title={!selected.email ? "Email mancante" : blockedByEmail.has((selected.email ?? "").trim().toLowerCase()) ? "Già bloccato" : "Invia email e marca come bloccato"}
+                  title={!selected.email ? "Email mancante" : selectedBlock ? "Già bloccato" : "Invia email e marca come bloccato"}
                 >
-                  {blockedByEmail.has((selected.email ?? "").trim().toLowerCase())
+                  {!!selectedBlock
                     ? "Bloccato"
                     : notifyBlockMutation.isPending
                       ? "Invio…"
@@ -1505,7 +1539,7 @@ export function CorsiNoShow() {
                   </div>
                 ) : null}
 
-                {selected.email && blockedByEmail.has(selected.email.trim().toLowerCase()) ? (
+                {selected.email && !!selectedBlock ? (
                   <button
                     type="button"
                     disabled={unblockMutation.isPending}

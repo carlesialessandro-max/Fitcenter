@@ -26,7 +26,8 @@ export async function postCorsiNoShowBlock(req: Request, res: Response) {
     const reason = String(req.body?.reason ?? "").trim()
     const monthKey = String(req.body?.monthKey ?? "").trim()
     const count = Number(req.body?.count ?? 0)
-    const row = corsiNoShowStore.block({ email, reason, monthKey, count })
+    const until = String(req.body?.until ?? "").trim()
+    const row = corsiNoShowStore.block({ email, reason, monthKey, count, until })
     res.status(201).json(row)
   } catch (e) {
     res.status(400).json({ message: (e as Error).message })
@@ -115,8 +116,8 @@ export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response)
       reason: "No-show ripetuti (auto)",
       monthKey,
       count,
+      until: untilIso,
     })
-    blocked.until = untilIso
     res.json({ ok: true, blocked, gestionale })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

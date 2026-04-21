@@ -2714,6 +2714,8 @@ export function isGestionaleConfigured(): boolean {
 }
 
 export type PrenotazioneCorsoRow = {
+  /** Chiave utente/anagrafica (se presente nella vista) */
+  idUtente?: string
   giorno?: string
   servizio?: string
   oraInizio?: string
@@ -2950,6 +2952,17 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
+    const idUtente = firstNonEmpty(raw, [
+      "IDUtente",
+      "IdUtente",
+      "UtenteId",
+      "IDCliente",
+      "IdCliente",
+      "ClienteId",
+      "IDAnagrafica",
+      "IdAnagrafica",
+      "AnagraficaId",
+    ])
     const dataUltimoAcessoRaw = firstNonEmpty(raw, [
       "DataUltimoAccesso",
       "DataUltimoAcesso",
@@ -2963,6 +2976,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     ])
     const dataUltimoAcesso = toIsoDateTime(dataUltimoAcessoRaw) ?? dataUltimoAcessoRaw
     return {
+      idUtente,
       giorno: day,
       servizio,
       oraInizio,
