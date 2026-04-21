@@ -244,6 +244,17 @@ function localYmd(d: Date): string {
   return `${y}-${mo}-${day}`
 }
 
+function makeLocalDateFromYmd(ymd: string, hh: number, mm: number): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null
+  const dt = new Date(y, mo - 1, d, hh, mm, 0, 0)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+
 function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { start: Date | null; end: Date | null } {
   const raw = (p.raw ?? {}) as any
   let start =
@@ -264,9 +275,8 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
   // Nel gestionale alcune viste mettono InizioPrenotazioneIscrizione a 00:00:00 e "sporcono" lo start.
   if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi) && oi !== "00:00") {
     const [hh, mm] = oi.split(":").map((x) => Number(x))
-    const d = new Date(dayIso)
-    d.setHours(hh, mm, 0, 0)
-    if (!Number.isNaN(d.getTime())) start = d
+    const d = makeLocalDateFromYmd(dayIso, hh, mm)
+    if (d) start = d
   }
   if (start && /^\d{1,2}:\d{2}$/.test(of) && of !== "00:00") {
     const [hh, mm] = of.split(":").map((x) => Number(x))
@@ -295,9 +305,8 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
   if (!start) {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi)) {
       const [hh, mm] = oi.split(":").map((x) => Number(x))
-      const d = new Date(dayIso)
-      d.setHours(hh, mm, 0, 0)
-      if (!Number.isNaN(d.getTime())) start = d
+      const d = makeLocalDateFromYmd(dayIso, hh, mm)
+      if (d) start = d
     }
   }
   if (!end && start) {
