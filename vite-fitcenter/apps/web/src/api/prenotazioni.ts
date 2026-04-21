@@ -64,5 +64,6 @@ export const prenotazioniApi = {
       "/prenotazioni/no-show/notify-and-block",
       body
     ),
+  unblockNoShow: (email: string) => api.delete<{ ok: boolean }> (`/prenotazioni/no-show/blocks/${encodeURIComponent(email)}`),
 }
 

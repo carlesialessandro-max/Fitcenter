@@ -2533,6 +2533,36 @@ export async function setBloccaPrenotazioniFinoAlByEmail(params: { email: string
   }
 }
 
+export async function clearBloccaPrenotazioniFinoAlByEmail(params: { email: string }): Promise<{ ok: true; rowsAffected: number } | { ok: false; message: string }> {
+  const p = await getPool()
+  if (!p) return { ok: false, message: "DB gestionale non configurato" }
+
+  const table = String(process.env.GESTIONALE_BLOCK_PRENOT_TABLE ?? "").trim()
+  if (!table) return { ok: false, message: "GESTIONALE_BLOCK_PRENOT_TABLE mancante" }
+  const colEmail = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_EMAIL ?? "Email").trim()
+  const colUntil = String(process.env.GESTIONALE_BLOCK_PRENOT_COL_UNTIL ?? "BloccaPrenotazioniFinoAl").trim()
+
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colEmail)) return { ok: false, message: "Colonna email non valida" }
+  if (!/^[A-Za-z0-9_.\[\]]+$/.test(colUntil)) return { ok: false, message: "Colonna until non valida" }
+
+  const q = qualifySqlObject(table).query
+  const email = String(params.email ?? "").trim()
+  if (!email) return { ok: false, message: "Email vuota" }
+
+  try {
+    const req = p.request().input("email", sql.NVarChar(320), email)
+    const r = await req.query(
+      `UPDATE ${q}
+       SET [${colUntil}] = NULL
+       WHERE LOWER(LTRIM(RTRIM(COALESCE([${colEmail}], N'')))) = LOWER(LTRIM(RTRIM(@email)));`
+    )
+    const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
+    return { ok: true, rowsAffected: affected }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 export function isGestionaleConfigured(): boolean {
   return !!getConnectionString()
 }

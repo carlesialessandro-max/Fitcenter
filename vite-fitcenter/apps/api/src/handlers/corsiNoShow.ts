@@ -1,7 +1,7 @@
 import { Request, Response } from "express"
 import { corsiNoShowStore } from "../store/corsi-no-show.js"
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
-import { setBloccaPrenotazioniFinoAlByEmail } from "../services/gestionale-sql.js"
+import { clearBloccaPrenotazioniFinoAlByEmail, setBloccaPrenotazioniFinoAlByEmail } from "../services/gestionale-sql.js"
 
 function pad2(n: number) {
   return String(n).padStart(2, "0")
@@ -31,9 +31,18 @@ export async function postCorsiNoShowBlock(req: Request, res: Response) {
 export async function deleteCorsiNoShowBlock(req: Request, res: Response) {
   try {
     const email = String(req.params.email ?? "").trim()
-    const ok = corsiNoShowStore.unblock(email)
+    const norm = corsiNoShowStore.normalizeEmail(email)
+    if (!norm) return res.status(400).json({ message: "Email non valida" })
+
+    const gestionale = await clearBloccaPrenotazioniFinoAlByEmail({ email: norm })
+    if (!gestionale.ok) {
+      // eslint-disable-next-line no-console
+      console.warn("[no-show] sblocco gestionale fallito:", gestionale.message)
+    }
+
+    const ok = corsiNoShowStore.unblock(norm)
     if (!ok) return res.status(404).json({ message: "Non presente in blocchi" })
-    res.json({ ok: true })
+    res.json({ ok: true, gestionale })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -66,7 +75,7 @@ export async function postCorsiNoShowNotifyAndBlock(req: Request, res: Response)
 
     const details =
       absences.length > 0
-        ? `\n\nAssenze rilevate:\n` +
+        ? `\nAssenze rilevate:\n` +
           absences
             .map((a) => {
               const hh = [a.oraInizio, a.oraFine].filter(Boolean).join("–")

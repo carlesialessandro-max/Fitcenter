@@ -237,6 +237,13 @@ function isoDayUtc(d: Date): string {
   return d.toISOString().slice(0, 10)
 }
 
+function localYmd(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${mo}-${day}`
+}
+
 function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { start: Date | null; end: Date | null } {
   const raw = (p.raw ?? {}) as any
   let start =
@@ -355,7 +362,7 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // Se non abbiamo orario lezione, applichiamo regola semplice: entrata nel giorno => presente.
   if (!w.start) return { present: true, entry: firstIn, exit: lastOut }
   // Day guard
-  if (isoDayUtc(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
+  if (localYmd(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
 
   // Regola presenza:
   // - presente se c'è una "entrata" prima o durante la lezione
@@ -1294,6 +1301,16 @@ export function CorsiNoShow() {
     },
   })
 
+  const unblockMutation = useMutation({
+    mutationFn: async (email: string) => {
+      if (!canManageNoShow) throw new Error("Permessi insufficienti")
+      return prenotazioniApi.unblockNoShow(email)
+    },
+    onSuccess: async () => {
+      await blocksQ.refetch()
+    },
+  })
+
   if (!canManageNoShow) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-6">
@@ -1439,6 +1456,18 @@ export function CorsiNoShow() {
                       ? "Invio…"
                       : "Invia mail + blocca"}
                 </button>
+
+                {selected.email && blockedByEmail.has(selected.email.trim().toLowerCase()) ? (
+                  <button
+                    type="button"
+                    disabled={unblockMutation.isPending}
+                    onClick={() => unblockMutation.mutate(selected.email!.trim().toLowerCase())}
+                    className="rounded-lg border border-zinc-700 bg-zinc-950/30 px-3 py-2 text-xs font-medium text-zinc-200 disabled:opacity-50"
+                    title="Sblocca prenotazioni (gestionale) e rimuovi blocco locale"
+                  >
+                    {unblockMutation.isPending ? "Sblocco…" : "Sblocca"}
+                  </button>
+                ) : null}
               </div>
             )}
           </div>
