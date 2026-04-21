@@ -324,7 +324,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const list = m.get(k) ?? []
 
     const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
-    if (dtIn && isoDayUtc(dtIn) === giornoIso) {
+    if (dtIn && localYmd(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
       const desc = `${String(raw?.Descrizione ?? raw?.descrizione ?? "")} ${String(raw?.Terminale ?? raw?.terminale ?? "")} ${String(
         raw?.Varco ?? raw?.varco ?? ""
@@ -334,7 +334,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     }
 
     const dtOut = parseDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
-    if (dtOut && isoDayUtc(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
+    if (dtOut && localYmd(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
 
     if (list.length > 0) m.set(k, list)
   }
@@ -1183,13 +1183,13 @@ export function CorsiNoShow() {
     for (const a of allAccessRows) {
       const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata ?? a.dataUscita)
       if (!dt) continue
-      daySet.add(isoDayUtc(dt))
+      daySet.add(localYmd(dt))
     }
     const m = new Map<string, AccessIndex>()
     for (const dayIso of daySet) {
       const dayRows = allAccessRows.filter((a) => {
         const dt = parseDateAny((a.raw as any)?.AccessiDataOra ?? a.dataEntrata ?? a.dataUscita)
-        return dt ? isoDayUtc(dt) === dayIso : false
+        return dt ? localYmd(dt) === dayIso : false
       })
       m.set(dayIso, buildAccessIndexForDay(dayRows, dayIso))
     }
@@ -1467,6 +1467,9 @@ export function CorsiNoShow() {
                   >
                     {unblockMutation.isPending ? "Sblocco…" : "Sblocca"}
                   </button>
+                ) : null}
+                {unblockMutation.isError ? (
+                  <div className="text-xs text-red-400">Errore sblocco: {String((unblockMutation.error as Error)?.message ?? "Errore")}</div>
                 ) : null}
               </div>
             )}
