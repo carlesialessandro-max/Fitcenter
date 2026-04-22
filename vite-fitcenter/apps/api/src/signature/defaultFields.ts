@@ -29,7 +29,10 @@ export function defaultSignatureFields(): SignatureField[] {
 
 export function ensureSignatureFields(fields: SignatureField[] | undefined | null): SignatureField[] {
   const defaults = defaultSignatureFields()
-  if (!Array.isArray(fields) || fields.length === 0) return defaults.map((f) => ({ ...f }))
+  // Se `fields` non è presente (template legacy), usa i default.
+  // Se invece è presente (anche vuoto), rispetta esattamente quanto salvato dall'admin.
+  if (!Array.isArray(fields)) return defaults.map((f) => ({ ...f }))
+  if (fields.length === 0) return []
 
   // Compatibilità: alcuni template vecchi usano cap_citta + campi nascita. Qui migriamo senza rompere la precompilazione.
   const cleaned = fields
@@ -68,19 +71,9 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
       ]
     })
 
-  // Se il template salvato non contiene alcuni campi standard (es. asi_tessera), li aggiungiamo dai default.
-  const ids = new Set(cleaned.map((f) => String(f.id)))
-  const maxOrder = cleaned.reduce((m, f) => Math.max(m, Number(f.order ?? 0) || 0), 0) || 0
-  const withMissing = cleaned.slice()
-  let nextOrder = maxOrder + 1
-  for (const d of defaults) {
-    if (ids.has(d.id)) continue
-    withMissing.push({ ...d, order: nextOrder++ })
-  }
-
   // Dedup: alcuni template possono contenere id duplicati (che portano a doppio rendering).
   const seen = new Set<string>()
-  const unique = withMissing.filter((f) => {
+  const unique = cleaned.filter((f) => {
     const id = String(f.id ?? "").trim()
     if (!id) return false
     if (seen.has(id)) return false
@@ -88,7 +81,7 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
     return true
   })
 
-  // Template salvato: usa l’elenco così com’è (più eventuali missing), ma completa proprietà mancanti con fallback dai default.
+  // Template salvato: usa l’elenco così com’è, completando proprietà mancanti con fallback dai default (stesso id).
   const byId = new Map(defaults.map((d) => [d.id, d]))
   return unique
     .slice()

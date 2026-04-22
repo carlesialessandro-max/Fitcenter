@@ -196,6 +196,38 @@ export function SignaturesAdmin() {
     })
   }
 
+  function addCustomSlot() {
+    const label = String(globalThis.prompt("Nome slot firma (es. 'Firma genitore 1')") ?? "").trim()
+    if (!label) return
+    const baseId = label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 32) || "firma"
+    setSlotsDraft((prev) => {
+      const used = new Set(prev.map((s) => s.id))
+      let id = baseId
+      let i = 2
+      while (used.has(id)) {
+        id = `${baseId}-${i++}`
+      }
+      const order = prev.length > 0 ? Math.max(...prev.map((s) => s.order || 0)) + 1 : 1
+      return [
+        ...prev,
+        {
+          id,
+          label,
+          page: 1,
+          x: 330,
+          y: 90,
+          width: 240,
+          height: 80,
+          order,
+        },
+      ]
+    })
+  }
+
   function resetFiveDefaults() {
     setSlotsDraft(DEFAULT_SIGNATURE_SLOTS.map((s) => ({ ...s })))
   }
@@ -953,6 +985,13 @@ export function SignaturesAdmin() {
                 className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200 disabled:opacity-40"
               >
                 Aggiungi slot (da elenco predefinito)
+              </button>
+              <button
+                type="button"
+                onClick={addCustomSlot}
+                className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200"
+              >
+                Aggiungi slot (personalizzato)
               </button>
               <button type="button" onClick={resetFiveDefaults} className="rounded border border-zinc-600 px-2 py-1 text-xs text-zinc-200">
                 Ripristina 5 slot predefiniti
