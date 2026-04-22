@@ -2931,23 +2931,42 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     )
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
-    const prenotatoIlRaw = firstNonEmpty(raw, [
-      // Prenotazione: colonna corretta vista da te
-      "DataOperazionePrenotazioneIscrizione",
-      "PrenotatoIl",
-      "DataPrenotazione",
-      "DataPrenotato",
-      "PrenotazioneData",
-      "DataCreazione",
-      "DataCreazionePrenotazione",
-      "DataCreazioneIscrizione",
-      "DataCreazionePrenotazioneIscrizione",
-      "DataCreazionePrenotazioneUtente",
-      "DataModifica",
-      "DataModificaPrenotazione",
-      "CreatoIl",
-      "CreatedAt",
-    ])
+    const prenotatoIlRaw = extra?.inAttesa
+      ? firstNonEmpty(raw, [
+          // Lista d'attesa: preferisci timestamp inserimento/operazione (evita "DataCreazione" anagrafica vecchia).
+          "PrenotazioniListaAttesaDataOperazione",
+          "PrenotazioniListaAttesaDataInserimento",
+          "PrenotazioniListaAttesaDataCreazione",
+          "PrenotazioniListaAttesaCreatoIl",
+          "PrenotazioniListaAttesaCreatedAt",
+          "DataOperazioneListaAttesa",
+          "DataInserimentoListaAttesa",
+          "DataCreazioneListaAttesa",
+          "DataRichiesta",
+          "RichiestoIl",
+          // Fallback "ragionevoli"
+          "DataOperazione",
+          "DataModifica",
+          "CreatoIl",
+          "CreatedAt",
+        ])
+      : firstNonEmpty(raw, [
+          // Prenotazione: colonna corretta vista da te
+          "DataOperazionePrenotazioneIscrizione",
+          "PrenotatoIl",
+          "DataPrenotazione",
+          "DataPrenotato",
+          "PrenotazioneData",
+          "DataCreazione",
+          "DataCreazionePrenotazione",
+          "DataCreazioneIscrizione",
+          "DataCreazionePrenotazioneIscrizione",
+          "DataCreazionePrenotazioneUtente",
+          "DataModifica",
+          "DataModificaPrenotazione",
+          "CreatoIl",
+          "CreatedAt",
+        ])
     const prenotatoIl = toIsoDateTime(prenotatoIlRaw) ?? prenotatoIlRaw
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])

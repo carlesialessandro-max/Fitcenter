@@ -91,6 +91,13 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   let fonte: LeadSource = "zapier"
   let fonteRaw = pick(["fonte", "Fonte", "source", "Source", "campaign_source", "origin"]).trim().toLowerCase()
   if (fonteRaw === "sito web" || fonteRaw === "sito") fonteRaw = "website"
+  // Zapier / Facebook Lead Ads spesso mandano stringhe tipo "Facebook Leads Ads" o "Meta/Facebook".
+  if (fonteRaw && !VALID_FONTE_ZAPIER.includes(fonteRaw as LeadSource)) {
+    const blob = fonteRaw.replace(/\s+/g, " ").trim()
+    if (blob.includes("facebook") || blob.includes("meta") || blob.includes("lead ads") || blob.includes("leads ads")) fonteRaw = "facebook"
+    else if (blob.includes("google")) fonteRaw = "google"
+    else if (blob.includes("website") || blob.includes("sito")) fonteRaw = "website"
+  }
   if (fonteRaw && VALID_FONTE_ZAPIER.includes(fonteRaw as LeadSource)) fonte = fonteRaw as LeadSource
   const interesseRaw = pick(["interesse", "Interesse", "interest"]) || (body.interesse != null ? unwrap(body.interesse) : "")
   const interesseValido = interesseRaw && VALID_INTERESSE.includes(interesseRaw as InteresseLead) ? (interesseRaw as InteresseLead) : undefined

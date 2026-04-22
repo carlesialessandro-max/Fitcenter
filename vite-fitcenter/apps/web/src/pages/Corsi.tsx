@@ -465,6 +465,20 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
 type AccessEvent = { t: Date; kind: "in" | "out" }
 type AccessIndex = Map<string, AccessEvent[]> // idKey -> access events (sorted by time)
 
+function accessKeyEmailFromRaw(raw: any): string | null {
+  const cand = String(raw?.Email ?? raw?.email ?? raw?.CustomerEmail ?? raw?.customerEmail ?? "").trim().toLowerCase()
+  if (!cand || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cand)) return null
+  return `email:${cand}`
+}
+
+function accessKeyNameFromAny(input: { cognome?: unknown; nome?: unknown; raw?: any }): string | null {
+  const cognome = String(input.cognome ?? input.raw?.Cognome ?? input.raw?.cognome ?? "").trim().toLowerCase()
+  const nome = String(input.nome ?? input.raw?.Nome ?? input.raw?.nome ?? "").trim().toLowerCase()
+  const full = `${cognome}|${nome}`.replace(/\s+/g, " ").trim()
+  if (!full || full === "|") return null
+  return `name:${full}`
+}
+
 function accessKindFromRaw(raw: any): AccessEvent["kind"] {
   const blob = [
     raw?.TerminaleDescrizione,
@@ -516,24 +530,35 @@ function parseAccessDateAny(val: unknown): Date | null {
 
 function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
   const m = new Map<string, AccessEvent[]>()
+  const push = (k: string, ev: AccessEvent) => {
+    const list = m.get(k) ?? []
+    list.push(ev)
+    m.set(k, list)
+  }
   for (const r of rows) {
     const raw = (r.raw ?? {}) as any
     const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
-    if (!id) continue
     const k = `id:${id}`
-    const list = m.get(k) ?? []
+    const kEmail = accessKeyEmailFromRaw(raw)
+    const kName = accessKeyNameFromAny({ cognome: r.cognome, nome: r.nome, raw })
 
     const dtIn = parseAccessDateAny(raw?.AccessiDataOra ?? r.dataEntrata ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (dtIn && localYmd(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
       const kind = accessKindFromRaw(raw)
-      list.push({ t: dtIn, kind })
+      const ev: AccessEvent = { t: dtIn, kind }
+      if (id) push(k, ev)
+      if (kEmail) push(kEmail, ev)
+      if (kName) push(kName, ev)
     }
 
     const dtOut = parseAccessDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
-    if (dtOut && localYmd(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
-
-    if (list.length > 0) m.set(k, list)
+    if (dtOut && localYmd(dtOut) === giornoIso) {
+      const ev: AccessEvent = { t: dtOut, kind: "out" }
+      if (id) push(k, ev)
+      if (kEmail) push(kEmail, ev)
+      if (kName) push(kName, ev)
+    }
   }
   for (const [k, list] of m.entries()) {
     list.sort((a, b) => a.t.getTime() - b.t.getTime())
@@ -544,8 +569,25 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
 
 function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
   const stable = participantStableKey(p, 0)
-  if (!stable.startsWith("id:")) return { present: false, entry: null, exit: null }
-  const evs = accessIdx.get(stable) ?? []
+  const candidateKeys: string[] = []
+  if (stable.startsWith("id:")) candidateKeys.push(stable)
+  const raw = (p.raw ?? {}) as any
+  const emailKey = accessKeyEmailFromRaw(raw) ?? (() => {
+    const e = String(p.email ?? "").trim().toLowerCase()
+    return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? `email:${e}` : null
+  })()
+  if (emailKey) candidateKeys.push(emailKey)
+  const nameKey = accessKeyNameFromAny({ cognome: p.cognome, nome: p.nome, raw })
+  if (nameKey) candidateKeys.push(nameKey)
+
+  let evs: AccessEvent[] = []
+  for (const k of candidateKeys) {
+    const got = accessIdx.get(k)
+    if (got && got.length > 0) {
+      evs = got
+      break
+    }
+  }
   if (evs.length === 0) return { present: false, entry: null, exit: null }
 
   const ins = evs.filter((e) => e.kind === "in").map((e) => e.t)
