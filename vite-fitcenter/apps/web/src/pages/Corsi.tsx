@@ -109,6 +109,8 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
         "Inizio",
         // Lista attesa: spesso qui c'è l'orario vero
         "PrenotazioniListaAttesaDataInizio",
+        // Alcuni gestionali mettono l'ora in una "data fittizia" (es. 1899-12-30 14:30) in DalleOre
+        "DalleOre",
       ]) ??
       ((r.oraInizio ?? "").trim() ? (r.oraInizio ?? "").trim() : undefined)
     const oraFine =
@@ -117,6 +119,37 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       ((r.oraFine ?? "").trim() ? (r.oraFine ?? "").trim() : undefined)
     const isWait = !!r.inAttesa
     const waitNoTime = isWait && (!oraInizio || oraInizio === "00:00")
+
+    // Se è in attesa ma abbiamo un'ora (es. da DalleOre) e manca l'oraFine,
+    // proviamo ad agganciarla al corso del giorno con stessa oraInizio.
+    if (isWait && !waitNoTime && oraInizio && (!oraFine || oraFine === "00:00")) {
+      const pool = byServiceDay.get(`${servizio}__${giorno}`) ?? []
+      if (pool.length > 0) {
+        const exact = pool.find((g) => (g.oraInizio ?? "") === oraInizio && !g.key.includes("__WAITLIST"))
+        if (exact) {
+          exact.partecipanti.push(r)
+          continue
+        }
+        // fallback: più vicino per ora
+        const toMin = (t?: string) => {
+          if (!t || !/^\d{2}:\d{2}$/.test(t)) return null
+          const [h, m] = t.split(":").map((x) => Number(x))
+          return h * 60 + m
+        }
+        const target = toMin(oraInizio)
+        if (target != null) {
+          const scored = pool
+            .filter((g) => !g.key.includes("__WAITLIST"))
+            .map((g) => ({ g, m: toMin(g.oraInizio) }))
+            .filter((x) => x.m != null) as { g: CorsoGroup; m: number }[]
+          if (scored.length > 0) {
+            scored.sort((a, b) => Math.abs(a.m - target) - Math.abs(b.m - target) || a.m - b.m)
+            scored[0]!.g.partecipanti.push(r)
+            continue
+          }
+        }
+      }
+    }
 
     // Se è in attesa e non ha un orario affidabile:
     // - se abbiamo un id corso/appuntamento, agganciamo comunque al corso giusto
@@ -133,8 +166,9 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
         }
       }
 
-      // Aggancio per orario: usa la datetime di lista attesa se presente, altrimenti prova oraInizio derivata.
+      // Aggancio per orario: usa la datetime di lista attesa / DalleOre se presente.
       const waitDt =
+        parseDateAny(raw?.DalleOre) ??
         parseDateAny(raw?.PrenotazioniListaAttesaDataInizio) ??
         parseDateAny(raw?.DataInizioPrenotazioneIscrizione) ??
         parseDateAny(raw?.InizioPrenotazioneIscrizione) ??
