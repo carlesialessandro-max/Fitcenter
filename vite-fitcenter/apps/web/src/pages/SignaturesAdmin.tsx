@@ -582,6 +582,19 @@ export function SignaturesAdmin() {
     }
   }
 
+  function onExportAuditCsv() {
+    try {
+      const el = globalThis.document.createElement("a")
+      el.href = signaturesApi.exportAuditCsvUrl()
+      el.target = "_blank"
+      el.rel = "noreferrer"
+      el.click()
+      setMsg("Audit esportato (CSV).")
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    }
+  }
+
   async function onDelete(id: string, deleteFiles: boolean) {
     const label = deleteFiles ? "Elimina richiesta + cancella file PDF dal server" : "Elimina solo la riga (PDF rimane sul server)"
     if (!globalThis.confirm(`${label}?\n\nId: ${id}`)) return
@@ -614,6 +627,14 @@ export function SignaturesAdmin() {
               className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200 disabled:opacity-60"
             >
               {exportBusy ? "Esportazione..." : "Esporta audit (JSON)"}
+            </button>
+            <button
+              type="button"
+              disabled={exportBusy}
+              onClick={onExportAuditCsv}
+              className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200 disabled:opacity-60"
+            >
+              Esporta audit (CSV/Excel)
             </button>
           </div>
 

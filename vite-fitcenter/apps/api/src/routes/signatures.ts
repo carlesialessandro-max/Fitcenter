@@ -11,6 +11,7 @@ import {
   downloadSignatureTemplateDocument,
   downloadPublicSignatureDocument,
   exportSignatureAudit,
+  exportSignatureAuditCsv,
   getPublicSignatureInfo,
   listSignatureRequests,
   listSignatureTemplates,
@@ -51,6 +52,7 @@ signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
 signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
 signaturesRouter.delete("/admin/:id", requireAuth, deleteSignatureRequest)
 signaturesRouter.get("/admin/export-audit", requireAuth, requireAdmin, exportSignatureAudit)
+signaturesRouter.get("/admin/export-audit.csv", requireAuth, requireAdmin, exportSignatureAuditCsv)
 signaturesRouter.get("/admin/privacy-page-text", requireAuth, requireAdmin, getSignaturePrivacyPageText)
 signaturesRouter.put("/admin/privacy-page-text", requireAuth, requireAdmin, putSignaturePrivacyPageText)
 signaturesRouter.post("/admin/privacy-page-text/reset", requireAuth, requireAdmin, resetSignaturePrivacyPageText)

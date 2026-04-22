@@ -2933,7 +2933,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = extra?.inAttesa
       ? firstNonEmpty(raw, [
-          // Lista d'attesa: preferisci timestamp inserimento/operazione (evita "DataCreazione" anagrafica vecchia).
+          // Lista d'attesa: la "data giusta" operativa è la DataInizio (quella vista nel gestionale).
+          "PrenotazioniListaAttesaDataInizio",
+          // Se manca, ripiega su timestamp inserimento/operazione.
           "PrenotazioniListaAttesaDataOperazione",
           "PrenotazioniListaAttesaDataInserimento",
           "PrenotazioniListaAttesaDataCreazione",

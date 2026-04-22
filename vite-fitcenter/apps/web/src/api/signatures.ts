@@ -67,6 +67,7 @@ export const signaturesApi = {
     return api.get<SignatureAdminListResponse>(`/signatures/admin${qs ? `?${qs}` : ""}`)
   },
   exportAudit: () => api.get<{ rows: unknown[]; exportedAt: string }>("/signatures/admin/export-audit"),
+  exportAuditCsvUrl: () => `${API_BASE}/signatures/admin/export-audit.csv`,
   deleteAdmin: (id: string, opts?: { deleteFiles?: boolean }) =>
     api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}${opts?.deleteFiles ? "?deleteFiles=1" : ""}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),

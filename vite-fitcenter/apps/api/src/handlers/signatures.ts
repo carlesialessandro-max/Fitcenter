@@ -738,6 +738,96 @@ export async function exportSignatureAudit(_req: Request, res: Response) {
   res.json({ rows: safe, exportedAt: nowIso() })
 }
 
+function csvEscape(v: unknown): string {
+  const s = v == null ? "" : String(v)
+  if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+export async function exportSignatureAuditCsv(_req: Request, res: Response) {
+  const rows = signatureStore.list()
+  const header = [
+    "requestId",
+    "token",
+    "status",
+    "createdAt",
+    "expiresAt",
+    "signedAt",
+    "customerEmail",
+    "customerName",
+    "documentOriginalName",
+    "documentFileName",
+    "signedDocumentFileName",
+    "eventAt",
+    "eventType",
+    "eventOk",
+    "channel",
+    "destination",
+    "ip",
+    "userAgent",
+    "message",
+  ]
+  const lines: string[] = []
+  lines.push(header.join(","))
+  for (const r of rows) {
+    const audit = Array.isArray(r.audit) ? r.audit : []
+    if (audit.length === 0) {
+      const base = [
+        r.id,
+        r.publicToken,
+        r.status,
+        r.createdAt,
+        r.expiresAt,
+        r.signedAt ?? "",
+        r.customerEmail,
+        r.customerName ?? "",
+        r.documentOriginalName,
+        r.documentFileName,
+        r.signedDocumentFileName ?? "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]
+      lines.push(base.map(csvEscape).join(","))
+      continue
+    }
+    for (const ev of audit) {
+      const row = [
+        r.id,
+        r.publicToken,
+        r.status,
+        r.createdAt,
+        r.expiresAt,
+        r.signedAt ?? "",
+        r.customerEmail,
+        r.customerName ?? "",
+        r.documentOriginalName,
+        r.documentFileName,
+        r.signedDocumentFileName ?? "",
+        ev.at,
+        ev.type,
+        ev.ok == null ? "" : String(ev.ok),
+        (ev as any).channel ?? "",
+        (ev as any).destination ?? "",
+        ev.ip ?? "",
+        ev.userAgent ?? "",
+        ev.message ?? "",
+      ]
+      lines.push(row.map(csvEscape).join(","))
+    }
+  }
+  const out = lines.join("\r\n")
+  res.setHeader("Content-Type", "text/csv; charset=utf-8")
+  res.setHeader("Content-Disposition", `attachment; filename="firma-audit-${new Date().toISOString().slice(0, 10)}.csv"`)
+  // BOM per Excel (UTF-8)
+  res.send(`\uFEFF${out}`)
+}
+
 export async function requestSignatureOtp(req: Request, res: Response) {
   const token = String(req.params.token ?? "").trim()
   const row = signatureStore.getByToken(token)
@@ -1348,6 +1438,52 @@ export async function confirmSignature(req: Request, res: Response) {
   const signedPdfPath = path.join(signatureStore.resolveSignatureDir(), signedFileName)
   fs.writeFileSync(signedPdfPath, signedPdfBytes)
 
+  const auditSidecarFileName = `signed-${row.id}.audit.json`
+  const auditSidecarPath = path.join(signatureStore.resolveSignatureDir(), auditSidecarFileName)
+  const writeAuditSidecar = (input: { completed: boolean; signedAt?: string | null; audit: SignatureRequest["audit"] }) => {
+    try {
+      const payload = {
+        version: 1,
+        generatedAt: nowIso(),
+        request: {
+          id: baseRow.id,
+          token: baseRow.publicToken,
+          status: input.completed ? "signed" : "pending",
+          createdAt: baseRow.createdAt,
+          expiresAt: baseRow.expiresAt,
+          templateId: baseRow.templateId ?? null,
+          templateName: baseRow.templateName ?? null,
+        },
+        document: {
+          originalName: baseRow.documentOriginalName,
+          sourceFileName: baseRow.documentFileName,
+          signedFileName,
+        },
+        signer: {
+          customerEmail: baseRow.customerEmail,
+          customerName: baseRow.customerName ?? null,
+          fullName: fullName || baseRow.customerName || null,
+          ip: req.ip ?? null,
+          userAgent: req.headers["user-agent"]?.toString() ?? null,
+        },
+        otp: {
+          verifiedAt: baseRow.otpVerifiedAt ?? null,
+          consentAcceptedAt: (baseRow as any).consentAcceptedAt ?? null,
+          // Nota legale/tecnica: non salviamo mai l'OTP in chiaro.
+          codeHash: baseRow.otpCodeHash ?? null,
+        },
+        result: {
+          completed: input.completed,
+          signedAt: input.signedAt ?? null,
+        },
+        audit: input.audit ?? [],
+      }
+      fs.writeFileSync(auditSidecarPath, Buffer.from(JSON.stringify(payload, null, 2), "utf8"))
+    } catch {
+      // best effort: non bloccare la firma
+    }
+  }
+
   // Export gestionale allegati (Windows share), se configurato.
   // Esempio env: GESTIONALE_ALLEGATI_DIR=\\\\SERVERNEW\\Manager\\Allegati
   const allegatiBase = String(process.env.GESTIONALE_ALLEGATI_DIR ?? "").trim()
@@ -1387,6 +1523,14 @@ export async function confirmSignature(req: Request, res: Response) {
       const altPath = makeUniquePath(basePath)
       fs.copyFileSync(signedPdfPath, altPath)
     }
+
+    // Copia anche il file "prova" affiancato (audit).
+    try {
+      const auditDest = `${destPath}.audit.json`
+      if (fs.existsSync(auditSidecarPath)) fs.copyFileSync(auditSidecarPath, auditDest)
+    } catch {
+      // best effort
+    }
   }
 
   const completed = signedSteps.every((s) => !!s.signedAt)
@@ -1410,6 +1554,9 @@ export async function confirmSignature(req: Request, res: Response) {
     }),
   }))
   if (!signed) return res.status(500).json({ message: "Errore interno" })
+
+  // Scrivi/aggiorna sempre un file prova affiancato al PDF firmato.
+  writeAuditSidecar({ completed, signedAt: signed.signedAt ?? null, audit: signed.audit ?? [] })
 
   if (completed) {
     try {
