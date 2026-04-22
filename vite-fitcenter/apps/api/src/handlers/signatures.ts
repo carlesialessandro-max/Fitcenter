@@ -1010,7 +1010,8 @@ export async function createSignatureTemplate(req: Request, res: Response) {
       privacyProfileId,
       // Nuovo template: 1 firma di default (poi l'admin può aggiungere slot se necessario).
       slots: [{ id: "firma-1", label: "Firma", page: 1, x: 330, y: 90, width: 240, height: 80, order: 1 }],
-      fields: ensureSignatureFields(null),
+      // Nuovo template: nessun campo di default (l'admin li aggiunge solo se servono).
+      fields: [],
     })
     res.json(tpl)
   } catch (e) {

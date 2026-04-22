@@ -144,7 +144,9 @@ export function SignaturesAdmin() {
     setPrivacyProfileIdDraft(t?.privacyProfileId ?? "default")
     const slots = t?.slots && t.slots.length > 0 ? t.slots : DEFAULT_SIGNATURE_SLOTS
     setSlotsDraft(slots.map((s) => ({ ...s })))
-    const fields = t?.fields && t.fields.length > 0 ? t.fields : DEFAULT_SIGNATURE_FIELDS
+    // Se il template ha `fields` (anche vuoto), rispetta il valore salvato.
+    // I default servono solo per template legacy senza proprietà `fields`.
+    const fields = Array.isArray(t?.fields) ? t!.fields : DEFAULT_SIGNATURE_FIELDS
     setFieldsDraft(fields.map((f) => ({ ...f })))
   }, [templateId, templatesQ.data])
 
