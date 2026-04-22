@@ -66,8 +66,29 @@ export const signaturesApi = {
     const qs = params.toString()
     return api.get<SignatureAdminListResponse>(`/signatures/admin${qs ? `?${qs}` : ""}`)
   },
-  exportAudit: () => api.get<{ rows: unknown[]; exportedAt: string }>("/signatures/admin/export-audit"),
-  exportAuditCsvUrl: () => `${API_BASE}/signatures/admin/export-audit.csv`,
+  exportAudit: (q?: { id?: string; token?: string }) => {
+    const params = new URLSearchParams()
+    if (q?.id) params.set("id", q.id)
+    if (q?.token) params.set("token", q.token)
+    const qs = params.toString()
+    return api.get<{ rows: unknown[]; exportedAt: string }>(`/signatures/admin/export-audit${qs ? `?${qs}` : ""}`)
+  },
+  exportAuditCsv: async (q?: { id?: string; token?: string }) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const params = new URLSearchParams()
+    if (q?.id) params.set("id", q.id)
+    if (q?.token) params.set("token", q.token)
+    const qs = params.toString()
+    const res = await fetch(`${API_BASE}/signatures/admin/export-audit.csv${qs ? `?${qs}` : ""}`, {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }))
+      throw new Error((err as { message?: string }).message ?? "Errore export audit CSV")
+    }
+    return res.blob()
+  },
   deleteAdmin: (id: string, opts?: { deleteFiles?: boolean }) =>
     api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}${opts?.deleteFiles ? "?deleteFiles=1" : ""}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),

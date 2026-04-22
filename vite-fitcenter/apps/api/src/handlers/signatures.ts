@@ -719,7 +719,11 @@ export async function downloadPublicSignatureDocument(req: Request, res: Respons
 }
 
 export async function exportSignatureAudit(_req: Request, res: Response) {
-  const rows = signatureStore.list()
+  const qId = String((_req.query as any)?.id ?? "").trim()
+  const qToken = String((_req.query as any)?.token ?? "").trim()
+  const rows = signatureStore
+    .list()
+    .filter((r) => (!qId || r.id === qId) && (!qToken || r.publicToken === qToken))
   const safe = rows.map((r) => ({
     id: r.id,
     token: r.publicToken,
@@ -744,21 +748,45 @@ function csvEscape(v: unknown): string {
   return s
 }
 
+function fmtRome(iso: unknown): string {
+  const s = iso == null ? "" : String(iso).trim()
+  if (!s) return ""
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ""
+  return new Intl.DateTimeFormat("it-IT", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(d)
+}
+
 export async function exportSignatureAuditCsv(_req: Request, res: Response) {
-  const rows = signatureStore.list()
+  const qId = String((_req.query as any)?.id ?? "").trim()
+  const qToken = String((_req.query as any)?.token ?? "").trim()
+  const rows = signatureStore
+    .list()
+    .filter((r) => (!qId || r.id === qId) && (!qToken || r.publicToken === qToken))
   const header = [
     "requestId",
     "token",
     "status",
     "createdAt",
+    "createdAt_IT",
     "expiresAt",
+    "expiresAt_IT",
     "signedAt",
+    "signedAt_IT",
     "customerEmail",
     "customerName",
     "documentOriginalName",
     "documentFileName",
     "signedDocumentFileName",
     "eventAt",
+    "eventAt_IT",
     "eventType",
     "eventOk",
     "channel",
@@ -777,8 +805,11 @@ export async function exportSignatureAuditCsv(_req: Request, res: Response) {
         r.publicToken,
         r.status,
         r.createdAt,
+        fmtRome(r.createdAt),
         r.expiresAt,
+        fmtRome(r.expiresAt),
         r.signedAt ?? "",
+        fmtRome(r.signedAt),
         r.customerEmail,
         r.customerName ?? "",
         r.documentOriginalName,
@@ -802,14 +833,18 @@ export async function exportSignatureAuditCsv(_req: Request, res: Response) {
         r.publicToken,
         r.status,
         r.createdAt,
+        fmtRome(r.createdAt),
         r.expiresAt,
+        fmtRome(r.expiresAt),
         r.signedAt ?? "",
+        fmtRome(r.signedAt),
         r.customerEmail,
         r.customerName ?? "",
         r.documentOriginalName,
         r.documentFileName,
         r.signedDocumentFileName ?? "",
         ev.at,
+        fmtRome(ev.at),
         ev.type,
         ev.ok == null ? "" : String(ev.ok),
         (ev as any).channel ?? "",
@@ -823,7 +858,8 @@ export async function exportSignatureAuditCsv(_req: Request, res: Response) {
   }
   const out = lines.join("\r\n")
   res.setHeader("Content-Type", "text/csv; charset=utf-8")
-  res.setHeader("Content-Disposition", `attachment; filename="firma-audit-${new Date().toISOString().slice(0, 10)}.csv"`)
+  const suffix = qId ? `-${qId}` : qToken ? `-${qToken}` : ""
+  res.setHeader("Content-Disposition", `attachment; filename="firma-audit${suffix}-${new Date().toISOString().slice(0, 10)}.csv"`)
   // BOM per Excel (UTF-8)
   res.send(`\uFEFF${out}`)
 }

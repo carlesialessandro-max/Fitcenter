@@ -582,16 +582,23 @@ export function SignaturesAdmin() {
     }
   }
 
-  function onExportAuditCsv() {
+  async function onExportAuditCsv() {
     try {
+      setErr(null)
+      setMsg(null)
+      setExportBusy(true)
+      const blob = await signaturesApi.exportAuditCsv()
+      const url = URL.createObjectURL(blob)
       const el = globalThis.document.createElement("a")
-      el.href = signaturesApi.exportAuditCsvUrl()
-      el.target = "_blank"
-      el.rel = "noreferrer"
+      el.href = url
+      el.download = `firma-audit-${new Date().toISOString().slice(0, 10)}.csv`
       el.click()
+      URL.revokeObjectURL(url)
       setMsg("Audit esportato (CSV).")
     } catch (e2) {
       setErr((e2 as Error).message)
+    } finally {
+      setExportBusy(false)
     }
   }
 
@@ -1327,6 +1334,33 @@ export function SignaturesAdmin() {
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={deletingId === r.id}
+                        onClick={async () => {
+                          try {
+                            setErr(null)
+                            setMsg(null)
+                            setDeletingId(r.id)
+                            const blob = await signaturesApi.exportAuditCsv({ id: r.id })
+                            const url = URL.createObjectURL(blob)
+                            const el = globalThis.document.createElement("a")
+                            el.href = url
+                            el.download = `firma-audit-${r.id}-${new Date().toISOString().slice(0, 10)}.csv`
+                            el.click()
+                            URL.revokeObjectURL(url)
+                            setMsg("Audit PDF esportato (CSV).")
+                          } catch (e2) {
+                            setErr((e2 as Error).message)
+                          } finally {
+                            setDeletingId(null)
+                          }
+                        }}
+                        className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
+                        title="Scarica audit (CSV) solo per questo PDF/richiesta"
+                      >
+                        Audit CSV
+                      </button>
                       <button
                         type="button"
                         disabled={deletingId === r.id}
