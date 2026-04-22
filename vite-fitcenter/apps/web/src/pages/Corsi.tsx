@@ -413,6 +413,26 @@ function accessKindFromRaw(raw: any): AccessEvent["kind"] {
   return "in"
 }
 
+function parseAccessDateAny(val: unknown): Date | null {
+  if (val == null) return null
+  // Per gli accessi vogliamo interpretare gli ISO con Z/offset come ORARI LOCALI (il gestionale li serializza così).
+  const s = String(val).trim()
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d+))?(?:Z|[+-]\d{2}:?\d{2})$/.exec(s)
+  if (m) {
+    const yyyy = Number(m[1])
+    const mm = Number(m[2])
+    const dd = Number(m[3])
+    const hh = Number(m[4] ?? 0)
+    const mi = Number(m[5] ?? 0)
+    const ss = Number(m[6] ?? 0)
+    const frac = String(m[7] ?? "0")
+    const ms = Number(frac.slice(0, 3).padEnd(3, "0"))
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  return parseDateAny(val)
+}
+
 function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
   const m = new Map<string, AccessEvent[]>()
   for (const r of rows) {
@@ -422,14 +442,14 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const k = `id:${id}`
     const list = m.get(k) ?? []
 
-    const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
+    const dtIn = parseAccessDateAny(raw?.AccessiDataOra ?? r.dataEntrata ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (dtIn && localYmd(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
       const kind = accessKindFromRaw(raw)
       list.push({ t: dtIn, kind })
     }
 
-    const dtOut = parseDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
+    const dtOut = parseAccessDateAny(r.dataUscita ?? raw?.Uscita ?? raw?.DataUscita ?? raw?.DataOraUscita ?? raw?.UscitaOra)
     if (dtOut && localYmd(dtOut) === giornoIso) list.push({ t: dtOut, kind: "out" })
 
     if (list.length > 0) m.set(k, list)
@@ -1041,6 +1061,7 @@ export function Corsi() {
                     const active = g.key === selectedCorsoKey
                     const pren = g.partecipanti.filter((p) => !p.inAttesa).length
                     const att = g.partecipanti.filter((p) => !!p.inAttesa).length
+                    const isWait = g.key.includes("__WAITLIST")
                     return (
                       <button
                         key={g.key}
@@ -1053,7 +1074,10 @@ export function Corsi() {
                         }`}
                       >
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-semibold text-zinc-100">{g.servizio}</div>
+                          <div className="truncate text-sm font-semibold text-zinc-100">
+                            {g.servizio}
+                            {isWait ? <span className="ml-2 text-xs font-semibold text-fuchsia-200">ATTESA</span> : null}
+                          </div>
                           <div className="mt-0.5 text-xs text-zinc-500">
                             {fmtDateIt(g.giorno)}
                             {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
@@ -1061,9 +1085,11 @@ export function Corsi() {
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
-                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
-                            {pren}
-                          </span>
+                          {!isWait ? (
+                            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                              {pren}
+                            </span>
+                          ) : null}
                           {att > 0 ? (
                             <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-xs font-semibold text-fuchsia-200">
                               {att}
