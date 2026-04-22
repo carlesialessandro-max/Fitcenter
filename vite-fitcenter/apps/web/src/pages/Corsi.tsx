@@ -83,6 +83,7 @@ function bestOraFromRaw(raw: any, keys: string[]): string | undefined {
 function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
   const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno(+id) -> gruppi (per agganciare attese senza orario)
+  const byServiceDay = new Map<string, CorsoGroup[]>() // servizio+giorno -> gruppi (per agganciare attese per orario)
   const waitBuckets = new Map<string, CorsoGroup>() // servizio+giorno -> gruppo "attesa" separato
   for (const r of rows) {
     const servizio = getCorsoTitolo(r)
@@ -119,6 +120,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
 
     // Se è in attesa e non ha un orario affidabile:
     // - se abbiamo un id corso/appuntamento, agganciamo comunque al corso giusto
+    // - altrimenti proviamo ad agganciare per orario (es. due corsi stesso servizio: 08:45 e 14:30)
     // - altrimenti la mettiamo in un bucket separato (evita mescolare 08:45 con 14:30).
     if (waitNoTime) {
       if (corsoId) {
@@ -130,6 +132,39 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
           continue
         }
       }
+
+      // Aggancio per orario: usa la datetime di lista attesa se presente, altrimenti prova oraInizio derivata.
+      const waitDt =
+        parseDateAny(raw?.PrenotazioniListaAttesaDataInizio) ??
+        parseDateAny(raw?.DataInizioPrenotazioneIscrizione) ??
+        parseDateAny(raw?.InizioPrenotazioneIscrizione) ??
+        null
+      const waitHHmm =
+        waitDt != null
+          ? `${String(waitDt.getHours()).padStart(2, "0")}:${String(waitDt.getMinutes()).padStart(2, "0")}`
+          : oraInizio
+      if (waitHHmm && /^\d{2}:\d{2}$/.test(waitHHmm)) {
+        const pool = byServiceDay.get(`${servizio}__${giorno}`) ?? []
+        if (pool.length > 0) {
+          const toMin = (t?: string) => {
+            if (!t || !/^\d{2}:\d{2}$/.test(t)) return null
+            const [h, m] = t.split(":").map((x) => Number(x))
+            return h * 60 + m
+          }
+          const target = toMin(waitHHmm)
+          if (target != null) {
+            const scored = pool
+              .map((g) => ({ g, m: toMin(g.oraInizio) }))
+              .filter((x) => x.m != null) as { g: CorsoGroup; m: number }[]
+            if (scored.length > 0) {
+              scored.sort((a, b) => Math.abs(a.m - target) - Math.abs(b.m - target) || a.m - b.m)
+              scored[0]!.g.partecipanti.push(r)
+              continue
+            }
+          }
+        }
+      }
+
       const wbKey = `${servizio}__${giorno}__WAITLIST`
       const wb = waitBuckets.get(wbKey) ?? { key: wbKey, servizio, giorno, oraInizio: undefined, oraFine: undefined, partecipanti: [] }
       wb.partecipanti.push(r)
@@ -144,6 +179,8 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       map.set(key, created)
       const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
       byBase.set(baseKey, [...(byBase.get(baseKey) ?? []), created])
+      const sd = `${servizio}__${giorno}`
+      byServiceDay.set(sd, [...(byServiceDay.get(sd) ?? []), created])
     } else {
       g.partecipanti.push(r)
     }
