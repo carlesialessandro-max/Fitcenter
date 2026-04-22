@@ -82,7 +82,8 @@ function bestOraFromRaw(raw: any, keys: string[]): string | undefined {
 
 function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
-  const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno -> gruppi (per agganciare attese senza orario)
+  const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno(+id) -> gruppi (per agganciare attese senza orario)
+  const waitBuckets = new Map<string, CorsoGroup>() // servizio+giorno -> gruppo "attesa" separato
   for (const r of rows) {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
@@ -99,7 +100,15 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     // proviamo a derivarlo dalle colonne datetime raw.
     const oraInizio =
       ((r.oraInizio ?? "").trim() && (r.oraInizio ?? "").trim() !== "00:00" ? (r.oraInizio ?? "").trim() : undefined) ??
-      bestOraFromRaw(raw, ["DataInizioPrenotazioneIscrizione", "InizioPrenotazioneIscrizione", "DataOraInizio", "DataInizio", "Inizio"]) ??
+      bestOraFromRaw(raw, [
+        "DataInizioPrenotazioneIscrizione",
+        "InizioPrenotazioneIscrizione",
+        "DataOraInizio",
+        "DataInizio",
+        "Inizio",
+        // Lista attesa: spesso qui c'è l'orario vero
+        "PrenotazioniListaAttesaDataInizio",
+      ]) ??
       ((r.oraInizio ?? "").trim() ? (r.oraInizio ?? "").trim() : undefined)
     const oraFine =
       ((r.oraFine ?? "").trim() && (r.oraFine ?? "").trim() !== "00:00" ? (r.oraFine ?? "").trim() : undefined) ??
@@ -108,16 +117,14 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const isWait = !!r.inAttesa
     const waitNoTime = isWait && (!oraInizio || oraInizio === "00:00")
 
-    // Se è in attesa e non ha un orario affidabile, prova ad agganciarla al corso del giorno con stesso servizio.
+    // Se è in attesa e non ha un orario affidabile, NON agganciarla "a caso":
+    // la mettiamo in un bucket separato (evita mescolare 08:45 con 14:30).
     if (waitNoTime) {
-      const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
-      const candidates = byBase.get(baseKey) ?? []
-      if (candidates.length > 0) {
-        // Se ci sono più gruppi (stesso corso, più orari), aggancia al primo in ordine di ora.
-        const pick = [...candidates].sort((a, b) => (a.oraInizio ?? "").localeCompare(b.oraInizio ?? ""))[0]!
-        pick.partecipanti.push(r)
-        continue
-      }
+      const wbKey = `${servizio}__${giorno}__WAITLIST`
+      const wb = waitBuckets.get(wbKey) ?? { key: wbKey, servizio, giorno, oraInizio: undefined, oraFine: undefined, partecipanti: [] }
+      wb.partecipanti.push(r)
+      waitBuckets.set(wbKey, wb)
+      continue
     }
 
     const key = `${servizio}__${giorno}__${corsoId ?? ""}__${oraInizio ?? ""}__${oraFine ?? ""}`
@@ -131,7 +138,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       g.partecipanti.push(r)
     }
   }
-  const list = Array.from(map.values())
+  const list = [...Array.from(map.values()), ...Array.from(waitBuckets.values())]
   list.sort((a, b) => {
     // Ordine richiesto: data + orario (non alfabetico per corso)
     const d = a.giorno.localeCompare(b.giorno)
@@ -535,6 +542,7 @@ export function Corsi() {
   const [messaggiBody, setMessaggiBody] = useState("")
   const [appello, setAppello] = useState<Record<string, true>>({})
   const [waCursor, setWaCursor] = useState(0)
+  const [courseNotes, setCourseNotes] = useState<Record<string, string>>({})
 
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
@@ -548,6 +556,33 @@ export function Corsi() {
       setDebugCorsi(false)
     }
   }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("fitcenter-corsi-course-notes")
+      if (!raw) return setCourseNotes({})
+      const parsed = JSON.parse(raw) as Record<string, string>
+      setCourseNotes(parsed && typeof parsed === "object" ? parsed : {})
+    } catch {
+      setCourseNotes({})
+    }
+  }, [])
+
+  function noteKeyForCourse(g: CorsoGroup): string {
+    // Key stabile anche se cambiano partecipanti; include giorno+servizio+orari
+    return `v1:${g.key}`
+  }
+
+  function updateCourseNote(g: CorsoGroup, text: string) {
+    const k = noteKeyForCourse(g)
+    setCourseNotes((prev) => {
+      const next = { ...prev, [k]: text }
+      try {
+        localStorage.setItem("fitcenter-corsi-course-notes", JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["prenotazioni-corsi", giorno],
@@ -657,6 +692,8 @@ export function Corsi() {
     const lastAccess = accessCount > 0 ? accessTimes[accessCount - 1] : undefined
     const startIso = w.start ? w.start.toISOString() : "null"
     const endIso = w.end ? w.end.toISOString() : "null"
+    const startLoc = w.start ? `${String(w.start.getHours()).padStart(2, "0")}:${String(w.start.getMinutes()).padStart(2, "0")}` : "null"
+    const endLoc = w.end ? `${String(w.end.getHours()).padStart(2, "0")}:${String(w.end.getMinutes()).padStart(2, "0")}` : "null"
     const rawStart = String(raw?.DataInizioPrenotazioneIscrizione ?? raw?.InizioPrenotazioneIscrizione ?? raw?.DataInizio ?? "")
     const rawEnd = String(raw?.DataFinePrenotazioneIscrizione ?? raw?.DataFine ?? "")
     const accessRawSample = String((accessiDayQ.data?.rows?.[0] as any)?.raw?.AccessiDataOra ?? "")
@@ -665,11 +702,11 @@ export function Corsi() {
       `stable=${stable}`,
       `rawStart=${rawStart || "—"}`,
       `rawEnd=${rawEnd || "—"}`,
-      `start=${startIso}`,
-      `end=${endIso}`,
+      `start=${startIso} (loc=${startLoc})`,
+      `end=${endIso} (loc=${endLoc})`,
       `accessCount=${accessCount}`,
-      `firstAccess=${firstAccess ? `${firstAccess.kind}:${firstAccess.t.toISOString()}` : "—"}`,
-      `lastAccess=${lastAccess ? `${lastAccess.kind}:${lastAccess.t.toISOString()}` : "—"}`,
+      `firstAccess=${firstAccess ? `${firstAccess.kind}:${firstAccess.t.toISOString()} (loc=${String(firstAccess.t.getHours()).padStart(2, "0")}:${String(firstAccess.t.getMinutes()).padStart(2, "0")})` : "—"}`,
+      `lastAccess=${lastAccess ? `${lastAccess.kind}:${lastAccess.t.toISOString()} (loc=${String(lastAccess.t.getHours()).padStart(2, "0")}:${String(lastAccess.t.getMinutes()).padStart(2, "0")})` : "—"}`,
       `sampleAccessRaw=${accessRawSample || "—"}`,
     ].join(" | ")
   }
@@ -1039,6 +1076,7 @@ export function Corsi() {
                     const g = selectedCorso
                     const canMessaggi =
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
+                    const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
                     return (
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
@@ -1070,6 +1108,17 @@ export function Corsi() {
                               Messaggi
                             </button>
                           </div>
+                        </div>
+
+                        <div className="border-b border-zinc-800/60 px-5 py-3">
+                          <label className="block text-xs font-medium text-zinc-400">Note corso</label>
+                          <textarea
+                            value={courseNote}
+                            onChange={(e) => updateCourseNote(g, e.target.value)}
+                            placeholder="Scrivi note interne per questo corso…"
+                            className="mt-1 w-full resize-y rounded-lg border border-zinc-700 bg-zinc-950/20 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600"
+                            rows={2}
+                          />
                         </div>
 
                         <div className="block sm:hidden">
