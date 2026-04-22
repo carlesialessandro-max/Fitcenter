@@ -117,9 +117,19 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const isWait = !!r.inAttesa
     const waitNoTime = isWait && (!oraInizio || oraInizio === "00:00")
 
-    // Se è in attesa e non ha un orario affidabile, NON agganciarla "a caso":
-    // la mettiamo in un bucket separato (evita mescolare 08:45 con 14:30).
+    // Se è in attesa e non ha un orario affidabile:
+    // - se abbiamo un id corso/appuntamento, agganciamo comunque al corso giusto
+    // - altrimenti la mettiamo in un bucket separato (evita mescolare 08:45 con 14:30).
     if (waitNoTime) {
+      if (corsoId) {
+        const baseKey = `${servizio}__${giorno}__${corsoId}`
+        const candidates = byBase.get(baseKey) ?? []
+        if (candidates.length > 0) {
+          const pick = [...candidates].sort((a, b) => (a.oraInizio ?? "").localeCompare(b.oraInizio ?? ""))[0]!
+          pick.partecipanti.push(r)
+          continue
+        }
+      }
       const wbKey = `${servizio}__${giorno}__WAITLIST`
       const wb = waitBuckets.get(wbKey) ?? { key: wbKey, servizio, giorno, oraInizio: undefined, oraFine: undefined, partecipanti: [] }
       wb.partecipanti.push(r)
@@ -1111,6 +1121,13 @@ export function Corsi() {
                     const canMessaggi =
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
                     const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
+                    const presentiCount = g.partecipanti.filter((p, idx) => {
+                      const okAppello = isAppelloChecked(g.key, p, idx)
+                      const okAccesso = isPresentByAccess(accessIdxDay, p, giorno).present
+                      return okAppello || okAccesso
+                    }).length
+                    const attesaCount = g.partecipanti.filter((p) => !!p.inAttesa).length
+                    const assentiCount = Math.max(0, g.partecipanti.length - attesaCount - presentiCount)
                     return (
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
@@ -1123,6 +1140,19 @@ export function Corsi() {
                             </div>
                           </div>
                           <div className="flex flex-wrap items-center justify-end gap-2">
+                            <div className="hidden items-center gap-2 text-xs text-zinc-400 sm:flex">
+                              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-semibold text-emerald-200">
+                                Presenti {presentiCount}
+                              </span>
+                              <span className="rounded-full border border-zinc-700 bg-zinc-950/20 px-2 py-0.5 font-semibold text-zinc-200">
+                                Assenti {assentiCount}
+                              </span>
+                              {attesaCount > 0 ? (
+                                <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 font-semibold text-fuchsia-200">
+                                  Attesa {attesaCount}
+                                </span>
+                              ) : null}
+                            </div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">
                               {g.partecipanti.length} partecipanti
                             </div>
