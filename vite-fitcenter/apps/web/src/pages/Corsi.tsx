@@ -66,14 +66,37 @@ function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
   )
 }
 
+function bestOraFromRaw(raw: any, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = raw?.[k]
+    if (v == null) continue
+    const dt = parseDateAny(v)
+    if (!dt) continue
+    const hh = String(dt.getHours()).padStart(2, "0")
+    const mm = String(dt.getMinutes()).padStart(2, "0")
+    const out = `${hh}:${mm}`
+    if (out !== "00:00") return out
+  }
+  return undefined
+}
+
 function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
   const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno -> gruppi (per agganciare attese senza orario)
   for (const r of rows) {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
-    const oraInizio = (r.oraInizio ?? "").trim() || undefined
-    const oraFine = (r.oraFine ?? "").trim() || undefined
+    const raw = (r.raw ?? {}) as any
+    // Alcune viste tornano oraInizio/oraFine come "00:00" anche se la datetime ha l'orario corretto:
+    // proviamo a derivarlo dalle colonne datetime raw.
+    const oraInizio =
+      ((r.oraInizio ?? "").trim() && (r.oraInizio ?? "").trim() !== "00:00" ? (r.oraInizio ?? "").trim() : undefined) ??
+      bestOraFromRaw(raw, ["DataInizioPrenotazioneIscrizione", "InizioPrenotazioneIscrizione", "DataOraInizio", "DataInizio", "Inizio"]) ??
+      ((r.oraInizio ?? "").trim() ? (r.oraInizio ?? "").trim() : undefined)
+    const oraFine =
+      ((r.oraFine ?? "").trim() && (r.oraFine ?? "").trim() !== "00:00" ? (r.oraFine ?? "").trim() : undefined) ??
+      bestOraFromRaw(raw, ["DataFinePrenotazioneIscrizione", "DataOraFine", "DataFine", "Fine"]) ??
+      ((r.oraFine ?? "").trim() ? (r.oraFine ?? "").trim() : undefined)
     const isWait = !!r.inAttesa
     const waitNoTime = isWait && (!oraInizio || oraInizio === "00:00")
 
@@ -354,7 +377,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (dtIn && localYmd(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
-      const desc = `${String(raw?.Descrizione ?? raw?.descrizione ?? "")} ${String(raw?.Terminale ?? raw?.terminale ?? "")} ${String(
+      const desc = `${String(raw?.Descrizione ?? raw?.descrizione ?? "")} ${String(raw?.TerminaleDescrizione ?? raw?.TerminaleDesc ?? raw?.terminaleDescrizione ?? "")} ${String(raw?.Terminale ?? raw?.terminale ?? "")} ${String(
         raw?.Varco ?? raw?.varco ?? ""
       )}`.toLowerCase()
       const kind: AccessEvent["kind"] = desc.includes("uscita") ? "out" : "in"
@@ -541,6 +564,18 @@ export function Corsi() {
     if (!q) return gruppi
     return gruppi.filter((g) => g.servizio.toLocaleLowerCase().includes(q))
   }, [gruppi, search])
+  const [selectedCorsoKey, setSelectedCorsoKey] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (gruppiFiltrati.length === 0) return setSelectedCorsoKey(null)
+    if (selectedCorsoKey && gruppiFiltrati.some((g) => g.key === selectedCorsoKey)) return
+    setSelectedCorsoKey(gruppiFiltrati[0]!.key)
+  }, [gruppiFiltrati, selectedCorsoKey])
+
+  const selectedCorso = useMemo(() => {
+    if (!selectedCorsoKey) return null
+    return gruppiFiltrati.find((g) => g.key === selectedCorsoKey) ?? null
+  }, [gruppiFiltrati, selectedCorsoKey])
 
   /** Quante prenotazioni (corsi distinti) ha lo stesso partecipante nello stesso giorno. */
   const prenotazioniPerPartecipante = useMemo(() => {
@@ -918,47 +953,93 @@ export function Corsi() {
               </div>
             </div>
 
-            {gruppiFiltrati.map((g) => {
-              const canMessaggi =
-                canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
-              return (
-                <div key={g.key} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold tracking-tight text-zinc-100">
-                        {g.servizio}
-                      </div>
-                      <div className="mt-0.5 text-xs text-zinc-500">
-                        gio {fmtDateIt(g.giorno)}
-                        {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
-                        {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">
-                        {g.partecipanti.length} partecipanti
-                      </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-950/20 p-2 lg:col-span-1">
+                <div className="px-2 py-2 text-xs font-semibold text-zinc-400">Elenco corsi</div>
+                <div className="max-h-[70vh] overflow-auto">
+                  {gruppiFiltrati.map((g) => {
+                    const active = g.key === selectedCorsoKey
+                    const pren = g.partecipanti.filter((p) => !p.inAttesa).length
+                    const att = g.partecipanti.filter((p) => !!p.inAttesa).length
+                    return (
                       <button
+                        key={g.key}
                         type="button"
-                        className="touch-manipulation rounded-lg border border-zinc-600 bg-zinc-800/60 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
-                        disabled={!canMessaggi}
-                        title={
-                          canMessaggi
-                            ? "Invia messaggio ai prenotati (email o WhatsApp)"
-                            : canSendMessages
-                              ? "Nessun indirizzo email né numero cellulare per questo corso"
-                              : "Solo lettura: non puoi inviare messaggi"
-                        }
-                        onClick={() => openMessaggi(g)}
+                        onClick={() => setSelectedCorsoKey(g.key)}
+                        className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-colors ${
+                          active
+                            ? "border-amber-500/40 bg-amber-500/10"
+                            : "border-zinc-800 bg-zinc-950/20 hover:bg-zinc-900/30"
+                        }`}
                       >
-                        Messaggi
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-zinc-100">{g.servizio}</div>
+                          <div className="mt-0.5 text-xs text-zinc-500">
+                            {fmtDateIt(g.giorno)}
+                            {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
+                            {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                            {pren}
+                          </span>
+                          {att > 0 ? (
+                            <span className="rounded-full border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-xs font-semibold text-fuchsia-200">
+                              {att}
+                            </span>
+                          ) : null}
+                        </div>
                       </button>
-                    </div>
-                  </div>
+                    )
+                  })}
+                </div>
+              </div>
 
-                  <div className="block sm:hidden">
-                    <div className="divide-y divide-zinc-800/60">
-                      {g.partecipanti.map((p, idx) => {
+              <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 shadow-sm lg:col-span-2">
+                {!selectedCorso ? (
+                  <div className="p-5 text-sm text-zinc-500">Seleziona un corso.</div>
+                ) : (
+                  (() => {
+                    const g = selectedCorso
+                    const canMessaggi =
+                      canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
+                    return (
+                      <>
+                        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-semibold tracking-tight text-zinc-100">{g.servizio}</div>
+                            <div className="mt-0.5 text-xs text-zinc-500">
+                              gio {fmtDateIt(g.giorno)}
+                              {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
+                              {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-end gap-2">
+                            <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">
+                              {g.partecipanti.length} partecipanti
+                            </div>
+                            <button
+                              type="button"
+                              className="touch-manipulation rounded-lg border border-zinc-600 bg-zinc-800/60 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              disabled={!canMessaggi}
+                              title={
+                                canMessaggi
+                                  ? "Invia messaggio ai prenotati (email o WhatsApp)"
+                                  : canSendMessages
+                                    ? "Nessun indirizzo email né numero cellulare per questo corso"
+                                    : "Solo lettura: non puoi inviare messaggi"
+                              }
+                              onClick={() => openMessaggi(g)}
+                            >
+                              Messaggi
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="block sm:hidden">
+                          <div className="divide-y divide-zinc-800/60">
+                            {g.partecipanti.map((p, idx) => {
                         const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                         const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                         const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
@@ -981,7 +1062,7 @@ export function Corsi() {
                           : { timeLabel: null, minutes: null }
                         const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p, accessIdxDay)
                         const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
-                        return (
+                              return (
                           <div key={idx} className="px-4 py-3">
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -1057,25 +1138,25 @@ export function Corsi() {
                               </div>
                             ) : null}
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
+                              )
+                            })}
+                          </div>
+                        </div>
 
-                  <div className="hidden overflow-x-auto sm:block">
-                    <table className="min-w-full text-left text-sm">
-                      <thead>
-                        <tr className="border-b border-zinc-800 bg-zinc-950/40">
-                          <th className="px-5 py-3 font-medium text-zinc-400">#</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Presente</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Accesso / uscita</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
-                          <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.partecipanti.map((p, idx) => {
+                        <div className="hidden overflow-x-auto sm:block">
+                          <table className="min-w-full text-left text-sm">
+                            <thead>
+                              <tr className="border-b border-zinc-800 bg-zinc-950/40">
+                                <th className="px-5 py-3 font-medium text-zinc-400">#</th>
+                                <th className="px-5 py-3 font-medium text-zinc-400">Presente</th>
+                                <th className="px-5 py-3 font-medium text-zinc-400">Accesso / uscita</th>
+                                <th className="px-5 py-3 font-medium text-zinc-400">Cognome e Nome</th>
+                                <th className="px-5 py-3 font-medium text-zinc-400">Prenotato il</th>
+                                <th className="px-5 py-3 font-medium text-zinc-400">Note</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.partecipanti.map((p, idx) => {
                           const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                           const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                           const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
@@ -1097,7 +1178,7 @@ export function Corsi() {
                             : { timeLabel: null, minutes: null }
                           const uscitaAnt = possibileUscitaAnticipata({ ...g, giorno }, p, accessIdxDay)
                           const nCorsiOggi = prenotazioniPerPartecipante.get(participantStableKey(p, idx)) ?? 0
-                          return (
+                                return (
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
                               <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
                               <td className="px-5 py-3">
@@ -1161,14 +1242,17 @@ export function Corsi() {
                               <td className="px-5 py-3 text-zinc-300">{pren || "—"}</td>
                               <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
                             </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )
-            })}
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )
+                  })()
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
