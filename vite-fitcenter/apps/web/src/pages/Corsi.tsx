@@ -140,6 +140,9 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   }
   const list = [...Array.from(map.values()), ...Array.from(waitBuckets.values())]
   list.sort((a, b) => {
+    const aw = a.key.includes("__WAITLIST") ? 1 : 0
+    const bw = b.key.includes("__WAITLIST") ? 1 : 0
+    if (aw !== bw) return aw - bw // WAITLIST in fondo
     // Ordine richiesto: data + orario (non alfabetico per corso)
     const d = a.giorno.localeCompare(b.giorno)
     if (d) return d
@@ -639,7 +642,12 @@ export function Corsi() {
   useEffect(() => {
     if (gruppiFiltrati.length === 0) return setSelectedCorsoKey(null)
     if (selectedCorsoKey && gruppiFiltrati.some((g) => g.key === selectedCorsoKey)) return
-    setSelectedCorsoKey(gruppiFiltrati[0]!.key)
+    // Default: preferisci un corso con prenotati (non WAITLIST).
+    const pick =
+      gruppiFiltrati.find((g) => !g.key.includes("__WAITLIST") && g.partecipanti.some((p) => !p.inAttesa)) ??
+      gruppiFiltrati.find((g) => !g.key.includes("__WAITLIST")) ??
+      gruppiFiltrati[0]!
+    setSelectedCorsoKey(pick.key)
   }, [gruppiFiltrati, selectedCorsoKey])
 
   const selectedCorso = useMemo(() => {
