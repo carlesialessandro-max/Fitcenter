@@ -6,11 +6,19 @@ export interface SignatureAdminItem {
   status: SignatureStatus
   createdAt: string
   expiresAt: string
+  createdByUsername?: string
   customerEmail: string
   customerName?: string
   signedAt?: string
   documentOriginalName: string
   signedDocumentFileName?: string
+}
+
+export interface SignatureAdminListResponse {
+  rows: SignatureAdminItem[]
+  page: number
+  limit: number
+  total: number
 }
 
 export interface SignaturePublicInfo {

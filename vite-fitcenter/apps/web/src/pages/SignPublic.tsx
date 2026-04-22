@@ -381,7 +381,8 @@ export function SignPublicPage() {
     try {
       setErr(null)
       setOk(null)
-      const out = await signaturesApi.verifyOtp(token, otp)
+      if (!acceptedTerms) return setErr("Devi accettare i termini")
+      const out = await signaturesApi.verifyOtp(token, otp, true)
       setSignerToken(out.signerToken)
       setOtp("")
       setOk("OTP verificato. Ora puoi firmare.")

@@ -77,6 +77,15 @@ function appendAudit(row: SignatureRequest, ev: Omit<SignatureRequest["audit"][n
   return audit
 }
 
+function shouldAppendAudit(args: { row: SignatureRequest; type: SignatureRequest["audit"][number]["type"]; minMs: number }): boolean {
+  const list = Array.isArray(args.row.audit) ? args.row.audit : []
+  const last = list.length > 0 ? list[list.length - 1] : null
+  if (!last || last.type !== args.type) return true
+  const dt = new Date(last.at).getTime()
+  if (!Number.isFinite(dt)) return true
+  return Date.now() - dt > args.minMs
+}
+
 function toSteps(slots: SignatureSlot[]): SignatureStep[] {
   return slots
     .slice()
@@ -584,10 +593,30 @@ export async function createSignatureRequest(req: Request, res: Response) {
 export async function listSignatureRequests(_req: Request, res: Response) {
   const isAdmin = _req.user?.role === "admin"
   const username = (_req.user?.username ?? "").trim().toLowerCase()
-  const rows = signatureStore
-    .list()
-    .filter((r) => isAdmin || String(r.createdByUsername ?? "").trim().toLowerCase() === username)
-    .map((r) => ({
+  const qFrom = String(_req.query?.from ?? "").trim()
+  const qTo = String(_req.query?.to ?? "").trim()
+  const qConsultant = String(_req.query?.consultant ?? "").trim().toLowerCase()
+  const page = Math.max(1, Number(_req.query?.page ?? 1) || 1)
+  const limit = Math.min(200, Math.max(10, Number(_req.query?.limit ?? 50) || 50))
+
+  const fromMs = qFrom ? new Date(qFrom).getTime() : NaN
+  const toMs = qTo ? new Date(qTo).getTime() : NaN
+  const matchFrom = (iso: string) => (Number.isFinite(fromMs) ? new Date(iso).getTime() >= fromMs : true)
+  const matchTo = (iso: string) => (Number.isFinite(toMs) ? new Date(iso).getTime() <= toMs : true)
+
+  const base = signatureStore.list().filter((r) => {
+    const createdBy = String(r.createdByUsername ?? "").trim().toLowerCase()
+    if (!isAdmin && createdBy !== username) return false
+    if (isAdmin && qConsultant && createdBy !== qConsultant) return false
+    if (!matchFrom(r.createdAt)) return false
+    if (!matchTo(r.createdAt)) return false
+    return true
+  })
+
+  const total = base.length
+  const start = (page - 1) * limit
+  const slice = base.slice(start, start + limit)
+  const rows = slice.map((r) => ({
     ...(function () {
       const steps = normalizedSteps(r)
       const completed = steps.length > 0 && steps.every((s) => !!s.signedAt)
@@ -598,13 +627,14 @@ export async function listSignatureRequests(_req: Request, res: Response) {
     token: r.publicToken,
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
+    createdByUsername: r.createdByUsername,
     customerEmail: r.customerEmail,
     customerName: r.customerName,
     signedAt: r.signedAt,
     documentOriginalName: r.documentOriginalName,
     signedDocumentFileName: r.signedDocumentFileName,
-    }))
-  res.json(rows)
+  }))
+  res.json({ rows, page, limit, total })
 }
 
 export async function deleteSignatureRequest(req: Request, res: Response) {
@@ -618,15 +648,18 @@ export async function deleteSignatureRequest(req: Request, res: Response) {
   if (!isAdmin && createdBy !== username) return res.status(403).json({ message: "Permessi insufficienti" })
   const deleted = signatureStore.deleteById(id)
   if (!deleted) return res.status(404).json({ message: "Richiesta non trovata" })
-  const dir = signatureStore.resolveSignatureDir()
-  for (const file of [deleted.documentFileName, deleted.signedDocumentFileName]) {
-    if (!file) continue
-    const p = path.join(dir, file)
-    if (fs.existsSync(p)) {
-      try {
-        fs.unlinkSync(p)
-      } catch {
-        // best effort
+  const deleteFiles = String((req.query as any)?.deleteFiles ?? "").trim() === "1"
+  if (deleteFiles) {
+    const dir = signatureStore.resolveSignatureDir()
+    for (const file of [deleted.documentFileName, deleted.signedDocumentFileName]) {
+      if (!file) continue
+      const p = path.join(dir, file)
+      if (fs.existsSync(p)) {
+        try {
+          fs.unlinkSync(p)
+        } catch {
+          // best effort
+        }
       }
     }
   }
@@ -637,6 +670,19 @@ export async function getPublicSignatureInfo(req: Request, res: Response) {
   const token = String(req.params.token ?? "").trim()
   const row = signatureStore.getByToken(token)
   if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
+  if (shouldAppendAudit({ row, type: "document_opened", minMs: 60_000 })) {
+    signatureStore.updateById(row.id, (r) => ({
+      ...r,
+      audit: appendAudit(r, {
+        type: "document_opened",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"]?.toString(),
+        ok: true,
+        link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail },
+        message: "Apertura link firma",
+      }),
+    }))
+  }
   const steps = normalizedSteps(row)
   const completed = steps.length > 0 && steps.every((s) => !!s.signedAt)
   const status = completed ? "signed" : isExpired(row.expiresAt) ? "expired" : "pending"
@@ -705,15 +751,43 @@ export async function requestSignatureOtp(req: Request, res: Response) {
     otpCodeHash: sha(otp),
     otpExpiresAt: new Date(Date.now() + OTP_TTL_MS).toISOString(),
     otpAttempts: 0,
-    audit: appendAudit(r, { type: "otp_requested", ip: req.ip, userAgent: req.headers["user-agent"]?.toString(), message: `OTP inviata a ${r.customerEmail}` }),
+    audit: appendAudit(r, {
+      type: "otp_requested",
+      ip: req.ip,
+      userAgent: req.headers["user-agent"]?.toString(),
+      channel: "email",
+      destination: r.customerEmail,
+      ok: true,
+      link: {
+        requestId: r.id,
+        token: r.publicToken,
+        documentFileName: r.documentFileName,
+        customerEmail: r.customerEmail,
+        otpCodeHash: sha(otp),
+      },
+      message: "OTP richiesta",
+    }),
   }))
   if (!updated) return res.status(500).json({ message: "Errore interno" })
 
-  await sendMail({
+  const mailRes = await sendMail({
     to: row.customerEmail,
     subject: "Codice OTP firma documento - FitCenter",
     text: `Il tuo codice OTP è: ${otp}\nScade tra 10 minuti.`,
   })
+  signatureStore.updateById(row.id, (r) => ({
+    ...r,
+    audit: appendAudit(r, {
+      type: "otp_sent",
+      ip: req.ip,
+      userAgent: req.headers["user-agent"]?.toString(),
+      channel: "email",
+      destination: r.customerEmail,
+      ok: !!mailRes.sent,
+      link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
+      message: mailRes.sent ? "OTP inviata" : "Invio OTP fallito",
+    }),
+  }))
   res.json({
     ok: true,
     // Utile in sviluppo locale quando SMTP non è configurato.
@@ -724,6 +798,7 @@ export async function requestSignatureOtp(req: Request, res: Response) {
 export async function verifySignatureOtp(req: Request, res: Response) {
   const token = String(req.params.token ?? "").trim()
   const otp = String(req.body?.otp ?? "").trim()
+  const acceptedTerms = !!req.body?.acceptedTerms
   const row = signatureStore.getByToken(token)
   if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
   const err = ensurePending(row)
@@ -731,6 +806,7 @@ export async function verifySignatureOtp(req: Request, res: Response) {
   if (!row.otpCodeHash || !row.otpExpiresAt) return res.status(400).json({ message: "OTP non richiesto" })
   if (isExpired(row.otpExpiresAt)) return res.status(400).json({ message: "OTP scaduto" })
   if ((row.otpAttempts ?? 0) >= MAX_OTP_ATTEMPTS) return res.status(429).json({ message: "Troppi tentativi OTP" })
+  if (!acceptedTerms) return res.status(400).json({ message: "Consenso obbligatorio (accetta i termini)" })
 
   const otpHash = sha(otp)
   if (otpHash !== row.otpCodeHash) {
@@ -741,6 +817,10 @@ export async function verifySignatureOtp(req: Request, res: Response) {
         type: "otp_invalid",
         ip: req.ip,
         userAgent: req.headers["user-agent"]?.toString(),
+        channel: "email",
+        destination: r.customerEmail,
+        ok: false,
+        link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
         message: "OTP non valido",
       }),
     }))
@@ -750,13 +830,17 @@ export async function verifySignatureOtp(req: Request, res: Response) {
   const signerToken = randomToken(24)
   const updated = signatureStore.updateById(row.id, (r) => ({
     ...r,
+    consentAcceptedAt: r.consentAcceptedAt ?? nowIso(),
     otpVerifiedAt: nowIso(),
     signerSessionTokenHash: sha(signerToken),
     signerSessionExpiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
     otpCodeHash: undefined,
     otpExpiresAt: undefined,
     otpAttempts: 0,
-    audit: appendAudit(r, { type: "otp_verified", ip: req.ip, userAgent: req.headers["user-agent"]?.toString(), message: "OTP verificato" }),
+    audit: appendAudit(
+      { ...r, audit: appendAudit(r, { type: "consent_accepted", ip: req.ip, userAgent: req.headers["user-agent"]?.toString(), ok: true, message: "Consenso accettato" }) },
+      { type: "otp_verified", ip: req.ip, userAgent: req.headers["user-agent"]?.toString(), channel: "email", destination: r.customerEmail, ok: true, message: "OTP verificato" }
+    ),
   }))
   if (!updated) return res.status(500).json({ message: "Errore interno" })
   res.json({ ok: true, signerToken })

@@ -13,6 +13,11 @@ function fmtDate(v?: string) {
 export function SignaturesAdmin() {
   const { role } = useAuth()
   const isAdmin = role === "admin"
+  const [fromDate, setFromDate] = useState<string>("")
+  const [toDate, setToDate] = useState<string>("")
+  const [consultant, setConsultant] = useState<string>("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(50)
   const [customerEmail, setCustomerEmail] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [documentFile, setDocumentFile] = useState<File | null>(null)
@@ -54,8 +59,15 @@ export function SignaturesAdmin() {
   const [newPrivacyPdfBusy, setNewPrivacyPdfBusy] = useState(false)
 
   const listQ = useQuery({
-    queryKey: ["signatures-admin"],
-    queryFn: () => signaturesApi.listAdmin(),
+    queryKey: ["signatures-admin", fromDate, toDate, consultant, page, limit],
+    queryFn: () =>
+      signaturesApi.listAdmin({
+        from: fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : undefined,
+        to: toDate ? new Date(`${toDate}T23:59:59`).toISOString() : undefined,
+        consultant: consultant.trim() || undefined,
+        page,
+        limit,
+      }),
     enabled: true,
   })
   const templatesQ = useQuery({
@@ -570,14 +582,15 @@ export function SignaturesAdmin() {
     }
   }
 
-  async function onDelete(id: string) {
-    if (!globalThis.confirm("Eliminare la richiesta firma?")) return
+  async function onDelete(id: string, deleteFiles: boolean) {
+    const label = deleteFiles ? "Elimina richiesta + cancella file PDF dal server" : "Elimina solo la riga (PDF rimane sul server)"
+    if (!globalThis.confirm(`${label}?\n\nId: ${id}`)) return
     setErr(null)
     setMsg(null)
     setDeletingId(id)
     try {
-      await signaturesApi.deleteAdmin(id)
-      setMsg("Richiesta eliminata.")
+      await signaturesApi.deleteAdmin(id, { deleteFiles })
+      setMsg(deleteFiles ? "Richiesta eliminata e file cancellati." : "Richiesta eliminata (file mantenuti sul server).")
       await listQ.refetch()
     } catch (e2) {
       setErr((e2 as Error).message)
@@ -1162,6 +1175,103 @@ export function SignaturesAdmin() {
       {msg && <p className="mt-3 text-sm text-emerald-400">{msg}</p>}
       {err && <p className="mt-3 text-sm text-red-400">{err}</p>}
 
+      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+        <div className="grid gap-3 sm:grid-cols-5">
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            Da (data creazione)
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setFromDate(e.target.value)
+                setPage(1)
+              }}
+              className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            A (data creazione)
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setToDate(e.target.value)
+                setPage(1)
+              }}
+              className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            Consulente (username)
+            <input
+              type="text"
+              value={consultant}
+              onChange={(e) => {
+                setConsultant(e.target.value)
+                setPage(1)
+              }}
+              placeholder={isAdmin ? "es. mario" : "(auto)"}
+              disabled={!isAdmin}
+              className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100 disabled:opacity-60"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-zinc-400">
+            Righe/pagina
+            <select
+              value={String(limit)}
+              onChange={(e) => {
+                setLimit(Number(e.target.value) || 50)
+                setPage(1)
+              }}
+              className="rounded border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm text-zinc-100"
+            >
+              {[25, 50, 100, 200].map((n) => (
+                <option key={n} value={String(n)}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex items-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate("")
+                setToDate("")
+                setConsultant("")
+                setPage(1)
+              }}
+              className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200"
+            >
+              Reset filtri
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
+          <div>
+            Totale: {listQ.data?.total ?? 0} — Pagina {listQ.data?.page ?? page}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={(listQ.data?.page ?? page) <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              type="button"
+              disabled={(listQ.data?.page ?? page) * (listQ.data?.limit ?? limit) >= (listQ.data?.total ?? 0)}
+              onClick={() => setPage((p) => p + 1)}
+              className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="mt-8 overflow-x-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
         <table className="w-full min-w-[760px] text-sm">
           <thead>
@@ -1176,7 +1286,7 @@ export function SignaturesAdmin() {
             </tr>
           </thead>
           <tbody className="text-zinc-200">
-            {(listQ.data ?? []).map((r) => {
+            {(listQ.data?.rows ?? []).map((r) => {
               const link = `${window.location.origin}/firma/${r.token}`
               return (
                 <tr key={r.id} className="border-b border-zinc-800/70 last:border-b-0">
@@ -1184,6 +1294,7 @@ export function SignaturesAdmin() {
                   <td className="px-3 py-2">
                     <div>{r.customerName || "—"}</div>
                     <div className="text-xs text-zinc-500">{r.customerEmail}</div>
+                    {isAdmin && r.createdByUsername && <div className="text-[11px] text-zinc-600">Consulente: {r.createdByUsername}</div>}
                   </td>
                   <td className="px-3 py-2">{r.documentOriginalName}</td>
                   <td className="px-3 py-2">{r.status}</td>
@@ -1194,19 +1305,31 @@ export function SignaturesAdmin() {
                     </a>
                   </td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={deletingId === r.id}
-                      onClick={() => onDelete(r.id)}
-                      className="rounded border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-900/20 disabled:opacity-60"
-                    >
-                      {deletingId === r.id ? "Elimino..." : "Elimina"}
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={deletingId === r.id}
+                        onClick={() => onDelete(r.id, false)}
+                        className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
+                        title="Elimina solo la riga. Il PDF resta sul server."
+                      >
+                        {deletingId === r.id ? "Elimino..." : "Elimina (solo app)"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deletingId === r.id}
+                        onClick={() => onDelete(r.id, true)}
+                        className="rounded border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-900/20 disabled:opacity-60"
+                        title="Elimina riga e cancella anche i file PDF."
+                      >
+                        {deletingId === r.id ? "Elimino..." : "Elimina + file"}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )
             })}
-            {!listQ.isLoading && (listQ.data ?? []).length === 0 && (
+            {!listQ.isLoading && (listQ.data?.rows ?? []).length === 0 && (
               <tr>
                 <td className="px-3 py-3 text-zinc-500" colSpan={7}>
                   Nessuna richiesta firma.

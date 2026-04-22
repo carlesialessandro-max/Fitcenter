@@ -5,14 +5,31 @@ export interface SignatureAuditEvent {
   type:
     | "created"
     | "otp_requested"
+    | "otp_sent"
     | "otp_verified"
     | "otp_invalid"
+    | "consent_accepted"
+    | "document_opened"
     | "signed"
     | "expired"
     | "signature_failed"
   ip?: string
   userAgent?: string
   message?: string
+  /** Canale OTP (oggi: email). */
+  channel?: "email" | "sms"
+  /** Destinazione (es. email o numero mascherato). */
+  destination?: string
+  /** Esito invio/verifica, se applicabile. */
+  ok?: boolean
+  /** Collegamento univoco tecnico: requestId/token/doc/signer (best-effort). */
+  link?: {
+    requestId?: string
+    token?: string
+    documentFileName?: string
+    customerEmail?: string
+    otpCodeHash?: string
+  }
 }
 
 export interface SignatureTemplate {
@@ -77,6 +94,7 @@ export interface SignatureRequest {
   otpExpiresAt?: string
   otpAttempts: number
   otpVerifiedAt?: string
+  consentAcceptedAt?: string
   signerSessionTokenHash?: string
   signerSessionExpiresAt?: string
   signedAt?: string

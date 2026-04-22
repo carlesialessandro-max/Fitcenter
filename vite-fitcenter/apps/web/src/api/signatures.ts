@@ -1,7 +1,7 @@
 import type {
   PrivacyProfile,
   PrivacyPageText,
-  SignatureAdminItem,
+  SignatureAdminListResponse,
   SignatureField,
   SignaturePublicInfo,
   SignatureSlot,
@@ -56,9 +56,19 @@ export const signaturesApi = {
     api.put<PrivacyProfile>(`/signatures/admin/privacy-profiles/${encodeURIComponent(id)}`, body),
   deletePrivacyProfile: (id: string) =>
     api.delete<{ ok: true }>(`/signatures/admin/privacy-profiles/${encodeURIComponent(id)}`),
-  listAdmin: () => api.get<SignatureAdminItem[]>("/signatures/admin"),
+  listAdmin: (q?: { from?: string; to?: string; consultant?: string; page?: number; limit?: number }) => {
+    const params = new URLSearchParams()
+    if (q?.from) params.set("from", q.from)
+    if (q?.to) params.set("to", q.to)
+    if (q?.consultant) params.set("consultant", q.consultant)
+    if (q?.page) params.set("page", String(q.page))
+    if (q?.limit) params.set("limit", String(q.limit))
+    const qs = params.toString()
+    return api.get<SignatureAdminListResponse>(`/signatures/admin${qs ? `?${qs}` : ""}`)
+  },
   exportAudit: () => api.get<{ rows: unknown[]; exportedAt: string }>("/signatures/admin/export-audit"),
-  deleteAdmin: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}`),
+  deleteAdmin: (id: string, opts?: { deleteFiles?: boolean }) =>
+    api.delete<{ ok: boolean }>(`/signatures/admin/${encodeURIComponent(id)}${opts?.deleteFiles ? "?deleteFiles=1" : ""}`),
   listTemplates: () => api.get<SignatureTemplate[]>("/signatures/admin/templates"),
   deleteTemplate: (id: string) => api.delete<{ ok: boolean }>(`/signatures/admin/templates/${encodeURIComponent(id)}`),
   deleteTemplatePage: (id: string, body?: { page?: number; which?: "last" }) =>
@@ -186,11 +196,11 @@ export const signaturesApi = {
       return json as { ok: boolean; debugOtp?: string }
     }),
 
-  verifyOtp: (token: string, otp: string) =>
+  verifyOtp: (token: string, otp: string, acceptedTerms: boolean) =>
     fetch(`${API_BASE}/signatures/public/${encodeURIComponent(token)}/verify-otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ otp }),
+      body: JSON.stringify({ otp, acceptedTerms }),
     }).then(async (r) => {
       const json = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error((json as { message?: string }).message ?? "Errore verifica OTP")
