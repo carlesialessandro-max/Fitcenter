@@ -87,6 +87,14 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
     const raw = (r.raw ?? {}) as any
+    const corsoId =
+      firstNonEmptyStr(raw?.IDAppuntamento) ??
+      firstNonEmptyStr(raw?.AppuntamentoId) ??
+      firstNonEmptyStr(raw?.IDLezione) ??
+      firstNonEmptyStr(raw?.LezioneId) ??
+      firstNonEmptyStr(raw?.IDCorso) ??
+      firstNonEmptyStr(raw?.CorsoId) ??
+      firstNonEmptyStr(raw?.IDSchedaCorso)
     // Alcune viste tornano oraInizio/oraFine come "00:00" anche se la datetime ha l'orario corretto:
     // proviamo a derivarlo dalle colonne datetime raw.
     const oraInizio =
@@ -102,7 +110,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
 
     // Se è in attesa e non ha un orario affidabile, prova ad agganciarla al corso del giorno con stesso servizio.
     if (waitNoTime) {
-      const baseKey = `${servizio}__${giorno}`
+      const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
       const candidates = byBase.get(baseKey) ?? []
       if (candidates.length > 0) {
         // Se ci sono più gruppi (stesso corso, più orari), aggancia al primo in ordine di ora.
@@ -112,12 +120,12 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       }
     }
 
-    const key = `${servizio}__${giorno}__${oraInizio ?? ""}__${oraFine ?? ""}`
+    const key = `${servizio}__${giorno}__${corsoId ?? ""}__${oraInizio ?? ""}__${oraFine ?? ""}`
     const g = map.get(key)
     if (!g) {
       const created = { key, servizio, giorno, oraInizio, oraFine, partecipanti: [r] }
       map.set(key, created)
-      const baseKey = `${servizio}__${giorno}`
+      const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
       byBase.set(baseKey, [...(byBase.get(baseKey) ?? []), created])
     } else {
       g.partecipanti.push(r)
@@ -365,6 +373,35 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
 type AccessEvent = { t: Date; kind: "in" | "out" }
 type AccessIndex = Map<string, AccessEvent[]> // idKey -> access events (sorted by time)
 
+function accessKindFromRaw(raw: any): AccessEvent["kind"] {
+  const blob = [
+    raw?.TerminaleDescrizione,
+    raw?.TerminaleDesc,
+    raw?.terminaleDescrizione,
+    raw?.DescrizioneTerminale,
+    raw?.Terminale,
+    raw?.terminale,
+    raw?.Varco,
+    raw?.varco,
+    raw?.VarcoDescrizione,
+    raw?.Descrizione,
+    raw?.descrizione,
+    raw?.Note,
+    raw?.note,
+  ]
+    .map((x) => String(x ?? ""))
+    .join(" ")
+    .toLowerCase()
+
+  // Regole:
+  // - se troviamo "uscita"/"exit" => out
+  // - altrimenti se troviamo "ingresso"/"entrata"/"in" => in
+  // - fallback: in
+  if (/\buscit[aeio]?\b|\bexit\b/.test(blob)) return "out"
+  if (/\bingress[oa]\b|\bentrata\b|\bin\b/.test(blob)) return "in"
+  return "in"
+}
+
 function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
   const m = new Map<string, AccessEvent[]>()
   for (const r of rows) {
@@ -377,10 +414,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
     const dtIn = parseDateAny(r.dataEntrata ?? raw?.AccessiDataOra ?? raw?.AccessiData ?? raw?.AccessiOra)
     if (dtIn && localYmd(dtIn) === giornoIso) {
       // Alcune viste esportano "uscita" come riga separata con timestamp in AccessiDataOra (non in dataUscita).
-      const desc = `${String(raw?.Descrizione ?? raw?.descrizione ?? "")} ${String(raw?.TerminaleDescrizione ?? raw?.TerminaleDesc ?? raw?.terminaleDescrizione ?? "")} ${String(raw?.Terminale ?? raw?.terminale ?? "")} ${String(
-        raw?.Varco ?? raw?.varco ?? ""
-      )}`.toLowerCase()
-      const kind: AccessEvent["kind"] = desc.includes("uscita") ? "out" : "in"
+      const kind = accessKindFromRaw(raw)
       list.push({ t: dtIn, kind })
     }
 
