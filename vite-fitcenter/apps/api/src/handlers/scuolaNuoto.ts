@@ -185,6 +185,22 @@ function pickExistingColumn(cols: string[], candidates: string[]): string | null
   return null
 }
 
+function pickColumnByKeyContains(cols: string[], needles: string[]): string | null {
+  const want = needles.map((n) => normalizeText(n)).filter(Boolean)
+  if (!want.length) return null
+  for (const c of cols) {
+    const cn = normalizeText(c)
+    if (!cn) continue
+    if (want.every((w) => cn.includes(w))) return c
+  }
+  for (const c of cols) {
+    const cn = normalizeText(c)
+    if (!cn) continue
+    if (want.some((w) => cn.includes(w))) return c
+  }
+  return null
+}
+
 export async function getScuolaNuotoToday(req: Request, res: Response) {
   const pool = await getPool()
   if (!pool) return res.status(503).json({ message: "SQL non configurato" })
@@ -197,17 +213,32 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   let dateStartCol: string | null = null
   let dateEndCol: string | null = null
+  let cols: string[] = []
   try {
-    const cols = await getViewColumns(pool, view.schema, view.name)
-    dateStartCol = pickExistingColumn(cols, ["CorsiDataInizio", "corsidatainizio", "data_inizio_corso", "datainizio"])
-    dateEndCol = pickExistingColumn(cols, ["CorsiDataFine", "corsidatafine", "data_fine_corso", "datafine"])
+    cols = await getViewColumns(pool, view.schema, view.name)
+    dateStartCol =
+      pickExistingColumn(cols, ["CorsiDataInizio", "corsidatainizio", "data_inizio_corso", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["corsi", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["datainizio"])
+    dateEndCol =
+      pickExistingColumn(cols, ["CorsiDataFine", "corsidatafine", "data_fine_corso", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["corsi", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["datafine"])
   } catch {
     // best effort: se non riusciamo a leggere metadata, proviamo query senza filtro colonne.
   }
 
+  // Richiesta: oggi deve essere compreso tra datainizio e datafine (filtro obbligatorio).
+  if (!dateStartCol || !dateEndCol) {
+    return res.status(500).json({
+      message: "Colonne periodo non trovate nella view corsi",
+      debug: { view: view.query, startCol: dateStartCol, endCol: dateEndCol, cols: cols.slice(0, 80) },
+    })
+  }
+
   const where: string[] = []
-  if (dateStartCol) where.push(`(TRY_CONVERT(date, [${dateStartCol}]) IS NULL OR TRY_CONVERT(date, [${dateStartCol}]) <= @today)`)
-  if (dateEndCol) where.push(`(TRY_CONVERT(date, [${dateEndCol}]) IS NULL OR TRY_CONVERT(date, [${dateEndCol}]) >= @today)`)
+  where.push(`(TRY_CONVERT(date, [${dateStartCol}]) <= @today)`)
+  where.push(`(TRY_CONVERT(date, [${dateEndCol}]) >= @today)`)
 
   const q = `
     SELECT *
@@ -244,6 +275,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     corso: string
     oraInizio: string | null
     oraFine: string | null
+    corsia: string | null
     periodo: string | null
     livello: string | null
     istruttore: string | null
@@ -262,12 +294,22 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     const etaRaw = firstNonEmpty(raw, ["Eta", "Età", "Anni"])
     const eta = etaRaw != null && /^\d+$/.test(etaRaw.trim()) ? Number(etaRaw.trim()) : null
 
-    const { from, to, label } = guessOrario(raw)
+    // Richiesta: orario da colonna "corsi orario"
+    const orarioRaw =
+      firstNonEmpty(raw, ["CorsiOrario", "Corsi Orario", "OrarioCorso", "Orario Corso", "Orario"]) ??
+      firstNonEmptyByKeyContains(raw, ["corsi", "orario"]) ??
+      firstNonEmptyByKeyContains(raw, ["orario"])
+    const { from, to, label } = orarioRaw
+      ? { from: extractTimeHHmm(orarioRaw), to: null, label: String(orarioRaw) }
+      : guessOrario(raw)
     const servizio =
       firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "Categoria", "TipoServizio"]) ??
       (label && label.includes("BAMBINI") ? "BAMBINI" : null)
     const vasca = firstNonEmpty(raw, ["Vasca", "VascaDescrizione", "Impianto", "Struttura"])
+    const corsia = firstNonEmpty(raw, ["Corsia", "CorsiCorsia"]) ?? firstNonEmptyByKeyContains(raw, ["corsia"])
     const istruttore =
+      firstNonEmpty(raw, ["NomiIstruttori", "Nomi Istruttori", "NomiIstruttore"]) ??
+      firstNonEmptyByKeyContains(raw, ["nomi", "istruttori"]) ??
       joinParts(
         firstNonEmpty(raw, ["IstruttoreNome", "NomeIstruttore", "DocenteNome", "MaestroNome", "AllenatoreNome"]),
         firstNonEmpty(raw, ["IstruttoreCognome", "CognomeIstruttore", "DocenteCognome", "MaestroCognome", "AllenatoreCognome"])
@@ -294,7 +336,9 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
     const key = `${normalizeText(servizio ?? "")}::${normalizeText(livello ?? "")}::${normalizeText(
       corsoName
-    )}::${from ?? ""}-${to ?? ""}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
+    )}::${from ?? ""}-${to ?? ""}::${normalizeText(corsia ?? "")}::${normalizeText(vasca ?? "")}::${normalizeText(
+      istruttore ?? ""
+    )}`
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, {
@@ -302,6 +346,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
         corso: corsoName,
         oraInizio: from,
         oraFine: to,
+        corsia,
         periodo,
         livello,
         istruttore,
@@ -322,6 +367,9 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   }
 
   const out = Array.from(groups.values()).sort((a, b) => {
+    const la = normalizeText(a.livello ?? "")
+    const lb = normalizeText(b.livello ?? "")
+    if (la !== lb) return la.localeCompare(lb)
     const ta = (a.oraInizio ?? "99:99").replace(":", "")
     const tb = (b.oraInizio ?? "99:99").replace(":", "")
     if (ta !== tb) return ta.localeCompare(tb)

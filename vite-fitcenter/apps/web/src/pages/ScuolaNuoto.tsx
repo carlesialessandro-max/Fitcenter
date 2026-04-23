@@ -6,7 +6,15 @@ import { Navigate } from "react-router-dom"
 
 function corsoTitle(c: ScuolaNuotoCorso): string {
   const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
-  const parts = [orario, c.corso, c.livello ? `Livello ${c.livello}` : null, c.servizio, c.vasca, c.istruttore].filter(Boolean)
+  const parts = [
+    orario,
+    c.corso,
+    c.livello ? `Livello ${c.livello}` : null,
+    c.istruttore ? `Istr: ${c.istruttore}` : null,
+    c.corsia ? `Corsia ${c.corsia}` : null,
+    c.servizio,
+    c.vasca,
+  ].filter(Boolean)
   return parts.join(" · ")
 }
 
