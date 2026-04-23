@@ -953,21 +953,52 @@ export function SignaturesAdmin() {
                 </button>
                 <span className="ml-2 text-zinc-400">{editMode === "fields" ? "Campo attivo:" : "Slot attivo:"}</span>
                 {editMode === "fields"
-                  ? fieldsDraft
-                      .slice()
-                      .sort((a, b) => a.order - b.order)
-                      .map((f) => (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => setSelectedFieldId(f.id)}
-                          className={`rounded px-2 py-1 ${
-                            selectedFieldId === f.id ? "bg-emerald-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"
-                          }`}
-                        >
-                          {f.order}. {f.label}
-                        </button>
-                      ))
+                  ? fieldsDraft.length > 0
+                    ? fieldsDraft
+                        .slice()
+                        .sort((a, b) => a.order - b.order)
+                        .map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onClick={() => setSelectedFieldId(f.id)}
+                            className={`rounded px-2 py-1 ${
+                              selectedFieldId === f.id ? "bg-emerald-500 text-zinc-950" : "border border-zinc-700 text-zinc-200"
+                            }`}
+                          >
+                            {f.order}. {f.label}
+                          </button>
+                        ))
+                    : (
+                        <span className="inline-flex flex-wrap items-center gap-2 text-zinc-500">
+                          Nessun campo. Aggiungine uno:
+                          <select
+                            value={addFieldId}
+                            onChange={(e) => setAddFieldId(e.target.value)}
+                            className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200"
+                          >
+                            <option value="">Seleziona…</option>
+                            {DEFAULT_SIGNATURE_FIELDS.map((d) => (
+                              <option key={d.id} value={d.id}>
+                                {d.label}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            disabled={!addFieldId}
+                            onClick={() => {
+                              if (!addFieldId) return
+                              addFieldFromDefaults(addFieldId)
+                              setAddFieldId("")
+                              setEditMode("fields")
+                            }}
+                            className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 disabled:opacity-50"
+                          >
+                            Aggiungi
+                          </button>
+                        </span>
+                      )
                   : slotsDraft
                       .slice()
                       .sort((a, b) => a.order - b.order)
