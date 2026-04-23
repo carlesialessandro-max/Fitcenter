@@ -453,13 +453,12 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
     page.drawText(clampTextToWidth({ text: asiCandidate, maxWidth: 220, font, size }), { x, y, size, font })
   }
 
-  // Render totali generali in grassetto nelle coordinate del template (2 colonne).
-  {
-    const layout = totalsLayout ?? { ...fallback, totale: { ...fallback.totale, size: 10 }, versato: { ...fallback.versato, size: 10 } }
+  // Render totali generali SOLO se il template contiene i campi (no fallback su regolamenti).
+  if (totalsLayout) {
+    const layout = totalsLayout
     const page = pages[Math.max(0, Math.min(pages.length - 1, layout.pageIdx))] ?? pages[0]
     const { width } = page.getSize()
     const size = 10
-    // Alcuni template hanno y leggermente diverse tra i 2 campi: allineiamo sulla stessa riga.
     const yRow = Math.min(layout.totale.y, layout.versato.y)
     if (totalTxt) {
       const w = layout.totale.w || FALLBACK_COL_W
