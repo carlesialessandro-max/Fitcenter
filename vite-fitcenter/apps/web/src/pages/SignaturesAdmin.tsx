@@ -4,6 +4,7 @@ import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
 import type { PrivacyPageText, PrivacyProfile, SignatureField, SignatureSlot } from "@/types/signature"
 import { DEFAULT_SIGNATURE_FIELDS, DEFAULT_SIGNATURE_SLOTS } from "@/constants/signatureDefaults"
+import { Navigate } from "react-router-dom"
 
 function fmtDate(v?: string) {
   if (!v) return "—"
@@ -12,6 +13,7 @@ function fmtDate(v?: string) {
 
 export function SignaturesAdmin() {
   const { role } = useAuth()
+  if (role === "firme") return <Navigate to="/firma-cassa" replace />
   const isAdmin = role === "admin"
   const [fromDate, setFromDate] = useState<string>("")
   const [toDate, setToDate] = useState<string>("")
@@ -265,7 +267,25 @@ export function SignaturesAdmin() {
     while (usedIds.has(instanceId)) instanceId = `${def.id}__${i++}`
     setFieldsDraft((prev) => {
       const maxOrder = prev.reduce((m, f) => Math.max(m, f.order ?? 0), 0)
-      return [...prev, { ...def, id: instanceId, bindId: def.id, order: maxOrder + 1 }]
+      const page = previewPage || 1
+      // Anti-overlap: se c'è già un campo con stesso bindId sulla stessa pagina,
+      // spostiamo leggermente la Y (così non si sovrappone subito).
+      const sameOnPage = prev
+        .filter((f) => (f.page ?? 1) === page)
+        .filter((f) => String((f as any).bindId ?? f.id) === def.id)
+      const baseY = Number(def.y ?? 0)
+      const dy = sameOnPage.length * 18
+      return [
+        ...prev,
+        {
+          ...def,
+          id: instanceId,
+          bindId: def.id,
+          page,
+          y: baseY - dy,
+          order: maxOrder + 1,
+        },
+      ]
     })
     setSelectedFieldId(instanceId)
   }
