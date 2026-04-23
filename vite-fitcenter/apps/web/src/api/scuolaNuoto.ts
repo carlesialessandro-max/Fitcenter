@@ -14,6 +14,7 @@ export type ScuolaNuotoCorso = {
   oraInizio: string | null
   oraFine: string | null
   periodo: string | null
+  livello: string | null
   istruttore: string | null
   vasca: string | null
   servizio: string | null

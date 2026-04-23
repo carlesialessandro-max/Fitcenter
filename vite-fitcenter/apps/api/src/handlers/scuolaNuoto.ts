@@ -105,6 +105,27 @@ function firstNonEmpty(raw: Record<string, unknown>, keys: string[]): string | n
   return null
 }
 
+function firstNonEmptyByKeyContains(raw: Record<string, unknown>, keyNeedles: string[]): string | null {
+  const needles = keyNeedles.map((x) => normalizeText(x)).filter(Boolean)
+  if (!needles.length) return null
+  for (const [k, v] of Object.entries(raw)) {
+    const kn = normalizeText(k)
+    if (!kn) continue
+    if (!needles.some((n) => kn.includes(n))) continue
+    if (v == null) continue
+    const s = String(v).trim()
+    if (s) return s
+  }
+  return null
+}
+
+function joinParts(a: string | null, b: string | null): string | null {
+  const x = String(a ?? "").trim()
+  const y = String(b ?? "").trim()
+  const out = [x, y].filter(Boolean).join(" ").trim()
+  return out || null
+}
+
 function guessOrario(raw: Record<string, unknown>): { from: string | null; to: string | null; label: string | null } {
   const label =
     firstNonEmpty(raw, ["Orario", "OrarioCorso", "Turno", "DescrizioneOrario", "FasciaOraria"]) ??
@@ -224,6 +245,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     oraInizio: string | null
     oraFine: string | null
     periodo: string | null
+    livello: string | null
     istruttore: string | null
     vasca: string | null
     servizio: string | null
@@ -245,14 +267,34 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "Categoria", "TipoServizio"]) ??
       (label && label.includes("BAMBINI") ? "BAMBINI" : null)
     const vasca = firstNonEmpty(raw, ["Vasca", "VascaDescrizione", "Impianto", "Struttura"])
-    const istruttore = firstNonEmpty(raw, ["Istruttore", "Docente", "Maestro", "Operatore", "Consulente", "Allenatore"])
+    const istruttore =
+      joinParts(
+        firstNonEmpty(raw, ["IstruttoreNome", "NomeIstruttore", "DocenteNome", "MaestroNome", "AllenatoreNome"]),
+        firstNonEmpty(raw, ["IstruttoreCognome", "CognomeIstruttore", "DocenteCognome", "MaestroCognome", "AllenatoreCognome"])
+      ) ??
+      firstNonEmpty(raw, [
+        "Istruttore",
+        "IstruttoreNomeCognome",
+        "NomeIstruttoreCognome",
+        "Docente",
+        "Maestro",
+        "Allenatore",
+        "OperatoreCorso",
+        "Operatore",
+        "Consulente",
+      ]) ??
+      firstNonEmptyByKeyContains(raw, ["istruttore", "maestro", "docente", "allenatore"])
     const periodo = firstNonEmpty(raw, ["Periodo", "CorsiPeriodo", "PeriodoDescrizione", "NomePeriodo"])
+    const livello =
+      firstNonEmpty(raw, ["Livello", "CorsiLivello", "LivelloCorso"]) ?? firstNonEmptyByKeyContains(raw, ["livello"])
     const corsoName =
       firstNonEmpty(raw, ["Corso", "NomeCorso", "CorsiNome", "CorsiDescrizione", "DescrizioneCorso", "Descrizione"]) ??
       label ??
       "Corso"
 
-    const key = `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${from ?? ""}-${to ?? ""}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
+    const key = `${normalizeText(servizio ?? "")}::${normalizeText(livello ?? "")}::${normalizeText(
+      corsoName
+    )}::${from ?? ""}-${to ?? ""}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, {
@@ -261,6 +303,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
         oraInizio: from,
         oraFine: to,
         periodo,
+        livello,
         istruttore,
         vasca,
         servizio,

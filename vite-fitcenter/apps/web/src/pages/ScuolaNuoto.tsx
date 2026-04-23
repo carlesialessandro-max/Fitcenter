@@ -6,7 +6,7 @@ import { Navigate } from "react-router-dom"
 
 function corsoTitle(c: ScuolaNuotoCorso): string {
   const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
-  const parts = [orario, c.corso, c.servizio, c.vasca, c.istruttore].filter(Boolean)
+  const parts = [orario, c.corso, c.livello ? `Livello ${c.livello}` : null, c.servizio, c.vasca, c.istruttore].filter(Boolean)
   return parts.join(" · ")
 }
 
