@@ -4,7 +4,9 @@ import { piscinaApi } from "@/api/piscina"
 import { useAuth } from "@/contexts/AuthContext"
 import { Navigate } from "react-router-dom"
 
-type Seat = { id: string; x: number; y: number; w: number; h: number; kind: "lettino" | "ombrellone" }
+type ShapeRect = { kind: "rect"; x: number; y: number; w: number; h: number; r?: number }
+type ShapeCircle = { kind: "circle"; cx: number; cy: number; r: number }
+type Seat = { id: string; label: string; bookId: string; shapes: Array<ShapeRect | ShapeCircle> }
 
 function isoTodayLocal(): string {
   const d = new Date()
@@ -14,31 +16,73 @@ function isoTodayLocal(): string {
   return `${y}-${m}-${day}`
 }
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
 function buildSeats(): Seat[] {
-  // Coordinate in viewBox 0..1000 (x) e 0..700 (y). Disposizione “simile” alla foto.
+  // Coordinate in viewBox 0..1000 (x) e 0..700 (y).
+  // Bordo piscina: lettino singolo numerato 1..28.
+  // Prato: postazione = 2 lettini + 1 ombrellone (prenotazione unica per postazione).
   const out: Seat[] = []
-  let n = 1
-  const add = (x: number, y: number, w: number, h: number, kind: Seat["kind"]) => out.push({ id: `${kind}-${n++}`, x, y, w, h, kind })
 
-  // Lettini bordo vasca in alto (deck)
-  for (let i = 0; i < 18; i++) add(360 + i * 30, 80, 18, 10, "lettino")
-  for (let i = 0; i < 14; i++) add(400 + i * 30, 110, 18, 10, "lettino")
-
-  // Blocco sinistra prato con ombrelloni
-  for (let r = 0; r < 4; r++) {
-    add(90, 300 + r * 85, 18, 18, "ombrellone")
-    for (let i = 0; i < 6; i++) add(140 + i * 30, 290 + r * 85, 18, 10, "lettino")
-    for (let i = 0; i < 6; i++) add(140 + i * 30, 310 + r * 85, 18, 10, "lettino")
+  const addLet = (num: number, x: number, y: number) => {
+    const bookId = `bp-${pad2(num)}`
+    out.push({
+      id: `lettino-${bookId}`,
+      label: String(num),
+      bookId,
+      shapes: [{ kind: "rect", x, y, w: 18, h: 10, r: 2 }],
+    })
   }
 
-  // Prato basso centro: cluster con 2 ombrelloni
-  add(470, 520, 18, 18, "ombrellone")
-  add(540, 560, 18, 18, "ombrellone")
-  for (let r = 0; r < 4; r++) for (let i = 0; i < 8; i++) add(410 + i * 28, 480 + r * 22, 18, 10, "lettino")
+  const addPostazione = (zone: "sx" | "cx" | "dx", idx: number, x: number, y: number) => {
+    const bookId = `pr-${zone}-${pad2(idx)}`
+    out.push({
+      id: `post-${bookId}`,
+      label: `${zone.toUpperCase()}${idx}`,
+      bookId,
+      shapes: [
+        { kind: "circle", cx: x + 10, cy: y + 10, r: 10 },
+        { kind: "rect", x: x + 26, y: y + 2, w: 18, h: 10, r: 2 },
+        { kind: "rect", x: x + 26, y: y + 18, w: 18, h: 10, r: 2 },
+      ],
+    })
+  }
 
-  // Destra prato: due colonne di lettini
-  for (let c = 0; c < 2; c++) for (let r = 0; r < 8; r++) add(820 + c * 40, 260 + r * 35, 18, 10, "lettino")
-  for (let c = 0; c < 2; c++) for (let r = 0; r < 8; r++) add(760 + c * 40, 280 + r * 35, 18, 10, "lettino")
+  // --- Bordo piscina (deck alto) ---
+  // Blocco Sinistro (13): sopra 7 (1-7), sotto 6 (8-13)
+  for (let i = 0; i < 7; i++) addLet(1 + i, 300 + i * 30, 80)
+  for (let i = 0; i < 6; i++) addLet(8 + i, 315 + i * 30, 110)
+
+  // Blocco Destro (15): sopra 8 (14-21), sotto 7 (22-28)
+  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30, 80)
+  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30, 110)
+
+  // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
+  // Le righe sono vicino alla siepe (foto 2)
+  let sx = 1
+  const sxStartX = 70
+  const sxStartY = 260
+  const sxDx = 70
+  for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX, sxStartY + i * 36)
+  for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX + sxDx, sxStartY + i * 36)
+  for (let i = 0; i < 8; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
+
+  // --- Prato centrale (3 file): 2, 4, 3 postazioni (ingresso piscina) ---
+  let cx = 1
+  const cxBaseX = 410
+  const cxBaseY = 470
+  for (let i = 0; i < 2; i++) addPostazione("cx", cx++, cxBaseX + i * 80, cxBaseY)
+  for (let i = 0; i < 4; i++) addPostazione("cx", cx++, cxBaseX - 40 + i * 80, cxBaseY + 70)
+  for (let i = 0; i < 3; i++) addPostazione("cx", cx++, cxBaseX + i * 80, cxBaseY + 140)
+
+  // --- Prato destra (2 file): 5 e 6 postazioni ---
+  let dx = 1
+  const dxBaseX = 740
+  const dxBaseY = 260
+  for (let i = 0; i < 5; i++) addPostazione("dx", dx++, dxBaseX, dxBaseY + i * 55)
+  for (let i = 0; i < 6; i++) addPostazione("dx", dx++, dxBaseX + 80, dxBaseY + i * 50)
 
   return out
 }
@@ -73,10 +117,10 @@ export function PiscinaMappa() {
     onSuccess: () => q.refetch(),
   })
 
-  function onSeatClick(seatId: string) {
-    const b = bookedBySeat.get(seatId)
+  function onSeatClick(bookId: string) {
+    const b = bookedBySeat.get(bookId)
     if (b) deleteM.mutate(b.id)
-    else createM.mutate(seatId)
+    else createM.mutate(bookId)
   }
 
   return (
@@ -148,19 +192,43 @@ export function PiscinaMappa() {
 
             {/* posti */}
             {seats.map((s) => {
-              const b = bookedBySeat.get(s.id)
-              const isUmb = s.kind === "ombrellone"
-              const fill = b ? "#ef4444" : isUmb ? "#fb923c" : "#f4f4f5"
-              const stroke = b ? "#7f1d1d" : "#3f3f46"
-              const opacity = isUmb ? 0.95 : 0.9
+              const b = bookedBySeat.get(s.bookId)
+              const isBooked = Boolean(b)
+              const fillLettino = isBooked ? "#ef4444" : "#f4f4f5"
+              const fillUmb = isBooked ? "#ef4444" : "#fb923c"
+              const stroke = isBooked ? "#7f1d1d" : "#3f3f46"
               return (
-                <g key={s.id} onClick={() => onSeatClick(s.id)} style={{ cursor: "pointer" }}>
-                  {isUmb ? (
-                    <circle cx={s.x + s.w / 2} cy={s.y + s.h / 2} r={s.w / 2} fill={fill} stroke={stroke} strokeWidth="2" opacity={opacity} />
-                  ) : (
-                    <rect x={s.x} y={s.y} width={s.w} height={s.h} rx="2" fill={fill} stroke={stroke} strokeWidth="1.5" opacity={opacity} />
+                <g key={s.id} onClick={() => onSeatClick(s.bookId)} style={{ cursor: "pointer" }}>
+                  {s.shapes.map((sh, idx) =>
+                    sh.kind === "circle" ? (
+                      <circle key={idx} cx={sh.cx} cy={sh.cy} r={sh.r} fill={fillUmb} stroke={stroke} strokeWidth="2" opacity={0.95} />
+                    ) : (
+                      <rect
+                        key={idx}
+                        x={sh.x}
+                        y={sh.y}
+                        width={sh.w}
+                        height={sh.h}
+                        rx={sh.r ?? 2}
+                        fill={fillLettino}
+                        stroke={stroke}
+                        strokeWidth="1.5"
+                        opacity={0.92}
+                      />
+                    )
                   )}
-                  <title>{b ? `${s.id} — prenotato da ${b.by}` : `${s.id} — libero`}</title>
+                  {/* Etichetta */}
+                  {(() => {
+                    const first = s.shapes[0]
+                    const tx = first.kind === "circle" ? first.cx : first.x + 4
+                    const ty = first.kind === "circle" ? first.cy + 4 : first.y + 9
+                    return (
+                      <text x={tx} y={ty} fontSize="10" fill={isBooked ? "#fff" : "#111"} fontWeight="700">
+                        {s.label}
+                      </text>
+                    )
+                  })()}
+                  <title>{b ? `${s.bookId} — prenotato da ${b.by}` : `${s.bookId} — libero`}</title>
                 </g>
               )
             })}
