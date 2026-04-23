@@ -213,6 +213,8 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   let dateStartCol: string | null = null
   let dateEndCol: string | null = null
+  let abbStartCol: string | null = null
+  let abbEndCol: string | null = null
   let cols: string[] = []
   try {
     cols = await getViewColumns(pool, view.schema, view.name)
@@ -224,6 +226,15 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       pickExistingColumn(cols, ["CorsiDataFine", "corsidatafine", "data_fine_corso", "datafine"]) ??
       pickColumnByKeyContains(cols, ["corsi", "datafine"]) ??
       pickColumnByKeyContains(cols, ["datafine"])
+
+    abbStartCol =
+      pickExistingColumn(cols, ["AbbonamentiIscrizioneDataInizio", "abbonamentiscrizionedatainizio"]) ??
+      pickColumnByKeyContains(cols, ["abbonamentiiscrizione", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["abbonamento", "iscrizione", "datainizio"])
+    abbEndCol =
+      pickExistingColumn(cols, ["AbbonamentiIscrizioneDataFine", "abbonamentiscrizionedatafine"]) ??
+      pickColumnByKeyContains(cols, ["abbonamentiiscrizione", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["abbonamento", "iscrizione", "datafine"])
   } catch {
     // best effort: se non riusciamo a leggere metadata, proviamo query senza filtro colonne.
   }
@@ -236,9 +247,19 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     })
   }
 
+  // Richiesta: mostrare SOLO utenti con abbonamento valido (filtro obbligatorio).
+  if (!abbStartCol || !abbEndCol) {
+    return res.status(500).json({
+      message: "Colonne abbonamento non trovate nella view corsi",
+      debug: { view: view.query, abbStartCol, abbEndCol, cols: cols.slice(0, 120) },
+    })
+  }
+
   const where: string[] = []
   where.push(`(TRY_CONVERT(date, [${dateStartCol}]) <= @today)`)
   where.push(`(TRY_CONVERT(date, [${dateEndCol}]) >= @today)`)
+  where.push(`(TRY_CONVERT(date, [${abbStartCol}]) <= @today)`)
+  where.push(`(TRY_CONVERT(date, [${abbEndCol}]) >= @today)`)
 
   const q = `
     SELECT *
