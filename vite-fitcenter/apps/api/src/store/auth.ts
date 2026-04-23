@@ -25,6 +25,7 @@ type UserRecord = User & { password: string; email?: string }
  *   ombretta  → H2Fc.Ombre.9!n
  *   serena    → H2Fc.Serena.9!p
  *   irene     → H2Fc.Irene.9!q
+ *   reception → H2Fc.Firme.9!u
  *   corsi     → H2Fc.Corsi.9!r
  *   istruttore→ H2Fc.Istruttore.9!s
  *   campus    → H2Fc.Campus.9!t
@@ -66,6 +67,12 @@ const DEFAULT_USERS: UserRecord[] = [
     leadFilter: "bambini",
   },
   {
+    username: "reception",
+    password: "$2b$12$EX0yJEfWwKmIBXoeO0ikHOeZVQcZorFqpmG17dbhdLuOr71f7kNJC",
+    nome: "Reception (Firme)",
+    role: "firme",
+  },
+  {
     username: "corsi",
     password: "$2b$12$pM0JZcrvtqNxxW7g/A4ps.5VWYFGGZrZ6ohxK5pv3p4Vz2.fKex/m",
     nome: "Corsi",
@@ -99,7 +106,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
       const password = String(o.password ?? "")
       const nome = String(o.nome ?? "").trim() || username
       const role = o.role as Role
-      if (!username || !password || !["admin", "operatore", "corsi", "istruttore", "campus"].includes(role)) continue
+      if (!username || !password || !["admin", "operatore", "firme", "corsi", "istruttore", "campus"].includes(role)) continue
       out.push({
         username,
         password,

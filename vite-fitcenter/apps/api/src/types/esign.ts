@@ -59,6 +59,8 @@ export interface SignatureSlot {
 
 export interface SignatureField {
   id: string
+  /** Chiave logica per prefill (consente duplicati su più pagine). Se assente usa `id`. */
+  bindId?: string
   label: string
   page: number
   x: number
@@ -83,6 +85,8 @@ export interface SignatureRequest {
   createdAt: string
   expiresAt: string
   createdByUsername: string
+  /** Origine richiesta: "cassa" (firma da cassa) oppure "admin" (manuale/admin). */
+  source?: "cassa" | "admin"
   customerEmail: string
   customerName?: string
   templateId?: string

@@ -75,9 +75,12 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
   const seen = new Set<string>()
   const unique = cleaned.filter((f) => {
     const id = String(f.id ?? "").trim()
+    const page = Number((f as any)?.page ?? 1) || 1
     if (!id) return false
-    if (seen.has(id)) return false
-    seen.add(id)
+    // Consenti duplicati logici (stesso bindId) su pagine diverse: dedup solo per (id,page).
+    const k = `${id}::${page}`
+    if (seen.has(k)) return false
+    seen.add(k)
     return true
   })
 
@@ -90,6 +93,7 @@ export function ensureSignatureFields(fields: SignatureField[] | undefined | nul
       const base = byId.get(String(f.id))
       return {
         id: String(f.id || `field-${i + 1}`),
+        bindId: (f as any).bindId != null ? String((f as any).bindId) : String(f.id || `field-${i + 1}`),
         label: String(f.label ?? base?.label ?? `Campo ${i + 1}`),
         page: Math.max(1, Number(f.page ?? base?.page ?? 1)),
         x: Number(f.x ?? base?.x ?? 50),

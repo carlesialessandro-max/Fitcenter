@@ -18,6 +18,7 @@ const navOperatore: NavItem[] = [
 const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] }] as const
 const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
 const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
+const navFirme: NavItem[] = [{ to: "/firme", label: "Firme" }, { to: "/firma-cassa", label: "Firma Cassa" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
@@ -47,6 +48,8 @@ export function AppLayout() {
             ? navIstruttore
             : role === "campus"
               ? navCampus
+              : role === "firme"
+                ? navFirme
               : navOperatore
 
   const Sidebar = (
@@ -61,7 +64,17 @@ export function AppLayout() {
           {user?.nome ?? "—"}
         </p>
         <p className="text-xs text-zinc-500">
-          {role === "admin" ? "Admin" : role === "corsi" ? "Corsi" : role === "istruttore" ? "Istruttore" : role === "campus" ? "Campus" : "Operatore"}
+          {role === "admin"
+            ? "Admin"
+            : role === "firme"
+              ? "Firme"
+              : role === "corsi"
+                ? "Corsi"
+                : role === "istruttore"
+                  ? "Istruttore"
+                  : role === "campus"
+                    ? "Campus"
+                    : "Operatore"}
         </p>
         <button
           type="button"

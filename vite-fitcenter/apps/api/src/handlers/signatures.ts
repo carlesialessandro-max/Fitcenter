@@ -296,12 +296,14 @@ async function renderPdfWithPrefill(basePath: string, fields: SignatureField[], 
   }
 
   for (const f of fields) {
+    const bind = String((f as any).bindId ?? f.id ?? "").trim()
     const id = String(f.id ?? "").trim()
-    const idNorm = normalizeKey(id)
+    const idNorm = normalizeKey(bind || id)
     const labelNorm = normalizeKey(String(f.label ?? ""))
-    const direct = (prefill as any)?.[id]
+    const direct = (prefill as any)?.[bind] ?? (prefill as any)?.[id]
     const alt =
       direct ??
+      prefillNorm.get(normalizeKey(bind || id)) ??
       prefillNorm.get(normalizeKey(id)) ??
       (f.label ? prefillNorm.get(normalizeKey(String(f.label))) : undefined)
     // Fallback specifico: tessera ASI può essere mappata come Custom2 in vista, ma nel template avere label "ASI Tessera N."
@@ -550,6 +552,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       createdAt: nowIso(),
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS).toISOString(),
       createdByUsername: req.user?.username ?? "admin",
+      source: isAdmin ? "admin" : "cassa",
       customerEmail,
       customerName: customerName || undefined,
       templateId: templateId || undefined,
@@ -592,6 +595,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
 
 export async function listSignatureRequests(_req: Request, res: Response) {
   const isAdmin = _req.user?.role === "admin"
+  const isFirme = _req.user?.role === "firme"
   const username = (_req.user?.username ?? "").trim().toLowerCase()
   const qFrom = String(_req.query?.from ?? "").trim()
   const qTo = String(_req.query?.to ?? "").trim()
@@ -606,7 +610,9 @@ export async function listSignatureRequests(_req: Request, res: Response) {
 
   const base = signatureStore.list().filter((r) => {
     const createdBy = String(r.createdByUsername ?? "").trim().toLowerCase()
+    const inferredSource = (r as any).source ?? (createdBy === "admin" ? "admin" : "cassa")
     if (!isAdmin && createdBy !== username) return false
+    if (isFirme && inferredSource !== "cassa") return false
     if (isAdmin && qConsultant && createdBy !== qConsultant) return false
     if (!matchFrom(r.createdAt)) return false
     if (!matchTo(r.createdAt)) return false
@@ -1040,6 +1046,7 @@ export async function updateSignatureTemplateSlots(req: Request, res: Response) 
   const fields: SignatureField[] | undefined = fieldsRaw
     ? fieldsRaw.map((f: Record<string, unknown>, i: number) => ({
         id: String(f.id ?? `field-${i + 1}`),
+        bindId: f.bindId != null ? String(f.bindId) : undefined,
         label: String(f.label ?? `Campo ${i + 1}`),
         page: Math.max(1, Number(f.page ?? 1)),
         x: Number(f.x ?? 50),

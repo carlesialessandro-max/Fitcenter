@@ -258,12 +258,16 @@ export function SignaturesAdmin() {
   function addFieldFromDefaults(id: string) {
     const def = DEFAULT_SIGNATURE_FIELDS.find((d) => d.id === id)
     if (!def) return
+    // Permetti duplicati logici (stesso bindId) su pagine diverse: creiamo un id univoco per istanza.
+    const usedIds = new Set(fieldsDraft.map((f) => f.id))
+    let instanceId = def.id
+    let i = 2
+    while (usedIds.has(instanceId)) instanceId = `${def.id}__${i++}`
     setFieldsDraft((prev) => {
-      if (prev.some((f) => f.id === id)) return prev
       const maxOrder = prev.reduce((m, f) => Math.max(m, f.order ?? 0), 0)
-      return [...prev, { ...def, order: maxOrder + 1 }]
+      return [...prev, { ...def, id: instanceId, bindId: def.id, order: maxOrder + 1 }]
     })
-    setSelectedFieldId(id)
+    setSelectedFieldId(instanceId)
   }
 
   function resetDefaultFields() {
@@ -979,7 +983,7 @@ export function SignaturesAdmin() {
                               className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200"
                             >
                               <option value="">Seleziona…</option>
-                              {DEFAULT_SIGNATURE_FIELDS.filter((d) => !fieldsDraft.some((f) => f.id === d.id)).map((d) => (
+                              {DEFAULT_SIGNATURE_FIELDS.map((d) => (
                                 <option key={d.id} value={d.id}>
                                   {d.label}
                                 </option>
@@ -1172,7 +1176,7 @@ export function SignaturesAdmin() {
                     className="min-w-[220px] rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
                   >
                     <option value="">Seleziona…</option>
-                    {DEFAULT_SIGNATURE_FIELDS.filter((d) => !fieldsDraft.some((f) => f.id === d.id)).map((d) => (
+                    {DEFAULT_SIGNATURE_FIELDS.map((d) => (
                       <option key={d.id} value={d.id}>
                         {d.label} (id: {d.id})
                       </option>

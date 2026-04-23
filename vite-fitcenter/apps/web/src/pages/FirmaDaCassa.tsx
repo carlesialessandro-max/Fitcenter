@@ -52,7 +52,7 @@ function todayIt(): string {
 
 export function FirmaDaCassa() {
   const { role } = useAuth()
-  const canUse = role === "admin" || role === "operatore"
+  const canUse = role === "admin" || role === "operatore" || role === "firme"
   const [windowMode, setWindowMode] = useState<"60" | "day">("60")
   const [selectedKey, setSelectedKey] = useState<string>("")
   const [templateId, setTemplateId] = useState<string>("")
