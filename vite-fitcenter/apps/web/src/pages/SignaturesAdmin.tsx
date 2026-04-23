@@ -36,6 +36,7 @@ export function SignaturesAdmin() {
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [fieldsDraft, setFieldsDraft] = useState<SignatureField[]>([])
   const [selectedFieldId, setSelectedFieldId] = useState<string>("")
+  const [addFieldId, setAddFieldId] = useState<string>("")
   const [editMode, setEditMode] = useState<"slots" | "fields">("slots")
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewErr, setPreviewErr] = useState<string | null>(null)
@@ -234,6 +235,35 @@ export function SignaturesAdmin() {
 
   function updateField(id: string, patch: Partial<SignatureField>) {
     setFieldsDraft((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+  }
+
+  function removeField(id: string) {
+    setFieldsDraft((prev) => {
+      const next = prev.filter((f) => f.id !== id)
+      if (next.length === 0) return []
+      // riallinea ordini (stabile)
+      return next
+        .slice()
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map((f, i) => ({ ...f, order: i + 1 }))
+    })
+  }
+
+  function clearAllFields() {
+    setFieldsDraft([])
+    setSelectedFieldId("")
+    setAddFieldId("")
+  }
+
+  function addFieldFromDefaults(id: string) {
+    const def = DEFAULT_SIGNATURE_FIELDS.find((d) => d.id === id)
+    if (!def) return
+    setFieldsDraft((prev) => {
+      if (prev.some((f) => f.id === id)) return prev
+      const maxOrder = prev.reduce((m, f) => Math.max(m, f.order ?? 0), 0)
+      return [...prev, { ...def, order: maxOrder + 1 }]
+    })
+    setSelectedFieldId(id)
   }
 
   function resetDefaultFields() {
@@ -1071,13 +1101,69 @@ export function SignaturesAdmin() {
             <div className="mt-4 rounded border border-emerald-700/40 bg-emerald-950/10 p-3">
               <h3 className="text-xs font-semibold text-emerald-200">Campi precompilazione (testo)</h3>
               <p className="mt-1 text-xs text-zinc-500">Questi valori vengono scritti sul PDF (prima della firma) usando i dati della cassa.</p>
+              <div className="mt-3 flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-1 text-xs text-zinc-400">
+                  Aggiungi campo (predefinito)
+                  <select
+                    value={addFieldId}
+                    onChange={(e) => setAddFieldId(e.target.value)}
+                    className="min-w-[220px] rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
+                  >
+                    <option value="">Seleziona…</option>
+                    {DEFAULT_SIGNATURE_FIELDS.filter((d) => !fieldsDraft.some((f) => f.id === d.id)).map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.label} (id: {d.id})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={!addFieldId}
+                  onClick={() => {
+                    if (!addFieldId) return
+                    addFieldFromDefaults(addFieldId)
+                    setAddFieldId("")
+                  }}
+                  className="rounded border border-zinc-700 px-3 py-2 text-sm text-zinc-200 disabled:opacity-50"
+                >
+                  Aggiungi
+                </button>
+                <button
+                  type="button"
+                  onClick={clearAllFields}
+                  className="rounded border border-red-900/60 px-3 py-2 text-sm text-red-200 hover:bg-red-950/20"
+                  title="Rimuove tutti i campi: verranno usati solo quelli che aggiungi manualmente."
+                >
+                  Svuota campi
+                </button>
+                <span className="text-xs text-zinc-500">
+                  Suggeriti: <span className="text-zinc-300">legale_rappresentante</span> (tutore), <span className="text-zinc-300">data_oggi</span>, <span className="text-zinc-300">nome</span>, <span className="text-zinc-300">cognome</span>.
+                </span>
+              </div>
               <div className="mt-3 grid gap-2">
                 {fieldsDraft
                   .slice()
                   .sort((a, b) => a.order - b.order)
                   .map((f) => (
                     <div key={f.id} className="grid gap-2 rounded border border-zinc-700 p-2 md:grid-cols-7">
-                      <div className="flex items-center text-xs font-medium text-zinc-200">{f.label}</div>
+                      <div className="flex items-center gap-2 text-xs font-medium text-zinc-200">
+                        <input
+                          type="text"
+                          value={f.label}
+                          onChange={(e) => updateField(f.id, { label: e.target.value })}
+                          className="w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-100"
+                          title="Etichetta (solo display). L'id tecnico resta quello."
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeField(f.id)}
+                          className="rounded border border-red-900/60 px-2 py-1 text-[11px] text-red-200 hover:bg-red-950/20"
+                          title="Rimuovi campo"
+                        >
+                          Rimuovi
+                        </button>
+                      </div>
                       <input
                         type="number"
                         min={1}
