@@ -1684,12 +1684,12 @@ export function CorsiNoShow() {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
       const subject = "Sospensione temporanea delle prenotazioni"
       const text =
-        `Gentile socio,\\n` +
-        `facendo seguito ai nostri precedenti avvisi, ti informiamo che nel mese corrente sono state rilevate oltre 3 assenze senza alcuna cancellazione o preavviso.\\n` +
-        `Come previsto dal regolamento interno, a causa del numero di assenze accumulate, la tua possibilità di prenotare i corsi è sospesa per i prossimi 3 giorni.\\n` +
-        `Ti ricordiamo che la cancellazione tempestiva (tramite APP o segreteria) è fondamentale per permettere ai soci in lista d'attesa di occupare il posto rimasto libero.\\n` +
-        `La funzionalità di prenotazione si riattiverà automaticamente al termine della sospensione. Se ritieni ci sia un errore o per problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\\n` +
-        `Cordiali saluti,\\n` +
+        `Gentile socio,\n\n` +
+        `facendo seguito ai nostri precedenti avvisi, ti informiamo che nel mese corrente sono state rilevate oltre 3 assenze senza alcuna cancellazione o preavviso.\n\n` +
+        `Come previsto dal regolamento interno, a causa del numero di assenze accumulate, la tua possibilità di prenotare i corsi è sospesa per i prossimi 3 giorni.\n\n` +
+        `Ti ricordiamo che la cancellazione tempestiva (tramite APP o segreteria) è fondamentale per permettere ai soci in lista d'attesa di occupare il posto rimasto libero.\n\n` +
+        `La funzionalità di prenotazione si riattiverà automaticamente al termine della sospensione. Se ritieni ci sia un errore o per problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\n\n` +
+        `Cordiali saluti,\n` +
         `La Segreteria`
       const absences = missedForSelected.map((m) => ({
         day: m.day,
@@ -1720,12 +1720,12 @@ export function CorsiNoShow() {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
       const subject = "Importante: Gestione delle tue prenotazioni"
       const text =
-        `Gentile socio,\\n` +
-        `Abbiamo rilevato che nel mese corrente sono presenti diverse prenotazioni (3 o più) a cui non è seguita la tua partecipazione\\n` +
-        `Ti chiediamo gentilmente di cancellare la prenotazione tramite APP o in caso di impossibilità di avvisare sempre la segreteria: questo permette ad altri soci in lista d'attesa di partecipare alle lezioni.\\n` +
-        `Nota bene: questa comunicazione funge da preavviso. A partire dal prossimo mese, il raggiungimento di 3 assenze non comunicate comporterà il blocco automatico delle prenotazioni per 3 giorni.\\n` +
-        `Per qualsiasi chiarimento o per segnalarci eventuali problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\\n` +
-        `Certi della tua collaborazione, ti auguriamo una buona giornata.\\n` +
+        `Gentile socio,\n\n` +
+        `Abbiamo rilevato che nel mese corrente sono presenti diverse prenotazioni (3 o più) a cui non è seguita la tua partecipazione.\n\n` +
+        `Ti chiediamo gentilmente di cancellare la prenotazione tramite APP o in caso di impossibilità di avvisare sempre la segreteria: questo permette ad altri soci in lista d'attesa di partecipare alle lezioni.\n\n` +
+        `Nota bene: questa comunicazione funge da preavviso. A partire dal prossimo mese, il raggiungimento di 3 assenze non comunicate comporterà il blocco automatico delle prenotazioni per 3 giorni.\n\n` +
+        `Per qualsiasi chiarimento o per segnalarci eventuali problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\n\n` +
+        `Certi della tua collaborazione, ti auguriamo una buona giornata.\n` +
         `La Segreteria`
       const absences = missedForSelected.map((m) => ({
         day: m.day,
