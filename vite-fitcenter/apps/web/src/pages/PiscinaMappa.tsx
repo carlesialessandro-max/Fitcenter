@@ -38,14 +38,15 @@ function buildSeats(): Seat[] {
 
   const addPostazione = (zone: "sx" | "cx" | "dx", idx: number, x: number, y: number) => {
     const bookId = `pr-${zone}-${pad2(idx)}`
+    // Postazione prato: 1 ombrellone + 2 lettini (più piccola per leggibilità)
     out.push({
       id: `post-${bookId}`,
       label: `${zone.toUpperCase()}${idx}`,
       bookId,
       shapes: [
-        { kind: "circle", cx: x + 10, cy: y + 10, r: 10 },
-        { kind: "rect", x: x + 26, y: y + 2, w: 18, h: 10, r: 2 },
-        { kind: "rect", x: x + 26, y: y + 18, w: 18, h: 10, r: 2 },
+        { kind: "circle", cx: x + 8, cy: y + 8, r: 8 },
+        { kind: "rect", x: x + 20, y: y + 2, w: 14, h: 8, r: 2 },
+        { kind: "rect", x: x + 20, y: y + 14, w: 14, h: 8, r: 2 },
       ],
     })
   }
