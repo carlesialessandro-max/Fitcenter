@@ -1682,13 +1682,15 @@ export function CorsiNoShow() {
   const notifyBlockMutation = useMutation({
     mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
-      const subject = "Prenotazioni corsi: sospensione per assenze ripetute"
+      const subject = "Sospensione temporanea delle prenotazioni"
       const text =
         `Gentile socio,\\n` +
-        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato. ` +
-        `Come da regolamento, la possibilità di prenotare i corsi viene temporaneamente sospesa per 3 giorni.\\n` +
-        `Per informazioni o sblocco, chiama la segreteria 0573 572649 oppure rispondi a questa email.\\n` +
-        `Cordiali saluti.`
+        `facendo seguito ai nostri precedenti avvisi, ti informiamo che nel mese corrente sono state rilevate oltre 3 assenze senza alcuna cancellazione o preavviso.\\n` +
+        `Come previsto dal regolamento interno, a causa del numero di assenze accumulate, la tua possibilità di prenotare i corsi è sospesa per i prossimi 3 giorni.\\n` +
+        `Ti ricordiamo che la cancellazione tempestiva (tramite APP o segreteria) è fondamentale per permettere ai soci in lista d'attesa di occupare il posto rimasto libero.\\n` +
+        `La funzionalità di prenotazione si riattiverà automaticamente al termine della sospensione. Se ritieni ci sia un errore o per problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\\n` +
+        `Cordiali saluti,\\n` +
+        `La Segreteria`
       const absences = missedForSelected.map((m) => ({
         day: m.day,
         servizio: m.servizio,
@@ -1716,13 +1718,15 @@ export function CorsiNoShow() {
   const notifyOnlyMutation = useMutation({
     mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
       if (!canManageNoShow) throw new Error("Permessi insufficienti")
-      const subject = "Prenotazioni corsi: assenze ripetute"
+      const subject = "Importante: Gestione delle tue prenotazioni"
       const text =
-        `Gentile socio,\n` +
-        `nel mese ${input.monthKey} risultano ${input.count} prenotazioni a cui non ti sei presentato.\n` +
-        `Ti chiediamo di avvisare la segreteria in caso di impossibilità a partecipare.\n` +
-        `Per informazioni chiama la segreteria 0573 572649 oppure rispondi a questa email.\n` +
-        `Cordiali saluti.`
+        `Gentile socio,\\n` +
+        `Abbiamo rilevato che nel mese corrente sono presenti diverse prenotazioni (3 o più) a cui non è seguita la tua partecipazione\\n` +
+        `Ti chiediamo gentilmente di cancellare la prenotazione tramite APP o in caso di impossibilità di avvisare sempre la segreteria: questo permette ad altri soci in lista d'attesa di partecipare alle lezioni.\\n` +
+        `Nota bene: questa comunicazione funge da preavviso. A partire dal prossimo mese, il raggiungimento di 3 assenze non comunicate comporterà il blocco automatico delle prenotazioni per 3 giorni.\\n` +
+        `Per qualsiasi chiarimento o per segnalarci eventuali problemi tecnici, puoi rispondere a questa email o chiamarci al numero 0573 572649.\\n` +
+        `Certi della tua collaborazione, ti auguriamo una buona giornata.\\n` +
+        `La Segreteria`
       const absences = missedForSelected.map((m) => ({
         day: m.day,
         servizio: m.servizio,
@@ -1742,12 +1746,14 @@ export function CorsiNoShow() {
     onSuccess: async () => {
       await blocksQ.refetch()
       if (selected?.email) {
-        const subject = "Prenotazioni corsi: sblocco confermato"
+        const subject = "Account ripristinato: puoi tornare a prenotare i tuoi corsi!"
         const text =
           `Gentile socio,\n` +
-          `ti confermiamo che la sospensione delle prenotazioni corsi è stata rimossa.\n` +
-          `Per informazioni chiama la segreteria 0573 572649 oppure rispondi a questa email.\n` +
-          `Cordiali saluti.`
+          `ti informiamo che il periodo di sospensione è terminato e la tua utenza è stata nuovamente abilitata alla prenotazione delle lezioni.\n` +
+          `Puoi tornare sin da ora a riservare il tuo posto tramite l'APP o i soliti canali. Ti chiediamo gentilmente, per il futuro, di ricordarti di cancellare le prenotazioni a cui non potrai partecipare, così da aiutarci a garantire il posto a tutti gli atleti.\n` +
+          `Per qualsiasi necessità o informazione, la segreteria è a tua disposizione al numero 0573 572649 o rispondendo a questa email.\n` +
+          `Ti aspettiamo in palestra!\n` +
+          `La Segreteria`
         void prenotazioniApi.notifyNoShow({ email: selected.email, subject, text, absences: [] })
       }
     },

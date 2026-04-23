@@ -26,6 +26,7 @@ function DashboardOrRedirect() {
   if (leadFilter === "bambini") return <Navigate to="/crm" replace />
   if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
   if (role === "campus") return <Navigate to="/campus" replace />
+  if (role === "firme") return <Navigate to="/firma-cassa" replace />
   return <Dashboard />
 }
 

@@ -18,7 +18,8 @@ const navOperatore: NavItem[] = [
 const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] }] as const
 const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
 const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
-const navFirme: NavItem[] = [{ to: "/firme", label: "Firme" }, { to: "/firma-cassa", label: "Firma Cassa" }] as const
+// Reception: solo firma da cassa (no dashboard, no admin firme).
+const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
