@@ -2,6 +2,8 @@ import type { Request, Response } from "express"
 import sql from "mssql"
 import { getPool } from "../services/gestionale-sql.js"
 
+type SqlViewInfo = { query: string; schema: string; name: string }
+
 function toIsoDateLocal(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
@@ -120,13 +122,46 @@ function guessOrario(raw: Record<string, unknown>): { from: string | null; to: s
   return { from, to, label }
 }
 
-function sqlViewName(): string {
+function sqlViewInfo(): SqlViewInfo {
   const raw = (process.env.GESTIONALE_VIEW_CORSI_UTENTI ?? "RVW_CorsiUtenti").trim()
   const safe = raw && /^[A-Za-z0-9_\.\[\]]+$/.test(raw) ? raw : "RVW_CorsiUtenti"
-  // Qualifica dbo se non è già qualificato
   const cleaned = safe.replace(/[\[\]]/g, "")
-  if (cleaned.includes(".")) return safe.includes("[") ? safe : safe.split(".").map((p) => `[${p}]`).join(".")
-  return `[dbo].[${cleaned}]`
+  // Qualifica dbo se non è già qualificato
+  if (cleaned.includes(".")) {
+    const [schema, name] = cleaned.split(".", 2) as [string, string]
+    const query = safe.includes("[") ? safe : safe.split(".").map((p) => `[${p}]`).join(".")
+    return { query, schema: schema || "dbo", name: name || "RVW_CorsiUtenti" }
+  }
+  return { query: `[dbo].[${cleaned}]`, schema: "dbo", name: cleaned || "RVW_CorsiUtenti" }
+}
+
+let cachedCols: { key: string; cols: string[]; at: number } | null = null
+async function getViewColumns(pool: sql.ConnectionPool, schema: string, name: string): Promise<string[]> {
+  const cacheKey = `${schema}.${name}`.toLowerCase()
+  const now = Date.now()
+  if (cachedCols && cachedCols.key === cacheKey && now - cachedCols.at < 60_000) return cachedCols.cols
+
+  const q = `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @name
+    ORDER BY ORDINAL_POSITION
+  `
+  const r = await pool.request().input("schema", sql.NVarChar, schema).input("name", sql.NVarChar, name).query(q)
+  const cols = (r.recordset ?? [])
+    .map((x: any) => String(x?.COLUMN_NAME ?? "").trim())
+    .filter(Boolean)
+  cachedCols = { key: cacheKey, cols, at: now }
+  return cols
+}
+
+function pickExistingColumn(cols: string[], candidates: string[]): string | null {
+  const map = new Map(cols.map((c) => [normalizeText(c), c]))
+  for (const cand of candidates) {
+    const got = map.get(normalizeText(cand))
+    if (got) return got
+  }
+  return null
 }
 
 export async function getScuolaNuotoToday(req: Request, res: Response) {
@@ -137,14 +172,26 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   const isoToday = toIsoDateLocal(now)
   const wk = weekdayTokens(weekdayKeyIt(now))
 
-  const view = sqlViewName()
+  const view = sqlViewInfo()
+
+  let dateStartCol: string | null = null
+  let dateEndCol: string | null = null
+  try {
+    const cols = await getViewColumns(pool, view.schema, view.name)
+    dateStartCol = pickExistingColumn(cols, ["CorsiDataInizio", "corsidatainizio", "data_inizio_corso", "datainizio"])
+    dateEndCol = pickExistingColumn(cols, ["CorsiDataFine", "corsidatafine", "data_fine_corso", "datafine"])
+  } catch {
+    // best effort: se non riusciamo a leggere metadata, proviamo query senza filtro colonne.
+  }
+
+  const where: string[] = []
+  if (dateStartCol) where.push(`(TRY_CONVERT(date, [${dateStartCol}]) IS NULL OR TRY_CONVERT(date, [${dateStartCol}]) <= @today)`)
+  if (dateEndCol) where.push(`(TRY_CONVERT(date, [${dateEndCol}]) IS NULL OR TRY_CONVERT(date, [${dateEndCol}]) >= @today)`)
+
   const q = `
     SELECT *
-    FROM ${view}
-    WHERE
-      (TRY_CONVERT(date, [CorsiDataInizio]) IS NULL OR TRY_CONVERT(date, [CorsiDataInizio]) <= @today)
-      AND
-      (TRY_CONVERT(date, [CorsiDataFine]) IS NULL OR TRY_CONVERT(date, [CorsiDataFine]) >= @today)
+    FROM ${view.query}
+    ${where.length ? "WHERE " + where.join(" AND ") : ""}
   `
 
   let rows: Record<string, unknown>[] = []
@@ -153,7 +200,11 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     rows = (r.recordset ?? []) as any
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e)
-    return res.status(500).json({ message: "Query corsi fallita", detail: msg })
+    return res.status(500).json({
+      message: "Query corsi fallita",
+      detail: msg,
+      debug: { view: view.query, startCol: dateStartCol, endCol: dateEndCol },
+    })
   }
 
   const filtered = rows.filter((raw) => isRowForWeekday(raw, wk))
