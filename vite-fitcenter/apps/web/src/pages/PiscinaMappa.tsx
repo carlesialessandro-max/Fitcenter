@@ -70,12 +70,17 @@ function buildSeats(): Seat[] {
   for (let i = 0; i < 8; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
 
   // --- Prato centrale (3 file): 2, 4, 3 postazioni (ingresso piscina) ---
+  // Richiesta: 3 file ripetute, ognuna con 2 (sx) + 4 (centro) + 3 (dx) postazioni.
   let cx = 1
-  const cxBaseX = 410
-  const cxBaseY = 470
-  for (let i = 0; i < 2; i++) addPostazione("cx", cx++, cxBaseX + i * 80, cxBaseY)
-  for (let i = 0; i < 4; i++) addPostazione("cx", cx++, cxBaseX - 40 + i * 80, cxBaseY + 70)
-  for (let i = 0; i < 3; i++) addPostazione("cx", cx++, cxBaseX + i * 80, cxBaseY + 140)
+  const cxRowYs = [470, 540, 610]
+  const cxLeftXs = [360, 440] // 2 a sinistra
+  const cxMidXs = [520, 600, 680, 760] // 4 al centro
+  const cxRightXs = [840, 920, 980] // 3 a destra (resta entro viewBox)
+  for (const y of cxRowYs) {
+    for (const x of cxLeftXs) addPostazione("cx", cx++, x, y)
+    for (const x of cxMidXs) addPostazione("cx", cx++, x, y)
+    for (const x of cxRightXs) addPostazione("cx", cx++, x, y)
+  }
 
   // --- Prato destra (2 file): 5 e 6 postazioni ---
   let dx = 1
