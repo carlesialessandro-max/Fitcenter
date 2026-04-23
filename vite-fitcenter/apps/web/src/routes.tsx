@@ -20,6 +20,7 @@ import { Corsi, CorsiNoShow } from "@/pages/Corsi"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
+import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -27,6 +28,7 @@ function DashboardOrRedirect() {
   if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
   if (role === "campus") return <Navigate to="/campus" replace />
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
+  if (role === "scuola_nuoto") return <Navigate to="/scuola-nuoto" replace />
   return <Dashboard />
 }
 
@@ -71,6 +73,7 @@ export const router = createBrowserRouter([
       { path: "corsi/assenze", element: <CorsiNoShow /> },
       { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },
+      { path: "scuola-nuoto", element: <ScuolaNuoto /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },

@@ -21,6 +21,7 @@ import { dataRouter } from "./routes/data.js"
 import { chiamateRouter } from "./routes/chiamate.js"
 import { signaturesRouter } from "./routes/signatures.js"
 import { prenotazioniRouter } from "./routes/prenotazioni.js"
+import { scuolaNuotoRouter } from "./routes/scuolaNuoto.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT ?? 3001
@@ -111,6 +112,7 @@ app.use("/api", chiamateRouter)
 app.use("/api/prenotazioni", prenotazioniRouter)
 app.use("/api/data", dataRouter)
 app.use("/api/signatures", signaturesRouter)
+app.use("/api/scuola-nuoto", scuolaNuotoRouter)
 
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true })
