@@ -73,9 +73,9 @@ function buildSeats(): Seat[] {
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
   let cx = 1
   const cxRowYs = [245, 300, 355]
-  const cxLeftXs = [315, 395] // 2 a sinistra
-  const cxMidXs = [470, 550, 630, 710] // 4 al centro
-  const cxRightXs = [785, 865, 945] // 3 a destra
+  const cxLeftXs = [300, 380] // 2 a sinistra
+  const cxMidXs = [455, 535, 615, 695] // 4 al centro
+  const cxRightXs = [760, 830, 900] // 3 a destra (più a sinistra per non confondersi con DX)
   for (const y of cxRowYs) {
     for (const x of cxLeftXs) addPostazione("cx", cx++, x, y)
     for (const x of cxMidXs) addPostazione("cx", cx++, x, y)
@@ -98,6 +98,8 @@ export function PiscinaMappa() {
   if (role !== "admin" && role !== "operatore") return <Navigate to="/" replace />
 
   const [date, setDate] = useState<string>(isoTodayLocal())
+  const [zoom, setZoom] = useState<number>(1)
+  const [showLabels, setShowLabels] = useState<boolean>(false)
   const seats = useMemo(() => buildSeats(), [])
 
   const q = useQuery({
@@ -146,6 +148,24 @@ export function PiscinaMappa() {
                 className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
               />
             </label>
+            <label className="text-xs text-zinc-500">
+              Zoom
+              <select
+                value={String(zoom)}
+                onChange={(e) => setZoom(Number(e.target.value) || 1)}
+                className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+              >
+                <option value="0.8">80%</option>
+                <option value="1">100%</option>
+                <option value="1.25">125%</option>
+                <option value="1.5">150%</option>
+                <option value="2">200%</option>
+              </select>
+            </label>
+            <label className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-400 sm:mt-6">
+              <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} />
+              Mostra etichette
+            </label>
             <button
               type="button"
               onClick={() => q.refetch()}
@@ -164,7 +184,11 @@ export function PiscinaMappa() {
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
         <div className="overflow-auto">
-          <svg viewBox="0 0 1000 700" className="min-w-[900px]">
+          <svg
+            viewBox="0 0 1000 700"
+            className="min-w-[900px]"
+            style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+          >
             {/* sfondo */}
             <rect x="0" y="0" width="1000" height="700" fill="#0a0a0a" />
             <rect x="0" y="210" width="1000" height="490" fill="#164e2b" opacity="0.9" />
@@ -223,16 +247,18 @@ export function PiscinaMappa() {
                     )
                   )}
                   {/* Etichetta */}
-                  {(() => {
-                    const first = s.shapes[0]
-                    const tx = first.kind === "circle" ? first.cx : first.x + 4
-                    const ty = first.kind === "circle" ? first.cy + 4 : first.y + 9
-                    return (
-                      <text x={tx} y={ty} fontSize="10" fill={isBooked ? "#fff" : "#111"} fontWeight="700">
-                        {s.label}
-                      </text>
-                    )
-                  })()}
+                  {showLabels
+                    ? (() => {
+                        const first = s.shapes[0]
+                        const tx = first.kind === "circle" ? first.cx : first.x + 4
+                        const ty = first.kind === "circle" ? first.cy + 4 : first.y + 9
+                        return (
+                          <text x={tx} y={ty} fontSize="10" fill={isBooked ? "#fff" : "#111"} fontWeight="700">
+                            {s.label}
+                          </text>
+                        )
+                      })()
+                    : null}
                   <title>{b ? `${s.bookId} — prenotato da ${b.by}` : `${s.bookId} — libero`}</title>
                 </g>
               )
