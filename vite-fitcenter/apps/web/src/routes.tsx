@@ -21,6 +21,7 @@ import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
 import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
+import { PiscinaMappa } from "@/pages/PiscinaMappa"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -74,6 +75,7 @@ export const router = createBrowserRouter([
       { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },
       { path: "scuola-nuoto", element: <ScuolaNuoto /> },
+      { path: "piscina", element: <PiscinaMappa /> },
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },

@@ -13,6 +13,7 @@ const navOperatore: NavItem[] = [
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
+  { to: "/piscina", label: "Mappa Piscina" },
 ] as const
 
 const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] }] as const
@@ -33,6 +34,7 @@ const navAdmin: NavItem[] = [
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
+  { to: "/piscina", label: "Mappa Piscina" },
 ] as const
 
 export function AppLayout() {
