@@ -26,13 +26,16 @@ function buildSeats(): Seat[] {
   // Prato: postazione = 2 lettini + 1 ombrellone (prenotazione unica per postazione).
   const out: Seat[] = []
 
+  const SCALE_ALL = 0.85
+  const S = (n: number) => n * SCALE_ALL
+
   const addLet = (num: number, x: number, y: number) => {
     const bookId = `bp-${pad2(num)}`
     out.push({
       id: `lettino-${bookId}`,
       label: String(num),
       bookId,
-      shapes: [{ kind: "rect", x, y, w: 18, h: 10, r: 2 }],
+      shapes: [{ kind: "rect", x: S(x), y: S(y), w: S(18), h: S(10), r: 2 }],
     })
   }
 
@@ -44,9 +47,9 @@ function buildSeats(): Seat[] {
       label: `${zone.toUpperCase()}${idx}`,
       bookId,
       shapes: [
-        { kind: "circle", cx: x + 8, cy: y + 8, r: 8 },
-        { kind: "rect", x: x + 20, y: y + 2, w: 14, h: 8, r: 2 },
-        { kind: "rect", x: x + 20, y: y + 14, w: 14, h: 8, r: 2 },
+        { kind: "circle", cx: S(x + 8), cy: S(y + 8), r: S(8) },
+        { kind: "rect", x: S(x + 20), y: S(y + 2), w: S(14), h: S(8), r: 2 },
+        { kind: "rect", x: S(x + 20), y: S(y + 14), w: S(14), h: S(8), r: 2 },
       ],
     })
   }
@@ -99,7 +102,7 @@ export function PiscinaMappa() {
   if (role !== "admin" && role !== "operatore") return <Navigate to="/" replace />
 
   const [date, setDate] = useState<string>(isoTodayLocal())
-  const [zoom, setZoom] = useState<number>(1)
+  const [zoom, setZoom] = useState<number>(0.8)
   const [showLabels, setShowLabels] = useState<boolean>(false)
   const seats = useMemo(() => buildSeats(), [])
 

@@ -201,13 +201,40 @@ function pickColumnByKeyContains(cols: string[], needles: string[]): string | nu
   return null
 }
 
+function normalizeParticipantKey(input: { id?: unknown; email?: unknown; nome?: unknown; cognome?: unknown; cellulare?: unknown }): string {
+  const id = String(input.id ?? "").trim()
+  if (id) return `id:${id}`
+  const email = String(input.email ?? "").trim().toLowerCase()
+  if (email.includes("@")) return `email:${email}`
+  const name = normalizeText(`${String(input.nome ?? "").trim()} ${String(input.cognome ?? "").trim()}`.trim())
+  const tel = String(input.cellulare ?? "").trim()
+  if (name && tel) return `name_tel:${name}:${tel}`
+  if (name) return `name:${name}`
+  if (tel) return `tel:${tel}`
+  return `anon:${Math.random().toString(36).slice(2)}`
+}
+
+function parseRequestedDay(raw: unknown): WeekdayKey | null {
+  const s = normalizeText(String(raw ?? ""))
+  if (!s) return null
+  if (s.startsWith("lun")) return "lun"
+  if (s.startsWith("mar")) return "mar"
+  if (s.startsWith("mer")) return "mer"
+  if (s.startsWith("gio")) return "gio"
+  if (s.startsWith("ven")) return "ven"
+  if (s.startsWith("sab")) return "sab"
+  if (s.startsWith("dom")) return "dom"
+  return null
+}
+
 export async function getScuolaNuotoToday(req: Request, res: Response) {
   const pool = await getPool()
   if (!pool) return res.status(503).json({ message: "SQL non configurato" })
 
   const now = new Date()
   const isoToday = toIsoDateLocal(now)
-  const wk = weekdayTokens(weekdayKeyIt(now))
+  const requested = parseRequestedDay(req.query.day)
+  const wk = weekdayTokens(requested ?? weekdayKeyIt(now))
 
   const view = sqlViewInfo()
 
@@ -283,6 +310,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   const filtered = rows.filter((raw) => isRowForWeekday(raw, wk))
 
   type Participant = {
+    key: string
     nome: string | null
     cognome: string | null
     cellulare: string | null
@@ -293,6 +321,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   type Group = {
     key: string
+    baseKey: string
     corso: string
     oraInizio: string | null
     oraFine: string | null
@@ -308,6 +337,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   const groups = new Map<string, Group>()
 
   for (const raw of filtered) {
+    const idUtente = firstNonEmpty(raw, ["IDUtente", "IdUtente", "idUtente", "IDCliente", "IdCliente", "IDAnagrafica"])
     const nome = firstNonEmpty(raw, ["Nome", "nome", "UtenteNome", "ClienteNome", "AnagraficaNome"])
     const cognome = firstNonEmpty(raw, ["Cognome", "cognome", "UtenteCognome", "ClienteCognome", "AnagraficaCognome"])
     const cellulare = firstNonEmpty(raw, ["Cellulare", "Telefono", "Tel", "TelefonoCellulare"])
@@ -355,15 +385,15 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       label ??
       "Corso"
 
-    const key = `${normalizeText(servizio ?? "")}::${normalizeText(livello ?? "")}::${normalizeText(
-      corsoName
-    )}::${from ?? ""}-${to ?? ""}::${normalizeText(corsia ?? "")}::${normalizeText(vasca ?? "")}::${normalizeText(
-      istruttore ?? ""
-    )}`
+    const baseKey = `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${from ?? ""}-${to ?? ""}::${normalizeText(
+      corsia ?? ""
+    )}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
+    const key = `${baseKey}::${normalizeText(livello ?? "")}`
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, {
         key,
+        baseKey,
         corso: corsoName,
         oraInizio: from,
         oraFine: to,
@@ -377,7 +407,9 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       })
     }
 
+    const pKey = normalizeParticipantKey({ id: idUtente, email, nome, cognome, cellulare })
     groups.get(key)!.utenti.push({
+      key: pKey,
       nome,
       cognome,
       cellulare,
