@@ -94,7 +94,7 @@ function accessNameKeysFromRow(raw: any, fallbackNome?: unknown, fallbackCognome
 }
 
 function accessTelKey(raw: any): string | null {
-  const tel = String(raw?.SMS ?? raw?.Sms ?? raw?.sms ?? raw?.Cellulare ?? raw?.Telefono ?? raw?.Tel ?? raw?.TelefonoCellulare ?? "").trim()
+  const tel = digitsPhone(raw?.SMS ?? raw?.Sms ?? raw?.sms ?? raw?.Cellulare ?? raw?.Telefono ?? raw?.Tel ?? raw?.TelefonoCellulare)
   return tel ? `tel:${tel}` : null
 }
 
@@ -274,7 +274,7 @@ export function ScuolaNuoto() {
     if (nk1) out.add(nk1)
     if (nk2) out.add(nk2)
 
-    const tel = String(u?.cellulare ?? "").trim()
+    const tel = digitsPhone(u?.cellulare)
     const telKey = tel ? `tel:${tel}` : null
     if (telKey) out.add(telKey)
     for (const nk of [nk1, nk2]) {
@@ -357,12 +357,21 @@ export function ScuolaNuoto() {
     const rawSample = accessKeys.sampleRaw || "—"
     const presentSize = presentKeys.size
     const sampleKeys = Array.from(presentKeys).slice(0, 6).join(",")
+    const probe = normalizeText(String(u?.cognome ?? ""))
+    const probeKeys = probe
+      ? Array.from(presentKeys)
+          .filter((k) => k.includes(probe))
+          .slice(0, 8)
+          .join(",")
+      : ""
     return [
       `DBG date=${q.data?.today ?? date}`,
       `userKey=${userKey}`,
       `accessRows=${accessiQ.data?.rows?.length ?? 0}`,
       `presentKeys=${presentSize}`,
       `sampleKeys=${sampleKeys || "—"}`,
+      `probe=${probe || "—"}`,
+      `probeKeys=${probeKeys || "—"}`,
       `cands=${cands.join(",") || "—"}`,
       `matched=${matched.join(",") || "—"}`,
       `matchCount=${times.length}`,
