@@ -62,8 +62,9 @@ function buildSeats(): Seat[] {
 
   // Blocco Destro (15): sopra 8 (14-21), sotto 7 (22-28)
   // Spostati a destra di +500px (richiesta).
-  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30 + 500, 55)
-  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30 + 500, 85)
+  // (aggiustamento: -100px rispetto a prima)
+  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30 + 400, 55)
+  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30 + 400, 85)
 
   // --- Prato: 25 lettini singoli (29..53) ---
   // Ai margini in fondo al prato (in basso), allineati come i lettini della piscina.
@@ -74,9 +75,11 @@ function buildSeats(): Seat[] {
   // sinistra (9)
   for (let i = 0; i < 9; i++) addLet(p++, 35, pgYTop + i * pgDy)
   // destra (9)
-  for (let i = 0; i < 9; i++) addLet(p++, 1445, pgYTop + i * pgDy)
-  // centro (7)
-  for (let i = 0; i < 7; i++) addLet(p++, 740, pgYTop + i * pgDy)
+  for (let i = 0; i < 9; i++) addLet(p++, 1265, pgYTop + i * pgDy)
+  // metti bp-29 vicino alla colonna centrale (dove cade bp-47..)
+  addLet(29, 740, pgYTop + pgDy)
+  // centro (7) => bp-47..bp-53
+  for (let i = 0; i < 7; i++) addLet(47 + i, 740, pgYTop + i * pgDy)
 
   // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
   // Le righe sono vicino alla siepe (foto 2)
@@ -210,17 +213,17 @@ export function PiscinaMappa() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
         <div className="overflow-auto">
           <svg
-            viewBox="0 0 1600 700"
+            viewBox="0 0 1400 700"
             className="min-w-[900px]"
             style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
             {/* sfondo */}
-            <rect x="0" y="0" width="1600" height="700" fill="#0a0a0a" />
-            <rect x="0" y="210" width="1600" height="490" fill="#164e2b" opacity="0.9" />
-            <rect x="250" y="20" width="1100" height="260" fill="#c9b48a" opacity="0.95" />
+            <rect x="0" y="0" width="1400" height="700" fill="#0a0a0a" />
+            <rect x="0" y="210" width="1400" height="490" fill="#164e2b" opacity="0.9" />
+            <rect x="250" y="20" width="900" height="260" fill="#c9b48a" opacity="0.95" />
 
             {/* edificio top */}
-            <rect x="520" y="0" width="1080" height="50" fill="#2a2a2a" />
+            <rect x="520" y="0" width="880" height="50" fill="#2a2a2a" />
 
             {/* vasca */}
             <path
