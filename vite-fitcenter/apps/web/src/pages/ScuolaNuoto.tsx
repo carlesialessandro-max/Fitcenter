@@ -652,7 +652,7 @@ export function ScuolaNuoto() {
                   {telHref(activeChild.cellulare) ? (
                     <a
                       href={telHref(activeChild.cellulare)!}
-                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                      className="rounded border border-emerald-600/60 bg-emerald-600/15 px-2 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-600/25"
                     >
                       Chiama
                     </a>
@@ -662,7 +662,7 @@ export function ScuolaNuoto() {
                       href={waHref(activeChild.cellulare)!}
                       target="_blank"
                       rel="noreferrer"
-                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                      className="rounded border border-green-600/60 bg-green-600/15 px-2 py-1 text-xs font-semibold text-green-200 hover:bg-green-600/25"
                     >
                       Messaggia
                     </a>
