@@ -298,6 +298,13 @@ export function ScuolaNuoto() {
             </label>
             <button
               type="button"
+              onClick={() => setDate(isoTodayLocal())}
+              className="inline-flex h-10 items-center justify-center rounded-md border border-zinc-700 bg-zinc-900 px-3 text-sm text-zinc-200 hover:bg-zinc-800"
+            >
+              Oggi
+            </button>
+            <button
+              type="button"
               onClick={() => {
                 ovQ.refetch()
                 q.refetch()
@@ -378,15 +385,12 @@ export function ScuolaNuoto() {
                     <th className="px-3 py-2">Età</th>
                     <th className="px-3 py-2">Cellulare</th>
                     <th className="px-3 py-2">Email</th>
-                    <th className="px-3 py-2">Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selected.utenti.map((u, idx) => {
                     const active = u.key === activeChildKey
                     const present = presentKeys.has(u.key)
-                    const tel = telHref(u.cellulare)
-                    const wa = waHref(u.cellulare)
                     return (
                       <tr
                         key={`${u.key}-${idx}`}
@@ -409,30 +413,6 @@ export function ScuolaNuoto() {
                         <td className="px-3 py-2">{u.eta ?? "—"}</td>
                         <td className="px-3 py-2">{u.cellulare ?? "—"}</td>
                         <td className="px-3 py-2">{u.email ?? "—"}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-2">
-                            {tel ? (
-                              <a
-                                href={tel}
-                                onClick={(e) => e.stopPropagation()}
-                                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
-                              >
-                                Chiama
-                              </a>
-                            ) : null}
-                            {wa ? (
-                              <a
-                                href={wa}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) => e.stopPropagation()}
-                                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
-                              >
-                                WhatsApp
-                              </a>
-                            ) : null}
-                          </div>
-                        </td>
                       </tr>
                     )
                   })}
@@ -474,6 +454,28 @@ export function ScuolaNuoto() {
               <div className="mt-1 text-sm text-zinc-200">
                 {activeChild ? `${activeChild.nome ?? ""} ${activeChild.cognome ?? ""}`.trim() || "—" : "Clicca un bambino nella lista"}
               </div>
+              {activeChild ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {telHref(activeChild.cellulare) ? (
+                    <a
+                      href={telHref(activeChild.cellulare)!}
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                    >
+                      Chiama
+                    </a>
+                  ) : null}
+                  {waHref(activeChild.cellulare) ? (
+                    <a
+                      href={waHref(activeChild.cellulare)!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                    >
+                      Messaggia
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="mt-2">
                 <div className="text-xs font-medium text-zinc-500">Note bambino (per questo corso)</div>
                 <textarea

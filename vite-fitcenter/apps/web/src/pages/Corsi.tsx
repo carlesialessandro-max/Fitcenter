@@ -603,31 +603,26 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // Day guard
   if (localYmd(w.start) !== giornoIso) return { present: false, entry: null, exit: null }
 
-  // Regola presenza:
-  // - presente se c'è una "entrata" prima o durante la lezione
-  // - se l'ultimo evento prima dell'inizio è "out", rimane assente finché non rientra (entrata durante la lezione)
-  const startMs = w.start.getTime()
+  // Regola presenza (robusta a ingressi molto prima del corso e a ingressi multipli):
+  // - consideriamo l'ultimo evento entro la fine lezione (+ tolleranza)
+  // - se l'ultimo evento è "in" => presente, se è "out" => assente
   const endMs = (w.end ?? w.start).getTime()
-  const graceBeforeMs = 30 * 60 * 1000
   const graceAfterMs = 60 * 60 * 1000
-  const lo = startMs - graceBeforeMs
-  const hi = endMs + graceAfterMs
+  const cutoffMs = endMs + graceAfterMs
 
-  const hasEntryAround = evs.some((e) => e.kind === "in" && e.t.getTime() >= lo && e.t.getTime() <= hi)
-  if (!hasEntryAround) return { present: false, entry: null, exit: null }
-
-  let lastBefore: AccessEvent | null = null
+  let lastEv: AccessEvent | null = null
+  let lastIn: Date | null = null
+  let lastOutInRange: Date | null = null
   for (const e of evs) {
     const ms = e.t.getTime()
-    if (ms > startMs) break
-    lastBefore = e
+    if (ms > cutoffMs) break
+    lastEv = e
+    if (e.kind === "in") lastIn = e.t
+    if (e.kind === "out") lastOutInRange = e.t
   }
-  if (lastBefore?.kind === "in") return { present: true, entry: firstIn, exit: lastOut }
-
-  // Se è uscita prima dell'inizio (o non c'è nessun evento prima), conta come presente solo se rientra durante la lezione.
-  const enteredDuring = evs.some((e) => e.kind === "in" && e.t.getTime() >= startMs && e.t.getTime() <= hi)
-  const present = enteredDuring
-  return { present, entry: present ? firstIn : null, exit: present ? lastOut : null }
+  if (!lastEv) return { present: false, entry: null, exit: null }
+  const present = lastEv.kind === "in"
+  return { present, entry: present ? (lastIn ?? firstIn) : null, exit: present ? lastOutInRange : null }
 }
 
 /** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */
