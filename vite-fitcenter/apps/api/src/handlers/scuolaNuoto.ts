@@ -95,6 +95,17 @@ function extractTimeHHmm(v: unknown): string | null {
   return null
 }
 
+function extractTimeRangeHHmm(v: unknown): { from: string | null; to: string | null } {
+  if (v == null) return { from: null, to: null }
+  const s = String(v).trim()
+  if (!s) return { from: null, to: null }
+  // Cerca due orari nel testo: supporta "17.00-17.45", "17:00-17:45", "17.00 17.45"
+  const matches = Array.from(s.matchAll(/(\d{1,2})[.:](\d{2})/g)).map((m) => `${String(m[1]).padStart(2, "0")}:${m[2]}`)
+  if (matches.length >= 2) return { from: matches[0] ?? null, to: matches[1] ?? null }
+  const from = extractTimeHHmm(s)
+  return { from, to: null }
+}
+
 function firstNonEmpty(raw: Record<string, unknown>, keys: string[]): string | null {
   for (const k of keys) {
     const v = raw[k]
@@ -331,6 +342,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     istruttore: string | null
     vasca: string | null
     servizio: string | null
+    maxPartecipanti: number | null
     utenti: Participant[]
   }
 
@@ -350,8 +362,9 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       firstNonEmpty(raw, ["CorsiOrario", "Corsi Orario", "OrarioCorso", "Orario Corso", "Orario"]) ??
       firstNonEmptyByKeyContains(raw, ["corsi", "orario"]) ??
       firstNonEmptyByKeyContains(raw, ["orario"])
+    const tr = orarioRaw ? extractTimeRangeHHmm(orarioRaw) : { from: null, to: null }
     const { from, to, label } = orarioRaw
-      ? { from: extractTimeHHmm(orarioRaw), to: null, label: String(orarioRaw) }
+      ? { from: tr.from, to: tr.to, label: String(orarioRaw) }
       : guessOrario(raw)
     const servizio =
       firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "Categoria", "TipoServizio"]) ??
@@ -380,6 +393,16 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     const periodo = firstNonEmpty(raw, ["Periodo", "CorsiPeriodo", "PeriodoDescrizione", "NomePeriodo"])
     const livello =
       firstNonEmpty(raw, ["Livello", "CorsiLivello", "LivelloCorso"]) ?? firstNonEmptyByKeyContains(raw, ["livello"])
+    const maxRaw =
+      firstNonEmpty(raw, ["NrMax", "NumeroMax", "MaxPartecipanti", "NumeroPartecipantiMax", "NumeroPosti", "Nr"]) ??
+      firstNonEmptyByKeyContains(raw, ["nr", "max"]) ??
+      firstNonEmptyByKeyContains(raw, ["numero", "max"])
+    const maxPartecipanti = (() => {
+      const s = String(maxRaw ?? "").trim()
+      const m = s.match(/\b(\d{1,3})\b/)
+      const n = m ? Number(m[1]) : NaN
+      return Number.isFinite(n) ? n : null
+    })()
     const corsoName =
       firstNonEmpty(raw, ["Corso", "NomeCorso", "CorsiNome", "CorsiDescrizione", "DescrizioneCorso", "Descrizione"]) ??
       label ??
@@ -403,6 +426,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
         istruttore,
         vasca,
         servizio,
+        maxPartecipanti,
         utenti: [],
       })
     }

@@ -6,6 +6,17 @@ import { Navigate } from "react-router-dom"
 
 type WeekdayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom"
 
+function weekdayKeyIt(d: Date): WeekdayKey {
+  const map: WeekdayKey[] = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"]
+  return map[d.getDay()] ?? "lun"
+}
+
+function fmtItDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? "").trim())
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
 function corsoTitle(c: ScuolaNuotoCorso): string {
   const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
   const parts = [
@@ -25,7 +36,7 @@ export function ScuolaNuoto() {
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
   if (role !== "admin" && role !== "scuola_nuoto") return <Navigate to="/" replace />
 
-  const [day, setDay] = useState<WeekdayKey>("gio")
+  const [day, setDay] = useState<WeekdayKey>(() => weekdayKeyIt(new Date()))
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeChildKey, setActiveChildKey] = useState<string | null>(null)
   const [childNoteDraft, setChildNoteDraft] = useState<string>("")
@@ -39,8 +50,8 @@ export function ScuolaNuoto() {
   })
 
   const ovQ = useQuery({
-    queryKey: ["scuola-nuoto", "overrides"],
-    queryFn: () => scuolaNuotoApi.overrides(),
+    queryKey: ["scuola-nuoto", "overrides", day],
+    queryFn: () => scuolaNuotoApi.overrides(day),
     staleTime: 5_000,
     refetchOnWindowFocus: false,
   })
@@ -96,21 +107,21 @@ export function ScuolaNuoto() {
   const saveCourseNoteM = useMutation({
     mutationFn: async () => {
       if (!selected) return
-      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft)
+      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, day)
     },
     onSuccess: () => ovQ.refetch(),
   })
   const saveChildNoteM = useMutation({
     mutationFn: async () => {
       if (!selected || !activeChild) return
-      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft)
+      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, day)
     },
     onSuccess: () => ovQ.refetch(),
   })
   const setLevelM = useMutation({
     mutationFn: async (liv: string) => {
       if (!selected || !activeChild) return
-      await scuolaNuotoApi.setLevelOverride(activeChild.key, selected.baseKey, liv)
+      await scuolaNuotoApi.setLevelOverride(activeChild.key, selected.baseKey, liv, day)
     },
     onSuccess: () => {
       ovQ.refetch()
@@ -142,7 +153,7 @@ export function ScuolaNuoto() {
             <p className="text-sm text-zinc-500">
               {q.data ? (
                 <>
-                  {q.data.weekday} · {q.data.today} · corsi: {derivedCorsi.length} (righe: {q.data.countMatched}/{q.data.countRows})
+                  {q.data.weekday} · {fmtItDate(q.data.today)} · corsi: {derivedCorsi.length} (righe: {q.data.countMatched}/{q.data.countRows})
                 </>
               ) : (
                 "Corsi del giorno della settimana (per periodo)"
@@ -210,6 +221,12 @@ export function ScuolaNuoto() {
                   <div className="truncate text-sm font-medium">{corsoTitle(c)}</div>
                   <div className="mt-0.5 text-xs text-zinc-500">
                     Iscritti: <span className="text-zinc-300">{c.utenti.length}</span>
+                    {typeof c.maxPartecipanti === "number" ? (
+                      <>
+                        {" "}
+                        / <span className="text-zinc-300">{c.maxPartecipanti}</span>
+                      </>
+                    ) : null}
                     {c.periodo ? <span className="ml-2">· {c.periodo}</span> : null}
                   </div>
                 </button>

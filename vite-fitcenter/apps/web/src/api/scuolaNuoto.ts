@@ -21,6 +21,7 @@ export type ScuolaNuotoCorso = {
   istruttore: string | null
   vasca: string | null
   servizio: string | null
+  maxPartecipanti: number | null
   utenti: ScuolaNuotoParticipant[]
 }
 
@@ -34,11 +35,13 @@ export type ScuolaNuotoTodayResponse = {
 
 export const scuolaNuotoApi = {
   today: (day?: string) => api.get<ScuolaNuotoTodayResponse>(`/scuola-nuoto/today${day ? `?day=${encodeURIComponent(day)}` : ""}`),
-  overrides: (day?: string) => api.get<{ day: string | null; courseNotes: Record<string, string>; childNotes: Record<string, string>; levelOverrides: Record<string, string> }>(
-    `/scuola-nuoto/overrides${day ? `?day=${encodeURIComponent(day)}` : ""}`
-  ),
+  overrides: (day?: string) =>
+    api.get<{ day: string | null; courseNotes: Record<string, string>; childNotes: Record<string, string>; levelOverrides: Record<string, string> }>(
+      `/scuola-nuoto/overrides${day ? `?day=${encodeURIComponent(day)}` : ""}`
+    ),
   setCourseNote: (baseKey: string, note: string, day?: string) => api.post<{ ok: true }>(`/scuola-nuoto/course-note`, { baseKey, note, day }),
-  setChildNote: (childKey: string, baseKey: string, note: string, day?: string) => api.post<{ ok: true }>(`/scuola-nuoto/child-note`, { childKey, baseKey, note, day }),
+  setChildNote: (childKey: string, baseKey: string, note: string, day?: string) =>
+    api.post<{ ok: true }>(`/scuola-nuoto/child-note`, { childKey, baseKey, note, day }),
   setLevelOverride: (childKey: string, baseKey: string, livello: string, day?: string) =>
     api.post<{ ok: true }>(`/scuola-nuoto/level-override`, { childKey, baseKey, livello, day }),
 }
