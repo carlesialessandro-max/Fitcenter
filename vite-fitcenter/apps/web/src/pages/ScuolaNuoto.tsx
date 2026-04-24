@@ -182,12 +182,25 @@ function buildAccessKeysIndex(rows: AccessoUtenteRow[]): { presentKeys: Set<stri
     }
     if (telKey) push(telKey, dtIn)
   }
+
+  // Normalizza chiavi name: aggiungendo anche il reverse (Nome Cognome <-> Cognome Nome)
+  // per rendere il match robusto quando le viste scambiano i campi.
+  for (const k of Array.from(presentKeys)) {
+    if (!k.startsWith("name:")) continue
+    const rest = k.slice("name:".length)
+    const parts = rest.split(/\s+/).filter(Boolean)
+    if (parts.length < 2) continue
+    const rev = `name:${[parts[parts.length - 1], ...parts.slice(1, -1), parts[0]].filter(Boolean).join(" ")}`
+    if (!presentKeys.has(rev)) presentKeys.add(rev)
+  }
+
   for (const [k, list] of byKey.entries()) {
     list.sort((a, b) => a.getTime() - b.getTime())
     byKey.set(k, list)
   }
   return { presentKeys, byKey, sampleRaw }
 }
+
 
 function corsoTitle(c: ScuolaNuotoCorso): string {
   const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
@@ -342,10 +355,14 @@ export function ScuolaNuoto() {
     const first = times[0]
     const last = times.length ? times[times.length - 1] : undefined
     const rawSample = accessKeys.sampleRaw || "—"
+    const presentSize = presentKeys.size
+    const sampleKeys = Array.from(presentKeys).slice(0, 6).join(",")
     return [
       `DBG date=${q.data?.today ?? date}`,
       `userKey=${userKey}`,
       `accessRows=${accessiQ.data?.rows?.length ?? 0}`,
+      `presentKeys=${presentSize}`,
+      `sampleKeys=${sampleKeys || "—"}`,
       `cands=${cands.join(",") || "—"}`,
       `matched=${matched.join(",") || "—"}`,
       `matchCount=${times.length}`,

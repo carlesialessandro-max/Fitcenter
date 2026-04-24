@@ -92,7 +92,7 @@ function buildSeats(): Seat[] {
   let dx = 1
   // Allinea al margine destro del prato e sposta tutto nel verde (y >= 210)
   // Sposta ancora a destra (~100px) per evitare overlap con il blocco centrale
-  const dxBaseX = 920
+  const dxBaseX = 1020
   const dxBaseY = 340
   for (let i = 0; i < 5; i++) addPostazione("dx", dx++, dxBaseX, dxBaseY + i * 55)
   // Seconda colonna più vicina per rientrare nel viewBox
