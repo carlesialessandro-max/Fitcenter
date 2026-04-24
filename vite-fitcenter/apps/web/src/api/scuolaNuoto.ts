@@ -34,7 +34,13 @@ export type ScuolaNuotoTodayResponse = {
 }
 
 export const scuolaNuotoApi = {
-  today: (day?: string) => api.get<ScuolaNuotoTodayResponse>(`/scuola-nuoto/today${day ? `?day=${encodeURIComponent(day)}` : ""}`),
+  today: (params?: { day?: string; date?: string }) => {
+    const qs = new URLSearchParams()
+    if (params?.day) qs.set("day", params.day)
+    if (params?.date) qs.set("date", params.date)
+    const s = qs.toString()
+    return api.get<ScuolaNuotoTodayResponse>(`/scuola-nuoto/today${s ? `?${s}` : ""}`)
+  },
   overrides: (day?: string) =>
     api.get<{ day: string | null; courseNotes: Record<string, string>; childNotes: Record<string, string>; levelOverrides: Record<string, string> }>(
       `/scuola-nuoto/overrides${day ? `?day=${encodeURIComponent(day)}` : ""}`

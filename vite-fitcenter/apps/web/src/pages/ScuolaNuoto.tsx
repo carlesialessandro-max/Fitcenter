@@ -26,6 +26,25 @@ function isoTodayLocal(): string {
   return `${y}-${m}-${day}`
 }
 
+function digitsPhone(s: unknown): string {
+  return String(s ?? "")
+    .replace(/[^\d+]/g, "")
+    .replace(/^00/, "+")
+    .trim()
+}
+
+function telHref(num: unknown): string | null {
+  const d = digitsPhone(num)
+  if (!d) return null
+  return `tel:${d}`
+}
+
+function waHref(num: unknown): string | null {
+  const d = digitsPhone(num).replace(/^\+/, "")
+  if (!d) return null
+  return `https://wa.me/${d}`
+}
+
 function normalizeText(s: string): string {
   return String(s ?? "")
     .toLowerCase()
@@ -106,7 +125,8 @@ export function ScuolaNuoto() {
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
   if (role !== "admin" && role !== "scuola_nuoto") return <Navigate to="/" replace />
 
-  const [day, setDay] = useState<WeekdayKey>(() => weekdayKeyIt(new Date()))
+  const [date, setDate] = useState<string>(() => isoTodayLocal())
+  const dayKey = useMemo<WeekdayKey>(() => weekdayKeyIt(new Date(`${date}T12:00:00`)), [date])
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeChildKey, setActiveChildKey] = useState<string | null>(null)
   const [childNoteDraft, setChildNoteDraft] = useState<string>("")
@@ -114,33 +134,30 @@ export function ScuolaNuoto() {
   const [targetBaseKey, setTargetBaseKey] = useState<string>("")
 
   const q = useQuery({
-    queryKey: ["scuola-nuoto", "today", day],
-    queryFn: () => scuolaNuotoApi.today(day),
+    queryKey: ["scuola-nuoto", "today", dayKey, date],
+    queryFn: () => scuolaNuotoApi.today({ day: dayKey, date }),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   })
 
-  const todayIso = isoTodayLocal()
-  const isTodaySelected = q.data?.today ? q.data.today === todayIso : false
   const accessiQ = useQuery({
-    queryKey: ["scuola-nuoto", "accessi", q.data?.today ?? todayIso, isTodaySelected],
+    queryKey: ["scuola-nuoto", "accessi", q.data?.today ?? date],
     queryFn: async () => {
-      const dayIso = (q.data?.today ?? todayIso) as string
+      const dayIso = (q.data?.today ?? date) as string
       return prenotazioniApi.listAccessiRange({ from: dayIso, to: dayIso })
     },
-    enabled: Boolean(isTodaySelected),
+    enabled: Boolean(q.data?.today),
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   })
 
   const presentKeys = useMemo(() => {
-    if (!isTodaySelected) return new Set<string>()
-    return buildPresentKeySet(accessiQ.data?.rows ?? [], q.data?.today ?? todayIso)
-  }, [accessiQ.data, isTodaySelected, q.data?.today, todayIso])
+    return buildPresentKeySet(accessiQ.data?.rows ?? [], q.data?.today ?? date)
+  }, [accessiQ.data, q.data?.today, date])
 
   const ovQ = useQuery({
-    queryKey: ["scuola-nuoto", "overrides", day],
-    queryFn: () => scuolaNuotoApi.overrides(day),
+    queryKey: ["scuola-nuoto", "overrides", dayKey],
+    queryFn: () => scuolaNuotoApi.overrides(dayKey),
     staleTime: 5_000,
     refetchOnWindowFocus: false,
   })
@@ -184,14 +201,13 @@ export function ScuolaNuoto() {
 
   const coursePresentCount = useMemo(() => {
     const m = new Map<string, number>()
-    if (!isTodaySelected) return m
     for (const c of derivedCorsi) {
       let n = 0
       for (const u of c.utenti) if (presentKeys.has(u.key)) n += 1
       m.set(c.key, n)
     }
     return m
-  }, [derivedCorsi, isTodaySelected, presentKeys])
+  }, [derivedCorsi, presentKeys])
 
   const selected = useMemo(() => {
     if (!derivedCorsi.length) return null
@@ -217,21 +233,21 @@ export function ScuolaNuoto() {
   const saveCourseNoteM = useMutation({
     mutationFn: async () => {
       if (!selected) return
-      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, day)
+      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, dayKey)
     },
     onSuccess: () => ovQ.refetch(),
   })
   const saveChildNoteM = useMutation({
     mutationFn: async () => {
       if (!selected || !activeChild) return
-      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, day)
+      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, dayKey)
     },
     onSuccess: () => ovQ.refetch(),
   })
   const setLevelM = useMutation({
     mutationFn: async (input: { liv: string; baseKey: string }) => {
       if (!activeChild) return
-      await scuolaNuotoApi.setLevelOverride(activeChild.key, input.baseKey, input.liv, day)
+      await scuolaNuotoApi.setLevelOverride(activeChild.key, input.baseKey, input.liv, dayKey)
     },
     onSuccess: () => {
       ovQ.refetch()
@@ -272,20 +288,13 @@ export function ScuolaNuoto() {
           </div>
           <div className="mt-3 flex w-full flex-col gap-2 sm:mt-0 sm:w-auto sm:flex-row sm:items-end">
             <label className="text-xs text-zinc-500">
-              Giorno
-              <select
-                value={day}
-                onChange={(e) => setDay(e.target.value as WeekdayKey)}
+              Data
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
                 className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              >
-                <option value="lun">Lun</option>
-                <option value="mar">Mar</option>
-                <option value="mer">Mer</option>
-                <option value="gio">Gio</option>
-                <option value="ven">Ven</option>
-                <option value="sab">Sab</option>
-                <option value="dom">Dom</option>
-              </select>
+              />
             </label>
             <button
               type="button"
@@ -316,7 +325,7 @@ export function ScuolaNuoto() {
             ) : null}
             {derivedCorsi.map((c) => {
               const active = selected?.key === c.key
-              const presentCount = isTodaySelected ? (coursePresentCount.get(c.key) ?? 0) : null
+              const presentCount = coursePresentCount.get(c.key) ?? 0
               return (
                 <button
                   key={c.key}
@@ -338,12 +347,8 @@ export function ScuolaNuoto() {
                         / <span className="text-zinc-300">{c.maxPartecipanti}</span>
                       </>
                     ) : null}
-                    {presentCount != null ? (
-                      <>
-                        {" "}
-                        · Presenti: <span className="text-zinc-300">{presentCount}</span>
-                      </>
-                    ) : null}
+                    {" "}
+                    · Presenti: <span className="text-zinc-300">{presentCount}</span>
                     {c.periodo ? <span className="ml-2">· {c.periodo}</span> : null}
                   </div>
                 </button>
@@ -373,12 +378,15 @@ export function ScuolaNuoto() {
                     <th className="px-3 py-2">Età</th>
                     <th className="px-3 py-2">Cellulare</th>
                     <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selected.utenti.map((u, idx) => {
                     const active = u.key === activeChildKey
-                    const present = isTodaySelected ? presentKeys.has(u.key) : null
+                    const present = presentKeys.has(u.key)
+                    const tel = telHref(u.cellulare)
+                    const wa = waHref(u.cellulare)
                     return (
                       <tr
                         key={`${u.key}-${idx}`}
@@ -391,9 +399,9 @@ export function ScuolaNuoto() {
                           <span
                             className={
                               "mr-2 inline-block h-2.5 w-2.5 rounded-full " +
-                              (present == null ? "bg-zinc-700" : present ? "bg-emerald-400" : "bg-zinc-500")
+                              (present ? "bg-emerald-400" : "bg-zinc-500")
                             }
-                            title={present == null ? "Presenza: solo per oggi" : present ? "Presente (entrata registrata)" : "Assente"}
+                            title={present ? "Presente (entrata registrata)" : "Assente"}
                           />
                           {u.nome ?? "—"}
                         </td>
@@ -401,6 +409,30 @@ export function ScuolaNuoto() {
                         <td className="px-3 py-2">{u.eta ?? "—"}</td>
                         <td className="px-3 py-2">{u.cellulare ?? "—"}</td>
                         <td className="px-3 py-2">{u.email ?? "—"}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {tel ? (
+                              <a
+                                href={tel}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                              >
+                                Chiama
+                              </a>
+                            ) : null}
+                            {wa ? (
+                              <a
+                                href={wa}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+                              >
+                                WhatsApp
+                              </a>
+                            ) : null}
+                          </div>
+                        </td>
                       </tr>
                     )
                   })}

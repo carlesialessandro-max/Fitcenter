@@ -243,9 +243,11 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   if (!pool) return res.status(503).json({ message: "SQL non configurato" })
 
   const now = new Date()
-  const isoToday = toIsoDateLocal(now)
+  const dateRaw = String(req.query.date ?? "").trim()
+  const selectedIso = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : toIsoDateLocal(now)
+  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? new Date(`${dateRaw}T12:00:00`) : now
   const requested = parseRequestedDay(req.query.day)
-  const wk = weekdayTokens(requested ?? weekdayKeyIt(now))
+  const wk = weekdayTokens(requested ?? weekdayKeyIt(selectedDate))
 
   const view = sqlViewInfo()
 
@@ -307,7 +309,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   let rows: Record<string, unknown>[] = []
   try {
-    const r = await pool.request().input("today", sql.Date, isoToday).query(q)
+    const r = await pool.request().input("today", sql.Date, selectedIso).query(q)
     rows = (r.recordset ?? []) as any
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e)
@@ -454,7 +456,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   })
 
   return res.json({
-    today: isoToday,
+    today: selectedIso,
     weekday: wk.full,
     countRows: rows.length,
     countMatched: filtered.length,
