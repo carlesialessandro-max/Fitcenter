@@ -64,6 +64,35 @@ function accessNameKey(nome: unknown, cognome: unknown): string | null {
   return n ? `name:${n}` : null
 }
 
+function accessNameKeysFromRow(raw: any, fallbackNome?: unknown, fallbackCognome?: unknown): string[] {
+  const out = new Set<string>()
+  const add = (nome: unknown, cognome: unknown) => {
+    const k = accessNameKey(nome, cognome)
+    if (k) out.add(k)
+  }
+
+  // Primary: separate fields (Nome Cognome)
+  add(fallbackNome, fallbackCognome)
+  // Also accept swapped order (some views store "NomeUtente" as "Cognome Nome")
+  add(fallbackCognome, fallbackNome)
+
+  const nomeUtente = String(raw?.NomeUtente ?? raw?.["Nome utente"] ?? raw?.Nome_utente ?? raw?.Utente ?? "").trim()
+  if (nomeUtente) {
+    const tokens = normalizeText(nomeUtente).split(/\s+/).filter(Boolean)
+    if (tokens.length >= 2) {
+      // as-is
+      out.add(`name:${tokens.join(" ")}`)
+      // swap first/last (covers "Cognome Nome" vs "Nome Cognome")
+      const swapped = [tokens[tokens.length - 1], ...tokens.slice(1, -1), tokens[0]].filter(Boolean).join(" ")
+      out.add(`name:${swapped}`)
+    } else if (tokens.length === 1) {
+      out.add(`name:${tokens[0]}`)
+    }
+  }
+
+  return Array.from(out)
+}
+
 function accessTelKey(raw: any): string | null {
   const tel = String(raw?.SMS ?? raw?.Sms ?? raw?.sms ?? raw?.Cellulare ?? raw?.Telefono ?? raw?.Tel ?? raw?.TelefonoCellulare ?? "").trim()
   return tel ? `tel:${tel}` : null
@@ -139,18 +168,13 @@ function buildPresentKeySet(rows: AccessoUtenteRow[], dayIso: string): Set<strin
     if (id) set.add(`id:${id}`)
     const ek = accessEmailKey(raw)
     if (ek) set.add(ek)
-    const nk = accessNameKey(r.nome, r.cognome)
-    if (nk) {
+    const nameKeys = accessNameKeysFromRow(raw, r.nome, r.cognome)
+    const telKey = accessTelKey(raw)
+    for (const nk of nameKeys) {
       set.add(nk)
-      const telKey = accessTelKey(raw)
-      if (telKey) {
-        set.add(telKey)
-        set.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
-      }
-    } else {
-      const telKey = accessTelKey(raw)
-      if (telKey) set.add(telKey)
+      if (telKey) set.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
     }
+    if (telKey) set.add(telKey)
   }
   return set
 }
