@@ -1,9 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Outlet, Link, useLocation } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 
-type NavItem = { to: string; label: string; children?: NavItem[] }
+type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean }
 
 const navOperatore: NavItem[] = [
   { to: "/", label: "Dashboard" },
@@ -26,21 +26,30 @@ const navScuolaNuoto: NavItem[] = [{ to: "/scuola-nuoto", label: "Scuola Nuoto" 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
-  { to: "/convalide-consulenti", label: "Convalide" },
-  { to: "/attivi-analisi", label: "Attivi" },
-  { to: "/firme", label: "Firme" },
-  { to: "/firma-cassa", label: "Firma Cassa" },
-  { to: "/crm", label: "CRM Vendita" },
-  { to: "/telefonate", label: "Telefonate" },
-  { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
-  { to: "/andamento-vendite", label: "Andamento Vendite" },
-  { to: "/piscina", label: "Mappa Piscina" },
+  {
+    to: "__admin_group__",
+    label: "Admin",
+    group: true,
+    children: [
+      { to: "/convalide-consulenti", label: "Convalide" },
+      { to: "/attivi-analisi", label: "Attivi" },
+      { to: "/firme", label: "Firme" },
+      { to: "/firma-cassa", label: "Firma Cassa" },
+      { to: "/crm", label: "CRM Vendita" },
+      { to: "/telefonate", label: "Telefonate" },
+      { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
+      { to: "/andamento-vendite", label: "Andamento Vendite" },
+      { to: "/piscina", label: "Mappa Piscina" },
+      { to: "/scuola-nuoto", label: "Scuola Nuoto" },
+    ],
+  },
 ] as const
 
 export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [adminOpen, setAdminOpen] = useState<boolean>(true)
   const nav: NavItem[] =
     leadFilter === "bambini"
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
@@ -93,44 +102,96 @@ export function AppLayout() {
         </button>
       </div>
       <nav className="flex flex-col gap-0.5 p-2">
-        {nav.map(({ to, label, children }) => (
+        {nav.map(({ to, label, children, group }) => (
           <div key={to}>
-            <Link
-              to={to}
-              onClick={() => setMobileOpen(false)}
-              className={cn(
-                "rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                location.pathname === to || (to !== "/" && location.pathname.startsWith(to))
-                  ? "bg-amber-500/20 text-amber-400"
-                  : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-              )}
-            >
-              {label}
-            </Link>
-            {children?.length ? (
-              <div className="mt-1 flex flex-col gap-0.5 pl-2">
-                {children.map((c) => (
-                  <Link
-                    key={c.to}
-                    to={c.to}
-                    onClick={() => setMobileOpen(false)}
-                    className={cn(
-                      "rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                      location.pathname === c.to || (c.to !== "/" && location.pathname.startsWith(c.to))
-                        ? "bg-amber-500/20 text-amber-400"
-                        : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
-                    )}
-                  >
-                    {c.label}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
+            {group ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !adminOpen
+                    setAdminOpen(next)
+                    try {
+                      localStorage.setItem("fitcenter-nav-admin-open", next ? "1" : "0")
+                    } catch {}
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    adminOpen ? "text-zinc-200 hover:bg-zinc-800" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                  )}
+                  aria-expanded={adminOpen}
+                >
+                  <span>{label}</span>
+                  <span className="text-xs text-zinc-500">{adminOpen ? "▾" : "▸"}</span>
+                </button>
+                {adminOpen && children?.length ? (
+                  <div className="mt-1 flex flex-col gap-0.5 pl-2">
+                    {children.map((c) => (
+                      <Link
+                        key={c.to}
+                        to={c.to}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                          location.pathname === c.to || (c.to !== "/" && location.pathname.startsWith(c.to))
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                        )}
+                      >
+                        {c.label}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Link
+                  to={to}
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    location.pathname === to || (to !== "/" && location.pathname.startsWith(to))
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                  )}
+                >
+                  {label}
+                </Link>
+                {children?.length ? (
+                  <div className="mt-1 flex flex-col gap-0.5 pl-2">
+                    {children.map((c) => (
+                      <Link
+                        key={c.to}
+                        to={c.to}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          "rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                          location.pathname === c.to || (c.to !== "/" && location.pathname.startsWith(c.to))
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                        )}
+                      >
+                        {c.label}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
         ))}
       </nav>
     </aside>
   )
+
+  useEffect(() => {
+    try {
+      setAdminOpen(localStorage.getItem("fitcenter-nav-admin-open") !== "0")
+    } catch {
+      setAdminOpen(true)
+    }
+  }, [])
 
   return (
     <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">
