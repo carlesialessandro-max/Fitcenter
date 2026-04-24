@@ -56,12 +56,26 @@ function buildSeats(): Seat[] {
 
   // --- Bordo piscina (deck alto) ---
   // Blocco Sinistro (13): sopra 7 (1-7), sotto 6 (8-13)
-  for (let i = 0; i < 7; i++) addLet(1 + i, 300 + i * 30, 80)
-  for (let i = 0; i < 6; i++) addLet(8 + i, 315 + i * 30, 110)
+  // Spostati più in alto per stare fuori dall'acqua.
+  for (let i = 0; i < 7; i++) addLet(1 + i, 300 + i * 30, 55)
+  for (let i = 0; i < 6; i++) addLet(8 + i, 315 + i * 30, 85)
 
   // Blocco Destro (15): sopra 8 (14-21), sotto 7 (22-28)
-  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30, 80)
-  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30, 110)
+  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30, 55)
+  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30, 85)
+
+  // --- Prato: 25 lettini singoli (29..53) ---
+  // Griglia nel prato verde, lontana dalle postazioni (ombrelloni) e dal bordo vasca.
+  let p = 29
+  const pgStartX = 260
+  const pgStartY = 560
+  const pgDx = 32
+  const pgDy = 20
+  for (let row = 0; row < 5; row++) {
+    for (let col = 0; col < 5; col++) {
+      addLet(p++, pgStartX + col * pgDx, pgStartY + row * pgDy)
+    }
+  }
 
   // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
   // Le righe sono vicino alla siepe (foto 2)
@@ -201,28 +215,28 @@ export function PiscinaMappa() {
             {/* sfondo */}
             <rect x="0" y="0" width="1000" height="700" fill="#0a0a0a" />
             <rect x="0" y="210" width="1000" height="490" fill="#164e2b" opacity="0.9" />
-            <rect x="250" y="20" width="700" height="230" fill="#c9b48a" opacity="0.95" />
+            <rect x="250" y="20" width="700" height="260" fill="#c9b48a" opacity="0.95" />
 
             {/* edificio top */}
             <rect x="520" y="0" width="480" height="50" fill="#2a2a2a" />
 
             {/* vasca */}
             <path
-              d="M410,70
-                 C360,70 330,100 330,140
-                 C330,200 410,230 500,230
-                 C590,230 670,200 670,140
-                 C670,100 640,70 590,70
-                 C560,70 540,85 520,110
-                 C500,85 470,70 410,70 Z"
+              d="M410,105
+                 C360,105 330,135 330,175
+                 C330,235 410,265 500,265
+                 C590,265 670,235 670,175
+                 C670,135 640,105 590,105
+                 C560,105 540,120 520,145
+                 C500,120 470,105 410,105 Z"
               fill="#43c6e6"
               stroke="#0e7490"
               strokeWidth="4"
             />
-            <path d="M360,120 C330,135 330,160 360,175 C390,160 390,135 360,120 Z" fill="#7dd3fc" opacity="0.75" />
+            <path d="M360,155 C330,170 330,195 360,210 C390,195 390,170 360,155 Z" fill="#7dd3fc" opacity="0.75" />
 
             {/* passerella basso vasca */}
-            <rect x="430" y="250" width="140" height="30" fill="#c9b48a" />
+            <rect x="430" y="285" width="140" height="30" fill="#c9b48a" />
 
             {/* siepi sinistra */}
             <rect x="20" y="20" width="210" height="190" fill="#0f3d22" opacity="0.9" />
