@@ -133,14 +133,7 @@ function parseAccessDateLocal(val: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function localYmd(d: Date): string {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
-}
-
-function buildPresentKeySet(rows: AccessoUtenteRow[], dayIso: string): Set<string> {
+function buildPresentKeySet(rows: AccessoUtenteRow[]): Set<string> {
   const set = new Set<string>()
   for (const r of rows) {
     const raw = (r.raw ?? {}) as any
@@ -164,7 +157,10 @@ function buildPresentKeySet(rows: AccessoUtenteRow[], dayIso: string): Set<strin
       })() ??
       parseAccessDateLocal(raw?.AccessiData) ??
       null
-    if (!dtIn || localYmd(dtIn) !== dayIso) continue
+    // Nota: i dati arrivano già filtrati dal server per giorno (accessi-range).
+    // Evitiamo un ulteriore filtro client-side su `localYmd(dtIn)` perché può essere falsato
+    // da serializzazione ISO con Z/offset e portare a "tutti grigi".
+    if (!dtIn) continue
     if (id) set.add(`id:${id}`)
     const ek = accessEmailKey(raw)
     if (ek) set.add(ek)
@@ -225,7 +221,7 @@ export function ScuolaNuoto() {
   })
 
   const presentKeys = useMemo(() => {
-    return buildPresentKeySet(accessiQ.data?.rows ?? [], q.data?.today ?? date)
+    return buildPresentKeySet(accessiQ.data?.rows ?? [])
   }, [accessiQ.data, q.data?.today, date])
 
   const ovQ = useQuery({
