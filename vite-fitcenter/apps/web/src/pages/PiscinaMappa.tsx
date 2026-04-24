@@ -66,9 +66,10 @@ function buildSeats(): Seat[] {
   // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
   // Le righe sono vicino alla siepe (foto 2)
   let sx = 1
-  const sxStartX = 70
-  const sxStartY = 260
-  const sxDx = 70
+  // Allinea alla siepe (x vicino al bordo sinistro del prato) e sposta tutto nel verde (y >= 210)
+  const sxStartX = 30
+  const sxStartY = 290
+  const sxDx = 75
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX, sxStartY + i * 36)
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX + sxDx, sxStartY + i * 36)
   for (let i = 0; i < 8; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
@@ -76,7 +77,8 @@ function buildSeats(): Seat[] {
   // --- Prato centrale (3 file): 2 + 4 + 3 postazioni, posizionate dove sono le "X" (screenshot) ---
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
   let cx = 1
-  const cxRowYs = [245, 300, 355]
+  // Spostate leggermente in basso per rimanere nel prato (dopo scala)
+  const cxRowYs = [285, 340, 395]
   const cxLeftXs = [300, 380] // 2 a sinistra
   const cxMidXs = [455, 535, 615, 695] // 4 al centro
   const cxRightXs = [760, 830, 900] // 3 a destra (più a sinistra per non confondersi con DX)
@@ -88,8 +90,9 @@ function buildSeats(): Seat[] {
 
   // --- Prato destra (2 file): 5 e 6 postazioni ---
   let dx = 1
-  const dxBaseX = 740
-  const dxBaseY = 260
+  // Allinea al margine destro del prato e sposta tutto nel verde (y >= 210)
+  const dxBaseX = 880
+  const dxBaseY = 290
   for (let i = 0; i < 5; i++) addPostazione("dx", dx++, dxBaseX, dxBaseY + i * 55)
   for (let i = 0; i < 6; i++) addPostazione("dx", dx++, dxBaseX + 80, dxBaseY + i * 50)
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { scuolaNuotoApi, type ScuolaNuotoCorso } from "@/api/scuolaNuoto"
 import { prenotazioniApi, type AccessoUtenteRow } from "@/api/prenotazioni"
@@ -133,8 +133,18 @@ function parseAccessDateLocal(val: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function buildPresentKeySet(rows: AccessoUtenteRow[]): Set<string> {
-  const set = new Set<string>()
+function buildAccessKeysIndex(rows: AccessoUtenteRow[]): { presentKeys: Set<string>; byKey: Map<string, Date[]>; sampleRaw: string } {
+  const presentKeys = new Set<string>()
+  const byKey = new Map<string, Date[]>()
+  const sampleRaw = String(((rows?.[0] as any)?.raw as any)?.AccessiDataOra ?? "")
+
+  const push = (k: string, t: Date) => {
+    presentKeys.add(k)
+    const list = byKey.get(k) ?? []
+    list.push(t)
+    byKey.set(k, list)
+  }
+
   for (const r of rows) {
     const raw = (r.raw ?? {}) as any
     const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
@@ -161,18 +171,22 @@ function buildPresentKeySet(rows: AccessoUtenteRow[]): Set<string> {
     // Evitiamo un ulteriore filtro client-side su `localYmd(dtIn)` perché può essere falsato
     // da serializzazione ISO con Z/offset e portare a "tutti grigi".
     if (!dtIn) continue
-    if (id) set.add(`id:${id}`)
+    if (id) push(`id:${id}`, dtIn)
     const ek = accessEmailKey(raw)
-    if (ek) set.add(ek)
+    if (ek) push(ek, dtIn)
     const nameKeys = accessNameKeysFromRow(raw, r.nome, r.cognome)
     const telKey = accessTelKey(raw)
     for (const nk of nameKeys) {
-      set.add(nk)
-      if (telKey) set.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
+      push(nk, dtIn)
+      if (telKey) push(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`, dtIn)
     }
-    if (telKey) set.add(telKey)
+    if (telKey) push(telKey, dtIn)
   }
-  return set
+  for (const [k, list] of byKey.entries()) {
+    list.sort((a, b) => a.getTime() - b.getTime())
+    byKey.set(k, list)
+  }
+  return { presentKeys, byKey, sampleRaw }
 }
 
 function corsoTitle(c: ScuolaNuotoCorso): string {
@@ -196,11 +210,20 @@ export function ScuolaNuoto() {
 
   const [date, setDate] = useState<string>(() => isoTodayLocal())
   const dayKey = useMemo<WeekdayKey>(() => weekdayKeyIt(new Date(`${date}T12:00:00`)), [date])
+  const [debugSn, setDebugSn] = useState(false)
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeChildKey, setActiveChildKey] = useState<string | null>(null)
   const [childNoteDraft, setChildNoteDraft] = useState<string>("")
   const [courseNoteDraft, setCourseNoteDraft] = useState<string>("")
   const [targetBaseKey, setTargetBaseKey] = useState<string>("")
+
+  useEffect(() => {
+    try {
+      setDebugSn(localStorage.getItem("fitcenter-debug-scuola-nuoto") === "1")
+    } catch {
+      setDebugSn(false)
+    }
+  }, [])
 
   const q = useQuery({
     queryKey: ["scuola-nuoto", "today", dayKey, date],
@@ -220,9 +243,8 @@ export function ScuolaNuoto() {
     refetchOnWindowFocus: false,
   })
 
-  const presentKeys = useMemo(() => {
-    return buildPresentKeySet(accessiQ.data?.rows ?? [])
-  }, [accessiQ.data, q.data?.today, date])
+  const accessKeys = useMemo(() => buildAccessKeysIndex(accessiQ.data?.rows ?? []), [accessiQ.data])
+  const presentKeys = accessKeys.presentKeys
 
   const ovQ = useQuery({
     queryKey: ["scuola-nuoto", "overrides", dayKey],
@@ -277,6 +299,26 @@ export function ScuolaNuoto() {
     }
     return m
   }, [derivedCorsi, presentKeys])
+
+  function fmtHm(d: Date): string {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  }
+
+  function debugPresenceForKey(userKey: string): string {
+    const times = accessKeys.byKey.get(userKey) ?? []
+    const first = times[0]
+    const last = times.length ? times[times.length - 1] : undefined
+    const rawSample = accessKeys.sampleRaw || "—"
+    return [
+      `DBG date=${q.data?.today ?? date}`,
+      `userKey=${userKey}`,
+      `accessRows=${accessiQ.data?.rows?.length ?? 0}`,
+      `matchCount=${times.length}`,
+      `first=${first ? `${first.toISOString()} (loc=${fmtHm(first)})` : "—"}`,
+      `last=${last ? `${last.toISOString()} (loc=${fmtHm(last)})` : "—"}`,
+      `sampleAccessRaw=${rawSample}`,
+    ].join(" | ")
+  }
 
   const selected = useMemo(() => {
     if (!derivedCorsi.length) return null
@@ -364,6 +406,20 @@ export function ScuolaNuoto() {
                 onChange={(e) => setDate(e.target.value)}
                 className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
               />
+            </label>
+            <label className="flex h-10 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-200">
+              <input
+                type="checkbox"
+                checked={debugSn}
+                onChange={(e) => {
+                  const v = e.target.checked
+                  setDebugSn(v)
+                  try {
+                    localStorage.setItem("fitcenter-debug-scuola-nuoto", v ? "1" : "0")
+                  } catch {}
+                }}
+              />
+              Debug
             </label>
             <button
               type="button"
@@ -477,6 +533,11 @@ export function ScuolaNuoto() {
                             title={present ? "Presente (entrata registrata)" : "Assente"}
                           />
                           {u.nome ?? "—"}
+                          {debugSn ? (
+                            <span className="ml-2 text-[10px] text-zinc-600" title={debugPresenceForKey(u.key)}>
+                              DBG
+                            </span>
+                          ) : null}
                         </td>
                         <td className="px-3 py-2">{u.cognome ?? "—"}</td>
                         <td className="px-3 py-2">{u.eta ?? "—"}</td>
