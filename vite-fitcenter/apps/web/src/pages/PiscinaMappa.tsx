@@ -63,23 +63,24 @@ function buildSeats(): Seat[] {
   // Blocco Destro (15): sopra 8 (14-21), sotto 7 (22-28)
   // Spostati a destra di +500px (richiesta).
   // (aggiustamento: -100px rispetto a prima)
-  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30 + 400, 55)
-  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30 + 400, 85)
+  // Ridotto per mantenere la mappa più stretta.
+  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30 + 200, 55)
+  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30 + 200, 85)
 
   // --- Prato: 25 lettini singoli (29..53) ---
   // Ai margini in fondo al prato (in basso), allineati come i lettini della piscina.
-  // 2 colonne laterali + 1 colonna centrale (9 + 9 + 7 = 25).
-  let p = 29
+  // 3 colonne centrali accanto alla fila bp-47..bp-53:
+  // - col 1: bp-29..bp-37 (9)
+  // - col 2: bp-38..bp-46 (9)
+  // - col 3: bp-47..bp-53 (7)
   const pgYTop = 620
   const pgDy = 18
-  // sinistra (9)
-  for (let i = 0; i < 9; i++) addLet(p++, 35, pgYTop + i * pgDy)
-  // destra (9)
-  for (let i = 0; i < 9; i++) addLet(p++, 1265, pgYTop + i * pgDy)
-  // metti bp-29 vicino alla colonna centrale (dove cade bp-47..)
-  addLet(29, 740, pgYTop + pgDy)
-  // centro (7) => bp-47..bp-53
-  for (let i = 0; i < 7; i++) addLet(47 + i, 740, pgYTop + i * pgDy)
+  const pgX1 = 660
+  const pgX2 = 700
+  const pgX3 = 740
+  for (let i = 0; i < 9; i++) addLet(29 + i, pgX1, pgYTop + i * pgDy)
+  for (let i = 0; i < 9; i++) addLet(38 + i, pgX2, pgYTop + i * pgDy)
+  for (let i = 0; i < 7; i++) addLet(47 + i, pgX3, pgYTop + i * pgDy)
 
   // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
   // Le righe sono vicino alla siepe (foto 2)
@@ -213,17 +214,17 @@ export function PiscinaMappa() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
         <div className="overflow-auto">
           <svg
-            viewBox="0 0 1400 700"
+            viewBox="0 0 1000 700"
             className="min-w-[900px]"
             style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
             {/* sfondo */}
-            <rect x="0" y="0" width="1400" height="700" fill="#0a0a0a" />
-            <rect x="0" y="210" width="1400" height="490" fill="#164e2b" opacity="0.9" />
-            <rect x="250" y="20" width="900" height="260" fill="#c9b48a" opacity="0.95" />
+            <rect x="0" y="0" width="1000" height="700" fill="#0a0a0a" />
+            <rect x="0" y="210" width="1000" height="490" fill="#164e2b" opacity="0.9" />
+            <rect x="250" y="20" width="700" height="260" fill="#c9b48a" opacity="0.95" />
 
             {/* edificio top */}
-            <rect x="520" y="0" width="880" height="50" fill="#2a2a2a" />
+            <rect x="520" y="0" width="480" height="50" fill="#2a2a2a" />
 
             {/* vasca */}
             <path
