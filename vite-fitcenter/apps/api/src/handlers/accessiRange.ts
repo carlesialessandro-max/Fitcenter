@@ -38,33 +38,10 @@ export async function getAccessiUtentiRange(req: Request, res: Response) {
     // Query unica: la vista accessi espone datetime → possiamo filtrare con BETWEEN senza ciclare giorno-per-giorno.
     let rows = await gestionaleSql.queryAccessiUtenti({ from: fromRaw, to: toRaw })
 
-    // Scuola nuoto: mostra solo accessi piscina (i bambini non possono accedere alla palestra).
-    const u = getScopedUser(req)
-    if (u.role === "scuola_nuoto") {
-      const isPiscina = (r: any): boolean => {
-        const raw = (r?.raw ?? {}) as any
-        const blob = [
-          raw?.Concentratore,
-          raw?.concentratore,
-          raw?.Terminale,
-          raw?.terminale,
-          raw?.TerminaleDescrizione,
-          raw?.TerminaleDesc,
-          raw?.DescrizioneTerminale,
-          raw?.Varco,
-          raw?.VarcoDescrizione,
-          raw?.Descrizione,
-          raw?.Note,
-          r?.dataEntrata,
-          r?.dataUscita,
-        ]
-          .map((x) => String(x ?? ""))
-          .join(" ")
-          .toLowerCase()
-        return blob.includes("piscina")
-      }
-      rows = rows.filter(isPiscina)
-    }
+    // Scuola nuoto: niente filtro lato server sugli accessi.
+    // In alcune installazioni la vista accessi non marca sempre "piscina" in modo consistente
+    // e un filtro testuale può escludere accessi validi → pallini sempre grigi.
+    void getScopedUser(req)
 
     res.json({ rows, meta: { fromSql: true, from: fromRaw, to: toRaw, days, count: rows.length } })
   } catch (e) {
