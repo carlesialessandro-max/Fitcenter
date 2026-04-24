@@ -301,12 +301,6 @@ export function ScuolaNuoto() {
     ovQ.data ?? { courseNotes: {}, childNotes: {}, levelOverrides: {} }
   const corsi = q.data?.corsi ?? []
 
-  const levels = useMemo(() => {
-    const s = new Set<string>()
-    for (const c of corsi) if (c.livello) s.add(String(c.livello))
-    return Array.from(s).sort((a, b) => a.localeCompare(b))
-  }, [corsi])
-
   // Deriva corsi applicando override livello per singolo bimbo.
   const derivedCorsi = useMemo(() => {
     const by = new Map<string, ScuolaNuotoCorso>()
@@ -389,11 +383,11 @@ export function ScuolaNuoto() {
   }, [derivedCorsi, selectedKey])
 
   const availableTargets = useMemo(() => {
-    const m = new Map<string, { baseKey: string; label: string }>()
+    const m = new Map<string, { baseKey: string; idCorso: number | null; label: string }>()
     for (const c of corsi) {
       if (!c.baseKey) continue
       if (m.has(c.baseKey)) continue
-      m.set(c.baseKey, { baseKey: c.baseKey, label: corsoTitle(c) })
+      m.set(c.baseKey, { baseKey: c.baseKey, idCorso: (c as any).idCorso ?? null, label: corsoTitle(c) })
     }
     return Array.from(m.values()).sort((a, b) => a.label.localeCompare(b.label))
   }, [corsi])
@@ -417,16 +411,11 @@ export function ScuolaNuoto() {
     },
     onSuccess: () => ovQ.refetch(),
   })
-  const setLevelM = useMutation({
-    mutationFn: async (input: { liv: string; baseKey: string }) => {
-      if (!canMoveLevel) return
-      if (!activeChild) return
-      await scuolaNuotoApi.setLevelOverride(activeChild.key, input.baseKey, input.liv, dayKey)
+  const moveIscrizioneM = useMutation({
+    mutationFn: async (input: { idIscrizione: number; idUtente: number | null; targetIdCorso: number }) => {
+      return scuolaNuotoApi.moveIscrizione(input)
     },
-    onSuccess: () => {
-      ovQ.refetch()
-      q.refetch()
-    },
+    onSuccess: () => q.refetch(),
   })
 
   // Sync drafts on selection changes
@@ -690,9 +679,9 @@ export function ScuolaNuoto() {
               </div>
 
               <div className="mt-3">
-                <div className="text-xs font-medium text-zinc-500">Sposta di livello</div>
+                <div className="text-xs font-medium text-zinc-500">Sposta iscrizione (gestionale)</div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  {canMoveLevel ? "Seleziona il corso/orario di destinazione." : "Disattivato (solo admin)."}
+                  {canMoveLevel ? "Aggiorna dbo.CorsiIscrizione usando l’iscrizione selezionata." : "Disattivato (solo admin)."}
                 </div>
                 <select
                   className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
@@ -707,27 +696,24 @@ export function ScuolaNuoto() {
                     </option>
                   ))}
                 </select>
-                <select
-                  className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-                  disabled={!activeChild || !canMoveLevel}
-                  onChange={(e) => {
-                    const baseKey = (targetBaseKey || selected?.baseKey || "").trim()
-                    if (!baseKey) return
-                    setLevelM.mutate({ liv: e.target.value, baseKey })
-                  }}
-                  value={
-                    activeChild
-                      ? overrides.levelOverrides?.[`${activeChild.key}::${(targetBaseKey || selected?.baseKey || "").trim()}`] ?? ""
-                      : ""
+                <button
+                  type="button"
+                  disabled={
+                    !canMoveLevel ||
+                    !activeChild ||
+                    !activeChild.idIscrizione ||
+                    !targetBaseKey ||
+                    !(availableTargets.find((t) => t.baseKey === targetBaseKey)?.idCorso)
                   }
+                  onClick={() => {
+                    const t = availableTargets.find((x) => x.baseKey === targetBaseKey) ?? null
+                    if (!t?.idCorso || !activeChild?.idIscrizione) return
+                    moveIscrizioneM.mutate({ idIscrizione: activeChild.idIscrizione, idUtente: activeChild.idUtente, targetIdCorso: t.idCorso })
+                  }}
+                  className="mt-2 w-full rounded-md border border-amber-600/50 bg-amber-600/15 px-3 py-2 text-sm font-semibold text-amber-200 hover:bg-amber-600/25 disabled:opacity-50"
                 >
-                  <option value="">(nessun override)</option>
-                  {levels.map((l) => (
-                    <option key={l} value={l}>
-                      {l}
-                    </option>
-                  ))}
-                </select>
+                  Sposta
+                </button>
               </div>
             </div>
           </div>

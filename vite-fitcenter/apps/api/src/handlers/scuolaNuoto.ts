@@ -324,6 +324,8 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   type Participant = {
     key: string
+    idUtente: number | null
+    idIscrizione: number | null
     nome: string | null
     cognome: string | null
     cellulare: string | null
@@ -335,6 +337,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   type Group = {
     key: string
     baseKey: string
+    idCorso: number | null
     corso: string
     oraInizio: string | null
     oraFine: string | null
@@ -419,6 +422,11 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       groups.set(key, {
         key,
         baseKey,
+        idCorso: (() => {
+          const s = String(firstNonEmpty(raw, ["IDCorso", "IdCorso", "CorsiIDCorso"]) ?? "").trim()
+          const n = Number(s)
+          return Number.isFinite(n) ? n : null
+        })(),
         corso: corsoName,
         oraInizio: from,
         oraFine: to,
@@ -436,6 +444,16 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     const pKey = normalizeParticipantKey({ id: idUtente, email, nome, cognome, cellulare })
     groups.get(key)!.utenti.push({
       key: pKey,
+      idUtente: (() => {
+        const s = String(idUtente ?? "").trim()
+        const n = Number(s)
+        return Number.isFinite(n) ? n : null
+      })(),
+      idIscrizione: (() => {
+        const s = String(firstNonEmpty(raw, ["CorsiIDIscrizione", "CorsiIdIscrizione", "IDIscrizione", "IdIscrizione"]) ?? "").trim()
+        const n = Number(s)
+        return Number.isFinite(n) ? n : null
+      })(),
       nome,
       cognome,
       cellulare,

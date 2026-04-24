@@ -2,6 +2,8 @@ import { api } from "./client"
 
 export type ScuolaNuotoParticipant = {
   key: string
+  idUtente: number | null
+  idIscrizione: number | null
   nome: string | null
   cognome: string | null
   cellulare: string | null
@@ -12,6 +14,7 @@ export type ScuolaNuotoParticipant = {
 export type ScuolaNuotoCorso = {
   key: string
   baseKey: string
+  idCorso: number | null
   corso: string
   oraInizio: string | null
   oraFine: string | null
@@ -50,5 +53,7 @@ export const scuolaNuotoApi = {
     api.post<{ ok: true }>(`/scuola-nuoto/child-note`, { childKey, baseKey, note, day }),
   setLevelOverride: (childKey: string, baseKey: string, livello: string, day?: string) =>
     api.post<{ ok: true }>(`/scuola-nuoto/level-override`, { childKey, baseKey, livello, day }),
+  moveIscrizione: (body: { idIscrizione: number; targetIdCorso: number; idUtente?: number | null }) =>
+    api.post<{ ok: true; rowsAffected: number }>(`/scuola-nuoto/move-iscrizione`, body),
 }
 

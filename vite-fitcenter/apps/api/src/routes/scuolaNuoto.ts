@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { requireAuth, requireAdminOrScuolaNuoto } from "../middleware/auth.js"
+import { requireAuth, requireAdmin, requireAdminOrScuolaNuoto } from "../middleware/auth.js"
 import { getScuolaNuotoToday } from "../handlers/scuolaNuoto.js"
 import {
   getScuolaNuotoOverrides,
@@ -7,6 +7,7 @@ import {
   postScuolaNuotoCourseNote,
   postScuolaNuotoLevelOverride,
 } from "../handlers/scuolaNuotoOverrides.js"
+import { postScuolaNuotoMoveIscrizione } from "../handlers/scuolaNuotoMove.js"
 
 export const scuolaNuotoRouter = Router()
 
@@ -18,4 +19,7 @@ scuolaNuotoRouter.get("/overrides", requireAuth, requireAdminOrScuolaNuoto, getS
 scuolaNuotoRouter.post("/course-note", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoCourseNote)
 scuolaNuotoRouter.post("/child-note", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoChildNote)
 scuolaNuotoRouter.post("/level-override", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoLevelOverride)
+
+// Spostamento iscrizione nel gestionale (write SQL) - solo admin.
+scuolaNuotoRouter.post("/move-iscrizione", requireAuth, requireAdmin, postScuolaNuotoMoveIscrizione)
 
