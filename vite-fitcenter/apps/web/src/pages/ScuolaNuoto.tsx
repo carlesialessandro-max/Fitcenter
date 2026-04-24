@@ -58,9 +58,15 @@ function accessEmailKey(raw: any): string | null {
   return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? `email:${e}` : null
 }
 
-function accessNameKey(cognome: unknown, nome: unknown): string | null {
-  const n = normalizeText(`${String(cognome ?? "").trim()} ${String(nome ?? "").trim()}`.trim())
+function accessNameKey(nome: unknown, cognome: unknown): string | null {
+  // Allineata a `normalizeParticipantKey` lato API: "Nome Cognome"
+  const n = normalizeText(`${String(nome ?? "").trim()} ${String(cognome ?? "").trim()}`.trim())
   return n ? `name:${n}` : null
+}
+
+function accessTelKey(raw: any): string | null {
+  const tel = String(raw?.SMS ?? raw?.Sms ?? raw?.sms ?? raw?.Cellulare ?? raw?.Telefono ?? raw?.Tel ?? raw?.TelefonoCellulare ?? "").trim()
+  return tel ? `tel:${tel}` : null
 }
 
 function parseAccessDateLocal(val: unknown): Date | null {
@@ -100,8 +106,18 @@ function buildPresentKeySet(rows: AccessoUtenteRow[], dayIso: string): Set<strin
     if (id) set.add(`id:${id}`)
     const ek = accessEmailKey(raw)
     if (ek) set.add(ek)
-    const nk = accessNameKey(r.cognome, r.nome)
-    if (nk) set.add(nk)
+    const nk = accessNameKey(r.nome, r.cognome)
+    if (nk) {
+      set.add(nk)
+      const telKey = accessTelKey(raw)
+      if (telKey) {
+        set.add(telKey)
+        set.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
+      }
+    } else {
+      const telKey = accessTelKey(raw)
+      if (telKey) set.add(telKey)
+    }
   }
   return set
 }
