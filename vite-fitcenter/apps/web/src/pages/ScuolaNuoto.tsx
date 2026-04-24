@@ -71,7 +71,9 @@ function accessTelKey(raw: any): string | null {
 
 function parseAccessDateLocal(val: unknown): Date | null {
   if (val == null) return null
+  if (val instanceof Date) return Number.isNaN(val.getTime()) ? null : val
   const s = String(val).trim()
+  if (!s) return null
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:\.(\d+))?(?:Z|[+-]\d{2}:?\d{2})$/.exec(s)
   if (m) {
     const yyyy = Number(m[1])
@@ -82,6 +84,19 @@ function parseAccessDateLocal(val: unknown): Date | null {
     const ss = Number(m[6] ?? 0)
     const frac = String(m[7] ?? "0")
     const ms = Number(frac.slice(0, 3).padEnd(3, "0"))
+    const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
+    return Number.isNaN(d.getTime()) ? null : d
+  }
+  // Supporta formato SQL: YYYY-MM-DD HH:mm:ss(.ms) oppure YYYY-MM-DD HH.mm.ss(.ms)
+  const sql = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2})[:\.](\d{2})(?:[:\.](\d{2}))?(?:\.(\d{1,3}))?$/.exec(s)
+  if (sql) {
+    const yyyy = Number(sql[1])
+    const mm = Number(sql[2])
+    const dd = Number(sql[3])
+    const hh = Number(sql[4] ?? 0)
+    const mi = Number(sql[5] ?? 0)
+    const ss = Number(sql[6] ?? 0)
+    const ms = Number((sql[7] ?? "0").padEnd(3, "0"))
     const d = new Date(yyyy, mm - 1, dd, hh, mi, ss, ms)
     return Number.isNaN(d.getTime()) ? null : d
   }
@@ -101,7 +116,25 @@ function buildPresentKeySet(rows: AccessoUtenteRow[], dayIso: string): Set<strin
   for (const r of rows) {
     const raw = (r.raw ?? {}) as any
     const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
-    const dtIn = parseAccessDateLocal(raw?.AccessiDataOra ?? r.dataEntrata ?? raw?.AccessiData ?? raw?.AccessiOra)
+    const dtIn =
+      parseAccessDateLocal(raw?.AccessiDataOra ?? r.dataEntrata) ??
+      (() => {
+        // Alcune viste forniscono data e ora separati (es. AccessiData + AccessiOra con 1900-01-01).
+        const d = parseAccessDateLocal(raw?.AccessiData)
+        const t = parseAccessDateLocal(raw?.AccessiOra)
+        if (!d || !t) return null
+        return new Date(
+          d.getFullYear(),
+          d.getMonth(),
+          d.getDate(),
+          t.getHours(),
+          t.getMinutes(),
+          t.getSeconds(),
+          t.getMilliseconds()
+        )
+      })() ??
+      parseAccessDateLocal(raw?.AccessiData) ??
+      null
     if (!dtIn || localYmd(dtIn) !== dayIso) continue
     if (id) set.add(`id:${id}`)
     const ek = accessEmailKey(raw)
