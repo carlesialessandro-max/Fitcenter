@@ -78,7 +78,7 @@ function buildSeats(): Seat[] {
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
   let cx = 1
   // Spostate leggermente in basso per rimanere nel prato (dopo scala)
-  const cxRowYs = [285, 340, 395]
+  const cxRowYs = [340, 395, 450]
   const cxLeftXs = [300, 380] // 2 a sinistra
   const cxMidXs = [455, 535, 615, 695] // 4 al centro
   const cxRightXs = [760, 830, 900] // 3 a destra (più a sinistra per non confondersi con DX)
@@ -91,10 +91,12 @@ function buildSeats(): Seat[] {
   // --- Prato destra (2 file): 5 e 6 postazioni ---
   let dx = 1
   // Allinea al margine destro del prato e sposta tutto nel verde (y >= 210)
-  const dxBaseX = 880
-  const dxBaseY = 290
+  // Sposta ancora a destra (~100px) per evitare overlap con il blocco centrale
+  const dxBaseX = 920
+  const dxBaseY = 340
   for (let i = 0; i < 5; i++) addPostazione("dx", dx++, dxBaseX, dxBaseY + i * 55)
-  for (let i = 0; i < 6; i++) addPostazione("dx", dx++, dxBaseX + 80, dxBaseY + i * 50)
+  // Seconda colonna più vicina per rientrare nel viewBox
+  for (let i = 0; i < 6; i++) addPostazione("dx", dx++, dxBaseX + 60, dxBaseY + i * 50)
 
   return out
 }

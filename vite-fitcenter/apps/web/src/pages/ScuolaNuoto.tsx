@@ -246,6 +246,36 @@ export function ScuolaNuoto() {
   const accessKeys = useMemo(() => buildAccessKeysIndex(accessiQ.data?.rows ?? []), [accessiQ.data])
   const presentKeys = accessKeys.presentKeys
 
+  function participantCandidateKeys(u: any): string[] {
+    const out = new Set<string>()
+    const k = String(u?.key ?? "").trim()
+    if (k) out.add(k)
+
+    const email = String(u?.email ?? "").trim().toLowerCase()
+    if (email && email.includes("@")) out.add(`email:${email}`)
+
+    const nome = String(u?.nome ?? "").trim()
+    const cognome = String(u?.cognome ?? "").trim()
+    const nk1 = accessNameKey(nome, cognome)
+    const nk2 = accessNameKey(cognome, nome)
+    if (nk1) out.add(nk1)
+    if (nk2) out.add(nk2)
+
+    const tel = String(u?.cellulare ?? "").trim()
+    const telKey = tel ? `tel:${tel}` : null
+    if (telKey) out.add(telKey)
+    for (const nk of [nk1, nk2]) {
+      if (nk && telKey) out.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
+    }
+
+    return Array.from(out)
+  }
+
+  function isPresentParticipant(u: any): boolean {
+    const cands = participantCandidateKeys(u)
+    return cands.some((kk) => presentKeys.has(kk))
+  }
+
   const ovQ = useQuery({
     queryKey: ["scuola-nuoto", "overrides", dayKey],
     queryFn: () => scuolaNuotoApi.overrides(dayKey),
@@ -294,7 +324,7 @@ export function ScuolaNuoto() {
     const m = new Map<string, number>()
     for (const c of derivedCorsi) {
       let n = 0
-      for (const u of c.utenti) if (presentKeys.has(u.key)) n += 1
+      for (const u of c.utenti) if (isPresentParticipant(u)) n += 1
       m.set(c.key, n)
     }
     return m
@@ -304,8 +334,11 @@ export function ScuolaNuoto() {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
   }
 
-  function debugPresenceForKey(userKey: string): string {
-    const times = accessKeys.byKey.get(userKey) ?? []
+  function debugPresenceForUser(u: any): string {
+    const userKey = String(u?.key ?? "")
+    const cands = participantCandidateKeys(u)
+    const matched = cands.filter((kk) => presentKeys.has(kk))
+    const times = matched.length ? (accessKeys.byKey.get(matched[0]!) ?? []) : []
     const first = times[0]
     const last = times.length ? times[times.length - 1] : undefined
     const rawSample = accessKeys.sampleRaw || "—"
@@ -313,6 +346,8 @@ export function ScuolaNuoto() {
       `DBG date=${q.data?.today ?? date}`,
       `userKey=${userKey}`,
       `accessRows=${accessiQ.data?.rows?.length ?? 0}`,
+      `cands=${cands.join(",") || "—"}`,
+      `matched=${matched.join(",") || "—"}`,
       `matchCount=${times.length}`,
       `first=${first ? `${first.toISOString()} (loc=${fmtHm(first)})` : "—"}`,
       `last=${last ? `${last.toISOString()} (loc=${fmtHm(last)})` : "—"}`,
@@ -515,7 +550,7 @@ export function ScuolaNuoto() {
                 <tbody>
                   {selected.utenti.map((u, idx) => {
                     const active = u.key === activeChildKey
-                    const present = presentKeys.has(u.key)
+                    const present = isPresentParticipant(u)
                     return (
                       <tr
                         key={`${u.key}-${idx}`}
@@ -534,7 +569,7 @@ export function ScuolaNuoto() {
                           />
                           {u.nome ?? "—"}
                           {debugSn ? (
-                            <span className="ml-2 text-[10px] text-zinc-600" title={debugPresenceForKey(u.key)}>
+                            <span className="ml-2 text-[10px] text-zinc-600" title={debugPresenceForUser(u)}>
                               DBG
                             </span>
                           ) : null}
