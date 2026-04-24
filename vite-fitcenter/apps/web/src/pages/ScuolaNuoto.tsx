@@ -220,6 +220,7 @@ export function ScuolaNuoto() {
   const { role } = useAuth()
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
   if (role !== "admin" && role !== "scuola_nuoto") return <Navigate to="/" replace />
+  const canMoveLevel = role === "admin"
 
   const [date, setDate] = useState<string>(() => isoTodayLocal())
   const dayKey = useMemo<WeekdayKey>(() => weekdayKeyIt(new Date(`${date}T12:00:00`)), [date])
@@ -418,6 +419,7 @@ export function ScuolaNuoto() {
   })
   const setLevelM = useMutation({
     mutationFn: async (input: { liv: string; baseKey: string }) => {
+      if (!canMoveLevel) return
       if (!activeChild) return
       await scuolaNuotoApi.setLevelOverride(activeChild.key, input.baseKey, input.liv, dayKey)
     },
@@ -689,10 +691,12 @@ export function ScuolaNuoto() {
 
               <div className="mt-3">
                 <div className="text-xs font-medium text-zinc-500">Sposta di livello</div>
-                <div className="mt-1 text-xs text-zinc-500">Seleziona il corso/orario di destinazione.</div>
+                <div className="mt-1 text-xs text-zinc-500">
+                  {canMoveLevel ? "Seleziona il corso/orario di destinazione." : "Disattivato (solo admin)."}
+                </div>
                 <select
                   className="mt-2 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-                  disabled={!activeChild}
+                  disabled={!activeChild || !canMoveLevel}
                   value={targetBaseKey || selected?.baseKey || ""}
                   onChange={(e) => setTargetBaseKey(e.target.value)}
                 >
@@ -705,7 +709,7 @@ export function ScuolaNuoto() {
                 </select>
                 <select
                   className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-                  disabled={!activeChild}
+                  disabled={!activeChild || !canMoveLevel}
                   onChange={(e) => {
                     const baseKey = (targetBaseKey || selected?.baseKey || "").trim()
                     if (!baseKey) return
