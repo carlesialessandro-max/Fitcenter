@@ -61,21 +61,22 @@ function buildSeats(): Seat[] {
   for (let i = 0; i < 6; i++) addLet(8 + i, 315 + i * 30, 85)
 
   // Blocco Destro (15): sopra 8 (14-21), sotto 7 (22-28)
-  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30, 55)
-  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30, 85)
+  // Spostati a destra di +500px (richiesta).
+  for (let i = 0; i < 8; i++) addLet(14 + i, 540 + i * 30 + 500, 55)
+  for (let i = 0; i < 7; i++) addLet(22 + i, 555 + i * 30 + 500, 85)
 
   // --- Prato: 25 lettini singoli (29..53) ---
-  // Griglia nel prato verde, lontana dalle postazioni (ombrelloni) e dal bordo vasca.
+  // Ai margini in fondo al prato (in basso), allineati come i lettini della piscina.
+  // 2 colonne laterali + 1 colonna centrale (9 + 9 + 7 = 25).
   let p = 29
-  const pgStartX = 260
-  const pgStartY = 560
-  const pgDx = 32
-  const pgDy = 20
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      addLet(p++, pgStartX + col * pgDx, pgStartY + row * pgDy)
-    }
-  }
+  const pgYTop = 620
+  const pgDy = 18
+  // sinistra (9)
+  for (let i = 0; i < 9; i++) addLet(p++, 35, pgYTop + i * pgDy)
+  // destra (9)
+  for (let i = 0; i < 9; i++) addLet(p++, 1445, pgYTop + i * pgDy)
+  // centro (7)
+  for (let i = 0; i < 7; i++) addLet(p++, 740, pgYTop + i * pgDy)
 
   // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
   // Le righe sono vicino alla siepe (foto 2)
@@ -92,7 +93,8 @@ function buildSeats(): Seat[] {
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
   let cx = 1
   // Spostate leggermente in basso per rimanere nel prato (dopo scala)
-  const cxRowYs = [340, 395, 450]
+  // Abbassate: così pr-cx-04/05 finiscono sicuramente su verde (dopo scala).
+  const cxRowYs = [420, 475, 530]
   const cxLeftXs = [300, 380] // 2 a sinistra
   const cxMidXs = [455, 535, 615, 695] // 4 al centro
   const cxRightXs = [760, 830, 900] // 3 a destra (più a sinistra per non confondersi con DX)
@@ -208,17 +210,17 @@ export function PiscinaMappa() {
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
         <div className="overflow-auto">
           <svg
-            viewBox="0 0 1000 700"
+            viewBox="0 0 1600 700"
             className="min-w-[900px]"
             style={{ transform: `scale(${zoom})`, transformOrigin: "0 0" }}
           >
             {/* sfondo */}
-            <rect x="0" y="0" width="1000" height="700" fill="#0a0a0a" />
-            <rect x="0" y="210" width="1000" height="490" fill="#164e2b" opacity="0.9" />
-            <rect x="250" y="20" width="700" height="260" fill="#c9b48a" opacity="0.95" />
+            <rect x="0" y="0" width="1600" height="700" fill="#0a0a0a" />
+            <rect x="0" y="210" width="1600" height="490" fill="#164e2b" opacity="0.9" />
+            <rect x="250" y="20" width="1100" height="260" fill="#c9b48a" opacity="0.95" />
 
             {/* edificio top */}
-            <rect x="520" y="0" width="480" height="50" fill="#2a2a2a" />
+            <rect x="520" y="0" width="1080" height="50" fill="#2a2a2a" />
 
             {/* vasca */}
             <path
