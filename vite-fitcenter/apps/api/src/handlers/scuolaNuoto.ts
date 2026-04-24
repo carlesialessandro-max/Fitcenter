@@ -352,7 +352,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     const idUtente = firstNonEmpty(raw, ["IDUtente", "IdUtente", "idUtente", "IDCliente", "IdCliente", "IDAnagrafica"])
     const nome = firstNonEmpty(raw, ["Nome", "nome", "UtenteNome", "ClienteNome", "AnagraficaNome"])
     const cognome = firstNonEmpty(raw, ["Cognome", "cognome", "UtenteCognome", "ClienteCognome", "AnagraficaCognome"])
-    const cellulare = firstNonEmpty(raw, ["Cellulare", "Telefono", "Tel", "TelefonoCellulare"])
+    const cellulare = firstNonEmpty(raw, ["SMS", "Sms", "sms", "Cellulare", "Telefono", "Tel", "TelefonoCellulare"])
     const email = firstNonEmpty(raw, ["Email", "E-mail", "Mail"])
     const etaRaw = firstNonEmpty(raw, ["Eta", "Età", "Anni"])
     const eta = etaRaw != null && /^\d+$/.test(etaRaw.trim()) ? Number(etaRaw.trim()) : null
