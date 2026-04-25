@@ -216,6 +216,18 @@ function corsoTitle(c: ScuolaNuotoCorso): string {
   return parts.join(" · ")
 }
 
+function timeBucket(oraInizio: string | null | undefined): "morning" | "midday" | "afternoon" | "evening" | "unknown" {
+  const s = String(oraInizio ?? "").trim()
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+  if (!m) return "unknown"
+  const hh = Number(m[1])
+  if (!Number.isFinite(hh)) return "unknown"
+  if (hh < 12) return "morning"
+  if (hh < 15) return "midday"
+  if (hh < 18) return "afternoon"
+  return "evening"
+}
+
 export function ScuolaNuoto() {
   const { role } = useAuth()
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
@@ -510,6 +522,17 @@ export function ScuolaNuoto() {
             {derivedCorsi.map((c) => {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
+              const bucket = timeBucket(c.oraInizio)
+              const bucketCls =
+                bucket === "morning"
+                  ? "ring-1 ring-sky-500/25"
+                  : bucket === "midday"
+                    ? "ring-1 ring-amber-500/25"
+                    : bucket === "afternoon"
+                      ? "ring-1 ring-emerald-500/25"
+                      : bucket === "evening"
+                        ? "ring-1 ring-fuchsia-500/25"
+                        : ""
               return (
                 <button
                   key={c.key}
@@ -517,6 +540,8 @@ export function ScuolaNuoto() {
                   onClick={() => setSelectedKey(c.key)}
                   className={
                     "w-full rounded-lg border px-3 py-2 text-left transition-colors " +
+                    bucketCls +
+                    " " +
                     (active
                       ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
                       : "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60")

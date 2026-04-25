@@ -3,6 +3,7 @@ import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, ge
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth } from "../middleware/auth.js"
 import multer from "multer"
+import { getIncassi } from "../handlers/incassi.js"
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
 
@@ -36,6 +37,7 @@ dataRouter.post("/ore-lavorate", postOraLavorata)
 dataRouter.delete("/ore-lavorate/:id", deleteOraLavorata)
 dataRouter.get("/report-consulenti", requireAdmin, getReportConsulenti)
 dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
+dataRouter.get("/incassi", requireAdmin, getIncassi)
 dataRouter.get("/campus", getCampus)
 dataRouter.patch("/campus/:clienteId", patchCampusCliente)
 dataRouter.patch("/campus/:clienteId/weeks/:weekKey", patchCampusWeekNote)

@@ -2531,6 +2531,59 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
   }
 }
 
+function getIncassiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_ABBONAMENTI_PAGAMENTI ?? "RVW_AbbonamentiPagamentiUtenti").trim()
+  if (!raw) return "RVW_AbbonamentiPagamentiUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_AbbonamentiPagamentiUtenti"
+  return raw
+}
+
+export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" }): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getIncassiViewName()
+  const vq = qualifySqlObject(view).query
+  const cols = await prenGetCols(view)
+  const set = new Set(cols)
+  const dateCol =
+    (set.has("dataoperazione") ? "DataOperazione" : null) ??
+    (set.has("datapagamento") ? "DataPagamento" : null) ??
+    (set.has("data") ? "Data" : null) ??
+    (set.has("dataora") ? "DataOra" : null) ??
+    "DataOperazione"
+
+  const r = await p
+    .request()
+    .input("from", sql.VarChar(10), params.from)
+    .input("to", sql.VarChar(10), params.to)
+    .query(
+      `SELECT * FROM ${vq}
+       WHERE (${sqlDateBetweenFastExpr(dateCol, "@from", "@to")} OR ${sqlDateBetweenExpr(dateCol, "@from", "@to")})
+       ORDER BY ${bracketCol(dateCol)} DESC;`
+    )
+  const rows = (r.recordset ?? []) as Record<string, unknown>[]
+  if (params.segment === "all") return rows
+
+  const wantBambini = params.segment === "bambini"
+  const match = (row: Record<string, unknown>) => {
+    const blob = [
+      row.NomeCorso,
+      row.Corso,
+      row.Servizio,
+      row.CategoriaDescrizione,
+      row.MacroCategoriaAbbonamentoDescrizione,
+      row.CategoriaAbbonamentoDescrizione,
+      row.Descrizione,
+    ]
+      .map((x) => String(x ?? ""))
+      .join(" ")
+      .toUpperCase()
+    const isB = blob.includes("BAMBIN")
+    return wantBambini ? isB : !isB
+  }
+  return rows.filter(match)
+}
+
 /**
  * Imposta "Blocca prenotazioni fino al" nel gestionale.
  *

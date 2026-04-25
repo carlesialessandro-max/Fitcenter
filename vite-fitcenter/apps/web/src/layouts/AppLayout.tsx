@@ -39,6 +39,7 @@ const navAdmin: NavItem[] = [
       { to: "/telefonate", label: "Telefonate" },
       { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
       { to: "/andamento-vendite", label: "Andamento Vendite" },
+      { to: "/incassi", label: "Incassi" },
       { to: "/piscina", label: "Mappa Piscina" },
       { to: "/scuola-nuoto", label: "Scuola Nuoto" },
     ],
