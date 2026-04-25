@@ -228,6 +228,24 @@ function timeBucket(oraInizio: string | null | undefined): "morning" | "midday" 
   return "evening"
 }
 
+function hourColor(oraInizio: string | null | undefined): { cls: string; label: string } {
+  const s = String(oraInizio ?? "").trim()
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s)
+  const hh = m ? Number(m[1]) : NaN
+  if (!Number.isFinite(hh)) return { cls: "", label: "" }
+  if (hh === 16) return { cls: "border-yellow-500/40 bg-yellow-500/10 text-yellow-100", label: "16" }
+  if (hh === 17) return { cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100", label: "17" }
+  if (hh === 18) return { cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-100", label: "18" }
+  if (hh === 19) return { cls: "border-sky-500/40 bg-sky-500/10 text-sky-100", label: "19" }
+  if (hh === 20) return { cls: "border-orange-500/40 bg-orange-500/10 text-orange-100", label: "20" }
+  const bucket = timeBucket(oraInizio)
+  if (bucket === "morning") return { cls: "border-sky-500/30 bg-sky-500/5 text-zinc-100", label: "" }
+  if (bucket === "midday") return { cls: "border-amber-500/30 bg-amber-500/5 text-zinc-100", label: "" }
+  if (bucket === "afternoon") return { cls: "border-emerald-500/30 bg-emerald-500/5 text-zinc-100", label: "" }
+  if (bucket === "evening") return { cls: "border-fuchsia-500/30 bg-fuchsia-500/5 text-zinc-100", label: "" }
+  return { cls: "", label: "" }
+}
+
 export function ScuolaNuoto() {
   const { role } = useAuth()
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
@@ -522,17 +540,7 @@ export function ScuolaNuoto() {
             {derivedCorsi.map((c) => {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
-              const bucket = timeBucket(c.oraInizio)
-              const bucketCls =
-                bucket === "morning"
-                  ? "ring-1 ring-sky-500/25"
-                  : bucket === "midday"
-                    ? "ring-1 ring-amber-500/25"
-                    : bucket === "afternoon"
-                      ? "ring-1 ring-emerald-500/25"
-                      : bucket === "evening"
-                        ? "ring-1 ring-fuchsia-500/25"
-                        : ""
+              const hc = hourColor(c.oraInizio)
               return (
                 <button
                   key={c.key}
@@ -540,14 +548,21 @@ export function ScuolaNuoto() {
                   onClick={() => setSelectedKey(c.key)}
                   className={
                     "w-full rounded-lg border px-3 py-2 text-left transition-colors " +
-                    bucketCls +
+                    hc.cls +
                     " " +
                     (active
-                      ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                      ? "ring-2 ring-amber-400/40"
                       : "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60")
                   }
                 >
-                  <div className="truncate text-sm font-medium">{corsoTitle(c)}</div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="truncate text-sm font-medium">{corsoTitle(c)}</div>
+                    {hc.label ? (
+                      <span className="shrink-0 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-200">
+                        {hc.label}
+                      </span>
+                    ) : null}
+                  </div>
                   <div className="mt-0.5 text-xs text-zinc-500">
                     Iscritti: <span className="text-zinc-300">{c.utenti.length}</span>
                     {typeof c.maxPartecipanti === "number" ? (

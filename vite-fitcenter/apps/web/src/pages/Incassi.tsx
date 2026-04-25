@@ -4,7 +4,7 @@ import { Navigate } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
-type Segment = "all" | "adulti" | "bambini"
+type Segment = "all" | "adulti" | "bambini" | "danza"
 
 type IncassiResponse = {
   from: string
@@ -44,12 +44,23 @@ export function Incassi() {
 
   const rows = q.data?.rows ?? []
   const cols = useMemo(() => {
+    // Tabella pulita: poche colonne utili.
     const s = new Set<string>()
     for (const r of rows) for (const k of Object.keys(r)) s.add(k)
-    const preferred = ["DataOperazione", "DataPagamento", "Data", "Importo", "Totale", "Metodo", "Cognome", "Nome", "NomeCorso", "Descrizione"]
-    const rest = Array.from(s).filter((k) => !preferred.includes(k)).sort((a, b) => a.localeCompare(b))
-    return [...preferred.filter((k) => s.has(k)), ...rest].slice(0, 16)
+    const preferred = ["DataOperazione", "DataPagamento", "Data", "Cliente", "Cognome", "Nome", "Abbonamento", "Servizio", "NomeCorso", "CategoriaDescrizione"]
+    const have = preferred.filter((k) => s.has(k))
+    return have.slice(0, 6)
   }, [rows])
+
+  function rowAmount(r: Record<string, unknown>): number {
+    const candidates = ["Importo", "Totale", "ImportoPagato", "ImportoTotale", "Prezzo", "importo", "totale"]
+    for (const k of candidates) {
+      const v = Number((r as any)[k])
+      if (Number.isFinite(v) && v !== 0) return v
+    }
+    const v0 = Number((r as any).Importo ?? (r as any).Totale ?? 0)
+    return Number.isFinite(v0) ? v0 : 0
+  }
 
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
@@ -88,6 +99,7 @@ export function Incassi() {
                 <option value="all">Tutti</option>
                 <option value="adulti">Adulti</option>
                 <option value="bambini">Bambini</option>
+                <option value="danza">Danza</option>
               </select>
             </label>
           </div>
@@ -108,6 +120,7 @@ export function Incassi() {
         <table className="min-w-[900px] w-full table-auto">
           <thead className="bg-zinc-950/40">
             <tr className="text-left text-xs text-zinc-500">
+              <th className="px-3 py-2">Importo</th>
               {cols.map((c) => (
                 <th key={c} className="px-3 py-2">
                   {c}
@@ -118,6 +131,9 @@ export function Incassi() {
           <tbody>
             {rows.map((r, idx) => (
               <tr key={idx} className="border-t border-zinc-800 text-sm text-zinc-200">
+                <td className="px-3 py-2 whitespace-nowrap font-semibold text-amber-300">
+                  {eur(rowAmount(r))}
+                </td>
                 {cols.map((c) => (
                   <td key={c} className="px-3 py-2 whitespace-nowrap">
                     {String((r as any)[c] ?? "—")}

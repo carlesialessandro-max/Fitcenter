@@ -2221,7 +2221,7 @@ export async function getVenditeMovimentiCategoriaDurata(
        RigheView AS (
          SELECT
            R.[${viewCfg.colJoin}] AS ID,
-           COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], R.[Descrizione], ${categoriaExpr}) AS Abbonamento,
+           COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr}) AS Abbonamento,
            TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
          FROM [${viewCfg.view}] R
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
@@ -2603,7 +2603,7 @@ function getIncassiViewName(): string {
   return raw
 }
 
-export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" }): Promise<Record<string, unknown>[]> {
+export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" | "danza" }): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
   const view = getIncassiViewName()
@@ -2629,24 +2629,14 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
   const rows = (r.recordset ?? []) as Record<string, unknown>[]
   if (params.segment === "all") return rows
 
-  const wantBambini = params.segment === "bambini"
-  const match = (row: Record<string, unknown>) => {
-    const blob = [
-      row.NomeCorso,
-      row.Corso,
-      row.Servizio,
-      row.CategoriaDescrizione,
-      row.MacroCategoriaAbbonamentoDescrizione,
-      row.CategoriaAbbonamentoDescrizione,
-      row.Descrizione,
-    ]
-      .map((x) => String(x ?? ""))
-      .join(" ")
-      .toUpperCase()
-    const isB = blob.includes("BAMBIN")
-    return wantBambini ? isB : !isB
-  }
-  return rows.filter(match)
+  const want =
+    params.segment === "adulti"
+      ? "CLIENTE"
+      : params.segment === "bambini"
+        ? "KIDS"
+        : "DANZA"
+
+  return rows.filter((row) => String((row as any).CategoriaDescrizione ?? "").trim().toUpperCase() === want)
 }
 
 /**
