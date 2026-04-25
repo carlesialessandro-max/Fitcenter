@@ -12,6 +12,7 @@ function exportAndamentoPdf(args: {
   to?: string
   byCategoria: { name: string; count: number; pct: number; euro: number }[]
   byDurata: { name: string; count: number; pct: number; euro: number }[]
+  byAbbonamento?: { name: string; count: number; euro: number }[]
 }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
   doc.setFontSize(14)
@@ -46,6 +47,22 @@ function exportAndamentoPdf(args: {
     styles: { fontSize: 9 },
     headStyles: { fillColor: [16, 185, 129] },
   })
+
+  const y2 = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 60
+  if (args.byAbbonamento?.length) {
+    autoTable(doc, {
+      startY: y2,
+      head: [["Abbonamento", "Movimenti", "Totale €"]],
+      body: args.byAbbonamento.map((r) => [
+        r.name,
+        String(r.count),
+        r.euro.toLocaleString("it-IT", { minimumFractionDigits: 2 }),
+      ]),
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [245, 158, 11] },
+      columnStyles: { 0: { cellWidth: 110 } },
+    })
+  }
   doc.save(`andamento-vendite-${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
@@ -196,6 +213,11 @@ export function AndamentoAbbonamenti() {
                     to: venditeMovimentiAndamento?.to,
                     byCategoria: computed.byCategoria,
                     byDurata: computed.byDurata,
+                    byAbbonamento: (venditeMovimentiAndamento as any)?.byAbbonamento?.map((r: any) => ({
+                      name: String(r.abbonamento ?? "—"),
+                      count: Number(r.count ?? 0) || 0,
+                      euro: Number(r.totalEuro ?? 0) || 0,
+                    })) ?? [],
                   })
                 }
                 className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"

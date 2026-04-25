@@ -638,12 +638,17 @@ export async function queryMovimentiVendutoSumByIscrizione(from: string, to: str
   try {
     const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     const tipoWhere = sqlWhereTipoOperazioneMovimentoVendita("M")
+    const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+    const dateExpr = (col: string) =>
+      dateShiftH
+        ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+        : `CAST(${col} AS DATE)`
     const r = await req.query(
       `SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
        FROM [${tbl}] M
        WHERE M.[${COL_IMPORTO}] > 0
-         AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+         AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+         AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
          ${tipoWhere}
        GROUP BY M.[${COL_ISCRIZIONE}]
        ORDER BY M.[${COL_ISCRIZIONE}]`
@@ -1650,6 +1655,11 @@ function sqlTotaleReportPerIscrizione(args: {
   fromParam: "@dataInizio" | "@from"
   toParam: "@dataFine" | "@to"
 }): string {
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
   // Replica report: Temp_Stampe = IDIscrizione con movimento nel periodo (da MovimentiVenduto),
   // poi somma Totale dalla view una volta per iscrizione (MAX per sicurezza).
   const tipoOp = movimentoTipoOperazioneVendita()
@@ -1659,8 +1669,8 @@ function sqlTotaleReportPerIscrizione(args: {
     SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
     FROM [${args.tblMov}] M
     WHERE M.[${COL_IMPORTO}] > 0
-      AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(${args.fromParam} AS DATE)
-      AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(${args.toParam} AS DATE)
+      AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(${args.fromParam} AS DATE)
+      AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(${args.toParam} AS DATE)
       ${whereTipo}
   ),
   UnaPerIscrizione AS (
@@ -1816,12 +1826,17 @@ async function queryVenditeSum(
       ids.forEach((id, i) => {
         req = req.input(`id${i}`, sql.Int, id)
       })
+      const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+      const dateExpr = (col: string) =>
+        dateShiftH
+          ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+          : `CAST(${col} AS DATE)`
       const r = await req.query(
         `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
          FROM [${tbl}] M
          WHERE M.[${COL_IMPORTO}] > 0
-           AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-           AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+           AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+           AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
            ${tipoWhere}
            AND ${matchCons}`
       )
@@ -2081,24 +2096,31 @@ export async function getVenditeMovimentiCategoriaDurata(
 ): Promise<{
   totalCount: number
   rows: { categoria: string; durataMesi: number | null; count: number; totalEuro: number }[]
+  byAbbonamento: { abbonamento: string; count: number; totalEuro: number }[]
 }> {
   const p = await getPool()
-  if (!p) return { totalCount: 0, rows: [] }
+  if (!p) return { totalCount: 0, rows: [], byAbbonamento: [] }
 
   const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditoreAbbonamento()
   const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
   try {
     const ids = idConsultant ? parseConsultantIds(idConsultant) : []
-    if (!viewCfg) return { totalCount: 0, rows: [] }
+    if (!viewCfg) return { totalCount: 0, rows: [], byAbbonamento: [] }
 
     const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
 
+    const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+    const dateExpr = (col: string) =>
+      dateShiftH
+        ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+        : `CAST(${col} AS DATE)`
+
     const whereBase = `
       WHERE M.[${COL_IMPORTO}] > 0
-        AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
-        AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+        AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+        AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
         AND M.[TipoOperazione] = '${movimentoTipoOperazioneVendita().replace(/'/g, "''")}'
     `
 
@@ -2190,6 +2212,43 @@ export async function getVenditeMovimentiCategoriaDurata(
        ORDER BY count DESC;`
     )
 
+    const rAbb = await req.query(
+      `;WITH Temp_Stampe AS (
+         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
+         FROM [${tblM}] M
+         ${whereBase}
+       ),
+       RigheView AS (
+         SELECT
+           R.[${viewCfg.colJoin}] AS ID,
+           COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], R.[Descrizione], ${categoriaExpr}) AS Abbonamento,
+           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
+         FROM [${viewCfg.view}] R
+         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
+         WHERE 1=1
+           ${consultantFilter}
+          ${whereCategoriaDanzaAdulti}
+          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+       ),
+       PerIscrizione AS (
+         SELECT
+           ID,
+           Abbonamento,
+           MAX(TotaleEuro) AS TotaleEuro
+         FROM RigheView
+         WHERE 1=1
+           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Abbonamento")}
+         GROUP BY ID, Abbonamento
+       )
+       SELECT
+         Abbonamento,
+         COUNT(*) AS count,
+         SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
+       FROM PerIscrizione
+       GROUP BY Abbonamento
+       ORDER BY totalEuro DESC;`
+    )
+
     const totalCount = Number(rTotal.recordset?.[0]?.totalCount ?? 0) || 0
     const rows = (r.recordset ?? []).map((row) => {
       const durataRaw = row.DurataMesi == null ? null : Number(row.DurataMesi)
@@ -2203,11 +2262,17 @@ export async function getVenditeMovimentiCategoriaDurata(
       }
     })
 
-    return { totalCount, rows }
+    const byAbbonamento = (rAbb.recordset ?? []).map((row) => ({
+      abbonamento: String(row.Abbonamento ?? "").trim() || "—",
+      count: Number(row.count ?? row.Count ?? 0) || 0,
+      totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
+    }))
+
+    return { totalCount, rows, byAbbonamento }
   } catch (e) {
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.
-    return { totalCount: 0, rows: [] }
+    return { totalCount: 0, rows: [], byAbbonamento: [] }
   }
 }
 

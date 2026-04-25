@@ -946,9 +946,9 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
       idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
     }
-    const { rows, totalCount } = await gestionaleSql.getVenditeMovimentiCategoriaDurata(from, to, idUtente ?? undefined)
+    const { rows, totalCount, byAbbonamento } = await gestionaleSql.getVenditeMovimentiCategoriaDurata(from, to, idUtente ?? undefined)
 
-    res.json({ from, to, totalCount, rows })
+    res.json({ from, to, totalCount, rows, byAbbonamento })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
