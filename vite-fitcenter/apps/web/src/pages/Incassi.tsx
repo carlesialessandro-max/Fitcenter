@@ -44,12 +44,30 @@ export function Incassi() {
 
   const rows = q.data?.rows ?? []
   const cols = useMemo(() => {
-    // Tabella pulita: poche colonne utili.
+    // Tabella: colonne utili richieste (nome/cognome, abbonamento/descrizione, venditore, ecc.).
     const s = new Set<string>()
     for (const r of rows) for (const k of Object.keys(r)) s.add(k)
-    const preferred = ["DataOperazione", "DataPagamento", "Data", "Cliente", "Cognome", "Nome", "Abbonamento", "Servizio", "NomeCorso", "CategoriaDescrizione"]
+    const preferred = [
+      "DataOperazione",
+      "DataPagamento",
+      "Data",
+      "Cognome",
+      "Nome",
+      "Abbonamento",
+      "AbbonamentoDescrizione",
+      "AbbonamentoDurataDescrizione",
+      "Descrizione",
+      "NomeCorso",
+      "Servizio",
+      "CategoriaDescrizione",
+      "Venditore",
+      "NomeVenditore",
+      "VenditoreNome",
+      "Operatore",
+    ]
     const have = preferred.filter((k) => s.has(k))
-    return have.slice(0, 6)
+    // evita troppe colonne ma lascia più info di prima
+    return have.slice(0, 12)
   }, [rows])
 
   function rowAmount(r: Record<string, unknown>): number {

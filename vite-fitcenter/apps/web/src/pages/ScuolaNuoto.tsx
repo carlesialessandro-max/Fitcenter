@@ -541,6 +541,8 @@ export function ScuolaNuoto() {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
               const hc = hourColor(c.oraInizio)
+              const fallbackInactive = "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60"
+              const baseInactive = hc.cls ? `${hc.cls} hover:brightness-110` : fallbackInactive
               return (
                 <button
                   key={c.key}
@@ -548,11 +550,8 @@ export function ScuolaNuoto() {
                   onClick={() => setSelectedKey(c.key)}
                   className={
                     "w-full rounded-lg border px-3 py-2 text-left transition-colors " +
-                    hc.cls +
                     " " +
-                    (active
-                      ? "ring-2 ring-amber-400/40"
-                      : "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60")
+                    (active ? `${baseInactive} ring-2 ring-amber-400/50` : baseInactive)
                   }
                 >
                   <div className="flex items-start justify-between gap-2">
