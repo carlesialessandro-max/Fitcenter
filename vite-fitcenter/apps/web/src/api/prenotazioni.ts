@@ -95,5 +95,18 @@ export const prenotazioniApi = {
       "/prenotazioni/blocca-corso",
       body
     ),
+  listBlocchiCorsi: (giorno: string) => {
+    const qs = `?giorno=${encodeURIComponent(giorno)}`
+    return api.get<{
+      ok: boolean
+      rows: {
+        idPrenotazioneLezione: number | null
+        idPrenotazione: number | null
+        dataInizio: string | null
+        dataFine: string | null
+        note: string | null
+      }[]
+    }>(`/prenotazioni/blocchi-corsi${qs}`)
+  },
 }
 

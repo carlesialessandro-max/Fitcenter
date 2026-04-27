@@ -259,3 +259,63 @@ export async function postBloccaCorso(req: Request, res: Response) {
   }
 }
 
+export async function getBlocchiCorsiGiorno(req: Request, res: Response) {
+  const u = getScopedUser(req)
+  if (u.role !== "admin" && u.role !== "corsi") return res.status(403).json({ message: "Permessi insufficienti" })
+
+  const giorno = String(req.query.giorno ?? "").trim()
+  if (!isIsoDate(giorno)) return res.status(400).json({ message: "Parametro giorno non valido (YYYY-MM-DD)" })
+
+  const p = await gestionaleSql.getPool()
+  if (!p) return res.status(503).json({ message: "DB gestionale non configurato (SQL_CONNECTION_STRING)" })
+
+  const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
+  const piQ = qualifySqlObject(rawPi).query
+  const piCols = await (async () => {
+    try {
+      const clean = qualifySqlObject(rawPi).objectId
+      const rr = await p.request().input("obj", sql.NVarChar, clean).query(
+        `SELECT LOWER(c.name) AS name
+         FROM sys.columns c
+         WHERE c.object_id = OBJECT_ID(@obj);`
+      )
+      return new Set<string>(((rr.recordset ?? []) as any[]).map((x) => String(x.name ?? "")).filter(Boolean))
+    } catch {
+      return new Set<string>()
+    }
+  })()
+
+  const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+  const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
+  const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
+  const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio"])
+  const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine"])
+  const colNote = pickFirstCol(piCols, ["Note", "Nota", "Descrizione", "Motivo"])
+
+  if (!colIdLez || !colDataInizio) {
+    return res.status(503).json({ message: "PrenotazioniIscrizione: colonne non trovate", debug: { table: rawPi } })
+  }
+
+  // Blocchi = righe con IDUtente NULL nel giorno richiesto (per data inizio).
+  const whereParts = [`CAST([${colDataInizio}] AS date) = CAST(@giorno AS date)`]
+  if (colIdUtente) whereParts.push(`[${colIdUtente}] IS NULL`)
+
+  const selectCols = [
+    colIdLez ? `[${colIdLez}] AS idPrenotazioneLezione` : "NULL AS idPrenotazioneLezione",
+    colIdPren ? `[${colIdPren}] AS idPrenotazione` : "NULL AS idPrenotazione",
+    colDataInizio ? `[${colDataInizio}] AS dataInizio` : "NULL AS dataInizio",
+    colDataFine ? `[${colDataFine}] AS dataFine` : "NULL AS dataFine",
+    colNote ? `[${colNote}] AS note` : "NULL AS note",
+  ]
+
+  const q = `
+    SELECT ${selectCols.join(", ")}
+    FROM ${piQ}
+    WHERE ${whereParts.join(" AND ")}
+  `
+
+  const rr = await p.request().input("giorno", sql.Date, giorno).query(q)
+  const rows = (rr.recordset ?? []) as any[]
+  return res.json({ ok: true, rows })
+}
+

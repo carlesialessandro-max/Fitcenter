@@ -782,6 +782,14 @@ export function Corsi() {
     staleTime: 30_000,
   })
 
+  const blocchiCorsiQ = useQuery({
+    queryKey: ["prenotazioni-blocchi-corsi", giorno],
+    queryFn: () => prenotazioniApi.listBlocchiCorsi(giorno),
+    enabled,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  })
+
   const blocksQ = useQuery({
     queryKey: ["corsi-no-show-blocks"],
     queryFn: () => prenotazioniApi.listNoShowBlocks(),
@@ -836,11 +844,35 @@ export function Corsi() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["prenotazioni-corsi", giorno] })
+      void queryClient.invalidateQueries({ queryKey: ["prenotazioni-blocchi-corsi", giorno] })
     },
   })
 
   const rows = data?.rows ?? []
-  const gruppi = useMemo(() => groupByCorso(rows), [rows])
+  const rawGruppi = useMemo(() => groupByCorso(rows), [rows])
+  const blockedByCourse = useMemo(() => {
+    const s = new Set<string>()
+    const list = blocchiCorsiQ.data?.rows ?? []
+    for (const r of list) {
+      const idLez = Number((r as any)?.idPrenotazioneLezione)
+      if (!Number.isFinite(idLez) || idLez <= 0) continue
+      const di = (r as any)?.dataInizio ? new Date(String((r as any).dataInizio)) : null
+      const df = (r as any)?.dataFine ? new Date(String((r as any).dataFine)) : null
+      const hhmm = (d: Date | null) =>
+        d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : ""
+      s.add(`${idLez}|${hhmm(di)}|${hhmm(df)}`)
+    }
+    return s
+  }, [blocchiCorsiQ.data])
+  const gruppi = useMemo(() => {
+    return rawGruppi.map((g) => {
+      const idLez = g.idLezione
+      const oi = g.oraInizio ?? ""
+      const of = g.oraFine ?? ""
+      const isBlocked = idLez ? blockedByCourse.has(`${idLez}|${oi}|${of}`) : false
+      return { ...g, isBloccato: isBlocked || g.isBloccato }
+    })
+  }, [rawGruppi, blockedByCourse])
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
