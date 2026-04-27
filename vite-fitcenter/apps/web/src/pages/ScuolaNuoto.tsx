@@ -622,6 +622,16 @@ export function ScuolaNuoto() {
                 dayKey={dayKey} · date={date} · apiToday={q.data?.today ?? "—"}
               </div>
             </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-zinc-400">
+              <span>qRows={q.data?.countRows ?? "—"}</span>
+              <span>qMatched={q.data?.countMatched ?? "—"}</span>
+              <span>accessRows={accessiQ.data?.rows?.length ?? 0}</span>
+              <span>presentKeys={presentKeys.size}</span>
+              <span>
+                accessErr=
+                {accessiQ.isError ? String((accessiQ.error as Error)?.message ?? "Errore") : "—"}
+              </span>
+            </div>
             {q.data?.debug ? (
               <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-zinc-300">
                 {JSON.stringify(q.data.debug, null, 2)}
@@ -632,6 +642,10 @@ export function ScuolaNuoto() {
                 chiamando una versione vecchia dell’API oppure l’API non sta includendo `debug=1`.
               </div>
             )}
+            <div className="mt-2 text-[11px] text-zinc-500">
+              samplePresentKeys:{" "}
+              <span className="text-zinc-300">{Array.from(presentKeys).slice(0, 8).join(", ") || "—"}</span>
+            </div>
           </div>
         ) : null}
       </div>
