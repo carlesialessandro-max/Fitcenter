@@ -265,6 +265,7 @@ export function ScuolaNuoto() {
   const [date, setDate] = useState<string>(() => isoTodayLocal())
   const dayKey = useMemo<WeekdayKey>(() => weekdayKeyIt(new Date(`${date}T12:00:00`)), [date])
   const [debugSn, setDebugSn] = useState(false)
+  const [sortMode, setSortMode] = useState<"time" | "level">("time")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [activeChildKey, setActiveChildKey] = useState<string | null>(null)
   const [childNoteDraft, setChildNoteDraft] = useState<string>("")
@@ -277,6 +278,13 @@ export function ScuolaNuoto() {
     } catch {
       setDebugSn(false)
     }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("fitcenter-scuola-nuoto-sort")
+      if (raw === "time" || raw === "level") setSortMode(raw)
+    } catch {}
   }, [])
 
   const q = useQuery({
@@ -357,16 +365,33 @@ export function ScuolaNuoto() {
         }
       }
     }
-    return Array.from(by.values()).sort((a, b) => {
-      const ta = String(a.oraInizio ?? "99:99").replace(":", "")
-      const tb = String(b.oraInizio ?? "99:99").replace(":", "")
+    return Array.from(by.values())
+  }, [corsi, overrides.levelOverrides])
+
+  const sortedCorsi = useMemo(() => {
+    const list = [...derivedCorsi]
+    const cmpTime = (x: ScuolaNuotoCorso) => String(x.oraInizio ?? "99:99").replace(":", "")
+    const cmpLevel = (x: ScuolaNuotoCorso) => String(x.livello ?? "")
+    list.sort((a, b) => {
+      if (sortMode === "level") {
+        const la = cmpLevel(a)
+        const lb = cmpLevel(b)
+        if (la !== lb) return la.localeCompare(lb)
+        const ta = cmpTime(a)
+        const tb = cmpTime(b)
+        if (ta !== tb) return ta.localeCompare(tb)
+        return a.corso.localeCompare(b.corso)
+      }
+      const ta = cmpTime(a)
+      const tb = cmpTime(b)
       if (ta !== tb) return ta.localeCompare(tb)
-      const la = String(a.livello ?? "")
-      const lb = String(b.livello ?? "")
+      const la = cmpLevel(a)
+      const lb = cmpLevel(b)
       if (la !== lb) return la.localeCompare(lb)
       return a.corso.localeCompare(b.corso)
     })
-  }, [corsi, overrides.levelOverrides])
+    return list
+  }, [derivedCorsi, sortMode])
 
   // Colore per orario: assegnato per ogni ORA:MIN presente quel giorno (così 16:15, 17:00, 17:45 sono diversi).
   const timeColorByOra = useMemo(() => {
@@ -382,24 +407,24 @@ export function ScuolaNuoto() {
       "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",
     ]
     const times = Array.from(
-      new Set(derivedCorsi.map((c) => String(c.oraInizio ?? "").trim()).filter(Boolean))
+      new Set(sortedCorsi.map((c) => String(c.oraInizio ?? "").trim()).filter(Boolean))
     ).sort((a, b) => a.localeCompare(b))
     const m = new Map<string, { cls: string; label: string }>()
     times.forEach((t, i) => {
       m.set(t, { cls: palette[i % palette.length]!, label: t })
     })
     return m
-  }, [derivedCorsi])
+  }, [sortedCorsi])
 
   const coursePresentCount = useMemo(() => {
     const m = new Map<string, number>()
-    for (const c of derivedCorsi) {
+    for (const c of sortedCorsi) {
       let n = 0
       for (const u of c.utenti) if (isPresentParticipant(u)) n += 1
       m.set(c.key, n)
     }
     return m
-  }, [derivedCorsi, presentKeys])
+  }, [sortedCorsi, presentKeys])
 
   function fmtHm(d: Date): string {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
@@ -440,10 +465,10 @@ export function ScuolaNuoto() {
   }
 
   const selected = useMemo(() => {
-    if (!derivedCorsi.length) return null
-    const direct = selectedKey ? derivedCorsi.find((c) => c.key === selectedKey) : null
-    return direct ?? derivedCorsi[0] ?? null
-  }, [derivedCorsi, selectedKey])
+    if (!sortedCorsi.length) return null
+    const direct = selectedKey ? sortedCorsi.find((c) => c.key === selectedKey) : null
+    return direct ?? sortedCorsi[0] ?? null
+  }, [sortedCorsi, selectedKey])
 
   const availableTargets = useMemo(() => {
     const m = new Map<string, { baseKey: string; idCorso: number | null; label: string }>()
@@ -505,7 +530,7 @@ export function ScuolaNuoto() {
             <p className="text-sm text-zinc-500">
               {q.data ? (
                 <>
-                  {q.data.weekday} · {fmtItDate(q.data.today)} · corsi: {derivedCorsi.length} (righe: {q.data.countMatched}/{q.data.countRows})
+                  {q.data.weekday} · {fmtItDate(q.data.today)} · corsi: {sortedCorsi.length} (righe: {q.data.countMatched}/{q.data.countRows})
                 </>
               ) : (
                 "Corsi del giorno della settimana (per periodo)"
@@ -521,6 +546,23 @@ export function ScuolaNuoto() {
                 onChange={(e) => setDate(e.target.value)}
                 className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
               />
+            </label>
+            <label className="text-xs text-zinc-500">
+              Ordina
+              <select
+                value={sortMode}
+                onChange={(e) => {
+                  const v = e.target.value === "level" ? "level" : "time"
+                  setSortMode(v)
+                  try {
+                    localStorage.setItem("fitcenter-scuola-nuoto-sort", v)
+                  } catch {}
+                }}
+                className="mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+              >
+                <option value="time">Orario inizio</option>
+                <option value="level">Livello</option>
+              </select>
             </label>
             <label className="flex h-10 items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900 px-3 text-xs text-zinc-200">
               <input
@@ -567,10 +609,10 @@ export function ScuolaNuoto() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
           <div className="mb-2 text-xs font-medium text-zinc-500">Corsi</div>
           <div className="flex flex-col gap-1">
-            {derivedCorsi.length === 0 && !q.isLoading ? (
+            {sortedCorsi.length === 0 && !q.isLoading ? (
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-sm text-zinc-500">Nessun corso trovato.</div>
             ) : null}
-            {derivedCorsi.map((c) => {
+            {sortedCorsi.map((c) => {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
               const tc = timeColorByOra.get(String(c.oraInizio ?? "").trim()) ?? timeColor(c.oraInizio)

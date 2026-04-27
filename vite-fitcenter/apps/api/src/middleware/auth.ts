@@ -54,6 +54,15 @@ export function requireAdminOrScuolaNuoto(req: Request, res: Response, next: Nex
   next()
 }
 
+export function requirePiscina(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (u.role !== "admin" && u.role !== "operatore" && u.role !== "bagnini") {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
+  next()
+}
+
 export function getScopedUser(req: Request): User {
   const u = req.user
   if (!u) {
