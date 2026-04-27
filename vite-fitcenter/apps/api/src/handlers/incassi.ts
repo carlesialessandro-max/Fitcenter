@@ -55,13 +55,22 @@ export async function getIncassi(req: Request, res: Response) {
     }
 
     const rowKeyFallback = (r: any): string => {
-      const dt = String(r?.CassaMovimentiDataOperazione ?? r?.CassaMovimentiData ?? r?.DataOperazione ?? r?.Data ?? "").trim()
-      const dtSec = dt ? dt.replace(/\.\d+Z?$/i, "Z").replace(/\.\d+$/i, "") : ""
+      const dtRaw = String(r?.CassaMovimentiDataOperazione ?? r?.CassaMovimentiData ?? r?.DataOperazione ?? r?.Data ?? "").trim()
+      const dtSec = (() => {
+        if (!dtRaw) return ""
+        // Normalizza: Safari/mobile è più severo sul parsing, quindi facciamo una chiave "al secondo" robusta.
+        // 1) ISO con ms: 2026-04-27T11:16:57.920Z → 2026-04-27T11:16:57
+        const iso = dtRaw.replace(" ", "T")
+        const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(iso)
+        if (m) return `${m[1]}T${m[2]}`
+        // 2) fallback: togli ms finali
+        return dtRaw.replace(/\.\d+Z?$/i, "").replace(/\.\d+$/i, "")
+      })()
       const imp = amountOf(r).toFixed(2)
       const cognome = String(r?.Cognome ?? r?.cognome ?? "").trim().toLowerCase()
       const nome = String(r?.Nome ?? r?.nome ?? "").trim().toLowerCase()
       const caus = String(r?.CassaMovimentiCausale ?? r?.Causale ?? "").trim().toLowerCase()
-      // Nota: non includiamo venditore/categoria perché spesso una riga duplicata li ha null → chiave diversa.
+      // Nota: non includiamo venditore/categoria perché spesso la riga duplicata li ha null → chiave diversa.
       return [dtSec, imp, cognome, nome, caus].join("|")
     }
 
