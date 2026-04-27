@@ -1108,6 +1108,14 @@ export function Corsi() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
+          {enabled ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              Accessi:{" "}
+              {accessiDayQ.isError
+                ? `errore (${String((accessiDayQ.error as any)?.message ?? "—")})`
+                : String(accessiDayQ.data?.rows?.length ?? 0)}
+            </p>
+          ) : null}
         </div>
         <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-2 sm:items-end">
           <label className="grid gap-1 text-sm text-zinc-400">
