@@ -68,14 +68,45 @@ export async function getIncassi(req: Request, res: Response) {
     // Richiesta: nascondi importi a zero (spesso sono righe tecniche / doppioni).
     const nonZero = allRows.filter((r) => amountOf(r) !== 0)
 
-    // Deduplica: se la view produce righe doppie, evita raddoppio totale.
-    const seen = new Set<string>()
-    const rows = nonZero.filter((r) => {
+    const hasCategoria = (r: any): boolean => {
+      const s = String(r?.CategoriaDescrizione ?? "").trim()
+      return Boolean(s) && s !== "—"
+    }
+
+    // Deduplica: se la view produce righe doppie, scegli la riga "migliore".
+    // Regola richiesta: preferisci quella con CategoriaDescrizione valorizzata.
+    const bestByKey = new Map<string, any>()
+    for (const r of nonZero) {
       const k = rowId(r) ?? rowKeyFallback(r)
-      if (seen.has(k)) return false
-      seen.add(k)
-      return true
-    })
+      const prev = bestByKey.get(k)
+      if (!prev) {
+        bestByKey.set(k, r)
+        continue
+      }
+      const prevHas = hasCategoria(prev)
+      const curHas = hasCategoria(r)
+      if (!prevHas && curHas) {
+        bestByKey.set(k, r)
+        continue
+      }
+      if (prevHas === curHas) {
+        // tie-breaker: preferisci riga con venditore/cognome/nome/causale valorizzati (più informativa)
+        const score = (x: any) => {
+          const fields = [
+            x?.NomeVenditore,
+            x?.VenditoreNome,
+            x?.Venditore,
+            x?.Operatore,
+            x?.Cognome,
+            x?.Nome,
+            x?.CassaMovimentiCausale,
+          ]
+          return fields.reduce((s: number, v: any) => s + (String(v ?? "").trim() ? 1 : 0), 0)
+        }
+        if (score(r) > score(prev)) bestByKey.set(k, r)
+      }
+    }
+    const rows = Array.from(bestByKey.values())
     const total = rows.reduce((s, r) => s + amountOf(r as any), 0)
     res.json({ from, to, segment: seg, count: rows.length, total, rows })
   } catch (e) {
