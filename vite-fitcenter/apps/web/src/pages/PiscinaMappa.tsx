@@ -124,7 +124,7 @@ function buildSeats(): Seat[] {
 export function PiscinaMappa() {
   const { role } = useAuth()
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
-  if (role !== "admin" && role !== "operatore") return <Navigate to="/" replace />
+  if (role !== "admin" && role !== "operatore" && role !== "bagnini") return <Navigate to="/" replace />
 
   const [date, setDate] = useState<string>(isoTodayLocal())
   const [zoom, setZoom] = useState<number>(0.8)

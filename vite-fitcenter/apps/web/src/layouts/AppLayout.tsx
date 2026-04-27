@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Outlet, Link, useLocation } from "react-router-dom"
+import { Outlet, Link, useLocation, Navigate } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -22,6 +22,7 @@ const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 // Reception: solo firma da cassa (no dashboard, no admin firme).
 const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa" }] as const
 const navScuolaNuoto: NavItem[] = [{ to: "/scuola-nuoto", label: "Scuola Nuoto" }] as const
+const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
@@ -51,6 +52,7 @@ export function AppLayout() {
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState<boolean>(true)
+  if (role === "bagnini" && !location.pathname.startsWith("/piscina")) return <Navigate to="/piscina" replace />
   const nav: NavItem[] =
     leadFilter === "bambini"
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
@@ -66,6 +68,8 @@ export function AppLayout() {
                 ? navFirme
                 : role === "scuola_nuoto"
                   ? navScuolaNuoto
+                  : role === "bagnini"
+                    ? navBagnini
               : navOperatore
 
   const Sidebar = (
@@ -92,6 +96,8 @@ export function AppLayout() {
                     ? "Campus"
                     : role === "scuola_nuoto"
                       ? "Scuola Nuoto"
+            : role === "bagnini"
+              ? "Bagnini"
                     : "Operatore"}
         </p>
         <button
