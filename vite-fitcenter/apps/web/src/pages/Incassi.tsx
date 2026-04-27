@@ -72,6 +72,8 @@ export function Incassi() {
     const s = new Set<string>()
     for (const r of rows) for (const k of Object.keys(r)) s.add(k)
     const preferred = [
+      "CassaMovimentiDataOperazione",
+      "CassaMovimentiData",
       "DataOperazione",
       "DataPagamento",
       "Data",

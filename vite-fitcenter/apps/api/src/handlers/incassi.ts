@@ -25,18 +25,17 @@ export async function getIncassi(req: Request, res: Response) {
 
   const seg = segFromRaw(String(req.query.segment ?? "all"))
   try {
-    const rows = await gestionaleSql.queryIncassiRange({ from, to, segment: seg })
-    const total = rows.reduce((s, r) => {
-      const x =
-        (r as any).CassaMovimentiImporto ??
-        (r as any).Importo ??
-        (r as any).Totale ??
-        (r as any).importo ??
-        (r as any).totale ??
-        0
+    const allRows = await gestionaleSql.queryIncassiRange({ from, to, segment: seg })
+
+    const amountOf = (r: any): number => {
+      const x = r?.CassaMovimentiImporto ?? r?.Importo ?? r?.Totale ?? r?.importo ?? r?.totale ?? 0
       const n = Number(x)
-      return s + (Number.isFinite(n) ? n : 0)
-    }, 0)
+      return Number.isFinite(n) ? n : 0
+    }
+
+    // Richiesta: nascondi importi a zero (spesso sono righe tecniche / doppioni).
+    const rows = allRows.filter((r) => amountOf(r) !== 0)
+    const total = rows.reduce((s, r) => s + amountOf(r as any), 0)
     res.json({ from, to, segment: seg, count: rows.length, total, rows })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
