@@ -40,14 +40,30 @@ type CorsoGroup = {
   giorno: string
   oraInizio?: string
   oraFine?: string
+  idLezione?: number
+  webVisibile?: number
+  isBloccato?: boolean
   partecipanti: PrenotazioneCorsoRow[]
 }
 
-function corsoIdFromGroupKey(key: string): number | null {
-  const parts = String(key ?? "").split("__")
-  const raw = parts[2] ?? ""
-  const n = Number(raw)
+function lessonIdFromRaw(raw: any): number | null {
+  const v =
+    firstNonEmptyStr(raw?.IDPrenotazioneLezione) ??
+    firstNonEmptyStr(raw?.IdPrenotazioneLezione) ??
+    firstNonEmptyStr(raw?.IDLezione) ??
+    firstNonEmptyStr(raw?.LezioneId) ??
+    firstNonEmptyStr(raw?.IDAppuntamento) ??
+    firstNonEmptyStr(raw?.AppuntamentoId) ??
+    null
+  const n = v != null ? Number(v) : NaN
   return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function webVisibileFromRaw(raw: any): number | null {
+  const v = raw?.WebVisibile ?? raw?.webVisibile ?? null
+  if (v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
 }
 
 function firstNonEmptyStr(v: unknown): string | undefined {
@@ -96,11 +112,13 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
     const raw = (r.raw ?? {}) as any
+    const idLezione = lessonIdFromRaw(raw)
+    const webVisibile = webVisibileFromRaw(raw)
+    const isBloccato = webVisibile != null ? webVisibile === 0 : false
+
+    // Corso ID legacy (solo per raggruppare quando manca IDPrenotazioneLezione).
     const corsoId =
-      firstNonEmptyStr(raw?.IDAppuntamento) ??
-      firstNonEmptyStr(raw?.AppuntamentoId) ??
-      firstNonEmptyStr(raw?.IDLezione) ??
-      firstNonEmptyStr(raw?.LezioneId) ??
+      (idLezione != null ? String(idLezione) : undefined) ??
       firstNonEmptyStr(raw?.IDCorso) ??
       firstNonEmptyStr(raw?.CorsoId) ??
       firstNonEmptyStr(raw?.IDSchedaCorso)
@@ -216,7 +234,17 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const key = `${servizio}__${giorno}__${corsoId ?? ""}__${oraInizio ?? ""}__${oraFine ?? ""}`
     const g = map.get(key)
     if (!g) {
-      const created = { key, servizio, giorno, oraInizio, oraFine, partecipanti: [r] }
+      const created = {
+        key,
+        servizio,
+        giorno,
+        oraInizio,
+        oraFine,
+        idLezione: idLezione ?? undefined,
+        webVisibile: webVisibile ?? undefined,
+        isBloccato: isBloccato || undefined,
+        partecipanti: [r],
+      }
       map.set(key, created)
       const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
       byBase.set(baseKey, [...(byBase.get(baseKey) ?? []), created])
@@ -224,6 +252,9 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       byServiceDay.set(sd, [...(byServiceDay.get(sd) ?? []), created])
     } else {
       g.partecipanti.push(r)
+      if (g.idLezione == null && idLezione != null) g.idLezione = idLezione
+      if (g.webVisibile == null && webVisibile != null) g.webVisibile = webVisibile
+      if (isBloccato) g.isBloccato = true
     }
   }
   const list = [...Array.from(map.values()), ...Array.from(waitBuckets.values())]
@@ -1216,6 +1247,11 @@ export function Corsi() {
                           <div className="truncate text-sm font-semibold text-zinc-100">
                             {g.servizio}
                             {isWait ? <span className="ml-2 text-xs font-semibold text-fuchsia-200">ATTESA</span> : null}
+                            {!isWait && g.isBloccato ? (
+                              <span className="ml-2 inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-200">
+                                BLOCCATO
+                              </span>
+                            ) : null}
                           </div>
                           <div className="mt-0.5 text-xs text-zinc-500">
                             {fmtDateIt(g.giorno)}
@@ -1261,7 +1297,14 @@ export function Corsi() {
                       <>
                         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
                           <div className="min-w-0 flex-1">
-                            <div className="text-sm font-semibold tracking-tight text-zinc-100">{g.servizio}</div>
+                            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold tracking-tight text-zinc-100">
+                              <span className="min-w-0 truncate">{g.servizio}</span>
+                              {g.isBloccato ? (
+                                <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[11px] font-semibold text-red-200">
+                                  BLOCCATO
+                                </span>
+                              ) : null}
+                            </div>
                             <div className="mt-0.5 text-xs text-zinc-500">
                               gio {fmtDateIt(g.giorno)}
                               {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
@@ -1300,23 +1343,23 @@ export function Corsi() {
                             >
                               Messaggi
                             </button>
-                            {(role === "admin" || role === "corsi") && corsoIdFromGroupKey(g.key) ? (
+                            {(role === "admin" || role === "corsi") && g.idLezione ? (
                               <>
                                 <button
                                   type="button"
-                                  disabled={bloccaCorsoM.isPending}
-                                  onClick={() => bloccaCorsoM.mutate({ idCorso: corsoIdFromGroupKey(g.key)!, blocked: true, motivo: "Bloccato da pagina Corsi" })}
+                                  disabled={bloccaCorsoM.isPending || !!g.isBloccato}
+                                  onClick={() => bloccaCorsoM.mutate({ idCorso: g.idLezione!, blocked: true, motivo: "Bloccato da pagina Corsi" })}
                                   className="touch-manipulation rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-900/40 disabled:opacity-40"
-                                  title="Blocca il corso sul gestionale (non prenotabile)"
+                                  title={g.isBloccato ? "Già bloccato" : "Blocca il corso sul gestionale (non prenotabile)"}
                                 >
                                   {bloccaCorsoM.isPending ? "Blocco…" : "Blocca corso"}
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={bloccaCorsoM.isPending}
-                                  onClick={() => bloccaCorsoM.mutate({ idCorso: corsoIdFromGroupKey(g.key)!, blocked: false, motivo: "Sbloccato da pagina Corsi" })}
+                                  disabled={bloccaCorsoM.isPending || !g.isBloccato}
+                                  onClick={() => bloccaCorsoM.mutate({ idCorso: g.idLezione!, blocked: false, motivo: "Sbloccato da pagina Corsi" })}
                                   className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60 disabled:opacity-40"
-                                  title="Sblocca il corso sul gestionale"
+                                  title={!g.isBloccato ? "Non risulta bloccato" : "Sblocca il corso sul gestionale"}
                                 >
                                   {bloccaCorsoM.isPending ? "Sblocco…" : "Sblocca corso"}
                                 </button>
