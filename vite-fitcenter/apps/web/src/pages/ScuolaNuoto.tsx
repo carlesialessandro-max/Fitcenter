@@ -12,6 +12,17 @@ function weekdayKeyIt(d: Date): WeekdayKey {
   return map[d.getDay()] ?? "lun"
 }
 
+function weekdayKeyFromIsoDate(iso: string): WeekdayKey {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? "").trim())
+  if (!m) return weekdayKeyIt(new Date())
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  const dow = new Date(Date.UTC(y, mo - 1, d, 12, 0, 0)).getUTCDay() // 0=dom
+  const map: WeekdayKey[] = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"]
+  return map[dow] ?? "lun"
+}
+
 function fmtItDate(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? "").trim())
   if (!m) return iso
@@ -263,7 +274,7 @@ export function ScuolaNuoto() {
   const canMoveLevel = role === "admin"
 
   const [date, setDate] = useState<string>(() => isoTodayLocal())
-  const dayKey = useMemo<WeekdayKey>(() => weekdayKeyIt(new Date(`${date}T12:00:00`)), [date])
+  const dayKey = useMemo<WeekdayKey>(() => weekdayKeyFromIsoDate(date), [date])
   const [debugSn, setDebugSn] = useState(false)
   const [sortMode, setSortMode] = useState<"time" | "level">("time")
   const [selectedKey, setSelectedKey] = useState<string | null>(null)

@@ -41,6 +41,7 @@ type CorsoGroup = {
   oraInizio?: string
   oraFine?: string
   idLezione?: number
+  idPrenotazione?: number
   webVisibile?: number
   isBloccato?: boolean
   partecipanti: PrenotazioneCorsoRow[]
@@ -55,6 +56,12 @@ function lessonIdFromRaw(raw: any): number | null {
     firstNonEmptyStr(raw?.IDAppuntamento) ??
     firstNonEmptyStr(raw?.AppuntamentoId) ??
     null
+  const n = v != null ? Number(v) : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function prenotazioneIdFromRaw(raw: any): number | null {
+  const v = firstNonEmptyStr(raw?.IDPrenotazione) ?? firstNonEmptyStr(raw?.IdPrenotazione) ?? null
   const n = v != null ? Number(v) : NaN
   return Number.isFinite(n) && n > 0 ? n : null
 }
@@ -113,6 +120,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const giorno = (r.giorno ?? "").trim() || "—"
     const raw = (r.raw ?? {}) as any
     const idLezione = lessonIdFromRaw(raw)
+    const idPrenotazione = prenotazioneIdFromRaw(raw)
     const webVisibile = webVisibileFromRaw(raw)
     const isBloccato = webVisibile != null ? webVisibile === 0 : false
 
@@ -241,6 +249,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
         oraInizio,
         oraFine,
         idLezione: idLezione ?? undefined,
+        idPrenotazione: idPrenotazione ?? undefined,
         webVisibile: webVisibile ?? undefined,
         isBloccato: isBloccato || undefined,
         partecipanti: [r],
@@ -253,6 +262,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     } else {
       g.partecipanti.push(r)
       if (g.idLezione == null && idLezione != null) g.idLezione = idLezione
+      if (g.idPrenotazione == null && idPrenotazione != null) g.idPrenotazione = idPrenotazione
       if (g.webVisibile == null && webVisibile != null) g.webVisibile = webVisibile
       if (isBloccato) g.isBloccato = true
     }
@@ -806,8 +816,17 @@ export function Corsi() {
   })
 
   const bloccaCorsoM = useMutation({
-    mutationFn: async (input: { idCorso: number; blocked: boolean; motivo?: string }) => {
-      return prenotazioniApi.bloccaCorso({ idCorso: input.idCorso, blocked: input.blocked, motivo: input.motivo, giorno })
+    mutationFn: async (input: { idCorso: number; blocked: boolean; motivo?: string; idPrenotazione?: number }) => {
+      return prenotazioniApi.bloccaCorso({
+        idCorso: input.idCorso,
+        idPrenotazione: input.idPrenotazione,
+        blocked: input.blocked,
+        motivo: input.motivo,
+        giorno,
+      })
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["prenotazioni-corsi", giorno] })
     },
   })
 
@@ -1348,7 +1367,14 @@ export function Corsi() {
                                 <button
                                   type="button"
                                   disabled={bloccaCorsoM.isPending || !!g.isBloccato}
-                                  onClick={() => bloccaCorsoM.mutate({ idCorso: g.idLezione!, blocked: true, motivo: "Bloccato da pagina Corsi" })}
+                                  onClick={() =>
+                                    bloccaCorsoM.mutate({
+                                      idCorso: g.idLezione!,
+                                      idPrenotazione: g.idPrenotazione,
+                                      blocked: true,
+                                      motivo: "Bloccato da pagina Corsi",
+                                    })
+                                  }
                                   className="touch-manipulation rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-900/40 disabled:opacity-40"
                                   title={g.isBloccato ? "Già bloccato" : "Blocca il corso sul gestionale (non prenotabile)"}
                                 >
@@ -1357,7 +1383,14 @@ export function Corsi() {
                                 <button
                                   type="button"
                                   disabled={bloccaCorsoM.isPending || !g.isBloccato}
-                                  onClick={() => bloccaCorsoM.mutate({ idCorso: g.idLezione!, blocked: false, motivo: "Sbloccato da pagina Corsi" })}
+                                  onClick={() =>
+                                    bloccaCorsoM.mutate({
+                                      idCorso: g.idLezione!,
+                                      idPrenotazione: g.idPrenotazione,
+                                      blocked: false,
+                                      motivo: "Sbloccato da pagina Corsi",
+                                    })
+                                  }
                                   className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60 disabled:opacity-40"
                                   title={!g.isBloccato ? "Non risulta bloccato" : "Sblocca il corso sul gestionale"}
                                 >

@@ -82,7 +82,7 @@ export const prenotazioniApi = {
       `/prenotazioni/no-show/blocks/${encodeURIComponent(params.email)}${qs}`
     )
   },
-  bloccaCorso: (body: { idCorso: number; blocked: boolean; motivo?: string; giorno?: string }) =>
+  bloccaCorso: (body: { idCorso: number; blocked: boolean; motivo?: string; giorno?: string; idPrenotazione?: number }) =>
     api.post<{ ok: boolean; rowsAffected: number; table?: string; colEnabled?: string; enabledValue?: number; giorno?: string | null }>(
       "/prenotazioni/blocca-corso",
       body

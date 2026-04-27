@@ -57,11 +57,15 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const body = (req.body ?? {}) as any
   // In pagina Corsi, l'ID più affidabile è quello della lezione/prenotazione (IDPrenotazioneLezione).
   const idCorso = Number(body?.idCorso)
+  const idPrenotazione = body?.idPrenotazione != null ? Number(body?.idPrenotazione) : null
   const giorno = String(body?.giorno ?? "").trim()
   const blocked = Boolean(body?.blocked)
   const motivo = String(body?.motivo ?? "").trim()
 
   if (!Number.isFinite(idCorso) || idCorso <= 0) return res.status(400).json({ message: "idCorso non valido" })
+  if (idPrenotazione != null && (!Number.isFinite(idPrenotazione) || idPrenotazione <= 0)) {
+    return res.status(400).json({ message: "idPrenotazione non valido" })
+  }
   if (giorno && !isIsoDate(giorno)) return res.status(400).json({ message: "giorno non valido (YYYY-MM-DD)" })
 
   const p = await gestionaleSql.getPoolWrite()
@@ -115,7 +119,35 @@ export async function postBloccaCorso(req: Request, res: Response) {
     const r = await rreq.query(`UPDATE ${q} SET ${setParts.join(", ")} WHERE [${colId}] = @idCorso;`)
     const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
     if (!affected) return res.status(404).json({ message: "Corso non trovato o non modificabile" })
-    return res.json({ ok: true, rowsAffected: affected, table: rawTable, colEnabled, enabledValue, giorno: giorno || null })
+
+    // Opzionale: aggiorna anche la "prenotazione madre" (dbo.Prenotazioni) se ci viene passato l'ID.
+    // In alcuni gestionali la visibilità web dipende sia dalla lezione che dalla prenotazione.
+    let affectedPren = 0
+    if (idPrenotazione != null) {
+      const rawPrenTable = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI ?? "dbo.Prenotazioni") ?? "dbo.Prenotazioni"
+      const pq = qualifySqlObject(rawPrenTable).query
+      const prenCols = await getColsLower(rawPrenTable)
+      const prenIdCol = pickFirstCol(prenCols, ["IDPrenotazione", "IdPrenotazione"])
+      const prenEnabledCol = pickFirstCol(prenCols, ["WebVisibile", "TotemVisibile", "Attivo"])
+      if (prenIdCol && prenEnabledCol) {
+        const rr = await p
+          .request()
+          .input("idPren", sql.Int, idPrenotazione)
+          .input("enabled", sql.Int, enabledValue)
+          .query(`UPDATE ${pq} SET [${prenEnabledCol}] = @enabled WHERE [${prenIdCol}] = @idPren;`)
+        affectedPren = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
+      }
+    }
+
+    return res.json({
+      ok: true,
+      rowsAffected: affected,
+      table: rawTable,
+      colEnabled,
+      enabledValue,
+      giorno: giorno || null,
+      ...(idPrenotazione != null ? { rowsAffectedPrenotazione: affectedPren } : {}),
+    })
   } catch (e) {
     return res.status(500).json({ message: (e as Error).message })
   }
