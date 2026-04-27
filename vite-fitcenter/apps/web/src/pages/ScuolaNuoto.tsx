@@ -358,12 +358,12 @@ export function ScuolaNuoto() {
       }
     }
     return Array.from(by.values()).sort((a, b) => {
-      const la = String(a.livello ?? "")
-      const lb = String(b.livello ?? "")
-      if (la !== lb) return la.localeCompare(lb)
       const ta = String(a.oraInizio ?? "99:99").replace(":", "")
       const tb = String(b.oraInizio ?? "99:99").replace(":", "")
       if (ta !== tb) return ta.localeCompare(tb)
+      const la = String(a.livello ?? "")
+      const lb = String(b.livello ?? "")
+      if (la !== lb) return la.localeCompare(lb)
       return a.corso.localeCompare(b.corso)
     })
   }, [corsi, overrides.levelOverrides])
