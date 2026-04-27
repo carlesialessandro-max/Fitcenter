@@ -6,12 +6,36 @@ import { useAuth } from "@/contexts/AuthContext"
 
 type Tab = "elenco" | "settimane"
 
+function eur(n: number): string {
+  return `€${Number(n || 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`
+}
+
+function digitsPhone(s: unknown): string {
+  return String(s ?? "").replace(/[^\d+]/g, "").replace(/^00/, "+")
+}
+function waHref(phone: unknown, text?: string): string | null {
+  const d = digitsPhone(phone).replace(/^\+/, "")
+  if (!d) return null
+  const q = text ? `?text=${encodeURIComponent(text)}` : ""
+  return `https://wa.me/${d}${q}`
+}
+function telHref(phone: unknown): string | null {
+  const d = digitsPhone(phone)
+  if (!d) return null
+  return `tel:${d}`
+}
+function mailHref(email: unknown, subject: string, body: string): string | null {
+  const e = String(email ?? "").trim()
+  if (!e || !e.includes("@")) return null
+  return `mailto:${encodeURIComponent(e)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
+
 function CampusWeeksGrouped(props: {
   weekKey: string
   weeks: { key: string; label: string }[]
   list: any[]
   groupFilter: string
-  patchCliente: (args: { clienteId: string; liv?: string; allergie?: string; genitore?: string; note?: string; gruppo?: string }) => void
+  patchCliente: (args: { clienteId: string; liv?: string; allergie?: string; genitore?: string; note?: string; gruppo?: string; consensoWhatsapp?: boolean }) => void
   patchWeek: (args: { clienteId: string; weekKey: string; note?: string }) => void
 }) {
   const { weekKey, weeks, list, groupFilter, patchCliente, patchWeek } = props
@@ -42,26 +66,87 @@ function CampusWeeksGrouped(props: {
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0]))
   }, [enriched])
 
+  const totalsAll = useMemo(() => {
+    const totVend = enriched.reduce((s, x) => s + Number(x.b.totaleVenduto ?? 0), 0)
+    const totPag = enriched.reduce((s, x) => s + Number(x.b.totalePagato ?? 0), 0)
+    return { count: enriched.length, venduto: totVend, pagato: totPag }
+  }, [enriched])
+
   return (
     <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/20 p-3">
       <div className="mb-3 text-sm text-zinc-400">
         Settimana selezionata: <span className="text-zinc-200 font-medium">{weekLabel}</span>
+        <span className="ml-3 text-zinc-500">
+          · Totale bambini: <span className="text-zinc-200 font-medium">{totalsAll.count}</span>
+          {" · "}Venduto: <span className="text-amber-300 font-medium">{eur(totalsAll.venduto)}</span>
+          {" · "}Pagato: <span className="text-emerald-300 font-medium">{eur(totalsAll.pagato)}</span>
+        </span>
       </div>
       {byGroup.length === 0 ? (
         <div className="py-6 text-center text-zinc-500">Nessun bambino per questa settimana.</div>
       ) : (
         <div className="space-y-4">
           {byGroup.map(([groupName, rows]) => {
+            const groupTotVend = rows.reduce((s, x) => s + Number(x.b.totaleVenduto ?? 0), 0)
+            const groupTotPag = rows.reduce((s, x) => s + Number(x.b.totalePagato ?? 0), 0)
             const byLiv = new Map<string, any[]>()
             rows.forEach((x) => {
               const l = x.liv
               byLiv.set(l, [...(byLiv.get(l) ?? []), x])
             })
             const livBlocks = Array.from(byLiv.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+            const groupPhonesWaOk = rows
+              .filter((x) => Boolean(x.b.consensoWhatsapp))
+              .map((x) => x.b.cellulare)
+              .filter((p) => Boolean(waHref(p)))
             return (
               <div key={groupName} className="rounded border border-zinc-800 bg-zinc-950/20 p-3">
                 <div className="mb-2 text-sm font-semibold text-amber-300">
                   Gruppo: <span className="text-zinc-100">{groupName}</span>
+                  <span className="ml-3 text-xs font-normal text-zinc-500">
+                    · bambini: <span className="text-zinc-200">{rows.length}</span>
+                    {" · "}venduto: <span className="text-amber-300">{eur(groupTotVend)}</span>
+                    {" · "}pagato: <span className="text-emerald-300">{eur(groupTotPag)}</span>
+                  </span>
+                </div>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      // Apri WhatsApp per tutti (solo consenso sì)
+                      const links = rows
+                        .filter((x) => Boolean(x.b.consensoWhatsapp))
+                        .map((x) => waHref(x.b.cellulare, `Ciao ${x.b.genitore ?? ""}, ti scrivo per il Campus Sportivi.`))
+                        .filter(Boolean) as string[]
+                      for (const href of links) {
+                        window.open(href, "_blank", "noreferrer")
+                        // eslint-disable-next-line no-await-in-loop
+                        await new Promise((r) => setTimeout(r, 350))
+                      }
+                    }}
+                    disabled={groupPhonesWaOk.length === 0}
+                    className="rounded border border-green-700/50 bg-green-950/20 px-3 py-1.5 text-xs font-semibold text-green-200 disabled:opacity-40"
+                  >
+                    WhatsApp gruppo (consenso sì) · {groupPhonesWaOk.length}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nums = rows
+                        .map((x) => digitsPhone(x.b.cellulare))
+                        .filter(Boolean)
+                        .join(", ")
+                      try {
+                        navigator.clipboard.writeText(nums)
+                        alert("Numeri copiati")
+                      } catch {
+                        alert(nums)
+                      }
+                    }}
+                    className="rounded border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs font-semibold text-zinc-200"
+                  >
+                    Copia numeri
+                  </button>
                 </div>
                 <div className="space-y-3">
                   {livBlocks.map(([liv, items]) => (
@@ -170,8 +255,15 @@ export function Campus() {
   const importRef = useRef<HTMLInputElement | null>(null)
 
   const patchCliente = useMutation({
-    mutationFn: (args: { clienteId: string; gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }) =>
-      dataApi.patchCampusCliente(args.clienteId, { gruppo: args.gruppo, genitore: args.genitore, liv: args.liv, allergie: args.allergie, note: args.note }),
+    mutationFn: (args: { clienteId: string; gruppo?: string; genitore?: string; consensoWhatsapp?: boolean; liv?: string; allergie?: string; note?: string }) =>
+      dataApi.patchCampusCliente(args.clienteId, {
+        gruppo: args.gruppo,
+        genitore: args.genitore,
+        consensoWhatsapp: args.consensoWhatsapp,
+        liv: args.liv,
+        allergie: args.allergie,
+        note: args.note,
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["campus"] }),
   })
   const patchWeek = useMutation({
@@ -197,6 +289,21 @@ export function Campus() {
     const s = search.trim().toLowerCase()
     return list.filter((c) => (c.cognomeNome || c.clienteNome).toLowerCase().includes(s))
   }, [data?.bambini, search])
+
+  const elencoTotals = useMemo(() => {
+    const list = filtered
+      .filter((b) => (groupFilter ? (b.gruppo ?? "").trim() === groupFilter : true))
+      .filter((b) => {
+        if (tab !== "settimane") return true
+        if (!weekKey) return true
+        const weeksForB = new Set<string>()
+        b.items.forEach((it: any) => it.settimane.forEach((w: string) => weeksForB.add(w)))
+        return weeksForB.has(weekKey)
+      })
+    const totVend = list.reduce((s, b) => s + Number(b.totaleVenduto ?? 0), 0)
+    const totPag = list.reduce((s, b) => s + Number(b.totalePagato ?? 0), 0)
+    return { count: list.length, venduto: totVend, pagato: totPag }
+  }, [filtered, groupFilter, tab, weekKey])
 
   const groups = useMemo(() => {
     const set = new Set<string>()
@@ -293,6 +400,12 @@ export function Campus() {
         </button>
       </div>
 
+      <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/20 px-4 py-3 text-sm text-zinc-300">
+        Totale bambini: <span className="font-semibold text-zinc-100">{elencoTotals.count}</span>
+        {" · "}Venduto: <span className="font-semibold text-amber-300">{eur(elencoTotals.venduto)}</span>
+        {" · "}Pagato: <span className="font-semibold text-emerald-300">{eur(elencoTotals.pagato)}</span>
+      </div>
+
       {tab === "settimane" && (
         <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
           <label className="text-sm text-zinc-400">
@@ -349,7 +462,9 @@ export function Campus() {
               <th className="px-3 py-3 font-medium text-zinc-400 text-center">LIV</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Allergie</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Genitore</th>
+              <th className="px-3 py-3 font-medium text-zinc-400 text-center whitespace-nowrap">OK WhatsApp</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Cellulare</th>
+              <th className="px-3 py-3 font-medium text-zinc-400">Azioni</th>
               <th className="px-3 py-3 font-medium text-zinc-400">Note</th>
               <th className="px-3 py-3 w-28 font-medium text-zinc-400 text-right whitespace-nowrap">Venduto</th>
               <th className="px-3 py-3 w-28 font-medium text-zinc-400 text-right whitespace-nowrap">Pagato</th>
@@ -369,6 +484,10 @@ export function Campus() {
               })
               .map((b) => {
                 const weekNoteVal = tab === "settimane" && weekKey ? (b.weekNotes?.[weekKey]?.note ?? "") : ""
+                const msg = `Ciao ${b.genitore ?? ""}, ti scrivo per il Campus Sportivi.`
+                const tHref = telHref(b.cellulare)
+                const wHref = waHref(b.cellulare, msg)
+                const mHref = mailHref(b.email, "Campus sportivi", msg)
                 return (
                   <tr key={b.clienteId} className="hover:bg-zinc-800/20">
                     <td className="px-3 py-3 font-medium text-zinc-200">{b.cognomeNome || b.clienteNome}</td>
@@ -406,7 +525,35 @@ export function Campus() {
                         className="w-48 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
                       />
                     </td>
+                    <td className="px-3 py-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(b.consensoWhatsapp)}
+                        onChange={(e) => patchCliente.mutate({ clienteId: b.clienteId, consensoWhatsapp: e.target.checked })}
+                      />
+                    </td>
                     <td className="px-3 py-3 text-zinc-300">{b.cellulare ?? "—"}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {tHref ? (
+                          <a href={tHref} className="rounded border border-emerald-600/60 bg-emerald-600/10 px-2 py-1 text-xs font-semibold text-emerald-200">
+                            Chiama
+                          </a>
+                        ) : null}
+                        {wHref && b.consensoWhatsapp ? (
+                          <a href={wHref} target="_blank" rel="noreferrer" className="rounded border border-green-600/60 bg-green-600/10 px-2 py-1 text-xs font-semibold text-green-200">
+                            WhatsApp
+                          </a>
+                        ) : (
+                          <span className="text-[11px] text-zinc-600">WhatsApp no</span>
+                        )}
+                        {mHref ? (
+                          <a href={mHref} className="rounded border border-sky-600/60 bg-sky-600/10 px-2 py-1 text-xs font-semibold text-sky-200">
+                            Mail
+                          </a>
+                        ) : null}
+                      </div>
+                    </td>
                     <td className="px-3 py-3">
                       <input
                         type="text"

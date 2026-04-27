@@ -104,15 +104,18 @@ export async function getCampus(req: Request, res: Response) {
     // Da RVW_AbbonamentiUtenti: genitore = PaganteNome, telefono = SMS
     const paganteByClienteId = new Map<string, string>()
     const smsByClienteId = new Map<string, string>()
+    const emailByClienteId = new Map<string, string>()
 
     const campusAbbonamenti = rows
       .map((r) => {
         const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
         const paganteNome = pickFirstNonEmpty(r, ["PaganteNome", "Pagante", "Pagante_Nome"])
         const sms = pickFirstNonEmpty(r, ["SMS", "Sms", "sms", "Cellulare", "cellulare", "Telefono", "telefono", "Telefono_1", "Telefono1"])
+        const email = pickFirstNonEmpty(r, ["Email", "email", "Mail", "mail"])
         if (clienteId) {
           if (paganteNome && !paganteByClienteId.has(clienteId)) paganteByClienteId.set(clienteId, paganteNome)
           if (sms && !smsByClienteId.has(clienteId)) smsByClienteId.set(clienteId, sms)
+          if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
         return rowToAbbonamento(r)
       })
@@ -126,6 +129,7 @@ export async function getCampus(req: Request, res: Response) {
         clienteNome: string
         clienteEta?: number
         cellulare?: string
+        email?: string
         genitoreSql?: string
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
         totaleVenduto: number
@@ -151,6 +155,7 @@ export async function getCampus(req: Request, res: Response) {
           clienteNome: a.clienteNome,
           clienteEta: a.clienteEta,
           cellulare: smsByClienteId.get(a.clienteId) || undefined,
+          email: emailByClienteId.get(a.clienteId) || undefined,
           genitoreSql: paganteByClienteId.get(a.clienteId) || undefined,
           items: [],
           totaleVenduto: 0,
@@ -186,10 +191,12 @@ export async function getCampus(req: Request, res: Response) {
           ...c,
           cognomeNome: c.clienteNome,
           eta: c.clienteEta,
+          email: c.email,
           allergie: saved?.allergie ?? "",
           note: saved?.note ?? "",
           gruppo: saved?.gruppo ?? "",
           genitore: saved?.genitore ?? c.genitoreSql ?? "",
+          consensoWhatsapp: saved?.consensoWhatsapp ?? null,
           liv: saved?.liv ?? "",
           weekNotes: saved?.weeks ?? {},
         }
@@ -207,10 +214,11 @@ export async function patchCampusCliente(req: Request, res: Response) {
     if (u.role !== "admin" && u.role !== "campus") return res.status(403).json({ message: "Permessi insufficienti" })
     const clienteId = String(req.params.clienteId ?? "").trim()
     if (!clienteId) return res.status(400).json({ message: "clienteId mancante" })
-    const body = (req.body ?? {}) as { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }
+    const body = (req.body ?? {}) as { gruppo?: string; genitore?: string; consensoWhatsapp?: boolean; liv?: string; allergie?: string; note?: string }
     const updated = campusStore.upsertCliente(clienteId, {
       gruppo: body.gruppo,
       genitore: body.genitore,
+      consensoWhatsapp: body.consensoWhatsapp,
       liv: body.liv,
       allergie: body.allergie,
       note: body.note,

@@ -10,6 +10,7 @@ export type CampusRecord = {
   clienteId: string
   gruppo?: string
   genitore?: string
+  consensoWhatsapp?: boolean
   liv?: string
   allergie?: string
   note?: string
@@ -45,7 +46,7 @@ export const campusStore = {
 
   upsertCliente(
     clienteId: string,
-    patch: { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }
+    patch: { gruppo?: string; genitore?: string; consensoWhatsapp?: boolean; liv?: string; allergie?: string; note?: string }
   ): CampusRecord {
     const id = String(clienteId ?? "").trim()
     const curr = db.get(id)
@@ -53,6 +54,7 @@ export const campusStore = {
       clienteId: id,
       gruppo: patch.gruppo != null ? String(patch.gruppo) : (curr?.gruppo ?? ""),
       genitore: patch.genitore != null ? String(patch.genitore) : (curr?.genitore ?? ""),
+      consensoWhatsapp: patch.consensoWhatsapp != null ? Boolean(patch.consensoWhatsapp) : curr?.consensoWhatsapp,
       liv: patch.liv != null ? String(patch.liv) : (curr?.liv ?? ""),
       allergie: patch.allergie != null ? String(patch.allergie) : (curr?.allergie ?? ""),
       note: patch.note != null ? String(patch.note) : (curr?.note ?? ""),

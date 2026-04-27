@@ -59,8 +59,10 @@ export const dataApi = {
         cognomeNome: string
         eta?: number
         cellulare?: string
+        email?: string
         gruppo: string
         genitore: string
+        consensoWhatsapp?: boolean | null
         liv: string
         allergie: string
         note: string
@@ -70,7 +72,7 @@ export const dataApi = {
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
       }[]
     }>("/data/campus"),
-  patchCampusCliente: (clienteId: string, body: { gruppo?: string; genitore?: string; liv?: string; allergie?: string; note?: string }) =>
+  patchCampusCliente: (clienteId: string, body: { gruppo?: string; genitore?: string; consensoWhatsapp?: boolean; liv?: string; allergie?: string; note?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}`, body),
   patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string; gruppo?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}/weeks/${encodeURIComponent(weekKey)}`, body),
