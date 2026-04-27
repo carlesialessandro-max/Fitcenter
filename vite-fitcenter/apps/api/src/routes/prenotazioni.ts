@@ -4,6 +4,7 @@ import { getPrenotazioniCorsi } from "../handlers/prenotazioni.js"
 import { postNotifyPrenotazioniCorsi } from "../handlers/prenotazioniNotify.js"
 import { getPrenotazioniCorsiRange } from "../handlers/prenotazioniRange.js"
 import { getAccessiUtentiRange } from "../handlers/accessiRange.js"
+import { postBloccaCorso } from "../handlers/corsiBlock.js"
 import {
   deleteCorsiNoShowBlock,
   listCorsiNoShowBlocks,
@@ -27,6 +28,9 @@ prenotazioniRouter.get("/accessi-range", requireAdminOrCorsiOrIstruttore, getAcc
 
 // POST /api/prenotazioni/notify-email  { giorno, groupKey, subject, text }
 prenotazioniRouter.post("/notify-email", requireAdminOrCorsi, postNotifyPrenotazioniCorsi)
+
+// POST /api/prenotazioni/blocca-corso  { idCorso, blocked, motivo? }
+prenotazioniRouter.post("/blocca-corso", requireAdminOrCorsi, postBloccaCorso)
 
 // No-show / blocchi (solo admin/corsi)
 prenotazioniRouter.get("/no-show/blocks", requireAdminOrCorsi, listCorsiNoShowBlocks)

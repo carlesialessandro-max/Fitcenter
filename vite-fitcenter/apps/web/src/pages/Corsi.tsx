@@ -43,6 +43,13 @@ type CorsoGroup = {
   partecipanti: PrenotazioneCorsoRow[]
 }
 
+function corsoIdFromGroupKey(key: string): number | null {
+  const parts = String(key ?? "").split("__")
+  const raw = parts[2] ?? ""
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
 function firstNonEmptyStr(v: unknown): string | undefined {
   const s = typeof v === "string" ? v.trim() : String(v ?? "").trim()
   return s ? s : undefined
@@ -767,6 +774,12 @@ export function Corsi() {
     },
   })
 
+  const bloccaCorsoM = useMutation({
+    mutationFn: async (input: { idCorso: number; blocked: boolean; motivo?: string }) => {
+      return prenotazioniApi.bloccaCorso({ idCorso: input.idCorso, blocked: input.blocked, motivo: input.motivo, giorno })
+    },
+  })
+
   const rows = data?.rows ?? []
   const gruppi = useMemo(() => groupByCorso(rows), [rows])
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
@@ -1287,6 +1300,28 @@ export function Corsi() {
                             >
                               Messaggi
                             </button>
+                            {(role === "admin" || role === "corsi") && corsoIdFromGroupKey(g.key) ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={bloccaCorsoM.isPending}
+                                  onClick={() => bloccaCorsoM.mutate({ idCorso: corsoIdFromGroupKey(g.key)!, blocked: true, motivo: "Bloccato da pagina Corsi" })}
+                                  className="touch-manipulation rounded-lg border border-red-700/50 bg-red-950/30 px-4 py-2 text-sm font-semibold text-red-200 hover:bg-red-900/40 disabled:opacity-40"
+                                  title="Blocca il corso sul gestionale (non prenotabile)"
+                                >
+                                  {bloccaCorsoM.isPending ? "Blocco…" : "Blocca corso"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={bloccaCorsoM.isPending}
+                                  onClick={() => bloccaCorsoM.mutate({ idCorso: corsoIdFromGroupKey(g.key)!, blocked: false, motivo: "Sbloccato da pagina Corsi" })}
+                                  className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-4 py-2 text-sm font-semibold text-zinc-200 hover:bg-zinc-800/60 disabled:opacity-40"
+                                  title="Sblocca il corso sul gestionale"
+                                >
+                                  {bloccaCorsoM.isPending ? "Sblocco…" : "Sblocca corso"}
+                                </button>
+                              </>
+                            ) : null}
                           </div>
                         </div>
 
