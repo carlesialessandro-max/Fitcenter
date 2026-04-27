@@ -91,6 +91,9 @@ function isRowForWeekday(raw: Record<string, unknown>, wk: { abbr: string; full:
     if (sn.includes(wk.fullNoAccent)) return true
   }
 
+  // Caso 3 (fallback): alcune view non hanno campi "giorni" strutturati ma scrivono il giorno dentro descrizioni.
+  // Fallback broad per non azzerare i corsi.
+  if (anyStringFieldContains(raw, wk.full) || anyStringFieldContains(raw, wk.fullNoAccent)) return true
   return false
 }
 
