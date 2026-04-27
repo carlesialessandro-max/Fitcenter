@@ -2612,13 +2612,8 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
   const view = getIncassiViewName()
   const vq = qualifySqlObject(view).query
   const cols = await prenGetCols(view)
-  const set = new Set(cols)
   const dateCol =
-    (set.has("cassamovimentidata") ? "CassaMovimentiData" : null) ??
-    (set.has("dataoperazione") ? "DataOperazione" : null) ??
-    (set.has("datapagamento") ? "DataPagamento" : null) ??
-    (set.has("data") ? "Data" : null) ??
-    (set.has("dataora") ? "DataOra" : null) ??
+    pickBestDateCol(cols, ["CassaMovimentiData", "DataOperazione", "DataPagamento", "Data", "DataOra"]) ??
     "DataOperazione"
 
   const r = await p

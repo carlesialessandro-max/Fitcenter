@@ -24,18 +24,22 @@ export async function getIncassi(req: Request, res: Response) {
   if (from > to) return res.status(400).json({ message: "Intervallo non valido (from > to)" })
 
   const seg = segFromRaw(String(req.query.segment ?? "all"))
-  const rows = await gestionaleSql.queryIncassiRange({ from, to, segment: seg })
-  const total = rows.reduce((s, r) => {
-    const x =
-      (r as any).CassaMovimentiImporto ??
-      (r as any).Importo ??
-      (r as any).Totale ??
-      (r as any).importo ??
-      (r as any).totale ??
-      0
-    const n = Number(x)
-    return s + (Number.isFinite(n) ? n : 0)
-  }, 0)
-  res.json({ from, to, segment: seg, count: rows.length, total, rows })
+  try {
+    const rows = await gestionaleSql.queryIncassiRange({ from, to, segment: seg })
+    const total = rows.reduce((s, r) => {
+      const x =
+        (r as any).CassaMovimentiImporto ??
+        (r as any).Importo ??
+        (r as any).Totale ??
+        (r as any).importo ??
+        (r as any).totale ??
+        0
+      const n = Number(x)
+      return s + (Number.isFinite(n) ? n : 0)
+    }, 0)
+    res.json({ from, to, segment: seg, count: rows.length, total, rows })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
 }
 

@@ -191,7 +191,11 @@ export function Incassi() {
             ))}
           </tbody>
         </table>
-        {q.isError ? <div className="p-3 text-sm text-red-200">Errore caricamento incassi.</div> : null}
+        {q.isError ? (
+          <div className="p-3 text-sm text-red-200">
+            Errore caricamento incassi: {String((q.error as any)?.message ?? "—")}
+          </div>
+        ) : null}
       </div>
     </div>
   )
