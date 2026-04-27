@@ -50,17 +50,12 @@ function pickFirstCol(colsLower: Set<string>, candidates: string[]): string | nu
   return null
 }
 
-/**
- * Blocca/sblocca un corso sul gestionale.
- *
- * NOTE: non sappiamo a priori la colonna corretta del gestionale per "prenotabile".
- * Usiamo un best-effort su dbo.Corsi (o env) e proviamo colonne tipiche.
- */
 export async function postBloccaCorso(req: Request, res: Response) {
   const u = getScopedUser(req)
   if (u.role !== "admin" && u.role !== "corsi") return res.status(403).json({ message: "Permessi insufficienti" })
 
   const body = (req.body ?? {}) as any
+  // In pagina Corsi, l'ID più affidabile è quello della lezione/prenotazione (IDPrenotazioneLezione).
   const idCorso = Number(body?.idCorso)
   const giorno = String(body?.giorno ?? "").trim()
   const blocked = Boolean(body?.blocked)
@@ -72,31 +67,22 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const p = await gestionaleSql.getPoolWrite()
   if (!p) return res.status(503).json({ message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" })
 
-  const rawTable = safeIdent(process.env.GESTIONALE_TABLE_CORSI ?? "dbo.Corsi") ?? "dbo.Corsi"
+  // Gestionale H2: blocco visibilità/prenotazioni della lezione su dbo.PrenotazioniLezioni.WebVisibile (o TotemVisibile).
+  // Override via env se necessario.
+  const rawTable = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_LEZIONI ?? "dbo.PrenotazioniLezioni") ?? "dbo.PrenotazioniLezioni"
   const q = qualifySqlObject(rawTable).query
   const colsLower = await getColsLower(rawTable)
 
-  // Colonne possibili: abilitazione web/prenotazioni
-  const colEnabled = pickFirstCol(colsLower, [
-    "AbilitaWEB",
-    "AbilitatoWEB",
-    "AbilitatoWeb",
-    "PrenotabileWeb",
-    "Prenotabile",
-    "Attivo",
-    "Abilitato",
-    "IsActive",
-    "Bloccato",
-  ])
+  // Colonne possibili su PrenotazioniLezioni
+  const colEnabled = pickFirstCol(colsLower, ["WebVisibile", "TotemVisibile"])
   if (!colEnabled) {
     return res.status(503).json({
-      message:
-        "Impossibile determinare colonna blocco corso su dbo.Corsi. Imposta una colonna (es. AbilitaWEB/Attivo) o configura il gestionale.",
+      message: "Impossibile determinare colonna visibilità su PrenotazioniLezioni (attese: WebVisibile/TotemVisibile).",
     })
   }
 
   // Proviamo anche una colonna note/motivo se esiste (opzionale).
-  const colMotivo = pickFirstCol(colsLower, ["Note", "Motivo", "NoteWeb", "NotePrenotazioni", "NotePrenotazione"])
+  const colMotivo = pickFirstCol(colsLower, ["Note"])
   const colDataOp = pickFirstCol(colsLower, ["DataOperazione", "DataModifica", "UpdatedAt", "DataAggiornamento"])
 
   const enabledValue = blocked ? 0 : 1
@@ -104,12 +90,14 @@ export async function postBloccaCorso(req: Request, res: Response) {
   if (colMotivo && motivo) setParts.push(`[${colMotivo}] = @motivo`)
   if (colDataOp) setParts.push(`[${colDataOp}] = GETDATE()`)
 
-  // NB: non sappiamo se il blocco è per giorno o globale sul corso; per ora è globale (su IDCorso).
-  // Se in futuro si scopre che è per singola data, aggiungiamo tabella/config dedicata.
+  // NB: IDCorso qui è IDPrenotazioneLezione (lezione specifica).
   try {
+    const colId = pickFirstCol(colsLower, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+    if (!colId) return res.status(503).json({ message: "Colonna IDPrenotazioneLezione non trovata" })
+
     let rreq = p.request().input("idCorso", sql.Int, idCorso).input("enabled", sql.Int, enabledValue)
     if (colMotivo && motivo) rreq = rreq.input("motivo", sql.NVarChar(500), motivo)
-    const r = await rreq.query(`UPDATE ${q} SET ${setParts.join(", ")} WHERE [IDCorso] = @idCorso;`)
+    const r = await rreq.query(`UPDATE ${q} SET ${setParts.join(", ")} WHERE [${colId}] = @idCorso;`)
     const affected = Array.isArray((r as any)?.rowsAffected) ? Number((r as any).rowsAffected?.[0] ?? 0) : 0
     if (!affected) return res.status(404).json({ message: "Corso non trovato o non modificabile" })
     return res.json({ ok: true, rowsAffected: affected, table: rawTable, colEnabled, enabledValue, giorno: giorno || null })
