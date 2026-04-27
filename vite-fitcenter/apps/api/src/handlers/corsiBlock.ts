@@ -61,6 +61,8 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const giorno = String(body?.giorno ?? "").trim()
   const blocked = Boolean(body?.blocked)
   const motivo = String(body?.motivo ?? "").trim()
+  const oraInizio = String(body?.oraInizio ?? "").trim()
+  const oraFine = String(body?.oraFine ?? "").trim()
 
   if (!Number.isFinite(idCorso) || idCorso <= 0) return res.status(400).json({ message: "idCorso non valido" })
   if (idPrenotazione != null && (!Number.isFinite(idPrenotazione) || idPrenotazione <= 0)) {
@@ -70,6 +72,110 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
   const p = await gestionaleSql.getPoolWrite()
   if (!p) return res.status(503).json({ message: "DB gestionale write non configurato (SQL_CONNECTION_STRING_WRITE)" })
+
+  // Caso speciale richiesto: blocco SOLO per una data/ora (non tutta la ricorrenza).
+  // Sul gestionale questo è rappresentato da righe in dbo.PrenotazioniIscrizione con IDUtente = NULL (blocco temporaneo).
+  if (giorno && /^\d{2}:\d{2}$/.test(oraInizio) && /^\d{2}:\d{2}$/.test(oraFine) && idPrenotazione != null) {
+    const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
+    const piQ = qualifySqlObject(rawPi).query
+    const piCols = await getColsLower(rawPi)
+    const colPiId = pickFirstCol(piCols, ["IDPrenotazioneIscrizione", "IdPrenotazioneIscrizione"])
+    const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
+    const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+    const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
+    const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio"])
+    const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine"])
+    const colDataOp = pickFirstCol(piCols, ["DataOperazione", "DataOperazionePrenotazioneIscrizione", "DataModifica", "UpdatedAt"])
+    const colNote = pickFirstCol(piCols, ["Note", "Nota", "Descrizione", "Motivo"])
+    const colImporto = pickFirstCol(piCols, ["Importo", "Costo", "Prezzo", "Totale", "ImportoWEB", "ImportoTotem"])
+    const colCanale = pickFirstCol(piCols, ["Canale", "Origine", "Fonte", "Tipo"])
+
+    if (!colPiId || !colIdPren || !colIdLez || !colDataInizio || !colDataFine) {
+      return res.status(503).json({
+        message: "Tabella PrenotazioniIscrizione non compatibile (colonne obbligatorie mancanti)",
+        debug: { table: rawPi, cols: Array.from(piCols).slice(0, 80) },
+      })
+    }
+
+    const dtStart = `${giorno}T${oraInizio}:00`
+    const dtEnd = `${giorno}T${oraFine}:00`
+
+    // Individua righe blocco esistenti: stesso corso+prenotazione+intervallo e IDUtente NULL.
+    const whereParts = [
+      `[${colIdLez}] = @idLez`,
+      `[${colIdPren}] = @idPren`,
+      `[${colDataInizio}] = @dtStart`,
+      `[${colDataFine}] = @dtEnd`,
+    ]
+    if (colIdUtente) whereParts.push(`[${colIdUtente}] IS NULL`)
+
+    if (blocked) {
+      // Inserisce blocco se non esiste già.
+      const insertCols: string[] = []
+      const insertVals: string[] = []
+
+      insertCols.push(`[${colIdLez}]`)
+      insertVals.push(`@idLez`)
+      insertCols.push(`[${colIdPren}]`)
+      insertVals.push(`@idPren`)
+      insertCols.push(`[${colDataInizio}]`)
+      insertVals.push(`@dtStart`)
+      insertCols.push(`[${colDataFine}]`)
+      insertVals.push(`@dtEnd`)
+      if (colIdUtente) {
+        insertCols.push(`[${colIdUtente}]`)
+        insertVals.push(`NULL`)
+      }
+      if (colImporto) {
+        insertCols.push(`[${colImporto}]`)
+        insertVals.push(`0`)
+      }
+      if (colNote) {
+        insertCols.push(`[${colNote}]`)
+        insertVals.push(`@note`)
+      }
+      if (colCanale) {
+        insertCols.push(`[${colCanale}]`)
+        insertVals.push(`@canale`)
+      }
+      if (colDataOp) {
+        insertCols.push(`[${colDataOp}]`)
+        insertVals.push(`GETDATE()`)
+      }
+
+      const qIns = `
+        IF NOT EXISTS (SELECT 1 FROM ${piQ} WHERE ${whereParts.join(" AND ")})
+        BEGIN
+          INSERT INTO ${piQ} (${insertCols.join(", ")})
+          VALUES (${insertVals.join(", ")});
+        END
+      `
+
+      const rr = await p
+        .request()
+        .input("idLez", sql.Int, idCorso)
+        .input("idPren", sql.Int, idPrenotazione)
+        .input("dtStart", sql.DateTime, new Date(dtStart))
+        .input("dtEnd", sql.DateTime, new Date(dtEnd))
+        .input("note", sql.NVarChar(200), motivo || "Blocco temporaneo")
+        .input("canale", sql.NVarChar(50), "Blocco temporaneo")
+        .query(qIns)
+      const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.slice(-1)?.[0] ?? 0) : 0
+      return res.json({ ok: true, rowsAffected: affected, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-insert" })
+    }
+
+    // Unblock: cancella le righe blocco (IDUtente NULL) per quella data/ora.
+    const qDel = `DELETE FROM ${piQ} WHERE ${whereParts.join(" AND ")};`
+    const rr = await p
+      .request()
+      .input("idLez", sql.Int, idCorso)
+      .input("idPren", sql.Int, idPrenotazione)
+      .input("dtStart", sql.DateTime, new Date(dtStart))
+      .input("dtEnd", sql.DateTime, new Date(dtEnd))
+      .query(qDel)
+    const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
+    return res.json({ ok: true, rowsAffected: affected, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-delete" })
+  }
 
   // Gestionale H2: blocco visibilità/prenotazioni della lezione su dbo.PrenotazioniLezioni.WebVisibile (o TotemVisibile).
   // Override via env se necessario.

@@ -816,13 +816,22 @@ export function Corsi() {
   })
 
   const bloccaCorsoM = useMutation({
-    mutationFn: async (input: { idCorso: number; blocked: boolean; motivo?: string; idPrenotazione?: number }) => {
+    mutationFn: async (input: {
+      idCorso: number
+      blocked: boolean
+      motivo?: string
+      idPrenotazione?: number
+      oraInizio?: string
+      oraFine?: string
+    }) => {
       return prenotazioniApi.bloccaCorso({
         idCorso: input.idCorso,
         idPrenotazione: input.idPrenotazione,
         blocked: input.blocked,
         motivo: input.motivo,
         giorno,
+        oraInizio: input.oraInizio,
+        oraFine: input.oraFine,
       })
     },
     onSuccess: () => {
@@ -1371,6 +1380,8 @@ export function Corsi() {
                                     bloccaCorsoM.mutate({
                                       idCorso: g.idLezione!,
                                       idPrenotazione: g.idPrenotazione,
+                                      oraInizio: g.oraInizio,
+                                      oraFine: g.oraFine,
                                       blocked: true,
                                       motivo: "Bloccato da pagina Corsi",
                                     })
@@ -1387,6 +1398,8 @@ export function Corsi() {
                                     bloccaCorsoM.mutate({
                                       idCorso: g.idLezione!,
                                       idPrenotazione: g.idPrenotazione,
+                                      oraInizio: g.oraInizio,
+                                      oraFine: g.oraFine,
                                       blocked: false,
                                       motivo: "Sbloccato da pagina Corsi",
                                     })
