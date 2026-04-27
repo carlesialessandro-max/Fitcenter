@@ -33,8 +33,49 @@ export async function getIncassi(req: Request, res: Response) {
       return Number.isFinite(n) ? n : 0
     }
 
+    const rowId = (r: any): string | null => {
+      const candidates = [
+        "CassaMovimentiID",
+        "CassaMovimentiId",
+        "IDCassaMovimenti",
+        "IdCassaMovimenti",
+        "IDMovimento",
+        "IdMovimento",
+        "MovimentoID",
+        "MovimentoId",
+        "ID",
+        "Id",
+      ]
+      for (const k of candidates) {
+        const v = r?.[k]
+        const s = String(v ?? "").trim()
+        if (s && s !== "0" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") return `${k}:${s}`
+      }
+      return null
+    }
+
+    const rowKeyFallback = (r: any): string => {
+      const dt = String(r?.CassaMovimentiDataOperazione ?? r?.CassaMovimentiData ?? r?.DataOperazione ?? r?.Data ?? "").trim()
+      const dtSec = dt ? dt.replace(/\.\d+Z?$/i, "Z").replace(/\.\d+$/i, "") : ""
+      const imp = amountOf(r).toFixed(2)
+      const cognome = String(r?.Cognome ?? r?.cognome ?? "").trim().toLowerCase()
+      const nome = String(r?.Nome ?? r?.nome ?? "").trim().toLowerCase()
+      const vend = String(r?.NomeVenditore ?? r?.VenditoreNome ?? r?.Venditore ?? r?.Operatore ?? "").trim().toLowerCase()
+      const caus = String(r?.CassaMovimentiCausale ?? r?.Causale ?? "").trim().toLowerCase()
+      return [dtSec, imp, cognome, nome, vend, caus].join("|")
+    }
+
     // Richiesta: nascondi importi a zero (spesso sono righe tecniche / doppioni).
-    const rows = allRows.filter((r) => amountOf(r) !== 0)
+    const nonZero = allRows.filter((r) => amountOf(r) !== 0)
+
+    // Deduplica: se la view produce righe doppie, evita raddoppio totale.
+    const seen = new Set<string>()
+    const rows = nonZero.filter((r) => {
+      const k = rowId(r) ?? rowKeyFallback(r)
+      if (seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
     const total = rows.reduce((s, r) => s + amountOf(r as any), 0)
     res.json({ from, to, segment: seg, count: rows.length, total, rows })
   } catch (e) {
