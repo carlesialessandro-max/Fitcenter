@@ -2613,7 +2613,7 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
   const vq = qualifySqlObject(view).query
   const cols = await prenGetCols(view)
   const dateCol =
-    pickBestDateCol(cols, ["CassaMovimentiData", "DataOperazione", "DataPagamento", "Data", "DataOra"]) ??
+    pickBestDateCol(cols, ["CassaMovimentiDataOperazione", "CassaMovimentiData", "DataOperazione", "DataPagamento", "Data", "DataOra"]) ??
     "DataOperazione"
 
   const r = await p
