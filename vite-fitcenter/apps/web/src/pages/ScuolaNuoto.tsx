@@ -250,23 +250,10 @@ function timeColor(oraInizio: string | null | undefined): { cls: string; label: 
   return { cls: palette[idx]!, label }
 }
 
-function levelAccent(livello: string | null | undefined): { dotCls: string; label: string } {
+function levelBadge(livello: string | null | undefined): string {
   const raw = String(livello ?? "").trim().toUpperCase()
-  if (!raw) return { dotCls: "bg-zinc-600", label: "" }
-  // Normalizza livelli tipo "A++"
-  const key = raw.replace(/\s+/g, "")
-  const palette = [
-    { dotCls: "bg-amber-400", label: key },
-    { dotCls: "bg-emerald-400", label: key },
-    { dotCls: "bg-sky-400", label: key },
-    { dotCls: "bg-fuchsia-400", label: key },
-    { dotCls: "bg-orange-400", label: key },
-    { dotCls: "bg-rose-400", label: key },
-    { dotCls: "bg-lime-400", label: key },
-    { dotCls: "bg-violet-400", label: key },
-  ]
-  const idx = hashStr(key) % palette.length
-  return palette[idx]!
+  if (!raw) return ""
+  return raw.replace(/\s+/g, "")
 }
 
 export function ScuolaNuoto() {
@@ -380,6 +367,29 @@ export function ScuolaNuoto() {
       return a.corso.localeCompare(b.corso)
     })
   }, [corsi, overrides.levelOverrides])
+
+  // Colore per orario: assegnato per ogni ORA:MIN presente quel giorno (così 16:15, 17:00, 17:45 sono diversi).
+  const timeColorByOra = useMemo(() => {
+    const palette = [
+      "border-yellow-500/40 bg-yellow-500/10 text-yellow-100",
+      "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+      "border-sky-500/40 bg-sky-500/10 text-sky-100",
+      "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-100",
+      "border-orange-500/40 bg-orange-500/10 text-orange-100",
+      "border-rose-500/40 bg-rose-500/10 text-rose-100",
+      "border-lime-500/40 bg-lime-500/10 text-lime-100",
+      "border-violet-500/40 bg-violet-500/10 text-violet-100",
+      "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",
+    ]
+    const times = Array.from(
+      new Set(derivedCorsi.map((c) => String(c.oraInizio ?? "").trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b))
+    const m = new Map<string, { cls: string; label: string }>()
+    times.forEach((t, i) => {
+      m.set(t, { cls: palette[i % palette.length]!, label: t })
+    })
+    return m
+  }, [derivedCorsi])
 
   const coursePresentCount = useMemo(() => {
     const m = new Map<string, number>()
@@ -563,8 +573,8 @@ export function ScuolaNuoto() {
             {derivedCorsi.map((c) => {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
-              const tc = timeColor(c.oraInizio)
-              const la = levelAccent(c.livello)
+              const tc = timeColorByOra.get(String(c.oraInizio ?? "").trim()) ?? timeColor(c.oraInizio)
+              const lvl = levelBadge(c.livello)
               const fallbackInactive = "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60"
               const baseInactive = tc.cls ? `${tc.cls} hover:brightness-110` : fallbackInactive
               return (
@@ -581,10 +591,10 @@ export function ScuolaNuoto() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="truncate text-sm font-medium">{corsoTitle(c)}</div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {la.label ? (
+                      {lvl ? (
                         <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-200">
-                          <span className={`h-2 w-2 rounded-full ${la.dotCls}`} />
-                          {la.label}
+                          <span className="h-2 w-2 rounded-full bg-zinc-500" />
+                          {lvl}
                         </span>
                       ) : null}
                       {tc.label ? (
