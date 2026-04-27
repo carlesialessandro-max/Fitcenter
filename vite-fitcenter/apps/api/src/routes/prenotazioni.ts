@@ -23,7 +23,7 @@ prenotazioniRouter.get("/prenotazioni", requireAdminOrCorsiOrIstruttore, getPren
 prenotazioniRouter.get("/prenotazioni-range", requireAdminOrCorsiOrIstruttore, getPrenotazioniCorsiRange)
 
 // GET /api/prenotazioni/accessi-range?from=YYYY-MM-DD&to=YYYY-MM-DD
-prenotazioniRouter.get("/accessi-range", requireAdminOrScuolaNuoto, getAccessiUtentiRange)
+prenotazioniRouter.get("/accessi-range", requireAdminOrCorsiOrIstruttore, getAccessiUtentiRange)
 
 // POST /api/prenotazioni/notify-email  { giorno, groupKey, subject, text }
 prenotazioniRouter.post("/notify-email", requireAdminOrCorsi, postNotifyPrenotazioniCorsi)
