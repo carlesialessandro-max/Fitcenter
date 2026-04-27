@@ -85,15 +85,30 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const colMotivo = pickFirstCol(colsLower, ["Note"])
   const colDataOp = pickFirstCol(colsLower, ["DataOperazione", "DataModifica", "UpdatedAt", "DataAggiornamento"])
 
-  const enabledValue = blocked ? 0 : 1
-  const setParts: string[] = [`[${colEnabled}] = @enabled`]
-  if (colMotivo && motivo) setParts.push(`[${colMotivo}] = @motivo`)
-  if (colDataOp) setParts.push(`[${colDataOp}] = GETDATE()`)
-
   // NB: IDCorso qui è IDPrenotazioneLezione (lezione specifica).
   try {
     const colId = pickFirstCol(colsLower, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
     if (!colId) return res.status(503).json({ message: "Colonna IDPrenotazioneLezione non trovata" })
+
+    // Nel gestionale H2 spesso i flag sono smallint con -1 = true, 0 = false.
+    // Per non indovinare, leggiamo il valore attuale e riusiamo il "true" coerente quando sblocchiamo.
+    let currentEnabled: number | null = null
+    try {
+      const rr = await p
+        .request()
+        .input("idCorso", sql.Int, idCorso)
+        .query(`SELECT TOP (1) CAST([${colEnabled}] AS int) AS v FROM ${q} WHERE [${colId}] = @idCorso;`)
+      const v = (rr.recordset?.[0] as any)?.v
+      const n = Number(v)
+      currentEnabled = Number.isFinite(n) ? n : null
+    } catch {
+      currentEnabled = null
+    }
+
+    const enabledValue = blocked ? 0 : currentEnabled != null && currentEnabled !== 0 ? currentEnabled : -1
+    const setParts: string[] = [`[${colEnabled}] = @enabled`]
+    if (colMotivo && motivo) setParts.push(`[${colMotivo}] = @motivo`)
+    if (colDataOp) setParts.push(`[${colDataOp}] = GETDATE()`)
 
     let rreq = p.request().input("idCorso", sql.Int, idCorso).input("enabled", sql.Int, enabledValue)
     if (colMotivo && motivo) rreq = rreq.input("motivo", sql.NVarChar(500), motivo)
