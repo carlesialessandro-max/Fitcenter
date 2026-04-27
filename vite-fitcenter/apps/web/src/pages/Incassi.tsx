@@ -74,6 +74,7 @@ export function Incassi() {
     const preferred = [
       "CassaMovimentiDataOperazione",
       "CassaMovimentiData",
+      "CassaMovimentiCausale",
       "DataOperazione",
       "DataPagamento",
       "Data",
