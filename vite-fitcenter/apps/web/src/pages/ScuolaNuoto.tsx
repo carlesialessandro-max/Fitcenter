@@ -216,34 +216,57 @@ function corsoTitle(c: ScuolaNuotoCorso): string {
   return parts.join(" · ")
 }
 
-function timeBucket(oraInizio: string | null | undefined): "morning" | "midday" | "afternoon" | "evening" | "unknown" {
-  const s = String(oraInizio ?? "").trim()
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s)
-  if (!m) return "unknown"
-  const hh = Number(m[1])
-  if (!Number.isFinite(hh)) return "unknown"
-  if (hh < 12) return "morning"
-  if (hh < 15) return "midday"
-  if (hh < 18) return "afternoon"
-  return "evening"
+function hashStr(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
 }
 
-function hourColor(oraInizio: string | null | undefined): { cls: string; label: string } {
+function timeColor(oraInizio: string | null | undefined): { cls: string; label: string } {
   const s = String(oraInizio ?? "").trim()
   const m = /^(\d{1,2}):(\d{2})$/.exec(s)
-  const hh = m ? Number(m[1]) : NaN
-  if (!Number.isFinite(hh)) return { cls: "", label: "" }
-  if (hh === 16) return { cls: "border-yellow-500/40 bg-yellow-500/10 text-yellow-100", label: "16" }
-  if (hh === 17) return { cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-100", label: "17" }
-  if (hh === 18) return { cls: "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-100", label: "18" }
-  if (hh === 19) return { cls: "border-sky-500/40 bg-sky-500/10 text-sky-100", label: "19" }
-  if (hh === 20) return { cls: "border-orange-500/40 bg-orange-500/10 text-orange-100", label: "20" }
-  const bucket = timeBucket(oraInizio)
-  if (bucket === "morning") return { cls: "border-sky-500/30 bg-sky-500/5 text-zinc-100", label: "" }
-  if (bucket === "midday") return { cls: "border-amber-500/30 bg-amber-500/5 text-zinc-100", label: "" }
-  if (bucket === "afternoon") return { cls: "border-emerald-500/30 bg-emerald-500/5 text-zinc-100", label: "" }
-  if (bucket === "evening") return { cls: "border-fuchsia-500/30 bg-fuchsia-500/5 text-zinc-100", label: "" }
-  return { cls: "", label: "" }
+  if (!m) return { cls: "", label: "" }
+  const hh = Number(m[1])
+  const mi = Number(m[2])
+  if (!Number.isFinite(hh) || !Number.isFinite(mi)) return { cls: "", label: "" }
+  const label = `${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}`
+
+  // Colori distinti per ogni orario (incl. minuti), ma consistenti.
+  const palette = [
+    "border-yellow-500/40 bg-yellow-500/10 text-yellow-100",
+    "border-emerald-500/40 bg-emerald-500/10 text-emerald-100",
+    "border-sky-500/40 bg-sky-500/10 text-sky-100",
+    "border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-100",
+    "border-orange-500/40 bg-orange-500/10 text-orange-100",
+    "border-rose-500/40 bg-rose-500/10 text-rose-100",
+    "border-lime-500/40 bg-lime-500/10 text-lime-100",
+    "border-violet-500/40 bg-violet-500/10 text-violet-100",
+    "border-cyan-500/40 bg-cyan-500/10 text-cyan-100",
+  ]
+  const idx = hashStr(label) % palette.length
+  return { cls: palette[idx]!, label }
+}
+
+function levelAccent(livello: string | null | undefined): { dotCls: string; label: string } {
+  const raw = String(livello ?? "").trim().toUpperCase()
+  if (!raw) return { dotCls: "bg-zinc-600", label: "" }
+  // Normalizza livelli tipo "A++"
+  const key = raw.replace(/\s+/g, "")
+  const palette = [
+    { dotCls: "bg-amber-400", label: key },
+    { dotCls: "bg-emerald-400", label: key },
+    { dotCls: "bg-sky-400", label: key },
+    { dotCls: "bg-fuchsia-400", label: key },
+    { dotCls: "bg-orange-400", label: key },
+    { dotCls: "bg-rose-400", label: key },
+    { dotCls: "bg-lime-400", label: key },
+    { dotCls: "bg-violet-400", label: key },
+  ]
+  const idx = hashStr(key) % palette.length
+  return palette[idx]!
 }
 
 export function ScuolaNuoto() {
@@ -540,9 +563,10 @@ export function ScuolaNuoto() {
             {derivedCorsi.map((c) => {
               const active = selected?.key === c.key
               const presentCount = coursePresentCount.get(c.key) ?? 0
-              const hc = hourColor(c.oraInizio)
+              const tc = timeColor(c.oraInizio)
+              const la = levelAccent(c.livello)
               const fallbackInactive = "border-zinc-800 bg-zinc-900/40 text-zinc-200 hover:bg-zinc-800/60"
-              const baseInactive = hc.cls ? `${hc.cls} hover:brightness-110` : fallbackInactive
+              const baseInactive = tc.cls ? `${tc.cls} hover:brightness-110` : fallbackInactive
               return (
                 <button
                   key={c.key}
@@ -556,11 +580,19 @@ export function ScuolaNuoto() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="truncate text-sm font-medium">{corsoTitle(c)}</div>
-                    {hc.label ? (
-                      <span className="shrink-0 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-200">
-                        {hc.label}
-                      </span>
-                    ) : null}
+                    <div className="flex shrink-0 items-center gap-2">
+                      {la.label ? (
+                        <span className="inline-flex items-center gap-1 rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-200">
+                          <span className={`h-2 w-2 rounded-full ${la.dotCls}`} />
+                          {la.label}
+                        </span>
+                      ) : null}
+                      {tc.label ? (
+                        <span className="rounded border border-zinc-700 bg-zinc-950/40 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-200">
+                          {tc.label}
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-0.5 text-xs text-zinc-500">
                     Iscritti: <span className="text-zinc-300">{c.utenti.length}</span>
