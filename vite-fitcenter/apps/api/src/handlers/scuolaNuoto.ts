@@ -39,7 +39,8 @@ function weekdayTokens(key: WeekdayKey): { abbr: string; full: string; fullNoAcc
 
 function yesLike(v: unknown): boolean {
   const s = String(v ?? "").trim().toLowerCase()
-  return s === "si" || s === "sì" || s === "true" || s === "1" || s === "y" || s === "yes"
+  // In molti gestionali: -1 = true, 0 = false
+  return s === "si" || s === "sì" || s === "true" || s === "1" || s === "-1" || s === "y" || s === "yes"
 }
 
 function normalizeText(s: string): string {
