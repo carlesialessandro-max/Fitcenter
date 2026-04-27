@@ -614,6 +614,14 @@ export function ScuolaNuoto() {
           </div>
         ) : null}
         {q.isLoading ? <div className="mt-3 text-sm text-zinc-400">Caricamento...</div> : null}
+        {debugSn && q.data?.debug ? (
+          <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3 text-xs text-zinc-200">
+            <div className="font-semibold text-zinc-100">Debug (giorni)</div>
+            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-zinc-300">
+              {JSON.stringify(q.data.debug, null, 2)}
+            </pre>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr_320px]">
