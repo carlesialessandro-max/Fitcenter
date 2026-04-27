@@ -299,7 +299,7 @@ export function ScuolaNuoto() {
   }, [])
 
   const q = useQuery({
-    queryKey: ["scuola-nuoto", "today", dayKey, date],
+    queryKey: ["scuola-nuoto", "today", dayKey, date, debugSn ? "dbg1" : "dbg0"],
     queryFn: () => scuolaNuotoApi.today({ day: dayKey, date, debug: debugSn }),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -614,12 +614,24 @@ export function ScuolaNuoto() {
           </div>
         ) : null}
         {q.isLoading ? <div className="mt-3 text-sm text-zinc-400">Caricamento...</div> : null}
-        {debugSn && q.data?.debug ? (
+        {debugSn ? (
           <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3 text-xs text-zinc-200">
-            <div className="font-semibold text-zinc-100">Debug (giorni)</div>
-            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-zinc-300">
-              {JSON.stringify(q.data.debug, null, 2)}
-            </pre>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold text-zinc-100">Debug (giorni)</div>
+              <div className="font-mono text-[11px] text-zinc-500">
+                dayKey={dayKey} · date={date} · apiToday={q.data?.today ?? "—"}
+              </div>
+            </div>
+            {q.data?.debug ? (
+              <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-snug text-zinc-300">
+                {JSON.stringify(q.data.debug, null, 2)}
+              </pre>
+            ) : (
+              <div className="mt-2 text-[11px] text-zinc-400">
+                Nessun payload debug ricevuto dall’API. Se continui a vedere 0/{q.data?.countRows ?? "—"}, allora stiamo
+                chiamando una versione vecchia dell’API oppure l’API non sta includendo `debug=1`.
+              </div>
+            )}
           </div>
         ) : null}
       </div>
