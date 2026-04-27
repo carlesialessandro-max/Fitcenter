@@ -75,6 +75,25 @@ function anyStringFieldContains(raw: Record<string, unknown>, needle: string): b
 }
 
 function isRowForWeekday(raw: Record<string, unknown>, wk: { abbr: string; full: string; fullNoAccent: string }): boolean {
+  const isoNum = (() => {
+    switch (wk.abbr) {
+      case "lun":
+        return 1
+      case "mar":
+        return 2
+      case "mer":
+        return 3
+      case "gio":
+        return 4
+      case "ven":
+        return 5
+      case "sab":
+        return 6
+      case "dom":
+        return 7
+    }
+  })()
+
   // Caso 1: colonna tipo "Giovedì"/"Giovedi" = Si
   // Se esistono colonne per i giorni, usiamo SOLO quelle (evita falsi positivi su campi testo).
   const dayCols = new Set(["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"])
@@ -90,14 +109,32 @@ function isRowForWeekday(raw: Record<string, unknown>, wk: { abbr: string; full:
 
   // Caso 2: campi "giorni/orario" (non scansionare TUTTE le stringhe, altrimenti può matchare testi non correlati).
   const re = new RegExp(`\\b${wk.abbr}\\b`, "i")
-  const candidates = [
+  const rawCandidates: unknown[] = [
+    // numerici tipici
+    raw.GGWeek,
+    raw.GiornoSettimana,
+    raw.Weekday,
+    raw.WeekDay,
+    raw.CorsiGGWeek,
+    raw.CorsiGiornoSettimana,
+    // stringhe tipiche
     firstNonEmpty(raw, ["Giorno", "Giorni", "GiornoSettimana", "Settimana", "Weekday", "WeekDay", "GGWeek"]),
     firstNonEmpty(raw, ["CorsiGiorno", "CorsiGiorni", "CorsiSettimana", "CorsiGGWeek"]),
     firstNonEmptyByKeyContains(raw, ["giorn"]),
     firstNonEmptyByKeyContains(raw, ["settiman"]),
-  ].filter((x) => typeof x === "string" && x.trim().length > 0) as string[]
+  ].filter((x) => x != null && String(x).trim().length > 0)
 
-  for (const s of candidates) {
+  for (const v of rawCandidates) {
+    if (typeof v === "number" && Number.isFinite(v)) {
+      if (v === isoNum) return true
+      continue
+    }
+    const s = String(v).trim()
+    const n = Number(s)
+    if (Number.isFinite(n)) {
+      if (n === isoNum) return true
+      continue
+    }
     if (re.test(s)) return true
     const sn = normalizeText(s)
     if (sn.includes(wk.fullNoAccent)) return true
