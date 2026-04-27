@@ -52,7 +52,7 @@ export function AppLayout() {
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [adminOpen, setAdminOpen] = useState<boolean>(true)
-  if (role === "bagnini" && !location.pathname.startsWith("/piscina")) return <Navigate to="/piscina" replace />
+  const mustRedirectBagnini = role === "bagnini" && !location.pathname.startsWith("/piscina")
   const nav: NavItem[] =
     leadFilter === "bambini"
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
@@ -199,6 +199,9 @@ export function AppLayout() {
       setAdminOpen(true)
     }
   }, [])
+
+  // Importante: redirect dopo gli hooks (evita crash React #310 in prod).
+  if (mustRedirectBagnini) return <Navigate to="/piscina" replace />
 
   return (
     <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">
