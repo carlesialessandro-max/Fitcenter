@@ -63,22 +63,33 @@ function anyStringFieldContains(raw: Record<string, unknown>, needle: string): b
 
 function isRowForWeekday(raw: Record<string, unknown>, wk: { abbr: string; full: string; fullNoAccent: string }): boolean {
   // Caso 1: colonna tipo "Giovedì"/"Giovedi" = Si
+  // Se esistono colonne per i giorni, usiamo SOLO quelle (evita falsi positivi su campi testo).
+  const dayCols = new Set(["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"])
+  let hasAnyDayCol = false
   for (const [k, v] of Object.entries(raw)) {
     const kn = normalizeText(k)
+    if (dayCols.has(kn)) hasAnyDayCol = true
     if (kn === wk.fullNoAccent) {
       if (yesLike(v)) return true
     }
   }
+  if (hasAnyDayCol) return false
 
-  // Caso 2: stringhe tipo "BAMBINI Gio" o simili
+  // Caso 2: campi "giorni/orario" (non scansionare TUTTE le stringhe, altrimenti può matchare testi non correlati).
   const re = new RegExp(`\\b${wk.abbr}\\b`, "i")
-  for (const v of Object.values(raw)) {
-    if (typeof v !== "string") continue
-    if (re.test(v)) return true
+  const candidates = [
+    firstNonEmpty(raw, ["Giorno", "Giorni", "GiornoSettimana", "Settimana", "Weekday", "WeekDay", "GGWeek"]),
+    firstNonEmpty(raw, ["CorsiGiorno", "CorsiGiorni", "CorsiSettimana", "CorsiGGWeek"]),
+    firstNonEmptyByKeyContains(raw, ["giorn"]),
+    firstNonEmptyByKeyContains(raw, ["settiman"]),
+  ].filter((x) => typeof x === "string" && x.trim().length > 0) as string[]
+
+  for (const s of candidates) {
+    if (re.test(s)) return true
+    const sn = normalizeText(s)
+    if (sn.includes(wk.fullNoAccent)) return true
   }
 
-  // Caso 3 (fallback): testo che contiene il nome giorno
-  if (anyStringFieldContains(raw, wk.full) || anyStringFieldContains(raw, wk.fullNoAccent)) return true
   return false
 }
 
