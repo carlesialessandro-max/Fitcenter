@@ -385,6 +385,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
   }
 
   const filtered = rows.filter((raw) => isRowForWeekday(raw, wk))
+  const wantDebug = String(req.query.debug ?? "").trim() === "1"
 
   type Participant = {
     key: string
@@ -537,12 +538,43 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
     return a.corso.localeCompare(b.corso)
   })
 
+  const debug = (() => {
+    if (!wantDebug) return undefined
+    const sample = rows.slice(0, 8).map((r) => {
+      const raw = r as any
+      const keys = Object.keys(raw)
+      const pickKeys = keys
+        .filter((k) => {
+          const kn = normalizeText(k)
+          return (
+            kn.includes("gg") ||
+            kn.includes("week") ||
+            kn.includes("giorn") ||
+            kn.includes("settiman") ||
+            kn === "lunedi" ||
+            kn === "martedi" ||
+            kn === "mercoledi" ||
+            kn === "giovedi" ||
+            kn === "venerdi" ||
+            kn === "sabato" ||
+            kn === "domenica"
+          )
+        })
+        .slice(0, 30)
+      const picked: Record<string, unknown> = {}
+      for (const k of pickKeys) picked[k] = raw[k]
+      return picked
+    })
+    return { wk, selectedIso, sampleKeysFromRows: sample }
+  })()
+
   return res.json({
     today: selectedIso,
     weekday: wk.full,
     countRows: rows.length,
     countMatched: filtered.length,
     corsi: out,
+    ...(debug ? { debug } : {}),
   })
 }
 

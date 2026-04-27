@@ -300,7 +300,7 @@ export function ScuolaNuoto() {
 
   const q = useQuery({
     queryKey: ["scuola-nuoto", "today", dayKey, date],
-    queryFn: () => scuolaNuotoApi.today({ day: dayKey, date }),
+    queryFn: () => scuolaNuotoApi.today({ day: dayKey, date, debug: debugSn }),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   })

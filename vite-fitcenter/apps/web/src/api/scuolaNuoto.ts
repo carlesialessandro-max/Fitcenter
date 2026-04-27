@@ -34,13 +34,15 @@ export type ScuolaNuotoTodayResponse = {
   countRows: number
   countMatched: number
   corsi: ScuolaNuotoCorso[]
+  debug?: any
 }
 
 export const scuolaNuotoApi = {
-  today: (params?: { day?: string; date?: string }) => {
+  today: (params?: { day?: string; date?: string; debug?: boolean }) => {
     const qs = new URLSearchParams()
     if (params?.day) qs.set("day", params.day)
     if (params?.date) qs.set("date", params.date)
+    if (params?.debug) qs.set("debug", "1")
     const s = qs.toString()
     return api.get<ScuolaNuotoTodayResponse>(`/scuola-nuoto/today${s ? `?${s}` : ""}`)
   },
