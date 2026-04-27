@@ -27,6 +27,30 @@ function eur(n: number): string {
   return n.toLocaleString("it-IT", { style: "currency", currency: "EUR" })
 }
 
+function fmtDateTimeIt(v: unknown): string | null {
+  if (v == null) return null
+  if (v instanceof Date) {
+    const d = v
+    const dd = String(d.getDate()).padStart(2, "0")
+    const mm = String(d.getMonth() + 1).padStart(2, "0")
+    const yy = d.getFullYear()
+    const hh = String(d.getHours()).padStart(2, "0")
+    const mi = String(d.getMinutes()).padStart(2, "0")
+    const ss = String(d.getSeconds()).padStart(2, "0")
+    return `${dd}/${mm}/${yy} ${hh}:${mi}:${ss}`
+  }
+  const s = String(v)
+  const dt = new Date(s)
+  if (Number.isNaN(dt.getTime())) return null
+  const dd = String(dt.getDate()).padStart(2, "0")
+  const mm = String(dt.getMonth() + 1).padStart(2, "0")
+  const yy = dt.getFullYear()
+  const hh = String(dt.getHours()).padStart(2, "0")
+  const mi = String(dt.getMinutes()).padStart(2, "0")
+  const ss = String(dt.getSeconds()).padStart(2, "0")
+  return `${dd}/${mm}/${yy} ${hh}:${mi}:${ss}`
+}
+
 export function Incassi() {
   const { role } = useAuth()
   if (role !== "admin") return <Navigate to="/" replace />
@@ -71,12 +95,12 @@ export function Incassi() {
   }, [rows])
 
   function rowAmount(r: Record<string, unknown>): number {
-    const candidates = ["Importo", "Totale", "ImportoPagato", "ImportoTotale", "Prezzo", "importo", "totale"]
+    const candidates = ["CassaMovimentiImporto", "Importo", "Totale", "ImportoPagato", "ImportoTotale", "Prezzo", "importo", "totale"]
     for (const k of candidates) {
       const v = Number((r as any)[k])
       if (Number.isFinite(v) && v !== 0) return v
     }
-    const v0 = Number((r as any).Importo ?? (r as any).Totale ?? 0)
+    const v0 = Number((r as any).CassaMovimentiImporto ?? (r as any).Importo ?? (r as any).Totale ?? 0)
     return Number.isFinite(v0) ? v0 : 0
   }
 
@@ -154,7 +178,13 @@ export function Incassi() {
                 </td>
                 {cols.map((c) => (
                   <td key={c} className="px-3 py-2 whitespace-nowrap">
-                    {String((r as any)[c] ?? "—")}
+                    {(() => {
+                      const raw = (r as any)[c]
+                      if (c === "DataOperazione" || c === "DataPagamento" || c === "Data" || c === "DataOra" || c === "CassaMovimentiData") {
+                        return fmtDateTimeIt(raw) ?? String(raw ?? "—")
+                      }
+                      return String(raw ?? "—")
+                    })()}
                   </td>
                 ))}
               </tr>

@@ -2597,9 +2597,12 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
 }
 
 function getIncassiViewName(): string {
-  const raw = (process.env.GESTIONALE_VIEW_ABBONAMENTI_PAGAMENTI ?? "RVW_AbbonamentiPagamentiUtenti").trim()
-  if (!raw) return "RVW_AbbonamentiPagamentiUtenti"
-  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_AbbonamentiPagamentiUtenti"
+  // Default: movimenti di cassa (coerente con griglia "Movimenti di Cassa" del gestionale).
+  // Override via env se necessario.
+  const fallback = "RVW_CassaMovimentiUtenti"
+  const raw = (process.env.GESTIONALE_VIEW_ABBONAMENTI_PAGAMENTI ?? fallback).trim()
+  if (!raw) return fallback
+  if (!isSafeSqlIdentifierLoose(raw)) return fallback
   return raw
 }
 
@@ -2611,6 +2614,7 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
   const cols = await prenGetCols(view)
   const set = new Set(cols)
   const dateCol =
+    (set.has("cassamovimentidata") ? "CassaMovimentiData" : null) ??
     (set.has("dataoperazione") ? "DataOperazione" : null) ??
     (set.has("datapagamento") ? "DataPagamento" : null) ??
     (set.has("data") ? "Data" : null) ??
