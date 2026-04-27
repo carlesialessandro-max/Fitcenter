@@ -183,7 +183,14 @@ export function Incassi() {
                   <td key={c} className="px-3 py-2 whitespace-nowrap">
                     {(() => {
                       const raw = (r as any)[c]
-                      if (c === "DataOperazione" || c === "DataPagamento" || c === "Data" || c === "DataOra" || c === "CassaMovimentiData") {
+                      if (
+                        c === "CassaMovimentiDataOperazione" ||
+                        c === "CassaMovimentiData" ||
+                        c === "DataOperazione" ||
+                        c === "DataPagamento" ||
+                        c === "Data" ||
+                        c === "DataOra"
+                      ) {
                         return fmtDateTimeIt(raw) ?? String(raw ?? "—")
                       }
                       return String(raw ?? "—")

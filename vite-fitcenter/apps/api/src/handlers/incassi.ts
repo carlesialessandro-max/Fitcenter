@@ -60,9 +60,9 @@ export async function getIncassi(req: Request, res: Response) {
       const imp = amountOf(r).toFixed(2)
       const cognome = String(r?.Cognome ?? r?.cognome ?? "").trim().toLowerCase()
       const nome = String(r?.Nome ?? r?.nome ?? "").trim().toLowerCase()
-      const vend = String(r?.NomeVenditore ?? r?.VenditoreNome ?? r?.Venditore ?? r?.Operatore ?? "").trim().toLowerCase()
       const caus = String(r?.CassaMovimentiCausale ?? r?.Causale ?? "").trim().toLowerCase()
-      return [dtSec, imp, cognome, nome, vend, caus].join("|")
+      // Nota: non includiamo venditore/categoria perché spesso una riga duplicata li ha null → chiave diversa.
+      return [dtSec, imp, cognome, nome, caus].join("|")
     }
 
     // Richiesta: nascondi importi a zero (spesso sono righe tecniche / doppioni).
