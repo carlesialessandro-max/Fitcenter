@@ -94,6 +94,21 @@ function isRowForWeekday(raw: Record<string, unknown>, wk: { abbr: string; full:
     }
   })()
 
+  // Caso 0: colonne GG1..GG7 (molto comuni). Se esistono, usiamo SOLO queste.
+  // Convenzione: GG1=lun, GG2=mar, ... GG7=dom.
+  let hasAnyGgCol = false
+  let ggMatchVal: unknown = undefined
+  for (const [k, v] of Object.entries(raw)) {
+    const kn = normalizeText(k).replace(/\s+/g, "")
+    const m = /^gg(\d)$/.exec(kn)
+    if (!m) continue
+    const n = Number(m[1])
+    if (!Number.isFinite(n) || n < 1 || n > 7) continue
+    hasAnyGgCol = true
+    if (n === isoNum) ggMatchVal = v
+  }
+  if (hasAnyGgCol) return yesLike(ggMatchVal)
+
   // Caso 1: colonna tipo "Giovedì"/"Giovedi" = Si
   // Se esistono colonne per i giorni, usiamo SOLO quelle (evita falsi positivi su campi testo).
   const dayCols = new Set(["lunedi", "martedi", "mercoledi", "giovedi", "venerdi", "sabato", "domenica"])
