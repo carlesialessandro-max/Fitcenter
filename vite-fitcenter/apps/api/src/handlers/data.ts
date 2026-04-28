@@ -769,20 +769,27 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
   try {
     const now = new Date()
     const todayIso = now.toISOString().slice(0, 10)
-    let list: Abbonamento[] = []
+    let rawRows: Record<string, unknown>[] = []
     if (gestionaleSql.isGestionaleConfigured()) {
-      const rows = await gestionaleSql.queryAbbonamenti(undefined)
-      list = rows.map((r) => rowToAbbonamento(r))
+      rawRows = await gestionaleSql.queryAbbonamenti(undefined)
     } else {
       const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
-      list = [...mockAbbonamenti]
+      // Mock: ricostruiamo righe "raw" minime partendo dal tipo Abbonamento.
+      rawRows = mockAbbonamenti.map((a) => ({
+        IDIscrizione: a.id,
+        IDUtente: a.clienteId,
+        ClienteCognome: (a.clienteNome ?? "").split(" ").slice(0, 1).join(" "),
+        ClienteNome: (a.clienteNome ?? "").split(" ").slice(1).join(" "),
+        ClienteEmail: "",
+        ClienteSms: "",
+        AbbonamentoDescrizione: a.abbonamentoDescrizione ?? a.pianoNome,
+        CategoriaAbbonamentoDescrizione: a.categoriaAbbonamentoDescrizione ?? "DANZA",
+        MacroCategoriaAbbonamentoDescrizione: a.macroCategoriaDescrizione ?? "",
+        DataInizio: a.dataInizio,
+        DataFine: a.dataFine,
+        Totale: a.prezzo,
+      }))
     }
-    // Attivi oggi: DataInizio <= today <= DataFine
-    const attivi = list.filter((a) => {
-      const di = String(a.dataInizio ?? "").slice(0, 10)
-      const df = String(a.dataFine ?? "").slice(0, 10)
-      return !!di && !!df && di <= todayIso && df >= todayIso
-    })
 
     const norm = (s: string) =>
       s
@@ -791,13 +798,12 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         .replace(/\p{M}/gu, "")
         .replace(/\s+/g, " ")
         .trim()
-    const isDanza = (a: Abbonamento) => {
-      const cat = norm(String(a.categoriaAbbonamentoDescrizione ?? a.categoria ?? ""))
-      const macro = norm(String(a.macroCategoriaDescrizione ?? ""))
-      const piano = norm(String(a.pianoNome ?? ""))
+    const isDanzaRow = (row: Record<string, unknown>, a: Abbonamento) => {
+      const cat = norm(String(row.CategoriaAbbonamentoDescrizione ?? a.categoriaAbbonamentoDescrizione ?? a.categoria ?? ""))
+      const macro = norm(String(row.MacroCategoriaAbbonamentoDescrizione ?? a.macroCategoriaDescrizione ?? ""))
+      const piano = norm(String(row.AbbonamentoDescrizione ?? a.pianoNome ?? ""))
       return cat === "DANZA" || cat.includes("DANZA") || macro.includes("DANZA") || piano.includes("DANZA")
     }
-    const danza = attivi.filter(isDanza)
 
     const pick = (raw: any, keys: string[]) => {
       for (const k of keys) {
@@ -809,44 +815,104 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       return null
     }
 
-    const rows = danza.map((a) => {
-      const raw = (a as any)?.raw ?? (a as any)
-      const email = pick(raw, ["ClienteEmail", "Email", "email", "E_mail", "Mail"])
-      const telefono = pick(raw, ["ClienteSms", "SMS", "sms", "Cellulare", "Telefono", "Telefono_1", "Telefono1"])
-      const totale = Number(a.prezzo ?? 0) || 0
-      // Best-effort: senza una view pagamenti dedicata assumiamo pagato = totale.
-      const pagato = totale
+    const pickNum = (raw: any, keys: string[]): number | null => {
+      for (const k of keys) {
+        const v = raw?.[k]
+        if (v == null || String(v).trim() === "") continue
+        const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
+        if (Number.isFinite(n)) return n
+      }
+      return null
+    }
+
+    type DanzaItem = {
+      idIscrizione: string
+      clienteId: string
+      clienteNome: string
+      email: string | null
+      telefono: string | null
+      abbonamento: string | null
+      categoria: string
+      microcategoria: string
+      scadenza: string | null
+      totale: number
+      pagato: number
+      daPagare: number
+    }
+
+    const items: DanzaItem[] = []
+    for (const row of rawRows) {
+      const a = rowToAbbonamento(row)
+      const di = String(a.dataInizio ?? "").slice(0, 10)
+      const df = String(a.dataFine ?? "").slice(0, 10)
+      if (!di || !df || di > todayIso || df < todayIso) continue
+      if (!isDanzaRow(row, a)) continue
+
+      const email = pick(row, ["Email", "E_mail", "Mail", "ClienteEmail"])
+      const telefono = pick(row, ["SMS", "Cellulare", "Telefono", "Telefono_1", "Telefono1", "ClienteSms"])
+      const totale =
+        pickNum(row, ["Totale", "Importo", "Prezzo"]) ??
+        (Number(a.prezzo ?? 0) || 0)
+      const pagato =
+        pickNum(row, ["ImportoPagato", "Pagato", "Versato", "Incassato"]) ??
+        totale
       const daPagare = Math.max(0, totale - pagato)
-      return {
-        idIscrizione: a.id,
-        clienteId: a.clienteId,
-        cognome: String(a.clienteNome ?? "").trim().split(" ").slice(0, 1).join(" ") || null,
-        nome: String(a.clienteNome ?? "").trim().split(" ").slice(1).join(" ") || null,
-        clienteNome: a.clienteNome,
+
+      const categoria = String(a.categoriaAbbonamentoDescrizione ?? row.CategoriaAbbonamentoDescrizione ?? "DANZA").trim() || "DANZA"
+      const micro =
+        String(row.AbbonamentoDurataDescrizione ?? row.AbbonamentoDescrizione ?? a.abbonamentoDescrizione ?? a.pianoNome ?? "").trim() ||
+        "—"
+
+      items.push({
+        idIscrizione: String(a.id ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? ""),
+        clienteId: String(a.clienteId ?? row.IDUtente ?? "").trim() || String(row.IDUtente ?? ""),
+        clienteNome: String(a.clienteNome ?? "").trim() || "—",
         email,
         telefono,
-        abbonamento: a.abbonamentoDescrizione ?? a.pianoNome,
-        categoria: a.categoriaAbbonamentoDescrizione ?? "DANZA",
-        scadenza: a.dataFine,
+        abbonamento: (a.abbonamentoDescrizione ?? a.pianoNome ?? null) as any,
+        categoria,
+        microcategoria: micro,
+        scadenza: a.dataFine ? String(a.dataFine).slice(0, 10) : null,
         totale,
         pagato,
         daPagare,
-      }
-    })
-
-    const byCategoria = new Map<string, typeof rows>()
-    for (const r of rows) {
-      const c = String(r.categoria ?? "DANZA").trim() || "DANZA"
-      const arr = byCategoria.get(c) ?? []
-      arr.push(r)
-      byCategoria.set(c, arr)
+      })
     }
+
+    const byCategoria = new Map<string, DanzaItem[]>()
+    for (const it of items) {
+      const arr = byCategoria.get(it.categoria) ?? []
+      arr.push(it)
+      byCategoria.set(it.categoria, arr)
+    }
+
     const categorie = Array.from(byCategoria.entries())
-      .map(([categoria, items]) => ({
-        categoria,
-        totaleIscritti: items.length,
-        items: items.sort((a, b) => String(a.clienteNome).localeCompare(String(b.clienteNome))),
-      }))
+      .map(([categoria, catItems]) => {
+        const byMicro = new Map<string, DanzaItem[]>()
+        for (const it of catItems) {
+          const arr = byMicro.get(it.microcategoria) ?? []
+          arr.push(it)
+          byMicro.set(it.microcategoria, arr)
+        }
+        const microcategorie = Array.from(byMicro.entries())
+          .map(([microcategoria, microItems]) => ({
+            microcategoria,
+            totaleIscritti: microItems.length,
+            totaleEuro: microItems.reduce((s, x) => s + (x.totale || 0), 0),
+            pagatoEuro: microItems.reduce((s, x) => s + (x.pagato || 0), 0),
+            daPagareEuro: microItems.reduce((s, x) => s + (x.daPagare || 0), 0),
+            items: microItems.sort((a, b) => String(a.clienteNome).localeCompare(String(b.clienteNome))),
+          }))
+          .sort((a, b) => b.totaleIscritti - a.totaleIscritti || a.microcategoria.localeCompare(b.microcategoria))
+        return {
+          categoria,
+          totaleIscritti: catItems.length,
+          totaleEuro: catItems.reduce((s, x) => s + (x.totale || 0), 0),
+          pagatoEuro: catItems.reduce((s, x) => s + (x.pagato || 0), 0),
+          daPagareEuro: catItems.reduce((s, x) => s + (x.daPagare || 0), 0),
+          microcategorie,
+        }
+      })
       .sort((a, b) => b.totaleIscritti - a.totaleIscritti || a.categoria.localeCompare(b.categoria))
 
     res.json({ asOf: todayIso, categorie })

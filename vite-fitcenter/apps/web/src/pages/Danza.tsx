@@ -36,19 +36,36 @@ type DanzaItem = {
   email: string | null
   telefono: string | null
   abbonamento: string | null
-  categoria: string | null
+  categoria: string
+  microcategoria: string
   scadenza: string | null
   totale: number
   pagato: number
   daPagare: number
 }
-type DanzaCategoria = { categoria: string; totaleIscritti: number; items: DanzaItem[] }
+type DanzaMicro = {
+  microcategoria: string
+  totaleIscritti: number
+  totaleEuro: number
+  pagatoEuro: number
+  daPagareEuro: number
+  items: DanzaItem[]
+}
+type DanzaCategoria = {
+  categoria: string
+  totaleIscritti: number
+  totaleEuro: number
+  pagatoEuro: number
+  daPagareEuro: number
+  microcategorie: DanzaMicro[]
+}
 type DanzaResponse = { asOf: string; categorie: DanzaCategoria[] }
 
 export function Danza() {
   const { role } = useAuth()
   const [q, setQ] = useState("")
   const [openCat, setOpenCat] = useState<string | null>(null)
+  const [openMicro, setOpenMicro] = useState<string | null>(null)
 
   const query = useQuery({
     queryKey: ["danza-attivi-oggi"],
@@ -65,11 +82,16 @@ export function Danza() {
     return cats
       .map((c) => ({
         ...c,
-        items: c.items.filter((it) =>
-          `${it.clienteNome} ${it.email ?? ""} ${it.abbonamento ?? ""}`.toLowerCase().includes(needle)
-        ),
+        microcategorie: c.microcategorie
+          .map((m) => ({
+            ...m,
+            items: m.items.filter((it) =>
+              `${it.clienteNome} ${it.email ?? ""} ${it.telefono ?? ""} ${it.abbonamento ?? ""}`.toLowerCase().includes(needle)
+            ),
+          }))
+          .filter((m) => m.items.length > 0),
       }))
-      .filter((c) => c.items.length > 0)
+      .filter((c) => c.microcategorie.length > 0)
   }, [query.data, needle])
 
   if (role !== "admin" && role !== "danza") {
@@ -114,94 +136,127 @@ export function Danza() {
           <div className="space-y-3">
             {filtered.map((c) => {
               const isOpen = openCat === c.categoria
-              const total = c.items.reduce((s, it) => s + (it.totale || 0), 0)
-              const totalPaid = c.items.reduce((s, it) => s + (it.pagato || 0), 0)
-              const totalDue = c.items.reduce((s, it) => s + (it.daPagare || 0), 0)
               return (
-                <div key={c.categoria} className="rounded-xl border border-zinc-800 bg-zinc-950/20">
+                <div key={c.categoria} className="rounded-xl border border-amber-500/20 bg-zinc-950/20">
                   <button
                     type="button"
                     className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
                     onClick={() => setOpenCat(isOpen ? null : c.categoria)}
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-zinc-100">{c.categoria}</div>
+                      <div className="truncate text-sm font-semibold text-amber-200">{c.categoria}</div>
                       <div className="mt-0.5 text-xs text-zinc-500">
                         Iscritti: <span className="text-zinc-200">{c.totaleIscritti}</span>
                         <span className="mx-2 text-zinc-700">·</span>
-                        Totale: <span className="text-zinc-200">{eur(total)}</span>
+                        Totale: <span className="text-zinc-200">{eur(c.totaleEuro)}</span>
                         <span className="mx-2 text-zinc-700">·</span>
-                        Pagato: <span className="text-zinc-200">{eur(totalPaid)}</span>
+                        Pagato: <span className="text-zinc-200">{eur(c.pagatoEuro)}</span>
                         <span className="mx-2 text-zinc-700">·</span>
-                        Da pagare: <span className="text-zinc-200">{eur(totalDue)}</span>
+                        Da pagare: <span className="text-zinc-200">{eur(c.daPagareEuro)}</span>
                       </div>
                     </div>
                     <div className="text-xs font-semibold text-zinc-400">{isOpen ? "Chiudi" : "Apri"}</div>
                   </button>
 
                   {isOpen ? (
-                    <div className="overflow-x-auto border-t border-zinc-800">
-                      <table className="min-w-full text-left text-sm">
-                        <thead>
-                          <tr className="bg-zinc-950/40 text-xs text-zinc-400">
-                            <th className="px-4 py-2">Cliente</th>
-                            <th className="px-4 py-2">Abbonamento</th>
-                            <th className="px-4 py-2">Scadenza</th>
-                            <th className="px-4 py-2">Totale</th>
-                            <th className="px-4 py-2">Pagato</th>
-                            <th className="px-4 py-2">Da pagare</th>
-                            <th className="px-4 py-2">Azioni</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {c.items.map((it) => {
-                            const tel = it.telefono ? telHref(it.telefono) : null
-                            const mail = it.email ? mailHref(it.email, "FitCenter Danza") : null
-                            return (
-                              <tr key={`${it.idIscrizione}-${it.clienteId}`} className="border-t border-zinc-800/60">
-                                <td className="px-4 py-2 font-medium text-zinc-100">{it.clienteNome || "—"}</td>
-                                <td className="px-4 py-2 text-zinc-300">{it.abbonamento || "—"}</td>
-                                <td className="px-4 py-2 font-mono text-xs text-zinc-300">{fmtDateIt(it.scadenza)}</td>
-                                <td className="px-4 py-2 text-zinc-200">{eur(it.totale)}</td>
-                                <td className="px-4 py-2 text-zinc-200">{eur(it.pagato)}</td>
-                                <td className="px-4 py-2 text-zinc-200">{eur(it.daPagare)}</td>
-                                <td className="px-4 py-2">
-                                  <div className="flex flex-wrap gap-2">
-                                    <a
-                                      href={tel ?? "#"}
-                                      onClick={(e) => {
-                                        if (!tel) e.preventDefault()
-                                      }}
-                                      className={`rounded border px-2 py-1 text-xs ${
-                                        tel
-                                          ? "border-zinc-700 bg-zinc-950/20 text-zinc-200 hover:bg-zinc-800/40"
-                                          : "border-zinc-800 text-zinc-600"
-                                      }`}
-                                      title={it.telefono ?? "Telefono non disponibile"}
-                                    >
-                                      Telefona
-                                    </a>
-                                    <a
-                                      href={mail ?? "#"}
-                                      onClick={(e) => {
-                                        if (!mail) e.preventDefault()
-                                      }}
-                                      className={`rounded border px-2 py-1 text-xs ${
-                                        mail
-                                          ? "border-zinc-700 bg-zinc-950/20 text-zinc-200 hover:bg-zinc-800/40"
-                                          : "border-zinc-800 text-zinc-600"
-                                      }`}
-                                      title={it.email ?? "Email non disponibile"}
-                                    >
-                                      Mail
-                                    </a>
-                                  </div>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="space-y-2 border-t border-zinc-800 p-3">
+                      {c.microcategorie.map((m) => {
+                        const microKey = `${c.categoria}::${m.microcategoria}`
+                        const microOpen = openMicro === microKey
+                        return (
+                          <div key={microKey} className="rounded-lg border border-fuchsia-500/20 bg-zinc-950/20">
+                            <button
+                              type="button"
+                              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+                              onClick={() => setOpenMicro(microOpen ? null : microKey)}
+                            >
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-fuchsia-200">{m.microcategoria}</div>
+                                <div className="mt-0.5 text-xs text-zinc-500">
+                                  Iscritti: <span className="text-zinc-200">{m.totaleIscritti}</span>
+                                  <span className="mx-2 text-zinc-700">·</span>
+                                  Totale: <span className="text-zinc-200">{eur(m.totaleEuro)}</span>
+                                  <span className="mx-2 text-zinc-700">·</span>
+                                  Pagato: <span className="text-zinc-200">{eur(m.pagatoEuro)}</span>
+                                  <span className="mx-2 text-zinc-700">·</span>
+                                  Da pagare: <span className="text-zinc-200">{eur(m.daPagareEuro)}</span>
+                                </div>
+                              </div>
+                              <div className="text-xs font-semibold text-zinc-400">{microOpen ? "Chiudi" : "Apri"}</div>
+                            </button>
+
+                            {microOpen ? (
+                              <div className="overflow-x-auto border-t border-zinc-800/60">
+                                <table className="min-w-full text-left text-sm">
+                                  <thead>
+                                    <tr className="bg-zinc-950/40 text-xs text-zinc-400">
+                                      <th className="px-4 py-2">Cliente</th>
+                                      <th className="px-4 py-2">Email</th>
+                                      <th className="px-4 py-2">SMS</th>
+                                      <th className="px-4 py-2">Abbonamento</th>
+                                      <th className="px-4 py-2">Scadenza</th>
+                                      <th className="px-4 py-2">Totale</th>
+                                      <th className="px-4 py-2">Pagato</th>
+                                      <th className="px-4 py-2">Da pagare</th>
+                                      <th className="px-4 py-2">Azioni</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {m.items.map((it) => {
+                                      const tel = it.telefono ? telHref(it.telefono) : null
+                                      const mail = it.email ? mailHref(it.email, "FitCenter Danza") : null
+                                      return (
+                                        <tr key={`${it.idIscrizione}-${it.clienteId}`} className="border-t border-zinc-800/60">
+                                          <td className="px-4 py-2 font-medium text-zinc-100">{it.clienteNome || "—"}</td>
+                                          <td className="px-4 py-2 font-mono text-xs text-zinc-300">{it.email || "—"}</td>
+                                          <td className="px-4 py-2 font-mono text-xs text-zinc-300">{it.telefono || "—"}</td>
+                                          <td className="px-4 py-2 text-zinc-300">{it.abbonamento || "—"}</td>
+                                          <td className="px-4 py-2 font-mono text-xs text-zinc-300">{fmtDateIt(it.scadenza)}</td>
+                                          <td className="px-4 py-2 text-zinc-200">{eur(it.totale)}</td>
+                                          <td className="px-4 py-2 text-zinc-200">{eur(it.pagato)}</td>
+                                          <td className="px-4 py-2 text-zinc-200">{eur(it.daPagare)}</td>
+                                          <td className="px-4 py-2">
+                                            <div className="flex flex-wrap gap-2">
+                                              <a
+                                                href={tel ?? "#"}
+                                                onClick={(e) => {
+                                                  if (!tel) e.preventDefault()
+                                                }}
+                                                className={`rounded border px-2 py-1 text-xs ${
+                                                  tel
+                                                    ? "border-emerald-700/50 bg-emerald-950/20 text-emerald-200 hover:bg-emerald-900/25"
+                                                    : "border-zinc-800 text-zinc-600"
+                                                }`}
+                                                title={it.telefono ?? "SMS non disponibile"}
+                                              >
+                                                Telefona
+                                              </a>
+                                              <a
+                                                href={mail ?? "#"}
+                                                onClick={(e) => {
+                                                  if (!mail) e.preventDefault()
+                                                }}
+                                                className={`rounded border px-2 py-1 text-xs ${
+                                                  mail
+                                                    ? "border-sky-700/50 bg-sky-950/20 text-sky-200 hover:bg-sky-900/25"
+                                                    : "border-zinc-800 text-zinc-600"
+                                                }`}
+                                                title={it.email ?? "Email non disponibile"}
+                                              >
+                                                Mail
+                                              </a>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            ) : null}
+                          </div>
+                        )
+                      })}
                     </div>
                   ) : null}
                 </div>
