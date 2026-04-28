@@ -136,19 +136,19 @@ export async function postBloccaCorso(req: Request, res: Response) {
     const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
     const piQ = qualifySqlObject(rawPi).query
     const piCols = await getColsLower(rawPi)
-    const colPiId = pickFirstCol(piCols, ["IDPrenotazioneIscrizione", "IdPrenotazioneIscrizione"])
     const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
     const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
     const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
-    const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio"])
-    const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine"])
+    const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio", "DataOraInizio", "DataOra", "Inizio", "OraInizio"])
+    const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine", "DataOraFine", "Fine", "OraFine"])
     const colDataOp = pickFirstCol(piCols, ["DataOperazione", "DataOperazionePrenotazioneIscrizione", "DataModifica", "UpdatedAt"])
     const colNote = pickFirstCol(piCols, ["Note", "Nota", "Descrizione", "Motivo"])
     const colImporto = pickFirstCol(piCols, ["Importo", "Costo", "Prezzo", "Totale", "ImportoWEB", "ImportoTotem"])
     const colCanale = pickFirstCol(piCols, ["Canale", "Origine", "Fonte", "Tipo"])
     const colOperatore = pickFirstCol(piCols, ["IDOperatore", "IdOperatore", "OperatoreId"])
 
-    if (!colPiId || !colIdPren || !colIdLez || !colDataInizio || !colDataFine) {
+    // Non richiediamo un ID identity (IDPrenotazioneIscrizione): non serve per INSERT/DELETE e può avere nomi diversi.
+    if (!colIdPren || !colIdLez || !colDataInizio || !colDataFine) {
       return res.status(503).json({
         message: "Tabella PrenotazioniIscrizione non compatibile (colonne obbligatorie mancanti)",
         debug: { table: rawPi, cols: Array.from(piCols).slice(0, 80) },
