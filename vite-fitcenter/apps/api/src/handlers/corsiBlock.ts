@@ -308,7 +308,16 @@ export async function postBloccaCorso(req: Request, res: Response) {
     }
 
     // Unblock: cancella le righe blocco (IDUtente NULL) per quella data/ora.
-    const qDel = `DELETE FROM ${piQ} WHERE ${whereParts.join(" AND ")};`
+    // Nota: alcuni DB salvano i datetime con rounding/precision diversa (smalldatetime/datetime2),
+    // quindi l'uguaglianza perfetta può non matchare. Usiamo una comparazione "a minuto".
+    const whereDelParts = [
+      `[${colIdLez}] = @idLez`,
+      `[${colIdPren}] = @idPren`,
+      `ABS(DATEDIFF(minute, [${colDataInizio}], @dtStart)) = 0`,
+      `ABS(DATEDIFF(minute, [${colDataFine}], @dtEnd)) = 0`,
+    ]
+    if (colIdUtente) whereDelParts.push(`[${colIdUtente}] IS NULL`)
+    const qDel = `DELETE FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`
     const rr = await p
       .request()
       .input("idLez", sql.Int, idCorso)
@@ -317,7 +326,21 @@ export async function postBloccaCorso(req: Request, res: Response) {
       .input("dtEnd", sql.DateTime, new Date(dtEnd))
       .query(qDel)
     const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
-    return res.json({ ok: true, rowsAffected: affected, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-delete" })
+    // Best-effort: quante righe blocco restano (per debug immediato).
+    let remaining = 0
+    try {
+      const rc = await p
+        .request()
+        .input("idLez", sql.Int, idCorso)
+        .input("idPren", sql.Int, idPrenotazione)
+        .input("dtStart", sql.DateTime, new Date(dtStart))
+        .input("dtEnd", sql.DateTime, new Date(dtEnd))
+        .query(`SELECT COUNT(1) AS c FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`)
+      remaining = Number((rc.recordset?.[0] as any)?.c ?? 0) || 0
+    } catch {
+      remaining = 0
+    }
+    return res.json({ ok: true, rowsAffected: affected, remaining, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-delete" })
   }
 
   // Gestionale H2: blocco visibilità/prenotazioni della lezione su dbo.PrenotazioniLezioni.WebVisibile (o TotemVisibile).
