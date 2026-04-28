@@ -89,6 +89,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
     const colNote = pickFirstCol(piCols, ["Note", "Nota", "Descrizione", "Motivo"])
     const colImporto = pickFirstCol(piCols, ["Importo", "Costo", "Prezzo", "Totale", "ImportoWEB", "ImportoTotem"])
     const colCanale = pickFirstCol(piCols, ["Canale", "Origine", "Fonte", "Tipo"])
+    const colOperatore = pickFirstCol(piCols, ["IDOperatore", "IdOperatore", "OperatoreId"])
 
     if (!colPiId || !colIdPren || !colIdLez || !colDataInizio || !colDataFine) {
       return res.status(503).json({
@@ -136,7 +137,13 @@ export async function postBloccaCorso(req: Request, res: Response) {
       }
       if (colCanale) {
         insertCols.push(`[${colCanale}]`)
-        insertVals.push(`@canale`)
+        // Dal gestionale: sui blocchi temporanei questo campo risulta NULL.
+        insertVals.push(`NULL`)
+      }
+      if (colOperatore) {
+        insertCols.push(`[${colOperatore}]`)
+        // Dal gestionale: i blocchi temporanei hanno spesso IDOperatore = 5.
+        insertVals.push(`5`)
       }
       if (colDataOp) {
         insertCols.push(`[${colDataOp}]`)
@@ -158,7 +165,6 @@ export async function postBloccaCorso(req: Request, res: Response) {
         .input("dtStart", sql.DateTime, new Date(dtStart))
         .input("dtEnd", sql.DateTime, new Date(dtEnd))
         .input("note", sql.NVarChar(200), motivo || "Blocco temporaneo")
-        .input("canale", sql.NVarChar(50), "Blocco temporaneo")
         .query(qIns)
       const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.slice(-1)?.[0] ?? 0) : 0
       return res.json({ ok: true, rowsAffected: affected, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-insert" })

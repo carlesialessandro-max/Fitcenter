@@ -54,6 +54,8 @@ export function FirmaDaCassa() {
   const { role } = useAuth()
   const canUse = role === "admin" || role === "operatore" || role === "firme"
   const [windowMode, setWindowMode] = useState<"60" | "day">("60")
+  const [asOf, setAsOf] = useState<string>(() => new Date().toISOString().slice(0, 10))
+  const [q, setQ] = useState<string>("")
   const [selectedKey, setSelectedKey] = useState<string>("")
   const [templateId, setTemplateId] = useState<string>("")
   const [busy, setBusy] = useState(false)
@@ -63,8 +65,13 @@ export function FirmaDaCassa() {
   const [createdKeys, setCreatedKeys] = useState<Record<string, true>>({})
 
   const movQ = useQuery({
-    queryKey: ["cassa-movimenti-utenti", windowMode],
-    queryFn: () => dataApi.getCassaMovimentiUtenti({ windowMinutes: windowMode === "60" ? 60 : undefined, limit: 1200 }),
+    queryKey: ["cassa-movimenti-utenti", windowMode, windowMode === "day" ? asOf : ""],
+    queryFn: () =>
+      dataApi.getCassaMovimentiUtenti({
+        asOf: windowMode === "day" ? asOf : undefined,
+        windowMinutes: windowMode === "60" ? 60 : undefined,
+        limit: 1200,
+      }),
     enabled: canUse,
     refetchInterval: windowMode === "60" ? 30_000 : false,
   })
@@ -75,11 +82,27 @@ export function FirmaDaCassa() {
     enabled: canUse,
   })
 
-  const groups = movQ.data?.groups ?? []
+  const groupsRaw = movQ.data?.groups ?? []
+  const groups = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    if (!needle) return groupsRaw
+    return groupsRaw.filter((g) => {
+      const a = `${g.cognome ?? ""} ${g.nome ?? ""}`.trim().toLowerCase()
+      const e = String(g.email ?? "").trim().toLowerCase()
+      return a.includes(needle) || e.includes(needle)
+    })
+  }, [groupsRaw, q])
   const selected: CassaMovimentiUtentiGroup | null = useMemo(
     () => groups.find((g) => g.key === selectedKey) ?? null,
     [groups, selectedKey]
   )
+
+  const selectedRowsForDay = useMemo(() => {
+    if (!selected) return []
+    if (windowMode !== "day") return selected.rows
+    const day = asOf
+    return selected.rows.filter((r) => (r.dataOperazioneIso ?? "").slice(0, 10) === day)
+  }, [selected, windowMode, asOf])
 
   useEffect(() => {
     // Quando cambio cliente/template, pulisco i messaggi per evitare confusione.
@@ -103,13 +126,13 @@ export function FirmaDaCassa() {
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
-      const sumTotale = selected.rows.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
-      const sumVersato = selected.rows.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
-      const asiFromRows = selected.rows.map((r) => (r as any).asiTesseraCustom2).find((x) => String(x ?? "").trim()) as
+      const sumTotale = selectedRowsForDay.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
+      const sumVersato = selectedRowsForDay.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
+      const asiFromRows = selectedRowsForDay.map((r) => (r as any).asiTesseraCustom2).find((x) => String(x ?? "").trim()) as
         | string
         | null
         | undefined
-      const movimentiLines = selected.rows
+      const movimentiLines = selectedRowsForDay
         .map((r) => {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
           const servizio = (r.tipoServizioDescrizione ?? "—").trim() || "—"
@@ -184,6 +207,13 @@ export function FirmaDaCassa() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <label className="text-xs text-zinc-400">Cerca</label>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Nome, cognome o email…"
+            className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+          />
           <label className="text-xs text-zinc-400">Finestra</label>
           <select
             value={windowMode}
@@ -193,6 +223,17 @@ export function FirmaDaCassa() {
             <option value="60">Ultimi 60 minuti</option>
             <option value="day">Oggi (tutto il giorno)</option>
           </select>
+          {windowMode === "day" ? (
+            <>
+              <label className="ml-2 text-xs text-zinc-400">Data</label>
+              <input
+                type="date"
+                value={asOf}
+                onChange={(e) => setAsOf(e.target.value)}
+                className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+              />
+            </>
+          ) : null}
           <label className="ml-2 text-xs text-zinc-400">Template</label>
           <select
             value={effectiveTemplateId}

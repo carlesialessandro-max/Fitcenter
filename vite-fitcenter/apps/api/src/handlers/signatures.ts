@@ -1567,9 +1567,12 @@ export async function confirmSignature(req: Request, res: Response) {
       fs.copyFileSync(signedPdfPath, altPath)
     }
 
-    // Copia anche il file "prova" affiancato (audit).
+    // Audit JSON: salvalo in cartella separata "json" (non dentro Pdf Firmati),
+    // così in "Pdf Firmati" restano solo i PDF firmati.
     try {
-      const auditDest = `${destPath}.audit.json`
+      const jsonDir = joinFn(base, safeId, "json")
+      fs.mkdirSync(jsonDir, { recursive: true })
+      const auditDest = joinFn(jsonDir, `${path.win32.basename(destPath)}.audit.json`)
       if (fs.existsSync(auditSidecarPath)) fs.copyFileSync(auditSidecarPath, auditDest)
     } catch {
       // best effort
