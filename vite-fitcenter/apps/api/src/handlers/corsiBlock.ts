@@ -7,6 +7,16 @@ function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
+function normHHmm(s: string): string | null {
+  const t = String(s ?? "").trim()
+  if (!t) return null
+  const m = /^(\d{1,2})[:\.](\d{2})/.exec(t)
+  if (!m) return null
+  const hh = String(Number(m[1])).padStart(2, "0")
+  const mm = String(m[2]).padStart(2, "0")
+  return /^\d{2}:\d{2}$/.test(`${hh}:${mm}`) ? `${hh}:${mm}` : null
+}
+
 function safeIdent(s: string): string | null {
   const t = String(s ?? "").trim()
   if (!t) return null
@@ -61,8 +71,8 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const giorno = String(body?.giorno ?? "").trim()
   const blocked = Boolean(body?.blocked)
   const motivo = String(body?.motivo ?? "").trim()
-  const oraInizio = String(body?.oraInizio ?? "").trim()
-  const oraFine = String(body?.oraFine ?? "").trim()
+  const oraInizioRaw = String(body?.oraInizio ?? "").trim()
+  const oraFineRaw = String(body?.oraFine ?? "").trim()
 
   if (!Number.isFinite(idCorso) || idCorso <= 0) return res.status(400).json({ message: "idCorso non valido" })
   if (idPrenotazioneRaw != null && (!Number.isFinite(idPrenotazioneRaw) || idPrenotazioneRaw <= 0)) {
@@ -75,24 +85,41 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
   // Caso speciale richiesto: blocco SOLO per una data/ora (non tutta la ricorrenza).
   // Sul gestionale questo è rappresentato da righe in dbo.PrenotazioniIscrizione con IDUtente = NULL (blocco temporaneo).
-  if (giorno && /^\d{2}:\d{2}$/.test(oraInizio) && /^\d{2}:\d{2}$/.test(oraFine)) {
+  if (giorno) {
+    // Orari: se non arrivano dal client, li ricaviamo da dbo.PrenotazioniLezioni (OraInizio/OraFine).
+    let oraInizio = normHHmm(oraInizioRaw)
+    let oraFine = normHHmm(oraFineRaw)
+
     // Se non ci arriva IDPrenotazione dalla view, lo ricaviamo da PrenotazioniLezioni.
     let idPrenotazione: number | null = idPrenotazioneRaw
-    if (idPrenotazione == null) {
+    if (idPrenotazione == null || oraInizio == null || oraFine == null) {
       try {
         const rawPl = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_LEZIONI ?? "dbo.PrenotazioniLezioni") ?? "dbo.PrenotazioniLezioni"
         const plQ = qualifySqlObject(rawPl).query
         const plCols = await getColsLower(rawPl)
         const colPlId = pickFirstCol(plCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
         const colPlPren = pickFirstCol(plCols, ["IDPrenotazione", "IdPrenotazione"])
+        const colPlOraInizio = pickFirstCol(plCols, ["OraInizio", "OraIn"])
+        const colPlOraFine = pickFirstCol(plCols, ["OraFine", "OraFin"])
         if (colPlId && colPlPren) {
           const rr = await p
             .request()
             .input("idLez", sql.Int, idCorso)
-            .query(`SELECT TOP (1) CAST([${colPlPren}] AS int) AS idPren FROM ${plQ} WHERE [${colPlId}] = @idLez;`)
-          const v = (rr.recordset?.[0] as any)?.idPren
-          const n = Number(v)
-          idPrenotazione = Number.isFinite(n) && n > 0 ? n : null
+            .query(
+              `SELECT TOP (1)
+                 CAST([${colPlPren}] AS int) AS idPren
+                 ${colPlOraInizio ? `, LEFT(CONVERT(varchar(8), [${colPlOraInizio}], 108), 5) AS oi` : ""}
+                 ${colPlOraFine ? `, LEFT(CONVERT(varchar(8), [${colPlOraFine}], 108), 5) AS of` : ""}
+               FROM ${plQ}
+               WHERE [${colPlId}] = @idLez;`
+            )
+          const row = (rr.recordset?.[0] as any) ?? {}
+          if (idPrenotazione == null) {
+            const n = Number(row?.idPren)
+            idPrenotazione = Number.isFinite(n) && n > 0 ? n : null
+          }
+          if (oraInizio == null) oraInizio = normHHmm(row?.oi)
+          if (oraFine == null) oraFine = normHHmm(row?.of)
         }
       } catch {
         idPrenotazione = null
@@ -101,6 +128,9 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
     if (idPrenotazione == null) {
       return res.status(400).json({ message: "Impossibile determinare IDPrenotazione per la lezione selezionata" })
+    }
+    if (oraInizio == null || oraFine == null) {
+      return res.status(400).json({ message: "Impossibile determinare oraInizio/oraFine per la lezione selezionata" })
     }
 
     const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
