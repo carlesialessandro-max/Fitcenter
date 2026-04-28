@@ -160,7 +160,24 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
     const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
     const piQ = qualifySqlObject(rawPi).query
-    const piCols = await getColsLower(rawPi)
+    let piCols = await getColsLower(rawPi)
+    // Alcune configurazioni SQL limitano la visibilità metadati (sys.columns) anche con permessi di scrittura.
+    // Se non riusciamo a leggere le colonne, proviamo un fallback con nomi "standard" del gestionale.
+    if (piCols.size === 0) {
+      piCols = new Set<string>([
+        "idprenotazioneiscrizione",
+        "idprenotazione",
+        "idprenotazionelezione",
+        "idutente",
+        "datainizio",
+        "datafine",
+        "dataoperazione",
+        "note",
+        "importo",
+        "canale",
+        "idoperatore",
+      ])
+    }
     const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
     const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
     const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
@@ -176,7 +193,18 @@ export async function postBloccaCorso(req: Request, res: Response) {
     if (!colIdPren || !colIdLez || !colDataInizio || !colDataFine) {
       return res.status(503).json({
         message: "Tabella PrenotazioniIscrizione non compatibile (colonne obbligatorie mancanti)",
-        debug: { table: rawPi, cols: Array.from(piCols).slice(0, 80) },
+        debug: {
+          table: rawPi,
+          missing: {
+            idPrenotazione: !colIdPren,
+            idPrenotazioneLezione: !colIdLez,
+            dataInizio: !colDataInizio,
+            dataFine: !colDataFine,
+          },
+          hint:
+            "Se 'cols' è vuoto, al DB user serve VIEW DEFINITION sulla tabella/schema oppure permessi metadata; in alternativa imposta GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE e rinomina colonne candidate nel codice.",
+          cols: Array.from(piCols).slice(0, 120),
+        },
       })
     }
 

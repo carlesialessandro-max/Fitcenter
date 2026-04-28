@@ -544,9 +544,22 @@ function accessKindFromRaw(raw: any): AccessEvent["kind"] {
     raw?.DescrizioneTerminale,
     raw?.Terminale,
     raw?.terminale,
+    raw?.TerminaleNome,
+    raw?.NomeTerminale,
+    raw?.TerminaleTesto,
+    raw?.TerminaleTxt,
+    raw?.VarcoNome,
     raw?.Varco,
     raw?.varco,
     raw?.VarcoDescrizione,
+    raw?.AccessoDescrizione,
+    raw?.DescrizioneAccesso,
+    raw?.Evento,
+    raw?.event,
+    raw?.Verso,
+    raw?.Direzione,
+    raw?.Tipo,
+    raw?.TipoEvento,
     raw?.Descrizione,
     raw?.descrizione,
     raw?.Note,
@@ -560,7 +573,7 @@ function accessKindFromRaw(raw: any): AccessEvent["kind"] {
   // - se troviamo "uscita"/"exit" => out
   // - altrimenti se troviamo "ingresso"/"entrata"/"in" => in
   // - fallback: in
-  if (/\buscit[aeio]?\b|\bexit\b/.test(blob)) return "out"
+  if (/\buscit[aeio]?\b|\bexit\b|\bout\b/.test(blob)) return "out"
   if (/\bingress[oa]\b|\bentrata\b|\bin\b/.test(blob)) return "in"
   return "in"
 }
