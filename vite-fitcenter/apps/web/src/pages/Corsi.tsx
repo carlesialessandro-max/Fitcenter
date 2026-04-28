@@ -856,11 +856,21 @@ export function Corsi() {
     for (const r of list) {
       const idLez = Number((r as any)?.idPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0) continue
-      const di = (r as any)?.dataInizio ? new Date(String((r as any).dataInizio)) : null
-      const df = (r as any)?.dataFine ? new Date(String((r as any).dataFine)) : null
-      const hhmm = (d: Date | null) =>
-        d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : ""
-      s.add(`${idLez}|${hhmm(di)}|${hhmm(df)}`)
+      const toHHmm = (v: unknown): string => {
+        if (v == null) return ""
+        const s = String(v).trim()
+        // Preferisci parsing "testuale" (robusto vs timezone): trova HH:MM in stringa SQL/ISO
+        const m = /\b(\d{2}):(\d{2})(?::\d{2})?\b/.exec(s)
+        if (m) return `${m[1]}:${m[2]}`
+        const d = new Date(s)
+        if (!Number.isNaN(d.getTime())) {
+          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+        }
+        return ""
+      }
+      const oi = toHHmm((r as any)?.dataInizio)
+      const of = toHHmm((r as any)?.dataFine)
+      s.add(`${idLez}|${oi}|${of}`)
     }
     return s
   }, [blocchiCorsiQ.data])
