@@ -856,20 +856,8 @@ export function Corsi() {
     for (const r of list) {
       const idLez = Number((r as any)?.idPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0) continue
-      const toHHmm = (v: unknown): string => {
-        if (v == null) return ""
-        const s = String(v).trim()
-        // Preferisci parsing "testuale" (robusto vs timezone): trova HH:MM in stringa SQL/ISO
-        const m = /\b(\d{2}):(\d{2})(?::\d{2})?\b/.exec(s)
-        if (m) return `${m[1]}:${m[2]}`
-        const d = new Date(s)
-        if (!Number.isNaN(d.getTime())) {
-          return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
-        }
-        return ""
-      }
-      const oi = toHHmm((r as any)?.dataInizio)
-      const of = toHHmm((r as any)?.dataFine)
+      const oi = String((r as any)?.oraInizio ?? "").trim()
+      const of = String((r as any)?.oraFine ?? "").trim()
       s.add(`${idLez}|${oi}|${of}`)
     }
     return s

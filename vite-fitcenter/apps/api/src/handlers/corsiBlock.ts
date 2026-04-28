@@ -303,8 +303,13 @@ export async function getBlocchiCorsiGiorno(req: Request, res: Response) {
   const selectCols = [
     colIdLez ? `[${colIdLez}] AS idPrenotazioneLezione` : "NULL AS idPrenotazioneLezione",
     colIdPren ? `[${colIdPren}] AS idPrenotazione` : "NULL AS idPrenotazione",
-    colDataInizio ? `[${colDataInizio}] AS dataInizio` : "NULL AS dataInizio",
-    colDataFine ? `[${colDataFine}] AS dataFine` : "NULL AS dataFine",
+    // Importante: serializzare datetime come stringa locale (non Date->ISO Z) per evitare shift timezone sul client.
+    colDataInizio
+      ? `CONVERT(varchar(19), [${colDataInizio}], 120) AS dataInizioSql`
+      : "NULL AS dataInizioSql",
+    colDataFine ? `CONVERT(varchar(19), [${colDataFine}], 120) AS dataFineSql` : "NULL AS dataFineSql",
+    colDataInizio ? `LEFT(CONVERT(varchar(8), [${colDataInizio}], 108), 5) AS oraInizio` : "NULL AS oraInizio",
+    colDataFine ? `LEFT(CONVERT(varchar(8), [${colDataFine}], 108), 5) AS oraFine` : "NULL AS oraFine",
     colNote ? `[${colNote}] AS note` : "NULL AS note",
   ]
 

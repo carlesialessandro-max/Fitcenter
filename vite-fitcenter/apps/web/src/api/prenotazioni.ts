@@ -102,8 +102,10 @@ export const prenotazioniApi = {
       rows: {
         idPrenotazioneLezione: number | null
         idPrenotazione: number | null
-        dataInizio: string | null
-        dataFine: string | null
+        dataInizioSql: string | null
+        dataFineSql: string | null
+        oraInizio: string | null
+        oraFine: string | null
         note: string | null
       }[]
     }>(`/prenotazioni/blocchi-corsi${qs}`)
