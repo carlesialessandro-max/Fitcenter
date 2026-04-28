@@ -886,11 +886,20 @@ export function Corsi() {
       const rows = (body as any)?.rowsAffected
       const mode = (body as any)?.mode
       const apiMsg = (body as any)?.message ? String((body as any)?.message) : null
+      const bodyPreview = (() => {
+        try {
+          if (body == null) return "null"
+          if (typeof body === "string") return body.slice(0, 220)
+          return JSON.stringify(body).slice(0, 320)
+        } catch {
+          return String(body)
+        }
+      })()
       const msg = eMsg
         ? `KO: ${eMsg}`
         : ok
           ? `OK: ${vars?.blocked ? "bloccato" : "sbloccato"} (rows=${String(rows ?? 0)}${mode ? `, ${String(mode)}` : ""})`
-          : `KO: ${apiMsg ?? "risposta non valida"}`
+          : `KO: ${apiMsg ?? `risposta non valida (body=${bodyPreview})`}`
       setLastBloccaMsg(msg)
     },
   })
