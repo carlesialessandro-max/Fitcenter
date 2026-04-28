@@ -149,6 +149,33 @@ export async function postBloccaCorso(req: Request, res: Response) {
           const ofDb = normHHmm(row?.of)
           if (oiDb) oraInizio = oiDb
           if (ofDb) oraFine = ofDb
+        } else {
+          // Fallback hardcoded: alcune configurazioni non permettono di leggere sys.columns,
+          // ma le colonne standard esistono comunque. Proviamo direttamente.
+          try {
+            const rr = await p
+              .request()
+              .input("idLez", sql.Int, idCorso)
+              .query(
+                `SELECT TOP (1)
+                   CAST([IDPrenotazione] AS int) AS idPren,
+                   LEFT(CONVERT(varchar(8), [OraInizio], 108), 5) AS oi,
+                   LEFT(CONVERT(varchar(8), [OraFine], 108), 5) AS of
+                 FROM ${plQ}
+                 WHERE [IDPrenotazioneLezione] = @idLez;`
+              )
+            const row = (rr.recordset?.[0] as any) ?? {}
+            if (idPrenotazione == null) {
+              const n = Number(row?.idPren)
+              idPrenotazione = Number.isFinite(n) && n > 0 ? n : null
+            }
+            const oiDb = normHHmm(row?.oi)
+            const ofDb = normHHmm(row?.of)
+            if (oiDb) oraInizio = oiDb
+            if (ofDb) oraFine = ofDb
+          } catch {
+            // ignore
+          }
         }
       } catch {
         idPrenotazione = null
