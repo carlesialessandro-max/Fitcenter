@@ -405,7 +405,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
       `LEFT(CONVERT(varchar(8), [${colDataFine}], 108), 5) = @of`,
     ]
     if (colIdUtente) whereDelParts.push(`[${colIdUtente}] IS NULL`)
-    const qDel = `DELETE FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`
+    const qDelStrict = `DELETE FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`
     const rr = await p
       .request()
       .input("idLez", sql.Int, idCorso)
@@ -413,8 +413,27 @@ export async function postBloccaCorso(req: Request, res: Response) {
       .input("giorno", sql.Date, giorno)
       .input("oi", sql.VarChar(5), oraInizio)
       .input("of", sql.VarChar(5), oraFine)
-      .query(qDel)
-    const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
+      .query(qDelStrict)
+    let affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
+    let mode: "iscrizione-delete" | "iscrizione-delete-relaxed" = "iscrizione-delete"
+
+    // Se non matcha (spesso per IDPrenotazione diverso/NULL o orari incongruenti), fai fallback:
+    // cancella qualsiasi blocco (IDUtente NULL) per quella lezione e quel giorno.
+    if (!affected) {
+      try {
+        const whereRelax = [
+          `[${colIdLez}] = @idLez`,
+          `CAST([${colDataInizio}] AS date) = CAST(@giorno AS date)`,
+        ]
+        if (colIdUtente) whereRelax.push(`[${colIdUtente}] IS NULL`)
+        const qDelRelax = `DELETE FROM ${piQ} WHERE ${whereRelax.join(" AND ")};`
+        const r2 = await p.request().input("idLez", sql.Int, idCorso).input("giorno", sql.Date, giorno).query(qDelRelax)
+        affected = Array.isArray((r2 as any)?.rowsAffected) ? Number((r2 as any).rowsAffected?.[0] ?? 0) : 0
+        if (affected) mode = "iscrizione-delete-relaxed"
+      } catch {
+        // ignore
+      }
+    }
     // Best-effort: quante righe blocco restano (per debug immediato).
     let remaining = 0
     try {
@@ -430,7 +449,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
     } catch {
       remaining = 0
     }
-    return res.json({ ok: true, rowsAffected: affected, remaining, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-delete" })
+    return res.json({ ok: true, rowsAffected: affected, remaining, table: rawPi, giorno, oraInizio, oraFine, mode })
   }
 
   // Gestionale H2: blocco visibilità/prenotazioni della lezione su dbo.PrenotazioniLezioni.WebVisibile (o TotemVisibile).
