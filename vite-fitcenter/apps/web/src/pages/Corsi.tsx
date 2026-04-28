@@ -832,6 +832,8 @@ export function Corsi() {
     },
   })
 
+  const [lastBloccaMsg, setLastBloccaMsg] = useState<string | null>(null)
+
   const bloccaCorsoM = useMutation({
     mutationFn: async (input: {
       idCorso: number
@@ -854,6 +856,18 @@ export function Corsi() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["prenotazioni-corsi", giorno] })
       void queryClient.invalidateQueries({ queryKey: ["prenotazioni-blocchi-corsi", giorno] })
+    },
+    onSettled: (data, err, vars) => {
+      const eMsg = err ? String((err as any)?.message ?? err) : null
+      const ok = (data as any)?.ok
+      const rows = (data as any)?.rowsAffected
+      const mode = (data as any)?.mode
+      const msg = eMsg
+        ? `KO: ${eMsg}`
+        : ok
+          ? `OK: ${vars?.blocked ? "bloccato" : "sbloccato"} (rows=${String(rows ?? 0)}${mode ? `, ${String(mode)}` : ""})`
+          : `KO: risposta non valida`
+      setLastBloccaMsg(msg)
     },
   })
 
@@ -1452,6 +1466,11 @@ export function Corsi() {
                             ) : null}
                           </div>
                         </div>
+                        {lastBloccaMsg ? (
+                          <div className="mt-2 text-xs text-zinc-400">
+                            Esito blocco: <span className="font-mono text-zinc-200">{lastBloccaMsg}</span>
+                          </div>
+                        ) : null}
 
                         <div className="border-b border-zinc-800/60 px-5 py-3">
                           <label className="block text-xs font-medium text-zinc-400">Note corso</label>
@@ -1480,7 +1499,13 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
-                        const access = isPresentByAccess(accessIdxDay, p, giorno)
+                        const pWithTimes: PrenotazioneCorsoRow = {
+                          ...p,
+                          giorno,
+                          oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
+                          oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
+                        }
+                        const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                         const okAccesso = access.present
                         const okAppello = isAppelloChecked(g.key, p, idx)
                         const presente = okAccesso || okAppello
@@ -1596,7 +1621,13 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
-                          const access = isPresentByAccess(accessIdxDay, p, giorno)
+                          const pWithTimes: PrenotazioneCorsoRow = {
+                            ...p,
+                            giorno,
+                            oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
+                            oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
+                          }
+                          const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                           const okAccesso = access.present
                           const okAppello = isAppelloChecked(g.key, p, idx)
                           const presente = okAccesso || okAppello
