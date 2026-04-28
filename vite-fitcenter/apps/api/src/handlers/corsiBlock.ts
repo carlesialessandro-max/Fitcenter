@@ -53,6 +53,31 @@ async function getColsLower(objName: string): Promise<Set<string>> {
   }
 }
 
+type ColMeta = { name: string; isIdentity: boolean; isComputed: boolean }
+async function getColsMeta(objName: string): Promise<ColMeta[]> {
+  const p = await gestionaleSql.getPoolWrite()
+  if (!p) return []
+  try {
+    const clean = qualifySqlObject(objName).objectId
+    const r = await p.request().input("obj", sql.NVarChar, clean).query(
+      `SELECT
+         c.name AS name,
+         CAST(COLUMNPROPERTY(c.object_id, c.name, 'IsIdentity') AS int) AS isIdentity,
+         CAST(c.is_computed AS int) AS isComputed
+       FROM sys.columns c
+       WHERE c.object_id = OBJECT_ID(@obj)
+       ORDER BY c.column_id ASC;`
+    )
+    return ((r.recordset ?? []) as any[]).map((x) => ({
+      name: String(x?.name ?? "").trim(),
+      isIdentity: Number(x?.isIdentity ?? 0) === 1,
+      isComputed: Number(x?.isComputed ?? 0) === 1,
+    })).filter((x) => !!x.name)
+  } catch {
+    return []
+  }
+}
+
 function pickFirstCol(colsLower: Set<string>, candidates: string[]): string | null {
   for (const c of candidates) {
     if (colsLower.has(c.toLowerCase())) return c
@@ -169,49 +194,76 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
     if (blocked) {
       // Inserisce blocco se non esiste già.
-      const insertCols: string[] = []
-      const insertVals: string[] = []
+      //
+      // IMPORTANTISSIMO: su molte installazioni il gestionale inserisce un blocco "clonando" una riga reale
+      // (stessi campi della prenotazione) e poi sovrascrive solo alcuni campi (IDUtente=NULL, Importo=0, Note, ecc).
+      // Questo evita record "incompleti" che non vengono letti correttamente dal gestionale.
+      //
+      // Strategia:
+      // - se troviamo una riga "base" (stessa lezione+prenotazione+orari, con IDUtente NOT NULL) facciamo
+      //   INSERT ... SELECT copiando tutte le colonne non identity/non computed, sovrascrivendo i campi noti.
+      // - se non troviamo base row, fallback al vecchio INSERT "minimo".
 
-      insertCols.push(`[${colIdLez}]`)
-      insertVals.push(`@idLez`)
-      insertCols.push(`[${colIdPren}]`)
-      insertVals.push(`@idPren`)
-      insertCols.push(`[${colDataInizio}]`)
-      insertVals.push(`@dtStart`)
-      insertCols.push(`[${colDataFine}]`)
-      insertVals.push(`@dtEnd`)
-      if (colIdUtente) {
-        insertCols.push(`[${colIdUtente}]`)
-        insertVals.push(`NULL`)
-      }
-      if (colImporto) {
-        insertCols.push(`[${colImporto}]`)
-        insertVals.push(`0`)
-      }
-      if (colNote) {
-        insertCols.push(`[${colNote}]`)
-        insertVals.push(`@note`)
-      }
-      if (colCanale) {
-        insertCols.push(`[${colCanale}]`)
-        // Dal gestionale: sui blocchi temporanei questo campo risulta NULL.
-        insertVals.push(`NULL`)
-      }
-      if (colOperatore) {
-        insertCols.push(`[${colOperatore}]`)
-        // Dal gestionale: i blocchi temporanei hanno spesso IDOperatore = 5.
-        insertVals.push(`5`)
-      }
-      if (colDataOp) {
-        insertCols.push(`[${colDataOp}]`)
-        insertVals.push(`GETDATE()`)
-      }
+      const meta = await getColsMeta(rawPi)
+      const insertable = meta.filter((c) => !c.isIdentity && !c.isComputed).map((c) => c.name)
+      const canClone = insertable.length > 0
 
-      const qIns = `
+      const colList = (name: string) => `[${name.replace(/]/g, "]]")}]`
+
+      const overrides = new Map<string, string>()
+      overrides.set(colIdLez, "@idLez")
+      overrides.set(colIdPren, "@idPren")
+      overrides.set(colDataInizio, "@dtStart")
+      overrides.set(colDataFine, "@dtEnd")
+      if (colIdUtente) overrides.set(colIdUtente, "NULL")
+      if (colImporto) overrides.set(colImporto, "0")
+      if (colNote) overrides.set(colNote, "@note")
+      if (colCanale) overrides.set(colCanale, "NULL")
+      if (colOperatore) overrides.set(colOperatore, "5")
+      if (colDataOp) overrides.set(colDataOp, "GETDATE()")
+
+      const baseWhere = [...whereParts]
+      // Base row: non deve essere già un blocco (IDUtente NOT NULL), se la colonna esiste.
+      if (colIdUtente) baseWhere.push(`[${colIdUtente}] IS NOT NULL`)
+
+      const cloneInsertSql = (() => {
+        if (!canClone) return null
+        const cols = insertable.map(colList).join(", ")
+        const selectExprs = insertable
+          .map((c) => {
+            const ov = overrides.get(c)
+            return ov ? `${ov} AS ${colList(c)}` : `B.${colList(c)}`
+          })
+          .join(", ")
+        return `
+          IF NOT EXISTS (SELECT 1 FROM ${piQ} WHERE ${whereParts.join(" AND ")})
+          BEGIN
+            IF EXISTS (SELECT 1 FROM ${piQ} B WHERE ${baseWhere.join(" AND ")})
+            BEGIN
+              INSERT INTO ${piQ} (${cols})
+              SELECT TOP (1) ${selectExprs}
+              FROM ${piQ} B
+              WHERE ${baseWhere.join(" AND ")}
+              ORDER BY ${colList(colIdPren)} DESC;
+            END
+            ELSE
+            BEGIN
+              -- fallback: insert minimo (senza clone)
+              INSERT INTO ${piQ} (${[colIdLez, colIdPren, colDataInizio, colDataFine]
+                .filter(Boolean)
+                .map(colList)
+                .join(", ")}${colIdUtente ? `, ${colList(colIdUtente)}` : ""}${colImporto ? `, ${colList(colImporto)}` : ""}${colNote ? `, ${colList(colNote)}` : ""}${colCanale ? `, ${colList(colCanale)}` : ""}${colOperatore ? `, ${colList(colOperatore)}` : ""}${colDataOp ? `, ${colList(colDataOp)}` : ""})
+              VALUES (@idLez, @idPren, @dtStart, @dtEnd${colIdUtente ? ", NULL" : ""}${colImporto ? ", 0" : ""}${colNote ? ", @note" : ""}${colCanale ? ", NULL" : ""}${colOperatore ? ", 5" : ""}${colDataOp ? ", GETDATE()" : ""});
+            END
+          END
+        `
+      })()
+
+      const qIns = cloneInsertSql ?? `
         IF NOT EXISTS (SELECT 1 FROM ${piQ} WHERE ${whereParts.join(" AND ")})
         BEGIN
-          INSERT INTO ${piQ} (${insertCols.join(", ")})
-          VALUES (${insertVals.join(", ")});
+          INSERT INTO ${piQ} ([${colIdLez}], [${colIdPren}], [${colDataInizio}], [${colDataFine}]${colIdUtente ? `, [${colIdUtente}]` : ""}${colImporto ? `, [${colImporto}]` : ""}${colNote ? `, [${colNote}]` : ""}${colCanale ? `, [${colCanale}]` : ""}${colOperatore ? `, [${colOperatore}]` : ""}${colDataOp ? `, [${colDataOp}]` : ""})
+          VALUES (@idLez, @idPren, @dtStart, @dtEnd${colIdUtente ? ", NULL" : ""}${colImporto ? ", 0" : ""}${colNote ? ", @note" : ""}${colCanale ? ", NULL" : ""}${colOperatore ? ", 5" : ""}${colDataOp ? ", GETDATE()" : ""});
         END
       `
 
