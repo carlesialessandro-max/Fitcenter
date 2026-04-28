@@ -35,14 +35,44 @@ async function request<T>(
   const res = await fetch(url, { ...options, headers })
   if (res.status === 401) {
     setAuthToken(null)
-    const err = await res.json().catch(() => ({ message: "Sessione scaduta" }))
-    throw new Error((err as { message?: string }).message ?? "Sessione scaduta")
+    const text = await res.text().catch(() => "")
+    let msg = "Sessione scaduta"
+    try {
+      const j = text ? JSON.parse(text) : null
+      msg = (j as any)?.message ?? msg
+    } catch {
+      // ignore
+    }
+    throw new Error(msg)
   }
+
+  // Leggi testo prima: alcune risposte possono essere vuote o non-JSON (proxy/html).
+  const text = await res.text().catch(() => "")
+  const parseBody = (): unknown => {
+    if (!text) return null
+    try {
+      return JSON.parse(text)
+    } catch {
+      return text
+    }
+  }
+  const body = parseBody()
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }))
-    throw new Error((err as { message?: string }).message ?? "Errore di rete")
+    const msg =
+      (body && typeof body === "object" && (body as any).message ? String((body as any).message) : null) ??
+      (typeof body === "string" && body.trim() ? body.trim().slice(0, 220) : null) ??
+      res.statusText ??
+      "Errore di rete"
+    throw new Error(msg)
   }
-  return res.json() as Promise<T>
+
+  // Se la risposta è "null" o vuota, è un'anomalia: rendiamola visibile.
+  if (body == null) {
+    throw new Error(`Risposta vuota dal server (HTTP ${res.status})`)
+  }
+
+  return body as T
 }
 
 export const api = {
