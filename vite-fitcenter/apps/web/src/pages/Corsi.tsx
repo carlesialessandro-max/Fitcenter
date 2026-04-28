@@ -445,6 +445,19 @@ function makeLocalDateFromYmd(ymd: string, hh: number, mm: number): Date | null 
   return Number.isNaN(dt.getTime()) ? null : dt
 }
 
+function normTimeHHmm(raw: string): { hh: number; mm: number } | null {
+  const s = String(raw ?? "").trim()
+  if (!s) return null
+  // Supporta: "10:39", "10:39:00", "10.39"
+  const m = /^(\d{1,2})[:\.](\d{2})(?::\d{2})?$/.exec(s)
+  if (!m) return null
+  const hh = Number(m[1])
+  const mm = Number(m[2])
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null
+  return { hh, mm }
+}
+
 function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { start: Date | null; end: Date | null } {
   const raw = (p.raw ?? {}) as any
   let start =
@@ -463,47 +476,43 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
 
   // PRIORITÀ: se abbiamo (giorno ISO + oraInizio/oraFine) affidabili, usali sempre.
   // Nel gestionale alcune viste mettono InizioPrenotazioneIscrizione a 00:00:00 e "sporcono" lo start.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi) && oi !== "00:00") {
-    const [hh, mm] = oi.split(":").map((x) => Number(x))
-    const d = makeLocalDateFromYmd(dayIso, hh, mm)
+  const oiT = normTimeHHmm(oi)
+  const ofT = normTimeHHmm(of)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && oiT && `${String(oiT.hh).padStart(2, "0")}:${String(oiT.mm).padStart(2, "0")}` !== "00:00") {
+    const d = makeLocalDateFromYmd(dayIso, oiT.hh, oiT.mm)
     if (d) start = d
   }
-  if (start && /^\d{1,2}:\d{2}$/.test(of) && of !== "00:00") {
-    const [hh, mm] = of.split(":").map((x) => Number(x))
+  if (start && ofT && `${String(ofT.hh).padStart(2, "0")}:${String(ofT.mm).padStart(2, "0")}` !== "00:00") {
     const d = new Date(start)
-    d.setHours(hh, mm, 0, 0)
+    d.setHours(ofT.hh, ofT.mm, 0, 0)
     if (!Number.isNaN(d.getTime())) end = d
   }
 
   // Alcune viste espongono Inizio/Fine con data corretta ma ORA = 00:00:00.
   // In questo caso, se abbiamo oraInizio/oraFine, correggiamo l'orario.
-  if (start && start.getHours() === 0 && start.getMinutes() === 0 && /^\d{1,2}:\d{2}$/.test(oi)) {
-    const [hh, mm] = oi.split(":").map((x) => Number(x))
+  if (start && start.getHours() === 0 && start.getMinutes() === 0 && oiT) {
     const d = new Date(start)
-    d.setHours(hh, mm, 0, 0)
+    d.setHours(oiT.hh, oiT.mm, 0, 0)
     if (!Number.isNaN(d.getTime())) start = d
   }
-  if (end && end.getHours() === 0 && end.getMinutes() === 0 && /^\d{1,2}:\d{2}$/.test(of)) {
-    const [hh, mm] = of.split(":").map((x) => Number(x))
+  if (end && end.getHours() === 0 && end.getMinutes() === 0 && ofT) {
     const d = new Date(end)
-    d.setHours(hh, mm, 0, 0)
+    d.setHours(ofT.hh, ofT.mm, 0, 0)
     if (!Number.isNaN(d.getTime())) end = d
   }
 
   // Fallback: alcune viste non espongono le colonne DataInizio/FinePrenotazioneIscrizione.
   // In quel caso ricostruiamo dalla coppia (giorno + oraInizio/oraFine) della prenotazione.
   if (!start) {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && /^\d{1,2}:\d{2}$/.test(oi)) {
-      const [hh, mm] = oi.split(":").map((x) => Number(x))
-      const d = makeLocalDateFromYmd(dayIso, hh, mm)
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dayIso) && oiT) {
+      const d = makeLocalDateFromYmd(dayIso, oiT.hh, oiT.mm)
       if (d) start = d
     }
   }
   if (!end && start) {
-    if (/^\d{1,2}:\d{2}$/.test(of)) {
-      const [hh, mm] = of.split(":").map((x) => Number(x))
+    if (ofT) {
       const d = new Date(start)
-      d.setHours(hh, mm, 0, 0)
+      d.setHours(ofT.hh, ofT.mm, 0, 0)
       if (!Number.isNaN(d.getTime())) end = d
     }
   }
@@ -1772,7 +1781,7 @@ export function CorsiNoShow() {
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
-      const presenteAppello = !!appello[`${gk}::${pk}`]
+      const presenteAppello = !!appello[`${gk}::${pk}`] || !!appello[`${gk}::${legacyParticipantKey(p, 0)}`]
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
       const presente = presenteAppello || presenteAccessi
@@ -1826,7 +1835,7 @@ export function CorsiNoShow() {
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
-      const presenteAppello = !!appello[`${gk}::${pk}`]
+      const presenteAppello = !!appello[`${gk}::${pk}`] || !!appello[`${gk}::${legacyParticipantKey(p, 0)}`]
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
       if (presenteAppello || presenteAccessi) continue
