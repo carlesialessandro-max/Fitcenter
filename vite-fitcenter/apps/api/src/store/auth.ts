@@ -31,6 +31,7 @@ type UserRecord = User & { password: string; email?: string }
  *   campus    → H2Fc.Campus.9!t
  *   scuola_nuoto → H2Fc.ScuolaNuoto.9!v
  *   bagnini   → H2Fc.Bagnini.9!w
+ *   danza     → H2Fc.Danza.9!y
  */
 const DEFAULT_USERS: UserRecord[] = [
   {
@@ -104,6 +105,12 @@ const DEFAULT_USERS: UserRecord[] = [
     nome: "Bagnini",
     role: "bagnini",
   },
+  {
+    username: "danza",
+    password: "$2b$12$yJwj5G4QeWY8wol4TcBxQ.P2FeZ1og0GqicMfVjFk0jOPPfv7XCGe",
+    nome: "Danza",
+    role: "danza",
+  },
 ]
 
 function loadUsersFromEnv(): UserRecord[] | null {
@@ -123,7 +130,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
       if (
         !username ||
         !password ||
-        !["admin", "operatore", "firme", "corsi", "istruttore", "campus", "scuola_nuoto", "bagnini"].includes(role)
+        !["admin", "operatore", "firme", "corsi", "istruttore", "campus", "scuola_nuoto", "bagnini", "danza"].includes(role)
       ) {
         continue
       }

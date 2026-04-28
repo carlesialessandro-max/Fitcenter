@@ -764,6 +764,97 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
   }
 }
 
+/** Danza: abbonamenti attivi oggi filtrati su categoria DANZA (drilldown client). */
+export async function getDanzaAttiviOggi(req: Request, res: Response) {
+  try {
+    const now = new Date()
+    const todayIso = now.toISOString().slice(0, 10)
+    let list: Abbonamento[] = []
+    if (gestionaleSql.isGestionaleConfigured()) {
+      const rows = await gestionaleSql.queryAbbonamenti(undefined)
+      list = rows.map((r) => rowToAbbonamento(r))
+    } else {
+      const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
+      list = [...mockAbbonamenti]
+    }
+    // Attivi oggi: DataInizio <= today <= DataFine
+    const attivi = list.filter((a) => {
+      const di = String(a.dataInizio ?? "").slice(0, 10)
+      const df = String(a.dataFine ?? "").slice(0, 10)
+      return !!di && !!df && di <= todayIso && df >= todayIso
+    })
+
+    const norm = (s: string) =>
+      s
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/\s+/g, " ")
+        .trim()
+    const isDanza = (a: Abbonamento) => {
+      const cat = norm(String(a.categoriaAbbonamentoDescrizione ?? a.categoria ?? ""))
+      const macro = norm(String(a.macroCategoriaDescrizione ?? ""))
+      const piano = norm(String(a.pianoNome ?? ""))
+      return cat === "DANZA" || cat.includes("DANZA") || macro.includes("DANZA") || piano.includes("DANZA")
+    }
+    const danza = attivi.filter(isDanza)
+
+    const pick = (raw: any, keys: string[]) => {
+      for (const k of keys) {
+        const v = raw?.[k]
+        if (v == null) continue
+        const s = String(v).trim()
+        if (s) return s
+      }
+      return null
+    }
+
+    const rows = danza.map((a) => {
+      const raw = (a as any)?.raw ?? (a as any)
+      const email = pick(raw, ["ClienteEmail", "Email", "email", "E_mail", "Mail"])
+      const telefono = pick(raw, ["ClienteSms", "SMS", "sms", "Cellulare", "Telefono", "Telefono_1", "Telefono1"])
+      const totale = Number(a.prezzo ?? 0) || 0
+      // Best-effort: senza una view pagamenti dedicata assumiamo pagato = totale.
+      const pagato = totale
+      const daPagare = Math.max(0, totale - pagato)
+      return {
+        idIscrizione: a.id,
+        clienteId: a.clienteId,
+        cognome: String(a.clienteNome ?? "").trim().split(" ").slice(0, 1).join(" ") || null,
+        nome: String(a.clienteNome ?? "").trim().split(" ").slice(1).join(" ") || null,
+        clienteNome: a.clienteNome,
+        email,
+        telefono,
+        abbonamento: a.abbonamentoDescrizione ?? a.pianoNome,
+        categoria: a.categoriaAbbonamentoDescrizione ?? "DANZA",
+        scadenza: a.dataFine,
+        totale,
+        pagato,
+        daPagare,
+      }
+    })
+
+    const byCategoria = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const c = String(r.categoria ?? "DANZA").trim() || "DANZA"
+      const arr = byCategoria.get(c) ?? []
+      arr.push(r)
+      byCategoria.set(c, arr)
+    }
+    const categorie = Array.from(byCategoria.entries())
+      .map(([categoria, items]) => ({
+        categoria,
+        totaleIscritti: items.length,
+        items: items.sort((a, b) => String(a.clienteNome).localeCompare(String(b.clienteNome))),
+      }))
+      .sort((a, b) => b.totaleIscritti - a.totaleIscritti || a.categoria.localeCompare(b.categoria))
+
+    res.json({ asOf: todayIso, categorie })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function getClienti(req: Request, res: Response) {
   try {
     if (!gestionaleSql.isGestionaleConfigured()) {

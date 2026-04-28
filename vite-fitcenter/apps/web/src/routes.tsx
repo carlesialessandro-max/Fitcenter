@@ -23,6 +23,7 @@ import { Campus } from "@/pages/Campus"
 import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
 import { PiscinaMappa } from "@/pages/PiscinaMappa"
 import { Incassi } from "@/pages/Incassi"
+import { Danza } from "@/pages/Danza"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -32,6 +33,7 @@ function DashboardOrRedirect() {
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
   if (role === "scuola_nuoto") return <Navigate to="/scuola-nuoto" replace />
   if (role === "bagnini") return <Navigate to="/piscina" replace />
+  if (role === "danza") return <Navigate to="/danza" replace />
   return <Dashboard />
 }
 
@@ -76,6 +78,7 @@ export const router = createBrowserRouter([
       { path: "corsi/assenze", element: <CorsiNoShow /> },
       { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },
+      { path: "danza", element: <Danza /> },
       { path: "scuola-nuoto", element: <ScuolaNuoto /> },
       { path: "piscina", element: <PiscinaMappa /> },
       { path: "incassi", element: <Incassi /> },

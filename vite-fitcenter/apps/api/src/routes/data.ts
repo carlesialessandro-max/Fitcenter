@@ -1,7 +1,7 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
-import { requireAdmin, requireAdminOrCampus, requireAuth } from "../middleware/auth.js"
+import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
 import { getIncassi } from "../handlers/incassi.js"
 
@@ -22,6 +22,7 @@ dataRouter.get("/dettaglio-anno", requireAdmin, getDettaglioAnno)
 dataRouter.get("/clienti", getClienti)
 dataRouter.get("/abbonamenti", getAbbonamenti)
 dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
+dataRouter.get("/danza/attivi-oggi", requireAdminOrDanza, getDanzaAttiviOggi)
 dataRouter.get("/budget", requireAdmin, getBudget)
 dataRouter.post("/budget", requireAdmin, setBudget)
 dataRouter.get("/leads", getLeadsFromGestionale)

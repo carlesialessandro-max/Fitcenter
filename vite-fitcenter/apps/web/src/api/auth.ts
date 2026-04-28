@@ -1,7 +1,7 @@
 import { api } from "./client"
 import { setAuthToken } from "./client"
 
-export type Role = "admin" | "operatore" | "firme" | "corsi" | "istruttore" | "campus" | "scuola_nuoto"
+export type Role = "admin" | "operatore" | "firme" | "corsi" | "istruttore" | "campus" | "scuola_nuoto" | "bagnini" | "danza"
 
 export interface User {
   username: string

@@ -20,9 +20,10 @@ const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/
 const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
 const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 // Reception: solo firma da cassa (no dashboard, no admin firme).
-const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa" }] as const
+const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa", children: [{ to: "/campus", label: "Campus" }] }] as const
 const navScuolaNuoto: NavItem[] = [{ to: "/scuola-nuoto", label: "Scuola Nuoto" }] as const
 const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as const
+const navDanza: NavItem[] = [{ to: "/danza", label: "Danza" }] as const
 
 const navAdmin: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
@@ -70,6 +71,8 @@ export function AppLayout() {
                   ? navScuolaNuoto
                   : role === "bagnini"
                     ? navBagnini
+                    : role === "danza"
+                      ? navDanza
               : navOperatore
 
   const Sidebar = (
@@ -98,6 +101,8 @@ export function AppLayout() {
                       ? "Scuola Nuoto"
             : role === "bagnini"
               ? "Bagnini"
+              : role === "danza"
+                ? "Danza"
                     : "Operatore"}
         </p>
         <button

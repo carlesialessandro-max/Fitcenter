@@ -1,4 +1,13 @@
-export type Role = "admin" | "operatore" | "firme" | "corsi" | "istruttore" | "campus" | "scuola_nuoto" | "bagnini"
+export type Role =
+  | "admin"
+  | "operatore"
+  | "firme"
+  | "corsi"
+  | "istruttore"
+  | "campus"
+  | "scuola_nuoto"
+  | "bagnini"
+  | "danza"
 
 export interface LoginBody {
   username: string
