@@ -57,7 +57,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const body = (req.body ?? {}) as any
   // In pagina Corsi, l'ID più affidabile è quello della lezione/prenotazione (IDPrenotazioneLezione).
   const idCorso = Number(body?.idCorso)
-  const idPrenotazione = body?.idPrenotazione != null ? Number(body?.idPrenotazione) : null
+  const idPrenotazioneRaw = body?.idPrenotazione != null ? Number(body?.idPrenotazione) : null
   const giorno = String(body?.giorno ?? "").trim()
   const blocked = Boolean(body?.blocked)
   const motivo = String(body?.motivo ?? "").trim()
@@ -65,7 +65,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
   const oraFine = String(body?.oraFine ?? "").trim()
 
   if (!Number.isFinite(idCorso) || idCorso <= 0) return res.status(400).json({ message: "idCorso non valido" })
-  if (idPrenotazione != null && (!Number.isFinite(idPrenotazione) || idPrenotazione <= 0)) {
+  if (idPrenotazioneRaw != null && (!Number.isFinite(idPrenotazioneRaw) || idPrenotazioneRaw <= 0)) {
     return res.status(400).json({ message: "idPrenotazione non valido" })
   }
   if (giorno && !isIsoDate(giorno)) return res.status(400).json({ message: "giorno non valido (YYYY-MM-DD)" })
@@ -75,7 +75,34 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
   // Caso speciale richiesto: blocco SOLO per una data/ora (non tutta la ricorrenza).
   // Sul gestionale questo è rappresentato da righe in dbo.PrenotazioniIscrizione con IDUtente = NULL (blocco temporaneo).
-  if (giorno && /^\d{2}:\d{2}$/.test(oraInizio) && /^\d{2}:\d{2}$/.test(oraFine) && idPrenotazione != null) {
+  if (giorno && /^\d{2}:\d{2}$/.test(oraInizio) && /^\d{2}:\d{2}$/.test(oraFine)) {
+    // Se non ci arriva IDPrenotazione dalla view, lo ricaviamo da PrenotazioniLezioni.
+    let idPrenotazione: number | null = idPrenotazioneRaw
+    if (idPrenotazione == null) {
+      try {
+        const rawPl = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_LEZIONI ?? "dbo.PrenotazioniLezioni") ?? "dbo.PrenotazioniLezioni"
+        const plQ = qualifySqlObject(rawPl).query
+        const plCols = await getColsLower(rawPl)
+        const colPlId = pickFirstCol(plCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+        const colPlPren = pickFirstCol(plCols, ["IDPrenotazione", "IdPrenotazione"])
+        if (colPlId && colPlPren) {
+          const rr = await p
+            .request()
+            .input("idLez", sql.Int, idCorso)
+            .query(`SELECT TOP (1) CAST([${colPlPren}] AS int) AS idPren FROM ${plQ} WHERE [${colPlId}] = @idLez;`)
+          const v = (rr.recordset?.[0] as any)?.idPren
+          const n = Number(v)
+          idPrenotazione = Number.isFinite(n) && n > 0 ? n : null
+        }
+      } catch {
+        idPrenotazione = null
+      }
+    }
+
+    if (idPrenotazione == null) {
+      return res.status(400).json({ message: "Impossibile determinare IDPrenotazione per la lezione selezionata" })
+    }
+
     const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
     const piQ = qualifySqlObject(rawPi).query
     const piCols = await getColsLower(rawPi)
@@ -235,7 +262,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
     // Opzionale: aggiorna anche la "prenotazione madre" (dbo.Prenotazioni) se ci viene passato l'ID.
     // In alcuni gestionali la visibilità web dipende sia dalla lezione che dalla prenotazione.
     let affectedPren = 0
-    if (idPrenotazione != null) {
+    if (idPrenotazioneRaw != null) {
       const rawPrenTable = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI ?? "dbo.Prenotazioni") ?? "dbo.Prenotazioni"
       const pq = qualifySqlObject(rawPrenTable).query
       const prenCols = await getColsLower(rawPrenTable)
@@ -244,7 +271,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
       if (prenIdCol && prenEnabledCol) {
         const rr = await p
           .request()
-          .input("idPren", sql.Int, idPrenotazione)
+          .input("idPren", sql.Int, idPrenotazioneRaw)
           .input("enabled", sql.Int, enabledValue)
           .query(`UPDATE ${pq} SET [${prenEnabledCol}] = @enabled WHERE [${prenIdCol}] = @idPren;`)
         affectedPren = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
@@ -258,7 +285,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
       colEnabled,
       enabledValue,
       giorno: giorno || null,
-      ...(idPrenotazione != null ? { rowsAffectedPrenotazione: affectedPren } : {}),
+      ...(idPrenotazioneRaw != null ? { rowsAffectedPrenotazione: affectedPren } : {}),
     })
   } catch (e) {
     return res.status(500).json({ message: (e as Error).message })
