@@ -308,13 +308,16 @@ export async function postBloccaCorso(req: Request, res: Response) {
     }
 
     // Unblock: cancella le righe blocco (IDUtente NULL) per quella data/ora.
-    // Nota: alcuni DB salvano i datetime con rounding/precision diversa (smalldatetime/datetime2),
-    // quindi l'uguaglianza perfetta può non matchare. Usiamo una comparazione "a minuto".
+    // IMPORTANT: evitare confronti su DateTime passati da Node (timezone/precisione/rounding possono rompere il match).
+    // Usiamo confronto deterministico su:
+    // - CAST(DataInizio AS date) = @giorno
+    // - ora (HH:MM) estratta da SQL = @oi/@of
     const whereDelParts = [
       `[${colIdLez}] = @idLez`,
       `[${colIdPren}] = @idPren`,
-      `ABS(DATEDIFF(minute, [${colDataInizio}], @dtStart)) = 0`,
-      `ABS(DATEDIFF(minute, [${colDataFine}], @dtEnd)) = 0`,
+      `CAST([${colDataInizio}] AS date) = CAST(@giorno AS date)`,
+      `LEFT(CONVERT(varchar(8), [${colDataInizio}], 108), 5) = @oi`,
+      `LEFT(CONVERT(varchar(8), [${colDataFine}], 108), 5) = @of`,
     ]
     if (colIdUtente) whereDelParts.push(`[${colIdUtente}] IS NULL`)
     const qDel = `DELETE FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`
@@ -322,8 +325,9 @@ export async function postBloccaCorso(req: Request, res: Response) {
       .request()
       .input("idLez", sql.Int, idCorso)
       .input("idPren", sql.Int, idPrenotazione)
-      .input("dtStart", sql.DateTime, new Date(dtStart))
-      .input("dtEnd", sql.DateTime, new Date(dtEnd))
+      .input("giorno", sql.Date, giorno)
+      .input("oi", sql.VarChar(5), oraInizio)
+      .input("of", sql.VarChar(5), oraFine)
       .query(qDel)
     const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.[0] ?? 0) : 0
     // Best-effort: quante righe blocco restano (per debug immediato).
@@ -333,8 +337,9 @@ export async function postBloccaCorso(req: Request, res: Response) {
         .request()
         .input("idLez", sql.Int, idCorso)
         .input("idPren", sql.Int, idPrenotazione)
-        .input("dtStart", sql.DateTime, new Date(dtStart))
-        .input("dtEnd", sql.DateTime, new Date(dtEnd))
+        .input("giorno", sql.Date, giorno)
+        .input("oi", sql.VarChar(5), oraInizio)
+        .input("of", sql.VarChar(5), oraFine)
         .query(`SELECT COUNT(1) AS c FROM ${piQ} WHERE ${whereDelParts.join(" AND ")};`)
       remaining = Number((rc.recordset?.[0] as any)?.c ?? 0) || 0
     } catch {
