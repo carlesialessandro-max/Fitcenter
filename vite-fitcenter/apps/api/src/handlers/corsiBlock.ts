@@ -312,6 +312,11 @@ export async function postBloccaCorso(req: Request, res: Response) {
       // (stessi campi della prenotazione) e poi sovrascrive solo alcuni campi (IDUtente=NULL, Importo=0, Note, ecc).
       // Questo evita record "incompleti" che non vengono letti correttamente dal gestionale.
       //
+      // Nel tuo DB (trace XE) il gestionale fa invece un INSERT "minimo" su PrenotazioniIscrizione:
+      // (IDPrenotazione,IDUtente,DataInizio,DataFine,DataOperazione,Totale,IDOperatore,Note,IDPrenotazioneLezione)
+      // e lascia NULL gli altri campi. Questo sembra essere ciò che rende il blocco effettivo lato prenotazioni.
+      // Quindi: se le colonne standard esistono, preferiamo SEMPRE l'insert minimo (no clone).
+      //
       // Strategia:
       // - se troviamo una riga "base" (stessa lezione+prenotazione+orari, con IDUtente NOT NULL) facciamo
       //   INSERT ... SELECT copiando tutte le colonne non identity/non computed, sovrascrivendo i campi noti.
@@ -322,6 +327,40 @@ export async function postBloccaCorso(req: Request, res: Response) {
       const canClone = insertable.length > 0
 
       const colList = (name: string) => `[${name.replace(/]/g, "]]")}]`
+
+      // Insert minimo "come gestionale"
+      const canMinInsert =
+        !!colIdPren && !!colIdLez && !!colDataInizio && !!colDataFine && !!colDataOp && !!colOperatore && !!colNote && !!colImporto
+      const qInsMin = canMinInsert
+        ? `
+          IF NOT EXISTS (SELECT 1 FROM ${piQ} WHERE ${whereParts.join(" AND ")})
+          BEGIN
+            INSERT INTO ${piQ} (${[
+              colList(colIdPren),
+              colIdUtente ? colList(colIdUtente) : null,
+              colList(colDataInizio),
+              colList(colDataFine),
+              colList(colDataOp),
+              colList(colImporto),
+              colList(colOperatore),
+              colList(colNote),
+              colList(colIdLez),
+            ]
+              .filter(Boolean)
+              .join(", ")})
+            VALUES (
+              @idPren,
+              ${colIdUtente ? "NULL" : ""}${colIdUtente ? "," : ""} @dtStart,
+              @dtEnd,
+              GETDATE(),
+              0,
+              5,
+              @note,
+              @idLez
+            );
+          END
+        `
+        : null
 
       const overrides = new Map<string, string>()
       overrides.set(colIdLez, "@idLez")
@@ -372,7 +411,7 @@ export async function postBloccaCorso(req: Request, res: Response) {
         `
       })()
 
-      const qIns = cloneInsertSql ?? `
+      const qIns = qInsMin ?? cloneInsertSql ?? `
         IF NOT EXISTS (SELECT 1 FROM ${piQ} WHERE ${whereParts.join(" AND ")})
         BEGIN
           INSERT INTO ${piQ} ([${colIdLez}], [${colIdPren}], [${colDataInizio}], [${colDataFine}]${colIdUtente ? `, [${colIdUtente}]` : ""}${colImporto ? `, [${colImporto}]` : ""}${colNote ? `, [${colNote}]` : ""}${colCanale ? `, [${colCanale}]` : ""}${colOperatore ? `, [${colOperatore}]` : ""}${colDataOp ? `, [${colDataOp}]` : ""})
