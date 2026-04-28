@@ -293,17 +293,20 @@ export async function postBloccaCorso(req: Request, res: Response) {
       })
     }
 
-    const dtStart = `${giorno}T${oraInizio}:00`
-    const dtEnd = `${giorno}T${oraFine}:00`
-
-    // Individua righe blocco esistenti: stesso corso+prenotazione+intervallo e IDUtente NULL.
+    // Per allineamento gestionale, evitiamo uguaglianze su DateTime passati da Node (timezone/precisione).
+    // Matchiamo per: lezione + prenotazione + giorno + HH:MM (estratto lato SQL).
     const whereParts = [
       `[${colIdLez}] = @idLez`,
       `[${colIdPren}] = @idPren`,
-      `[${colDataInizio}] = @dtStart`,
-      `[${colDataFine}] = @dtEnd`,
+      `CAST([${colDataInizio}] AS date) = CAST(@giorno AS date)`,
+      `LEFT(CONVERT(varchar(8), [${colDataInizio}], 108), 5) = @oi`,
+      `LEFT(CONVERT(varchar(8), [${colDataFine}], 108), 5) = @of`,
     ]
     if (colIdUtente) whereParts.push(`[${colIdUtente}] IS NULL`)
+
+    const giornoIt = giorno.split("-").reverse().join("/")
+    const dtStartIt = `${giornoIt} ${oraInizio}:00`
+    const dtEndIt = `${giornoIt} ${oraFine}:00`
 
     if (blocked) {
       // Inserisce blocco se non esiste già.
@@ -348,16 +351,16 @@ export async function postBloccaCorso(req: Request, res: Response) {
             ]
               .filter(Boolean)
               .join(", ")})
-            VALUES (
-              @idPren,
-              ${colIdUtente ? "NULL" : ""}${colIdUtente ? "," : ""} @dtStart,
-              @dtEnd,
-              GETDATE(),
-              0,
-              5,
-              @note,
-              @idLez
-            );
+             VALUES (
+               @idPren,
+               ${colIdUtente ? "NULL" : ""}${colIdUtente ? "," : ""} TRY_CONVERT(datetime, @dtStartIt, 103),
+               TRY_CONVERT(datetime, @dtEndIt, 103),
+               GETDATE(),
+               0,
+               5,
+               @note,
+               @idLez
+             );
           END
         `
         : null
@@ -365,8 +368,8 @@ export async function postBloccaCorso(req: Request, res: Response) {
       const overrides = new Map<string, string>()
       overrides.set(colIdLez, "@idLez")
       overrides.set(colIdPren, "@idPren")
-      overrides.set(colDataInizio, "@dtStart")
-      overrides.set(colDataFine, "@dtEnd")
+      overrides.set(colDataInizio, "TRY_CONVERT(datetime, @dtStartIt, 103)")
+      overrides.set(colDataFine, "TRY_CONVERT(datetime, @dtEndIt, 103)")
       if (colIdUtente) overrides.set(colIdUtente, "NULL")
       if (colImporto) overrides.set(colImporto, "0")
       if (colNote) overrides.set(colNote, "@note")
@@ -423,8 +426,11 @@ export async function postBloccaCorso(req: Request, res: Response) {
         .request()
         .input("idLez", sql.Int, idCorso)
         .input("idPren", sql.Int, idPrenotazione)
-        .input("dtStart", sql.DateTime, new Date(dtStart))
-        .input("dtEnd", sql.DateTime, new Date(dtEnd))
+        .input("giorno", sql.Date, giorno)
+        .input("oi", sql.VarChar(5), oraInizio)
+        .input("of", sql.VarChar(5), oraFine)
+        .input("dtStartIt", sql.VarChar(19), dtStartIt)
+        .input("dtEndIt", sql.VarChar(19), dtEndIt)
         // Allineamento gestionale: per permettere sblocco via interfaccia gestionale,
         // la nota deve essere esattamente quella usata dal gestionale.
         .input("note", sql.NVarChar(200), "Blocco temporaneo")
