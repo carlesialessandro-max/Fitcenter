@@ -178,12 +178,66 @@ export async function postBloccaCorso(req: Request, res: Response) {
           }
         }
       } catch {
-        idPrenotazione = null
+        // Non azzerare: potremmo aver già ottenuto id/orari in fallback interni.
+      }
+    }
+
+    // Fallback forte: se PrenotazioniLezioni non espone IDPrenotazione (o è NULL),
+    // ricavalo dalla riga "vera" in PrenotazioniIscrizione (stessa lezione+orari, utente non nullo).
+    if (idPrenotazione == null && oraInizio != null && oraFine != null) {
+      try {
+        const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
+        const piQ = qualifySqlObject(rawPi).query
+        let piCols = await getColsLower(rawPi)
+        if (piCols.size === 0) {
+          piCols = new Set<string>([
+            "idprenotazioneiscrizione",
+            "idprenotazione",
+            "idprenotazionelezione",
+            "idutente",
+            "datainizio",
+            "datafine",
+          ])
+        }
+        const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
+        const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+        const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
+        const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio", "DataOraInizio", "DataOra", "Inizio", "OraInizio"])
+        const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine", "DataOraFine", "Fine", "OraFine"])
+        if (colIdPren && colIdLez && colDataInizio && colDataFine) {
+          const req = p
+            .request()
+            .input("idLez", sql.Int, idCorso)
+            .input("giorno", sql.Date, giorno)
+            .input("oi", sql.VarChar(5), oraInizio)
+            .input("of", sql.VarChar(5), oraFine)
+          const where = [
+            `[${colIdLez}] = @idLez`,
+            `CAST([${colDataInizio}] AS date) = CAST(@giorno AS date)`,
+            `LEFT(CONVERT(varchar(8), [${colDataInizio}], 108), 5) = @oi`,
+            `LEFT(CONVERT(varchar(8), [${colDataFine}], 108), 5) = @of`,
+            colIdUtente ? `[${colIdUtente}] IS NOT NULL` : "1=1",
+            `[${colIdPren}] IS NOT NULL`,
+          ]
+          const rr = await req.query(
+            `SELECT TOP (1) CAST([${colIdPren}] AS int) AS idPren
+             FROM ${piQ}
+             WHERE ${where.join(" AND ")}
+             ORDER BY CAST([${colIdPren}] AS int) DESC;`
+          )
+          const n = Number((rr.recordset?.[0] as any)?.idPren)
+          if (Number.isFinite(n) && n > 0) idPrenotazione = n
+        }
+      } catch {
+        // ignore
       }
     }
 
     if (idPrenotazione == null) {
-      return res.status(400).json({ message: "Impossibile determinare IDPrenotazione per la lezione selezionata" })
+      return res.status(400).json({
+        message: "Impossibile determinare IDPrenotazione per la lezione selezionata",
+        debug: { idCorso, giorno, oraInizio, oraFine, idPrenotazioneRaw },
+      })
     }
     if (oraInizio == null || oraFine == null) {
       return res.status(400).json({ message: "Impossibile determinare oraInizio/oraFine per la lezione selezionata" })
