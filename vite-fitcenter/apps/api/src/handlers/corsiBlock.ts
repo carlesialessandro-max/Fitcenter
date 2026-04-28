@@ -386,7 +386,9 @@ export async function postBloccaCorso(req: Request, res: Response) {
         .input("idPren", sql.Int, idPrenotazione)
         .input("dtStart", sql.DateTime, new Date(dtStart))
         .input("dtEnd", sql.DateTime, new Date(dtEnd))
-        .input("note", sql.NVarChar(200), motivo || "Blocco temporaneo")
+        // Allineamento gestionale: per permettere sblocco via interfaccia gestionale,
+        // la nota deve essere esattamente quella usata dal gestionale.
+        .input("note", sql.NVarChar(200), "Blocco temporaneo")
         .query(qIns)
       const affected = Array.isArray((rr as any)?.rowsAffected) ? Number((rr as any).rowsAffected?.slice(-1)?.[0] ?? 0) : 0
       return res.json({ ok: true, rowsAffected: affected, table: rawPi, giorno, oraInizio, oraFine, mode: "iscrizione-insert" })
