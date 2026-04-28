@@ -444,7 +444,23 @@ export async function getBlocchiCorsiGiorno(req: Request, res: Response) {
 
   const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
   const piQ = qualifySqlObject(rawPi).query
-  const piCols = await getColsLower(rawPi)
+  let piCols = await getColsLower(rawPi)
+  // Se l'utente DB non ha visibilità metadati (sys.columns), fallback ai nomi standard.
+  if (piCols.size === 0) {
+    piCols = new Set<string>([
+      "idprenotazioneiscrizione",
+      "idprenotazione",
+      "idprenotazionelezione",
+      "idutente",
+      "datainizio",
+      "datafine",
+      "dataoperazione",
+      "note",
+      "importo",
+      "canale",
+      "idoperatore",
+    ])
+  }
 
   const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
   const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])

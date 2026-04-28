@@ -1504,6 +1504,11 @@ export function Corsi() {
                             Esito blocco: <span className="font-mono text-zinc-200">{lastBloccaMsg}</span>
                           </div>
                         ) : null}
+                        {blocchiCorsiQ.isError ? (
+                          <div className="mt-1 text-xs text-red-300">
+                            Errore lettura blocchi: {String((blocchiCorsiQ.error as any)?.message ?? "—")}
+                          </div>
+                        ) : null}
 
                         <div className="border-b border-zinc-800/60 px-5 py-3">
                           <label className="block text-xs font-medium text-zinc-400">Note corso</label>
