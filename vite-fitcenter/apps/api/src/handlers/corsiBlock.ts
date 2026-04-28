@@ -409,30 +409,20 @@ export async function getBlocchiCorsiGiorno(req: Request, res: Response) {
   const giorno = String(req.query.giorno ?? "").trim()
   if (!isIsoDate(giorno)) return res.status(400).json({ message: "Parametro giorno non valido (YYYY-MM-DD)" })
 
-  const p = await gestionaleSql.getPool()
-  if (!p) return res.status(503).json({ message: "DB gestionale non configurato (SQL_CONNECTION_STRING)" })
+  // Importante: la lista blocchi legge dbo.PrenotazioniIscrizione. Spesso l'utente READ non ha SELECT su questa tabella.
+  // Usiamo quindi la connessione WRITE (se configurata) e facciamo fallback alla READ.
+  const p = (await gestionaleSql.getPoolWrite()) ?? (await gestionaleSql.getPool())
+  if (!p) return res.status(503).json({ message: "DB gestionale non configurato (SQL_CONNECTION_STRING[_WRITE])" })
 
   const rawPi = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione") ?? "dbo.PrenotazioniIscrizione"
   const piQ = qualifySqlObject(rawPi).query
-  const piCols = await (async () => {
-    try {
-      const clean = qualifySqlObject(rawPi).objectId
-      const rr = await p.request().input("obj", sql.NVarChar, clean).query(
-        `SELECT LOWER(c.name) AS name
-         FROM sys.columns c
-         WHERE c.object_id = OBJECT_ID(@obj);`
-      )
-      return new Set<string>(((rr.recordset ?? []) as any[]).map((x) => String(x.name ?? "")).filter(Boolean))
-    } catch {
-      return new Set<string>()
-    }
-  })()
+  const piCols = await getColsLower(rawPi)
 
   const colIdLez = pickFirstCol(piCols, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
   const colIdPren = pickFirstCol(piCols, ["IDPrenotazione", "IdPrenotazione"])
   const colIdUtente = pickFirstCol(piCols, ["IDUtente", "IdUtente"])
-  const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio"])
-  const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine"])
+  const colDataInizio = pickFirstCol(piCols, ["DataInizio", "Datainizio", "DataOraInizio", "DataOra", "Inizio", "OraInizio"])
+  const colDataFine = pickFirstCol(piCols, ["DataFine", "Datafine", "DataOraFine", "Fine", "OraFine"])
   const colNote = pickFirstCol(piCols, ["Note", "Nota", "Descrizione", "Motivo"])
 
   if (!colIdLez || !colDataInizio) {
