@@ -117,7 +117,9 @@ export async function postBloccaCorso(req: Request, res: Response) {
 
     // Se non ci arriva IDPrenotazione dalla view, lo ricaviamo da PrenotazioniLezioni.
     let idPrenotazione: number | null = idPrenotazioneRaw
-    if (idPrenotazione == null || oraInizio == null || oraFine == null) {
+    // Nota: anche se il client passa oraInizio/oraFine, possono essere sbagliati.
+    // Se PrenotazioniLezioni espone gli orari, quelli sono la fonte autorevole.
+    if (idPrenotazione == null || oraInizio == null || oraFine == null || true) {
       try {
         const rawPl = safeIdent(process.env.GESTIONALE_TABLE_PRENOTAZIONI_LEZIONI ?? "dbo.PrenotazioniLezioni") ?? "dbo.PrenotazioniLezioni"
         const plQ = qualifySqlObject(rawPl).query
@@ -143,8 +145,10 @@ export async function postBloccaCorso(req: Request, res: Response) {
             const n = Number(row?.idPren)
             idPrenotazione = Number.isFinite(n) && n > 0 ? n : null
           }
-          if (oraInizio == null) oraInizio = normHHmm(row?.oi)
-          if (oraFine == null) oraFine = normHHmm(row?.of)
+          const oiDb = normHHmm(row?.oi)
+          const ofDb = normHHmm(row?.of)
+          if (oiDb) oraInizio = oiDb
+          if (ofDb) oraFine = ofDb
         }
       } catch {
         idPrenotazione = null

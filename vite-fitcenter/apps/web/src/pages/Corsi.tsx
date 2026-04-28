@@ -907,23 +907,19 @@ export function Corsi() {
   const rows = data?.rows ?? []
   const rawGruppi = useMemo(() => groupByCorso(rows), [rows])
   const blockedByCourse = useMemo(() => {
-    const s = new Set<string>()
+    const s = new Set<number>()
     const list = blocchiCorsiQ.data?.rows ?? []
     for (const r of list) {
       const idLez = Number((r as any)?.idPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0) continue
-      const oi = String((r as any)?.oraInizio ?? "").trim()
-      const of = String((r as any)?.oraFine ?? "").trim()
-      s.add(`${idLez}|${oi}|${of}`)
+      s.add(idLez)
     }
     return s
   }, [blocchiCorsiQ.data])
   const gruppi = useMemo(() => {
     return rawGruppi.map((g) => {
       const idLez = g.idLezione
-      const oi = g.oraInizio ?? ""
-      const of = g.oraFine ?? ""
-      const isBlocked = idLez ? blockedByCourse.has(`${idLez}|${oi}|${of}`) : false
+      const isBlocked = idLez ? blockedByCourse.has(idLez) : false
       return { ...g, isBloccato: isBlocked || g.isBloccato }
     })
   }, [rawGruppi, blockedByCourse])
