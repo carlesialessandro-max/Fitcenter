@@ -537,7 +537,7 @@ function accessKeyNameFromAny(input: { cognome?: unknown; nome?: unknown; raw?: 
 }
 
 function accessKindFromRaw(raw: any): AccessEvent["kind"] {
-  const blob = [
+  const parts: unknown[] = [
     raw?.TerminaleDescrizione,
     raw?.TerminaleDesc,
     raw?.terminaleDescrizione,
@@ -565,8 +565,17 @@ function accessKindFromRaw(raw: any): AccessEvent["kind"] {
     raw?.Note,
     raw?.note,
   ]
+  // Fallback: alcune viste mettono "Uscita/Ingresso" in un campo non previsto.
+  // Usiamo anche i valori di tutte le chiavi per aumentare la probabilità di match.
+  try {
+    if (raw && typeof raw === "object") {
+      for (const v of Object.values(raw)) parts.push(v)
+    }
+  } catch {}
+  const blob = parts
     .map((x) => String(x ?? ""))
     .join(" ")
+    .slice(0, 4000)
     .toLowerCase()
 
   // Regole:
@@ -871,15 +880,17 @@ export function Corsi() {
       void queryClient.invalidateQueries({ queryKey: ["prenotazioni-blocchi-corsi", giorno] })
     },
     onSettled: (data, err, vars) => {
+      const body = (data as any)?.data ?? data
       const eMsg = err ? String((err as any)?.message ?? err) : null
-      const ok = (data as any)?.ok
-      const rows = (data as any)?.rowsAffected
-      const mode = (data as any)?.mode
+      const ok = (body as any)?.ok
+      const rows = (body as any)?.rowsAffected
+      const mode = (body as any)?.mode
+      const apiMsg = (body as any)?.message ? String((body as any)?.message) : null
       const msg = eMsg
         ? `KO: ${eMsg}`
         : ok
           ? `OK: ${vars?.blocked ? "bloccato" : "sbloccato"} (rows=${String(rows ?? 0)}${mode ? `, ${String(mode)}` : ""})`
-          : `KO: risposta non valida`
+          : `KO: ${apiMsg ?? "risposta non valida"}`
       setLastBloccaMsg(msg)
     },
   })
