@@ -941,8 +941,8 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       const cassaMovIdMov = String(
         rowGetNorm(row, ["IDCassaMovimenti", "IdCassaMovimenti", "CassaMovimentiId", "IDMovimento", "IdMovimento", "MovimentoId"]) ?? ""
       ).trim()
-      const cassaMovDataIso = parseItDateOnly(rowGetNorm(row, ["Data Operazione", "DataOperazione", "CassaMovimentiDataOperazione"]))
-      const hasMovimentoReale = !!cassaMovIdIscr || !!cassaMovIdMov || !!cassaMovDataIso
+      // IMPORTANT: non usare "Data Operazione" come segnale, spesso è la data operazione dell'iscrizione.
+      const hasMovimentoReale = !!cassaMovIdIscr || !!cassaMovIdMov
       const paidByCassa =
         hasMovimentoReale && cassaMovImp != null && (Number(cassaMovImp) || 0) > 0 ? (Number(cassaMovImp) || 0) : 0
 
