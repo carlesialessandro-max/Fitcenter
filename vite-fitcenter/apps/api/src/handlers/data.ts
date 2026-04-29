@@ -851,11 +851,23 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       if (v == null) return null
       const s = String(v).trim()
       if (!s) return null
+      // placeholder comuni per "non pagato"
+      if (s === "0" || s === "0.00.00" || s === "0,00,00" || s === "00/00/0000" || s === "00/00/0000 0.00.00") return null
       // es: "30/04/2026 0.00.00"
       const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
-      if (m) return `${m[3]}-${m[2]}-${m[1]}`
+      if (m) {
+        const iso = `${m[3]}-${m[2]}-${m[1]}`
+        if (iso === "1900-01-01") return null
+        return iso
+      }
       const d = new Date(s as any)
-      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+      if (!Number.isNaN(d.getTime())) {
+        const iso = d.toISOString().slice(0, 10)
+        if (iso === "1900-01-01") return null
+        // "0" su alcuni parser -> 1970-01-01
+        if (iso === "1970-01-01" && (s === "0" || s === "0.0" || s === "0.00")) return null
+        return iso
+      }
       return null
     }
 
