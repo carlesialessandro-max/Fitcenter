@@ -698,24 +698,33 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // - consideriamo l'ultimo evento entro la fine lezione (+ tolleranza)
   // - se l'ultimo evento è "in" => presente, se è "out" => assente
   const endMs = (w.end ?? w.start).getTime()
-  // Le uscite dopo molto tempo dalla fine (es. altro corso / transito) non devono spegnere il pallino.
-  // 10 minuti è sufficiente per tollerare ritardi/sfasamenti minori.
-  const graceAfterMs = 10 * 60 * 1000
-  const cutoffMs = endMs + graceAfterMs
 
-  let lastEv: AccessEvent | null = null
-  let lastIn: Date | null = null
-  let lastOutInRange: Date | null = null
-  for (const e of evs) {
-    const ms = e.t.getTime()
-    if (ms > cutoffMs) break
-    lastEv = e
-    if (e.kind === "in") lastIn = e.t
-    if (e.kind === "out") lastOutInRange = e.t
+  // Presenza = ha fatto "in" entro la lezione,
+  // ed eventuali "out" prima della fine annullano la presenza.
+  // Gli "out" dopo `oraFine` (es. uscita per transito / altro corso) NON devono spegnere il pallino.
+  const evsInLesson = evs.filter((e) => e.t.getTime() <= endMs)
+  if (evsInLesson.length === 0) return { present: false, entry: null, exit: null }
+
+  const insInLesson = evsInLesson.filter((e) => e.kind === "in").map((e) => e.t)
+  if (insInLesson.length === 0) return { present: false, entry: null, exit: null }
+
+  const lastIn = insInLesson[insInLesson.length - 1] ?? null
+  if (!lastIn) return { present: false, entry: null, exit: null }
+
+  const outsAfterLastIn = evsInLesson
+    .filter((e) => e.kind === "out" && e.t.getTime() >= lastIn.getTime())
+    .map((e) => e.t)
+  const hasOutAfterLastIn = outsAfterLastIn.length > 0
+
+  let present = !hasOutAfterLastIn
+
+  // Se entra MOLTO dopo l'inizio lezione, non considerarlo presente (richiesta precedente).
+  const entryLateToleranceMs = 2 * 60 * 1000
+  if (present && w.start && lastIn.getTime() > w.start.getTime() + entryLateToleranceMs) {
+    present = false
   }
-  if (!lastEv) return { present: false, entry: null, exit: null }
-  const present = lastEv.kind === "in"
-  return { present, entry: present ? (lastIn ?? firstIn) : null, exit: present ? lastOutInRange : null }
+
+  return { present, entry: present ? lastIn : null, exit: null }
 }
 
 /** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */
