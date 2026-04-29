@@ -922,10 +922,26 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         const tot = Number((r as any)?.Totale ?? (r as any)?.totale ?? 0) || 0
         paidByIscrizione.set(id, tot)
       }
+      const hasAnyMatch = items.some((it) => paidByIscrizione.has(it.idIscrizione))
+
+      // Fallback: se la view non espone IDIscrizione, sommiamo per clienteId.
+      let paidByClienteId: Map<string, number> | null = null
+      if (!hasAnyMatch) {
+        const rowsByCliente = await gestionaleSql.queryCassaMovimentiSumByClienteId(minDataInizioIso, todayIso)
+        paidByClienteId = new Map<string, number>()
+        for (const r of rowsByCliente) {
+          const id = String((r as any)?.IDUtente ?? (r as any)?.idUtente ?? (r as any)?.ClienteId ?? "").trim()
+          if (!id) continue
+          const tot = Number((r as any)?.Totale ?? (r as any)?.totale ?? 0) || 0
+          paidByClienteId.set(id, tot)
+        }
+      }
+
       for (const it of items) {
-        // Se non troviamo movimenti pagati per quell'ID, assumiamo pagato=0.
-        // Questo evita falsi "da pagare = 0" quando la view abbonamenti non espone residui/pagato corretti.
-        const paid = paidByIscrizione.has(it.idIscrizione) ? paidByIscrizione.get(it.idIscrizione) ?? 0 : 0
+        const paid =
+          paidByIscrizione.has(it.idIscrizione)
+            ? paidByIscrizione.get(it.idIscrizione) ?? 0
+            : paidByClienteId?.get(it.clienteId) ?? 0
         it.pagato = paid
         it.daPagare = Math.max(0, (it.totale ?? 0) - paid)
       }

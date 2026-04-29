@@ -750,6 +750,69 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
   }
 }
 
+/** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
+export async function queryCassaMovimentiSumByClienteId(from: string, to: string): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = await resolveCassaMovimentiViewName()
+  const vq = qualifySqlObject(view).query
+  try {
+    const colsLower = await prenGetCols(view) // lower-case
+    const dateCol =
+      pickBestDateCol(colsLower, [
+        "CassaMovimentiDataOperazione",
+        "DataOperazione",
+        "DataMovimento",
+        "CassaMovimentiData",
+        "Data",
+        "DataPagamento",
+      ]) ?? null
+    const importoCol =
+      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
+    const clienteIdColText =
+      pickBestTextCol(colsLower, ["IDUtente", "IdUtente", "idUtente", "ClienteId", "IdCliente", "IDCliente", "UtenteId"]) ?? null
+    const clienteIdColNum =
+      pickBestNumberCol(colsLower, ["IDUtente", "IdUtente", "idUtente", "ClienteId", "IdCliente", "IDCliente", "UtenteId"]) ?? null
+    const clienteIdCol = clienteIdColText ?? clienteIdColNum
+    const tipoServizioCol =
+      pickBestTextCol(colsLower, [
+        "TipoServizioDescrizione",
+        "TipoServizio",
+        "TipoServizioDesc",
+        "TipoServizioDescr",
+        "ServizioDescrizione",
+        "TipoDescrizione",
+      ]) ?? null
+
+    if (!dateCol || !importoCol || !clienteIdCol) return []
+
+    const whereParts: string[] = []
+    whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
+    whereParts.push(`COALESCE(LTRIM(RTRIM(CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64)))), N'') <> N''`)
+    if (tipoServizioCol) {
+      whereParts.push(
+        `LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi')`
+      )
+    }
+    whereParts.push(
+      `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) >= CAST(@from AS DATE) AND CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) <= CAST(@to AS DATE)`
+    )
+    const where = `WHERE ${whereParts.join(" AND ")}`
+
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    const r = await req.query(
+      `SELECT CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64)) AS IDUtente, COALESCE(SUM(TRY_CONVERT(float, ${bracketCol(importoCol)})), 0) AS Totale
+       FROM ${vq}
+       ${where}
+       GROUP BY CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64))
+       ORDER BY CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64));`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}
+
 function idParamType(id: string): { type: typeof sql.Int | typeof sql.VarChar; value: number | string } {
   const n = parseInt(id, 10)
   if (String(n) === id && !Number.isNaN(n)) return { type: sql.Int, value: n }

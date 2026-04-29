@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
@@ -72,27 +72,28 @@ export function AbbonamentoDettaglio() {
     setDraftNote(note)
   }, [note])
 
-  const crmParams =
-    abbonamento && cliente
-      ? {
-          nomeVenditore: abbonamento.consulenteNome ?? consulenteNome ?? "",
-          cognome: cliente.cognome ?? "",
-          nome: cliente.nome ?? "",
-          // In CRM la colonna DestinatarioNomeOperatore va valorizzata con l'operatore loggato.
-          nomeOperatore: consulenteNome ?? abbonamento.consulenteNome ?? "",
-        }
-      : null
-  const canQueryCrm =
-    !!crmParams &&
-    !!crmParams.nomeVenditore &&
-    !!crmParams.nomeOperatore &&
-    !!crmParams.cognome &&
-    !!crmParams.nome
-  const { data: crmAppuntamenti = [] } = useQuery({
-    queryKey: ["data", "crm-appuntamenti", crmParams?.nomeVenditore ?? "", crmParams?.cognome ?? "", crmParams?.nome ?? "", crmParams?.nomeOperatore ?? ""],
-    queryFn: () => dataApi.getCrmAppuntamenti(crmParams!),
+  // CRM mese corrente: usiamo la query per operatore (più robusta) e filtriamo per nome/cognome cliente.
+  const today = new Date()
+  const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+  const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
+  const operatoreCrm = (consulenteNome ?? abbonamento?.consulenteNome ?? "").trim()
+  const canQueryCrm = !!operatoreCrm && !!cliente?.cognome && !!cliente?.nome
+  const crmOperatoreQ = useQuery({
+    queryKey: ["data", "crm-appuntamenti-operatore", operatoreCrm, fromIso, toIso],
+    queryFn: () => dataApi.getCrmAppuntamentiOperatore({ from: fromIso, to: toIso }),
     enabled: canQueryCrm,
+    retry: false,
   })
+  const crmAppuntamenti = useMemo(() => {
+    const rows = crmOperatoreQ.data?.rows ?? []
+    const wantC = String(cliente?.cognome ?? "").trim().toLowerCase()
+    const wantN = String(cliente?.nome ?? "").trim().toLowerCase()
+    return rows.filter((r) => {
+      const c = String((r as any).cognome ?? "").trim().toLowerCase()
+      const n = String((r as any).nome ?? "").trim().toLowerCase()
+      return !!wantC && !!wantN && c === wantC && n === wantN
+    })
+  }, [crmOperatoreQ.data, cliente?.cognome, cliente?.nome])
 
   const { data: chiamate = [] } = useQuery({
     queryKey: ["chiamate", "cliente", abbonamento?.clienteId ?? ""],

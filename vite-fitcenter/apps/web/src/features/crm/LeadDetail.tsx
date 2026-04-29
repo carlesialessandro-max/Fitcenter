@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
@@ -16,7 +17,7 @@ export function LeadDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { role } = useAuth()
+  const { role, consulenteNome } = useAuth()
 
   const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -65,6 +66,30 @@ export function LeadDetail() {
       </div>
     )
   }
+
+  // CRM mese corrente: usiamo la query per operatore (più robusta) e filtriamo per nome/cognome cliente.
+  const today = new Date()
+  const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+  const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
+  const operatore = (consulenteNome ?? lead.consulenteNome ?? "").trim()
+  const canQueryCrm = !!operatore
+  const crmOperatoreQ = useQuery({
+    queryKey: ["data", "crm-appuntamenti-operatore", operatore, fromIso, toIso],
+    queryFn: () => dataApi.getCrmAppuntamentiOperatore({ from: fromIso, to: toIso }),
+    enabled: canQueryCrm,
+    retry: false,
+  })
+  const crmAppuntamenti = useMemo(() => {
+    const rows = crmOperatoreQ.data?.rows ?? []
+    const wantC = String(lead.cognome ?? "").trim().toLowerCase()
+    const wantN = String(lead.nome ?? "").trim().toLowerCase()
+    return rows.filter((r) => {
+      const c = String((r as any).cognome ?? "").trim().toLowerCase()
+      const n = String((r as any).nome ?? "").trim().toLowerCase()
+      return !!wantC && !!wantN && c === wantC && n === wantN
+    })
+  }, [crmOperatoreQ.data, lead.cognome, lead.nome])
+  const loadingCrm = crmOperatoreQ.isLoading
 
   return (
     <div className="p-6">
@@ -174,6 +199,55 @@ export function LeadDetail() {
           </div>
         </div>
       </div>
+
+      {canQueryCrm ? (
+        <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Operatore: <span className="text-zinc-300">{operatore || "—"}</span>
+          </p>
+          {loadingCrm ? (
+            <div className="mt-3 text-sm text-zinc-500">Caricamento…</div>
+          ) : crmAppuntamenti.length === 0 ? (
+            <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-950/20 px-3 py-3 text-sm text-zinc-500">
+              Nessun appuntamento CRM trovato per questo lead nel mese corrente.
+            </div>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-md border border-zinc-700">
+              <table className="min-w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-700 bg-zinc-800/50">
+                    <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
+                    <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {crmAppuntamenti.map((row, i) => (
+                    <tr key={i} className="border-b border-zinc-800 last:border-0">
+                      <td className="px-3 py-2 text-zinc-300">
+                        {row.dataAppuntamento
+                          ? new Date(row.dataAppuntamento).toLocaleDateString("it-IT", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="px-3 py-2 text-zinc-300">{row.tipoDescrizione || "—"}</td>
+                      <td className="px-3 py-2 text-zinc-300">{row.esitoDescrizione || "—"}</td>
+                      <td className="px-3 py-2 text-zinc-300">{row.crmDescrizione || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="mt-4 text-xs text-zinc-500">
         Creato il {new Date(lead.createdAt).toLocaleString("it-IT")} · Aggiornato il{" "}
