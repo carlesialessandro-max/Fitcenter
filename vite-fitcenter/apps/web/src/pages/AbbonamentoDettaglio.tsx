@@ -244,43 +244,49 @@ export function AbbonamentoDettaglio() {
             </div>
           </div>
 
-          {crmAppuntamenti.length > 0 && (
+          {canQueryCrm ? (
             <div className="mt-6">
               <h3 className="mb-2 text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h3>
-              <div className="overflow-x-auto rounded-md border border-zinc-700">
-                <table className="min-w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-700 bg-zinc-800/50">
-                      <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
-                      <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
-                      <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
-                      <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {crmAppuntamenti.map((row, i) => (
-                      <tr key={i} className="border-b border-zinc-800 last:border-0">
-                        <td className="px-3 py-2 text-zinc-300">
-                          {row.dataAppuntamento
-                            ? new Date(row.dataAppuntamento).toLocaleDateString("it-IT", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "—"}
-                        </td>
-                        <td className="px-3 py-2 text-zinc-300">{row.tipoDescrizione || "—"}</td>
-                        <td className="px-3 py-2 text-zinc-300">{row.esitoDescrizione || "—"}</td>
-                        <td className="px-3 py-2 text-zinc-300">{row.crmDescrizione || "—"}</td>
+              {crmAppuntamenti.length === 0 ? (
+                <div className="rounded-md border border-zinc-800 bg-zinc-950/20 px-3 py-3 text-sm text-zinc-500">
+                  Nessun appuntamento CRM trovato per questo cliente nel mese corrente.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-zinc-700">
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-zinc-700 bg-zinc-800/50">
+                        <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
+                        <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {crmAppuntamenti.map((row, i) => (
+                        <tr key={i} className="border-b border-zinc-800 last:border-0">
+                          <td className="px-3 py-2 text-zinc-300">
+                            {row.dataAppuntamento
+                              ? new Date(row.dataAppuntamento).toLocaleDateString("it-IT", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })
+                              : "—"}
+                          </td>
+                          <td className="px-3 py-2 text-zinc-300">{row.tipoDescrizione || "—"}</td>
+                          <td className="px-3 py-2 text-zinc-300">{row.esitoDescrizione || "—"}</td>
+                          <td className="px-3 py-2 text-zinc-300">{row.crmDescrizione || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
+          ) : null}
 
           <div className="mt-6">
             <h3 className="mb-2 text-sm font-medium text-zinc-400">Attività telefoniche</h3>

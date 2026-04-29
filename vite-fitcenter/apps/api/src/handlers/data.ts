@@ -910,11 +910,11 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       })
     }
 
-    // Allineamento "pagato / da pagare" con i movimenti pagamenti (gestionale):
-    // pagato = somma MovimentiVenduto (Importo>0) per IDIscrizione nel periodo [min(dataInizio), oggi]
+    // Allineamento "pagato / da pagare" con i movimenti di cassa (gestionale):
+    // pagato = somma importo per IDIscrizione nel periodo [min(dataInizio), oggi]
     // daPagare = max(0, totale - pagato)
     if (gestionaleSql.isGestionaleConfigured() && minDataInizioIso) {
-      const pagatoRows = await gestionaleSql.queryMovimentiVendutoSumByIscrizione(minDataInizioIso, todayIso)
+      const pagatoRows = await gestionaleSql.queryCassaMovimentiSumByIscrizione(minDataInizioIso, todayIso)
       const paidByIscrizione = new Map<string, number>()
       for (const r of pagatoRows) {
         const id = String((r as any)?.IDIscrizione ?? (r as any)?.idIscrizione ?? "").trim()

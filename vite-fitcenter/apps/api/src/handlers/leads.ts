@@ -3,6 +3,7 @@ import crypto from "crypto"
 import { store } from "../store/leads.js"
 import { importFromSqlServer } from "../services/sql-import.js"
 import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types/lead.js"
+import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 
 export async function listLeads(req: Request, res: Response) {
   try {
@@ -178,7 +179,30 @@ export async function webhookZapier(req: Request, res: Response) {
 }
 
 export async function updateLead(req: Request, res: Response) {
-  const updated = store.update(String(req.params.id), req.body)
+  const id = String(req.params.id ?? "").trim()
+  if (!id) return res.status(400).json({ message: "id mancante" })
+  const u = getScopedUser(req)
+  const lead = store.get(id)
+  if (!lead) return res.status(404).json({ message: "Lead non trovato" })
+
+  // Admin: può aggiornare tutto.
+  // Consulente: può aggiornare solo stato/interesse/note sui lead assegnati a lei.
+  let payload: Record<string, unknown> = req.body as any
+  if (u.role !== "admin") {
+    const me = (getOperatoreConsulenteNome(req) ?? "").trim().toLowerCase()
+    const assigned = String(lead.consulenteNome ?? "").trim().toLowerCase()
+    if (!me) return res.status(403).json({ message: "Solo operatore può aggiornare un lead" })
+    if (!assigned || assigned !== me) return res.status(403).json({ message: "Lead non assegnato a te" })
+
+    // Whitelist campi aggiornabili.
+    const body = (req.body ?? {}) as Record<string, unknown>
+    payload = {}
+    if (body.stato != null) payload.stato = body.stato
+    if (body.interesse != null) payload.interesse = body.interesse
+    if (body.note != null) payload.note = body.note
+  }
+
+  const updated = store.update(id, payload as any)
   if (!updated) return res.status(404).json({ message: "Lead non trovato" })
   res.json(updated)
 }

@@ -15,5 +15,6 @@ leadsRouter.get("/leads", requireAuth, requireAdmin, listLeads)
 leadsRouter.post("/leads/import-sql", requireAuth, requireAdmin, importFromSql)
 leadsRouter.get("/leads/:id", requireAuth, requireAdmin, getLead)
 leadsRouter.post("/leads", requireAuth, requireAdmin, createLead)
-leadsRouter.put("/leads/:id", requireAuth, requireAdmin, updateLead)
+// Update: consentito anche alle consulenti (solo sui lead assegnati a loro; enforcement nel handler).
+leadsRouter.put("/leads/:id", requireAuth, updateLead)
 leadsRouter.delete("/leads/:id", requireAuth, requireAdmin, deleteLead)
