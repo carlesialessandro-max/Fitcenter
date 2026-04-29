@@ -700,7 +700,13 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
     if (e.kind === "out") lastOutInRange = e.t
   }
   if (!lastEv) return { present: false, entry: null, exit: null }
-  const present = lastEv.kind === "in"
+  let present = lastEv.kind === "in"
+  // Evita falsi positivi: ingresso dopo l'inizio lezione => non considerare presente da accessi.
+  // La presenza può comunque essere marcata manualmente via appello.
+  if (present && w.start && lastIn) {
+    const lateToleranceMs = 2 * 60 * 1000
+    if (lastIn.getTime() > w.start.getTime() + lateToleranceMs) present = false
+  }
   return { present, entry: present ? (lastIn ?? firstIn) : null, exit: present ? lastOutInRange : null }
 }
 

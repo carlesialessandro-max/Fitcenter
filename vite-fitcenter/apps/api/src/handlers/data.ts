@@ -853,10 +853,34 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       const totale =
         pickNum(row, ["Totale", "Importo", "Prezzo"]) ??
         (Number(a.prezzo ?? 0) || 0)
-      const pagato =
-        pickNum(row, ["ImportoPagato", "Pagato", "Versato", "Incassato"]) ??
-        totale
-      const daPagare = Math.max(0, totale - pagato)
+      const pagatoRaw = pickNum(row, ["ImportoPagato", "Pagato", "Versato", "Incassato", "Acconto"])
+      const daPagareRaw = pickNum(row, ["DaPagare", "ImportoDaPagare", "Residuo", "ResiduoEuro", "Rimanente", "SaldoResiduo"])
+
+      const statoPagamento = String(
+        row.StatoPagamento ?? row.StatoPag ?? row.Stato ?? row.Pagamento ?? row.EsitoPagamento ?? ""
+      )
+        .trim()
+        .toLowerCase()
+
+      let pagato = pagatoRaw
+      let daPagare = daPagareRaw
+      if (daPagare == null && pagato != null) daPagare = Math.max(0, totale - pagato)
+      if (pagato == null && daPagare != null) pagato = Math.max(0, totale - daPagare)
+      if (pagato == null && daPagare == null) {
+        if (/\b(non pagat|da pagare|insolut|scopert)\b/.test(statoPagamento)) {
+          pagato = 0
+          daPagare = totale
+        } else if (/\b(pagat|saldat|ok)\b/.test(statoPagamento)) {
+          pagato = totale
+          daPagare = 0
+        } else {
+          // Fallback storico in assenza di metadati pagamento.
+          pagato = totale
+          daPagare = 0
+        }
+      }
+      pagato = Math.max(0, Number(pagato ?? 0) || 0)
+      daPagare = Math.max(0, Number(daPagare ?? Math.max(0, totale - pagato)) || 0)
 
       const categoria = String(a.categoriaAbbonamentoDescrizione ?? row.CategoriaAbbonamentoDescrizione ?? "DANZA").trim() || "DANZA"
       const micro =
