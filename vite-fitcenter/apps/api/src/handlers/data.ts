@@ -896,7 +896,9 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       if (!minDataInizioIso || di < minDataInizioIso) minDataInizioIso = di
 
       // Rate: preferiamo questa fonte se disponibile (Data Rata / Data Pagato / Abbonamenti Pagamenti Importo).
-      const idIscrAgg = String(a.id ?? row["ID Iscrizione"] ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? "")
+      const idIscrAgg =
+        String(a.id ?? rowGetNorm(row, ["ID Iscrizione", "IDIscrizione", "IdIscrizione"]) ?? row.IDIscrizione ?? "").trim() ||
+        String(row.IDIscrizione ?? "")
       const rataIso = parseItDateOnly(
         rowGetNorm(row, ["Data Rata", "DataRata", "Abbonamenti Pagamenti Data Rata", "AbbonamentiPagamentiDataRata"])
       )
@@ -926,11 +928,29 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
           const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
           return Number.isFinite(n) ? n : null
         })()
+
+      // Indicatore incasso reale: preferisci cassa movimenti / tipo pagamento.
+      const cassaMovImp =
+        pickNum(row, ["Cassa Movimenti Importo", "CassaMovimentiImporto", "CassaMovimenti Importo", "CassaImporto"]) ??
+        (() => {
+          const v = rowGetNorm(row, ["Cassa Movimenti Importo", "CassaMovimentiImporto", "Cassamovimentiimporto"])
+          if (v == null || String(v).trim() === "") return null
+          const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
+          return Number.isFinite(n) ? n : null
+        })()
+      const idTipoPagamentoRaw = rowGetNorm(row, ["ID Tipo Pagamento", "IDTipoPagamento", "IdTipoPagamento"])
+      const idTipoPagamento = idTipoPagamentoRaw != null && String(idTipoPagamentoRaw).trim() !== "" ? String(idTipoPagamentoRaw).trim() : ""
+      const nomeOpPagamento = String(
+        rowGetNorm(row, ["Nome Operatore Pagamento", "NomeOperatorePagamento"]) ?? ""
+      ).trim()
+      const hasIncasso = (cassaMovImp != null && (Number(cassaMovImp) || 0) > 0) || !!idTipoPagamento || !!nomeOpPagamento
+
       if (idIscrAgg && rataIso && rataImporto != null && rataImporto > 0) {
         // Considera solo rate nel periodo dell'abbonamento attivo
         if (rataIso >= di && rataIso <= df) {
           const cur = rateAggByIscrizione.get(idIscrAgg) ?? { paid: 0, due: 0 }
-          if (pagatoIso) cur.paid += rataImporto
+          // Pagata solo se DataPagato valida + indicatore incasso reale.
+          if (pagatoIso && hasIncasso) cur.paid += rataImporto
           else cur.due += rataImporto
           rateAggByIscrizione.set(idIscrAgg, cur)
         }
