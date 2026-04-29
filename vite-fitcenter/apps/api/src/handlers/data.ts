@@ -871,6 +871,19 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       return null
     }
 
+    const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "")
+    const rowGetNorm = (row: any, wants: string[]): unknown => {
+      const keys = Object.keys(row ?? {})
+      if (!keys.length) return undefined
+      const map = new Map<string, string>()
+      for (const k of keys) map.set(normKey(k), k)
+      for (const w of wants) {
+        const hit = map.get(normKey(w))
+        if (hit != null) return row[hit]
+      }
+      return undefined
+    }
+
     let minDataInizioIso: string | null = null
     const items: DanzaItem[] = []
     const rateAggByIscrizione = new Map<string, { paid: number; due: number }>()
@@ -884,15 +897,35 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
 
       // Rate: preferiamo questa fonte se disponibile (Data Rata / Data Pagato / Abbonamenti Pagamenti Importo).
       const idIscrAgg = String(a.id ?? row["ID Iscrizione"] ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? "")
-      const rataIso = parseItDateOnly(row["Data Rata"] ?? (row as any).DataRata)
-      const pagatoIso = parseItDateOnly(row["Data Pagato"] ?? (row as any).DataPagato)
-      const rataImporto = pickNum(row, [
-        "Abbonamenti Pagamenti Importo",
-        "AbbonamentiPagamentiImporto",
-        "PagamentiImporto",
-        "ImportoRata",
-        "Importo Rata",
-      ])
+      const rataIso = parseItDateOnly(
+        rowGetNorm(row, ["Data Rata", "DataRata", "Abbonamenti Pagamenti Data Rata", "AbbonamentiPagamentiDataRata"])
+      )
+      const pagatoIso = parseItDateOnly(
+        rowGetNorm(row, ["Data Pagato", "DataPagato", "Abbonamenti Pagamenti Data Pagato", "AbbonamentiPagamentiDataPagato"])
+      )
+      const rataImporto =
+        pickNum(row, [
+          "Abbonamenti Pagamenti Importo",
+          "AbbonamentiPagamentiImporto",
+          "PagamentiImporto",
+          "ImportoRata",
+          "Importo Rata",
+        ]) ??
+        (() => {
+          const v = rowGetNorm(row, [
+            "Abbonamenti Pagamenti Importo",
+            "AbbonamentiPagamentiImporto",
+            "Abbonamenti_Pagamenti_Importo",
+            "Pagamenti Importo",
+            "PagamentiImporto",
+            "ImportoRata",
+            "Importo Rata",
+            "Importo_Rata",
+          ])
+          if (v == null || String(v).trim() === "") return null
+          const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
+          return Number.isFinite(n) ? n : null
+        })()
       if (idIscrAgg && rataIso && rataImporto != null && rataImporto > 0) {
         // Considera solo rate nel periodo dell'abbonamento attivo
         if (rataIso >= di && rataIso <= df) {
