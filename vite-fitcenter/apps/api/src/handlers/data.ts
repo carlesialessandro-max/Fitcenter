@@ -847,8 +847,21 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       daPagare: number
     }
 
+    const parseItDateOnly = (v: unknown): string | null => {
+      if (v == null) return null
+      const s = String(v).trim()
+      if (!s) return null
+      // es: "30/04/2026 0.00.00"
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+      if (m) return `${m[3]}-${m[2]}-${m[1]}`
+      const d = new Date(s as any)
+      if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10)
+      return null
+    }
+
     let minDataInizioIso: string | null = null
     const items: DanzaItem[] = []
+    const rateAggByIscrizione = new Map<string, { paid: number; due: number }>()
     for (const row of rawRows) {
       const a = rowToAbbonamento(row)
       const di = String(a.dataInizio ?? "").slice(0, 10)
@@ -856,6 +869,27 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       if (!di || !df || di > todayIso || df < todayIso) continue
       if (!isDanzaRow(row, a)) continue
       if (!minDataInizioIso || di < minDataInizioIso) minDataInizioIso = di
+
+      // Rate: preferiamo questa fonte se disponibile (Data Rata / Data Pagato / Abbonamenti Pagamenti Importo).
+      const idIscrAgg = String(a.id ?? row["ID Iscrizione"] ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? "")
+      const rataIso = parseItDateOnly(row["Data Rata"] ?? (row as any).DataRata)
+      const pagatoIso = parseItDateOnly(row["Data Pagato"] ?? (row as any).DataPagato)
+      const rataImporto = pickNum(row, [
+        "Abbonamenti Pagamenti Importo",
+        "AbbonamentiPagamentiImporto",
+        "PagamentiImporto",
+        "ImportoRata",
+        "Importo Rata",
+      ])
+      if (idIscrAgg && rataIso && rataImporto != null && rataImporto > 0) {
+        // Considera solo rate nel periodo dell'abbonamento attivo
+        if (rataIso >= di && rataIso <= df) {
+          const cur = rateAggByIscrizione.get(idIscrAgg) ?? { paid: 0, due: 0 }
+          if (pagatoIso) cur.paid += rataImporto
+          else cur.due += rataImporto
+          rateAggByIscrizione.set(idIscrAgg, cur)
+        }
+      }
 
       const email = pick(row, ["Email", "E_mail", "Mail", "ClienteEmail"])
       const telefono = pick(row, ["SMS", "Cellulare", "Telefono", "Telefono_1", "Telefono1", "ClienteSms"])
@@ -897,7 +931,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         "—"
 
       items.push({
-        idIscrizione: String(a.id ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? ""),
+        idIscrizione: String(a.id ?? row["ID Iscrizione"] ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? ""),
         clienteId: String(a.clienteId ?? row.IDUtente ?? "").trim() || String(row.IDUtente ?? ""),
         clienteNome: String(a.clienteNome ?? "").trim() || "—",
         email,
@@ -914,10 +948,26 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       })
     }
 
+    // Se abbiamo rate per IDIscrizione, sono la fonte più affidabile.
+    // pagato = somma rate con DataPagato valorizzata
+    // daPagare = somma rate senza DataPagato
+    for (const it of items) {
+      const agg = rateAggByIscrizione.get(it.idIscrizione)
+      if (!agg) continue
+      const sum = (Number(agg.paid) || 0) + (Number(agg.due) || 0)
+      if (sum <= 0) continue
+      it.pagato = Math.max(0, Number(agg.paid) || 0)
+      it.daPagare = Math.max(0, Number(agg.due) || 0)
+      // Se il totale riga è incoerente, manteniamo comunque rate come verità.
+      it.totale = Math.max(it.totale ?? 0, it.pagato + it.daPagare)
+    }
+
     // Allineamento "pagato / da pagare" con i movimenti di cassa (gestionale):
     // pagato = somma importo per IDIscrizione nel periodo [min(dataInizio), oggi]
     // daPagare = max(0, totale - pagato)
-    if (gestionaleSql.isGestionaleConfigured() && minDataInizioIso) {
+    // Applica solo se non abbiamo rate (altrimenti rischia di marcare pagato quando ci sono rate insolute).
+    const hasAnyRate = rateAggByIscrizione.size > 0
+    if (!hasAnyRate && gestionaleSql.isGestionaleConfigured() && minDataInizioIso) {
       const pagatoRows = await gestionaleSql.queryCassaMovimentiSumByIscrizione(minDataInizioIso, todayIso)
       const paidByIscrizione = new Map<string, number>()
       for (const r of pagatoRows) {
