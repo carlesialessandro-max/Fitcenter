@@ -923,7 +923,9 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         paidByIscrizione.set(id, tot)
       }
       for (const it of items) {
-        const paid = paidByIscrizione.get(it.idIscrizione) ?? it.pagato ?? 0
+        // Se non troviamo movimenti pagati per quell'ID, assumiamo pagato=0.
+        // Questo evita falsi "da pagare = 0" quando la view abbonamenti non espone residui/pagato corretti.
+        const paid = paidByIscrizione.has(it.idIscrizione) ? paidByIscrizione.get(it.idIscrizione) ?? 0 : 0
         it.pagato = paid
         it.daPagare = Math.max(0, (it.totale ?? 0) - paid)
       }

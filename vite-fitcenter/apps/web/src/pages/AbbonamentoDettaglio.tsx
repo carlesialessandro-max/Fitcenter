@@ -75,10 +75,11 @@ export function AbbonamentoDettaglio() {
   const crmParams =
     abbonamento && cliente
       ? {
-          nomeVenditore: abbonamento.consulenteNome ?? "",
+          nomeVenditore: abbonamento.consulenteNome ?? consulenteNome ?? "",
           cognome: cliente.cognome ?? "",
           nome: cliente.nome ?? "",
-          nomeOperatore: abbonamento.consulenteNome ?? consulenteNome,
+          // In CRM la colonna DestinatarioNomeOperatore va valorizzata con l'operatore loggato.
+          nomeOperatore: consulenteNome ?? abbonamento.consulenteNome ?? "",
         }
       : null
   const canQueryCrm =
@@ -211,6 +212,12 @@ export function AbbonamentoDettaglio() {
             <textarea
               value={draftNote}
               onChange={(e) => setDraftNote(e.target.value)}
+              onBlur={(e) => {
+                const v = e.target.value.trim()
+                // Auto-save su blur (oltre ai pulsanti).
+                if (v === (note ?? "").trim()) return
+                updateMutation.mutate({ note: v })
+              }}
               rows={3}
               className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 focus:border-amber-500/50 focus:outline-none"
               placeholder="Note del consulente..."
