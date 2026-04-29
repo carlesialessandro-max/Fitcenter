@@ -698,7 +698,9 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // - consideriamo l'ultimo evento entro la fine lezione (+ tolleranza)
   // - se l'ultimo evento è "in" => presente, se è "out" => assente
   const endMs = (w.end ?? w.start).getTime()
-  const graceAfterMs = 60 * 60 * 1000
+  // Le uscite dopo molto tempo dalla fine (es. altro corso / transito) non devono spegnere il pallino.
+  // 10 minuti è sufficiente per tollerare ritardi/sfasamenti minori.
+  const graceAfterMs = 10 * 60 * 1000
   const cutoffMs = endMs + graceAfterMs
 
   let lastEv: AccessEvent | null = null
