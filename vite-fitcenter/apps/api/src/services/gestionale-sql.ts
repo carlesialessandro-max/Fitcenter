@@ -678,14 +678,38 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
       ]) ?? null
     const importoCol =
       pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
-    const idIscrizioneCol =
+    // IDIscrizione può essere testo o numerico a seconda della view.
+    const idIscrizioneColText =
       pickBestTextCol(colsLower, [
         "IDIscrizione",
         "IdIscrizione",
         "IscrizioneId",
+        "Iscrizione",
+        "IDIscr",
+        "IdIscr",
         "AbbonamentiIDIscrizione",
         "AbbonamentiIdIscrizione",
+        "AbbonamentiIscrizioneId",
+        "IscrizioneID",
+        "IdAbbonamentoIscrizione",
+        "IDAbbonamentoIscrizione",
       ]) ?? null
+    const idIscrizioneColNum =
+      pickBestNumberCol(colsLower, [
+        "IDIscrizione",
+        "IdIscrizione",
+        "IscrizioneId",
+        "Iscrizione",
+        "IDIscr",
+        "IdIscr",
+        "AbbonamentiIDIscrizione",
+        "AbbonamentiIdIscrizione",
+        "AbbonamentiIscrizioneId",
+        "IscrizioneID",
+        "IdAbbonamentoIscrizione",
+        "IDAbbonamentoIscrizione",
+      ]) ?? null
+    const idIscrizioneCol = idIscrizioneColText ?? idIscrizioneColNum
     const tipoServizioCol =
       pickBestTextCol(colsLower, [
         "TipoServizioDescrizione",
@@ -1557,10 +1581,10 @@ export async function queryCrmAppuntamenti(params: {
     const r = await req.query(
       `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione
        FROM ${view}
-       WHERE NomeVenditore = @nomeVenditore
-         AND Cognome = @cognome
-         AND Nome = @nome
-         AND DestinatarioNomeOperatore = @nomeOperatore
+       WHERE LOWER(LTRIM(RTRIM(COALESCE(NomeVenditore, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nomeVenditore, N''))))
+         AND LOWER(LTRIM(RTRIM(COALESCE(Cognome, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@cognome, N''))))
+         AND LOWER(LTRIM(RTRIM(COALESCE(Nome, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nome, N''))))
+         AND LOWER(LTRIM(RTRIM(COALESCE(DestinatarioNomeOperatore, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nomeOperatore, N''))))
          AND YEAR(DataAppuntamento) = YEAR(GETDATE())
          AND MONTH(DataAppuntamento) = MONTH(GETDATE())
        ORDER BY DataAppuntamento DESC`
