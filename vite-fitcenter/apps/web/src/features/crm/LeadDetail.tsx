@@ -17,7 +17,7 @@ export function LeadDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { role, consulenteNome } = useAuth()
+  const { role } = useAuth()
 
   const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -67,29 +67,21 @@ export function LeadDetail() {
     )
   }
 
-  // CRM mese corrente: usiamo la query per operatore (più robusta) e filtriamo per nome/cognome cliente.
+  // CRM mese corrente: mostra per Nome+Cognome cliente (indipendente dall'operatore).
   const today = new Date()
   const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
   const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
-  const operatore = (consulenteNome ?? lead.consulenteNome ?? "").trim()
-  const canQueryCrm = !!operatore
-  const crmOperatoreQ = useQuery({
-    queryKey: ["data", "crm-appuntamenti-operatore", operatore, fromIso, toIso],
-    queryFn: () => dataApi.getCrmAppuntamentiOperatore({ from: fromIso, to: toIso }),
+  const cognomeCrm = String(lead.cognome ?? "").trim()
+  const nomeCrm = String(lead.nome ?? "").trim()
+  const canQueryCrm = !!cognomeCrm && !!nomeCrm
+  const crmClienteQ = useQuery({
+    queryKey: ["data", "crm-appuntamenti-cliente", cognomeCrm, nomeCrm, fromIso, toIso],
+    queryFn: () => dataApi.getCrmAppuntamentiCliente({ cognome: cognomeCrm, nome: nomeCrm, from: fromIso, to: toIso }),
     enabled: canQueryCrm,
     retry: false,
   })
-  const crmAppuntamenti = useMemo(() => {
-    const rows = crmOperatoreQ.data?.rows ?? []
-    const wantC = String(lead.cognome ?? "").trim().toLowerCase()
-    const wantN = String(lead.nome ?? "").trim().toLowerCase()
-    return rows.filter((r) => {
-      const c = String((r as any).cognome ?? "").trim().toLowerCase()
-      const n = String((r as any).nome ?? "").trim().toLowerCase()
-      return !!wantC && !!wantN && c === wantC && n === wantN
-    })
-  }, [crmOperatoreQ.data, lead.cognome, lead.nome])
-  const loadingCrm = crmOperatoreQ.isLoading
+  const crmAppuntamenti = useMemo(() => crmClienteQ.data?.rows ?? [], [crmClienteQ.data])
+  const loadingCrm = crmClienteQ.isLoading
 
   return (
     <div className="p-6">
@@ -204,7 +196,7 @@ export function LeadDetail() {
         <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Operatore: <span className="text-zinc-300">{operatore || "—"}</span>
+            Cliente: <span className="text-zinc-300">{cognomeCrm} {nomeCrm}</span>
           </p>
           {loadingCrm ? (
             <div className="mt-3 text-sm text-zinc-500">Caricamento…</div>

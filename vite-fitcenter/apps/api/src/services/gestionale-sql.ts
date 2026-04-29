@@ -1625,6 +1625,88 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   return { select, map }
 }
 
+export type CassaMovimentoLite = {
+  clienteId: string
+  dataOperazioneIso: string | null
+  importo: number
+  causale: string
+}
+
+/** Ritorna movimenti (importo>0) per clienti e range date. */
+export async function queryCassaMovimentiLiteByClienteIds(params: {
+  from: string // YYYY-MM-DD
+  to: string // YYYY-MM-DD
+  clienteIds: string[]
+}): Promise<CassaMovimentoLite[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = await resolveCassaMovimentiViewName()
+  const vq = qualifySqlObject(view).query
+  try {
+    const colsLower = await prenGetCols(view)
+    const dateCol =
+      pickBestDateCol(colsLower, [
+        "CassaMovimentiDataOperazione",
+        "DataOperazione",
+        "DataMovimento",
+        "CassaMovimentiData",
+        "Data",
+        "DataPagamento",
+      ]) ?? null
+    const importoCol =
+      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
+    const clienteIdColText =
+      pickBestTextCol(colsLower, ["IDUtente", "IdUtente", "idUtente", "ClienteId", "IdCliente", "IDCliente", "UtenteId"]) ?? null
+    const clienteIdColNum =
+      pickBestNumberCol(colsLower, ["IDUtente", "IdUtente", "idUtente", "ClienteId", "IdCliente", "IDCliente", "UtenteId"]) ?? null
+    const clienteIdCol = clienteIdColText ?? clienteIdColNum
+    const causaleCol = pickBestTextCol(colsLower, ["CassaMovimentiCausale", "Causale", "Descrizione", "Note"]) ?? null
+
+    if (!dateCol || !importoCol || !clienteIdCol) return []
+
+    const ids = [...new Set(params.clienteIds.map((s) => String(s ?? "").trim()).filter(Boolean))]
+    if (!ids.length) return []
+    // Limite prudenziale: se esplode, ricadiamo su query senza filtro (ma qui preferiamo empty).
+    if (ids.length > 900) return []
+
+    const req = p.request().input("from", sql.VarChar(10), params.from).input("to", sql.VarChar(10), params.to)
+    const inParams: string[] = []
+    ids.forEach((id, i) => {
+      const key = `id${i}`
+      req.input(key, sql.NVarChar(64), id)
+      inParams.push(`@${key}`)
+    })
+
+    const whereParts: string[] = []
+    whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
+    whereParts.push(`CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) >= CAST(@from AS DATE)`)
+    whereParts.push(`CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) <= CAST(@to AS DATE)`)
+    whereParts.push(`CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64)) IN (${inParams.join(",")})`)
+    const where = `WHERE ${whereParts.join(" AND ")}`
+
+    const r = await req.query(
+      `SELECT
+         CAST(${bracketCol(clienteIdCol)} AS NVARCHAR(64)) AS IDUtente,
+         ${bracketCol(dateCol)} AS DataOperazione,
+         ${bracketCol(importoCol)} AS Importo
+         ${causaleCol ? `, ${bracketCol(causaleCol)} AS Causale` : ""}
+       FROM ${vq}
+       ${where}
+       ORDER BY TRY_CONVERT(datetime, ${bracketCol(dateCol)}) ASC;`
+    )
+
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      clienteId: row.IDUtente != null ? String(row.IDUtente) : "",
+      dataOperazioneIso: toIsoMaybe(row.DataOperazione),
+      importo: safeNum(row.Importo),
+      causale: row.Causale != null ? String(row.Causale) : "",
+    }))
+  } catch {
+    return []
+  }
+}
+
 export async function queryCrmAppuntamenti(params: {
   nomeVenditore: string
   cognome: string
@@ -1658,6 +1740,46 @@ export async function queryCrmAppuntamenti(params: {
       tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
       esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
       crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Appuntamenti CRM filtrati per cliente (nome/cognome) e range date. */
+export async function queryCrmAppuntamentiCliente(params: {
+  cognome: string
+  nome: string
+  from: string // YYYY-MM-DD
+  to: string // YYYY-MM-DD
+}): Promise<CrmAppuntamentoRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getCrmUtentiViewName()
+  try {
+    const extra = await crmSelectExtraFragments(view)
+    const req = p
+      .request()
+      .input("cognome", sql.NVarChar, params.cognome?.trim() ?? "")
+      .input("nome", sql.NVarChar, params.nome?.trim() ?? "")
+      .input("from", sql.VarChar(10), params.from)
+      .input("to", sql.VarChar(10), params.to)
+    const r = await req.query(
+      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
+       FROM ${view}
+       WHERE LOWER(LTRIM(RTRIM(COALESCE(Cognome, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@cognome, N''))))
+         AND LOWER(LTRIM(RTRIM(COALESCE(Nome, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nome, N''))))
+         AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
+         AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
+       ORDER BY DataAppuntamento ASC`
+    )
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      dataAppuntamento: row.DataAppuntamento != null ? String(row.DataAppuntamento) : "",
+      tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
+      esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
+      crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+      ...extra.map(row),
     }))
   } catch {
     return []

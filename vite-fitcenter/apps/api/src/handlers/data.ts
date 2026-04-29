@@ -840,6 +840,8 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       categoria: string
       microcategoria: string
       scadenza: string | null
+      dataInizio: string // YYYY-MM-DD
+      dataFine: string // YYYY-MM-DD
       totale: number
       pagato: number
       daPagare: number
@@ -904,6 +906,8 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         categoria,
         microcategoria: micro,
         scadenza: a.dataFine ? String(a.dataFine).slice(0, 10) : null,
+        dataInizio: di,
+        dataFine: df,
         totale,
         pagato,
         daPagare,
@@ -924,26 +928,68 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       }
       const hasAnyMatch = items.some((it) => paidByIscrizione.has(it.idIscrizione))
 
-      // Fallback: se la view non espone IDIscrizione, sommiamo per clienteId.
-      let paidByClienteId: Map<string, number> | null = null
-      if (!hasAnyMatch) {
-        const rowsByCliente = await gestionaleSql.queryCassaMovimentiSumByClienteId(minDataInizioIso, todayIso)
-        paidByClienteId = new Map<string, number>()
-        for (const r of rowsByCliente) {
-          const id = String((r as any)?.IDUtente ?? (r as any)?.idUtente ?? (r as any)?.ClienteId ?? "").trim()
-          if (!id) continue
-          const tot = Number((r as any)?.Totale ?? (r as any)?.totale ?? 0) || 0
-          paidByClienteId.set(id, tot)
+      if (hasAnyMatch) {
+        for (const it of items) {
+          const paid = paidByIscrizione.get(it.idIscrizione) ?? 0
+          it.pagato = Math.max(0, paid)
+          it.daPagare = Math.max(0, (it.totale ?? 0) - it.pagato)
         }
-      }
+      } else {
+        // Fallback robusto: attribuzione per cliente usando i movimenti nel range dell'abbonamento attivo.
+        // Caso tipico: RVW_CassaMovimentiUtenti non espone/valorizza IDIscrizione.
+        const clienteIds = [...new Set(items.map((it) => it.clienteId).filter(Boolean))]
+        const movs = await gestionaleSql.queryCassaMovimentiLiteByClienteIds({
+          from: minDataInizioIso,
+          to: todayIso,
+          clienteIds,
+        })
+        const movsByCliente = new Map<string, { t: number; imp: number }[]>()
+        for (const m of movs) {
+          const cid = String(m.clienteId ?? "").trim()
+          if (!cid) continue
+          const iso = m.dataOperazioneIso ? m.dataOperazioneIso.slice(0, 10) : null
+          if (!iso) continue
+          const imp = Number(m.importo ?? 0) || 0
+          if (imp <= 0) continue
+          const arr = movsByCliente.get(cid) ?? []
+          arr.push({ t: Date.parse(`${iso}T00:00:00.000Z`), imp })
+          movsByCliente.set(cid, arr)
+        }
+        for (const arr of movsByCliente.values()) arr.sort((a, b) => a.t - b.t)
 
-      for (const it of items) {
-        const paid =
-          paidByIscrizione.has(it.idIscrizione)
-            ? paidByIscrizione.get(it.idIscrizione) ?? 0
-            : paidByClienteId?.get(it.clienteId) ?? 0
-        it.pagato = paid
-        it.daPagare = Math.max(0, (it.totale ?? 0) - paid)
+        // Per ogni cliente: distribuisce i movimenti sugli abbonamenti attivi (ordinati per inizio),
+        // rispettando il range date dell'abbonamento e senza superare il totale.
+        const itemsByCliente = new Map<string, DanzaItem[]>()
+        for (const it of items) {
+          const arr = itemsByCliente.get(it.clienteId) ?? []
+          arr.push(it)
+          itemsByCliente.set(it.clienteId, arr)
+        }
+        for (const arr of itemsByCliente.values()) arr.sort((a, b) => a.dataInizio.localeCompare(b.dataInizio))
+
+        for (const [cid, subs] of itemsByCliente.entries()) {
+          const movArr = movsByCliente.get(cid) ?? []
+          for (const it of subs) {
+            it.pagato = 0
+            it.daPagare = Math.max(0, it.totale ?? 0)
+          }
+          for (const mv of movArr) {
+            // trova il primo abbonamento che include la data movimento e ha ancora residuo
+            for (const it of subs) {
+              const startT = Date.parse(`${it.dataInizio}T00:00:00.000Z`)
+              const endT = Date.parse(`${it.dataFine}T23:59:59.999Z`)
+              if (mv.t < startT || mv.t > endT) continue
+              const due = Math.max(0, (it.totale ?? 0) - (it.pagato ?? 0))
+              if (due <= 0) continue
+              const take = Math.min(due, mv.imp)
+              if (take <= 0) continue
+              it.pagato = (it.pagato ?? 0) + take
+              it.daPagare = Math.max(0, (it.totale ?? 0) - it.pagato)
+              mv.imp -= take
+              if (mv.imp <= 0) break
+            }
+          }
+        }
       }
     }
 
@@ -1936,6 +1982,27 @@ export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
     const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : defFrom
     const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : defTo
     const rows = await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
+    res.json({ from: fromIso, to: toIso, rows })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Appuntamenti CRM per cliente (nome+cognome) nel range date. */
+export async function getCrmAppuntamentiCliente(req: Request, res: Response) {
+  try {
+    if (!gestionaleSql.isGestionaleConfigured()) return res.json({ from: "", to: "", rows: [] })
+    const cognome = String(req.query.cognome ?? "").trim()
+    const nome = String(req.query.nome ?? "").trim()
+    if (!cognome || !nome) return res.status(400).json({ message: "nome e cognome obbligatori" })
+    const from = String(req.query.from ?? "").trim()
+    const to = String(req.query.to ?? "").trim()
+    const today = new Date()
+    const defFrom = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1)).toISOString().slice(0, 10)
+    const defTo = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 1, 1)).toISOString().slice(0, 10)
+    const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : defFrom
+    const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : defTo
+    const rows = await gestionaleSql.queryCrmAppuntamentiCliente({ cognome, nome, from: fromIso, to: toIso })
     res.json({ from: fromIso, to: toIso, rows })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
