@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
@@ -66,20 +67,30 @@ export function AbbonamentoDettaglio() {
   const followUp = abbonamentoId ? followUpAll[abbonamentoId] : undefined
   const stato = (followUp?.stato as RinnovoStato) ?? "da_contattare"
   const note = followUp?.note ?? ""
+  const [draftNote, setDraftNote] = useState(note)
+  useEffect(() => {
+    setDraftNote(note)
+  }, [note])
 
   const crmParams =
-    abbonamento && cliente && consulenteNome
+    abbonamento && cliente
       ? {
           nomeVenditore: abbonamento.consulenteNome ?? "",
           cognome: cliente.cognome ?? "",
           nome: cliente.nome ?? "",
-          nomeOperatore: consulenteNome,
+          nomeOperatore: abbonamento.consulenteNome ?? consulenteNome,
         }
       : null
+  const canQueryCrm =
+    !!crmParams &&
+    !!crmParams.nomeVenditore &&
+    !!crmParams.nomeOperatore &&
+    !!crmParams.cognome &&
+    !!crmParams.nome
   const { data: crmAppuntamenti = [] } = useQuery({
     queryKey: ["data", "crm-appuntamenti", crmParams?.nomeVenditore ?? "", crmParams?.cognome ?? "", crmParams?.nome ?? "", crmParams?.nomeOperatore ?? ""],
     queryFn: () => dataApi.getCrmAppuntamenti(crmParams!),
-    enabled: !!crmParams && (!!crmParams.nomeVenditore || !!crmParams.cognome || !!crmParams.nome),
+    enabled: canQueryCrm,
   })
 
   const { data: chiamate = [] } = useQuery({
@@ -198,15 +209,32 @@ export function AbbonamentoDettaglio() {
           <div className="mt-4">
             <label className="block text-sm text-zinc-500">Note</label>
             <textarea
-              defaultValue={note}
-              onBlur={(e) => {
-                const v = e.target.value.trim()
-                if (v !== note) updateMutation.mutate({ note: v })
-              }}
+              value={draftNote}
+              onChange={(e) => setDraftNote(e.target.value)}
               rows={3}
               className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-800/50 px-3 py-2 text-sm text-zinc-100 focus:border-amber-500/50 focus:outline-none"
               placeholder="Note del consulente..."
             />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => updateMutation.mutate({ note: draftNote.trim() })}
+                disabled={updateMutation.isPending}
+              >
+                Salva
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setDraftNote("")
+                  updateMutation.mutate({ note: "" })
+                }}
+                disabled={updateMutation.isPending}
+              >
+                Elimina
+              </Button>
+            </div>
           </div>
 
           {crmAppuntamenti.length > 0 && (

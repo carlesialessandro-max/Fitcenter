@@ -360,12 +360,18 @@ function legacyParticipantKey(p: PrenotazioneCorsoRow, idx: number): string {
   return `fallback:${nome}|${em}|${sms}|${idx}`
 }
 
-function readAppelloForDay(giornoIso: string): Record<string, true> {
+function readAppelloForDay(giornoIso: string): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(`fitcenter-corsi-appello:${giornoIso}`)
     if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, true>
-    return parsed && typeof parsed === "object" ? parsed : {}
+    const parsed = JSON.parse(raw) as Record<string, boolean>
+    if (!parsed || typeof parsed !== "object") return {}
+    // Normalizza: accetta solo booleani.
+    const out: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "boolean") out[k] = v
+    }
+    return out
   } catch {
     return {}
   }
@@ -766,7 +772,9 @@ export function Corsi() {
   const [messaggiChannel, setMessaggiChannel] = useState<"email" | "whatsapp">("email")
   const [messaggiSubject, setMessaggiSubject] = useState("")
   const [messaggiBody, setMessaggiBody] = useState("")
-  const [appello, setAppello] = useState<Record<string, true>>({})
+  // Override manuale per la presenza (verde/grigio) salvato in localStorage.
+  // Valore: true=presente manualmente, false=assente manualmente.
+  const [appello, setAppello] = useState<Record<string, boolean>>({})
   const [waCursor, setWaCursor] = useState(0)
   const [courseNotes, setCourseNotes] = useState<Record<string, string>>({})
 
@@ -1021,34 +1029,28 @@ export function Corsi() {
     try {
       const raw = localStorage.getItem(`fitcenter-corsi-appello:${giorno}`)
       if (!raw) return setAppello({})
-      const parsed = JSON.parse(raw) as Record<string, true>
-      setAppello(parsed && typeof parsed === "object" ? parsed : {})
+      const parsed = JSON.parse(raw) as Record<string, boolean>
+      if (parsed && typeof parsed === "object") setAppello(parsed)
+      else setAppello({})
     } catch {
       setAppello({})
     }
   }, [giorno])
 
-  function isAppelloChecked(groupKey: string, p: PrenotazioneCorsoRow, idx: number): boolean {
+  function appelloOverride(groupKey: string, p: PrenotazioneCorsoRow, idx: number): { hasOverride: boolean; value: boolean } {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
-    if (appello[k]) return true
-    // Compatibilità: chiavi salvate con versione precedente (include idx sempre).
     const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
-    return !!appello[old]
+    if (Object.prototype.hasOwnProperty.call(appello, k)) return { hasOverride: true, value: !!appello[k] }
+    // Compatibilità: chiavi salvate con versione precedente (include idx sempre).
+    if (Object.prototype.hasOwnProperty.call(appello, old)) return { hasOverride: true, value: !!appello[old] }
+    return { hasOverride: false, value: false }
   }
 
-  function toggleAppello(groupKey: string, p: PrenotazioneCorsoRow, idx: number): void {
+  function toggleAppello(groupKey: string, p: PrenotazioneCorsoRow, idx: number, nextValue: boolean): void {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
     const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
     setAppello((prev) => {
-      const next = { ...prev }
-      const has = !!next[k] || !!next[old]
-      if (has) {
-        delete next[k]
-        delete next[old]
-      } else {
-        next[k] = true
-        next[old] = true
-      }
+      const next = { ...prev, [k]: nextValue, [old]: nextValue }
       try {
         localStorage.setItem(`fitcenter-corsi-appello:${giorno}`, JSON.stringify(next))
       } catch {}
@@ -1403,9 +1405,9 @@ export function Corsi() {
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
                     const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
                     const presentiCount = g.partecipanti.filter((p, idx) => {
-                      const okAppello = isAppelloChecked(g.key, p, idx)
                       const okAccesso = isPresentByAccess(accessIdxDay, p, giorno).present
-                      return okAppello || okAccesso
+                      const ov = appelloOverride(g.key, p, idx)
+                      return ov.hasOverride ? ov.value : okAccesso
                     }).length
                     const attesaCount = g.partecipanti.filter((p) => !!p.inAttesa).length
                     const assentiCount = Math.max(0, g.partecipanti.length - attesaCount - presentiCount)
@@ -1547,8 +1549,8 @@ export function Corsi() {
                         }
                         const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                         const okAccesso = access.present
-                        const okAppello = isAppelloChecked(g.key, p, idx)
-                        const presente = okAccesso || okAppello
+                        const ov = appelloOverride(g.key, p, idx)
+                        const presente = ov.hasOverride ? ov.value : okAccesso
                         const accessoInfo = access.entry
                           ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                           : { timeLabel: null, minutes: null }
@@ -1605,21 +1607,14 @@ export function Corsi() {
                               <div className="flex shrink-0 items-center gap-2">
                                 <button
                                   type="button"
-                                  title={
-                                    okAccesso
-                                      ? "Presente (accesso effettuato oggi)"
-                                      : presente
-                                        ? "Presente (appello)"
-                                        : "Segna presente (appello)"
-                                  }
+                                  title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
                                   aria-pressed={presente}
-                                  disabled={okAccesso}
-                                  onClick={() => toggleAppello(g.key, p, idx)}
+                                  onClick={() => toggleAppello(g.key, p, idx, !presente)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
                                     presente
                                       ? "border-emerald-400/60 bg-emerald-500/30"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  } ${okAccesso ? "cursor-not-allowed opacity-90" : ""}`}
+                                  }`}
                                 />
                               </div>
                             </div>
@@ -1669,8 +1664,8 @@ export function Corsi() {
                           }
                           const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                           const okAccesso = access.present
-                          const okAppello = isAppelloChecked(g.key, p, idx)
-                          const presente = okAccesso || okAppello
+                          const ov = appelloOverride(g.key, p, idx)
+                          const presente = ov.hasOverride ? ov.value : okAccesso
                           const accessoInfo = access.entry
                             ? { timeLabel: `${String(access.entry.getHours()).padStart(2, "0")}:${String(access.entry.getMinutes()).padStart(2, "0")}`, minutes: access.entry.getHours() * 60 + access.entry.getMinutes() }
                             : { timeLabel: null, minutes: null }
@@ -1682,21 +1677,14 @@ export function Corsi() {
                               <td className="px-5 py-3">
                                 <button
                                   type="button"
-                                  title={
-                                    okAccesso
-                                      ? "Presente (accesso effettuato oggi)"
-                                      : presente
-                                        ? "Presente (appello)"
-                                        : "Segna presente (appello)"
-                                  }
+                                  title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
                                   aria-pressed={presente}
-                                  disabled={okAccesso}
-                                  onClick={() => toggleAppello(g.key, p, idx)}
+                                  onClick={() => toggleAppello(g.key, p, idx, !presente)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
                                     presente
                                       ? "border-emerald-400/60 bg-emerald-500/30"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  } ${okAccesso ? "cursor-not-allowed opacity-90" : ""}`}
+                                  }`}
                                 />
                               </td>
                               <td className="max-w-[11rem] px-5 py-3 align-top text-xs text-zinc-400">
@@ -1852,10 +1840,14 @@ export function CorsiNoShow() {
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
-      const presenteAppello = !!appello[`${gk}::${pk}`] || !!appello[`${gk}::${legacyParticipantKey(p, 0)}`]
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
-      const presente = presenteAppello || presenteAccessi
+      const kStable = `${gk}::${pk}`
+      const kLegacy = `${gk}::${legacyParticipantKey(p, 0)}`
+      let presenteAppello: boolean | undefined = undefined
+      if (Object.prototype.hasOwnProperty.call(appello, kStable)) presenteAppello = appello[kStable]
+      else if (Object.prototype.hasOwnProperty.call(appello, kLegacy)) presenteAppello = appello[kLegacy]
+      const presente = presenteAppello ?? presenteAccessi
       if (presente) continue
 
       const cur = counts.get(key) ?? { key, idUtente, cognome, nome, email, count: 0, monthKey: r.monthKey }
@@ -1906,10 +1898,14 @@ export function CorsiNoShow() {
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
       const appello = readAppelloForDay(day)
-      const presenteAppello = !!appello[`${gk}::${pk}`] || !!appello[`${gk}::${legacyParticipantKey(p, 0)}`]
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
-      if (presenteAppello || presenteAccessi) continue
+      const kStable = `${gk}::${pk}`
+      const kLegacy = `${gk}::${legacyParticipantKey(p, 0)}`
+      let presenteAppello: boolean | undefined = undefined
+      if (Object.prototype.hasOwnProperty.call(appello, kStable)) presenteAppello = appello[kStable]
+      else if (Object.prototype.hasOwnProperty.call(appello, kLegacy)) presenteAppello = appello[kLegacy]
+      if ((presenteAppello ?? presenteAccessi) as boolean) continue
       out.push({ day, servizio: getCorsoTitolo(p), oraInizio: (p.oraInizio ?? "").trim() || undefined, oraFine: (p.oraFine ?? "").trim() || undefined })
     }
     out.sort((a, b) => a.day.localeCompare(b.day) || (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "") || a.servizio.localeCompare(b.servizio))

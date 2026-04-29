@@ -788,6 +788,11 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         DataInizio: a.dataInizio,
         DataFine: a.dataFine,
         Totale: a.prezzo,
+        // Mock pagamento: consideriamo non pagato.
+        ImportoPagato: 0,
+        DaPagare: a.prezzo,
+        Residuo: a.prezzo,
+        StatoPagamento: "NON PAGATO",
       }))
     }
 
@@ -840,6 +845,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       daPagare: number
     }
 
+    let minDataInizioIso: string | null = null
     const items: DanzaItem[] = []
     for (const row of rawRows) {
       const a = rowToAbbonamento(row)
@@ -847,6 +853,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       const df = String(a.dataFine ?? "").slice(0, 10)
       if (!di || !df || di > todayIso || df < todayIso) continue
       if (!isDanzaRow(row, a)) continue
+      if (!minDataInizioIso || di < minDataInizioIso) minDataInizioIso = di
 
       const email = pick(row, ["Email", "E_mail", "Mail", "ClienteEmail"])
       const telefono = pick(row, ["SMS", "Cellulare", "Telefono", "Telefono_1", "Telefono1", "ClienteSms"])
@@ -901,6 +908,25 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         pagato,
         daPagare,
       })
+    }
+
+    // Allineamento "pagato / da pagare" con i movimenti pagamenti (gestionale):
+    // pagato = somma MovimentiVenduto (Importo>0) per IDIscrizione nel periodo [min(dataInizio), oggi]
+    // daPagare = max(0, totale - pagato)
+    if (gestionaleSql.isGestionaleConfigured() && minDataInizioIso) {
+      const pagatoRows = await gestionaleSql.queryMovimentiVendutoSumByIscrizione(minDataInizioIso, todayIso)
+      const paidByIscrizione = new Map<string, number>()
+      for (const r of pagatoRows) {
+        const id = String((r as any)?.IDIscrizione ?? (r as any)?.idIscrizione ?? "").trim()
+        if (!id) continue
+        const tot = Number((r as any)?.Totale ?? (r as any)?.totale ?? 0) || 0
+        paidByIscrizione.set(id, tot)
+      }
+      for (const it of items) {
+        const paid = paidByIscrizione.get(it.idIscrizione) ?? it.pagato ?? 0
+        it.pagato = paid
+        it.daPagare = Math.max(0, (it.totale ?? 0) - paid)
+      }
     }
 
     const byCategoria = new Map<string, DanzaItem[]>()
