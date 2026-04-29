@@ -935,7 +935,16 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
           const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
           return Number.isFinite(n) ? n : null
         })()
-      const paidByCassa = cassaMovImp != null && (Number(cassaMovImp) || 0) > 0 ? (Number(cassaMovImp) || 0) : 0
+      // In alcune viste il campo Importo può contenere importo "previsto".
+      // Quindi richiediamo anche un indicatore di movimento reale (data operazione o id movimento).
+      const cassaMovIdIscr = String(rowGetNorm(row, ["Cassa Movimenti ID Iscrizione", "CassaMovimentiIDIscrizione"]) ?? "").trim()
+      const cassaMovIdMov = String(
+        rowGetNorm(row, ["IDCassaMovimenti", "IdCassaMovimenti", "CassaMovimentiId", "IDMovimento", "IdMovimento", "MovimentoId"]) ?? ""
+      ).trim()
+      const cassaMovDataIso = parseItDateOnly(rowGetNorm(row, ["Data Operazione", "DataOperazione", "CassaMovimentiDataOperazione"]))
+      const hasMovimentoReale = !!cassaMovIdIscr || !!cassaMovIdMov || !!cassaMovDataIso
+      const paidByCassa =
+        hasMovimentoReale && cassaMovImp != null && (Number(cassaMovImp) || 0) > 0 ? (Number(cassaMovImp) || 0) : 0
 
       if (idIscrAgg && rataIso && rataImporto != null && rataImporto > 0) {
         // Considera solo rate nel periodo dell'abbonamento attivo
