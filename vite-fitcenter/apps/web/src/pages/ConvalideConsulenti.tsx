@@ -3,14 +3,16 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 
 export function ConvalideConsulenti() {
-  const { role } = useAuth()
+  const { role, consulenteNome } = useAuth()
   const now = new Date()
   const [anno, setAnno] = useState(now.getFullYear())
   const [mese, setMese] = useState(now.getMonth() + 1)
   const [view, setView] = useState<"settimana" | "mese">("settimana")
   const [consulente, setConsulente] = useState("")
+  const queryClient = useQueryClient()
 
   const allQ = useQuery({
     queryKey: ["convalidazioni-admin-all", anno, mese],
@@ -20,12 +22,12 @@ export function ConvalideConsulenti() {
   })
 
   const consulenti = useMemo(() => Object.keys(allQ.data?.all ?? {}).sort((a, b) => a.localeCompare(b)), [allQ.data?.all])
-  const selected = consulente || consulenti[0] || ""
+  const selected = role === "admin" ? (consulente || consulenti[0] || "") : (consulenteNome ?? "")
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["convalidazioni-admin-page", anno, mese, selected],
     queryFn: () => dataApi.getConvalidazioni(anno, mese, selected),
-    enabled: role === "admin" && !!selected,
+    enabled: !!selected,
     retry: false,
   })
 
@@ -55,7 +57,16 @@ export function ConvalideConsulenti() {
     return (jsDay + 6) % 7 // 0=Lun..6=Dom
   }, [anno, mese])
 
-  if (role !== "admin") {
+  const setConvalidaMutation = useMutation({
+    mutationFn: (payload: { giorno: number; convalidato: boolean }) =>
+      dataApi.setConvalidazione({ anno, mese, giorno: payload.giorno, convalidato: payload.convalidato, consulenteNome: selected }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["convalidazioni-admin-page", anno, mese, selected] })
+      queryClient.invalidateQueries({ queryKey: ["convalidazioni-admin-all", anno, mese] })
+    },
+  })
+
+  if (role !== "admin" && role !== "operatore") {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-6">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
@@ -79,20 +90,29 @@ export function ConvalideConsulenti() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <label className="flex flex-col gap-1 text-sm text-zinc-400">
-          Consulente
-          <select
-            value={selected}
-            onChange={(e) => setConsulente(e.target.value)}
-            className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
-          >
-            {consulenti.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </label>
+        {role === "admin" ? (
+          <label className="flex flex-col gap-1 text-sm text-zinc-400">
+            Consulente
+            <select
+              value={selected}
+              onChange={(e) => setConsulente(e.target.value)}
+              className="min-w-[320px] rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
+            >
+              {consulenti.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <div className="flex flex-col gap-1 text-sm text-zinc-400">
+            Consulente
+            <div className="min-w-[320px] rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-zinc-100">
+              {selected || "—"}
+            </div>
+          </div>
+        )}
         <div className="flex flex-col gap-1 text-sm text-zinc-400">
           <span>Riepilogo mese</span>
           <div className="text-xs text-zinc-500">
@@ -207,17 +227,23 @@ export function ConvalideConsulenti() {
                   {giorniMeseGrid.map((g) => {
                     const active = giorniSet.has(g)
                     return (
-                      <div
+                      <button
                         key={g}
-                        className={`flex h-10 items-center justify-center rounded-md border text-sm ${
+                        type="button"
+                        disabled={role !== "operatore" || setConvalidaMutation.isPending}
+                        onClick={() => {
+                          if (role !== "operatore") return
+                          setConvalidaMutation.mutate({ giorno: g, convalidato: !active })
+                        }}
+                        className={`flex h-10 items-center justify-center rounded-md border text-sm transition-colors ${
                           active
                             ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
                             : "border-zinc-800 bg-zinc-900/20 text-zinc-500"
-                        }`}
+                        } ${role === "operatore" ? "hover:bg-zinc-800/60" : ""}`}
                         title={active ? `Giorno ${g} convalidato` : `Giorno ${g}`}
                       >
                         {g}
-                      </div>
+                      </button>
                     )
                   })}
                 </div>
