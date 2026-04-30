@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
@@ -60,6 +60,7 @@ export function SignaturesAdmin() {
   const [newPrivacyPdfName, setNewPrivacyPdfName] = useState("")
   const [newPrivacyPdfFile, setNewPrivacyPdfFile] = useState<File | null>(null)
   const [newPrivacyPdfBusy, setNewPrivacyPdfBusy] = useState(false)
+  const [openDays, setOpenDays] = useState<Record<string, boolean>>({})
 
   const listQ = useQuery({
     queryKey: ["signatures-admin", fromDate, toDate, consultant, page, limit],
@@ -152,6 +153,33 @@ export function SignaturesAdmin() {
     const fields = Array.isArray(t?.fields) ? t!.fields : DEFAULT_SIGNATURE_FIELDS
     setFieldsDraft(fields.map((f) => ({ ...f })))
   }, [templateId, templatesQ.data])
+
+  const groupedByDay = useMemo(() => {
+    const rows = (listQ.data?.rows ?? []) as Array<{
+      id: string
+      createdAt?: string
+      [k: string]: any
+    }>
+    const toDayKey = (iso?: string) => {
+      const s = String(iso ?? "").trim()
+      if (!s) return "—"
+      const d = new Date(s)
+      if (Number.isNaN(d.getTime())) return "—"
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, "0")
+      const day = String(d.getDate()).padStart(2, "0")
+      return `${y}-${m}-${day}`
+    }
+    const map = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const k = toDayKey(r.createdAt)
+      const arr = map.get(k) ?? []
+      arr.push(r)
+      map.set(k, arr)
+    }
+    const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1))
+    return { keys, map }
+  }, [listQ.data?.rows])
 
   useEffect(() => {
     if (!slotsDraft.length) {
@@ -1527,74 +1555,104 @@ export function SignaturesAdmin() {
             </tr>
           </thead>
           <tbody className="text-zinc-200">
-            {(listQ.data?.rows ?? []).map((r) => {
-              const link = `${window.location.origin}/firma/${r.token}`
+            {groupedByDay.keys.map((dayKey) => {
+              const dayRows = groupedByDay.map.get(dayKey) ?? []
+              const isOpen = openDays[dayKey] ?? true
+              const itLabel =
+                dayKey && /^\d{4}-\d{2}-\d{2}$/.test(dayKey)
+                  ? new Date(`${dayKey}T12:00:00`).toLocaleDateString("it-IT", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric" })
+                  : "—"
               return (
-                <tr key={r.id} className="border-b border-zinc-800/70 last:border-b-0">
-                  <td className="px-3 py-2">{fmtDate(r.createdAt)}</td>
-                  <td className="px-3 py-2">
-                    <div>{r.customerName || "—"}</div>
-                    <div className="text-xs text-zinc-500">{r.customerEmail}</div>
-                    {isAdmin && r.createdByUsername && <div className="text-[11px] text-zinc-600">Consulente: {r.createdByUsername}</div>}
-                  </td>
-                  <td className="px-3 py-2">{r.documentOriginalName}</td>
-                  <td className="px-3 py-2">{r.status}</td>
-                  <td className="px-3 py-2">{fmtDate(r.expiresAt)}</td>
-                  <td className="px-3 py-2">
-                    <a className="text-amber-400 hover:underline" href={link} target="_blank" rel="noreferrer">
-                      Apri
-                    </a>
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-2">
+                <Fragment key={dayKey}>
+                  <tr className="border-b border-zinc-800 bg-zinc-950/30 text-xs text-zinc-400">
+                    <td colSpan={7} className="px-3 py-2">
                       <button
                         type="button"
-                        disabled={deletingId === r.id}
-                        onClick={async () => {
-                          try {
-                            setErr(null)
-                            setMsg(null)
-                            setDeletingId(r.id)
-                            const blob = await signaturesApi.exportAuditCsv({ id: r.id })
-                            const url = URL.createObjectURL(blob)
-                            const el = globalThis.document.createElement("a")
-                            el.href = url
-                            el.download = `firma-audit-${r.id}-${new Date().toISOString().slice(0, 10)}.csv`
-                            el.click()
-                            URL.revokeObjectURL(url)
-                            setMsg("Audit PDF esportato (CSV).")
-                          } catch (e2) {
-                            setErr((e2 as Error).message)
-                          } finally {
-                            setDeletingId(null)
-                          }
-                        }}
-                        className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
-                        title="Scarica audit (CSV) solo per questo PDF/richiesta"
+                        onClick={() => setOpenDays((p) => ({ ...p, [dayKey]: !(p[dayKey] ?? true) }))}
+                        className="inline-flex items-center gap-2 rounded border border-zinc-800 bg-zinc-900/30 px-2 py-1 hover:bg-zinc-900/50"
+                        title={isOpen ? "Collassa" : "Espandi"}
                       >
-                        Audit CSV
+                        <span className="text-zinc-300">{isOpen ? "▾" : "▸"}</span>
+                        <span className="font-medium text-zinc-200">{itLabel}</span>
+                        <span className="text-zinc-500">({dayRows.length})</span>
                       </button>
-                      <button
-                        type="button"
-                        disabled={deletingId === r.id}
-                        onClick={() => onDelete(r.id, false)}
-                        className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
-                        title="Elimina solo la riga. Il PDF resta sul server."
-                      >
-                        {deletingId === r.id ? "Elimino..." : "Elimina (solo app)"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deletingId === r.id}
-                        onClick={() => onDelete(r.id, true)}
-                        className="rounded border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-900/20 disabled:opacity-60"
-                        title="Elimina riga e cancella anche i file PDF."
-                      >
-                        {deletingId === r.id ? "Elimino..." : "Elimina + file"}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                  {isOpen
+                    ? dayRows.map((r: any) => {
+                        const link = `${window.location.origin}/firma/${r.token}`
+                        return (
+                          <tr key={r.id} className="border-b border-zinc-800/70 last:border-b-0">
+                            <td className="px-3 py-2">{fmtDate(r.createdAt)}</td>
+                            <td className="px-3 py-2">
+                              <div>{r.customerName || "—"}</div>
+                              <div className="text-xs text-zinc-500">{r.customerEmail}</div>
+                              {isAdmin && r.createdByUsername && (
+                                <div className="text-[11px] text-zinc-600">Consulente: {r.createdByUsername}</div>
+                              )}
+                            </td>
+                            <td className="px-3 py-2">{r.documentOriginalName}</td>
+                            <td className="px-3 py-2">{r.status}</td>
+                            <td className="px-3 py-2">{fmtDate(r.expiresAt)}</td>
+                            <td className="px-3 py-2">
+                              <a className="text-amber-400 hover:underline" href={link} target="_blank" rel="noreferrer">
+                                Apri
+                              </a>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  disabled={deletingId === r.id}
+                                  onClick={async () => {
+                                    try {
+                                      setErr(null)
+                                      setMsg(null)
+                                      setDeletingId(r.id)
+                                      const blob = await signaturesApi.exportAuditCsv({ id: r.id })
+                                      const url = URL.createObjectURL(blob)
+                                      const el = globalThis.document.createElement("a")
+                                      el.href = url
+                                      el.download = `firma-audit-${r.id}-${new Date().toISOString().slice(0, 10)}.csv`
+                                      el.click()
+                                      URL.revokeObjectURL(url)
+                                      setMsg("Audit PDF esportato (CSV).")
+                                    } catch (e2) {
+                                      setErr((e2 as Error).message)
+                                    } finally {
+                                      setDeletingId(null)
+                                    }
+                                  }}
+                                  className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
+                                  title="Scarica audit (CSV) solo per questo PDF/richiesta"
+                                >
+                                  Audit CSV
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={deletingId === r.id}
+                                  onClick={() => onDelete(r.id, false)}
+                                  className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-200 hover:bg-zinc-800/40 disabled:opacity-60"
+                                  title="Elimina solo la riga. Il PDF resta sul server."
+                                >
+                                  {deletingId === r.id ? "Elimino..." : "Elimina (solo app)"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={deletingId === r.id}
+                                  onClick={() => onDelete(r.id, true)}
+                                  className="rounded border border-red-900/70 px-2 py-1 text-xs text-red-300 hover:bg-red-900/20 disabled:opacity-60"
+                                  title="Elimina riga e cancella anche i file PDF."
+                                >
+                                  {deletingId === r.id ? "Elimino..." : "Elimina + file"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
+                    : null}
+                </Fragment>
               )
             })}
             {!listQ.isLoading && (listQ.data?.rows ?? []).length === 0 && (
