@@ -133,11 +133,23 @@ export function Incassi() {
   function rowAmount(r: Record<string, unknown>): number {
     const candidates = ["CassaMovimentiImporto", "Importo", "Totale", "ImportoPagato", "ImportoTotale", "Prezzo", "importo", "totale"]
     for (const k of candidates) {
-      const v = Number((r as any)[k])
+      const raw = (r as any)[k]
+      const v = (() => {
+        if (raw == null) return 0
+        if (typeof raw === "number") return Number.isFinite(raw) ? raw : 0
+        const s0 = String(raw).trim()
+        if (!s0) return 0
+        const s1 = s0
+          .replace(/[€\s]/g, "")
+          .replace(/\.(?=\d{3}(\D|$))/g, "")
+          .replace(",", ".")
+        const n = Number(s1)
+        return Number.isFinite(n) ? n : 0
+      })()
       if (Number.isFinite(v) && v !== 0) return v
     }
-    const v0 = Number((r as any).CassaMovimentiImporto ?? (r as any).Importo ?? (r as any).Totale ?? 0)
-    return Number.isFinite(v0) ? v0 : 0
+    const v0 = (r as any).CassaMovimentiImporto ?? (r as any).Importo ?? (r as any).Totale ?? 0
+    return typeof v0 === "number" ? (Number.isFinite(v0) ? v0 : 0) : 0
   }
 
   return (

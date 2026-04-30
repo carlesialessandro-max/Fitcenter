@@ -27,10 +27,23 @@ export async function getIncassi(req: Request, res: Response) {
   try {
     const allRows = await gestionaleSql.queryIncassiRange({ from, to, segment: seg })
 
+    const parseMoney = (v: unknown): number => {
+      if (v == null) return 0
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0
+      const s0 = String(v).trim()
+      if (!s0) return 0
+      // Esempi possibili: "350,00", "350.00", "€ 350,00", "1.234,56"
+      const s1 = s0
+        .replace(/[€\s]/g, "")
+        .replace(/\.(?=\d{3}(\D|$))/g, "") // rimuovi separatori migliaia tipo 1.234,56
+        .replace(",", ".")
+      const n = Number(s1)
+      return Number.isFinite(n) ? n : 0
+    }
+
     const amountOf = (r: any): number => {
       const x = r?.CassaMovimentiImporto ?? r?.Importo ?? r?.Totale ?? r?.importo ?? r?.totale ?? 0
-      const n = Number(x)
-      return Number.isFinite(n) ? n : 0
+      return parseMoney(x)
     }
 
     const rowId = (r: any): string | null => {
