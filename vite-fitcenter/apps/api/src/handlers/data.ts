@@ -2185,6 +2185,23 @@ export async function getConvalidazioni(req: Request, res: Response) {
   }
 }
 
+/** Admin: convalidazioni mese per tutti i consulenti presenti nello store. */
+export async function getConvalidazioniAdminAll(req: Request, res: Response) {
+  try {
+    const u = getScopedUser(req)
+    if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+    const anno = Number(req.query.anno)
+    const mese = Number(req.query.mese)
+    if (Number.isNaN(anno) || Number.isNaN(mese)) {
+      return res.status(400).json({ message: "anno e mese obbligatori" })
+    }
+    const all = convalidazioniStore.getAllByMonth(anno, mese)
+    res.json({ anno, mese, all })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function setConvalidazione(req: Request, res: Response) {
   try {
     const body = req.body as { anno: number; mese: number; giorno: number; convalidato: boolean; consulenteNome: string }

@@ -5,17 +5,27 @@ import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 
 export function ConvalideConsulenti() {
-  const { role, consulenti } = useAuth()
+  const { role } = useAuth()
   const now = new Date()
   const [anno, setAnno] = useState(now.getFullYear())
   const [mese, setMese] = useState(now.getMonth() + 1)
   const [view, setView] = useState<"settimana" | "mese">("settimana")
-  const [consulente, setConsulente] = useState(consulenti?.[0] ?? "")
+  const [consulente, setConsulente] = useState("")
+
+  const allQ = useQuery({
+    queryKey: ["convalidazioni-admin-all", anno, mese],
+    queryFn: () => dataApi.getConvalidazioniAdminAll(anno, mese),
+    enabled: role === "admin",
+    retry: false,
+  })
+
+  const consulenti = useMemo(() => Object.keys(allQ.data?.all ?? {}).sort((a, b) => a.localeCompare(b)), [allQ.data?.all])
+  const selected = consulente || consulenti[0] || ""
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["convalidazioni-admin-page", anno, mese, consulente],
-    queryFn: () => dataApi.getConvalidazioni(anno, mese, consulente),
-    enabled: role === "admin" && !!consulente,
+    queryKey: ["convalidazioni-admin-page", anno, mese, selected],
+    queryFn: () => dataApi.getConvalidazioni(anno, mese, selected),
+    enabled: role === "admin" && !!selected,
     retry: false,
   })
 
@@ -72,17 +82,23 @@ export function ConvalideConsulenti() {
         <label className="flex flex-col gap-1 text-sm text-zinc-400">
           Consulente
           <select
-            value={consulente}
+            value={selected}
             onChange={(e) => setConsulente(e.target.value)}
             className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
           >
-            {(consulenti ?? []).map((c) => (
+            {consulenti.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
           </select>
         </label>
+        <div className="flex flex-col gap-1 text-sm text-zinc-400">
+          <span>Riepilogo mese</span>
+          <div className="text-xs text-zinc-500">
+            Consulenti con convalide: <span className="text-zinc-200">{consulenti.length}</span>
+          </div>
+        </div>
         <label className="flex flex-col gap-1 text-sm text-zinc-400">
           Anno
           <input
@@ -133,6 +149,12 @@ export function ConvalideConsulenti() {
       </div>
 
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+        {allQ.isLoading ? <div className="py-2 text-sm text-zinc-500">Caricamento elenco consulenti…</div> : null}
+        {!allQ.isLoading && consulenti.length === 0 ? (
+          <div className="rounded-lg border border-zinc-800 bg-zinc-950/20 p-3 text-sm text-zinc-500">
+            Nessuna convalida trovata nello storico per questo mese.
+          </div>
+        ) : null}
         {isLoading && <div className="py-8 text-center text-zinc-400">Caricamento...</div>}
         {error && <div className="py-6 text-center text-red-400">{(error as Error).message}</div>}
         {!isLoading && !error && (

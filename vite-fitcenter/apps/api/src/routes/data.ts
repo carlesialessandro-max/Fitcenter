@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
@@ -33,6 +33,7 @@ dataRouter.get("/crm-appuntamenti", getCrmAppuntamenti)
 dataRouter.get("/crm-appuntamenti-operatore", getCrmAppuntamentiOperatore)
 dataRouter.get("/crm-appuntamenti-cliente", getCrmAppuntamentiCliente)
 dataRouter.get("/convalidazioni", getConvalidazioni)
+dataRouter.get("/convalidazioni-admin-all", requireAdmin, getConvalidazioniAdminAll)
 dataRouter.post("/convalidazioni", setConvalidazione)
 dataRouter.get("/ore-lavorate", getOreLavorate)
 dataRouter.post("/ore-lavorate", postOraLavorata)

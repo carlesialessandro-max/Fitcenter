@@ -57,16 +57,49 @@ export function Incassi() {
 
   const [from, setFrom] = useState<string>(() => isoTodayLocal())
   const [to, setTo] = useState<string>(() => isoTodayLocal())
-  const [segment, setSegment] = useState<Segment>("all")
+  const [expanded, setExpanded] = useState<Exclude<Segment, "all"> | null>(null)
 
-  const q = useQuery({
-    queryKey: ["incassi", from, to, segment],
-    queryFn: () => api.get<IncassiResponse>(`/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=${segment}`),
+  const qAdulti = useQuery({
+    queryKey: ["incassi", from, to, "adulti"],
+    queryFn: () =>
+      api.get<IncassiResponse>(`/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=adulti`),
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  })
+  const qBambini = useQuery({
+    queryKey: ["incassi", from, to, "bambini"],
+    queryFn: () =>
+      api.get<IncassiResponse>(`/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=bambini`),
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  })
+  const qDanza = useQuery({
+    queryKey: ["incassi", from, to, "danza"],
+    queryFn: () =>
+      api.get<IncassiResponse>(`/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=danza`),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
   })
 
-  const rows = q.data?.rows ?? []
+  const groups = useMemo(() => {
+    const mk = (label: string, seg: Exclude<Segment, "all">, q: any) => ({
+      label,
+      seg,
+      total: Number(q.data?.total ?? 0) || 0,
+      count: Number(q.data?.count ?? 0) || 0,
+      rows: (q.data?.rows ?? []) as Record<string, unknown>[],
+      isLoading: !!q.isLoading,
+      isFetching: !!q.isFetching,
+      isError: !!q.isError,
+      errorMessage: String((q.error as any)?.message ?? ""),
+    })
+    return [mk("Adulti", "adulti", qAdulti), mk("Bambini", "bambini", qBambini), mk("Danza", "danza", qDanza)]
+  }, [qAdulti.data, qAdulti.isLoading, qAdulti.isFetching, qAdulti.isError, qAdulti.error, qBambini, qDanza])
+
+  const totalDay = useMemo(() => groups.reduce((s, g) => s + (g.total || 0), 0), [groups])
+
+  const activeGroup = groups.find((g) => g.seg === expanded) ?? null
+  const rows = activeGroup?.rows ?? []
   const cols = useMemo(() => {
     // Tabella: colonne utili richieste (nome/cognome, abbonamento/descrizione, venditore, ecc.).
     const s = new Set<string>()
@@ -135,33 +168,53 @@ export function Incassi() {
               />
             </label>
             <label className="text-xs text-zinc-500">
-              Tipo
-              <select
-                value={segment}
-                onChange={(e) => setSegment(e.target.value as Segment)}
-                className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              >
-                <option value="all">Tutti</option>
-                <option value="adulti">Adulti</option>
-                <option value="bambini">Bambini</option>
-                <option value="danza">Danza</option>
-              </select>
+              Dettaglio
+              <div className="mt-1 flex gap-2">
+                {groups.map((g) => {
+                  const on = expanded === g.seg
+                  return (
+                    <button
+                      key={g.seg}
+                      type="button"
+                      onClick={() => setExpanded(on ? null : g.seg)}
+                      className={`rounded-md border px-3 py-2 text-sm ${
+                        on ? "border-amber-500 bg-amber-500/20 text-amber-300" : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900"
+                      }`}
+                      title={on ? "Nascondi dettagli" : "Mostra dettagli"}
+                    >
+                      {g.label}
+                    </button>
+                  )
+                })}
+              </div>
             </label>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-zinc-200">
-            Totale: <span className="font-semibold text-amber-300">{eur(q.data?.total ?? 0)}</span>
+            Totale giorno: <span className="font-semibold text-amber-300">{eur(totalDay)}</span>
           </div>
-          <div className="text-zinc-500">
-            Righe: <span className="text-zinc-200">{q.data?.count ?? 0}</span>
-          </div>
-          {q.isFetching ? <div className="text-zinc-500">Aggiornamento…</div> : null}
+          {groups.map((g) => (
+            <button
+              key={g.seg}
+              type="button"
+              onClick={() => setExpanded(expanded === g.seg ? null : g.seg)}
+              className={`rounded-lg border px-3 py-2 text-left ${
+                expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-900/50"
+              }`}
+            >
+              <div className="text-xs text-zinc-500">{g.label}</div>
+              <div className="font-semibold text-zinc-100">{eur(g.total)}</div>
+              <div className="text-xs text-zinc-500">Righe: <span className="text-zinc-200">{g.count}</span></div>
+            </button>
+          ))}
+          {(qAdulti.isFetching || qBambini.isFetching || qDanza.isFetching) ? <div className="text-zinc-500">Aggiornamento…</div> : null}
         </div>
       </div>
 
-      <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
+      {expanded ? (
+        <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
         <table className="min-w-[900px] w-full table-auto">
           <thead className="bg-zinc-950/40">
             <tr className="text-left text-xs text-zinc-500">
@@ -201,12 +254,17 @@ export function Incassi() {
             ))}
           </tbody>
         </table>
-        {q.isError ? (
+        {activeGroup?.isError ? (
           <div className="p-3 text-sm text-red-200">
-            Errore caricamento incassi: {String((q.error as any)?.message ?? "—")}
+            Errore caricamento incassi: {activeGroup.errorMessage || "—"}
           </div>
         ) : null}
       </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
+          Seleziona un gruppo (Adulti/Bambini/Danza) per vedere il dettaglio righe.
+        </div>
+      )}
     </div>
   )
 }

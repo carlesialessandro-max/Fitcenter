@@ -154,6 +154,8 @@ export const dataApi = {
     api.get<{ anno: number; mese: number; consulenteNome: string; convalidati: number[] }>(
       `/data/convalidazioni?anno=${anno}&mese=${mese}&consulente=${encodeURIComponent(consulenteNome)}`
     ),
+  getConvalidazioniAdminAll: (anno: number, mese: number) =>
+    api.get<{ anno: number; mese: number; all: Record<string, number[]> }>(`/data/convalidazioni-admin-all?anno=${anno}&mese=${mese}`),
   setConvalidazione: (body: { anno: number; mese: number; giorno: number; convalidato: boolean; consulenteNome: string }) =>
     api.post<{ anno: number; mese: number; giorno: number; convalidato: boolean }>("/data/convalidazioni", body),
   getOreLavorate: (params?: { consulente?: string; anno?: number; mese?: number }) => {
