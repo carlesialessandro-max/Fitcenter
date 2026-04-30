@@ -2169,8 +2169,11 @@ export async function getConvalidazioni(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno)
     const mese = Number(req.query.mese)
+    const u = getScopedUser(req)
     const operatoreNome = getOperatoreConsulenteNome(req)
-    const consulenteNome = (operatoreNome ?? (req.query.consulente as string))?.trim()
+    // Admin può richiedere qualsiasi consulente via query; non-admin solo se stesso.
+    const consulenteNome =
+      (u.role === "admin" ? (req.query.consulente as string) : (operatoreNome ?? (req.query.consulente as string)))?.trim()
     if (Number.isNaN(anno) || Number.isNaN(mese)) {
       return res.status(400).json({ message: "anno e mese obbligatori" })
     }
