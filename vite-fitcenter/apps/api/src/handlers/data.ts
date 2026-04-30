@@ -887,6 +887,8 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
     let minDataInizioIso: string | null = null
     const items: DanzaItem[] = []
     const rateAggByIscrizione = new Map<string, { paid: number; due: number }>()
+    const cassaPaidByIscrizione = new Map<string, number>()
+    const totaleByIscrizione = new Map<string, number>()
     for (const row of rawRows) {
       const a = rowToAbbonamento(row)
       const di = String(a.dataInizio ?? "").slice(0, 10)
@@ -899,6 +901,32 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       const idIscrAgg =
         String(a.id ?? rowGetNorm(row, ["ID Iscrizione", "IDIscrizione", "IdIscrizione"]) ?? row.IDIscrizione ?? "").trim() ||
         String(row.IDIscrizione ?? "")
+
+      // Regola richiesta: pagato = CassaMovimentiImporto, totale = Totale, daPagare = Totale - pagato (tutto sulla stessa riga/view)
+      const totaleRow =
+        pickNum(row, ["Totale", "totale", "Importo", "Prezzo"]) ??
+        (() => {
+          const v = rowGetNorm(row, ["Totale", "totale", "Importo", "Prezzo"])
+          if (v == null || String(v).trim() === "") return null
+          const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
+          return Number.isFinite(n) ? n : null
+        })()
+      const cassaMovImpRow =
+        pickNum(row, ["Cassa Movimenti Importo", "CassaMovimentiImporto", "CassaMovimenti Importo", "Cassamovimentiimporto"]) ??
+        (() => {
+          const v = rowGetNorm(row, ["Cassa Movimenti Importo", "CassaMovimentiImporto", "Cassamovimentiimporto"])
+          if (v == null || String(v).trim() === "") return null
+          const n = typeof v === "number" ? v : Number(String(v).replace(",", "."))
+          return Number.isFinite(n) ? n : null
+        })()
+      if (idIscrAgg) {
+        if (totaleRow != null && totaleRow > 0) {
+          totaleByIscrizione.set(idIscrAgg, Math.max(totaleByIscrizione.get(idIscrAgg) ?? 0, totaleRow))
+        }
+        if (cassaMovImpRow != null && cassaMovImpRow >= 0) {
+          cassaPaidByIscrizione.set(idIscrAgg, Math.max(cassaPaidByIscrizione.get(idIscrAgg) ?? 0, cassaMovImpRow))
+        }
+      }
       const rataIso = parseItDateOnly(
         rowGetNorm(row, ["Data Rata", "DataRata", "Abbonamenti Pagamenti Data Rata", "AbbonamentiPagamentiDataRata"])
       )
@@ -1026,6 +1054,17 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       it.daPagare = Math.max(0, Number(agg.due) || 0)
       // Se il totale riga è incoerente, manteniamo comunque rate come verità.
       it.totale = Math.max(it.totale ?? 0, it.pagato + it.daPagare)
+    }
+
+    // Override finale (regola richiesta): pagato = CassaMovimentiImporto, totale = Totale, daPagare = Totale - pagato.
+    // Se la view espone questi campi, sono la fonte di verità.
+    for (const it of items) {
+      if (!totaleByIscrizione.has(it.idIscrizione) && !cassaPaidByIscrizione.has(it.idIscrizione)) continue
+      const tot = totaleByIscrizione.get(it.idIscrizione) ?? it.totale ?? 0
+      const paid = cassaPaidByIscrizione.get(it.idIscrizione) ?? 0
+      it.totale = Math.max(0, Number(tot) || 0)
+      it.pagato = Math.max(0, Math.min(it.totale, Number(paid) || 0))
+      it.daPagare = Math.max(0, it.totale - it.pagato)
     }
 
     // Allineamento "pagato / da pagare" con i movimenti di cassa (gestionale):
