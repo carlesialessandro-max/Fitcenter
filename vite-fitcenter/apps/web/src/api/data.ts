@@ -169,6 +169,7 @@ export const dataApi = {
   postOraLavorata: (body: { consulenteNome: string; giorno: string; oraInizio: string; oraFine: string }) =>
     api.post<OraLavorata>("/data/ore-lavorate", body),
   deleteOraLavorata: (id: string) => api.delete(`/data/ore-lavorate/${encodeURIComponent(id)}`),
+  getDebugConsulenti: () => api.get<{ consulenti: { nome: string; id: string }[] }>("/data/debug-consulenti"),
   getReportConsulenti: (params?: {
     periodo?: "week" | "month" | "year"
     asOf?: string

@@ -1,69 +1,85 @@
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
-import { dataApi } from "@/api/data"
+import { dataApi, type OraLavorata } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+
+function localIsoDate(d = new Date()): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function fmtDateIt(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  return `${m[3]}/${m[2]}/${m[1]}`
+}
+
+function minutesBetween(start: string, end: string): number {
+  const m1 = /^(\d{1,2}):(\d{2})$/.exec(start)
+  const m2 = /^(\d{1,2}):(\d{2})$/.exec(end)
+  if (!m1 || !m2) return 0
+  const a = Number(m1[1]) * 60 + Number(m1[2])
+  const b = Number(m2[1]) * 60 + Number(m2[2])
+  return Math.max(0, b - a)
+}
+
+function fmtHours(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h}h ${String(m).padStart(2, "0")}m`
+}
 
 export function ConvalideConsulenti() {
   const { role, consulenteNome } = useAuth()
   const now = new Date()
   const [anno, setAnno] = useState(now.getFullYear())
   const [mese, setMese] = useState(now.getMonth() + 1)
-  const [view, setView] = useState<"settimana" | "mese">("settimana")
-  const [consulente, setConsulente] = useState("")
+  const [consulenteSel, setConsulenteSel] = useState("")
   const queryClient = useQueryClient()
 
-  const allQ = useQuery({
-    queryKey: ["convalidazioni-admin-all", anno, mese],
-    queryFn: () => dataApi.getConvalidazioniAdminAll(anno, mese),
+  const debugQ = useQuery({
+    queryKey: ["debug-consulenti"],
+    queryFn: () => dataApi.getDebugConsulenti(),
     enabled: role === "admin",
     retry: false,
+    staleTime: 60_000,
   })
+  const consulenti = useMemo(
+    () => (debugQ.data?.consulenti ?? []).map((c) => c.nome).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [debugQ.data?.consulenti]
+  )
 
-  const consulenti = useMemo(() => Object.keys(allQ.data?.all ?? {}).sort((a, b) => a.localeCompare(b)), [allQ.data?.all])
-  const selected = role === "admin" ? (consulente || consulenti[0] || "") : (consulenteNome ?? "")
+  const selected = role === "admin" ? (consulenteSel || consulenti[0] || "") : (consulenteNome ?? "")
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["convalidazioni-admin-page", anno, mese, selected],
-    queryFn: () => dataApi.getConvalidazioni(anno, mese, selected),
+  const { data: ore = [], isLoading, error } = useQuery({
+    queryKey: ["ore-lavorate", selected, anno, mese],
+    queryFn: () => dataApi.getOreLavorate({ consulente: selected || undefined, anno, mese }),
     enabled: !!selected,
     retry: false,
   })
 
-  const giorni = useMemo(() => (data?.convalidati ?? []).slice().sort((a, b) => a - b), [data?.convalidati])
-  const giorniSet = useMemo(() => new Set(giorni), [giorni])
-  const giorniNelMese = useMemo(() => new Date(anno, mese, 0).getDate(), [anno, mese])
+  const totalMinutes = useMemo(() => ore.reduce((s, r) => s + minutesBetween(r.oraInizio, r.oraFine), 0), [ore])
 
-  const settimane = useMemo(() => {
-    const out: Array<{ numero: number; start: number; end: number; count: number; lista: number[] }> = []
-    let start = 1
-    let numero = 1
-    while (start <= giorniNelMese) {
-      const end = Math.min(start + 6, giorniNelMese)
-      const lista = Array.from({ length: end - start + 1 }, (_, i) => start + i).filter((g) => giorniSet.has(g))
-      out.push({ numero, start, end, count: lista.length, lista })
-      start = end + 1
-      numero += 1
-    }
-    return out
-  }, [giorniNelMese, giorniSet])
-  const giorniMeseGrid = useMemo(() => Array.from({ length: giorniNelMese }, (_, i) => i + 1), [giorniNelMese])
-  const percentualeConvalida = giorniNelMese > 0 ? Math.round((giorni.length / giorniNelMese) * 100) : 0
-  const weekDayLabels = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
-  const leadingEmptyCells = useMemo(() => {
-    const d = new Date(anno, mese - 1, 1)
-    const jsDay = d.getDay() // 0=Dom..6=Sab
-    return (jsDay + 6) % 7 // 0=Lun..6=Dom
-  }, [anno, mese])
+  const todayStr = localIsoDate(now)
+  const [giorno, setGiorno] = useState(todayStr)
+  const [oraInizio, setOraInizio] = useState("09:00")
+  const [oraFine, setOraFine] = useState("18:00")
 
-  const setConvalidaMutation = useMutation({
-    mutationFn: (payload: { giorno: number; convalidato: boolean }) =>
-      dataApi.setConvalidazione({ anno, mese, giorno: payload.giorno, convalidato: payload.convalidato, consulenteNome: selected }),
+  const postMutation = useMutation({
+    mutationFn: () => dataApi.postOraLavorata({ consulenteNome: selected, giorno, oraInizio, oraFine }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["convalidazioni-admin-page", anno, mese, selected] })
-      queryClient.invalidateQueries({ queryKey: ["convalidazioni-admin-all", anno, mese] })
+      queryClient.invalidateQueries({ queryKey: ["ore-lavorate", selected, anno, mese] })
+      setGiorno(todayStr)
+      setOraInizio("09:00")
+      setOraFine("18:00")
     },
+  })
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => dataApi.deleteOraLavorata(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ore-lavorate", selected, anno, mese] }),
   })
 
   if (role !== "admin" && role !== "operatore") {
@@ -71,7 +87,7 @@ export function ConvalideConsulenti() {
       <div className="flex min-h-[40vh] items-center justify-center p-6">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
           <h2 className="text-lg font-semibold text-zinc-200">Convalide consulenti</h2>
-          <p className="mt-2 text-sm text-zinc-500">Pagina disponibile solo per admin.</p>
+          <p className="mt-2 text-sm text-zinc-500">Pagina disponibile solo per admin/operatore.</p>
           <Link to="/" className="mt-4 inline-block text-sm text-amber-400 hover:underline">
             Torna alla dashboard
           </Link>
@@ -84,8 +100,8 @@ export function ConvalideConsulenti() {
     <div className="p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100">Convalide Consulenti</h1>
-          <p className="text-sm text-zinc-500">Riepilogo convalidazioni per mese e settimana</p>
+          <h1 className="text-2xl font-semibold text-zinc-100">Convalide ore lavorate</h1>
+          <p className="text-sm text-zinc-500">Riepilogo ore lavorate per mese</p>
         </div>
       </div>
 
@@ -95,8 +111,8 @@ export function ConvalideConsulenti() {
             Consulente
             <select
               value={selected}
-              onChange={(e) => setConsulente(e.target.value)}
-              className="min-w-[320px] rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
+              onChange={(e) => setConsulenteSel(e.target.value)}
+              className="min-w-[360px] rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
             >
               {consulenti.map((c) => (
                 <option key={c} value={c}>
@@ -108,17 +124,12 @@ export function ConvalideConsulenti() {
         ) : (
           <div className="flex flex-col gap-1 text-sm text-zinc-400">
             Consulente
-            <div className="min-w-[320px] rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-zinc-100">
+            <div className="min-w-[360px] rounded border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-zinc-100">
               {selected || "—"}
             </div>
           </div>
         )}
-        <div className="flex flex-col gap-1 text-sm text-zinc-400">
-          <span>Riepilogo mese</span>
-          <div className="text-xs text-zinc-500">
-            Consulenti con convalide: <span className="text-zinc-200">{consulenti.length}</span>
-          </div>
-        </div>
+
         <label className="flex flex-col gap-1 text-sm text-zinc-400">
           Anno
           <input
@@ -142,118 +153,104 @@ export function ConvalideConsulenti() {
             ))}
           </select>
         </label>
-        <div className="ml-auto flex gap-2">
-          <button
-            type="button"
-            onClick={() => setView("settimana")}
-            className={`rounded border px-3 py-2 text-sm ${
-              view === "settimana"
-                ? "border-amber-500 bg-amber-500/20 text-amber-400"
-                : "border-zinc-600 text-zinc-400 hover:bg-zinc-800"
-            }`}
-          >
-            Settimana
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("mese")}
-            className={`rounded border px-3 py-2 text-sm ${
-              view === "mese"
-                ? "border-amber-500 bg-amber-500/20 text-amber-400"
-                : "border-zinc-600 text-zinc-400 hover:bg-zinc-800"
-            }`}
-          >
-            Mese
-          </button>
+
+        <div className="ml-auto rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-sm text-zinc-200">
+          Totale mese: <span className="font-semibold text-amber-300">{fmtHours(totalMinutes)}</span>
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-        {allQ.isLoading ? <div className="py-2 text-sm text-zinc-500">Caricamento elenco consulenti…</div> : null}
-        {!allQ.isLoading && consulenti.length === 0 ? (
-          <div className="rounded-lg border border-zinc-800 bg-zinc-950/20 p-3 text-sm text-zinc-500">
-            Nessuna convalida trovata nello storico per questo mese.
-          </div>
-        ) : null}
-        {isLoading && <div className="py-8 text-center text-zinc-400">Caricamento...</div>}
-        {error && <div className="py-6 text-center text-red-400">{(error as Error).message}</div>}
-        {!isLoading && !error && (
-          <>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-                <p className="text-xs text-zinc-500">Convalidati</p>
-                <p className="text-2xl font-semibold text-emerald-400">{giorni.length}</p>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-                <p className="text-xs text-zinc-500">Giorni mese</p>
-                <p className="text-2xl font-semibold text-zinc-100">{giorniNelMese}</p>
-              </div>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
-                <p className="text-xs text-zinc-500">Copertura</p>
-                <p className="text-2xl font-semibold text-amber-400">{percentualeConvalida}%</p>
-              </div>
-            </div>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-zinc-800">
-              <div
-                className="h-full rounded-full bg-amber-500 transition-all"
-                style={{ width: `${Math.min(100, Math.max(0, percentualeConvalida))}%` }}
+      {role === "operatore" ? (
+        <div className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="mb-3 text-lg font-semibold text-zinc-100">Aggiungi</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-sm text-zinc-400">
+              Data
+              <input
+                type="date"
+                value={giorno}
+                onChange={(e) => setGiorno(e.target.value)}
+                className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
               />
-            </div>
-            {view === "settimana" ? (
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {settimane.map((s) => (
-                  <div key={s.numero} className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-3">
-                    <p className="text-xs text-zinc-500">
-                      Settimana {s.numero} ({s.start}-{s.end})
-                    </p>
-                    <p className="mt-1 text-lg font-semibold text-zinc-100">{s.count} giorni</p>
-                    <p className="mt-1 text-xs text-zinc-500">{s.lista.length ? s.lista.join(", ") : "Nessuno"}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-4">
-                <div className="mb-2 grid grid-cols-7 gap-2">
-                  {weekDayLabels.map((label) => (
-                    <div key={label} className="text-center text-xs font-medium text-zinc-500">
-                      {label}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-2">
-                  {Array.from({ length: leadingEmptyCells }, (_, i) => (
-                    <div key={`empty-${i}`} className="h-10 rounded-md border border-transparent" />
-                  ))}
-                  {giorniMeseGrid.map((g) => {
-                    const active = giorniSet.has(g)
-                    return (
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-zinc-400">
+              Ora inizio
+              <input
+                type="time"
+                value={oraInizio}
+                onChange={(e) => setOraInizio(e.target.value)}
+                className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-zinc-400">
+              Ora fine
+              <input
+                type="time"
+                value={oraFine}
+                onChange={(e) => setOraFine(e.target.value)}
+                className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => postMutation.mutate()}
+              disabled={postMutation.isPending}
+              className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+            >
+              Aggiungi
+            </button>
+            {postMutation.isError ? (
+              <div className="text-sm text-red-400">{String((postMutation.error as any)?.message ?? "Errore")}</div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
+        {isLoading ? <div className="p-4 text-sm text-zinc-500">Caricamento…</div> : null}
+        {error ? <div className="p-4 text-sm text-red-400">{(error as Error).message}</div> : null}
+        {!isLoading && !error ? (
+          <table className="min-w-[900px] w-full table-auto">
+            <thead className="bg-zinc-950/40">
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="px-3 py-2">Data</th>
+                <th className="px-3 py-2">Ora inizio</th>
+                <th className="px-3 py-2">Ora fine</th>
+                <th className="px-3 py-2">Totale</th>
+                <th className="px-3 py-2">Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(ore as OraLavorata[]).map((r) => {
+                const mins = minutesBetween(r.oraInizio, r.oraFine)
+                return (
+                  <tr key={r.id} className="border-t border-zinc-800 text-sm text-zinc-200">
+                    <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(r.giorno)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{r.oraInizio}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{r.oraFine}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-amber-300">{fmtHours(mins)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <button
-                        key={g}
                         type="button"
-                        disabled={role !== "operatore" || setConvalidaMutation.isPending}
-                        onClick={() => {
-                          if (role !== "operatore") return
-                          setConvalidaMutation.mutate({ giorno: g, convalidato: !active })
-                        }}
-                        className={`flex h-10 items-center justify-center rounded-md border text-sm transition-colors ${
-                          active
-                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
-                            : "border-zinc-800 bg-zinc-900/20 text-zinc-500"
-                        } ${role === "operatore" ? "hover:bg-zinc-800/60" : ""}`}
-                        title={active ? `Giorno ${g} convalidato` : `Giorno ${g}`}
+                        onClick={() => deleteMutation.mutate(r.id)}
+                        disabled={deleteMutation.isPending || (role === "operatore" && selected !== consulenteNome)}
+                        className="text-red-400 hover:underline disabled:opacity-50"
                       >
-                        {g}
+                        Elimina
                       </button>
-                    )
-                  })}
-                </div>
-                <p className="mt-3 text-sm text-zinc-400">
-                  {giorni.length ? `Giorni convalidati: ${giorni.join(", ")}` : "Nessun giorno convalidato"}
-                </p>
-              </div>
-            )}
-          </>
-        )}
+                    </td>
+                  </tr>
+                )
+              })}
+              {(ore as OraLavorata[]).length === 0 ? (
+                <tr className="border-t border-zinc-800">
+                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-zinc-500">
+                    Nessuna riga per questo mese.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        ) : null}
       </div>
     </div>
   )
