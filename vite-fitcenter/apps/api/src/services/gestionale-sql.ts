@@ -2882,7 +2882,7 @@ function getIncassiViewName(): string {
   return raw
 }
 
-export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" | "danza" }): Promise<Record<string, unknown>[]> {
+export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" | "danza" | "ticket" }): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
   const view = getIncassiViewName()
@@ -2904,6 +2904,41 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
   const rows = (r.recordset ?? []) as Record<string, unknown>[]
   if (params.segment === "all") return rows
 
+  const isTicketing = (row: any): boolean => {
+    const caus = String(
+      firstNonEmpty(row, [
+        "CassaMovimentiCausale",
+        "Causale",
+        "Descrizione",
+        "CasseMovimentiCausale",
+        "CassaMovimentiCausa",
+        "CassaMovimentiDescrizione",
+      ]) ?? ""
+    )
+      .trim()
+      .toUpperCase()
+    if (caus.startsWith("TICKETING")) return true
+    const nomeSolo = String(
+      firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome", "Nome_Utente", "Nome utente", "RagioneSociale"]) ?? ""
+    )
+      .trim()
+      .toLowerCase()
+    if (nomeSolo === "ticketing") return true
+    const cognome = String(firstNonEmpty(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome"]) ?? "")
+      .trim()
+      .toLowerCase()
+    const nome = String(firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]) ?? "")
+      .trim()
+      .toLowerCase()
+    const full = [cognome, nome].filter(Boolean).join(" ").trim()
+    if (full === "ticketing") return true
+    return false
+  }
+
+  if (params.segment === "ticket") {
+    return rows.filter((row) => isTicketing(row as any))
+  }
+
   const want =
     params.segment === "adulti"
       ? "CLIENTE"
@@ -2911,7 +2946,10 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
         ? "KIDS"
         : "DANZA"
 
-  return rows.filter((row) => String((row as any).CategoriaDescrizione ?? "").trim().toUpperCase() === want)
+  return rows.filter(
+    (row) =>
+      String((row as any).CategoriaDescrizione ?? "").trim().toUpperCase() === want && !isTicketing(row as any)
+  )
 }
 
 /**

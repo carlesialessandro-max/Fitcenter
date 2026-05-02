@@ -4,7 +4,7 @@ import { Navigate } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
-type Segment = "all" | "adulti" | "bambini" | "danza"
+type Segment = "all" | "adulti" | "bambini" | "danza" | "ticket"
 
 type IncassiResponse = {
   from: string
@@ -80,6 +80,13 @@ export function Incassi() {
     refetchOnWindowFocus: false,
     staleTime: 10_000,
   })
+  const qTicket = useQuery({
+    queryKey: ["incassi", from, to, "ticket"],
+    queryFn: () =>
+      api.get<IncassiResponse>(`/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=ticket`),
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
+  })
 
   const groups = useMemo(() => {
     const mk = (label: string, seg: Exclude<Segment, "all">, q: any) => ({
@@ -93,8 +100,34 @@ export function Incassi() {
       isError: !!q.isError,
       errorMessage: String((q.error as any)?.message ?? ""),
     })
-    return [mk("Adulti", "adulti", qAdulti), mk("Bambini", "bambini", qBambini), mk("Danza", "danza", qDanza)]
-  }, [qAdulti.data, qAdulti.isLoading, qAdulti.isFetching, qAdulti.isError, qAdulti.error, qBambini, qDanza])
+    return [
+      mk("Adulti", "adulti", qAdulti),
+      mk("Bambini", "bambini", qBambini),
+      mk("Danza", "danza", qDanza),
+      mk("Ticket (giornalieri)", "ticket", qTicket),
+    ]
+  }, [
+    qAdulti.data,
+    qAdulti.isLoading,
+    qAdulti.isFetching,
+    qAdulti.isError,
+    qAdulti.error,
+    qBambini.data,
+    qBambini.isLoading,
+    qBambini.isFetching,
+    qBambini.isError,
+    qBambini.error,
+    qDanza.data,
+    qDanza.isLoading,
+    qDanza.isFetching,
+    qDanza.isError,
+    qDanza.error,
+    qTicket.data,
+    qTicket.isLoading,
+    qTicket.isFetching,
+    qTicket.isError,
+    qTicket.error,
+  ])
 
   const totalDay = useMemo(() => groups.reduce((s, g) => s + (g.total || 0), 0), [groups])
 
@@ -113,6 +146,8 @@ export function Incassi() {
       "Data",
       "Cognome",
       "Nome",
+      "NomeUtente",
+      "UtenteNome",
       "Abbonamento",
       "AbbonamentoDescrizione",
       "AbbonamentoDurataDescrizione",
@@ -221,7 +256,9 @@ export function Incassi() {
               <div className="text-xs text-zinc-500">Righe: <span className="text-zinc-200">{g.count}</span></div>
             </button>
           ))}
-          {(qAdulti.isFetching || qBambini.isFetching || qDanza.isFetching) ? <div className="text-zinc-500">Aggiornamento…</div> : null}
+          {(qAdulti.isFetching || qBambini.isFetching || qDanza.isFetching || qTicket.isFetching) ? (
+            <div className="text-zinc-500">Aggiornamento…</div>
+          ) : null}
         </div>
       </div>
 
@@ -274,7 +311,7 @@ export function Incassi() {
       </div>
       ) : (
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Danza) per vedere il dettaglio righe.
+          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio righe.
         </div>
       )}
     </div>

@@ -6,11 +6,12 @@ function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
-function segFromRaw(s: string): "all" | "adulti" | "bambini" | "danza" {
+function segFromRaw(s: string): "all" | "adulti" | "bambini" | "danza" | "ticket" {
   const t = s.trim().toLowerCase()
   if (t === "adulti") return "adulti"
   if (t === "bambini") return "bambini"
   if (t === "danza") return "danza"
+  if (t === "ticket" || t === "ticketing" || t === "tickets") return "ticket"
   return "all"
 }
 
