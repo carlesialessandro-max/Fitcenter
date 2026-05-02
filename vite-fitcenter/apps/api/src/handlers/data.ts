@@ -2657,10 +2657,15 @@ export async function getReportConsulenti(req: Request, res: Response) {
 
       let movimentiAndamento = 0
       let venditeDaViewSql = false
+      // Dashboard consuntivo = `getVenditeProgressivoMese` → query per-iscrizione (Totale view + Temp_Stampe).
+      // `getVenditeTotaleRangeView` somma invece SUM(M.Importo): più alta se ci sono più movimenti sulla stessa iscrizione.
+      const venditeByMovimento = process.env.GESTIONALE_VENDITE_BY_MOVIMENTO === "true"
       if (gestionaleSql.isGestionaleConfigured() && idUtente) {
         try {
           const [euro, mov] = await Promise.all([
-            withReportConsulentiSqlTimeout(gestionaleSql.getVenditeTotaleRangeView(fromIso, toIso, idUtente)),
+            venditeByMovimento
+              ? withReportConsulentiSqlTimeout(gestionaleSql.getVenditeTotaleRangeView(fromIso, toIso, idUtente))
+              : Promise.resolve({ ok: false as const, totaleEuro: 0 }),
             withReportConsulentiSqlTimeout(
               gestionaleSql.getVenditeMovimentiCategoriaDurata(fromIso, toIso, idUtente)
             ),

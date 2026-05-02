@@ -2555,7 +2555,9 @@ export async function getVenditeMovimentiCategoriaDurata(
 const ZERO_VENDITE_RANGE_VIEW = { ok: false as const, totaleEuro: 0 }
 
 /**
- * Produzione € su intervallo [from,to]: **SUM(M.Importo)** movimenti join view venditore (stessa base di `queryVenditeSum`).
+ * Produzione € su intervallo [from,to]: **SUM(M.Importo)** movimenti join view venditore.
+ * Allineato alla dashboard solo se `GESTIONALE_VENDITE_BY_MOVIMENTO=true`; altrimenti il report usa
+ * `getVenditeProgressivoMese` (Totale per iscrizione / Temp_Stampe come il gestionale).
  */
 export async function getVenditeTotaleRangeView(
   from: string,
@@ -2767,6 +2769,8 @@ export async function getCrossAbbonamentiDaLogByVenditore(
             L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
             OR L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
           )
+          -- Solo passaggi effettivamente verso prodotto CROSS (non ogni cambio tipo abbonamento).
+          AND UPPER(L.[AppLogDescrizione]) LIKE N'%CROSS%'
           -- Escludi tesseramenti / iscrizioni (non sono passaggi CROSS utili al report)
           AND UPPER(L.[AppLogDescrizione]) NOT LIKE N'%TESSERAMENT%'
           AND NOT (UPPER(L.[AppLogDescrizione]) LIKE N'%ASI%' AND UPPER(L.[AppLogDescrizione]) LIKE N'%ISCRIZIONE%')
