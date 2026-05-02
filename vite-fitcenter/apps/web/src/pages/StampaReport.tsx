@@ -35,6 +35,25 @@ function monthStartIso(iso: string): string {
   return `${m[1]}-${m[2]}-01`
 }
 
+const PDF_MARGIN_X = 10
+
+/** Evita tabelle tagliate a metà pagina (es. sezione CROSS invisibile). */
+function ensurePdfSpace(doc: JsPdfWithAutoTable, y: number, reserveMm = 52): number {
+  const pageH = doc.internal.pageSize.getHeight()
+  if (y > pageH - reserveMm) {
+    doc.addPage()
+    return 14
+  }
+  return y
+}
+
+const pdfTableDefaults = {
+  margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X },
+  styles: { fontSize: 8, halign: "left" as const, valign: "middle" as const },
+  headStyles: { halign: "left" as const },
+  footStyles: { fontStyle: "bold" as const, fontSize: 8, halign: "left" as const },
+}
+
 export function StampaReport() {
   const { role } = useAuth()
   if (role !== "admin") return <Navigate to="/" replace />
@@ -70,18 +89,19 @@ export function StampaReport() {
     if (!reportData) return
     const { rows, totals } = reportData
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as JsPdfWithAutoTable
-    const footStyles = { fontStyle: "bold" as const, fontSize: 8, halign: "left" as const }
 
     doc.setFontSize(14)
-    doc.text("ANALISI PRODUZIONE - FitCenter", 10, 10)
+    doc.text("ANALISI PRODUZIONE - FitCenter", PDF_MARGIN_X, 10)
     doc.setFontSize(10)
-    doc.text(`Dal: ${fmtDateIt(from)}   Al: ${fmtDateIt(to)}`, 10, 16)
-    doc.text(`Consulenti: ${consulentiEffective.join(", ") || "Nessuna"}`, 10, 21)
+    doc.text(`Dal: ${fmtDateIt(from)}   Al: ${fmtDateIt(to)}`, PDF_MARGIN_X, 16)
+    doc.text(`Consulenti: ${consulentiEffective.join(", ") || "Nessuna"}`, PDF_MARGIN_X, 21)
     let y = 28
 
+    y = ensurePdfSpace(doc, y)
     doc.setFontSize(11)
-    doc.text("PRODUZIONE TOTALE", 10, y)
+    doc.text("PRODUZIONE TOTALE", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Movimenti", "Produzione €", "Budget", "Scostamento", "Trend"]],
       body: rows.map((r) => [
@@ -102,68 +122,66 @@ export function StampaReport() {
           `${totals.percentualeBudget.toLocaleString("it-IT", { minimumFractionDigits: 2 })}%`,
         ],
       ],
-      footStyles,
-      styles: { fontSize: 8 },
     })
     y = autoTableNextY(doc, y + 45)
 
+    y = ensurePdfSpace(doc, y)
     doc.setFontSize(11)
-    doc.text("CLIENTI NUOVI", 10, y)
+    doc.text("CLIENTI NUOVI", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Nuovi clienti"]],
       body: rows.map((r) => [r.consulenteNome, String(r.clientiNuovi ?? 0)]),
       foot: [["TOTALE", String(totals.clientiNuovi)]],
-      footStyles,
-      styles: { fontSize: 8 },
     })
     y = autoTableNextY(doc, y + 25)
 
+    y = ensurePdfSpace(doc, y)
     doc.setFontSize(11)
-    doc.text("RINNOVI", 10, y)
+    doc.text("RINNOVI", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Rinnovi"]],
       body: rows.map((r) => [r.consulenteNome, String(r.rinnovi ?? 0)]),
       foot: [["TOTALE", String(totals.rinnovi)]],
-      footStyles,
-      styles: { fontSize: 8 },
     })
     y = autoTableNextY(doc, y + 25)
 
+    y = ensurePdfSpace(doc, y)
     doc.setFontSize(11)
-    doc.text("INVITO CLIENTI", 10, y)
+    doc.text("INVITO CLIENTI", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Invito clienti (categoria INVITO)"]],
       body: rows.map((r) => [r.consulenteNome, String(r.invitoClienti ?? 0)]),
       foot: [["TOTALE", String(totals.invitoClienti)]],
-      footStyles,
-      styles: { fontSize: 8 },
     })
     y = autoTableNextY(doc, y + 25)
 
+    y = ensurePdfSpace(doc, y, 42)
     doc.setFontSize(11)
-    doc.text("ABBONAMENTI CROSS (da log modifiche tipo)", 10, y)
+    doc.text("ABBONAMENTI CROSS (da log modifiche tipo)", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Passaggi a CROSS (log)"]],
       body: rows.map((r) => [r.consulenteNome, String(r.crossAbbonamenti ?? 0)]),
       foot: [["TOTALE", String(totals.crossAbbonamenti ?? 0)]],
-      footStyles,
-      styles: { fontSize: 8 },
     })
     y = autoTableNextY(doc, y + 25)
 
+    y = ensurePdfSpace(doc, y)
     doc.setFontSize(11)
-    doc.text("CONTATTI TELEFONICI", 10, y)
+    doc.text("CONTATTI TELEFONICI", PDF_MARGIN_X, y)
     autoTable(doc, {
+      ...pdfTableDefaults,
       startY: y + 2,
       head: [["Consulente", "Contatti telefonici"]],
       body: rows.map((r) => [r.consulenteNome, String(r.telefonate)]),
       foot: [["TOTALE", String(totals.telefonate)]],
-      footStyles,
-      styles: { fontSize: 8 },
     })
 
     doc.save(`analisi-produzione-${from}-${to}.pdf`)

@@ -1869,42 +1869,44 @@ function sqlWhereTipoOperazioneMovimentoVendita(alias: string): string {
   return s
 }
 
-/** Colonna vista: durata abbonamento (es. "TESSERAMENTO GARE" da escludere dai totali). */
-function colAbbonamentoDurataDescrizione(): string {
-  const raw = (process.env.GESTIONALE_VIEW_COL_ABBONAMENTO_DURATA_DESC ?? "AbbonamentoDurataDescrizione").trim()
-  const cleaned = raw.replace(/[\[\]]/g, "")
-  return /^[A-Za-z0-9_]+$/.test(cleaned) ? cleaned : "AbbonamentoDurataDescrizione"
-}
-
 /**
- * Esclude righe con AbbondamentoDurataDescrizione = TESSERAMENTO GARE (gestionale).
- * Disabilitabile con GESTIONALE_EXCLUDE_DURATA_TESSERAMENTO_GARE=false se la colonna non esiste nella view.
+ * Esclude solo combinazioni precise ID dalla vista abbonamenti (es. RVW_AbbonamentiUtenti):
+ * - Danza: Macro 4 + Cat 16 + Abb 376 + Durata 4185 (MENSILE 2VS / 2VS)
+ * - Tesseramento gare: Macro 5 + Cat 19 + Abb 401 + Durata 5363 (FIN+Iscrizione / TESSERAMENTO GARE)
  */
-function whereExcludeAbbonamentoDurataTesseramentoGare(alias = "R"): string {
-  if ((process.env.GESTIONALE_EXCLUDE_DURATA_TESSERAMENTO_GARE ?? "true").toLowerCase() === "false") return ""
-  const c = colAbbonamentoDurataDescrizione()
+function whereExcludeAbbonamentiSpecificiIds(alias = "R"): string {
+  if ((process.env.GESTIONALE_EXCLUDE_ABBONAMENTI_ID_PAIRS ?? "true").toLowerCase() === "false") return ""
+  const durRaw = (process.env.GESTIONALE_VIEW_COL_ID_DURATA ?? "IDDurata").trim().replace(/[\[\]]/g, "")
+  const durCol = /^[A-Za-z_][A-Za-z0-9_]*$/.test(durRaw) ? durRaw : "IDDurata"
   return `
-    AND UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${c}], N'')))) <> N'TESSERAMENTO GARE'
+    AND NOT (
+      COALESCE(${alias}.[IDMacroCategoria], -2147483648) = 4
+      AND COALESCE(${alias}.[IDCategoria], -2147483648) = 16
+      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 376
+      AND COALESCE(${alias}.[${durCol}], -2147483648) = 4185
+    )
+    AND NOT (
+      COALESCE(${alias}.[IDMacroCategoria], -2147483648) = 5
+      AND COALESCE(${alias}.[IDCategoria], -2147483648) = 19
+      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 401
+      AND COALESCE(${alias}.[${durCol}], -2147483648) = 5363
+    )
   `
 }
 
 function whereEsclusioniVenditeView(alias = "R"): string {
-  // Regola richiesta: "DANZA ADULTI" è un falso positivo (altra azienda).
-  // La escludiamo ovunque si usi la logica vendite/report (dashboard + andamento).
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
   const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], ''))))`
   const catNorm = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${cat}, '.', ''), ' ', ''), '-', ''), '_', ''), '+', '')`
   const macroNorm = `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(${macro}, '.', ''), ' ', ''), '-', ''), '_', ''), '+', '')`
-  // Esclusioni aggiuntive richieste (tesseramenti FIN/UISP 1 giorno gare/trasferta/rimborso)
   return `
-    AND ${cat} <> 'DANZA ADULTI'
     AND NOT (
       ${catNorm} LIKE '%UISP%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
     )
     AND NOT (
       ${macroNorm} LIKE '%FIN%' AND ${catNorm} LIKE '%ISCRIZIONE%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
     )
-    ${whereExcludeAbbonamentoDurataTesseramentoGare(alias)}
+    ${whereExcludeAbbonamentiSpecificiIds(alias)}
   `
 }
 
@@ -1971,12 +1973,12 @@ function sqlMovimentoAttribuitoConsulente(
   idWhereR: string,
   idParams: string
 ): string {
-  const dur = whereExcludeAbbonamentoDurataTesseramentoGare("R")
+  const exId = whereExcludeAbbonamentiSpecificiIds("R")
   return `(
     EXISTS (
       SELECT 1 FROM [${view}] R
       WHERE R.[${colJoin}] = M.[${COL_ISCRIZIONE}] AND ${idWhereR}
-      ${dur}
+      ${exId}
     )
     OR ${sqlMovimentoAttribuitoIdsSuMovimento(idParams)}
   )`
@@ -2405,11 +2407,6 @@ export async function getVenditeMovimentiCategoriaDurata(
     const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
-    // Regola richiesta: "DANZA ADULTI" è un falso positivo (venditore rimasto da storico),
-    // quindi lo escludiamo dall'andamento vendite.
-    const whereCategoriaDanzaAdulti = `
-      AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
-    `
     const consultantFilter =
       idConsultant && ids.length > 0
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
@@ -2431,8 +2428,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-          ${whereCategoriaDanzaAdulti}
-          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+          ${whereExcludeAbbonamentiSpecificiIds("R")}
        ),
        PerIscrizione AS (
          SELECT
@@ -2464,8 +2460,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-          ${whereCategoriaDanzaAdulti}
-          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+          ${whereExcludeAbbonamentiSpecificiIds("R")}
        ),
        PerIscrizione AS (
          SELECT
@@ -2503,8 +2498,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-          ${whereCategoriaDanzaAdulti}
-          ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+          ${whereExcludeAbbonamentiSpecificiIds("R")}
        ),
        PerIscrizione AS (
          SELECT
@@ -2635,7 +2629,6 @@ export async function getReportConteggiAndamento(
     const upperMacroExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], ''))))`
 
     const whereTesseramento = `
-      AND COALESCE(R.[IDCategoriaUtente], -1) <> 19
       AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
       AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
       AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
@@ -2688,7 +2681,7 @@ export async function getReportConteggiAndamento(
       ${consultantFilter}
       ${whereTesseramento}
       ${whereCategorieEscluse}
-      ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}`
+      ${whereExcludeAbbonamentiSpecificiIds("R")}`
     )
 
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
@@ -2769,8 +2762,12 @@ export async function getCrossAbbonamentiDaLogByVenditore(
             L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
             OR L.[AppLogDescrizione] LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
           )
-          -- Solo passaggi effettivamente verso prodotto CROSS (non ogni cambio tipo abbonamento).
-          AND UPPER(L.[AppLogDescrizione]) LIKE N'%CROSS%'
+          -- Passaggi verso abbonamento CROSS (varianti testuali sul log gestionale).
+          AND (
+            UPPER(L.[AppLogDescrizione]) LIKE N'%CROSS%'
+            OR UPPER(L.[AppLogDescrizione]) LIKE N'%ABBONAMENTO CROSS%'
+            OR UPPER(L.[AppLogDescrizione]) LIKE N'%TIPO%ABBONAMENTO%CROSS%'
+          )
           -- Escludi tesseramenti / iscrizioni (non sono passaggi CROSS utili al report)
           AND UPPER(L.[AppLogDescrizione]) NOT LIKE N'%TESSERAMENT%'
           AND NOT (UPPER(L.[AppLogDescrizione]) LIKE N'%ASI%' AND UPPER(L.[AppLogDescrizione]) LIKE N'%ISCRIZIONE%')

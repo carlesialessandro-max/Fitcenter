@@ -114,7 +114,7 @@ export async function getBudgetDepSig(): Promise<string> {
   const b = await getMeta("v:budget")
   // Bump quando cambia la logica SQL vendite (invalida cache dashboard/dettaglio su SQLite).
   // La cache resta persistente su app.sqlite; solo la chiave dep_sig cambia così i totali si ricalcolano.
-  const vendSig = "v21-report-vendite-allinea-dashboard"
+  const vendSig = "v22-esclusioni-abbonamenti-id-e-report-storico"
   return `${b}.${vendSig}`
 }
 
@@ -140,7 +140,10 @@ export async function cacheGet<T>(args: {
   const month = (useLocal ? d.getMonth() : d.getUTCMonth()) + 1
   const day = useLocal ? d.getDate() : d.getUTCDate()
   const todayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-  const treatAsNoExpiry = isHistoricalTotalsName && args.asOf !== todayKey
+  const isHistoricalReportConsulenti =
+    args.name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(args.asOf) && args.asOf < todayKey
+  const treatAsNoExpiry =
+    (isHistoricalTotalsName && args.asOf !== todayKey) || isHistoricalReportConsulenti
 
   const rows = db.exec(
     treatAsNoExpiry

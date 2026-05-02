@@ -117,8 +117,8 @@ export function Dashboard() {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : 30_000,
-    gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : 30_000,
+    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
     placeholderData: (prev) => prev,
   })
 
@@ -129,7 +129,8 @@ export function Dashboard() {
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: 30_000,
+    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : 30_000,
+    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
   })
 
   const annoOre = now.getFullYear()
