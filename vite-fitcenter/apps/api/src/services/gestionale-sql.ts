@@ -1892,20 +1892,25 @@ function whereExcludeAbbonamentoDurataTesseramentoGare(alias = "R"): string {
  */
 function whereExcludeAbbonamentiSpecificiIds(alias = "R"): string {
   if ((process.env.GESTIONALE_EXCLUDE_ABBONAMENTI_ID_PAIRS ?? "true").toLowerCase() === "false") return ""
+  const useDurata = (process.env.GESTIONALE_EXCLUDE_ABBONAMENTI_ID_USE_DURATA ?? "true").toLowerCase() !== "false"
   const durRaw = (process.env.GESTIONALE_VIEW_COL_ID_DURATA ?? "IDDurata").trim().replace(/[\[\]]/g, "")
   const durCol = /^[A-Za-z_][A-Za-z0-9_]*$/.test(durRaw) ? durRaw : "IDDurata"
+  const danzaDur = useDurata
+    ? `\n      AND COALESCE(${alias}.[${durCol}], -2147483648) = 4185`
+    : ""
+  const tessDur = useDurata
+    ? `\n      AND COALESCE(${alias}.[${durCol}], -2147483648) = 5363`
+    : ""
   return `
     AND NOT (
       COALESCE(${alias}.[IDMacroCategoria], -2147483648) = 4
       AND COALESCE(${alias}.[IDCategoria], -2147483648) = 16
-      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 376
-      AND COALESCE(${alias}.[${durCol}], -2147483648) = 4185
+      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 376${danzaDur}
     )
     AND NOT (
       COALESCE(${alias}.[IDMacroCategoria], -2147483648) = 5
       AND COALESCE(${alias}.[IDCategoria], -2147483648) = 19
-      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 401
-      AND COALESCE(${alias}.[${durCol}], -2147483648) = 5363
+      AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 401${tessDur}
     )
   `
 }
