@@ -3,8 +3,10 @@
  *
  * Obiettivo: evitare che al primo login / primo F5 l'admin debba attendere calcoli SQL lenti.
  *
- * Eseguire dalla root monorepo:
- *   pnpm exec tsx apps/api/scripts/precompute-dashboard-cache.ts
+ * Eseguire dalla root monorepo (dove c'è pnpm-lock.yaml):
+ *   pnpm run precompute:dashboard-cache
+ * In alternativa:
+ *   pnpm --filter api run precompute:dashboard-cache
  */
 import { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } from "../src/handlers/data.js"
 import { cacheGet, getBudgetDepSig } from "../src/services/persistent-cache.js"

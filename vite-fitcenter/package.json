@@ -5,6 +5,7 @@
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
+    "precompute:dashboard-cache": "pnpm --filter api run precompute:dashboard-cache",
     "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",
     "format": "turbo format",
