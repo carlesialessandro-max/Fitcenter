@@ -680,9 +680,8 @@ function sqlReferralEscludiNonAbbonamentiMin(alias: string): string {
 }
 
 /**
- * Referral “porta un amico”: clienti con IDPresentatore valorizzato (presentati da un altro utente socio),
- * il cui abbonamento venduto dalla consulente è uno di quelli con ID venditore negli ID indicati.
- * (IDPresentatore è l’ID del socio presentatore, non della consulente — si filtra come per queryAbbonamenti.)
+ * Referral “porta un amico”: clienti con IDPresentatore valorizzato e abbonamento utile nel mese.
+ * Con `venditoreUtenteIds` vuoto: nessun filtro venditore (uso admin “tutti”).
  */
 export async function queryReferralPresentati(
   venditoreUtenteIds: number[],
@@ -690,7 +689,7 @@ export async function queryReferralPresentati(
   toIso: string
 ): Promise<Record<string, unknown>[]> {
   const ids = venditoreUtenteIds.filter((n) => Number.isFinite(n))
-  if (ids.length === 0) return []
+  const noVendorFilter = ids.length === 0
   const p = await getPool()
   if (!p) return []
   const tblU = defaultTables.clienti
@@ -699,11 +698,12 @@ export async function queryReferralPresentati(
   const params = ids.map((_, i) => `@r${i}`).join(", ")
 
   const mkReq = () => {
-    let req = p.request()
-    ids.forEach((id, i) => {
-      req = req.input(`r${i}`, sql.Int, id)
-    })
-    req = req.input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+    let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+    if (!noVendorFilter) {
+      ids.forEach((id, i) => {
+        req = req.input(`r${i}`, sql.Int, id)
+      })
+    }
     return req
   }
 
@@ -712,18 +712,19 @@ export async function queryReferralPresentati(
   if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
 
   const pag = (alias: string) => sqlReferralImportoPagatoExpr(alias)
-  const abbMonthWhere = (alias: string, vendCol: string, excludeSql: string) => {
+  const abbMonthWhere = (alias: string, vendCol: string | null, excludeSql: string) => {
     const x = alias
+    const vendLine =
+      vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
     return `
     ${x}.[IDUtente] = u.[IDUtente]
-    AND ${x}.[${vendCol}] IN (${params})
-    AND CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND ${vendLine}CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
     AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
     AND (${pag(x)}) > 0
     AND ${excludeSql}`
   }
 
-  const sqlRichFull = (vendCol: string, excludeSql: string) => `
+  const sqlRichFull = (vendCol: string | null, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -761,7 +762,7 @@ CROSS APPLY (
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const sqlMinimal = (vendCol: string, excludeSql: string) => `
+  const sqlMinimal = (vendCol: string | null, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -798,11 +799,23 @@ CROSS APPLY (
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const variants: { sql: (v: string, ex: string) => string; exclude: string }[] = [
+  const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [
     { sql: sqlRichFull, exclude: sqlReferralEscludiNonAbbonamenti("x") },
     { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamenti("x") },
     { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamentiMin("x") },
   ]
+
+  if (noVendorFilter) {
+    for (const { sql: buildSql, exclude } of variants) {
+      try {
+        const r = await mkReq().query(buildSql(null, exclude))
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        // prova variante successiva
+      }
+    }
+    return []
+  }
 
   for (const vendCol of colsToTry) {
     for (const { sql: buildSql, exclude } of variants) {

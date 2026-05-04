@@ -1227,28 +1227,53 @@ export async function getReferralPresentati(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
     const consulenteQ = typeof req.query.consulente === "string" ? req.query.consulente.trim() : ""
+    const tuttiRaw = req.query.tutti
+    const tuttiIVenditori =
+      u.role === "admin" &&
+      (tuttiRaw === "1" || tuttiRaw === "true" || String(tuttiRaw ?? "").toLowerCase() === "yes")
     const operatoreNome = getOperatoreConsulenteNome(req)
     const consulente =
-      u.role === "admin" && consulenteQ ? consulenteQ : operatoreNome ?? (consulenteQ || undefined)
-    if (!consulente?.trim()) {
+      u.role === "admin"
+        ? tuttiIVenditori
+          ? undefined
+          : consulenteQ || undefined
+        : operatoreNome ?? (consulenteQ || undefined)
+    if (!consulente?.trim() && !tuttiIVenditori) {
       return res.json({
         items: [] as unknown[],
         totaleEuro: 0,
+        totaleClienti: 0,
         venditoreIdsResolved: [] as number[],
+        tuttiIVenditori: false,
         hint:
           u.role === "admin"
-            ? 'Aggiungi il parametro query consulente (es. ?consulente=Carmen%20Severino).'
+            ? 'Seleziona una consulente oppure usa tutti=1 per vedere tutti i venditori.'
             : undefined,
       })
     }
     if (!gestionaleSql.isGestionaleConfigured()) {
-      return res.json({ items: [], totaleEuro: 0, venditoreIdsResolved: [] })
+      return res.json({
+        items: [],
+        totaleEuro: 0,
+        totaleClienti: 0,
+        venditoreIdsResolved: [],
+        tuttiIVenditori,
+      })
     }
-    const idStr = await resolveConsultantId(consulente.trim())
-    if (!idStr?.trim()) {
-      return res.json({ items: [], totaleEuro: 0, venditoreIdsResolved: [] })
+    let venditoreIdsResolved: number[] = []
+    if (!tuttiIVenditori) {
+      const idStr = await resolveConsultantId(consulente!.trim())
+      if (!idStr?.trim()) {
+        return res.json({
+          items: [],
+          totaleEuro: 0,
+          totaleClienti: 0,
+          venditoreIdsResolved: [],
+          tuttiIVenditori: false,
+        })
+      }
+      venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
     }
-    const venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
     const { fromIso, toIso, year, month } = monthRangeFromQuery(req)
     const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIso)
     const items = rows.map((row) => {
@@ -1277,7 +1302,15 @@ export async function getReferralPresentati(req: Request, res: Response) {
       }
     })
     const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100
-    res.json({ items, totaleEuro, venditoreIdsResolved, range: { year, month, from: fromIso, to: toIso } })
+    const totaleClienti = items.length
+    res.json({
+      items,
+      totaleEuro,
+      totaleClienti,
+      venditoreIdsResolved,
+      tuttiIVenditori,
+      range: { year, month, from: fromIso, to: toIso },
+    })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
