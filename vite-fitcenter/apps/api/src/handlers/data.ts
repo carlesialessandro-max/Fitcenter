@@ -1225,16 +1225,57 @@ function monthRangeFromQuery(req: Request): { fromIso: string; toIso: string; ye
 
 export async function getReferralPresentati(req: Request, res: Response) {
   try {
+    const u = getScopedUser(req)
+    const consulenteQ = typeof req.query.consulente === "string" ? req.query.consulente.trim() : ""
+    const tuttiIVenditori =
+      u.role === "admin" &&
+      (req.query.tutti === "1" || req.query.tutti === "true" || String(req.query.tutti ?? "").toLowerCase() === "yes")
+
+    const rangeEarly = monthRangeFromQuery(req)
+
     if (!gestionaleSql.isGestionaleConfigured()) {
       return res.json({
         items: [],
         totaleEuro: 0,
         totaleClienti: 0,
+        venditoreIdsResolved: [] as number[],
+        tuttiIVenditori,
         range: undefined,
       })
     }
-    const { fromIso, toIso, year, month } = monthRangeFromQuery(req)
-    const rows = await gestionaleSql.queryReferralPresentati(fromIso, toIso)
+
+    let venditoreIdsResolved: number[] = []
+
+    if (u.role === "admin") {
+      if (!tuttiIVenditori) {
+        if (!consulenteQ) {
+          return res.json({
+            items: [],
+            totaleEuro: 0,
+            totaleClienti: 0,
+            venditoreIdsResolved: [],
+            tuttiIVenditori: false,
+            hint: "Seleziona «Tutti i venditori» oppure una consulente nel menu.",
+            range: { year: rangeEarly.year, month: rangeEarly.month, from: rangeEarly.fromIso, to: rangeEarly.toIso },
+          })
+        }
+        const idStr = await resolveConsultantId(consulenteQ)
+        if (!idStr?.trim()) {
+          return res.json({
+            items: [],
+            totaleEuro: 0,
+            totaleClienti: 0,
+            venditoreIdsResolved: [],
+            tuttiIVenditori: false,
+            range: { year: rangeEarly.year, month: rangeEarly.month, from: rangeEarly.fromIso, to: rangeEarly.toIso },
+          })
+        }
+        venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
+      }
+    }
+
+    const { fromIso, toIso, year, month } = rangeEarly
+    const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIso)
     const items = rows.map((row) => {
       const pc = String(row.SocioPresentatoreCognome ?? "").trim()
       const pn = String(row.SocioPresentatoreNome ?? "").trim()
@@ -1266,6 +1307,8 @@ export async function getReferralPresentati(req: Request, res: Response) {
       items,
       totaleEuro,
       totaleClienti,
+      venditoreIdsResolved,
+      tuttiIVenditori: u.role === "admin" ? tuttiIVenditori : false,
       range: { year, month, from: fromIso, to: toIso },
     })
   } catch (e) {

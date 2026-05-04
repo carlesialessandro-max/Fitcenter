@@ -34,7 +34,10 @@ export type ReferralPresentatiResponse = {
   totaleEuro: number
   /** Numero clienti referral nella lista (stesso mese / filtri). */
   totaleClienti: number
+  venditoreIdsResolved?: number[]
+  tuttiIVenditori?: boolean
   range?: { year: number; month: number; from: string; to: string }
+  hint?: string
 }
 
 function withConsulente(url: string, consulente?: string) {
@@ -61,12 +64,21 @@ export const dataApi = {
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza
     return api.get<Abbonamento[]>(url)
   },
-  getReferralPresentati: (opts?: { year?: number; month?: number }) => {
+  getReferralPresentati: (opts?: {
+    year?: number
+    month?: number
+    /** Admin: nome consulente (budget). Ignorato se tutti è true. */
+    consulente?: string
+    /** Admin: nessun filtro ID venditore. */
+    tutti?: boolean
+  }) => {
     const params = new URLSearchParams()
     if (opts?.year != null && opts?.month != null) {
       params.set("year", String(opts.year))
       params.set("month", String(opts.month))
     }
+    if (opts?.consulente) params.set("consulente", opts.consulente)
+    if (opts?.tutti) params.set("tutti", "1")
     const q = params.toString()
     return api.get<ReferralPresentatiResponse>(`/data/referral-presentati${q ? `?${q}` : ""}`)
   },

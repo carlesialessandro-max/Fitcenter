@@ -680,31 +680,51 @@ function sqlReferralEscludiNonAbbonamentiMin(alias: string): string {
 }
 
 /**
- * Referral “porta un amico”: clienti con IDPresentatore valorizzato e nel mese un abbonamento utile con importo pagato > 0.
- * Nessun filtro per venditore/consulente (solo dati cliente + abbonamenti).
+ * Referral “porta un amico”: presentatore valorizzato, abbonamento utile nel mese, importo pagato > 0.
+ * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore (come queryAbbonamenti).
  */
-export async function queryReferralPresentati(fromIso: string, toIso: string): Promise<Record<string, unknown>[]> {
+export async function queryReferralPresentati(
+  venditoreUtenteIds: number[],
+  fromIso: string,
+  toIso: string
+): Promise<Record<string, unknown>[]> {
+  const ids = venditoreUtenteIds.filter((n) => Number.isFinite(n))
+  const noVendorFilter = ids.length === 0
   const p = await getPool()
   if (!p) return []
   const tblU = defaultTables.clienti
   const tblA = getAbbonamentiTableName()
   const colPres = referralPresenterColumn()
+  const params = ids.map((_, i) => `@r${i}`).join(", ")
 
-  const mkReq = () =>
-    p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+  const mkReq = () => {
+    let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+    if (!noVendorFilter) {
+      ids.forEach((id, i) => {
+        req = req.input(`r${i}`, sql.Int, id)
+      })
+    }
+    return req
+  }
+
+  const colsToTry = ["IDVenditore", "Abbonanditore"]
+  const envCol = process.env.GESTIONALE_ABBONAMENTI_COL_VENDITORE?.trim()
+  if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
 
   const pag = (alias: string) => sqlReferralImportoPagatoExpr(alias)
-  const abbMonthWhere = (alias: string, excludeSql: string) => {
+  const abbMonthWhere = (alias: string, vendCol: string | null, excludeSql: string) => {
     const x = alias
+    const vendLine =
+      vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
     return `
     ${x}.[IDUtente] = u.[IDUtente]
-    AND CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND ${vendLine}CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
     AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
     AND (${pag(x)}) > 0
     AND ${excludeSql}`
   }
 
-  const sqlRichFull = (excludeSql: string) => `
+  const sqlRichFull = (vendCol: string | null, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -726,7 +746,7 @@ LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
   SELECT COALESCE(SUM(${pag("x")}), 0) AS TotaleMese
   FROM [${tblA}] x
-  WHERE ${abbMonthWhere("x", excludeSql)}
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
 ) t
 CROSS APPLY (
   SELECT TOP 1
@@ -736,13 +756,13 @@ CROSS APPLY (
     ${pag("x")} AS PagatoEff,
     COALESCE(x.[AbbonamentoDescrizione], x.[DescrizioneAbbonamento], CAST(N'' AS NVARCHAR(400))) AS AbbDescrCombined
   FROM [${tblA}] x
-  WHERE ${abbMonthWhere("x", excludeSql)}
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const sqlMinimal = (excludeSql: string) => `
+  const sqlMinimal = (vendCol: string | null, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -764,7 +784,7 @@ LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
   SELECT COALESCE(SUM(${pag("x")}), 0) AS TotaleMese
   FROM [${tblA}] x
-  WHERE ${abbMonthWhere("x", excludeSql)}
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
 ) t
 CROSS APPLY (
   SELECT TOP 1
@@ -773,24 +793,38 @@ CROSS APPLY (
     x.[DataFine],
     ${pag("x")} AS PagatoEff
   FROM [${tblA}] x
-  WHERE ${abbMonthWhere("x", excludeSql)}
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const variants: { sql: (ex: string) => string; exclude: string }[] = [
+  const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [
     { sql: sqlRichFull, exclude: sqlReferralEscludiNonAbbonamenti("x") },
     { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamenti("x") },
     { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamentiMin("x") },
   ]
 
-  for (const { sql: buildSql, exclude } of variants) {
-    try {
-      const r = await mkReq().query(buildSql(exclude))
-      return (r.recordset ?? []) as Record<string, unknown>[]
-    } catch {
-      // prova variante successiva
+  if (noVendorFilter) {
+    for (const { sql: buildSql, exclude } of variants) {
+      try {
+        const r = await mkReq().query(buildSql(null, exclude))
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        // prova variante successiva
+      }
+    }
+    return []
+  }
+
+  for (const vendCol of colsToTry) {
+    for (const { sql: buildSql, exclude } of variants) {
+      try {
+        const r = await mkReq().query(buildSql(vendCol, exclude))
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        // prova variante successiva
+      }
     }
   }
   return []
