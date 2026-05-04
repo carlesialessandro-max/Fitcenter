@@ -21,6 +21,8 @@ export type ReferralPresentatiItem = {
   presentatoDaNome: string | null
   idIscrizione: string | null
   abbonamento: string | null
+  /** Presente se sul DB esiste la colonna DataPresentazione (mese report su questa data). */
+  dataPresentazione: string | null
   dataInizioAbb: string | null
   dataFineAbb: string | null
   /** Importo pagato (ImportoPagato/Pagato/…), non solo listino. */

@@ -58,7 +58,7 @@ export function Referral() {
     const items = query.data?.items ?? []
     if (!needle) return items
     return items.filter((it) =>
-      `${it.cognome} ${it.nome} ${it.email ?? ""} ${it.telefono ?? ""} ${it.abbonamento ?? ""} ${it.presentatoDaNome ?? ""}`.toLowerCase().includes(needle)
+      `${it.cognome} ${it.nome} ${it.email ?? ""} ${it.telefono ?? ""} ${it.abbonamento ?? ""} ${it.presentatoDaNome ?? ""} ${it.dataPresentazione ?? ""}`.toLowerCase().includes(needle)
     )
   }, [query.data, needle])
 
@@ -72,8 +72,9 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Clienti con socio presentatore e abbonamento utile iniziato nel mese (esclusi tesseramenti/attivazioni), solo importo
-          pagato positivo.
+          Clienti con socio presentatore: se nel gestionale esiste{" "}
+          <span className="text-zinc-400">DataPresentazione</span>, il mese selezionato filtra su quella data; altrimenti sul mese di{" "}
+          <span className="text-zinc-400">inizio abbonamento</span>. Esclusi tesseramenti/attivazioni, solo importo pagato positivo.
           {role === "admin" ? (
             <> Admin: scegli «Tutti i venditori» o una consulente per filtrare le vendite attribuite.</>
           ) : (
@@ -150,15 +151,16 @@ export function Referral() {
         <p className="text-sm text-red-400">{(query.error as Error).message}</p>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-zinc-500">
-          Nessun referral nel mese con questi criteri (presentatore, abbonamento utile nel mese, importo pagato positivo
+          Nessun referral nel mese con questi criteri (presentatore, data presentazione o inizio abbonamento nel mese, importo pagato positivo
           {role === "admin" && !adminTutti ? ", venditore selezionato" : ""}), oppure SQL non disponibile.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
-          <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1060px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2 font-medium">Cliente</th>
+                <th className="px-3 py-2 font-medium">Data presentazione</th>
                 <th className="px-3 py-2 font-medium">Presentato da</th>
                 <th className="px-3 py-2 font-medium">Contatti</th>
                 <th className="px-3 py-2 font-medium">Abbonamento</th>
@@ -175,6 +177,9 @@ export function Referral() {
                       {it.cognome} {it.nome}
                     </div>
                     <div className="text-xs text-zinc-600">ID {it.clienteId}</div>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-zinc-400 tabular-nums">
+                    {it.dataPresentazione ? fmtDateIt(it.dataPresentazione) : <span className="text-zinc-600">—</span>}
                   </td>
                   <td className="px-3 py-2 text-zinc-300">
                     {it.presentatoDaNome ? (

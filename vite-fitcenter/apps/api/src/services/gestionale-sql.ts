@@ -637,6 +637,13 @@ function referralPresenterColumn(): string {
   return col || "IDPresentatore"
 }
 
+/** Data presentazione referral sul cliente (tabella Utenti). Se la colonna esiste, il mese del report filtra su questa data, non su DataInizio abbonamento. */
+function referralPresentationDateColumnLogical(): string {
+  const raw = process.env.GESTIONALE_UTENTI_COL_DATA_PRESENTAZIONE?.trim()
+  const col = (raw || "DataPresentazione").replace(/[^\p{L}\p{N}_]/gu, "")
+  return col || "DataPresentazione"
+}
+
 /** Priorità colonne importo/totale riga — script referral-debug-mese.sql e API devono restare allineati. */
 const REFERRAL_IMPORTO_COL_PRIORITY = [
   "ImportoPagato",
@@ -669,7 +676,7 @@ function pickAbbColumnActual(cols: Set<string>, logical: string): string | null 
   return null
 }
 
-async function fetchAbbonamentiColumnSet(pool: sql.ConnectionPool, tableSpec: string): Promise<Set<string>> {
+async function fetchSqlColumnSetForObject(pool: sql.ConnectionPool, tableSpec: string): Promise<Set<string>> {
   try {
     const { objectId } = qualifySqlObject(tableSpec)
     const lit = objectId.replace(/'/g, "''")
@@ -785,11 +792,21 @@ export async function queryReferralPresentati(
   const colPres = referralPresenterColumn()
   const params = ids.map((_, i) => `@r${i}`).join(", ")
 
-  const abbCols = await fetchAbbonamentiColumnSet(p, tblA)
+  const abbCols = await fetchSqlColumnSetForObject(p, tblA)
+  const utentiCols = await fetchSqlColumnSetForObject(p, tblU)
+  const presDateActual = pickAbbColumnActual(utentiCols, referralPresentationDateColumnLogical())
+  const usePresentationMonth = presDateActual != null
   const pag = (alias: string) => sqlReferralPagatoExprDynamic(alias, abbCols)
   const excludeFullDyn = sqlReferralExcludeFullDynamic("x", abbCols)
   const excludeMinDyn = sqlReferralExcludeMinDynamic("x", abbCols)
   const abbDescrSel = sqlReferralAbbDescrSelectDynamic("x", abbCols)
+  const presDateSql = presDateActual ? bracketSqlAliasColumn("u", presDateActual) : null
+  const presDateWhere =
+    presDateSql != null
+      ? `AND CAST(${presDateSql} AS DATE) >= CAST(@from AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE)`
+      : ""
+  const refDataPresSelect =
+    presDateSql != null ? `CAST(${presDateSql} AS DATE) AS ReferralDataPresentazione` : `CAST(NULL AS DATE) AS ReferralDataPresentazione`
 
   const mkReq = () => {
     let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
@@ -809,11 +826,15 @@ export async function queryReferralPresentati(
     const x = alias
     const vendLine =
       vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
+    const abbInCalendarMonth =
+      usePresentationMonth
+        ? ""
+        : `CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
+    AND `
     return `
     ${x}.[IDUtente] = u.[IDUtente]
-    AND ${vendLine}CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
-    AND (${pag(x)}) > 0
+    AND ${vendLine}${abbInCalendarMonth}(${pag(x)}) > 0
     AND ${excludeSql}`
   }
 
@@ -824,6 +845,7 @@ SELECT
   u.[Nome] AS ClienteNome,
   u.[Email] AS ClienteEmail,
   u.[SMS] AS ClienteSms,
+  ${refDataPresSelect},
   u.[${colPres}] AS ReferralIDSocioPresentatore,
   pres.[IDUtente] AS SocioPresentatoreIDUtente,
   pres.[Cognome] AS SocioPresentatoreCognome,
@@ -853,6 +875,7 @@ CROSS APPLY (
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
+  ${presDateWhere}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const sqlMinimal = (vendCol: string | null, excludeSql: string) => `
@@ -862,6 +885,7 @@ SELECT
   u.[Nome] AS ClienteNome,
   u.[Email] AS ClienteEmail,
   u.[SMS] AS ClienteSms,
+  ${refDataPresSelect},
   u.[${colPres}] AS ReferralIDSocioPresentatore,
   pres.[IDUtente] AS SocioPresentatoreIDUtente,
   pres.[Cognome] AS SocioPresentatoreCognome,
@@ -891,6 +915,7 @@ CROSS APPLY (
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
+  ${presDateWhere}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [

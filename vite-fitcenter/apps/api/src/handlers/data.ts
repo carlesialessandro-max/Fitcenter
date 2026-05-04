@@ -1295,6 +1295,7 @@ export async function getReferralPresentati(req: Request, res: Response) {
         presentatoDaNome: pc || pn ? `${pc} ${pn}`.trim() : null,
         idIscrizione: row.ReferralIDIscrizione != null ? String(row.ReferralIDIscrizione) : null,
         abbonamento: row.ReferralAbbDescrizione != null && String(row.ReferralAbbDescrizione).trim() !== "" ? String(row.ReferralAbbDescrizione) : null,
+        dataPresentazione: sqlScalarDateToIso(row.ReferralDataPresentazione),
         dataInizioAbb: sqlScalarDateToIso(row.ReferralDataInizio),
         dataFineAbb: sqlScalarDateToIso(row.ReferralDataFine),
         importoPagato: Number(row.ReferralImportoPagato ?? row.ReferralImportoAbb ?? 0) || 0,

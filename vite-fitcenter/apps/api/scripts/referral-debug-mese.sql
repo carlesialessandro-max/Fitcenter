@@ -6,7 +6,12 @@
   colonne che esistono (niente errore 207 se mancano ImportoPagato, macro, ecc.).
 
   Tabella clienti default: dbo.Utenti | Abbonamenti: dbo.AbbonamentiIscrizione
-  Override come in .env API: @SchemaAbb, @TblAbb, @TblUtenti, @ColPres
+  Override come in .env API: @SchemaAbb, @TblAbb, @TblUtenti, @ColPres, @ColDataPres
+  (GESTIONALE_UTENTI_COL_DATA_PRESENTAZIONE, default DataPresentazione).
+
+  Query [8–9]: come l’API quando esiste DataPresentazione — il mese selezionato filtra quella data;
+  gli abbonamenti utili non sono più filtrati per DataInizio nel mese.
+  Per aprile 2026: @Anno = 2026, @Mese = 4.
 
   SSMS — errore 137 «Dichiarare @Anno / @Da»:
   - Esegui l’intero file: Ctrl+A poi F5 (non solo un blocco in mezzo).
@@ -20,6 +25,7 @@ DECLARE @SchemaAbb SYSNAME = N'dbo';
 DECLARE @TblAbb SYSNAME = N'AbbonamentiIscrizione';
 DECLARE @TblUtenti SYSNAME = N'Utenti';
 DECLARE @ColPres SYSNAME = N'IDPresentatore';
+DECLARE @ColDataPres SYSNAME = N'DataPresentazione';
 
 DECLARE @Da DATE = DATEFROMPARTS(@Anno, @Mese, 1);
 DECLARE @Al DATE = DATEADD(MONTH, 1, @Da);
@@ -48,6 +54,12 @@ BEGIN
   RAISERROR(N'Colonna presentatore assente su %s.%s : %s', 16, 1, @SchemaAbb, @TblUtenti, @ColPres);
   RETURN;
 END
+
+DECLARE @HasDataPres BIT =
+  CASE
+    WHEN COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti), @ColDataPres) IS NOT NULL THEN 1
+    ELSE 0
+  END;
 
 -- --- Ordine priorità colonne «pagato» / totale riga (come API + fallback gestionale) ---
 DECLARE @PagatoPieces NVARCHAR(MAX);
@@ -165,6 +177,7 @@ SET @ExMin += N' )';
 
 PRINT CONCAT(N'Periodo: ', CONVERT(NVARCHAR(10), @Da, 120), N' .. escluso ', CONVERT(NVARCHAR(10), @Al, 120));
 PRINT CONCAT(N'PagatoExpr: ', @PagatoExpr);
+PRINT CONCAT(N'DataPresentazione su Utenti: ', CASE WHEN @HasDataPres = 1 THEN N'SÌ (' + @ColDataPres + N')' ELSE N'NO — query [5–6] usano solo DataInizio abbonamento nel mese' END);
 
 -- --- 1) Clienti con presentatore ---
 DECLARE @Sql1 NVARCHAR(MAX) = N'
@@ -209,7 +222,9 @@ WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
 
 EXEC sys.sp_executesql @Sql4;
 
--- --- 5) Lista finale — esclusioni «full» ---
+-- --- 5) Lista — mese su DataInizio abbonamento (diagnostica legacy se non usate [8–9]) ---
+PRINT N'--- [5–6] Filtro mese su DataInizio abbonamento ---';
+
 DECLARE @PagatoXInner NVARCHAR(MAX) = @PagatoExpr;
 
 DECLARE @Sql5 NVARCHAR(MAX) = N'
@@ -264,6 +279,67 @@ PRINT N'--- Ripetizione query lista con esclusioni MIN ---';
 DECLARE @Sql6 NVARCHAR(MAX) = REPLACE(@Sql5, @ExFull, @ExMin);
 
 EXEC sys.sp_executesql @Sql6;
+
+-- --- 8–9) Come FitCenter: mese su DataPresentazione; abbonamenti utili senza filtro DataInizio ---
+IF @HasDataPres = 0
+BEGIN
+  PRINT N'--- [8–9] Saltate: aggiungi la colonna DataPresentazione su Utenti o imposta @ColDataPres al nome reale. ---';
+END
+ELSE
+BEGIN
+  DECLARE @PresBr SYSNAME = QUOTENAME(@ColDataPres);
+
+  DECLARE @Sql8 NVARCHAR(MAX) = N'
+SELECT
+  u.[IDUtente] AS ClienteIDUtente,
+  u.[Cognome] AS ClienteCognome,
+  u.[Nome] AS ClienteNome,
+  u.[Email],
+  CAST(u.' + @PresBr + N' AS DATE) AS DataPresentazione,
+  u.' + QUOTENAME(@ColPres) + N' AS IDPresentatore,
+  pres.[Cognome] AS PresentatoreCognome,
+  pres.[Nome] AS PresentatoreNome,
+  a.[IDIscrizione] AS ReferralIDIscrizione,
+  a.[DataInizio] AS ReferralDataInizio,
+  a.[DataFine] AS ReferralDataFine,
+  a.[PagatoEff] AS PagatoRiga,
+  t.[TotaleMese] AS TotalePagatoMese,
+  a.[AbbDescrCombined] AS DescAbbonamento
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
+LEFT JOIN ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS pres ON pres.[IDUtente] = u.' + QUOTENAME(@ColPres) + N'
+OUTER APPLY (
+  SELECT SUM((' + @PagatoXInner + N')) AS TotaleMese
+  FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND (' + @PagatoXInner + N') > 0
+    AND ' + @ExFull + N'
+) AS t
+CROSS APPLY (
+  SELECT TOP 1
+    x.[IDIscrizione],
+    x.[DataInizio],
+    x.[DataFine],
+    (' + @PagatoXInner + N') AS PagatoEff,
+    (' + @AbbDescrExpr + N') AS AbbDescrCombined
+  FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND (' + @PagatoXInner + N') > 0
+    AND ' + @ExFull + N'
+  ORDER BY (' + @PagatoXInner + N') DESC, x.[DataInizio] DESC
+) AS a
+WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
+  AND CAST(u.' + @PresBr + N' AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+  AND CAST(u.' + @PresBr + N' AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
+ORDER BY u.[Cognome], u.[Nome];';
+
+  PRINT N'--- [8] Lista referral — DataPresentazione nel periodo (FULL exclude) ---';
+  EXEC sys.sp_executesql @Sql8;
+
+  DECLARE @Sql9 NVARCHAR(MAX) = REPLACE(@Sql8, @ExFull, @ExMin);
+
+  PRINT N'--- [9] Stesso elenco — esclusioni MIN ---';
+  EXEC sys.sp_executesql @Sql9;
+END
 
 -- --- 7) Colonne della tabella abbonamenti ---
 SELECT c.name AS ColumnName, t.name AS TypeName
