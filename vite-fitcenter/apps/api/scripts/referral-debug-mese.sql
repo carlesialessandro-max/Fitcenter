@@ -7,6 +7,10 @@
 
   Tabella clienti default: dbo.Utenti | Abbonamenti: dbo.AbbonamentiIscrizione
   Override come in .env API: @SchemaAbb, @TblAbb, @TblUtenti, @ColPres
+
+  SSMS — errore 137 «Dichiarare @Anno / @Da»:
+  - Esegui l’intero file: Ctrl+A poi F5 (non solo un blocco in mezzo).
+  - Le date sono inserite come testo nella SQL dinamica (niente @Da/@Al dentro sp_executesql).
 */
 
 DECLARE @Anno INT = 2026;
@@ -19,6 +23,10 @@ DECLARE @ColPres SYSNAME = N'IDPresentatore';
 
 DECLARE @Da DATE = DATEFROMPARTS(@Anno, @Mese, 1);
 DECLARE @Al DATE = DATEADD(MONTH, 1, @Da);
+
+-- Incorporate nella stringa dinamica (yyyy-mm-dd, stile ODBC 23 / ISO)
+DECLARE @DaLit NCHAR(10) = CONVERT(NCHAR(10), @Da, 23);
+DECLARE @AlLit NCHAR(10) = CONVERT(NCHAR(10), @Al, 23);
 
 DECLARE @Oid INT = OBJECT_ID(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb));
 DECLARE @Ou  INT = OBJECT_ID(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti));
@@ -41,9 +49,7 @@ BEGIN
   RETURN;
 END
 
-/*-----------------------------------------------------------------------------
-  Ordine priorità colonne «pagato» / totale riga (come API + fallback gestionale)
------------------------------------------------------------------------------*/
+-- --- Ordine priorità colonne «pagato» / totale riga (come API + fallback gestionale) ---
 DECLARE @PagatoPieces NVARCHAR(MAX);
 
 SELECT @PagatoPieces = STUFF(
@@ -81,9 +87,7 @@ DECLARE @PagatoExpr NVARCHAR(MAX) =
     ELSE N'COALESCE(' + @PagatoPieces + N', CAST(0 AS FLOAT))'
   END;
 
-/*-----------------------------------------------------------------------------
-  Descrizione abbonamento in SELECT (solo colonne esistenti)
------------------------------------------------------------------------------*/
+-- --- Descrizione abbonamento in SELECT (solo colonne esistenti) ---
 DECLARE @AbbDescrExpr NVARCHAR(MAX) = N'CAST(N'''' AS NVARCHAR(400))';
 
 IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'AbbonamentoDescrizione') IS NOT NULL
@@ -102,10 +106,7 @@ IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'Descrizione')
    AND COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'DescrizioneAbbonamento') IS NULL
   SET @AbbDescrExpr = N'ISNULL(CAST(x.[Descrizione] AS NVARCHAR(400)), N'''')';
 
-/*-----------------------------------------------------------------------------
-  Esclusioni «full» (solo AND per colonne presenti). Se non c’è nessuna colonna
-  utile oltre IDCategoria/descrizione, equivale alla variante «min».
------------------------------------------------------------------------------*/
+-- --- Esclusioni «full» (solo AND per colonne presenti) ---
 DECLARE @ExFull NVARCHAR(MAX) = N'( 1 = 1';
 
 IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'IDCategoria') IS NOT NULL
@@ -145,9 +146,7 @@ END
 
 SET @ExFull += N' )';
 
-/*-----------------------------------------------------------------------------
-  Variante «min» esclusioni (solo IDCategoria + testo piano se disponibile)
------------------------------------------------------------------------------*/
+-- --- Variante «min» esclusioni ---
 DECLARE @ExMin NVARCHAR(MAX) = N'( 1 = 1';
 
 IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'IDCategoria') IS NOT NULL
@@ -167,9 +166,7 @@ SET @ExMin += N' )';
 PRINT CONCAT(N'Periodo: ', CONVERT(NVARCHAR(10), @Da, 120), N' .. escluso ', CONVERT(NVARCHAR(10), @Al, 120));
 PRINT CONCAT(N'PagatoExpr: ', @PagatoExpr);
 
-/*-----------------------------------------------------------------------------
-  1) Clienti con presentatore
------------------------------------------------------------------------------*/
+-- --- 1) Clienti con presentatore ---
 DECLARE @Sql1 NVARCHAR(MAX) = N'
 SELECT COUNT(*) AS Utenti_con_presentatore
 FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
@@ -177,32 +174,26 @@ WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL;';
 
 EXEC sys.sp_executesql @Sql1;
 
-/*-----------------------------------------------------------------------------
-  2) Righe abbonamento nel mese (DataInizio nel range)
------------------------------------------------------------------------------*/
+-- --- 2) Righe abbonamento nel mese (DataInizio nel range) ---
 DECLARE @Sql2 NVARCHAR(MAX) = N'
 SELECT COUNT(*) AS Righe_abbonamenti_nel_mese
 FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
-WHERE CAST(x.[DataInizio] AS DATE) >= @Da
-  AND CAST(x.[DataInizio] AS DATE) < @Al;';
+WHERE CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+  AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE);';
 
-EXEC sys.sp_executesql @Sql2, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+EXEC sys.sp_executesql @Sql2;
 
-/*-----------------------------------------------------------------------------
-  3) Stesso mese + importo «effettivo» > 0
------------------------------------------------------------------------------*/
+-- --- 3) Stesso mese + importo «effettivo» > 0 ---
 DECLARE @Sql3 NVARCHAR(MAX) = N'
 SELECT COUNT(*) AS Righe_nel_mese_con_importo_formula
 FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
-WHERE CAST(x.[DataInizio] AS DATE) >= @Da
-  AND CAST(x.[DataInizio] AS DATE) < @Al
+WHERE CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+  AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
   AND (' + @PagatoExpr + N') > 0;';
 
-EXEC sys.sp_executesql @Sql3, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+EXEC sys.sp_executesql @Sql3;
 
-/*-----------------------------------------------------------------------------
-  4) Clienti con presentatore + almeno un abbonamento nel mese con pagato > 0
------------------------------------------------------------------------------*/
+-- --- 4) Clienti con presentatore + abbonamento nel mese con pagato > 0 ---
 DECLARE @Sql4 NVARCHAR(MAX) = N'
 SELECT COUNT(DISTINCT u.[IDUtente]) AS Clienti_presentatore_con_abb_mese_pagato
 FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
@@ -211,16 +202,14 @@ WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
     SELECT 1
     FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
     WHERE x.[IDUtente] = u.[IDUtente]
-      AND CAST(x.[DataInizio] AS DATE) >= @Da
-      AND CAST(x.[DataInizio] AS DATE) < @Al
+      AND CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+      AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
       AND (' + @PagatoExpr + N') > 0
   );';
 
-EXEC sys.sp_executesql @Sql4, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+EXEC sys.sp_executesql @Sql4;
 
-/*-----------------------------------------------------------------------------
-  5) Lista finale — esclusioni «full» dinamiche
------------------------------------------------------------------------------*/
+-- --- 5) Lista finale — esclusioni «full» ---
 DECLARE @PagatoXInner NVARCHAR(MAX) = @PagatoExpr;
 
 DECLARE @Sql5 NVARCHAR(MAX) = N'
@@ -244,8 +233,8 @@ OUTER APPLY (
   SELECT SUM((' + @PagatoXInner + N')) AS TotaleMese
   FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
   WHERE x.[IDUtente] = u.[IDUtente]
-    AND CAST(x.[DataInizio] AS DATE) >= @Da
-    AND CAST(x.[DataInizio] AS DATE) < @Al
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
     AND (' + @PagatoXInner + N') > 0
     AND ' + @ExFull + N'
 ) AS t
@@ -258,8 +247,8 @@ CROSS APPLY (
     (' + @AbbDescrExpr + N') AS AbbDescrCombined
   FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
   WHERE x.[IDUtente] = u.[IDUtente]
-    AND CAST(x.[DataInizio] AS DATE) >= @Da
-    AND CAST(x.[DataInizio] AS DATE) < @Al
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
     AND (' + @PagatoXInner + N') > 0
     AND ' + @ExFull + N'
   ORDER BY (' + @PagatoXInner + N') DESC, x.[DataInizio] DESC
@@ -267,20 +256,16 @@ CROSS APPLY (
 WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome];';
 
-EXEC sys.sp_executesql @Sql5, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+EXEC sys.sp_executesql @Sql5;
 
-/*-----------------------------------------------------------------------------
-  6) Stesso elenco con esclusioni «min» (se il 5 svuota tutto per filtro testo)
------------------------------------------------------------------------------*/
+-- --- 6) Stesso elenco con esclusioni «min» ---
 PRINT N'--- Ripetizione query lista con esclusioni MIN ---';
 
 DECLARE @Sql6 NVARCHAR(MAX) = REPLACE(@Sql5, @ExFull, @ExMin);
 
-EXEC sys.sp_executesql @Sql6, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+EXEC sys.sp_executesql @Sql6;
 
-/*-----------------------------------------------------------------------------
-  7) Opzionale — colonne reali sulla tabella abbonamenti (copia/incolla nomi)
------------------------------------------------------------------------------*/
+-- --- 7) Colonne della tabella abbonamenti ---
 SELECT c.name AS ColumnName, t.name AS TypeName
 FROM sys.columns AS c
 JOIN sys.types AS t ON c.user_type_id = t.user_type_id
