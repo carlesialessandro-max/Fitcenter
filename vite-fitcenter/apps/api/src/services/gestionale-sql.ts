@@ -637,47 +637,134 @@ function referralPresenterColumn(): string {
   return col || "IDPresentatore"
 }
 
-/** Priorità come nelle altre liste vendita/Danza: pagato effettivo, poi fallback listino. */
-function sqlReferralImportoPagatoExpr(alias: string): string {
-  const x = alias
-  /** Allineato a pick colonne «totale iscrizione» in map-sql / colonne frequenti su gestionali diversi. */
-  return `COALESCE(${x}.[ImportoPagato], ${x}.[Pagato], ${x}.[Versato], ${x}.[Incassato], ${x}.[Acconto], ${x}.[Importo], ${x}.[Totale], ${x}.[AbbonamentiIscrizioneTotale], ${x}.[AbbonamentiIscrizionetotale], ${x}.[IscrizioneTotale], ${x}.[TotaleIscrizione], ${x}.[TotaleAbbonamento], 0)`
+/** Priorità colonne importo/totale riga — script referral-debug-mese.sql e API devono restare allineati. */
+const REFERRAL_IMPORTO_COL_PRIORITY = [
+  "ImportoPagato",
+  "Pagato",
+  "Versato",
+  "Incassato",
+  "Acconto",
+  "Importo",
+  "Totale",
+  "AbbonamentiIscrizioneTotale",
+  "AbbonamentiIscrizionetotale",
+  "IscrizioneTotale",
+  "TotaleIscrizione",
+  "TotaleAbbonamento",
+] as const
+
+function bracketSqlAliasColumn(alias: string, colName: string): string {
+  const safe = colName.replace(/\]/g, "]]")
+  return `${alias}.[${safe}]`
 }
 
-/** Esclude tesseramenti / attivazioni (allineato a map-sql `isTesseramentoRow`). */
-function sqlReferralEscludiNonAbbonamenti(alias: string): string {
-  const x = alias
-  return `(
-    ISNULL(${x}.[IDCategoria], 0) <> 19
-    AND UPPER(ISNULL(${x}.[AbbonamentoDurataDescrizione], N'')) <> N'TESSERAMENTO GARE'
-    AND UPPER(ISNULL(${x}.[CategoriaAbbonamentoDescrizione], N'')) NOT LIKE N'%TESSERAMENTI%'
-    AND UPPER(LTRIM(RTRIM(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')))) <> N'VARIE'
-    AND NOT (
-      UPPER(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')) LIKE N'%ASI%'
-      AND UPPER(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')) LIKE N'%ISCRIZIONE%'
-    )
-    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%TESSERAMENTI%'
-    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%ATTIVAZIONE%'
-    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%PHON ATTIVA%'
-    AND NOT (
-      UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) LIKE N'%ASI%'
-      AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) LIKE N'%ISC%'
-    )
-  )`
+function pickAbbColumnActual(cols: Set<string>, logical: string): string | null {
+  for (const c of cols) {
+    if (c === logical) return c
+  }
+  const low = logical.toLowerCase()
+  for (const c of cols) {
+    if (c.toLowerCase() === low) return c
+  }
+  return null
 }
 
-/** Fallback se la tabella non espone categorie/macro (solo IDCategoria + descrizione piano). */
-function sqlReferralEscludiNonAbbonamentiMin(alias: string): string {
+async function fetchAbbonamentiColumnSet(pool: sql.ConnectionPool, tableSpec: string): Promise<Set<string>> {
+  try {
+    const { objectId } = qualifySqlObject(tableSpec)
+    const lit = objectId.replace(/'/g, "''")
+    const r = await pool.request().query(`
+      SELECT c.name AS n FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'${lit}')
+    `)
+    const set = new Set<string>()
+    for (const row of r.recordset ?? []) {
+      const n = (row as { n?: unknown }).n
+      if (n != null && String(n).trim() !== "") set.add(String(n))
+    }
+    return set
+  } catch {
+    return new Set()
+  }
+}
+
+/** COALESCE solo sulle colonne presenti sulla tabella abbonamenti (evita errore 207 come nello script SSMS). */
+function sqlReferralPagatoExprDynamic(alias: string, cols: Set<string>): string {
+  const parts: string[] = []
+  for (const logical of REFERRAL_IMPORTO_COL_PRIORITY) {
+    const ac = pickAbbColumnActual(cols, logical)
+    if (ac) parts.push(bracketSqlAliasColumn(alias, ac))
+  }
+  if (parts.length === 0) return `CAST(0 AS FLOAT)`
+  return `COALESCE(${parts.join(", ")}, CAST(0 AS FLOAT))`
+}
+
+function referralAbbDescPredActual(cols: Set<string>): string | null {
+  return (
+    pickAbbColumnActual(cols, "AbbonamentoDescrizione") ??
+    pickAbbColumnActual(cols, "DescrizioneAbbonamento") ??
+    pickAbbColumnActual(cols, "Descrizione")
+  )
+}
+
+/** Esclusioni «full»: solo predicati sulle colonne che esistono (allineato a referral-debug-mese.sql). */
+function sqlReferralExcludeFullDynamic(alias: string, cols: Set<string>): string {
   const x = alias
-  return `(
-    ISNULL(${x}.[IDCategoria], 0) <> 19
-    AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) NOT LIKE N'%TESSERAMENTI%'
-    AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) NOT LIKE N'%ATTIVAZIONE%'
-    AND NOT (
-      UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) LIKE N'%ASI%'
-      AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) LIKE N'%ISC%'
+  const chunks: string[] = ["1 = 1"]
+  const cat = pickAbbColumnActual(cols, "IDCategoria")
+  if (cat) chunks.push(`ISNULL(${bracketSqlAliasColumn(x, cat)}, 0) <> 19`)
+  const dur = pickAbbColumnActual(cols, "AbbonamentoDurataDescrizione")
+  if (dur)
+    chunks.push(`UPPER(ISNULL(${bracketSqlAliasColumn(x, dur)}, N'')) <> N'TESSERAMENTO GARE'`)
+  const cabb = pickAbbColumnActual(cols, "CategoriaAbbonamentoDescrizione")
+  if (cabb)
+    chunks.push(`UPPER(ISNULL(${bracketSqlAliasColumn(x, cabb)}, N'')) NOT LIKE N'%TESSERAMENTI%'`)
+  const macro = pickAbbColumnActual(cols, "MacroCategoriaAbbonamentoDescrizione")
+  if (macro) {
+    const m = bracketSqlAliasColumn(x, macro)
+    chunks.push(`UPPER(LTRIM(RTRIM(ISNULL(${m}, N'')))) <> N'VARIE'`)
+    chunks.push(
+      `NOT (UPPER(ISNULL(${m}, N'')) LIKE N'%ASI%' AND UPPER(ISNULL(${m}, N'')) LIKE N'%ISCRIZIONE%')`
     )
-  )`
+  }
+  const pred = referralAbbDescPredActual(cols)
+  if (pred) {
+    const p = `CAST(${bracketSqlAliasColumn(x, pred)} AS NVARCHAR(400))`
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%TESSERAMENTI%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%ATTIVAZIONE%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%PHON ATTIVA%'`)
+    chunks.push(`NOT (UPPER(ISNULL(${p}, N'')) LIKE N'%ASI%' AND UPPER(ISNULL(${p}, N'')) LIKE N'%ISC%')`)
+  }
+  return `(${chunks.join(" AND ")})`
+}
+
+/** Esclusioni ridotte (IDCategoria + descrizione piano se c’è). */
+function sqlReferralExcludeMinDynamic(alias: string, cols: Set<string>): string {
+  const x = alias
+  const chunks: string[] = ["1 = 1"]
+  const cat = pickAbbColumnActual(cols, "IDCategoria")
+  if (cat) chunks.push(`ISNULL(${bracketSqlAliasColumn(x, cat)}, 0) <> 19`)
+  const pred = referralAbbDescPredActual(cols)
+  if (pred) {
+    const p = `CAST(${bracketSqlAliasColumn(x, pred)} AS NVARCHAR(400))`
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%TESSERAMENTI%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%ATTIVAZIONE%'`)
+    chunks.push(`NOT (UPPER(ISNULL(${p}, N'')) LIKE N'%ASI%' AND UPPER(ISNULL(${p}, N'')) LIKE N'%ISC%')`)
+  }
+  return `(${chunks.join(" AND ")})`
+}
+
+function sqlReferralAbbDescrSelectDynamic(alias: string, cols: Set<string>): string {
+  const x = alias
+  const abb = pickAbbColumnActual(cols, "AbbonamentoDescrizione")
+  const desAbb = pickAbbColumnActual(cols, "DescrizioneAbbonamento")
+  const desc = pickAbbColumnActual(cols, "Descrizione")
+  if (abb && desAbb) {
+    return `COALESCE(CAST(${bracketSqlAliasColumn(x, abb)} AS NVARCHAR(400)), CAST(${bracketSqlAliasColumn(x, desAbb)} AS NVARCHAR(400)), CAST(N'' AS NVARCHAR(400)))`
+  }
+  if (abb) return `ISNULL(CAST(${bracketSqlAliasColumn(x, abb)} AS NVARCHAR(400)), N'')`
+  if (desAbb) return `ISNULL(CAST(${bracketSqlAliasColumn(x, desAbb)} AS NVARCHAR(400)), N'')`
+  if (desc) return `ISNULL(CAST(${bracketSqlAliasColumn(x, desc)} AS NVARCHAR(400)), N'')`
+  return `CAST(N'' AS NVARCHAR(400))`
 }
 
 /**
@@ -698,6 +785,12 @@ export async function queryReferralPresentati(
   const colPres = referralPresenterColumn()
   const params = ids.map((_, i) => `@r${i}`).join(", ")
 
+  const abbCols = await fetchAbbonamentiColumnSet(p, tblA)
+  const pag = (alias: string) => sqlReferralPagatoExprDynamic(alias, abbCols)
+  const excludeFullDyn = sqlReferralExcludeFullDynamic("x", abbCols)
+  const excludeMinDyn = sqlReferralExcludeMinDynamic("x", abbCols)
+  const abbDescrSel = sqlReferralAbbDescrSelectDynamic("x", abbCols)
+
   const mkReq = () => {
     let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
     if (!noVendorFilter) {
@@ -712,7 +805,6 @@ export async function queryReferralPresentati(
   const envCol = process.env.GESTIONALE_ABBONAMENTI_COL_VENDITORE?.trim()
   if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
 
-  const pag = (alias: string) => sqlReferralImportoPagatoExpr(alias)
   const abbMonthWhere = (alias: string, vendCol: string | null, excludeSql: string) => {
     const x = alias
     const vendLine =
@@ -740,7 +832,7 @@ SELECT
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
   a.[PagatoEff] AS ReferralImportoPagato,
-  COALESCE(a.[AbbDescrCombined], CAST(N'' AS NVARCHAR(400))) AS ReferralAbbDescrizione,
+  a.[AbbDescrCombined] AS ReferralAbbDescrizione,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
@@ -755,7 +847,7 @@ CROSS APPLY (
     x.[DataInizio],
     x.[DataFine],
     ${pag("x")} AS PagatoEff,
-    COALESCE(x.[AbbonamentoDescrizione], x.[DescrizioneAbbonamento], CAST(N'' AS NVARCHAR(400))) AS AbbDescrCombined
+    (${abbDescrSel}) AS AbbDescrCombined
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
@@ -778,7 +870,7 @@ SELECT
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
   a.[PagatoEff] AS ReferralImportoPagato,
-  CAST(N'' AS NVARCHAR(400)) AS ReferralAbbDescrizione,
+  a.[AbbDescrCombined] AS ReferralAbbDescrizione,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
@@ -792,7 +884,8 @@ CROSS APPLY (
     x.[IDIscrizione],
     x.[DataInizio],
     x.[DataFine],
-    ${pag("x")} AS PagatoEff
+    ${pag("x")} AS PagatoEff,
+    (${abbDescrSel}) AS AbbDescrCombined
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
@@ -801,9 +894,9 @@ WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
   const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [
-    { sql: sqlRichFull, exclude: sqlReferralEscludiNonAbbonamenti("x") },
-    { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamenti("x") },
-    { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamentiMin("x") },
+    { sql: sqlRichFull, exclude: excludeFullDyn },
+    { sql: sqlMinimal, exclude: excludeFullDyn },
+    { sql: sqlMinimal, exclude: excludeMinDyn },
   ]
 
   if (noVendorFilter) {
