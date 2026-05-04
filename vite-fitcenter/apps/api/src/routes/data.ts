@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
@@ -23,6 +23,7 @@ dataRouter.get("/clienti", getClienti)
 dataRouter.get("/abbonamenti", getAbbonamenti)
 dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
 dataRouter.get("/danza/attivi-oggi", requireAdminOrDanza, getDanzaAttiviOggi)
+dataRouter.get("/referral-presentati", getReferralPresentati)
 dataRouter.get("/budget", requireAdmin, getBudget)
 dataRouter.post("/budget", requireAdmin, setBudget)
 dataRouter.get("/leads", getLeadsFromGestionale)

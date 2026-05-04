@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext"
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean }
 
 const navOperatore: NavItem[] = [
-  { to: "/", label: "Dashboard" },
+  { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
   { to: "/firme", label: "Firme" },
   { to: "/firma-cassa", label: "Firma Cassa" },
   { to: "/crm", label: "CRM Vendita" },
@@ -26,7 +26,14 @@ const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as co
 const navDanza: NavItem[] = [{ to: "/danza", label: "Danza" }] as const
 
 const navAdmin: NavItem[] = [
-  { to: "/", label: "Dashboard", children: [{ to: "/stampa-report", label: "Stampa report" }] },
+  {
+    to: "/",
+    label: "Dashboard",
+    children: [
+      { to: "/stampa-report", label: "Stampa report" },
+      { to: "/referral", label: "Referral" },
+    ],
+  },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
   {
     to: "__admin_group__",

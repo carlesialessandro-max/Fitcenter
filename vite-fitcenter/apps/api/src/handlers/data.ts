@@ -1204,6 +1204,59 @@ export async function getClienti(req: Request, res: Response) {
   }
 }
 
+function sqlScalarDateToIso(v: unknown): string | null {
+  if (v == null) return null
+  if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10)
+  const s = String(v).trim().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+}
+
+export async function getReferralPresentati(req: Request, res: Response) {
+  try {
+    const u = getScopedUser(req)
+    const consulenteQ = typeof req.query.consulente === "string" ? req.query.consulente.trim() : ""
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente =
+      u.role === "admin" && consulenteQ ? consulenteQ : operatoreNome ?? (consulenteQ || undefined)
+    if (!consulente?.trim()) {
+      return res.json({
+        items: [] as unknown[],
+        totaleEuro: 0,
+        presenterIdsResolved: [] as number[],
+        hint:
+          u.role === "admin"
+            ? 'Aggiungi il parametro query consulente (es. ?consulente=Carmen%20Severino).'
+            : undefined,
+      })
+    }
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      return res.json({ items: [], totaleEuro: 0, presenterIdsResolved: [] })
+    }
+    const idStr = await resolveConsultantId(consulente.trim())
+    if (!idStr?.trim()) {
+      return res.json({ items: [], totaleEuro: 0, presenterIdsResolved: [] })
+    }
+    const presenterIdsResolved = gestionaleSql.parseConsultantIds(idStr)
+    const rows = await gestionaleSql.queryReferralPresentati(presenterIdsResolved)
+    const items = rows.map((row) => ({
+      clienteId: String(row.ClienteIDUtente ?? ""),
+      cognome: String(row.ClienteCognome ?? ""),
+      nome: String(row.ClienteNome ?? ""),
+      email: row.ClienteEmail != null && String(row.ClienteEmail).trim() !== "" ? String(row.ClienteEmail) : null,
+      telefono: row.ClienteSms != null && String(row.ClienteSms).trim() !== "" ? String(row.ClienteSms) : null,
+      idIscrizione: row.ReferralIDIscrizione != null ? String(row.ReferralIDIscrizione) : null,
+      abbonamento: row.ReferralAbbDescrizione != null && String(row.ReferralAbbDescrizione).trim() !== "" ? String(row.ReferralAbbDescrizione) : null,
+      dataInizioAbb: sqlScalarDateToIso(row.ReferralDataInizio),
+      dataFineAbb: sqlScalarDateToIso(row.ReferralDataFine),
+      importoAbbonamento: Number(row.ReferralImportoAbb ?? 0) || 0,
+    }))
+    const totaleEuro = Math.round(items.reduce((s, x) => s + x.importoAbbonamento, 0) * 100) / 100
+    res.json({ items, totaleEuro, presenterIdsResolved })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function getAbbonamenti(req: Request, res: Response) {
   try {
     const operatoreNome = getOperatoreConsulenteNome(req)

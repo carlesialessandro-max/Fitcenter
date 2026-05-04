@@ -24,6 +24,7 @@ import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
 import { PiscinaMappa } from "@/pages/PiscinaMappa"
 import { Incassi } from "@/pages/Incassi"
 import { Danza } from "@/pages/Danza"
+import { Referral } from "@/pages/Referral"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -79,6 +80,7 @@ export const router = createBrowserRouter([
       { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },
       { path: "danza", element: <Danza /> },
+      { path: "referral", element: <Referral /> },
       { path: "scuola-nuoto", element: <ScuolaNuoto /> },
       { path: "piscina", element: <PiscinaMappa /> },
       { path: "incassi", element: <Incassi /> },

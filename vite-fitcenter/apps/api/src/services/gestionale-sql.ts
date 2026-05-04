@@ -630,6 +630,103 @@ export async function queryClienti(): Promise<Record<string, unknown>[]> {
   }
 }
 
+/** Colonna FK sul cliente verso chi ha presentato (default IDPresentatore). Override: GESTIONALE_UTENTI_COL_ID_PRESENTATORE. */
+function referralPresenterColumn(): string {
+  const raw = process.env.GESTIONALE_UTENTI_COL_ID_PRESENTATORE?.trim()
+  const col = (raw || "IDPresentatore").replace(/[^\p{L}\p{N}_]/gu, "")
+  return col || "IDPresentatore"
+}
+
+/**
+ * Clienti il cui campo presentatore punta a uno degli IDUtente indicati (porta un amico / incentive consulenti).
+ * Per ogni cliente: ultimo abbonamento per DataInizio (AbbonamentiIscrizione).
+ */
+export async function queryReferralPresentati(presenterUtenteIds: number[]): Promise<Record<string, unknown>[]> {
+  const ids = presenterUtenteIds.filter((n) => Number.isFinite(n))
+  if (ids.length === 0) return []
+  const p = await getPool()
+  if (!p) return []
+  const tblU = defaultTables.clienti
+  const tblA = getAbbonamentiTableName()
+  const colPres = referralPresenterColumn()
+  const params = ids.map((_, i) => `@r${i}`).join(", ")
+
+  const mkReq = () => {
+    let req = p.request()
+    ids.forEach((id, i) => {
+      req = req.input(`r${i}`, sql.Int, id)
+    })
+    return req
+  }
+
+  const sqlRich = `
+SELECT
+  u.[IDUtente] AS ClienteIDUtente,
+  u.[Cognome] AS ClienteCognome,
+  u.[Nome] AS ClienteNome,
+  u.[Email] AS ClienteEmail,
+  u.[SMS] AS ClienteSms,
+  a.[IDIscrizione] AS ReferralIDIscrizione,
+  a.[DataInizio] AS ReferralDataInizio,
+  a.[DataFine] AS ReferralDataFine,
+  COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
+  COALESCE(a.[AbbDescrCombined], CAST(N'' AS NVARCHAR(400))) AS ReferralAbbDescrizione
+FROM [${tblU}] u
+OUTER APPLY (
+  SELECT TOP 1
+    x.[IDIscrizione],
+    x.[DataInizio],
+    x.[DataFine],
+    x.[Importo],
+    x.[Totale],
+    COALESCE(x.[AbbonamentoDescrizione], x.[DescrizioneAbbonamento], CAST(N'' AS NVARCHAR(400))) AS AbbDescrCombined
+  FROM [${tblA}] x
+  WHERE x.[IDUtente] = u.[IDUtente]
+  ORDER BY x.[DataInizio] DESC
+) a
+WHERE u.[${colPres}] IN (${params})
+ORDER BY u.[Cognome], u.[Nome]`
+
+  const sqlMinimal = `
+SELECT
+  u.[IDUtente] AS ClienteIDUtente,
+  u.[Cognome] AS ClienteCognome,
+  u.[Nome] AS ClienteNome,
+  u.[Email] AS ClienteEmail,
+  u.[SMS] AS ClienteSms,
+  a.[IDIscrizione] AS ReferralIDIscrizione,
+  a.[DataInizio] AS ReferralDataInizio,
+  a.[DataFine] AS ReferralDataFine,
+  COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
+  CAST(N'' AS NVARCHAR(400)) AS ReferralAbbDescrizione
+FROM [${tblU}] u
+OUTER APPLY (
+  SELECT TOP 1
+    x.[IDIscrizione],
+    x.[DataInizio],
+    x.[DataFine],
+    x.[Importo],
+    x.[Totale]
+  FROM [${tblA}] x
+  WHERE x.[IDUtente] = u.[IDUtente]
+  ORDER BY x.[DataInizio] DESC
+) a
+WHERE u.[${colPres}] IN (${params})
+ORDER BY u.[Cognome], u.[Nome]`
+
+  try {
+    const r = await mkReq().query(sqlRich)
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    try {
+      const r = await mkReq().query(sqlMinimal)
+      return (r.recordset ?? []) as Record<string, unknown>[]
+    } catch {
+      return []
+    }
+  }
+}
+
 /** Somma incassi (Importo) per IDIscrizione nel range [from,to]. */
 export async function queryMovimentiVendutoSumByIscrizione(from: string, to: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()

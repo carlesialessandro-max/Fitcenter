@@ -10,6 +10,26 @@ import type {
 import type { Lead } from "@/types/lead"
 import { api } from "./client"
 
+export type ReferralPresentatiItem = {
+  clienteId: string
+  cognome: string
+  nome: string
+  email: string | null
+  telefono: string | null
+  idIscrizione: string | null
+  abbonamento: string | null
+  dataInizioAbb: string | null
+  dataFineAbb: string | null
+  importoAbbonamento: number
+}
+
+export type ReferralPresentatiResponse = {
+  items: ReferralPresentatiItem[]
+  totaleEuro: number
+  presenterIdsResolved: number[]
+  hint?: string
+}
+
 function withConsulente(url: string, consulente?: string) {
   if (!consulente) return url
   const sep = url.includes("?") ? "&" : "?"
@@ -34,6 +54,8 @@ export const dataApi = {
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza
     return api.get<Abbonamento[]>(url)
   },
+  getReferralPresentati: (consulente?: string) =>
+    api.get<ReferralPresentatiResponse>(withConsulente("/data/referral-presentati", consulente)),
   getBudget: (anno?: number) =>
     api.get<{
       list: BudgetMensile[]
