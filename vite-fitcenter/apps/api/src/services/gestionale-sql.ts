@@ -638,11 +638,16 @@ function referralPresenterColumn(): string {
 }
 
 /**
- * Clienti il cui campo presentatore punta a uno degli IDUtente indicati (porta un amico / incentive consulenti).
- * Per ogni cliente: ultimo abbonamento per DataInizio (AbbonamentiIscrizione).
+ * Referral “porta un amico”: clienti con IDPresentatore valorizzato (presentati da un altro utente socio),
+ * il cui abbonamento venduto dalla consulente è uno di quelli con ID venditore negli ID indicati.
+ * (IDPresentatore è l’ID del socio presentatore, non della consulente — si filtra come per queryAbbonamenti.)
  */
-export async function queryReferralPresentati(presenterUtenteIds: number[]): Promise<Record<string, unknown>[]> {
-  const ids = presenterUtenteIds.filter((n) => Number.isFinite(n))
+export async function queryReferralPresentati(
+  venditoreUtenteIds: number[],
+  fromIso: string,
+  toIso: string
+): Promise<Record<string, unknown>[]> {
+  const ids = venditoreUtenteIds.filter((n) => Number.isFinite(n))
   if (ids.length === 0) return []
   const p = await getPool()
   if (!p) return []
@@ -656,23 +661,42 @@ export async function queryReferralPresentati(presenterUtenteIds: number[]): Pro
     ids.forEach((id, i) => {
       req = req.input(`r${i}`, sql.Int, id)
     })
+    req = req.input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
     return req
   }
 
-  const sqlRich = `
+  const colsToTry = ["IDVenditore", "Abbonanditore"]
+  const envCol = process.env.GESTIONALE_ABBONAMENTI_COL_VENDITORE?.trim()
+  if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
+
+  const sqlRich = (vendCol: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
   u.[Nome] AS ClienteNome,
   u.[Email] AS ClienteEmail,
   u.[SMS] AS ClienteSms,
+  u.[${colPres}] AS ReferralIDSocioPresentatore,
+  pres.[IDUtente] AS SocioPresentatoreIDUtente,
+  pres.[Cognome] AS SocioPresentatoreCognome,
+  pres.[Nome] AS SocioPresentatoreNome,
   a.[IDIscrizione] AS ReferralIDIscrizione,
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
   COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
-  COALESCE(a.[AbbDescrCombined], CAST(N'' AS NVARCHAR(400))) AS ReferralAbbDescrizione
+  COALESCE(a.[AbbDescrCombined], CAST(N'' AS NVARCHAR(400))) AS ReferralAbbDescrizione,
+  t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
+LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
+  SELECT COALESCE(SUM(COALESCE(x.[Importo], x.[Totale], 0)), 0) AS TotaleMese
+  FROM [${tblA}] x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND x.[${vendCol}] IN (${params})
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
+) t
+CROSS APPLY (
   SELECT TOP 1
     x.[IDIscrizione],
     x.[DataInizio],
@@ -682,25 +706,42 @@ OUTER APPLY (
     COALESCE(x.[AbbonamentoDescrizione], x.[DescrizioneAbbonamento], CAST(N'' AS NVARCHAR(400))) AS AbbDescrCombined
   FROM [${tblA}] x
   WHERE x.[IDUtente] = u.[IDUtente]
+    AND x.[${vendCol}] IN (${params})
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
   ORDER BY x.[DataInizio] DESC
 ) a
-WHERE u.[${colPres}] IN (${params})
+WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const sqlMinimal = `
+  const sqlMinimal = (vendCol: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
   u.[Nome] AS ClienteNome,
   u.[Email] AS ClienteEmail,
   u.[SMS] AS ClienteSms,
+  u.[${colPres}] AS ReferralIDSocioPresentatore,
+  pres.[IDUtente] AS SocioPresentatoreIDUtente,
+  pres.[Cognome] AS SocioPresentatoreCognome,
+  pres.[Nome] AS SocioPresentatoreNome,
   a.[IDIscrizione] AS ReferralIDIscrizione,
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
   COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
-  CAST(N'' AS NVARCHAR(400)) AS ReferralAbbDescrizione
+  CAST(N'' AS NVARCHAR(400)) AS ReferralAbbDescrizione,
+  t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
+LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
+  SELECT COALESCE(SUM(COALESCE(x.[Importo], x.[Totale], 0)), 0) AS TotaleMese
+  FROM [${tblA}] x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND x.[${vendCol}] IN (${params})
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
+) t
+CROSS APPLY (
   SELECT TOP 1
     x.[IDIscrizione],
     x.[DataInizio],
@@ -709,22 +750,28 @@ OUTER APPLY (
     x.[Totale]
   FROM [${tblA}] x
   WHERE x.[IDUtente] = u.[IDUtente]
+    AND x.[${vendCol}] IN (${params})
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
   ORDER BY x.[DataInizio] DESC
 ) a
-WHERE u.[${colPres}] IN (${params})
+WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  try {
-    const r = await mkReq().query(sqlRich)
-    return (r.recordset ?? []) as Record<string, unknown>[]
-  } catch {
+  for (const vendCol of colsToTry) {
     try {
-      const r = await mkReq().query(sqlMinimal)
+      const r = await mkReq().query(sqlRich(vendCol))
       return (r.recordset ?? []) as Record<string, unknown>[]
     } catch {
-      return []
+      try {
+        const r = await mkReq().query(sqlMinimal(vendCol))
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        // prova colonna venditore successiva
+      }
     }
   }
+  return []
 }
 
 /** Somma incassi (Importo) per IDIscrizione nel range [from,to]. */

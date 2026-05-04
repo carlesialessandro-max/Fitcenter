@@ -1211,6 +1211,18 @@ function sqlScalarDateToIso(v: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
 }
 
+function monthRangeFromQuery(req: Request): { fromIso: string; toIso: string; year: number; month: number } {
+  const now = new Date()
+  const yRaw = typeof req.query.year === "string" ? Number(req.query.year) : NaN
+  const mRaw = typeof req.query.month === "string" ? Number(req.query.month) : NaN
+  const year = Number.isFinite(yRaw) && yRaw >= 2000 && yRaw <= 2100 ? Math.trunc(yRaw) : now.getFullYear()
+  const month = Number.isFinite(mRaw) && mRaw >= 1 && mRaw <= 12 ? Math.trunc(mRaw) : now.getMonth() + 1
+  const fromIso = `${year}-${String(month).padStart(2, "0")}-01`
+  const nextMonth = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 }
+  const toIso = `${nextMonth.y}-${String(nextMonth.m).padStart(2, "0")}-01`
+  return { fromIso, toIso, year, month }
+}
+
 export async function getReferralPresentati(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
@@ -1222,7 +1234,7 @@ export async function getReferralPresentati(req: Request, res: Response) {
       return res.json({
         items: [] as unknown[],
         totaleEuro: 0,
-        presenterIdsResolved: [] as number[],
+        venditoreIdsResolved: [] as number[],
         hint:
           u.role === "admin"
             ? 'Aggiungi il parametro query consulente (es. ?consulente=Carmen%20Severino).'
@@ -1230,28 +1242,42 @@ export async function getReferralPresentati(req: Request, res: Response) {
       })
     }
     if (!gestionaleSql.isGestionaleConfigured()) {
-      return res.json({ items: [], totaleEuro: 0, presenterIdsResolved: [] })
+      return res.json({ items: [], totaleEuro: 0, venditoreIdsResolved: [] })
     }
     const idStr = await resolveConsultantId(consulente.trim())
     if (!idStr?.trim()) {
-      return res.json({ items: [], totaleEuro: 0, presenterIdsResolved: [] })
+      return res.json({ items: [], totaleEuro: 0, venditoreIdsResolved: [] })
     }
-    const presenterIdsResolved = gestionaleSql.parseConsultantIds(idStr)
-    const rows = await gestionaleSql.queryReferralPresentati(presenterIdsResolved)
-    const items = rows.map((row) => ({
-      clienteId: String(row.ClienteIDUtente ?? ""),
-      cognome: String(row.ClienteCognome ?? ""),
-      nome: String(row.ClienteNome ?? ""),
-      email: row.ClienteEmail != null && String(row.ClienteEmail).trim() !== "" ? String(row.ClienteEmail) : null,
-      telefono: row.ClienteSms != null && String(row.ClienteSms).trim() !== "" ? String(row.ClienteSms) : null,
-      idIscrizione: row.ReferralIDIscrizione != null ? String(row.ReferralIDIscrizione) : null,
-      abbonamento: row.ReferralAbbDescrizione != null && String(row.ReferralAbbDescrizione).trim() !== "" ? String(row.ReferralAbbDescrizione) : null,
-      dataInizioAbb: sqlScalarDateToIso(row.ReferralDataInizio),
-      dataFineAbb: sqlScalarDateToIso(row.ReferralDataFine),
-      importoAbbonamento: Number(row.ReferralImportoAbb ?? 0) || 0,
-    }))
-    const totaleEuro = Math.round(items.reduce((s, x) => s + x.importoAbbonamento, 0) * 100) / 100
-    res.json({ items, totaleEuro, presenterIdsResolved })
+    const venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
+    const { fromIso, toIso, year, month } = monthRangeFromQuery(req)
+    const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIso)
+    const items = rows.map((row) => {
+      const pc = String(row.SocioPresentatoreCognome ?? "").trim()
+      const pn = String(row.SocioPresentatoreNome ?? "").trim()
+      const pid =
+        row.SocioPresentatoreIDUtente != null && String(row.SocioPresentatoreIDUtente).trim() !== ""
+          ? String(row.SocioPresentatoreIDUtente)
+          : row.ReferralIDSocioPresentatore != null && String(row.ReferralIDSocioPresentatore).trim() !== ""
+            ? String(row.ReferralIDSocioPresentatore)
+            : null
+      return {
+        clienteId: String(row.ClienteIDUtente ?? ""),
+        cognome: String(row.ClienteCognome ?? ""),
+        nome: String(row.ClienteNome ?? ""),
+        email: row.ClienteEmail != null && String(row.ClienteEmail).trim() !== "" ? String(row.ClienteEmail) : null,
+        telefono: row.ClienteSms != null && String(row.ClienteSms).trim() !== "" ? String(row.ClienteSms) : null,
+        presentatoDaId: pid,
+        presentatoDaNome: pc || pn ? `${pc} ${pn}`.trim() : null,
+        idIscrizione: row.ReferralIDIscrizione != null ? String(row.ReferralIDIscrizione) : null,
+        abbonamento: row.ReferralAbbDescrizione != null && String(row.ReferralAbbDescrizione).trim() !== "" ? String(row.ReferralAbbDescrizione) : null,
+        dataInizioAbb: sqlScalarDateToIso(row.ReferralDataInizio),
+        dataFineAbb: sqlScalarDateToIso(row.ReferralDataFine),
+        importoAbbonamento: Number(row.ReferralImportoAbb ?? 0) || 0,
+        totaleMese: Number(row.ReferralTotaleMese ?? 0) || 0,
+      }
+    })
+    const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100
+    res.json({ items, totaleEuro, venditoreIdsResolved, range: { year, month, from: fromIso, to: toIso } })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

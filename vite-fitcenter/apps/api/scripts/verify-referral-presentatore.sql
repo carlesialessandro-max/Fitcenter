@@ -4,7 +4,39 @@
 
   Ipotesi app: dbo.Utenti + colonna IDPresentatore (FK verso IDUtente del presentatore).
   Se i nomi differiscono, vedi elenco colonne con %Present% sotto.
+
+  --- Lettura schermata Extra / Altro ---
+  "Presentato da" = IDPresentatore sulla RIGA dell'utente che stai modificando.
+                    Se nel gestionale e' NESSUN UTENTE, in SQL su quella riga trovi NULL (corretto).
+
+  "Ha presentato"   = NON e' un campo sulla riga del presentatore: sono gli ALTRI utenti che hanno
+                    IDPresentatore = IDUtente di chi ha presentato.
+                    Per Mazza Saverio: cercare righe dove IDPresentatore = ID di Mazza (es. 65846),
+                    non guardare IDPresentatore sulla riga di Mazza.
 */
+
+-- 0) Chi ha presentato qualcuno (lista "Ha presentato" nel gestionale) — es. Mazza Saverio
+DECLARE @IdPresentatore INT = (
+  SELECT TOP (1) u.IDUtente
+  FROM dbo.Utenti AS u
+  WHERE u.Cognome LIKE N'%Mazza%' AND u.Nome LIKE N'%Saverio%'
+  ORDER BY u.IDUtente
+);
+
+SELECT @IdPresentatore AS IdUtente_del_presentatore;
+
+SELECT u.IDUtente, u.Cognome, u.Nome, u.Email, u.SMS, u.IDPresentatore
+FROM dbo.Utenti AS u
+WHERE u.IDPresentatore = @IdPresentatore
+ORDER BY u.Cognome, u.Nome;
+
+-- Controllo incrociato sui nominativi mostrati in "Ha presentato"
+SELECT u.IDUtente, u.Cognome, u.Nome, u.IDPresentatore,
+       pres.Cognome AS PresentatoreCognome, pres.Nome AS PresentatoreNome
+FROM dbo.Utenti AS u
+LEFT JOIN dbo.Utenti AS pres ON pres.IDUtente = u.IDPresentatore
+WHERE (u.Cognome LIKE N'%Acunzo%' AND u.Nome LIKE N'%Antonio%')
+   OR (u.Cognome LIKE N'%Landini%' AND u.Nome LIKE N'%Mattia%');
 
 -- 1) Colonne su dbo.Utenti che contengono "Present"
 SELECT c.name AS column_name
@@ -57,16 +89,40 @@ WHERE u.IDPresentatore = @IdTestProva
 ORDER BY u.Cognome, u.Nome;
 
 /*
-  5) Vista consulente (pagina Referral): clienti con IDPresentatore = ID della consulente.
+  5) Pagina Referral FitCenter: clienti con porta-amico E abbonamento venduto dalla consulente.
+     Verifica IDVenditore (o Abbonanditore) su Acunzo / Landini vs ID della consulente scelta nell'app.
 */
-DECLARE @ConsultanteID INT = 0; -- <<< INSERISCI IDUtente consulente
+SELECT TOP (20)
+  a.IDIscrizione,
+  a.IDUtente,
+  u.Cognome,
+  u.Nome,
+  u.IDPresentatore,
+  a.IDVenditore,
+  a.Abbonanditore,
+  a.DataInizio,
+  a.DataFine
+FROM dbo.AbbonamentiIscrizione AS a
+INNER JOIN dbo.Utenti AS u ON u.IDUtente = a.IDUtente
+WHERE u.IDUtente IN (24, 16867)
+ORDER BY u.Cognome, a.DataInizio DESC;
 
-SELECT u.IDUtente, u.Cognome, u.Nome, u.Email, u.SMS, u.IDPresentatore
+/*
+  6) Clienti referral attesi per una consulente (un ID venditore; per piu' ID ripeti la query).
+*/
+DECLARE @IdVenditoreConsulente INT = 336; -- <<< ID consulente come in env / mapping app
+
+SELECT DISTINCT u.IDUtente, u.Cognome, u.Nome, u.IDPresentatore
 FROM dbo.Utenti AS u
-WHERE u.IDPresentatore = @ConsultanteID
-ORDER BY u.Cognome, u.Nome;
+WHERE u.IDPresentatore IS NOT NULL
+  AND EXISTS (
+    SELECT 1
+    FROM dbo.AbbonamentiIscrizione AS a
+    WHERE a.IDUtente = u.IDUtente
+      AND (a.IDVenditore = @IdVenditoreConsulente OR TRY_CAST(a.Abbonanditore AS INT) = @IdVenditoreConsulente)
+  );
 
--- 6) Opzionale: colonne data su Utenti (per filtrare modifiche di oggi)
+-- Opzionale: colonne data su Utenti (per filtrare modifiche di oggi)
 -- SELECT c.name FROM sys.columns c
 -- INNER JOIN sys.tables t ON t.object_id = c.object_id
 -- INNER JOIN sys.schemas s ON s.schema_id = t.schema_id

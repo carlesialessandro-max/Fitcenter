@@ -17,12 +17,19 @@ function fmtDateIt(iso: string | null | undefined): string {
 export function Referral() {
   const { role, consulenteNome, consulenti } = useAuth()
   const [adminConsulente, setAdminConsulente] = useState("")
+  const [ym, setYm] = useState(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  })
   const effectiveConsulente =
     role === "admin" ? (adminConsulente.trim() || undefined) : consulenteNome ?? undefined
 
+  const year = Number(ym.slice(0, 4))
+  const month = Number(ym.slice(5, 7))
+
   const query = useQuery({
-    queryKey: ["referral-presentati", effectiveConsulente ?? ""],
-    queryFn: () => dataApi.getReferralPresentati(effectiveConsulente),
+    queryKey: ["referral-presentati", effectiveConsulente ?? "", ym],
+    queryFn: () => dataApi.getReferralPresentati(effectiveConsulente, year, month),
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -43,7 +50,7 @@ export function Referral() {
     const items = query.data?.items ?? []
     if (!needle) return items
     return items.filter((it) =>
-      `${it.cognome} ${it.nome} ${it.email ?? ""} ${it.telefono ?? ""} ${it.abbonamento ?? ""}`.toLowerCase().includes(needle)
+      `${it.cognome} ${it.nome} ${it.email ?? ""} ${it.telefono ?? ""} ${it.abbonamento ?? ""} ${it.presentatoDaNome ?? ""}`.toLowerCase().includes(needle)
     )
   }, [query.data, needle])
 
@@ -57,7 +64,8 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Clienti presentati a te come consulente di riferimento, con ultimo abbonamento e totale importi (ultimo contratto).
+          Clienti “porta un amico” con socio presentatore impostato, il cui abbonamento risulta venduto da te (come nelle altre liste
+          vendite). Il totale usa l’ultimo contratto che matcha il venditore.
         </p>
       </div>
 
@@ -94,18 +102,29 @@ export function Referral() {
           onChange={(e) => setQ(e.target.value)}
           className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 sm:max-w-md"
         />
+        <div className="flex items-end justify-between gap-3 sm:justify-end">
+          <label className="text-xs text-zinc-500">
+            Mese
+            <input
+              type="month"
+              value={ym}
+              onChange={(e) => setYm(e.target.value)}
+              className="mt-1 block rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
+            />
+          </label>
         <div className="text-right text-sm text-zinc-400">
           <div>
-            Totale (lista): <span className="font-medium text-zinc-100">{eur(query.data?.totaleEuro ?? 0)}</span>
+            Totale mese: <span className="font-medium text-zinc-100">{eur(query.data?.totaleEuro ?? 0)}</span>
           </div>
           {needle ? (
             <div className="text-xs text-zinc-500">
-              Filtrati: <span className="text-zinc-300">{eur(totaleFiltrato)}</span>
+              Filtrati (ultimo contratto): <span className="text-zinc-300">{eur(totaleFiltrato)}</span>
             </div>
           ) : null}
-          {query.data?.presenterIdsResolved?.length ? (
-            <div className="text-xs text-zinc-600">ID presentatore risolti: {query.data.presenterIdsResolved.join(", ")}</div>
+          {query.data?.venditoreIdsResolved?.length ? (
+            <div className="text-xs text-zinc-600">ID venditore (consulente): {query.data.venditoreIdsResolved.join(", ")}</div>
           ) : null}
+        </div>
         </div>
       </div>
 
@@ -117,17 +136,19 @@ export function Referral() {
         <p className="text-sm text-zinc-500">
           {role === "admin" && !adminConsulente.trim()
             ? "Seleziona una consulente per vedere i referral."
-            : "Nessun cliente con presentatore impostato sui tuoi ID, oppure SQL non disponibile."}
+            : "Nessun referral per la consulente selezionata: servono cliente con ID presentatore valorizzato e almeno un abbonamento con il tuo ID venditore, oppure SQL non disponibile."}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[980px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2 font-medium">Cliente</th>
+                <th className="px-3 py-2 font-medium">Presentato da</th>
                 <th className="px-3 py-2 font-medium">Contatti</th>
                 <th className="px-3 py-2 font-medium">Abbonamento</th>
                 <th className="px-3 py-2 font-medium">Inizio / fine</th>
+                <th className="px-3 py-2 text-right font-medium">Totale mese</th>
                 <th className="px-3 py-2 text-right font-medium">Importo</th>
               </tr>
             </thead>
@@ -140,6 +161,16 @@ export function Referral() {
                     </div>
                     <div className="text-xs text-zinc-600">ID {it.clienteId}</div>
                   </td>
+                  <td className="px-3 py-2 text-zinc-300">
+                    {it.presentatoDaNome ? (
+                      <>
+                        <div className="font-medium text-zinc-200">{it.presentatoDaNome}</div>
+                        {it.presentatoDaId ? <div className="text-xs text-zinc-600">ID {it.presentatoDaId}</div> : null}
+                      </>
+                    ) : (
+                      <span className="text-zinc-600">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-zinc-400">
                     {it.email ? <div className="truncate max-w-[200px]" title={it.email}>{it.email}</div> : <span className="text-zinc-600">—</span>}
                     {it.telefono ? <div className="text-xs text-zinc-500">{it.telefono}</div> : null}
@@ -151,6 +182,7 @@ export function Referral() {
                   <td className="px-3 py-2 text-zinc-400">
                     {fmtDateIt(it.dataInizioAbb)} → {fmtDateIt(it.dataFineAbb)}
                   </td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-200">{eur(it.totaleMese)}</td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-200">{eur(it.importoAbbonamento)}</td>
                 </tr>
               ))}

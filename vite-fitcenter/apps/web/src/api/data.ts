@@ -16,17 +16,23 @@ export type ReferralPresentatiItem = {
   nome: string
   email: string | null
   telefono: string | null
+  /** Utente socio che ha presentato (IDPresentatore). */
+  presentatoDaId: string | null
+  presentatoDaNome: string | null
   idIscrizione: string | null
   abbonamento: string | null
   dataInizioAbb: string | null
   dataFineAbb: string | null
   importoAbbonamento: number
+  /** Totale acquistato nel mese selezionato (somma importi abbonamenti venduti dalla consulente). */
+  totaleMese: number
 }
 
 export type ReferralPresentatiResponse = {
   items: ReferralPresentatiItem[]
   totaleEuro: number
-  presenterIdsResolved: number[]
+  venditoreIdsResolved: number[]
+  range?: { year: number; month: number; from: string; to: string }
   hint?: string
 }
 
@@ -54,8 +60,13 @@ export const dataApi = {
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza
     return api.get<Abbonamento[]>(url)
   },
-  getReferralPresentati: (consulente?: string) =>
-    api.get<ReferralPresentatiResponse>(withConsulente("/data/referral-presentati", consulente)),
+  getReferralPresentati: (consulente?: string, year?: number, month?: number) => {
+    let url = withConsulente("/data/referral-presentati", consulente)
+    if (year != null && month != null) {
+      url += (url.includes("?") ? "&" : "?") + `year=${encodeURIComponent(String(year))}&month=${encodeURIComponent(String(month))}`
+    }
+    return api.get<ReferralPresentatiResponse>(url)
+  },
   getBudget: (anno?: number) =>
     api.get<{
       list: BudgetMensile[]
