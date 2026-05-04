@@ -25,7 +25,7 @@ export type ReferralPresentatiItem = {
   dataFineAbb: string | null
   /** Importo pagato (ImportoPagato/Pagato/…), non solo listino. */
   importoPagato: number
-  /** Totale acquistato nel mese selezionato (somma importi abbonamenti venduti dalla consulente). */
+  /** Somma importi pagati nel mese per quel cliente (solo abbonamenti utili). */
   totaleMese: number
 }
 
@@ -34,10 +34,7 @@ export type ReferralPresentatiResponse = {
   totaleEuro: number
   /** Numero clienti referral nella lista (stesso mese / filtri). */
   totaleClienti: number
-  venditoreIdsResolved: number[]
-  tuttiIVenditori?: boolean
   range?: { year: number; month: number; from: string; to: string }
-  hint?: string
 }
 
 function withConsulente(url: string, consulente?: string) {
@@ -64,16 +61,8 @@ export const dataApi = {
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza
     return api.get<Abbonamento[]>(url)
   },
-  getReferralPresentati: (opts?: {
-    consulente?: string
-    /** Solo admin: tutti i venditori (nessun filtro ID venditore). */
-    tutti?: boolean
-    year?: number
-    month?: number
-  }) => {
+  getReferralPresentati: (opts?: { year?: number; month?: number }) => {
     const params = new URLSearchParams()
-    if (opts?.consulente) params.set("consulente", opts.consulente)
-    if (opts?.tutti) params.set("tutti", "1")
     if (opts?.year != null && opts?.month != null) {
       params.set("year", String(opts.year))
       params.set("month", String(opts.month))

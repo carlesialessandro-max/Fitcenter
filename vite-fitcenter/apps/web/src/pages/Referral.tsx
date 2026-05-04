@@ -1,10 +1,6 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
-import { useAuth } from "@/contexts/AuthContext"
-
-/** Valore select admin: mostra referral di tutti i venditori. */
-const ADMIN_TUTTI = "__ALL__"
 
 function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
@@ -18,45 +14,21 @@ function fmtDateIt(iso: string | null | undefined): string {
 }
 
 export function Referral() {
-  const { role, consulenteNome, consulenti } = useAuth()
-  const [adminConsulente, setAdminConsulente] = useState(ADMIN_TUTTI)
   const [ym, setYm] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
   })
-  const referralTutti = role === "admin" && adminConsulente === ADMIN_TUTTI
-  const effectiveConsulente =
-    role === "admin"
-      ? referralTutti
-        ? undefined
-        : adminConsulente.trim() || undefined
-      : consulenteNome ?? undefined
 
   const year = Number(ym.slice(0, 4))
   const month = Number(ym.slice(5, 7))
 
   const query = useQuery({
-    queryKey: ["referral-presentati", referralTutti ? "tutti" : effectiveConsulente ?? "", ym],
-    queryFn: () =>
-      dataApi.getReferralPresentati({
-        consulente: effectiveConsulente,
-        tutti: referralTutti,
-        year,
-        month,
-      }),
+    queryKey: ["referral-presentati", ym],
+    queryFn: () => dataApi.getReferralPresentati({ year, month }),
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
   })
-
-  const { data: budgetData } = useQuery({
-    queryKey: ["budget"],
-    queryFn: () => dataApi.getBudget(),
-    enabled: role === "admin",
-  })
-
-  const consulentiList =
-    role === "admin" && budgetData?.consulenti?.length ? budgetData.consulenti : (consulenti ?? [])
 
   const [q, setQ] = useState("")
   const needle = q.trim().toLowerCase()
@@ -78,44 +50,10 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          {role === "admin" && referralTutti ? (
-            <>
-              Tutti i venditori: clienti referral con presentatore e abbonamento utile iniziato nel mese selezionato
-              (importi pagato).
-            </>
-          ) : (
-            <>
-              Clienti “porta un amico” con socio presentatore impostato: solo abbonamenti utili iniziati nel mese (esclusi
-              tesseramenti/attivazioni), venduti da te; importi da pagato (ImportoPagato/Pagato/…).
-            </>
-          )}
+          Clienti con socio presentatore e abbonamento utile iniziato nel mese selezionato (esclusi tesseramenti/attivazioni).
+          Solo righe con importo pagato positivo (ImportoPagato/Pagato/…); nessun filtro sul venditore.
         </p>
       </div>
-
-      {role === "admin" ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <label className="text-sm text-zinc-400">
-            Consulente
-            <select
-              value={adminConsulente}
-              onChange={(e) => setAdminConsulente(e.target.value)}
-              className="mt-1 block w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 sm:w-72"
-            >
-              <option value={ADMIN_TUTTI}>Tutti i venditori</option>
-              {consulentiList.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          {query.data?.hint ? <p className="text-xs text-amber-400/90 sm:self-end">{query.data.hint}</p> : null}
-        </div>
-      ) : null}
-
-      {query.data?.hint && role !== "admin" ? (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">{query.data.hint}</p>
-      ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <input
@@ -135,26 +73,21 @@ export function Referral() {
               className="mt-1 block rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100"
             />
           </label>
-        <div className="text-right text-sm text-zinc-400">
-          <div>
-            Clienti referral:{" "}
-            <span className="font-medium text-zinc-100">{query.data?.totaleClienti ?? (query.data?.items?.length ?? 0)}</span>
-          </div>
-          <div>
-            Totale mese: <span className="font-medium text-zinc-100">{eur(query.data?.totaleEuro ?? 0)}</span>
-          </div>
-          {needle ? (
-            <div className="text-xs text-zinc-500">
-              Filtrati: {filtered.length} clienti · totale pagato mese{" "}
-              <span className="text-zinc-300">{eur(totaleFiltrato)}</span>
+          <div className="text-right text-sm text-zinc-400">
+            <div>
+              Clienti referral:{" "}
+              <span className="font-medium text-zinc-100">{query.data?.totaleClienti ?? (query.data?.items?.length ?? 0)}</span>
             </div>
-          ) : null}
-          {query.data?.tuttiIVenditori ? (
-            <div className="text-xs text-zinc-600">Vista: tutti i venditori</div>
-          ) : query.data?.venditoreIdsResolved?.length ? (
-            <div className="text-xs text-zinc-600">ID venditore (consulente): {query.data.venditoreIdsResolved.join(", ")}</div>
-          ) : null}
-        </div>
+            <div>
+              Totale mese: <span className="font-medium text-zinc-100">{eur(query.data?.totaleEuro ?? 0)}</span>
+            </div>
+            {needle ? (
+              <div className="text-xs text-zinc-500">
+                Filtrati: {filtered.length} clienti · totale pagato mese{" "}
+                <span className="text-zinc-300">{eur(totaleFiltrato)}</span>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
 
@@ -164,8 +97,8 @@ export function Referral() {
         <p className="text-sm text-red-400">{(query.error as Error).message}</p>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-zinc-500">
-          Nessun referral nel mese con i filtri attivi (presentatore, abbonamento utile iniziato nel mese, importo pagato
-          positivo, eventuale venditore), oppure SQL non disponibile.
+          Nessun referral nel mese con questi criteri (presentatore, abbonamento utile iniziato nel mese, importo pagato positivo),
+          oppure SQL non disponibile.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
