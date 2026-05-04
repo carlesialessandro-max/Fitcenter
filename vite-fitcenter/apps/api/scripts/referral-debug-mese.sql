@@ -1,184 +1,288 @@
 /*
-  Debug Referral FitCenter — confronto con GET /data/referral-presentati (admin «Tutti i venditori»).
+  Debug Referral FitCenter — confronto con GET /data/referral-presentati.
 
-  Imposta anno/mese qui sotto ed esegui in SSMS sul database gestionale.
+  Imposta parametri qui sotto. Lo script usa SQL dinamico: legge sys.columns sulla
+  tabella abbonamenti e costruisce COALESCE «pagato» + filtri esclusione solo per
+  colonne che esistono (niente errore 207 se mancano ImportoPagato, macro, ecc.).
+
   Tabella clienti default: dbo.Utenti | Abbonamenti: dbo.AbbonamentiIscrizione
-  Colonna presentatore default: IDPresentatore (override env: GESTIONALE_UTENTI_COL_ID_PRESENTATORE)
+  Override come in .env API: @SchemaAbb, @TblAbb, @TblUtenti, @ColPres
 */
 
 DECLARE @Anno INT = 2026;
 DECLARE @Mese INT = 5;
 
+DECLARE @SchemaAbb SYSNAME = N'dbo';
+DECLARE @TblAbb SYSNAME = N'AbbonamentiIscrizione';
+DECLARE @TblUtenti SYSNAME = N'Utenti';
+DECLARE @ColPres SYSNAME = N'IDPresentatore';
+
 DECLARE @Da DATE = DATEFROMPARTS(@Anno, @Mese, 1);
-DECLARE @Al DATE = DATEADD(MONTH, 1, @Da); /* fine esclusa, come nell’API */
+DECLARE @Al DATE = DATEADD(MONTH, 1, @Da);
 
-PRINT CONCAT(N'Periodo referral: da ', CONVERT(NVARCHAR(10), @Da, 120), N' a escluso ', CONVERT(NVARCHAR(10), @Al, 120));
+DECLARE @Oid INT = OBJECT_ID(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb));
+DECLARE @Ou  INT = OBJECT_ID(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti));
+
+IF @Oid IS NULL
+BEGIN
+  RAISERROR(N'Tabella abbonamenti non trovata: %s.%s', 16, 1, @SchemaAbb, @TblAbb);
+  RETURN;
+END
+
+IF @Ou IS NULL
+BEGIN
+  RAISERROR(N'Tabella utenti non trovata: %s.%s', 16, 1, @SchemaAbb, @TblUtenti);
+  RETURN;
+END
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti), @ColPres) IS NULL
+BEGIN
+  RAISERROR(N'Colonna presentatore assente su %s.%s : %s', 16, 1, @SchemaAbb, @TblUtenti, @ColPres);
+  RETURN;
+END
 
 /*-----------------------------------------------------------------------------
-  1) Quanti clienti hanno un presentatore (IDPresentatore valorizzato)?
+  Ordine priorità colonne «pagato» / totale riga (come API + fallback gestionale)
 -----------------------------------------------------------------------------*/
+DECLARE @PagatoPieces NVARCHAR(MAX);
+
+SELECT @PagatoPieces = STUFF(
+  (
+    SELECT N', x.' + QUOTENAME(col.name)
+    FROM
+      (VALUES
+        (1,  N'ImportoPagato'),
+        (2,  N'Pagato'),
+        (3,  N'Versato'),
+        (4,  N'Incassato'),
+        (5,  N'Acconto'),
+        (6,  N'Importo'),
+        (7,  N'Totale'),
+        (8,  N'AbbonamentiIscrizioneTotale'),
+        (9,  N'AbbonamentiIscrizionetotale'),
+        (10, N'IscrizioneTotale'),
+        (11, N'TotaleIscrizione'),
+        (12, N'TotaleAbbonamento')
+      ) AS pri(Ordine, ColName)
+      INNER JOIN sys.columns AS col
+        ON col.object_id = @Oid
+       AND col.name = pri.ColName
+    ORDER BY pri.Ordine
+    FOR XML PATH(N''), TYPE
+  ).value(N'.', N'NVARCHAR(MAX)'),
+  1,
+  2,
+  N''
+);
+
+DECLARE @PagatoExpr NVARCHAR(MAX) =
+  CASE
+    WHEN @PagatoPieces IS NULL OR LEN(@PagatoPieces) = 0 THEN N'CAST(0 AS FLOAT)'
+    ELSE N'COALESCE(' + @PagatoPieces + N', CAST(0 AS FLOAT))'
+  END;
+
+/*-----------------------------------------------------------------------------
+  Descrizione abbonamento in SELECT (solo colonne esistenti)
+-----------------------------------------------------------------------------*/
+DECLARE @AbbDescrExpr NVARCHAR(MAX) = N'CAST(N'''' AS NVARCHAR(400))';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'AbbonamentoDescrizione') IS NOT NULL
+  SET @AbbDescrExpr = N'ISNULL(CAST(x.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'''')';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'DescrizioneAbbonamento') IS NOT NULL
+  SET @AbbDescrExpr =
+    CASE @AbbDescrExpr
+      WHEN N'CAST(N'''' AS NVARCHAR(400))'
+        THEN N'ISNULL(CAST(x.[DescrizioneAbbonamento] AS NVARCHAR(400)), N'''')'
+      ELSE N'COALESCE(CAST(x.[AbbonamentoDescrizione] AS NVARCHAR(400)), CAST(x.[DescrizioneAbbonamento] AS NVARCHAR(400)), CAST(N'''' AS NVARCHAR(400)))'
+    END;
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'Descrizione') IS NOT NULL
+   AND COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'AbbonamentoDescrizione') IS NULL
+   AND COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'DescrizioneAbbonamento') IS NULL
+  SET @AbbDescrExpr = N'ISNULL(CAST(x.[Descrizione] AS NVARCHAR(400)), N'''')';
+
+/*-----------------------------------------------------------------------------
+  Esclusioni «full» (solo AND per colonne presenti). Se non c’è nessuna colonna
+  utile oltre IDCategoria/descrizione, equivale alla variante «min».
+-----------------------------------------------------------------------------*/
+DECLARE @ExFull NVARCHAR(MAX) = N'( 1 = 1';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'IDCategoria') IS NOT NULL
+  SET @ExFull += N' AND ISNULL(x.[IDCategoria], 0) <> 19';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'AbbonamentoDurataDescrizione') IS NOT NULL
+  SET @ExFull += N' AND UPPER(ISNULL(x.[AbbonamentoDurataDescrizione], N'''')) <> N''TESSERAMENTO GARE''';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'CategoriaAbbonamentoDescrizione') IS NOT NULL
+  SET @ExFull += N' AND UPPER(ISNULL(x.[CategoriaAbbonamentoDescrizione], N'''')) NOT LIKE N''%TESSERAMENTI%''';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'MacroCategoriaAbbonamentoDescrizione') IS NOT NULL
+BEGIN
+  SET @ExFull +=
+    N' AND UPPER(LTRIM(RTRIM(ISNULL(x.[MacroCategoriaAbbonamentoDescrizione], N'''')))) <> N''VARIE'''
+    + N' AND NOT (UPPER(ISNULL(x.[MacroCategoriaAbbonamentoDescrizione], N'''')) LIKE N''%ASI%'''
+    + N' AND UPPER(ISNULL(x.[MacroCategoriaAbbonamentoDescrizione], N'''')) LIKE N''%ISCRIZIONE%'')';
+END
+
+DECLARE @AbbDescPred NVARCHAR(MAX) = NULL;
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'AbbonamentoDescrizione') IS NOT NULL
+  SET @AbbDescPred = N'CAST(x.[AbbonamentoDescrizione] AS NVARCHAR(400))';
+ELSE IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'DescrizioneAbbonamento') IS NOT NULL
+  SET @AbbDescPred = N'CAST(x.[DescrizioneAbbonamento] AS NVARCHAR(400))';
+ELSE IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'Descrizione') IS NOT NULL
+  SET @AbbDescPred = N'CAST(x.[Descrizione] AS NVARCHAR(400))';
+
+IF @AbbDescPred IS NOT NULL
+BEGIN
+  SET @ExFull +=
+      N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) NOT LIKE N''%TESSERAMENTI%'''
+    + N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) NOT LIKE N''%ATTIVAZIONE%'''
+    + N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) NOT LIKE N''%PHON ATTIVA%'''
+    + N' AND NOT (UPPER(ISNULL(' + @AbbDescPred + N', N'''')) LIKE N''%ASI%'''
+    + N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) LIKE N''%ISC%'')';
+END
+
+SET @ExFull += N' )';
+
+/*-----------------------------------------------------------------------------
+  Variante «min» esclusioni (solo IDCategoria + testo piano se disponibile)
+-----------------------------------------------------------------------------*/
+DECLARE @ExMin NVARCHAR(MAX) = N'( 1 = 1';
+
+IF COL_LENGTH(QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb), N'IDCategoria') IS NOT NULL
+  SET @ExMin += N' AND ISNULL(x.[IDCategoria], 0) <> 19';
+
+IF @AbbDescPred IS NOT NULL
+BEGIN
+  SET @ExMin +=
+      N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) NOT LIKE N''%TESSERAMENTI%'''
+    + N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) NOT LIKE N''%ATTIVAZIONE%'''
+    + N' AND NOT (UPPER(ISNULL(' + @AbbDescPred + N', N'''')) LIKE N''%ASI%'''
+    + N' AND UPPER(ISNULL(' + @AbbDescPred + N', N'''')) LIKE N''%ISC%'')';
+END
+
+SET @ExMin += N' )';
+
+PRINT CONCAT(N'Periodo: ', CONVERT(NVARCHAR(10), @Da, 120), N' .. escluso ', CONVERT(NVARCHAR(10), @Al, 120));
+PRINT CONCAT(N'PagatoExpr: ', @PagatoExpr);
+
+/*-----------------------------------------------------------------------------
+  1) Clienti con presentatore
+-----------------------------------------------------------------------------*/
+DECLARE @Sql1 NVARCHAR(MAX) = N'
 SELECT COUNT(*) AS Utenti_con_presentatore
-FROM dbo.Utenti AS u
-WHERE u.IDPresentatore IS NOT NULL;
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
+WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL;';
+
+EXEC sys.sp_executesql @Sql1;
 
 /*-----------------------------------------------------------------------------
-  2) Righe abbonamento nel mese (qualsiasi cliente), senza altri filtri
+  2) Righe abbonamento nel mese (DataInizio nel range)
 -----------------------------------------------------------------------------*/
+DECLARE @Sql2 NVARCHAR(MAX) = N'
 SELECT COUNT(*) AS Righe_abbonamenti_nel_mese
-FROM dbo.AbbonamentiIscrizione AS x
-WHERE CAST(x.DataInizio AS DATE) >= @Da
-  AND CAST(x.DataInizio AS DATE) < @Al;
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+WHERE CAST(x.[DataInizio] AS DATE) >= @Da
+  AND CAST(x.[DataInizio] AS DATE) < @Al;';
+
+EXEC sys.sp_executesql @Sql2, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
 
 /*-----------------------------------------------------------------------------
-  3) Stesso mese ma solo ImportoPagato/Pagato/… > 0 (formula come API)
+  3) Stesso mese + importo «effettivo» > 0
 -----------------------------------------------------------------------------*/
-SELECT COUNT(*) AS Righe_nel_mese_con_importo_pagato_formula
-FROM dbo.AbbonamentiIscrizione AS x
-WHERE CAST(x.DataInizio AS DATE) >= @Da
-  AND CAST(x.DataInizio AS DATE) < @Al
-  AND COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) > 0;
+DECLARE @Sql3 NVARCHAR(MAX) = N'
+SELECT COUNT(*) AS Righe_nel_mese_con_importo_formula
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+WHERE CAST(x.[DataInizio] AS DATE) >= @Da
+  AND CAST(x.[DataInizio] AS DATE) < @Al
+  AND (' + @PagatoExpr + N') > 0;';
+
+EXEC sys.sp_executesql @Sql3, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
 
 /*-----------------------------------------------------------------------------
-  4) Clienti con presentatore che hanno ALMENO un abbonamento nel mese con formula > 0
-     (ancora SENZA esclusioni tesseramenti — se qui è 0 il problema è date/pagato)
+  4) Clienti con presentatore + almeno un abbonamento nel mese con pagato > 0
 -----------------------------------------------------------------------------*/
-SELECT COUNT(DISTINCT u.IDUtente) AS Clienti_presentatore_con_abb_mese_pagato
-FROM dbo.Utenti AS u
-WHERE u.IDPresentatore IS NOT NULL
+DECLARE @Sql4 NVARCHAR(MAX) = N'
+SELECT COUNT(DISTINCT u.[IDUtente]) AS Clienti_presentatore_con_abb_mese_pagato
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
+WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
   AND EXISTS (
     SELECT 1
-    FROM dbo.AbbonamentiIscrizione AS x
-    WHERE x.IDUtente = u.IDUtente
-      AND CAST(x.DataInizio AS DATE) >= @Da
-      AND CAST(x.DataInizio AS DATE) < @Al
-      AND COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) > 0
-  );
+    FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+    WHERE x.[IDUtente] = u.[IDUtente]
+      AND CAST(x.[DataInizio] AS DATE) >= @Da
+      AND CAST(x.[DataInizio] AS DATE) < @Al
+      AND (' + @PagatoExpr + N') > 0
+  );';
+
+EXEC sys.sp_executesql @Sql4, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
 
 /*-----------------------------------------------------------------------------
-  5) QUERY FINALE come API (esclusioni «full» — se fallisce per colonne mancanti,
-     usa il blocco 5b più sotto)
+  5) Lista finale — esclusioni «full» dinamiche
 -----------------------------------------------------------------------------*/
+DECLARE @PagatoXInner NVARCHAR(MAX) = @PagatoExpr;
+
+DECLARE @Sql5 NVARCHAR(MAX) = N'
 SELECT
-  u.IDUtente AS ClienteIDUtente,
-  u.Cognome AS ClienteCognome,
-  u.Nome AS ClienteNome,
-  u.Email,
-  u.IDPresentatore,
-  pres.Cognome AS PresentatoreCognome,
-  pres.Nome AS PresentatoreNome,
-  a.IDIscrizione AS ReferralIDIscrizione,
-  a.DataInizio AS ReferralDataInizio,
-  a.DataFine AS ReferralDataFine,
-  COALESCE(a.ImportoPagato, a.Pagato, a.Versato, a.Incassato, a.Acconto, a.Importo, a.Totale, 0) AS PagatoRiga,
-  t.TotaleMese AS TotalePagatoMese,
-  COALESCE(a.AbbonamentoDescrizione, a.DescrizioneAbbonamento, N'') AS DescAbbonamento
-FROM dbo.Utenti AS u
-LEFT JOIN dbo.Utenti AS pres ON pres.IDUtente = u.IDPresentatore
+  u.[IDUtente] AS ClienteIDUtente,
+  u.[Cognome] AS ClienteCognome,
+  u.[Nome] AS ClienteNome,
+  u.[Email],
+  u.' + QUOTENAME(@ColPres) + N' AS IDPresentatore,
+  pres.[Cognome] AS PresentatoreCognome,
+  pres.[Nome] AS PresentatoreNome,
+  a.[IDIscrizione] AS ReferralIDIscrizione,
+  a.[DataInizio] AS ReferralDataInizio,
+  a.[DataFine] AS ReferralDataFine,
+  a.[PagatoEff] AS PagatoRiga,
+  t.[TotaleMese] AS TotalePagatoMese,
+  a.[AbbDescrCombined] AS DescAbbonamento
+FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS u
+LEFT JOIN ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblUtenti) + N' AS pres ON pres.[IDUtente] = u.' + QUOTENAME(@ColPres) + N'
 OUTER APPLY (
-  SELECT SUM(COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0)) AS TotaleMese
-  FROM dbo.AbbonamentiIscrizione AS x
-  WHERE x.IDUtente = u.IDUtente
-    AND CAST(x.DataInizio AS DATE) >= @Da
-    AND CAST(x.DataInizio AS DATE) < @Al
-    AND COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) > 0
-    AND (
-      ISNULL(x.IDCategoria, 0) <> 19
-      AND UPPER(ISNULL(x.AbbonamentoDurataDescrizione, N'')) <> N'TESSERAMENTO GARE'
-      AND UPPER(ISNULL(x.CategoriaAbbonamentoDescrizione, N'')) NOT LIKE N'%TESSERAMENTI%'
-      AND UPPER(LTRIM(RTRIM(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')))) <> N'VARIE'
-      AND NOT (
-        UPPER(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')) LIKE N'%ASI%'
-        AND UPPER(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')) LIKE N'%ISCRIZIONE%'
-      )
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%TESSERAMENTI%'
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%ATTIVAZIONE%'
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%PHON ATTIVA%'
-      AND NOT (
-        UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) LIKE N'%ASI%'
-        AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) LIKE N'%ISC%'
-      )
-    )
+  SELECT SUM((' + @PagatoXInner + N')) AS TotaleMese
+  FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND CAST(x.[DataInizio] AS DATE) >= @Da
+    AND CAST(x.[DataInizio] AS DATE) < @Al
+    AND (' + @PagatoXInner + N') > 0
+    AND ' + @ExFull + N'
 ) AS t
 CROSS APPLY (
   SELECT TOP 1
-    x.IDIscrizione,
-    x.DataInizio,
-    x.DataFine,
-    x.ImportoPagato,
-    x.Pagato,
-    x.Importo,
-    x.Totale,
-    COALESCE(x.AbbonamentoDescrizione, x.DescrizioneAbbonamento, N'') AS AbbonamentoDescrizione
-  FROM dbo.AbbonamentiIscrizione AS x
-  WHERE x.IDUtente = u.IDUtente
-    AND CAST(x.DataInizio AS DATE) >= @Da
-    AND CAST(x.DataInizio AS DATE) < @Al
-    AND COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) > 0
-    AND (
-      ISNULL(x.IDCategoria, 0) <> 19
-      AND UPPER(ISNULL(x.AbbonamentoDurataDescrizione, N'')) <> N'TESSERAMENTO GARE'
-      AND UPPER(ISNULL(x.CategoriaAbbonamentoDescrizione, N'')) NOT LIKE N'%TESSERAMENTI%'
-      AND UPPER(LTRIM(RTRIM(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')))) <> N'VARIE'
-      AND NOT (
-        UPPER(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')) LIKE N'%ASI%'
-        AND UPPER(ISNULL(x.MacroCategoriaAbbonamentoDescrizione, N'')) LIKE N'%ISCRIZIONE%'
-      )
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%TESSERAMENTI%'
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%ATTIVAZIONE%'
-      AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) NOT LIKE N'%PHON ATTIVA%'
-      AND NOT (
-        UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) LIKE N'%ASI%'
-        AND UPPER(ISNULL(x.AbbonamentoDescrizione, N'')) LIKE N'%ISC%'
-      )
-    )
-  ORDER BY COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) DESC,
-           x.DataInizio DESC
+    x.[IDIscrizione],
+    x.[DataInizio],
+    x.[DataFine],
+    (' + @PagatoXInner + N') AS PagatoEff,
+    (' + @AbbDescrExpr + N') AS AbbDescrCombined
+  FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
+  WHERE x.[IDUtente] = u.[IDUtente]
+    AND CAST(x.[DataInizio] AS DATE) >= @Da
+    AND CAST(x.[DataInizio] AS DATE) < @Al
+    AND (' + @PagatoXInner + N') > 0
+    AND ' + @ExFull + N'
+  ORDER BY (' + @PagatoXInner + N') DESC, x.[DataInizio] DESC
 ) AS a
-WHERE u.IDPresentatore IS NOT NULL
-ORDER BY u.Cognome, u.Nome;
+WHERE u.' + QUOTENAME(@ColPres) + N' IS NOT NULL
+ORDER BY u.[Cognome], u.[Nome];';
 
-/*
------------------------------------------------------------------------------
-  5b) FALLBACK se la query 5 dà errore (colonne macro/categoria assenti):
-      stesse date e pagato, solo IDCategoria + AbbonamentoDescrizione
------------------------------------------------------------------------------
-SELECT
-  u.IDUtente,
-  u.Cognome,
-  u.Nome,
-  u.IDPresentatore,
-  a.IDIscrizione,
-  a.DataInizio,
-  COALESCE(a.ImportoPagato, a.Pagato, a.Importo, a.Totale, 0) AS PagatoRiga
-FROM dbo.Utenti AS u
-CROSS APPLY (
-  SELECT TOP 1 x.*
-  FROM dbo.AbbonamentiIscrizione AS x
-  WHERE x.IDUtente = u.IDUtente
-    AND CAST(x.DataInizio AS DATE) >= @Da
-    AND CAST(x.DataInizio AS DATE) < @Al
-    AND COALESCE(x.ImportoPagato, x.Pagato, x.Versato, x.Incassato, x.Acconto, x.Importo, x.Totale, 0) > 0
-    AND ISNULL(x.IDCategoria, 0) <> 19
-    AND UPPER(ISNULL(CAST(x.AbbonamentoDescrizione AS NVARCHAR(400)), N'')) NOT LIKE N'%TESSERAMENTI%'
-    AND UPPER(ISNULL(CAST(x.AbbonamentoDescrizione AS NVARCHAR(400)), N'')) NOT LIKE N'%ATTIVAZIONE%'
-    AND NOT (
-      UPPER(ISNULL(CAST(x.AbbonamentoDescrizione AS NVARCHAR(400)), N'')) LIKE N'%ASI%'
-      AND UPPER(ISNULL(CAST(x.AbbonamentoDescrizione AS NVARCHAR(400)), N'')) LIKE N'%ISC%'
-    )
-  ORDER BY COALESCE(x.ImportoPagato, x.Pagato, x.Importo, x.Totale, 0) DESC, x.DataInizio DESC
-) AS a
-WHERE u.IDPresentatore IS NOT NULL
-ORDER BY u.Cognome, u.Nome;
-*/
+EXEC sys.sp_executesql @Sql5, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
 
 /*-----------------------------------------------------------------------------
-  6) Opzionale — filtro consulente come nell’app quando NON è «Tutti»:
-     decommentare e impostare @IdVenditore (es. 336 Carmen)
------------------------------------------------------------------------------
-DECLARE @IdVenditore INT = 336;
-
-SELECT ...
--- aggiungere nella WHERE interna sugli x:
--- AND x.IDVenditore = @IdVenditore
--- (oppure Abbonanditore se usate quella colonna)
+  6) Stesso elenco con esclusioni «min» (se il 5 svuota tutto per filtro testo)
 -----------------------------------------------------------------------------*/
+PRINT N'--- Ripetizione query lista con esclusioni MIN ---';
+
+DECLARE @Sql6 NVARCHAR(MAX) = REPLACE(@Sql5, @ExFull, @ExMin);
+
+EXEC sys.sp_executesql @Sql6, N'@Da DATE, @Al DATE', @Da = @Da, @Al = @Al;
+
+/*-----------------------------------------------------------------------------
+  7) Opzionale — colonne reali sulla tabella abbonamenti (copia/incolla nomi)
+-----------------------------------------------------------------------------*/
+SELECT c.name AS ColumnName, t.name AS TypeName
+FROM sys.columns AS c
+JOIN sys.types AS t ON c.user_type_id = t.user_type_id
+WHERE c.object_id = @Oid
+ORDER BY c.column_id;

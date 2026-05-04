@@ -640,7 +640,8 @@ function referralPresenterColumn(): string {
 /** Priorità come nelle altre liste vendita/Danza: pagato effettivo, poi fallback listino. */
 function sqlReferralImportoPagatoExpr(alias: string): string {
   const x = alias
-  return `COALESCE(${x}.[ImportoPagato], ${x}.[Pagato], ${x}.[Versato], ${x}.[Incassato], ${x}.[Acconto], ${x}.[Importo], ${x}.[Totale], 0)`
+  /** Allineato a pick colonne «totale iscrizione» in map-sql / colonne frequenti su gestionali diversi. */
+  return `COALESCE(${x}.[ImportoPagato], ${x}.[Pagato], ${x}.[Versato], ${x}.[Incassato], ${x}.[Acconto], ${x}.[Importo], ${x}.[Totale], ${x}.[AbbonamentiIscrizioneTotale], ${x}.[AbbonamentiIscrizionetotale], ${x}.[IscrizioneTotale], ${x}.[TotaleIscrizione], ${x}.[TotaleAbbonamento], 0)`
 }
 
 /** Esclude tesseramenti / attivazioni (allineato a map-sql `isTesseramentoRow`). */
