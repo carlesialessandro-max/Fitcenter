@@ -23,7 +23,8 @@ export type ReferralPresentatiItem = {
   abbonamento: string | null
   dataInizioAbb: string | null
   dataFineAbb: string | null
-  importoAbbonamento: number
+  /** Importo pagato (ImportoPagato/Pagato/…), non solo listino. */
+  importoPagato: number
   /** Totale acquistato nel mese selezionato (somma importi abbonamenti venduti dalla consulente). */
   totaleMese: number
 }

@@ -637,6 +637,48 @@ function referralPresenterColumn(): string {
   return col || "IDPresentatore"
 }
 
+/** Priorità come nelle altre liste vendita/Danza: pagato effettivo, poi fallback listino. */
+function sqlReferralImportoPagatoExpr(alias: string): string {
+  const x = alias
+  return `COALESCE(${x}.[ImportoPagato], ${x}.[Pagato], ${x}.[Versato], ${x}.[Incassato], ${x}.[Acconto], ${x}.[Importo], ${x}.[Totale], 0)`
+}
+
+/** Esclude tesseramenti / attivazioni (allineato a map-sql `isTesseramentoRow`). */
+function sqlReferralEscludiNonAbbonamenti(alias: string): string {
+  const x = alias
+  return `(
+    ISNULL(${x}.[IDCategoria], 0) <> 19
+    AND UPPER(ISNULL(${x}.[AbbonamentoDurataDescrizione], N'')) <> N'TESSERAMENTO GARE'
+    AND UPPER(ISNULL(${x}.[CategoriaAbbonamentoDescrizione], N'')) NOT LIKE N'%TESSERAMENTI%'
+    AND UPPER(LTRIM(RTRIM(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')))) <> N'VARIE'
+    AND NOT (
+      UPPER(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')) LIKE N'%ASI%'
+      AND UPPER(ISNULL(${x}.[MacroCategoriaAbbonamentoDescrizione], N'')) LIKE N'%ISCRIZIONE%'
+    )
+    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%TESSERAMENTI%'
+    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%ATTIVAZIONE%'
+    AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) NOT LIKE N'%PHON ATTIVA%'
+    AND NOT (
+      UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) LIKE N'%ASI%'
+      AND UPPER(ISNULL(${x}.[AbbonamentoDescrizione], N'')) LIKE N'%ISC%'
+    )
+  )`
+}
+
+/** Fallback se la tabella non espone categorie/macro (solo IDCategoria + descrizione piano). */
+function sqlReferralEscludiNonAbbonamentiMin(alias: string): string {
+  const x = alias
+  return `(
+    ISNULL(${x}.[IDCategoria], 0) <> 19
+    AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) NOT LIKE N'%TESSERAMENTI%'
+    AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) NOT LIKE N'%ATTIVAZIONE%'
+    AND NOT (
+      UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) LIKE N'%ASI%'
+      AND UPPER(ISNULL(CAST(${x}.[AbbonamentoDescrizione] AS NVARCHAR(400)), N'')) LIKE N'%ISC%'
+    )
+  )`
+}
+
 /**
  * Referral “porta un amico”: clienti con IDPresentatore valorizzato (presentati da un altro utente socio),
  * il cui abbonamento venduto dalla consulente è uno di quelli con ID venditore negli ID indicati.
@@ -669,7 +711,19 @@ export async function queryReferralPresentati(
   const envCol = process.env.GESTIONALE_ABBONAMENTI_COL_VENDITORE?.trim()
   if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
 
-  const sqlRich = (vendCol: string) => `
+  const pag = (alias: string) => sqlReferralImportoPagatoExpr(alias)
+  const abbMonthWhere = (alias: string, vendCol: string, excludeSql: string) => {
+    const x = alias
+    return `
+    ${x}.[IDUtente] = u.[IDUtente]
+    AND ${x}.[${vendCol}] IN (${params})
+    AND CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
+    AND (${pag(x)}) > 0
+    AND ${excludeSql}`
+  }
+
+  const sqlRichFull = (vendCol: string, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -683,38 +737,31 @@ SELECT
   a.[IDIscrizione] AS ReferralIDIscrizione,
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
-  COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
+  a.[PagatoEff] AS ReferralImportoPagato,
   COALESCE(a.[AbbDescrCombined], CAST(N'' AS NVARCHAR(400))) AS ReferralAbbDescrizione,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
-  SELECT COALESCE(SUM(COALESCE(x.[Importo], x.[Totale], 0)), 0) AS TotaleMese
+  SELECT COALESCE(SUM(${pag("x")}), 0) AS TotaleMese
   FROM [${tblA}] x
-  WHERE x.[IDUtente] = u.[IDUtente]
-    AND x.[${vendCol}] IN (${params})
-    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
 ) t
 CROSS APPLY (
   SELECT TOP 1
     x.[IDIscrizione],
     x.[DataInizio],
     x.[DataFine],
-    x.[Importo],
-    x.[Totale],
+    ${pag("x")} AS PagatoEff,
     COALESCE(x.[AbbonamentoDescrizione], x.[DescrizioneAbbonamento], CAST(N'' AS NVARCHAR(400))) AS AbbDescrCombined
   FROM [${tblA}] x
-  WHERE x.[IDUtente] = u.[IDUtente]
-    AND x.[${vendCol}] IN (${params})
-    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
-  ORDER BY x.[DataInizio] DESC
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
+  ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
-  const sqlMinimal = (vendCol: string) => `
+  const sqlMinimal = (vendCol: string, excludeSql: string) => `
 SELECT
   u.[IDUtente] AS ClienteIDUtente,
   u.[Cognome] AS ClienteCognome,
@@ -728,46 +775,42 @@ SELECT
   a.[IDIscrizione] AS ReferralIDIscrizione,
   a.[DataInizio] AS ReferralDataInizio,
   a.[DataFine] AS ReferralDataFine,
-  COALESCE(a.[Importo], a.[Totale], 0) AS ReferralImportoAbb,
+  a.[PagatoEff] AS ReferralImportoPagato,
   CAST(N'' AS NVARCHAR(400)) AS ReferralAbbDescrizione,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
 OUTER APPLY (
-  SELECT COALESCE(SUM(COALESCE(x.[Importo], x.[Totale], 0)), 0) AS TotaleMese
+  SELECT COALESCE(SUM(${pag("x")}), 0) AS TotaleMese
   FROM [${tblA}] x
-  WHERE x.[IDUtente] = u.[IDUtente]
-    AND x.[${vendCol}] IN (${params})
-    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
 ) t
 CROSS APPLY (
   SELECT TOP 1
     x.[IDIscrizione],
     x.[DataInizio],
     x.[DataFine],
-    x.[Importo],
-    x.[Totale]
+    ${pag("x")} AS PagatoEff
   FROM [${tblA}] x
-  WHERE x.[IDUtente] = u.[IDUtente]
-    AND x.[${vendCol}] IN (${params})
-    AND CAST(x.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(x.[DataInizio] AS DATE) < CAST(@to AS DATE)
-  ORDER BY x.[DataInizio] DESC
+  WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
+  ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
 ORDER BY u.[Cognome], u.[Nome]`
 
+  const variants: { sql: (v: string, ex: string) => string; exclude: string }[] = [
+    { sql: sqlRichFull, exclude: sqlReferralEscludiNonAbbonamenti("x") },
+    { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamenti("x") },
+    { sql: sqlMinimal, exclude: sqlReferralEscludiNonAbbonamentiMin("x") },
+  ]
+
   for (const vendCol of colsToTry) {
-    try {
-      const r = await mkReq().query(sqlRich(vendCol))
-      return (r.recordset ?? []) as Record<string, unknown>[]
-    } catch {
+    for (const { sql: buildSql, exclude } of variants) {
       try {
-        const r = await mkReq().query(sqlMinimal(vendCol))
+        const r = await mkReq().query(buildSql(vendCol, exclude))
         return (r.recordset ?? []) as Record<string, unknown>[]
       } catch {
-        // prova colonna venditore successiva
+        // prova variante successiva
       }
     }
   }

@@ -55,7 +55,7 @@ export function Referral() {
   }, [query.data, needle])
 
   const totaleFiltrato = useMemo(
-    () => Math.round(filtered.reduce((s, x) => s + x.importoAbbonamento, 0) * 100) / 100,
+    () => Math.round(filtered.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100,
     [filtered]
   )
 
@@ -64,8 +64,8 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Clienti “porta un amico” con socio presentatore impostato, il cui abbonamento risulta venduto da te (come nelle altre liste
-          vendite). Il totale usa l’ultimo contratto che matcha il venditore.
+          Clienti “porta un amico” con socio presentatore impostato: solo abbonamenti utili iniziati nel mese (esclusi
+          tesseramenti/attivazioni), venduti da te; importi da pagato (ImportoPagato/Pagato/…).
         </p>
       </div>
 
@@ -136,7 +136,7 @@ export function Referral() {
         <p className="text-sm text-zinc-500">
           {role === "admin" && !adminConsulente.trim()
             ? "Seleziona una consulente per vedere i referral."
-            : "Nessun referral per la consulente selezionata: servono cliente con ID presentatore valorizzato e almeno un abbonamento con il tuo ID venditore, oppure SQL non disponibile."}
+            : "Nessun referral nel mese: servono cliente con presentatore, abbonamento utile iniziato nel mese, importo pagato > 0, venduto da te (ID venditore), oppure SQL non disponibile."}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
@@ -148,8 +148,8 @@ export function Referral() {
                 <th className="px-3 py-2 font-medium">Contatti</th>
                 <th className="px-3 py-2 font-medium">Abbonamento</th>
                 <th className="px-3 py-2 font-medium">Inizio / fine</th>
-                <th className="px-3 py-2 text-right font-medium">Totale mese</th>
-                <th className="px-3 py-2 text-right font-medium">Importo</th>
+                <th className="px-3 py-2 text-right font-medium">Totale pagato (mese)</th>
+                <th className="px-3 py-2 text-right font-medium">Pagato (riga)</th>
               </tr>
             </thead>
             <tbody>
@@ -183,7 +183,7 @@ export function Referral() {
                     {fmtDateIt(it.dataInizioAbb)} → {fmtDateIt(it.dataFineAbb)}
                   </td>
                   <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-200">{eur(it.totaleMese)}</td>
-                  <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-200">{eur(it.importoAbbonamento)}</td>
+                  <td className="px-3 py-2 text-right font-medium tabular-nums text-zinc-200">{eur(it.importoPagato)}</td>
                 </tr>
               ))}
             </tbody>
