@@ -59,7 +59,16 @@ type DanzaCategoria = {
   daPagareEuro: number
   microcategorie: DanzaMicro[]
 }
-type DanzaResponse = { asOf: string; categorie: DanzaCategoria[] }
+type DanzaTotali = { totaleIscritti: number; totaleEuro: number; pagatoEuro: number; daPagareEuro: number }
+type DanzaResponse = {
+  asOf: string
+  /** Totali su TUTTE le categorie (abbonamenti attivi oggi). */
+  totaliGenerali: DanzaTotali
+  /** Breakdown totali per categoria su TUTTE le categorie. */
+  categorieGenerali: Array<{ categoria: string } & DanzaTotali>
+  /** Dettaglio danza (drilldown). */
+  categorie: DanzaCategoria[]
+}
 
 export function Danza() {
   const { role } = useAuth()
@@ -93,6 +102,16 @@ export function Danza() {
       }))
       .filter((c) => c.microcategorie.length > 0)
   }, [query.data, needle])
+
+  const totDanza = useMemo(() => {
+    const cats = query.data?.categorie ?? []
+    return {
+      totaleIscritti: cats.reduce((s, c) => s + (c.totaleIscritti || 0), 0),
+      totaleEuro: cats.reduce((s, c) => s + (c.totaleEuro || 0), 0),
+      pagatoEuro: cats.reduce((s, c) => s + (c.pagatoEuro || 0), 0),
+      daPagareEuro: cats.reduce((s, c) => s + (c.daPagareEuro || 0), 0),
+    }
+  }, [query.data])
 
   if (role !== "admin" && role !== "danza") {
     return (
@@ -134,6 +153,37 @@ export function Danza() {
           <p className="text-sm text-zinc-500">Nessun abbonamento attivo trovato.</p>
         ) : (
           <div className="space-y-3">
+            {/* Totali in cima, nello stesso stile delle card */}
+            <div className="rounded-xl border border-zinc-800 bg-zinc-950/20">
+              <div className="px-4 py-3">
+                <div className="truncate text-sm font-semibold text-zinc-200">Totali generali</div>
+                <div className="mt-0.5 text-xs text-zinc-500">
+                  Iscritti: <span className="text-zinc-200">{query.data?.totaliGenerali?.totaleIscritti ?? "—"}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Totale: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.totaleEuro ?? 0)}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Pagato: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.pagatoEuro ?? 0)}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Da pagare: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.daPagareEuro ?? 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-amber-500/20 bg-zinc-950/20">
+              <div className="px-4 py-3">
+                <div className="truncate text-sm font-semibold text-amber-200">Totali Danza</div>
+                <div className="mt-0.5 text-xs text-zinc-500">
+                  Iscritti: <span className="text-zinc-200">{totDanza.totaleIscritti}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Totale: <span className="text-zinc-200">{eur(totDanza.totaleEuro)}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Pagato: <span className="text-zinc-200">{eur(totDanza.pagatoEuro)}</span>
+                  <span className="mx-2 text-zinc-700">·</span>
+                  Da pagare: <span className="text-zinc-200">{eur(totDanza.daPagareEuro)}</span>
+                </div>
+              </div>
+            </div>
+
             {filtered.map((c) => {
               const isOpen = openCat === c.categoria
               return (

@@ -885,7 +885,8 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
     }
 
     let minDataInizioIso: string | null = null
-    const items: DanzaItem[] = []
+    const itemsAll: DanzaItem[] = []
+    const itemsDanza: DanzaItem[] = []
     const rateAggByIscrizione = new Map<string, { paid: number; due: number }>()
     const cassaPaidByIscrizione = new Map<string, number>()
     const totaleByIscrizione = new Map<string, number>()
@@ -894,7 +895,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       const di = String(a.dataInizio ?? "").slice(0, 10)
       const df = String(a.dataFine ?? "").slice(0, 10)
       if (!di || !df || di > todayIso || df < todayIso) continue
-      if (!isDanzaRow(row, a)) continue
+      const isDanza = isDanzaRow(row, a)
       if (!minDataInizioIso || di < minDataInizioIso) minDataInizioIso = di
 
       // Rate: preferiamo questa fonte se disponibile (Data Rata / Data Pagato / Abbonamenti Pagamenti Importo).
@@ -1024,7 +1025,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         String(row.AbbonamentoDurataDescrizione ?? row.AbbonamentoDescrizione ?? a.abbonamentoDescrizione ?? a.pianoNome ?? "").trim() ||
         "—"
 
-      items.push({
+      const it: DanzaItem = {
         idIscrizione: String(a.id ?? row["ID Iscrizione"] ?? row.IDIscrizione ?? "").trim() || String(row.IDIscrizione ?? ""),
         clienteId: String(a.clienteId ?? row.IDUtente ?? "").trim() || String(row.IDUtente ?? ""),
         clienteNome: String(a.clienteNome ?? "").trim() || "—",
@@ -1039,13 +1040,15 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         totale,
         pagato,
         daPagare,
-      })
+      }
+      itemsAll.push(it)
+      if (isDanza) itemsDanza.push(it)
     }
 
     // Se abbiamo rate per IDIscrizione, sono la fonte più affidabile.
     // pagato = somma rate con DataPagato valorizzata
     // daPagare = somma rate senza DataPagato
-    for (const it of items) {
+    for (const it of itemsAll) {
       const agg = rateAggByIscrizione.get(it.idIscrizione)
       if (!agg) continue
       const sum = (Number(agg.paid) || 0) + (Number(agg.due) || 0)
@@ -1058,7 +1061,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
 
     // Override finale (regola richiesta): pagato = CassaMovimentiImporto, totale = Totale, daPagare = Totale - pagato.
     // Se la view espone questi campi, sono la fonte di verità.
-    for (const it of items) {
+    for (const it of itemsAll) {
       if (!totaleByIscrizione.has(it.idIscrizione) && !cassaPaidByIscrizione.has(it.idIscrizione)) continue
       const tot = totaleByIscrizione.get(it.idIscrizione) ?? it.totale ?? 0
       const paid = cassaPaidByIscrizione.get(it.idIscrizione) ?? 0
@@ -1149,7 +1152,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
     }
 
     const byCategoria = new Map<string, DanzaItem[]>()
-    for (const it of items) {
+    for (const it of itemsDanza) {
       const arr = byCategoria.get(it.categoria) ?? []
       arr.push(it)
       byCategoria.set(it.categoria, arr)
@@ -1184,7 +1187,30 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       })
       .sort((a, b) => b.totaleIscritti - a.totaleIscritti || a.categoria.localeCompare(b.categoria))
 
-    res.json({ asOf: todayIso, categorie })
+    const byCategoriaAll = new Map<string, DanzaItem[]>()
+    for (const it of itemsAll) {
+      const arr = byCategoriaAll.get(it.categoria) ?? []
+      arr.push(it)
+      byCategoriaAll.set(it.categoria, arr)
+    }
+    const categorieGenerali = Array.from(byCategoriaAll.entries())
+      .map(([categoria, catItems]) => ({
+        categoria,
+        totaleIscritti: catItems.length,
+        totaleEuro: catItems.reduce((s, x) => s + (x.totale || 0), 0),
+        pagatoEuro: catItems.reduce((s, x) => s + (x.pagato || 0), 0),
+        daPagareEuro: catItems.reduce((s, x) => s + (x.daPagare || 0), 0),
+      }))
+      .sort((a, b) => b.totaleIscritti - a.totaleIscritti || a.categoria.localeCompare(b.categoria))
+
+    const totaliGenerali = {
+      totaleIscritti: itemsAll.length,
+      totaleEuro: itemsAll.reduce((s, x) => s + (x.totale || 0), 0),
+      pagatoEuro: itemsAll.reduce((s, x) => s + (x.pagato || 0), 0),
+      daPagareEuro: itemsAll.reduce((s, x) => s + (x.daPagare || 0), 0),
+    }
+
+    res.json({ asOf: todayIso, totaliGenerali, categorieGenerali, categorie })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
