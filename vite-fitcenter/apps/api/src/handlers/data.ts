@@ -1084,10 +1084,10 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         const tot = Number((r as any)?.Totale ?? (r as any)?.totale ?? 0) || 0
         paidByIscrizione.set(id, tot)
       }
-      const hasAnyMatch = items.some((it) => paidByIscrizione.has(it.idIscrizione))
+      const hasAnyMatch = itemsAll.some((it) => paidByIscrizione.has(it.idIscrizione))
 
       if (hasAnyMatch) {
-        for (const it of items) {
+        for (const it of itemsAll) {
           const paid = paidByIscrizione.get(it.idIscrizione) ?? 0
           it.pagato = Math.max(0, paid)
           it.daPagare = Math.max(0, (it.totale ?? 0) - it.pagato)
@@ -1095,7 +1095,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
       } else {
         // Fallback robusto: attribuzione per cliente usando i movimenti nel range dell'abbonamento attivo.
         // Caso tipico: RVW_CassaMovimentiUtenti non espone/valorizza IDIscrizione.
-        const clienteIds = [...new Set(items.map((it) => it.clienteId).filter(Boolean))]
+        const clienteIds = [...new Set(itemsAll.map((it) => it.clienteId).filter(Boolean))].map(String)
         const movs = await gestionaleSql.queryCassaMovimentiLiteByClienteIds({
           from: minDataInizioIso,
           to: todayIso,
@@ -1118,7 +1118,7 @@ export async function getDanzaAttiviOggi(req: Request, res: Response) {
         // Per ogni cliente: distribuisce i movimenti sugli abbonamenti attivi (ordinati per inizio),
         // rispettando il range date dell'abbonamento e senza superare il totale.
         const itemsByCliente = new Map<string, DanzaItem[]>()
-        for (const it of items) {
+        for (const it of itemsAll) {
           const arr = itemsByCliente.get(it.clienteId) ?? []
           arr.push(it)
           itemsByCliente.set(it.clienteId, arr)
