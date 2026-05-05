@@ -103,15 +103,15 @@ export function Danza() {
       .filter((c) => c.microcategorie.length > 0)
   }, [query.data, needle])
 
-  const totDanza = useMemo(() => {
-    const cats = query.data?.categorie ?? []
+  const totVisible = useMemo(() => {
+    const cats = filtered ?? []
     return {
       totaleIscritti: cats.reduce((s, c) => s + (c.totaleIscritti || 0), 0),
       totaleEuro: cats.reduce((s, c) => s + (c.totaleEuro || 0), 0),
       pagatoEuro: cats.reduce((s, c) => s + (c.pagatoEuro || 0), 0),
       daPagareEuro: cats.reduce((s, c) => s + (c.daPagareEuro || 0), 0),
     }
-  }, [query.data])
+  }, [filtered])
 
   if (role !== "admin" && role !== "danza") {
     return (
@@ -158,28 +158,13 @@ export function Danza() {
               <div className="px-4 py-3">
                 <div className="truncate text-sm font-semibold text-zinc-200">Totali generali</div>
                 <div className="mt-0.5 text-xs text-zinc-500">
-                  Iscritti: <span className="text-zinc-200">{query.data?.totaliGenerali?.totaleIscritti ?? "—"}</span>
+                  Iscritti: <span className="text-zinc-200">{totVisible.totaleIscritti}</span>
                   <span className="mx-2 text-zinc-700">·</span>
-                  Totale: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.totaleEuro ?? 0)}</span>
+                  Totale: <span className="text-zinc-200">{eur(totVisible.totaleEuro)}</span>
                   <span className="mx-2 text-zinc-700">·</span>
-                  Pagato: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.pagatoEuro ?? 0)}</span>
+                  Pagato: <span className="text-zinc-200">{eur(totVisible.pagatoEuro)}</span>
                   <span className="mx-2 text-zinc-700">·</span>
-                  Da pagare: <span className="text-zinc-200">{eur(query.data?.totaliGenerali?.daPagareEuro ?? 0)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-amber-500/20 bg-zinc-950/20">
-              <div className="px-4 py-3">
-                <div className="truncate text-sm font-semibold text-amber-200">Totali Danza</div>
-                <div className="mt-0.5 text-xs text-zinc-500">
-                  Iscritti: <span className="text-zinc-200">{totDanza.totaleIscritti}</span>
-                  <span className="mx-2 text-zinc-700">·</span>
-                  Totale: <span className="text-zinc-200">{eur(totDanza.totaleEuro)}</span>
-                  <span className="mx-2 text-zinc-700">·</span>
-                  Pagato: <span className="text-zinc-200">{eur(totDanza.pagatoEuro)}</span>
-                  <span className="mx-2 text-zinc-700">·</span>
-                  Da pagare: <span className="text-zinc-200">{eur(totDanza.daPagareEuro)}</span>
+                  Da pagare: <span className="text-zinc-200">{eur(totVisible.daPagareEuro)}</span>
                 </div>
               </div>
             </div>
