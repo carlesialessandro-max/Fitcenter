@@ -34,7 +34,7 @@ const SOURCES: LeadSource[] = ["website", "facebook", "google", "tour_spontaneo"
 
 export function LeadList() {
   const queryClient = useQueryClient()
-  const { role } = useAuth()
+  const { role, user, leadFilter } = useAuth()
   const [search, setSearch] = useState("")
   const [fonte, setFonte] = useState<LeadSource | "">("")
   const [consulente, setConsulente] = useState("")
@@ -54,7 +54,8 @@ export function LeadList() {
   })
 
   const { data: allLeads = [], isLoading, error } = useQuery({
-    queryKey: ["data", "leads"],
+    // Include session scope: evita che cambiando utente si riusi cache di un'altra ACL (bambini/adulti).
+    queryKey: ["data", "leads", user?.username ?? "", leadFilter ?? ""],
     queryFn: () => dataApi.getLeads(),
   })
 
