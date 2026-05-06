@@ -2173,9 +2173,14 @@ function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string): string {
   return `(${orM})`
 }
 
-function movimentoTipoOperazioneVendita(): string {
+function movimentoTipoOperazioneVenditaList(): string[] {
+  // Supporta lista separata da virgola, es. "I,U" per includere anche movimenti di update/cross.
   const raw = (process.env.GESTIONALE_MOVIMENTI_TIPO_OPERAZIONE_VENDITA ?? "I").trim()
-  return /^[A-Za-z0-9_]+$/.test(raw) ? raw : "I"
+  const parts = raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => /^[A-Za-z0-9_]+$/.test(s))
+  return parts.length ? parts : ["I"]
 }
 function movimentoTipoServizioVendita(): string | null {
   const raw = (process.env.GESTIONALE_MOVIMENTI_TIPO_SERVIZIO_VENDITA ?? "").trim()
@@ -2185,9 +2190,12 @@ function movimentoTipoServizioVendita(): string | null {
 
 /** Stessi filtri TipoOperazione (e opz. TipoServizio) usati in Temp_Stampe per il report per iscrizione. */
 function sqlWhereTipoOperazioneMovimentoVendita(alias: string): string {
-  const tipoOp = movimentoTipoOperazioneVendita()
+  const tipoOps = movimentoTipoOperazioneVenditaList()
   const tipoServ = movimentoTipoServizioVendita()
-  let s = ` AND ${alias}.[TipoOperazione] = '${tipoOp.replace(/'/g, "''")}'`
+  let s =
+    tipoOps.length === 1
+      ? ` AND ${alias}.[TipoOperazione] = '${tipoOps[0]!.replace(/'/g, "''")}'`
+      : ` AND ${alias}.[TipoOperazione] IN (${tipoOps.map((t) => `'${t.replace(/'/g, "''")}'`).join(", ")})`
   if (tipoServ) s += ` AND ${alias}.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'`
   return s
 }
@@ -2286,9 +2294,7 @@ function sqlTotaleReportPerIscrizione(args: {
       : `CAST(${col} AS DATE)`
   // Replica report: Temp_Stampe = IDIscrizione con movimento nel periodo (da MovimentiVenduto),
   // poi somma Totale dalla view una volta per iscrizione (MAX per sicurezza).
-  const tipoOp = movimentoTipoOperazioneVendita()
-  const tipoServ = movimentoTipoServizioVendita()
-  const whereTipo = `AND M.[TipoOperazione] = '${tipoOp.replace(/'/g, "''")}'` + (tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : "")
+  const whereTipo = sqlWhereTipoOperazioneMovimentoVendita("M")
   return `;WITH Temp_Stampe AS (
     SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
     FROM [${args.tblMov}] M
@@ -2746,7 +2752,7 @@ export async function getVenditeMovimentiCategoriaDurata(
       WHERE M.[${COL_IMPORTO}] > 0
         AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
         AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
-        AND M.[TipoOperazione] = '${movimentoTipoOperazioneVendita().replace(/'/g, "''")}'
+        ${sqlWhereTipoOperazioneMovimentoVendita("M")}
     `
 
     // Distribuzione come report: una volta per iscrizione (Totale view), non per movimento.
