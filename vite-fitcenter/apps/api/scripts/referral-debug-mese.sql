@@ -10,7 +10,7 @@
   (GESTIONALE_UTENTI_COL_DATA_PRESENTAZIONE, default DataPresentazione).
 
   Query [8–9]: come l’API quando esiste DataPresentazione — il mese selezionato filtra quella data;
-  gli abbonamenti utili non sono più filtrati per DataInizio nel mese.
+  i totali/abbonamento mostrato restano filtrati sul mese (DataInizio nel mese).
   Per aprile 2026: @Anno = 2026, @Mese = 4.
 
   SSMS — errore 137 «Dichiarare @Anno / @Da»:
@@ -311,6 +311,8 @@ OUTER APPLY (
   SELECT SUM((' + @PagatoXInner + N')) AS TotaleMese
   FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
   WHERE x.[IDUtente] = u.[IDUtente]
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
     AND (' + @PagatoXInner + N') > 0
     AND ' + @ExFull + N'
 ) AS t
@@ -323,6 +325,8 @@ CROSS APPLY (
     (' + @AbbDescrExpr + N') AS AbbDescrCombined
   FROM ' + QUOTENAME(@SchemaAbb) + N'.' + QUOTENAME(@TblAbb) + N' AS x
   WHERE x.[IDUtente] = u.[IDUtente]
+    AND CAST(x.[DataInizio] AS DATE) >= CAST(N''' + @DaLit + N''' AS DATE)
+    AND CAST(x.[DataInizio] AS DATE) < CAST(N''' + @AlLit + N''' AS DATE)
     AND (' + @PagatoXInner + N') > 0
     AND ' + @ExFull + N'
   ORDER BY (' + @PagatoXInner + N') DESC, x.[DataInizio] DESC

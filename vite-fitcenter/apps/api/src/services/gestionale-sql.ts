@@ -738,6 +738,8 @@ function sqlReferralExcludeFullDynamic(alias: string, cols: Set<string>): string
     const p = `CAST(${bracketSqlAliasColumn(x, pred)} AS NVARCHAR(400))`
     chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%TESSERAMENTI%'`)
     chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%ATTIVAZIONE%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%PROVA%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%INVITO%'`)
     chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%PHON ATTIVA%'`)
     chunks.push(`NOT (UPPER(ISNULL(${p}, N'')) LIKE N'%ASI%' AND UPPER(ISNULL(${p}, N'')) LIKE N'%ISC%')`)
   }
@@ -755,6 +757,8 @@ function sqlReferralExcludeMinDynamic(alias: string, cols: Set<string>): string 
     const p = `CAST(${bracketSqlAliasColumn(x, pred)} AS NVARCHAR(400))`
     chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%TESSERAMENTI%'`)
     chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%ATTIVAZIONE%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%PROVA%'`)
+    chunks.push(`UPPER(ISNULL(${p}, N'')) NOT LIKE N'%INVITO%'`)
     chunks.push(`NOT (UPPER(ISNULL(${p}, N'')) LIKE N'%ASI%' AND UPPER(ISNULL(${p}, N'')) LIKE N'%ISC%')`)
   }
   return `(${chunks.join(" AND ")})`
@@ -826,10 +830,10 @@ export async function queryReferralPresentati(
     const x = alias
     const vendLine =
       vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
-    const abbInCalendarMonth =
-      usePresentationMonth
-        ? ""
-        : `CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
+    // Importante: anche quando il mese lista clienti è su DataPresentazione,
+    // i totali e l'abbonamento mostrato devono riferirsi AL MESE selezionato.
+    // Usiamo DataInizio come proxy "riga nel mese" (come prima).
+    const abbInCalendarMonth = `CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
     AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
     AND `
     return `
