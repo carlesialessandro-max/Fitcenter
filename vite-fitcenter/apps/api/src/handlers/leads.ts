@@ -100,12 +100,55 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     else if (blob.includes("website") || blob.includes("sito")) fonteRaw = "website"
   }
   if (fonteRaw && VALID_FONTE_ZAPIER.includes(fonteRaw as LeadSource)) fonte = fonteRaw as LeadSource
-  const interesseRaw = pick(["interesse", "Interesse", "interest"]) || (body.interesse != null ? unwrap(body.interesse) : "")
+  const tipologiaRaw =
+    pick([
+      "tipologia",
+      "Tipologia",
+      "tipologiaRichiesta",
+      "TipologiaRichiesta",
+      "tipologia_di_richiesta",
+      "Tipologia di richiesta",
+      "requestType",
+      "RequestType",
+      "tipoRichiesta",
+      "TipoRichiesta",
+      "tipo",
+      "Tipo",
+    ]) || ""
+
+  const interesseRaw =
+    pick(["interesse", "Interesse", "interest", "Interest"]) ||
+    (body.interesse != null ? unwrap(body.interesse) : "") ||
+    tipologiaRaw
   const interesseValido = interesseRaw && VALID_INTERESSE.includes(interesseRaw as InteresseLead) ? (interesseRaw as InteresseLead) : undefined
   const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw.trim() : undefined
-  const note = body.note != null ? String(body.note) : undefined
-  const categoriaRaw = pick(["categoria", "Categoria", "tipo", "Tipo", "canale"])?.toLowerCase()
-  const categoria = categoriaRaw === "bambini" ? ("bambini" as const) : undefined
+
+  const oggetto =
+    pick(["oggetto", "Oggetto", "subject", "Subject", "titolo", "Titolo"]) ||
+    pick(["Oggetto richiesta", "OggettoRichiesta"]) ||
+    ""
+  const messaggio =
+    pick(["messaggio", "Messaggio", "message", "Message", "testo", "Testo", "body", "Body", "descrizione", "Descrizione"]) ||
+    ""
+
+  // Default: se arriva dal form sito (tipologia/oggetto/messaggio) e non è specificata fonte, consideriamolo "website".
+  if (!fonteRaw && (tipologiaRaw || oggetto || messaggio)) fonte = "website"
+
+  const noteParts: string[] = []
+  if (tipologiaRaw) noteParts.push(`Tipologia: ${tipologiaRaw}`)
+  if (oggetto) noteParts.push(`Oggetto: ${oggetto}`)
+  if (messaggio) noteParts.push(messaggio)
+  const note =
+    (body.note != null ? String(body.note) : "") ||
+    (noteParts.length ? noteParts.join("\n") : "")
+  const noteOut = note.trim() ? note.trim() : undefined
+
+  const categoriaRaw = (pick(["categoria", "Categoria", "canale", "Canale"]) || "").toLowerCase()
+  const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw}`.toLowerCase()
+  const categoria =
+    categoriaRaw === "bambini" || /\b(bambin|campus|scuola\s*nuoto|acquatic)\b/i.test(blobCat)
+      ? ("bambini" as const)
+      : undefined
   return {
     nome: nome || "—",
     cognome: cognome || "—",
@@ -116,7 +159,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     interesse: interesseValido,
     interesseDettaglio: interesseDettaglio || undefined,
     categoria,
-    note,
+    note: noteOut,
   }
 }
 
@@ -170,6 +213,10 @@ export async function webhookZapier(req: Request, res: Response) {
       const payload = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {}
       const leadPayload = normalizeZapierBody(payload)
       const lead = store.create(leadPayload)
+      // Routing bambini: assegna automaticamente a Irene (username/ID logico).
+      if ((leadPayload.categoria ?? "generale") === "bambini") {
+        store.update(lead.id, { consulenteNome: "Irene", consulenteId: "irene" } as any)
+      }
       created.push(lead)
     }
     res.status(201).json({ created: created.length, leads: created })

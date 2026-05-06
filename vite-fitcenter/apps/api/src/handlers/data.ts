@@ -1585,8 +1585,14 @@ export async function getTotaliAnni(req: Request, res: Response) {
 export async function getLeadsFromGestionale(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
-    const filters: { categoria?: "bambini" } = {}
-    if (u?.leadFilter === "bambini") filters.categoria = "bambini"
+    const filters: { categoria?: "bambini" | "generale" } = {}
+    // ACL:
+    // - admin: vede tutto
+    // - Irene (leadFilter=bambini): vede solo bambini
+    // - altri: non devono vedere i bambini
+    if (u?.role !== "admin") {
+      filters.categoria = u?.leadFilter === "bambini" ? "bambini" : "generale"
+    }
     res.json(leadsStore.list(filters))
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
