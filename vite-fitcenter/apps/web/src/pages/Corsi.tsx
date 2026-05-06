@@ -19,8 +19,13 @@ function monthRangeFromDay(dayIso: string): { from: string; to: string; monthKey
   const mo = Number(m[2]) // 1..12
   const from = `${m[1]}-${m[2]}-01`
   const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate() // day 0 of next month = last day of current month
-  const to = `${m[1]}-${m[2]}-${String(lastDay).padStart(2, "0")}`
-  return { from, to, monthKey: `${m[1]}-${m[2]}` }
+  const endOfMonth = `${m[1]}-${m[2]}-${String(lastDay).padStart(2, "0")}`
+  const monthKey = `${m[1]}-${m[2]}`
+  // No-show (assenze mese): non considerare prenotazioni future.
+  // Se il mese selezionato è quello corrente, il range termina a oggi.
+  const today = isoToday()
+  const to = monthKey === today.slice(0, 7) ? (today < endOfMonth ? today : endOfMonth) : endOfMonth
+  return { from, to, monthKey }
 }
 
 function fmtDateIt(iso: string): string {
