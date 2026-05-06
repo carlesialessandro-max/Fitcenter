@@ -969,7 +969,7 @@ export async function queryMovimentiVendutoSumByIscrizione(from: string, to: str
     const r = await req.query(
       `SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
        FROM [${tbl}] M
-       WHERE M.[${COL_IMPORTO}] > 0
+       WHERE M.[${COL_IMPORTO}] <> 0
          AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
          AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
          ${tipoWhere}
@@ -2298,7 +2298,7 @@ function sqlTotaleReportPerIscrizione(args: {
   return `;WITH Temp_Stampe AS (
     SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
     FROM [${args.tblMov}] M
-    WHERE M.[${COL_IMPORTO}] > 0
+    WHERE M.[${COL_IMPORTO}] <> 0
       AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(${args.fromParam} AS DATE)
       AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(${args.toParam} AS DATE)
       ${whereTipo}
@@ -2465,7 +2465,7 @@ async function queryVenditeSum(
       const r = await req.query(
         `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
          FROM [${tbl}] M
-         WHERE M.[${COL_IMPORTO}] > 0
+         WHERE M.[${COL_IMPORTO}] <> 0
            AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
            AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
            ${tipoWhere}
@@ -2490,9 +2490,10 @@ async function queryVenditeSum(
       giorno != null ? ` AND DAY([${COL_DATA}]) = @giorno` : progressivoGiorno != null ? ` AND DAY([${COL_DATA}]) <= @progressivoGiorno` : ""
     const where =
       (consultantCol && idConsultant ? `[${consultantCol}] = @id AND ` : "") +
-      `[${COL_IMPORTO}] > 0 AND YEAR([${COL_DATA}]) = @anno AND MONTH([${COL_DATA}]) = @mese` +
+      `M.[${COL_IMPORTO}] <> 0 AND YEAR(M.[${COL_DATA}]) = @anno AND MONTH(M.[${COL_DATA}]) = @mese` +
       dayCondition
-    const r = await req.query(`SELECT SUM([${COL_IMPORTO}]) AS Totale FROM [${tbl}] WHERE ${where}`)
+    const whereWithTipo = where + sqlWhereTipoOperazioneMovimentoVendita("M")
+    const r = await req.query(`SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale FROM [${tbl}] M WHERE ${whereWithTipo}`)
     const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
     return Number(row?.Totale ?? row?.totale) || 0
   }
@@ -2504,7 +2505,7 @@ async function queryVenditeSum(
   for (const col of colsToTry) {
     try {
       const sum = await runQuery(col)
-      if (sum > 0) return sum
+      if (sum !== 0) return sum
     } catch {
       // skip
     }
@@ -2589,7 +2590,7 @@ export async function getVenditePerMeseAnno(
       const r = await req.query(
         `SELECT MONTH(M.[${COL_DATA}]) AS Mese, SUM(M.[${COL_IMPORTO}]) AS Totale
          FROM [${tbl}] M
-         WHERE M.[${COL_IMPORTO}] > 0 AND YEAR(M.[${COL_DATA}]) = @anno AND ${matchCons}
+         WHERE M.[${COL_IMPORTO}] <> 0 AND YEAR(M.[${COL_DATA}]) = @anno AND ${matchCons}
          GROUP BY MONTH(M.[${COL_DATA}]) ORDER BY Mese`
       )
       return mapRows((r.recordset ?? []) as Record<string, unknown>[])
@@ -2667,7 +2668,7 @@ export async function getVenditeTotaliPerAnno(
         const r = await req.query(
           `SELECT YEAR(M.[${COL_DATA}]) AS Anno, SUM(M.[${COL_IMPORTO}]) AS Totale
            FROM [${tbl}] M
-           WHERE M.[${COL_IMPORTO}] > 0
+           WHERE M.[${COL_IMPORTO}] <> 0
            GROUP BY YEAR(M.[${COL_DATA}])
            ORDER BY Anno`
         )
@@ -2679,7 +2680,7 @@ export async function getVenditeTotaliPerAnno(
       const r = await req.query(
         `SELECT YEAR(M.[${COL_DATA}]) AS Anno, SUM(M.[${COL_IMPORTO}]) AS Totale
          FROM [${tbl}] M
-         WHERE M.[${COL_IMPORTO}] > 0 AND ${matchCons}
+         WHERE M.[${COL_IMPORTO}] <> 0 AND ${matchCons}
          GROUP BY YEAR(M.[${COL_DATA}])
          ORDER BY Anno`
       )
@@ -2749,7 +2750,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         : `CAST(${col} AS DATE)`
 
     const whereBase = `
-      WHERE M.[${COL_IMPORTO}] > 0
+      WHERE M.[${COL_IMPORTO}] <> 0
         AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
         AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
         ${sqlWhereTipoOperazioneMovimentoVendita("M")}
@@ -2937,7 +2938,7 @@ export async function getVenditeTotaleRangeView(
     const r = await req.query(
       `SELECT COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
        FROM [${tblM}] M
-       WHERE M.[${COL_IMPORTO}] > 0
+       WHERE M.[${COL_IMPORTO}] <> 0
          AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
          AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
          AND ${matchCons}`
@@ -2977,7 +2978,7 @@ export async function getReportConteggiAndamento(
     ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
 
     const whereBase = `
-      WHERE M.[${COL_IMPORTO}] > 0
+      WHERE M.[${COL_IMPORTO}] <> 0
         AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
         AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
     `
