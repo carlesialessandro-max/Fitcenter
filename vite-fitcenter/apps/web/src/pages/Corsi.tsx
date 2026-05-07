@@ -1841,9 +1841,12 @@ export function CorsiNoShow() {
     if (!rangeQ.data || !accessiRangeQ.data) return []
     const all = rangeQ.data?.rows ?? []
     const counts = new Map<string, NoShowRow>()
+    const nowMs = Date.now()
     for (const p of all) {
       if (p.inAttesa) continue
       const w = getLessonWindow(p, (p.giorno ?? "").trim())
+      // No-show (assenze mese): non contare lezioni future (anche se nello stesso giorno).
+      if (w.start && w.start.getTime() > nowMs) continue
       const day = w.start ? isoDayUtc(w.start) : ""
       if (!day) continue
       const key = participantStableKey(p, 0)
@@ -1904,11 +1907,14 @@ export function CorsiNoShow() {
     if (!selected) return []
     const all = rangeQ.data?.rows ?? []
     const out: { day: string; servizio: string; oraInizio?: string; oraFine?: string }[] = []
+    const nowMs = Date.now()
     for (const p of all) {
       if (p.inAttesa) continue
       const key = participantStableKey(p, 0)
       if (key !== selected.key) continue
       const w = getLessonWindow(p)
+      // Non mostrare/contare lezioni future (anche se oggi più tardi).
+      if (w.start && w.start.getTime() > nowMs) continue
       const day = w.start ? isoDayUtc(w.start) : ""
       if (!day) continue
       const gk = groupKeyForRow(p)
