@@ -216,7 +216,11 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const noteOut = note.trim() ? note.trim() : undefined
 
   const categoriaRaw = (pick(["categoria", "Categoria", "canale", "Canale"]) || "").toLowerCase()
-  const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw}`.toLowerCase()
+  const flatBlob = Object.entries(flat)
+    .map(([k, v]) => `${k}=${v}`)
+    .join("\n")
+    .toLowerCase()
+  const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw} ${oggetto} ${messaggio} ${noteOut ?? ""} ${flatBlob}`.toLowerCase()
   const categoria =
     categoriaRaw === "bambini" || /\b(bambin|campus|scuola\s*nuoto|acquatic)\b/i.test(blobCat)
       ? ("bambini" as const)
