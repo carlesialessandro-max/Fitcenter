@@ -2338,6 +2338,112 @@ function sqlMovimentoAttribuitoConsulente(
 }
 
 /**
+ * Delta cross (upgrade/modifica abbonamento) attribuito al consulente.
+ *
+ * Dati osservati:
+ * - AppLog: "ABBONAMENTI MODIFICA: ..." con "(IDIscrizione = NNN)."
+ * - MovimentiVenduto: righe TipoOperazione='U' (TipoServizio='A') con importi +/-.
+ *   Il valore corretto da conteggiare nel venduto è la differenza: max(importo>0) + min(importo<0)
+ *   nella finestra vicino al log, una sola volta per IDIscrizione.
+ *
+ * Nota: usiamo la view venditore per attribuire l'iscrizione al consulente (evita dipendenze su NomeOperatore del log).
+ */
+async function queryVenditeCrossDeltaSum(args: {
+  p: sql.ConnectionPool
+  viewCfg: { view: string; colId: string; colJoin: string }
+  ids: number[] | null // null = tutti
+  fromIso: string // YYYY-MM-DD
+  toIso: string // YYYY-MM-DD
+}): Promise<number> {
+  const { p, viewCfg, ids, fromIso, toIso } = args
+  const tblMov = defaultTables.movimentiVenduto
+  const tblLog = "AppLog"
+
+  const tipoServ = movimentoTipoServizioVendita()
+  const tipoServWhere = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
+
+  const idParams = ids ? ids.map((_, i) => `@id${i}`).join(", ") : ""
+  const idWhereR = ids
+    ? ids.length === 1
+      ? `R.[${viewCfg.colId}] = @id0`
+      : `R.[${viewCfg.colId}] IN (${idParams})`
+    : "1=1"
+
+  // Finestra di correlazione: stessa usata nel debug SQL (± 5 minuti).
+  // Per limitare scansioni, restringiamo MovimentiVenduto al range globale esteso (± 10 minuti).
+  const q = `
+    ;WITH LogsRaw AS (
+      SELECT
+        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
+        TRY_CONVERT(int,
+          LTRIM(RTRIM(
+            SUBSTRING(
+              L.[Descrizione],
+              CHARINDEX('IDIscrizione =', L.[Descrizione]) + LEN('IDIscrizione ='),
+              CHARINDEX(')', L.[Descrizione], CHARINDEX('IDIscrizione =', L.[Descrizione])) -
+              (CHARINDEX('IDIscrizione =', L.[Descrizione]) + LEN('IDIscrizione ='))
+            )
+          ))
+        ) AS IDIscrizione
+      FROM [${tblLog}] L
+      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
+        AND L.[Descrizione] LIKE N'ABBONAMENTI MODIFICA:%'
+        AND L.[Descrizione] LIKE N'%(IDIscrizione = %'
+    ),
+    Logs AS (
+      SELECT IDIscrizione, MAX(LogData) AS LogData
+      FROM LogsRaw
+      WHERE IDIscrizione IS NOT NULL
+      GROUP BY IDIscrizione
+    ),
+    Target AS (
+      SELECT L.IDIscrizione, L.LogData
+      FROM Logs L
+      INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = L.IDIscrizione
+      WHERE ${idWhereR}
+        ${whereEsclusioniVenditeView("R")}
+        ${whereExcludeUispTesseramenti("R")}
+    ),
+    Mov AS (
+      SELECT
+        M.[${COL_ISCRIZIONE}] AS IDIscrizione,
+        CAST(M.[${COL_DATA}] AS DATETIME) AS DataMov,
+        TRY_CONVERT(float, M.[${COL_IMPORTO}]) AS Importo
+      FROM [${tblMov}] M
+      WHERE CAST(M.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -10, CAST(@from AS DATETIME))
+        AND CAST(M.[${COL_DATA}] AS DATETIME) <= DATEADD(minute,  10, DATEADD(second, 86399, CAST(@to AS DATETIME)))
+        AND M.[TipoOperazione] = 'U'
+        ${tipoServWhere}
+    ),
+    PerIscrizione AS (
+      SELECT
+        T.IDIscrizione,
+        MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
+        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg
+      FROM Target T
+      INNER JOIN Mov V
+        ON V.IDIscrizione = T.IDIscrizione
+       AND V.DataMov >= DATEADD(minute, -5, T.LogData)
+       AND V.DataMov <= DATEADD(minute,  5, T.LogData)
+      GROUP BY T.IDIscrizione
+    )
+    SELECT COALESCE(SUM(COALESCE(Pos,0) + COALESCE(Neg,0)), 0) AS TotaleCross
+    FROM PerIscrizione;
+  `
+
+  let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+  if (ids) {
+    ids.forEach((id, i) => {
+      req = req.input(`id${i}`, sql.Int, id)
+    })
+  }
+  const r = await req.query(q)
+  const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+  return Number(row?.TotaleCross ?? row?.totalecross) || 0
+}
+
+/**
  * Totale vendite: con view venditore si usa **SUM(M.Importo)** su MovimentiVenduto join view (stesso criterio
  * del gestionale: una riga = un movimento). La vecchia logica MAX(R.Totale) per IDIscrizione sottostimava
  * quando ci sono più movimenti sulla stessa iscrizione (merchandising, ecc.). Senza view: SUM(M.Importo).
@@ -2390,7 +2496,21 @@ async function queryVenditeSum(
           })
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-        return Number(row?.Totale ?? row?.totale) || 0
+        const base = Number(row?.Totale ?? row?.totale) || 0
+        const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
+        if (!includeCross) return base
+        try {
+          const cross = await queryVenditeCrossDeltaSum({
+            p,
+            viewCfg: { view, colId, colJoin },
+            ids,
+            fromIso: dataStr,
+            toIso: dataStr,
+          })
+          return base + cross
+        } catch {
+          return base
+        }
       }
 
       const ultimoGiorno = new Date(anno, mese, 0).getDate()
@@ -2422,7 +2542,21 @@ async function queryVenditeSum(
         })
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-      return Number(row?.Totale ?? row?.totale) || 0
+      const base = Number(row?.Totale ?? row?.totale) || 0
+      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
+      if (!includeCross) return base
+      try {
+        const cross = await queryVenditeCrossDeltaSum({
+          p,
+          viewCfg: { view, colId, colJoin },
+          ids,
+          fromIso: dataInizioStr,
+          toIso: dataFineEffettiva,
+        })
+        return base + cross
+      } catch {
+        return base
+      }
     } catch {
       return 0
     }
