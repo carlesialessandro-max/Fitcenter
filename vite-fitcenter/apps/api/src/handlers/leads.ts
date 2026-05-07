@@ -48,11 +48,45 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     }
     return ""
   }
+  const flatten = (root: unknown, maxDepth = 4): Record<string, string> => {
+    const out: Record<string, string> = {}
+    const visit = (v: unknown, path: string, depth: number) => {
+      if (depth > maxDepth) return
+      if (v == null) return
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+        const s = String(v).trim()
+        if (s) out[path] = s
+        return
+      }
+      if (Array.isArray(v)) {
+        v.slice(0, 50).forEach((item, i) => visit(item, `${path}[${i}]`, depth + 1))
+        return
+      }
+      if (typeof v === "object") {
+        const o = v as Record<string, unknown>
+        // Pattern Zapier comune: { key/name/label: "...", value: "..." }
+        const key = unwrap(o.key ?? o.name ?? o.label ?? "").trim()
+        const val = unwrap(o.value ?? o.text ?? o.val ?? "").trim()
+        if (key && val) out[key] = val
+        for (const [k, vv] of Object.entries(o)) {
+          visit(vv, path ? `${path}.${k}` : k, depth + 1)
+        }
+      }
+    }
+    visit(root, "", 0)
+    return out
+  }
+  const flat = flatten(body)
   const pick = (keys: string[]): string => {
     for (const k of keys) {
       if (body[k] != null) {
         const s = unwrap(body[k]).trim()
         if (s) return s
+      }
+      // match su chiave "flat" (case-insensitive, tollera spazi)
+      const target = k.toLowerCase().trim()
+      for (const [fk, fv] of Object.entries(flat)) {
+        if (fk.toLowerCase().trim() === target) return fv.trim()
       }
     }
     return ""
@@ -74,6 +108,40 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     return { nome, cognome, email, telefono }
   }
 
+  const parseFromLabeledText = (
+    raw: string
+  ): { nome?: string; cognome?: string; email?: string; telefono?: string; tipologia?: string; messaggio?: string; oggetto?: string } => {
+    const s = String(raw ?? "").trim()
+    if (!s) return {}
+    const lines = s
+      .split(/\r?\n/)
+      .map((x) => x.trim())
+      .filter(Boolean)
+    if (lines.length < 2) return {}
+    const take = (label: string): string => {
+      const re = new RegExp(`^${label}\\s*:\\s*(.+)$`, "i")
+      for (const ln of lines) {
+        const m = re.exec(ln)
+        if (m?.[1]) return m[1].trim()
+      }
+      return ""
+    }
+    const nomeFull = take("Nome")
+    const tipologia = take("Tipologia") || take("Interesse")
+    const email = take("Email")
+    const telefono = take("Telefono") || take("Cellulare")
+    const messaggio = take("Messaggio")
+    const oggetto = take("Oggetto")
+    let nome: string | undefined
+    let cognome: string | undefined
+    if (nomeFull) {
+      const parts = nomeFull.split(/\s+/).filter(Boolean)
+      nome = parts[0]
+      cognome = parts.slice(1).join(" ") || undefined
+    }
+    return { nome, cognome, email, telefono, tipologia, messaggio, oggetto }
+  }
+
   const nomePick = pick(["nome", "Nome", "first_name", "firstName", "FirstName", "name", "Name", "given_name", "givenName"])
   const cognomePick = pick(["cognome", "Cognome", "last_name", "lastName", "LastName", "surname", "Surname", "family_name", "familyName"])
   const emailPick = pick(["email", "Email", "e_mail", "mail", "Mail", "email_address", "emailAddress"])
@@ -84,11 +152,12 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     (nomePick && nomePick.includes(",") ? nomePick : "") ||
     pick(["raw", "Raw", "lead", "Lead", "contatto", "Contatto", "payload", "Payload", "message", "Message", "text", "Text"])
   const parsed = parseFromRawString(rawCandidate)
+  const labeled = parseFromLabeledText(rawCandidate)
 
-  const nome = nomePick || parsed.nome || ""
-  const cognome = cognomePick || parsed.cognome || ""
-  const email = emailPick || parsed.email || ""
-  const telefono = telefonoPick || parsed.telefono || ""
+  const nome = nomePick || labeled.nome || parsed.nome || ""
+  const cognome = cognomePick || labeled.cognome || parsed.cognome || ""
+  const email = emailPick || labeled.email || parsed.email || ""
+  const telefono = telefonoPick || labeled.telefono || parsed.telefono || ""
   let fonte: LeadSource = "zapier"
   let fonteRaw = pick(["fonte", "Fonte", "source", "Source", "campaign_source", "origin"]).trim().toLowerCase()
   if (fonteRaw === "sito web" || fonteRaw === "sito") fonteRaw = "website"
@@ -119,6 +188,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const interesseRaw =
     pick(["interesse", "Interesse", "interest", "Interest"]) ||
     (body.interesse != null ? unwrap(body.interesse) : "") ||
+    labeled.tipologia ||
     tipologiaRaw
   const interesseValido = interesseRaw && VALID_INTERESSE.includes(interesseRaw as InteresseLead) ? (interesseRaw as InteresseLead) : undefined
   const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw.trim() : undefined
@@ -126,9 +196,11 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const oggetto =
     pick(["oggetto", "Oggetto", "subject", "Subject", "titolo", "Titolo"]) ||
     pick(["Oggetto richiesta", "OggettoRichiesta"]) ||
+    labeled.oggetto ||
     ""
   const messaggio =
     pick(["messaggio", "Messaggio", "message", "Message", "testo", "Testo", "body", "Body", "descrizione", "Descrizione"]) ||
+    labeled.messaggio ||
     ""
 
   // Default: se arriva dal form sito (tipologia/oggetto/messaggio) e non è specificata fonte, consideriamolo "website".
