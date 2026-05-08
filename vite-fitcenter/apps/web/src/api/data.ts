@@ -118,6 +118,7 @@ export const dataApi = {
         note: string
         totaleVenduto: number
         totalePagato: number
+        totaleDaPagare?: number
         weekNotes: Record<string, { note?: string; gruppo?: string }>
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
       }[]
