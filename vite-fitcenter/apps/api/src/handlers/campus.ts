@@ -124,6 +124,17 @@ export async function getCampus(req: Request, res: Response) {
       })
       .filter(isCampusAbb)
       .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
+    // Totale contrattuale dalla view pagamenti (RVW_AbbonamentiPagamentiUtenti): serve per acconti + rate.
+    const totVendutoByIscrizione = new Map<string, number>()
+    if (gestionaleSql.isGestionaleConfigured() && campusAbbonamenti.length > 0) {
+      const ids = campusAbbonamenti.map((a) => a.id).filter(Boolean)
+      const totRows = await gestionaleSql.queryAbbonamentiPagamentiTotaleCassaByIscrizione(ids)
+      for (const r of totRows) {
+        const id = String((r as any).IDIscrizione ?? (r as any).idIscrizione ?? "").trim()
+        const tot = Number((r as any).Totale ?? (r as any).totale ?? 0) || 0
+        if (id && tot > 0) totVendutoByIscrizione.set(id, tot)
+      }
+    }
 
     const byCliente = new Map<
       string,
@@ -172,7 +183,9 @@ export async function getCampus(req: Request, res: Response) {
         settimane: weeks,
         prezzo: a.prezzo,
       })
-      entry.totaleVenduto += a.prezzo || 0
+            // Venduto: usa totale contrattuale (se presente), altrimenti fallback al prezzo riga.
+      const vendutoEff = totVendutoByIscrizione.get(a.id) ?? a.prezzo ?? 0
+      entry.totaleVenduto += vendutoEff || 0
       entry.totalePagato += pagatoByIscrizione.get(a.id) ?? 0
       byCliente.set(a.clienteId, entry)
     }
@@ -277,6 +290,17 @@ export async function importCampusPlanningExcel(req: Request, res: Response) {
       .map((r) => rowToAbbonamento(r))
       .filter(isCampusAbb)
       .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
+    // Totale contrattuale dalla view pagamenti (RVW_AbbonamentiPagamentiUtenti): serve per acconti + rate.
+    const totVendutoByIscrizione = new Map<string, number>()
+    if (gestionaleSql.isGestionaleConfigured() && campusAbbonamenti.length > 0) {
+      const ids = campusAbbonamenti.map((a) => a.id).filter(Boolean)
+      const totRows = await gestionaleSql.queryAbbonamentiPagamentiTotaleCassaByIscrizione(ids)
+      for (const r of totRows) {
+        const id = String((r as any).IDIscrizione ?? (r as any).idIscrizione ?? "").trim()
+        const tot = Number((r as any).Totale ?? (r as any).totale ?? 0) || 0
+        if (id && tot > 0) totVendutoByIscrizione.set(id, tot)
+      }
+    }
     const nameToClienteId = new Map<string, string>()
     campusAbbonamenti.forEach((a) => {
       const k = normNameKey(a.clienteNome)

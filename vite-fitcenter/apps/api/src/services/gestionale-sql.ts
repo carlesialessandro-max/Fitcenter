@@ -1073,7 +1073,63 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
   }
 }
 
-/** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
+function getAbbonamentiPagamentiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_ABBONAMENTI_PAGAMENTI ?? "RVW_AbbonamentiPagamentiUtenti").trim()
+  if (!raw) return "RVW_AbbonamentiPagamentiUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_AbbonamentiPagamentiUtenti"
+  return raw
+}
+/**
+ * Totale contrattuale (Totale/Importo/Prezzo) e pagato in cassa (CassaMovimentiImporto) per IDIscrizione.
+ * Usato quando il "Totale" dell'abbonamento non coincide con quanto già pagato (es. acconto + resto in rate).
+ */
+export async function queryAbbonamentiPagamentiTotaleCassaByIscrizione(
+  iscrizioneIds: string[]
+): Promise<Record<string, unknown>[]> {
+  const ids = (iscrizioneIds ?? []).map(String).map((s) => s.trim()).filter(Boolean)
+  if (ids.length === 0) return []
+  const p = await getPool()
+  if (!p) return []
+  const view = getAbbonamentiPagamentiViewName()
+  const { query: vq } = qualifySqlObject(view)
+  try {
+    const colsLower = await prenGetCols(view)
+    const idCol =
+      pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "ID Iscrizione", "AbbonamentiIDIscrizione"]) ??
+      pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
+      null
+    const totaleCol =
+      pickBestNumberCol(colsLower, ["Totale", "Importo", "Prezzo", "Ammontare"]) ??
+      pickBestTextCol(colsLower, ["Totale", "Importo", "Prezzo", "Ammontare"]) ??
+      null
+    const cassaCol =
+      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Cassa Movimenti Importo", "Cassamovimentiimporto", "CassaImporto"]) ??
+      pickBestTextCol(colsLower, ["CassaMovimentiImporto", "Cassa Movimenti Importo", "Cassamovimentiimporto", "CassaImporto"]) ??
+      null
+    if (!idCol || (!totaleCol && !cassaCol)) return []
+    const req = p.request()
+    const params = ids.slice(0, 1500).map((id, i) => {
+      req.input(`id${i}`, sql.VarChar(64), id)
+      return `@id${i}`
+    })
+    const inList = params.join(", ")
+    const idExpr = `CAST(${bracketCol(idCol)} AS NVARCHAR(64))`
+    const totExpr = totaleCol ? `MAX(TRY_CONVERT(float, ${bracketCol(totaleCol)}))` : "NULL"
+    const casExpr = cassaCol ? `MAX(TRY_CONVERT(float, ${bracketCol(cassaCol)}))` : "NULL"
+    const r = await req.query(
+      `SELECT ${idExpr} AS IDIscrizione,
+              COALESCE(${totExpr}, 0) AS Totale,
+              COALESCE(${casExpr}, 0) AS CassaMovimentiImporto
+       FROM ${vq}
+       WHERE ${idExpr} IN (${inList})
+       GROUP BY ${idExpr}
+       ORDER BY ${idExpr};`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}/** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
 export async function queryCassaMovimentiSumByClienteId(from: string, to: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
