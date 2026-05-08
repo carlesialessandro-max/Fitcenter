@@ -95,7 +95,10 @@ function pickFirstNonEmpty(row: Record<string, unknown>, keys: string[]): string
 export async function getCampus(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
-    if (u.role !== "admin" && u.role !== "campus") return res.status(403).json({ message: "Permessi insufficienti" })
+    // Reception (operatore) deve poter consultare il Campus in lettura.
+    if (u.role !== "admin" && u.role !== "campus" && u.role !== "operatore") {
+      return res.status(403).json({ message: "Permessi insufficienti" })
+    }
 
     const rangeFrom = String(req.query.from ?? DEFAULT_RANGE_FROM).trim() || DEFAULT_RANGE_FROM
     const rangeTo = String(req.query.to ?? DEFAULT_RANGE_TO).trim() || DEFAULT_RANGE_TO
@@ -189,6 +192,7 @@ export async function getCampus(req: Request, res: Response) {
         const saved = campusStore.get(c.clienteId)
         return {
           ...c,
+          totaleDaPagare: Math.max(0, Number(c.totaleVenduto ?? 0) - Number(c.totalePagato ?? 0)),
           cognomeNome: c.clienteNome,
           eta: c.clienteEta,
           email: c.email,

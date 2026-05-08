@@ -238,7 +238,7 @@ function CampusWeeksGrouped(props: {
 export function Campus() {
   const { role } = useAuth()
   const queryClient = useQueryClient()
-  if (role !== "admin" && role !== "campus") return <Navigate to="/" replace />
+  if (role !== "admin" && role !== "campus" && role !== "operatore") return <Navigate to="/" replace />
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["campus"],
@@ -302,7 +302,8 @@ export function Campus() {
       })
     const totVend = list.reduce((s, b) => s + Number(b.totaleVenduto ?? 0), 0)
     const totPag = list.reduce((s, b) => s + Number(b.totalePagato ?? 0), 0)
-    return { count: list.length, venduto: totVend, pagato: totPag }
+    const totDue = list.reduce((s, b) => s + Number(b.totaleDaPagare ?? Math.max(0, Number(b.totaleVenduto ?? 0) - Number(b.totalePagato ?? 0))), 0)
+    return { count: list.length, venduto: totVend, pagato: totPag, daPagare: totDue }
   }, [filtered, groupFilter, tab, weekKey])
 
   const groups = useMemo(() => {
@@ -404,6 +405,7 @@ export function Campus() {
         Totale bambini: <span className="font-semibold text-zinc-100">{elencoTotals.count}</span>
         {" · "}Venduto: <span className="font-semibold text-amber-300">{eur(elencoTotals.venduto)}</span>
         {" · "}Pagato: <span className="font-semibold text-emerald-300">{eur(elencoTotals.pagato)}</span>
+        {" · "}Da pagare: <span className="font-semibold text-rose-300">{eur(elencoTotals.daPagare)}</span>
       </div>
 
       {tab === "settimane" && (
