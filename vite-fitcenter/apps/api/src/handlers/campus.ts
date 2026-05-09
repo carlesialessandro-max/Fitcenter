@@ -70,8 +70,16 @@ function overlapsRange(aFrom: string, aTo: string, rangeFrom: string, rangeTo: s
   const at = parseIsoDate(aTo)
   const rf = parseIsoDate(rangeFrom)
   const rt = parseIsoDate(rangeTo)
-  if (!af || !at || !rf || !rt) return false
-  return at.getTime() >= rf.getTime() && af.getTime() <= rt.getTime()
+  if (!rf || !rt) return true
+  // In alcune view/casi storici DataInizio/DataFine possono essere vuote o in formato non ISO.
+  // Non vogliamo sottostimare: se non riusciamo a leggere una delle due date, facciamo fallback
+  // all'altra; se mancano entrambe includiamo comunque la riga.
+  const start = af ?? at
+  const end = at ?? af
+  if (!start && !end) return true
+  const startT = (start ?? rf).getTime()
+  const endT = (end ?? rt).getTime()
+  return endT >= rf.getTime() && startT <= rt.getTime()
 }
 
 function weeksForAbbonamento(aFrom: string, aTo: string, weeks: { from: string; to: string }[]): string[] {
@@ -124,17 +132,9 @@ export async function getCampus(req: Request, res: Response) {
       })
       .filter(isCampusAbb)
       .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
-    // Totale contrattuale dalla view pagamenti (RVW_AbbonamentiPagamentiUtenti): serve per acconti + rate.
-    const totVendutoByIscrizione = new Map<string, number>()
-    if (gestionaleSql.isGestionaleConfigured() && campusAbbonamenti.length > 0) {
-      const ids = campusAbbonamenti.map((a) => a.id).filter(Boolean)
-      const totRows = await gestionaleSql.queryAbbonamentiPagamentiTotaleCassaByIscrizione(ids)
-      for (const r of totRows) {
-        const id = String((r as any).IDIscrizione ?? (r as any).idIscrizione ?? "").trim()
-        const tot = Number((r as any).Totale ?? (r as any).totale ?? 0) || 0
-        if (id && tot > 0) totVendutoByIscrizione.set(id, tot)
-      }
-    }
+    // Venduto: per specifica deve corrispondere a RVW_AbbonamentiUtenti -> Importo (prezzo riga abbonamento),
+    // non alla view pagamenti. Alcune view possono duplicare righe per la stessa IDIscrizione: evita doppio conteggio.
+    const seenIscrizione = new Set<string>()
 
     const byCliente = new Map<
       string,
@@ -183,10 +183,14 @@ export async function getCampus(req: Request, res: Response) {
         settimane: weeks,
         prezzo: a.prezzo,
       })
-            // Venduto: usa totale contrattuale (se presente), altrimenti fallback al prezzo riga.
-      const vendutoEff = totVendutoByIscrizione.get(a.id) ?? a.prezzo ?? 0
-      entry.totaleVenduto += vendutoEff || 0
-      entry.totalePagato += pagatoByIscrizione.get(a.id) ?? 0
+      const iscrId = String(a.id ?? "").trim()
+      if (!iscrId) {
+        entry.totaleVenduto += Number(a.prezzo ?? 0) || 0
+      } else if (!seenIscrizione.has(iscrId)) {
+        seenIscrizione.add(iscrId)
+        entry.totaleVenduto += Number(a.prezzo ?? 0) || 0
+        entry.totalePagato += pagatoByIscrizione.get(iscrId) ?? 0
+      }
       byCliente.set(a.clienteId, entry)
     }
 
