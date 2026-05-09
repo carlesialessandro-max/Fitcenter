@@ -6,7 +6,7 @@ import { getScopedUser } from "../middleware/auth.js"
 import XLSX from "xlsx"
 
 const DEFAULT_RANGE_FROM = "2026-03-01"
-const DEFAULT_RANGE_TO = "2026-09-13"
+const DEFAULT_RANGE_TO = new Date().toISOString().split("T")[0]
 
 const CAMPUS_WEEKS_2026: { from: string; to: string }[] = [
   { from: "2026-06-15", to: "2026-06-19" },
@@ -65,6 +65,31 @@ function parseIsoDate(iso: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
+function parseLooseDate(s: unknown): Date | null {
+  const raw = String(s ?? "").trim()
+  if (!raw) return null
+  // ISO YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return parseIsoDate(raw)
+  // IT dd/mm/yyyy or dd-mm-yyyy
+  const m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/.exec(raw)
+  if (m) {
+    const dd = String(m[1]).padStart(2, "0")
+    const mm = String(m[2]).padStart(2, "0")
+    const yyyy = m[3]
+    return parseIsoDate(`${yyyy}-${mm}-${dd}`)
+  }
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function inClosedRange(d: Date, fromIso: string, toIso: string): boolean {
+  const rf = parseIsoDate(fromIso)
+  const rt = parseIsoDate(toIso)
+  if (!rf || !rt) return true
+  const t = d.getTime()
+  return t >= rf.getTime() && t <= rt.getTime()
+}
+
 function overlapsRange(aFrom: string, aTo: string, rangeFrom: string, rangeTo: string): boolean {
   const af = parseIsoDate(aFrom)
   const at = parseIsoDate(aTo)
@@ -117,6 +142,7 @@ export async function getCampus(req: Request, res: Response) {
     const smsByClienteId = new Map<string, string>()
     const emailByClienteId = new Map<string, string>()
 
+    const dataOperazioneByIscrizione = new Map<string, Date>()
     const campusAbbonamenti = rows
       .map((r) => {
         const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
@@ -128,10 +154,27 @@ export async function getCampus(req: Request, res: Response) {
           if (sms && !smsByClienteId.has(clienteId)) smsByClienteId.set(clienteId, sms)
           if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
-        return rowToAbbonamento(r)
+        const a = rowToAbbonamento(r)
+        // Se la view espone la data vendita/iscrizione, usala per il filtro periodo (coerente col gestionale).
+        const dOp = parseLooseDate(
+          (r as any).DataOperazione ??
+            (r as any)["Data Operazione"] ??
+            (r as any).DataIscrizione ??
+            (r as any)["Data Iscrizione"] ??
+            (r as any).DataContratto ??
+            (r as any)["Data Contratto"] ??
+            (r as any).Data ??
+            (r as any)["Data"]
+        )
+        if (dOp && a.id) dataOperazioneByIscrizione.set(String(a.id), dOp)
+        return a
       })
       .filter(isCampusAbb)
-      .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
+      .filter((a) => {
+        const dOp = a.id ? dataOperazioneByIscrizione.get(String(a.id)) : null
+        if (dOp) return inClosedRange(dOp, rangeFrom, rangeTo)
+        return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
+      })
     // Venduto: per specifica deve corrispondere a RVW_AbbonamentiUtenti -> Importo (prezzo riga abbonamento),
     // non alla view pagamenti. Alcune view possono duplicare righe per la stessa IDIscrizione: evita doppio conteggio.
     const seenIscrizione = new Set<string>()
