@@ -386,16 +386,14 @@ export async function getCampus(req: Request, res: Response) {
     const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW }) => {
       const iscr = normIscrizioneCampusKey(a.id)
       let importoVenduto = importoRvW
-      if (vendutoDaMovimenti && iscr) {
-        const m = vendutoMovByIscr.get(iscr)
-        if (m != null && m > 0) {
-          if (!movGiaApplicato.has(iscr)) {
-            importoVenduto = m
-            movGiaApplicato.add(iscr)
-          } else {
-            // Stessa iscrizione duplicata in RVW: il venduto da movimenti va contato una sola volta.
-            importoVenduto = 0
-          }
+      if (vendutoDaMovimenti && iscr && vendutoMovByIscr.has(iscr)) {
+        const m = vendutoMovByIscr.get(iscr) ?? 0
+        if (!movGiaApplicato.has(iscr)) {
+          importoVenduto = m
+          movGiaApplicato.add(iscr)
+        } else {
+          // Stessa iscrizione duplicata in RVW: il venduto da movimenti va contato una sola volta.
+          importoVenduto = 0
         }
       }
       return { a, importoVenduto }

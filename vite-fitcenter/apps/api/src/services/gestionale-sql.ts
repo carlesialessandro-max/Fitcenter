@@ -1018,19 +1018,21 @@ export async function queryMovimentiVendutoSumByIscrizioneIds(
     if (slice.length === 0) continue
     try {
       let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
-      const ph = slice.map((_, j) => `@mvid${off + j}`).join(", ")
       slice.forEach((n, j) => {
         req = req.input(`mvid${off + j}`, sql.Int, Math.trunc(n))
       })
+      // Una riga per ogni ID richiesto (Totale 0 se nessun movimento nel range): evita fallback RVW
+      // che gonfia il «Venduto» rispetto alla griglia «Abbonamenti venduti» (solo operazioni nel periodo).
+      const valueTuples = slice.map((_, j) => `(@mvid${off + j})`).join(", ")
       const r = await req.query(
-        `SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
-         FROM [${tbl}] M
-         WHERE M.[${COL_ISCRIZIONE}] IN (${ph})
+        `SELECT v.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+         FROM (VALUES ${valueTuples}) AS v([${COL_ISCRIZIONE}])
+         LEFT JOIN [${tbl}] M ON M.[${COL_ISCRIZIONE}] = v.[${COL_ISCRIZIONE}]
            AND M.[${COL_IMPORTO}] <> 0
            AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
            AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
            ${tipoWhere}
-         GROUP BY M.[${COL_ISCRIZIONE}]`
+         GROUP BY v.[${COL_ISCRIZIONE}]`
       )
       for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
         const id = normCampusIscrizioneKeyForMap((row as any).IDIscrizione ?? (row as any).idIscrizione)
