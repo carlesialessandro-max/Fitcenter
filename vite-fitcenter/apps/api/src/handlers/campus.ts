@@ -5,7 +5,10 @@ import { campusStore } from "../store/campus.js"
 import { getScopedUser } from "../middleware/auth.js"
 import XLSX from "xlsx"
 
-const DEFAULT_RANGE_FROM = "2026-03-01"
+function firstMarchIsoItaly(): string {
+  const y = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric" }).format(new Date()).slice(0, 4)
+  return `${y}-03-01`
+}
 
 /** Data odierna in calendario Europe/Rome (YYYY-MM-DD), coerente col gestionale IT. */
 function todayIsoItaly(): string {
@@ -187,7 +190,7 @@ export async function getCampus(req: Request, res: Response) {
       return res.status(403).json({ message: "Permessi insufficienti" })
     }
 
-    const rangeFrom = String(req.query.from ?? DEFAULT_RANGE_FROM).trim() || DEFAULT_RANGE_FROM
+    const rangeFrom = String(req.query.from ?? firstMarchIsoItaly()).trim() || firstMarchIsoItaly()
     const rangeTo = String(req.query.to ?? todayIsoItaly()).trim() || todayIsoItaly()
 
     const rows = await gestionaleSql.queryAbbonamenti(undefined)
@@ -373,7 +376,7 @@ export async function importCampusPlanningExcel(req: Request, res: Response) {
 
     // Costruisco mappa nome->clienteId dagli attuali campus in range.
     const rows = await gestionaleSql.queryAbbonamenti(undefined)
-    const rangeFrom = DEFAULT_RANGE_FROM
+    const rangeFrom = firstMarchIsoItaly()
     const rangeTo = todayIsoItaly()
     const campusAbbonamenti = rows
       .map((r) => ({ r, a: rowToAbbonamento(r) }))

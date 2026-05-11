@@ -48,6 +48,15 @@ function withConsulente(url: string, consulente?: string) {
   return `${url}${sep}consulente=${encodeURIComponent(consulente)}`
 }
 
+/** Allineato al gestionale IT: 1° marzo anno corrente → oggi (Europe/Rome), come la data sul PC dell’utente. */
+function campusDateRangeQuery(): string {
+  const tz = "Europe/Rome"
+  const to = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())
+  const year = to.slice(0, 4)
+  const from = `${year}-03-01`
+  return `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+}
+
 export const dataApi = {
   getDashboard: (consulente?: string, asOf?: string) => {
     const params = new URLSearchParams()
@@ -99,6 +108,7 @@ export const dataApi = {
     }),
   getLeads: () => api.get<Lead[]>("/data/leads"),
   assignLeadToMe: (id: string) => api.post<Lead>(`/data/leads/${encodeURIComponent(id)}/assign-me`, {}),
+  /** Periodo Campus: 1 marzo (anno calendario Europe/Rome) → oggi (stesso fuso del browser). */
   getCampus: () =>
     api.get<{
       range: { from: string; to: string }
@@ -122,7 +132,7 @@ export const dataApi = {
         weekNotes: Record<string, { note?: string; gruppo?: string }>
         items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
       }[]
-    }>("/data/campus"),
+    }>(`/data/campus${campusDateRangeQuery()}`),
   patchCampusCliente: (clienteId: string, body: { gruppo?: string; genitore?: string; consensoWhatsapp?: boolean; liv?: string; allergie?: string; note?: string }) =>
     api.patch(`/data/campus/${encodeURIComponent(clienteId)}`, body),
   patchCampusWeekNote: (clienteId: string, weekKey: string, body: { note?: string; gruppo?: string }) =>

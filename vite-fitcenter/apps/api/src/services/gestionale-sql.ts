@@ -1081,7 +1081,7 @@ function getAbbonamentiPagamentiViewName(): string {
 }
 /**
  * Totale contrattuale (Totale/Importo/Prezzo) e pagato in cassa (CassaMovimentiImporto) per IDIscrizione.
- * Usato quando il "Totale" dell'abbonamento non coincide con quanto già pagato (es. acconto + resto in rate).
+ * Usato quando il "Totale" dell'abbonamento non coincide con quanto giï¿½ pagato (es. acconto + resto in rate).
  */
 export async function queryAbbonamentiPagamentiTotaleCassaByIscrizione(
   iscrizioneIds: string[]

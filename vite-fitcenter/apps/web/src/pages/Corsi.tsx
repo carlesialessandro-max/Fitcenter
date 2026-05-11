@@ -725,8 +725,10 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   const lastIn = insInLesson[insInLesson.length - 1] ?? null
   if (!lastIn) return { present: false, entry: null, exit: null }
 
+  // Uscita registrata pochi secondi/minuti dopo l’ingresso (doppio passaggio varco): non deve annullare la presenza.
+  const MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL = 20 * 60 * 1000
   const outsAfterLastIn = evsInLesson
-    .filter((e) => e.kind === "out" && e.t.getTime() >= lastIn.getTime())
+    .filter((e) => e.kind === "out" && e.t.getTime() >= lastIn.getTime() + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL)
     .map((e) => e.t)
   const hasOutAfterLastIn = outsAfterLastIn.length > 0
 
@@ -1020,10 +1022,10 @@ export function Corsi() {
     return m
   }, [blocksQ.data])
 
-  function debugPresence(p: PrenotazioneCorsoRow): string {
-    const raw = (p.raw ?? {}) as any
-    const stable = participantStableKey(p, 0)
-    const w = getLessonWindow(p)
+  function debugPresence(pMerged: PrenotazioneCorsoRow): string {
+    const raw = (pMerged.raw ?? {}) as any
+    const stable = participantStableKey(pMerged, 0)
+    const w = getLessonWindow(pMerged, giorno)
     const accessTimes = stable.startsWith("id:") ? (accessIdxDay.get(stable) ?? []) : []
     const accessCount = accessTimes.length
     const firstAccess = accessTimes[0]
@@ -1607,7 +1609,7 @@ export function Corsi() {
                                   Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
                                 </div>
                                 {debugCorsi ? (
-                                  <div className="mt-1 text-[10px] text-zinc-600" title={debugPresence(p)}>
+                                  <div className="mt-1 text-[10px] text-zinc-600" title={debugPresence(pWithTimes)}>
                                     DBG
                                   </div>
                                 ) : null}
@@ -1725,7 +1727,7 @@ export function Corsi() {
                                     <span className="text-zinc-600">—</span>
                                   )}
                                   {debugCorsi ? (
-                                    <span className="text-[10px] text-zinc-600" title={debugPresence(p)}>
+                                    <span className="text-[10px] text-zinc-600" title={debugPresence(pWithTimes)}>
                                       DBG
                                     </span>
                                   ) : null}
