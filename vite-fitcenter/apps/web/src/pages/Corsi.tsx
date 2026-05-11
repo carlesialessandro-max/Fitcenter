@@ -597,9 +597,10 @@ function accessKindFromRaw(raw: any): AccessEvent["kind"] {
 
   // Regole:
   // - se troviamo "uscita"/"exit" => out
-  // - altrimenti se troviamo "ingresso"/"entrata"/"in" => in
-  // - fallback: in
+  // - "entrata subordinata" (e simili) nel gestionale è spesso l'uscita varco palestra: trattala come OUT
+  //   prima della generica parola "entrata", altrimenti viene classificato erroneamente come ingresso.
   if (/\buscit[aeio]?\b|\bexit\b|\bout\b/.test(blob)) return "out"
+  if (/\bentrata\s+subordinat/i.test(blob)) return "out"
   if (/\bingress[oa]\b|\bentrata\b|\bin\b/.test(blob)) return "in"
   return "in"
 }
@@ -702,12 +703,20 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // Regola presenza (robusta a ingressi molto prima del corso e a ingressi multipli):
   // - consideriamo l'ultimo evento entro la fine lezione (+ tolleranza)
   // - se l'ultimo evento è "in" => presente, se è "out" => assente
+  const startMs = w.start.getTime()
   const endMs = (w.end ?? w.start).getTime()
+  // Finestra rilevante: da un po' prima dell'inizio lezione (transito / arrivo anticipato) fino a fine lezione.
+  // Esclude passaggi mattutini / di altri corsi che altrimenti finirebbero in `evsInLesson` e annullano il pallino.
+  const PRE_LEZIONE_MS = 45 * 60 * 1000
+  const windowStartMs = startMs - PRE_LEZIONE_MS
 
-  // Presenza = ha fatto "in" entro la lezione,
-  // ed eventuali "out" prima della fine annullano la presenza.
-  // Gli "out" dopo `oraFine` (es. uscita per transito / altro corso) NON devono spegnere il pallino.
-  const evsInLesson = evs.filter((e) => e.t.getTime() <= endMs)
+  // Presenza = ha fatto "in" nella finestra lezione,
+  // ed eventuali "out" nella stessa finestra dopo quell'ingresso annullano la presenza.
+  // Gli eventi dopo `oraFine` restano fuori (es. uscita ore dopo).
+  const evsInLesson = evs.filter((e) => {
+    const t = e.t.getTime()
+    return t >= windowStartMs && t <= endMs
+  })
   if (evsInLesson.length === 0) return { present: false, entry: null, exit: null }
 
   const insInLesson = evsInLesson.filter((e) => e.kind === "in").map((e) => e.t)
@@ -725,8 +734,10 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
 
   // Entro fine lezione: ritardi (es. ingresso 9:44 per lezione 9:30–10:20) contano come presenti,
   // purché l'ingresso sia avvenuto prima della fine lezione (già filtrato in evsInLesson).
+  // Mostriamo sempre l'orario dell'ultimo ingresso nella finestra (anche se poi risulta assente per uscita),
+  // così in UI si capisce il mismatch con l'appello manuale.
 
-  return { present, entry: present ? lastIn : null, exit: null }
+  return { present, entry: lastIn, exit: null }
 }
 
 /** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */

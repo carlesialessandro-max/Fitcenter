@@ -152,7 +152,8 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
     str(row.Descrizione ?? row.descrizione) ||
     (row.IDDurata != null ? `Piano ${row.IDDurata}` : "") ||
     "Abbonamento"
-  const prezzo = num(row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price ?? row.Importo ?? row.importo)
+  // RVW_AbbonamentiUtenti: spesso l'importo riga è in Importo; Totale può essere un altro aggregato.
+  const prezzo = num(row.Importo ?? row.importo ?? row.Totale ?? row.Prezzo ?? row.prezzo ?? row.Price ?? row.price)
   const dmRaw = row.DurataMesi ?? row.durataMesi ?? row.Durata ?? row.durata
   let durataMesi: number | undefined
   if (dmRaw != null && String(dmRaw).trim() !== "") {

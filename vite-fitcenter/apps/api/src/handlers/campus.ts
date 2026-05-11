@@ -144,6 +144,9 @@ function pickFirstNonEmpty(row: Record<string, unknown>, keys: string[]): string
  * Priorità: date di inserimento/registrazione; solo dopo data operazione / iscrizione.
  */
 function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null {
+  // Ordine importante: NON usare prima DataUltimaModifica/DataCreazione (cambiano nel tempo e
+  // escludono dal filtro "marzo–oggi" iscrizioni vendute mesi prima). DataOperazione/DataIscrizione
+  // restano vicine al gestionale "Abbonamento inserito / vendita". La colonna generica "Data" è ambigua → esclusa.
   const keys = [
     "DataInserimento",
     "Data Inserimento",
@@ -153,19 +156,18 @@ function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null 
     "Data Abbonamento Inserito",
     "DataInserito",
     "Data Inserito",
-    "DataRegistrazione",
-    "Data Registrazione",
-    "DataCreazione",
-    "Data Creazione",
-    "DataUltimaModifica",
-    "Data Ultima Modifica",
     "DataOperazione",
     "Data Operazione",
     "DataIscrizione",
     "Data Iscrizione",
     "DataContratto",
     "Data Contratto",
-    "Data",
+    "DataRegistrazione",
+    "Data Registrazione",
+    "DataCreazione",
+    "Data Creazione",
+    "DataUltimaModifica",
+    "Data Ultima Modifica",
   ]
   for (const k of keys) {
     const v = (row as any)[k]
