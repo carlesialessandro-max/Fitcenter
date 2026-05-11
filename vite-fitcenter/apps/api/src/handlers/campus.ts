@@ -239,8 +239,9 @@ export async function getCampus(req: Request, res: Response) {
       }
     >()
 
-    // Pagato: somma Importo per IDIscrizione nel range e poi aggrega per cliente.
-    const pagatoRows = await gestionaleSql.queryMovimentiVendutoSumByIscrizione(rangeFrom, rangeTo)
+    // Pagato: incassi cassa per IDIscrizione nel range (come tab «Pagamenti» / Data pagato), non MovimentiVenduto
+    // (che segue «Data operazione» e somme vicine ad «Abbonamenti venduti» → Pagato > Venduto in Campus).
+    const pagatoRows = await gestionaleSql.queryCassaMovimentiSumByIscrizione(rangeFrom, rangeTo)
     const pagatoByIscrizione = new Map<string, number>()
     pagatoRows.forEach((r) => {
       const id = String((r as any).IDIscrizione ?? (r as any).idIscrizione ?? "").trim()

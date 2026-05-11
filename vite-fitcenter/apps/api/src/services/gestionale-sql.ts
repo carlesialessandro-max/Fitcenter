@@ -990,14 +990,18 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
   const vq = qualifySqlObject(view).query
   try {
     const colsLower = await prenGetCols(view) // lower-case
+    // Priorità «data incasso» come tab Pagamenti (Data pagato), non la data operazione di vendita.
     const dateCol =
       pickBestDateCol(colsLower, [
+        "DataPagato",
+        "DataPagamento",
+        "CassaMovimentiDataPagato",
+        "CassaMovimentiDataPagamento",
         "CassaMovimentiDataOperazione",
         "DataOperazione",
         "DataMovimento",
         "CassaMovimentiData",
         "Data",
-        "DataPagamento",
       ]) ?? null
     const importoCol =
       pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
