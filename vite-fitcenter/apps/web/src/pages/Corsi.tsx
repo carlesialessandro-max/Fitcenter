@@ -723,11 +723,8 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
 
   let present = !hasOutAfterLastIn
 
-  // Se entra MOLTO dopo l'inizio lezione, non considerarlo presente (richiesta precedente).
-  const entryLateToleranceMs = 2 * 60 * 1000
-  if (present && w.start && lastIn.getTime() > w.start.getTime() + entryLateToleranceMs) {
-    present = false
-  }
+  // Entro fine lezione: ritardi (es. ingresso 9:44 per lezione 9:30–10:20) contano come presenti,
+  // purché l'ingresso sia avvenuto prima della fine lezione (già filtrato in evsInLesson).
 
   return { present, entry: present ? lastIn : null, exit: null }
 }
@@ -1421,7 +1418,13 @@ export function Corsi() {
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
                     const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
                     const presentiCount = g.partecipanti.filter((p, idx) => {
-                      const okAccesso = isPresentByAccess(accessIdxDay, p, giorno).present
+                      const pWithTimes: PrenotazioneCorsoRow = {
+                        ...p,
+                        giorno,
+                        oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
+                        oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
+                      }
+                      const okAccesso = isPresentByAccess(accessIdxDay, pWithTimes, giorno).present
                       const ov = appelloOverride(g.key, p, idx)
                       return ov.hasOverride ? ov.value : okAccesso
                     }).length
@@ -1628,7 +1631,7 @@ export function Corsi() {
                                   onClick={() => toggleAppello(g.key, p, idx, !presente)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
                                     presente
-                                      ? "border-emerald-400/60 bg-emerald-500/30"
+                                      ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
                                   }`}
                                 />
@@ -1698,7 +1701,7 @@ export function Corsi() {
                                   onClick={() => toggleAppello(g.key, p, idx, !presente)}
                                   className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
                                     presente
-                                      ? "border-emerald-400/60 bg-emerald-500/30"
+                                      ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
                                       : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
                                   }`}
                                 />

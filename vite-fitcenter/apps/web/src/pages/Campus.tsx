@@ -238,7 +238,7 @@ function CampusWeeksGrouped(props: {
 export function Campus() {
   const { role } = useAuth()
   const queryClient = useQueryClient()
-  if (role !== "admin" && role !== "campus" && role !== "operatore") return <Navigate to="/" replace />
+  if (role !== "admin" && role !== "campus" && role !== "operatore" && role !== "firme") return <Navigate to="/" replace />
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["campus"],

@@ -6,7 +6,20 @@ import { getScopedUser } from "../middleware/auth.js"
 import XLSX from "xlsx"
 
 const DEFAULT_RANGE_FROM = "2026-03-01"
-const DEFAULT_RANGE_TO = new Date().toISOString().split("T")[0]
+
+/** Data odierna in calendario Europe/Rome (YYYY-MM-DD), coerente col gestionale IT. */
+function todayIsoItaly(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date())
+  } catch {
+    return new Date().toISOString().split("T")[0]
+  }
+}
 
 const CAMPUS_WEEKS_2026: { from: string; to: string }[] = [
   { from: "2026-06-15", to: "2026-06-19" },
@@ -66,6 +79,7 @@ function parseIsoDate(iso: string): Date | null {
 }
 
 function parseLooseDate(s: unknown): Date | null {
+  if (s instanceof Date && !Number.isNaN(s.getTime())) return s
   const raw = String(s ?? "").trim()
   if (!raw) return null
   // ISO YYYY-MM-DD
@@ -125,16 +139,54 @@ function pickFirstNonEmpty(row: Record<string, unknown>, keys: string[]): string
   return ""
 }
 
+/**
+ * Data di riferimento come nel gestionale: filtro "Abbonamento inserito dal–al".
+ * Priorità: date di inserimento/registrazione; solo dopo data operazione / iscrizione.
+ */
+function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null {
+  const keys = [
+    "DataInserimento",
+    "Data Inserimento",
+    "DataInserimentoAbbonamento",
+    "Data Inserimento Abbonamento",
+    "DataAbbonamentoInserito",
+    "Data Abbonamento Inserito",
+    "DataInserito",
+    "Data Inserito",
+    "DataRegistrazione",
+    "Data Registrazione",
+    "DataCreazione",
+    "Data Creazione",
+    "DataUltimaModifica",
+    "Data Ultima Modifica",
+    "DataOperazione",
+    "Data Operazione",
+    "DataIscrizione",
+    "Data Iscrizione",
+    "DataContratto",
+    "Data Contratto",
+    "Data",
+  ]
+  for (const k of keys) {
+    const v = (row as any)[k]
+    if (v == null) continue
+    if (typeof v === "string" && !v.trim()) continue
+    const d = parseLooseDate(v)
+    if (d) return d
+  }
+  return null
+}
+
 export async function getCampus(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
     // Reception (operatore) deve poter consultare il Campus in lettura.
-    if (u.role !== "admin" && u.role !== "campus" && u.role !== "operatore") {
+    if (u.role !== "admin" && u.role !== "campus" && u.role !== "operatore" && u.role !== "firme") {
       return res.status(403).json({ message: "Permessi insufficienti" })
     }
 
     const rangeFrom = String(req.query.from ?? DEFAULT_RANGE_FROM).trim() || DEFAULT_RANGE_FROM
-    const rangeTo = String(req.query.to ?? DEFAULT_RANGE_TO).trim() || DEFAULT_RANGE_TO
+    const rangeTo = String(req.query.to ?? todayIsoItaly()).trim() || todayIsoItaly()
 
     const rows = await gestionaleSql.queryAbbonamenti(undefined)
     // Da RVW_AbbonamentiUtenti: genitore = PaganteNome, telefono = SMS
@@ -142,7 +194,6 @@ export async function getCampus(req: Request, res: Response) {
     const smsByClienteId = new Map<string, string>()
     const emailByClienteId = new Map<string, string>()
 
-    const dataOperazioneByIscrizione = new Map<string, Date>()
     const campusAbbonamenti = rows
       .map((r) => {
         const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
@@ -155,26 +206,15 @@ export async function getCampus(req: Request, res: Response) {
           if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
         const a = rowToAbbonamento(r)
-        // Se la view espone la data vendita/iscrizione, usala per il filtro periodo (coerente col gestionale).
-        const dOp = parseLooseDate(
-          (r as any).DataOperazione ??
-            (r as any)["Data Operazione"] ??
-            (r as any).DataIscrizione ??
-            (r as any)["Data Iscrizione"] ??
-            (r as any).DataContratto ??
-            (r as any)["Data Contratto"] ??
-            (r as any).Data ??
-            (r as any)["Data"]
-        )
-        if (dOp && a.id) dataOperazioneByIscrizione.set(String(a.id), dOp)
-        return a
+        const rifData = pickDataAbbonamentoInserito(r)
+        return { a, rifData }
       })
-      .filter(isCampusAbb)
-      .filter((a) => {
-        const dOp = a.id ? dataOperazioneByIscrizione.get(String(a.id)) : null
-        if (dOp) return inClosedRange(dOp, rangeFrom, rangeTo)
+      .filter(({ a }) => isCampusAbb(a))
+      .filter(({ a, rifData }) => {
+        if (rifData) return inClosedRange(rifData, rangeFrom, rangeTo)
         return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
       })
+      .map(({ a }) => a)
     // Venduto: per specifica deve corrispondere a RVW_AbbonamentiUtenti -> Importo (prezzo riga abbonamento),
     // non alla view pagamenti. Alcune view possono duplicare righe per la stessa IDIscrizione: evita doppio conteggio.
     const seenIscrizione = new Set<string>()
@@ -332,11 +372,16 @@ export async function importCampusPlanningExcel(req: Request, res: Response) {
     // Costruisco mappa nome->clienteId dagli attuali campus in range.
     const rows = await gestionaleSql.queryAbbonamenti(undefined)
     const rangeFrom = DEFAULT_RANGE_FROM
-    const rangeTo = DEFAULT_RANGE_TO
+    const rangeTo = todayIsoItaly()
     const campusAbbonamenti = rows
-      .map((r) => rowToAbbonamento(r))
-      .filter(isCampusAbb)
-      .filter((a) => overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo))
+      .map((r) => ({ r, a: rowToAbbonamento(r) }))
+      .filter(({ a }) => isCampusAbb(a))
+      .filter(({ a, r }) => {
+        const rif = pickDataAbbonamentoInserito(r)
+        if (rif) return inClosedRange(rif, rangeFrom, rangeTo)
+        return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
+      })
+      .map(({ a }) => a)
     // Totale contrattuale dalla view pagamenti (RVW_AbbonamentiPagamentiUtenti): serve per acconti + rate.
     const totVendutoByIscrizione = new Map<string, number>()
     if (gestionaleSql.isGestionaleConfigured() && campusAbbonamenti.length > 0) {
