@@ -63,9 +63,9 @@ function normToken(s: string): string {
     .trim()
 }
 
-/** Venduto Campus: Importo da RVW; se vuoto il gestionale usa spesso Totale sulla stessa riga. */
+/** Venduto Campus = colonna Importo da RVW (come tab «Abbonamenti venduti»), non Totale. */
 function campusImportoVendutoRvW(row: Record<string, unknown>): number {
-  const v = row.Importo ?? row.importo ?? row.Totale ?? row.totale ?? row.Prezzo ?? row.prezzo
+  const v = row.Importo ?? row.importo
   if (v == null || String(v).trim() === "") return 0
   const n = Number(String(v).replace(/\s/g, "").replace(",", "."))
   return Number.isFinite(n) ? n : 0
@@ -324,8 +324,8 @@ export async function getCampus(req: Request, res: Response) {
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
       .map(({ a, importoVenduto }) => ({ a, importoVenduto }))
-    // Venduto = RVW_AbbonamentiUtenti.Importo (dedupe per IDIscrizione). Pagato = RVW_AbbonamentiPagamentiUtenti somma CassaMovimentiImporto.
-    const seenIscrizione = new Set<string>()
+    // Venduto = somma Importo (ogni riga RVW nel periodo, come «Abbonamenti venduti»). Pagato = somma CassaMovimentiImporto al massimo una volta per IDIscrizione (evita doppi se la view duplica righe).
+    const iscrizionePagatoGiaSommata = new Set<string>()
 
     const byCliente = new Map<
       string,
@@ -373,13 +373,14 @@ export async function getCampus(req: Request, res: Response) {
         settimane: weeks,
         prezzo: importoVenduto,
       })
+      entry.totaleVenduto += importoVenduto
       const iscrId = normIscrizioneCampusKey(a.id)
-      if (!iscrId) {
-        entry.totaleVenduto += importoVenduto
-      } else if (!seenIscrizione.has(iscrId)) {
-        seenIscrizione.add(iscrId)
-        entry.totaleVenduto += importoVenduto
-        entry.totalePagato += pagatoByIscrizione.get(iscrId) ?? 0
+      if (iscrId) {
+        const pk = `${a.clienteId}::${iscrId}`
+        if (!iscrizionePagatoGiaSommata.has(pk)) {
+          iscrizionePagatoGiaSommata.add(pk)
+          entry.totalePagato += pagatoByIscrizione.get(iscrId) ?? 0
+        }
       }
       byCliente.set(a.clienteId, entry)
     }
