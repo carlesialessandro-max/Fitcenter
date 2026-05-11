@@ -982,6 +982,68 @@ export async function queryMovimentiVendutoSumByIscrizione(from: string, to: str
   }
 }
 
+/** Chiave IDIscrizione numerica coerente con `campus.ts` / pagamenti. */
+function normCampusIscrizioneKeyForMap(v: unknown): string {
+  const s = String(v ?? "").trim()
+  if (!s) return ""
+  const n = Number(s.replace(",", "."))
+  if (Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER && Number.isInteger(n)) return String(n)
+  if (Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER) return String(Math.trunc(n))
+  return s
+}
+
+/**
+ * Come `queryMovimentiVendutoSumByIscrizione` ma solo per l’elenco di IDIscrizione (es. Campus).
+ * Stessa logica della colonna «Importo» in «Abbonamenti venduti» / movimenti vendita.
+ */
+export async function queryMovimentiVendutoSumByIscrizioneIds(
+  from: string,
+  to: string,
+  idIscrizioni: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  const p = await getPool()
+  if (!p || idIscrizioni.length === 0) return out
+  const tbl = defaultTables.movimentiVenduto
+  const tipoWhere = sqlWhereTipoOperazioneMovimentoVendita("M")
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+  const nums = [...new Set(idIscrizioni.map((s) => Number(String(s).replace(",", "."))).filter((n) => Number.isFinite(n) && n > 0 && n <= 2147483647))]
+  const CHUNK = 400
+  for (let off = 0; off < nums.length; off += CHUNK) {
+    const slice = nums.slice(off, off + CHUNK)
+    if (slice.length === 0) continue
+    try {
+      let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+      const ph = slice.map((_, j) => `@mvid${off + j}`).join(", ")
+      slice.forEach((n, j) => {
+        req = req.input(`mvid${off + j}`, sql.Int, Math.trunc(n))
+      })
+      const r = await req.query(
+        `SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione, COALESCE(SUM(M.[${COL_IMPORTO}]), 0) AS Totale
+         FROM [${tbl}] M
+         WHERE M.[${COL_ISCRIZIONE}] IN (${ph})
+           AND M.[${COL_IMPORTO}] <> 0
+           AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+           AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+           ${tipoWhere}
+         GROUP BY M.[${COL_ISCRIZIONE}]`
+      )
+      for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+        const id = normCampusIscrizioneKeyForMap((row as any).IDIscrizione ?? (row as any).idIscrizione)
+        const tot = Number((row as any).Totale ?? (row as any).totale ?? 0) || 0
+        if (id) out.set(id, tot)
+      }
+    } catch {
+      // chunk fallito: continua con i successivi
+    }
+  }
+  return out
+}
+
 /** Espressione data per filtro range: prima colonne «pagato», poi operazione (COALESCE evita righe escluse se DataPagato è NULL). */
 function cassaDateExprForRange(colsLower: string[], bracket: (c: string) => string): string | null {
   const set = new Set(colsLower)

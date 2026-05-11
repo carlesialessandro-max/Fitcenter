@@ -63,12 +63,58 @@ function normToken(s: string): string {
     .trim()
 }
 
-/** Venduto Campus = colonna Importo da RVW (come tab «Abbonamenti venduti»), non Totale. */
-function campusImportoVendutoRvW(row: Record<string, unknown>): number {
-  const v = row.Importo ?? row.importo
-  if (v == null || String(v).trim() === "") return 0
-  const n = Number(String(v).replace(/\s/g, "").replace(",", "."))
+/** Importi it-IT / SQL: migliaia con `.`, decimali con `,`; oppure numero nativo. */
+function parseMoneyIt(v: unknown): number {
+  if (typeof v === "number" && Number.isFinite(v)) return v
+  let s = String(v ?? "").trim()
+  if (!s) return 0
+  s = s.replace(/\s/g, "").replace(/€/gi, "").replace(/eur/gi, "").trim()
+  // 1.234,56 o 12.345,6
+  const itGrouped = /^(\d{1,3}(?:\.\d{3})+),(\d+)$/.exec(s)
+  if (itGrouped) {
+    const n = Number(`${itGrouped[1]!.replace(/\./g, "")}.${itGrouped[2]}`)
+    return Number.isFinite(n) ? n : 0
+  }
+  // 1234,56 (decimali con virgola)
+  if (/,/.test(s) && (!/\./.test(s) || s.lastIndexOf(",") > s.lastIndexOf("."))) {
+    s = s.replace(/\./g, "").replace(",", ".")
+  } else {
+    s = s.replace(",", ".")
+  }
+  const n = Number(s)
   return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Importo da RVW (fallback). Preferire colonne esplicite; opz. `GESTIONALE_CAMPUS_COL_IMPORTO`.
+ * Niente match «fuzzy» su nomi che contengono importo (evita colonne tipo ImportoPagato).
+ */
+function campusImportoVendutoRvW(row: Record<string, unknown>): number {
+  const rawCol = (process.env.GESTIONALE_CAMPUS_COL_IMPORTO ?? "").trim().replace(/[\[\]]/g, "")
+  if (rawCol && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawCol)) {
+    const v = (row as any)[rawCol]
+    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+  }
+  const keys = [
+    "Importo",
+    "importo",
+    "AbbonamentiImporto",
+    "Abbonamenti Importo",
+    "Abbonamenti_Importo",
+    "ImportoAbbonamento",
+    "ImportoRiga",
+    "ImportoVendita",
+    "ImportoIscrizione",
+  ]
+  for (const k of keys) {
+    const v = (row as any)[k]
+    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+  }
+  for (const [k, v] of Object.entries(row)) {
+    if (k.replace(/\s/g, "").toLowerCase() !== "importo") continue
+    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+  }
+  return 0
 }
 
 /** Chiave IDIscrizione allineata tra RVW abbonamenti e righe cassa (numerico / ".0"). */
@@ -305,7 +351,7 @@ export async function getCampus(req: Request, res: Response) {
     const smsByClienteId = new Map<string, string>()
     const emailByClienteId = new Map<string, string>()
 
-    const campusAbbonamenti = rows
+    const campusRowsRaw = rows
       .map((r) => {
         const row = r as Record<string, unknown>
         const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
@@ -318,13 +364,43 @@ export async function getCampus(req: Request, res: Response) {
           if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
         const a = rowToAbbonamento(r)
-        const importoVenduto = campusImportoVendutoRvW(row)
-        return { a, importoVenduto, row }
+        const importoRvW = campusImportoVendutoRvW(row)
+        return { a, importoRvW, row }
       })
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
-      .map(({ a, importoVenduto }) => ({ a, importoVenduto }))
-    // Venduto = somma Importo (ogni riga RVW nel periodo, come «Abbonamenti venduti»). Pagato = somma CassaMovimentiImporto al massimo una volta per IDIscrizione (evita doppi se la view duplica righe).
+
+    const vendutoDaMovimenti = (process.env.GESTIONALE_CAMPUS_VENDUTO_DA_MOVIMENTI ?? "true").toLowerCase() !== "false"
+    const idList = [
+      ...new Set(
+        campusRowsRaw
+          .map(({ a }) => normIscrizioneCampusKey(a.id))
+          .filter((k) => k.length > 0),
+      ),
+    ]
+    const vendutoMovByIscr =
+      vendutoDaMovimenti && gestionaleSql.isGestionaleConfigured() && idList.length > 0
+        ? await gestionaleSql.queryMovimentiVendutoSumByIscrizioneIds(rangeFrom, rangeTo, idList)
+        : new Map<string, number>()
+    const movGiaApplicato = new Set<string>()
+    const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW }) => {
+      const iscr = normIscrizioneCampusKey(a.id)
+      let importoVenduto = importoRvW
+      if (vendutoDaMovimenti && iscr) {
+        const m = vendutoMovByIscr.get(iscr)
+        if (m != null && m > 0) {
+          if (!movGiaApplicato.has(iscr)) {
+            importoVenduto = m
+            movGiaApplicato.add(iscr)
+          } else {
+            // Stessa iscrizione duplicata in RVW: il venduto da movimenti va contato una sola volta.
+            importoVenduto = 0
+          }
+        }
+      }
+      return { a, importoVenduto }
+    })
+    // Venduto = somma Importo movimenti vendita nel periodo (come «Abbonamenti venduti»), fallback RVW; pagato = cassa per IDIscrizione (dedup).
     const iscrizionePagatoGiaSommata = new Set<string>()
 
     const byCliente = new Map<
