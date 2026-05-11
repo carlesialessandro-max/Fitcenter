@@ -113,6 +113,14 @@ function parseLooseDate(s: unknown): Date | null {
     const yyyy = m[3]
     return parseIsoDate(`${yyyy}-${mm}-${dd}`)
   }
+  // IT datetime da gestionale/SQL: "03/03/2026 17.02.25" o "03/03/2026 17:02:25" (ore con . o :)
+  const mdt = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2})[.:](\d{1,2})(?:[.:](\d{1,2}))?/.exec(raw)
+  if (mdt) {
+    const dd = String(mdt[1]).padStart(2, "0")
+    const mm = String(mdt[2]).padStart(2, "0")
+    const yyyy = mdt[3]
+    return parseIsoDate(`${yyyy}-${mm}-${dd}`)
+  }
   const d = new Date(raw)
   return Number.isNaN(d.getTime()) ? null : d
 }
