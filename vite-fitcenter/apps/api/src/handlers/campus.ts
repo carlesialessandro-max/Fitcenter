@@ -63,9 +63,9 @@ function normToken(s: string): string {
     .trim()
 }
 
-/** Venduto Campus: solo colonna Importo da RVW_AbbonamentiUtenti (come da gestionale). */
+/** Venduto Campus: Importo da RVW; se vuoto il gestionale usa spesso Totale sulla stessa riga. */
 function campusImportoVendutoRvW(row: Record<string, unknown>): number {
-  const v = row.Importo ?? row.importo
+  const v = row.Importo ?? row.importo ?? row.Totale ?? row.totale ?? row.Prezzo ?? row.prezzo
   if (v == null || String(v).trim() === "") return 0
   const n = Number(String(v).replace(/\s/g, "").replace(",", "."))
   return Number.isFinite(n) ? n : 0
@@ -162,12 +162,9 @@ function pickFirstNonEmpty(row: Record<string, unknown>, keys: string[]): string
 
 /**
  * Data di riferimento come nel gestionale: filtro "Abbonamento inserito dal–al".
- * Priorità: date di inserimento/registrazione; solo dopo data operazione / iscrizione.
+ * Priorità: date di inserimento / operazione vendita; poi colonna generica `Data` (spesso l’unica in RVW).
  */
 function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null {
-  // Ordine importante: NON usare prima DataUltimaModifica/DataCreazione (cambiano nel tempo e
-  // escludono dal filtro "marzo–oggi" iscrizioni vendute mesi prima). DataOperazione/DataIscrizione
-  // restano vicine al gestionale "Abbonamento inserito / vendita". La colonna generica "Data" è ambigua → esclusa.
   const keys = [
     "DataInserimento",
     "Data Inserimento",
@@ -177,6 +174,9 @@ function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null 
     "Data Abbonamento Inserito",
     "DataInserito",
     "Data Inserito",
+    "AbbonamentiDataOperazione",
+    "Abbonamenti Data Operazione",
+    "DataOperazioneAbbonamento",
     "DataOperazione",
     "Data Operazione",
     "DataIscrizione",
@@ -185,6 +185,8 @@ function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null 
     "Data Contratto",
     "DataRegistrazione",
     "Data Registrazione",
+    // Alcune RVW espongono solo `Data` come data vendita / inserimento (senza overlap col periodo lezione estate).
+    "Data",
     "DataCreazione",
     "Data Creazione",
     "DataUltimaModifica",
@@ -196,6 +198,32 @@ function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null 
     if (typeof v === "string" && !v.trim()) continue
     const d = parseLooseDate(v)
     if (d) return d
+  }
+  // Fallback: qualunque colonna il cui nome suggerisce inserimento / operazione / vendita (driver con alias diversi).
+  for (const [k, v] of Object.entries(row)) {
+    if (v == null || (typeof v === "string" && !v.trim())) continue
+    const nk = k
+      .replace(/\s/g, "")
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+    if (!nk.includes("data")) continue
+    if (nk.includes("nascita")) continue
+    if (nk.includes("datapag") || nk.includes("pagato") || nk.includes("rata")) continue
+    if (nk.includes("fine") && (nk.includes("abbon") || nk.includes("iscriz"))) continue
+    if (nk.includes("inizio") && nk.includes("abbon")) continue
+    if (nk.includes("modific") || nk.includes("ultimamod")) continue
+    if (
+      nk.includes("inser") ||
+      nk.includes("operaz") ||
+      nk.includes("iscriz") ||
+      nk.includes("contrat") ||
+      nk.includes("vendit") ||
+      nk.includes("regist")
+    ) {
+      const d = parseLooseDate(v)
+      if (d) return d
+    }
   }
   return null
 }
