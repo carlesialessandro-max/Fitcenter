@@ -1154,7 +1154,98 @@ export async function queryAbbonamentiPagamentiTotaleCassaByIscrizione(
   } catch {
     return []
   }
-}/** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
+}
+
+/**
+ * Campus — Pagato: da RVW_AbbonamentiPagamentiUtenti, filtro categoria campus,
+ * somma CassaMovimentiImporto per IDIscrizione nel range date (stessa logica richiesta gestionale).
+ */
+export async function queryAbbonamentiPagamentiSumCassaCampusByIscrizione(
+  from: string,
+  to: string
+): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getAbbonamentiPagamentiViewName()
+  const { query: vq } = qualifySqlObject(view)
+  try {
+    const colsLower = await prenGetCols(view)
+    const idCol =
+      pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "ID Iscrizione", "AbbonamentiIDIscrizione"]) ??
+      pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
+      null
+    const cassaCol =
+      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Cassa Movimenti Importo", "Cassamovimentiimporto", "CassaImporto"]) ??
+      pickBestTextCol(colsLower, ["CassaMovimentiImporto", "Cassa Movimenti Importo", "Cassamovimentiimporto", "CassaImporto"]) ??
+      null
+    const macroCol =
+      pickBestTextCol(colsLower, ["MacroCategoriaAbbonamentoDescrizione", "MacroCategoriaDescrizione"]) ?? null
+    const catCol =
+      pickBestTextCol(colsLower, ["CategoriaAbbonamentoDescrizione", "CategoriaDescrizione", "NomeCategoria"]) ?? null
+    const dateCol =
+      pickBestDateCol(colsLower, [
+        "DataPagato",
+        "DataPagamento",
+        "AbbonamentiPagamentiDataPagato",
+        "CassaMovimentiDataPagato",
+        "DataRata",
+        "Data Rata",
+        "AbbonamentiPagamentiDataRata",
+        "DataOperazione",
+        "Data",
+      ]) ?? null
+
+    if (!idCol || !cassaCol || !dateCol) return []
+
+    const campusWhere: string[] = []
+    if (macroCol) {
+      campusWhere.push(
+        `LOWER(LTRIM(RTRIM(CAST(${bracketCol(macroCol)} AS NVARCHAR(256))))) LIKE N'%corsi%'`
+      )
+    }
+    if (catCol) {
+      campusWhere.push(
+        `LOWER(LTRIM(RTRIM(CAST(${bracketCol(catCol)} AS NVARCHAR(256))))) LIKE N'%campus%sportivi%'`
+      )
+    }
+    if (campusWhere.length === 0) {
+      const abbDesc =
+        pickBestTextCol(colsLower, [
+          "AbbonamentoDescrizione",
+          "Abbonamento",
+          "DescrizioneAbbonamento",
+          "NomeAbbonamento",
+        ]) ?? null
+      if (!abbDesc) return []
+      campusWhere.push(
+        `LOWER(LTRIM(RTRIM(CAST(${bracketCol(abbDesc)} AS NVARCHAR(512))))) LIKE N'%campus%sportivi%'`
+      )
+    }
+
+    const idExpr = `CAST(${bracketCol(idCol)} AS NVARCHAR(64))`
+    const cassaExpr = `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+    const datePred = `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) >= CAST(@from AS DATE) AND CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) <= CAST(@to AS DATE)`
+
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    const r = await req.query(
+      `SELECT ${idExpr} AS IDIscrizione,
+              COALESCE(SUM(${cassaExpr}), 0) AS Totale
+       FROM ${vq}
+       WHERE COALESCE(LTRIM(RTRIM(${idExpr})), N'') <> N''
+         AND ${cassaExpr} IS NOT NULL
+         AND ${cassaExpr} <> 0
+         AND ${datePred}
+         AND ${campusWhere.join(" AND ")}
+       GROUP BY ${idExpr}
+       ORDER BY ${idExpr}`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}
+
+/** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
 export async function queryCassaMovimentiSumByClienteId(from: string, to: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []

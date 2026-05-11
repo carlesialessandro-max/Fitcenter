@@ -63,6 +63,14 @@ function normToken(s: string): string {
     .trim()
 }
 
+/** Venduto Campus: solo colonna Importo da RVW_AbbonamentiUtenti (come da gestionale). */
+function campusImportoVendutoRvW(row: Record<string, unknown>): number {
+  const v = row.Importo ?? row.importo
+  if (v == null || String(v).trim() === "") return 0
+  const n = Number(String(v).replace(/\s/g, "").replace(",", "."))
+  return Number.isFinite(n) ? n : 0
+}
+
 /** Chiave IDIscrizione allineata tra RVW abbonamenti e righe cassa (numerico / ".0"). */
 function normIscrizioneCampusKey(v: unknown): string {
   const s = String(v ?? "").trim()
@@ -211,6 +219,7 @@ export async function getCampus(req: Request, res: Response) {
 
     const campusAbbonamenti = rows
       .map((r) => {
+        const row = r as Record<string, unknown>
         const clienteId = String((r as any).IDUtente ?? (r as any).IdUtente ?? (r as any).idUtente ?? (r as any).ClienteId ?? "").trim()
         const paganteNome = pickFirstNonEmpty(r, ["PaganteNome", "Pagante", "Pagante_Nome"])
         const sms = pickFirstNonEmpty(r, ["SMS", "Sms", "sms", "Cellulare", "cellulare", "Telefono", "telefono", "Telefono_1", "Telefono1"])
@@ -222,16 +231,16 @@ export async function getCampus(req: Request, res: Response) {
         }
         const a = rowToAbbonamento(r)
         const rifData = pickDataAbbonamentoInserito(r)
-        return { a, rifData }
+        const importoVenduto = campusImportoVendutoRvW(row)
+        return { a, rifData, importoVenduto }
       })
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, rifData }) => {
         if (rifData) return inClosedRange(rifData, rangeFrom, rangeTo)
         return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
       })
-      .map(({ a }) => a)
-    // Venduto: per specifica deve corrispondere a RVW_AbbonamentiUtenti -> Importo (prezzo riga abbonamento),
-    // non alla view pagamenti. Alcune view possono duplicare righe per la stessa IDIscrizione: evita doppio conteggio.
+      .map(({ a, importoVenduto }) => ({ a, importoVenduto }))
+    // Venduto = RVW_AbbonamentiUtenti.Importo (dedupe per IDIscrizione). Pagato = RVW_AbbonamentiPagamentiUtenti somma CassaMovimentiImporto.
     const seenIscrizione = new Set<string>()
 
     const byCliente = new Map<
@@ -249,9 +258,7 @@ export async function getCampus(req: Request, res: Response) {
       }
     >()
 
-    // Pagato: incassi cassa per IDIscrizione nel range (come tab «Pagamenti» / Data pagato), non MovimentiVenduto
-    // (che segue «Data operazione» e somme vicine ad «Abbonamenti venduti» → Pagato > Venduto in Campus).
-    const pagatoRows = await gestionaleSql.queryCassaMovimentiSumByIscrizione(rangeFrom, rangeTo)
+    const pagatoRows = await gestionaleSql.queryAbbonamentiPagamentiSumCassaCampusByIscrizione(rangeFrom, rangeTo)
     const pagatoByIscrizione = new Map<string, number>()
     pagatoRows.forEach((r) => {
       const id = normIscrizioneCampusKey((r as any).IDIscrizione ?? (r as any).idIscrizione)
@@ -259,7 +266,7 @@ export async function getCampus(req: Request, res: Response) {
       if (id) pagatoByIscrizione.set(id, tot)
     })
 
-    for (const a of campusAbbonamenti) {
+    for (const { a, importoVenduto } of campusAbbonamenti) {
       const weeks = weeksForAbbonamento(a.dataInizio, a.dataFine, CAMPUS_WEEKS_2026)
       const entry =
         byCliente.get(a.clienteId) ??
@@ -280,14 +287,14 @@ export async function getCampus(req: Request, res: Response) {
         dataInizio: a.dataInizio,
         dataFine: a.dataFine,
         settimane: weeks,
-        prezzo: a.prezzo,
+        prezzo: importoVenduto,
       })
       const iscrId = normIscrizioneCampusKey(a.id)
       if (!iscrId) {
-        entry.totaleVenduto += Number(a.prezzo ?? 0) || 0
+        entry.totaleVenduto += importoVenduto
       } else if (!seenIscrizione.has(iscrId)) {
         seenIscrizione.add(iscrId)
-        entry.totaleVenduto += Number(a.prezzo ?? 0) || 0
+        entry.totaleVenduto += importoVenduto
         entry.totalePagato += pagatoByIscrizione.get(iscrId) ?? 0
       }
       byCliente.set(a.clienteId, entry)
