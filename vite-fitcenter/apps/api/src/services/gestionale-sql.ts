@@ -982,6 +982,34 @@ export async function queryMovimentiVendutoSumByIscrizione(from: string, to: str
   }
 }
 
+/** Espressione data per filtro range: prima colonne «pagato», poi operazione (COALESCE evita righe escluse se DataPagato è NULL). */
+function cassaDateExprForRange(colsLower: string[], bracket: (c: string) => string): string | null {
+  const set = new Set(colsLower)
+  const dateOrder = [
+    "DataPagato",
+    "DataPagamento",
+    "CassaMovimentiDataPagato",
+    "CassaMovimentiDataPagamento",
+    "CassaMovimentiDataOperazione",
+    "DataOperazione",
+    "DataMovimento",
+    "CassaMovimentiData",
+    "Data",
+  ]
+  const found = dateOrder.filter((c) => set.has(c.toLowerCase()))
+  if (found.length === 0) {
+    const one = pickBestDateCol(colsLower, dateOrder)
+    if (!one) return null
+    return `CAST(TRY_CONVERT(datetime, ${bracket(one)}) AS DATE)`
+  }
+  if (found.length === 1) {
+    const c = found[0]!
+    return `CAST(TRY_CONVERT(datetime, ${bracket(c)}) AS DATE)`
+  }
+  const inner = found.map((c) => `TRY_CONVERT(datetime, ${bracket(c)})`).join(", ")
+  return `CAST(COALESCE(${inner}) AS DATE)`
+}
+
 /** Somma incassi (Importo) per IDIscrizione dalla view CassaMovimenti (range date). */
 export async function queryCassaMovimentiSumByIscrizione(from: string, to: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()
@@ -990,19 +1018,7 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
   const vq = qualifySqlObject(view).query
   try {
     const colsLower = await prenGetCols(view) // lower-case
-    // Priorità «data incasso» come tab Pagamenti (Data pagato), non la data operazione di vendita.
-    const dateCol =
-      pickBestDateCol(colsLower, [
-        "DataPagato",
-        "DataPagamento",
-        "CassaMovimentiDataPagato",
-        "CassaMovimentiDataPagamento",
-        "CassaMovimentiDataOperazione",
-        "DataOperazione",
-        "DataMovimento",
-        "CassaMovimentiData",
-        "Data",
-      ]) ?? null
+    const dateExpr = cassaDateExprForRange(colsLower, bracketCol)
     const importoCol =
       pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "Importo", "Totale", "Ammontare", "Prezzo"]) ?? null
     // IDIscrizione può essere testo o numerico a seconda della view.
@@ -1047,31 +1063,36 @@ export async function queryCassaMovimentiSumByIscrizione(from: string, to: strin
         "TipoDescrizione",
       ]) ?? null
 
-    if (!dateCol || !importoCol || !idIscrizioneCol) return []
+    if (!dateExpr || !importoCol || !idIscrizioneCol) return []
 
-    const whereParts: string[] = []
-    whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
-    whereParts.push(`COALESCE(LTRIM(RTRIM(CAST(${bracketCol(idIscrizioneCol)} AS NVARCHAR(64)))), N'') <> N''`)
-    // Coerenza con queryCassaMovimentiUtenti: solo righe abbonamenti/corsi (se colonna disponibile)
-    if (tipoServizioCol) {
-      whereParts.push(
-        `LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi')`
-      )
+    const buildWhere = (withTipoServizio: boolean): string => {
+      const whereParts: string[] = []
+      whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
+      whereParts.push(`COALESCE(LTRIM(RTRIM(CAST(${bracketCol(idIscrizioneCol)} AS NVARCHAR(64)))), N'') <> N''`)
+      if (withTipoServizio && tipoServizioCol) {
+        whereParts.push(
+          `LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi','campus','campus sportivi')`
+        )
+      }
+      whereParts.push(`${dateExpr} >= CAST(@from AS DATE) AND ${dateExpr} <= CAST(@to AS DATE)`)
+      return `WHERE ${whereParts.join(" AND ")}`
     }
-    whereParts.push(
-      `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) >= CAST(@from AS DATE) AND CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) <= CAST(@to AS DATE)`
-    )
-    const where = `WHERE ${whereParts.join(" AND ")}`
 
     const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
-    const r = await req.query(
+    const sqlBody = (where: string) =>
       `SELECT CAST(${bracketCol(idIscrizioneCol)} AS NVARCHAR(64)) AS IDIscrizione, COALESCE(SUM(TRY_CONVERT(float, ${bracketCol(importoCol)})), 0) AS Totale
        FROM ${vq}
        ${where}
        GROUP BY CAST(${bracketCol(idIscrizioneCol)} AS NVARCHAR(64))
        ORDER BY CAST(${bracketCol(idIscrizioneCol)} AS NVARCHAR(64));`
-    )
-    return (r.recordset ?? []) as Record<string, unknown>[]
+
+    let r = await req.query(sqlBody(buildWhere(true)))
+    let rows = (r.recordset ?? []) as Record<string, unknown>[]
+    if (rows.length === 0 && tipoServizioCol) {
+      r = await req.query(sqlBody(buildWhere(false)))
+      rows = (r.recordset ?? []) as Record<string, unknown>[]
+    }
+    return rows
   } catch {
     return []
   }

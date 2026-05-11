@@ -63,6 +63,16 @@ function normToken(s: string): string {
     .trim()
 }
 
+/** Chiave IDIscrizione allineata tra RVW abbonamenti e righe cassa (numerico / ".0"). */
+function normIscrizioneCampusKey(v: unknown): string {
+  const s = String(v ?? "").trim()
+  if (!s) return ""
+  const n = Number(s.replace(",", "."))
+  if (Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER && Number.isInteger(n)) return String(n)
+  if (Number.isFinite(n) && n > 0 && n <= Number.MAX_SAFE_INTEGER) return String(Math.trunc(n))
+  return s
+}
+
 function isCampusAbb(a: ReturnType<typeof rowToAbbonamento>): boolean {
   const macro = normToken(a.macroCategoriaDescrizione ?? "")
   const cat = normToken(a.categoriaAbbonamentoDescrizione ?? "")
@@ -244,7 +254,7 @@ export async function getCampus(req: Request, res: Response) {
     const pagatoRows = await gestionaleSql.queryCassaMovimentiSumByIscrizione(rangeFrom, rangeTo)
     const pagatoByIscrizione = new Map<string, number>()
     pagatoRows.forEach((r) => {
-      const id = String((r as any).IDIscrizione ?? (r as any).idIscrizione ?? "").trim()
+      const id = normIscrizioneCampusKey((r as any).IDIscrizione ?? (r as any).idIscrizione)
       const tot = Number((r as any).Totale ?? (r as any).totale ?? 0) || 0
       if (id) pagatoByIscrizione.set(id, tot)
     })
@@ -272,7 +282,7 @@ export async function getCampus(req: Request, res: Response) {
         settimane: weeks,
         prezzo: a.prezzo,
       })
-      const iscrId = String(a.id ?? "").trim()
+      const iscrId = normIscrizioneCampusKey(a.id)
       if (!iscrId) {
         entry.totaleVenduto += Number(a.prezzo ?? 0) || 0
       } else if (!seenIscrizione.has(iscrId)) {
