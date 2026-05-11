@@ -230,6 +230,8 @@ function pickDataAbbonamentoInserito(row: Record<string, unknown>): Date | null 
 
 export async function getCampus(req: Request, res: Response) {
   try {
+    res.setHeader("Cache-Control", "private, no-store, no-cache, must-revalidate, max-age=0")
+    res.setHeader("Pragma", "no-cache")
     const u = getScopedUser(req)
     // Reception (operatore) deve poter consultare il Campus in lettura.
     if (u.role !== "admin" && u.role !== "campus" && u.role !== "operatore" && u.role !== "firme") {

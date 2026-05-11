@@ -48,12 +48,16 @@ function withConsulente(url: string, consulente?: string) {
   return `${url}${sep}consulente=${encodeURIComponent(consulente)}`
 }
 
-/** Allineato al gestionale IT: 1° marzo anno corrente → oggi (Europe/Rome), come la data sul PC dell’utente. */
-function campusDateRangeQuery(): string {
+/** Allineato al gestionale IT: 1° marzo anno corrente → oggi (Europe/Rome). Esportato per queryKey React Query. */
+export function campusDateRangeParts(): { from: string; to: string } {
   const tz = "Europe/Rome"
   const to = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date())
   const year = to.slice(0, 4)
-  const from = `${year}-03-01`
+  return { from: `${year}-03-01`, to }
+}
+
+function campusDateRangeQuery(): string {
+  const { from, to } = campusDateRangeParts()
   return `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
 }
 

@@ -76,7 +76,7 @@ async function request<T>(
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>(path, { method: "GET" }),
+  get: <T>(path: string, init?: RequestInit) => request<T>(path, { method: "GET", cache: "no-store", ...init }),
   post: <T>(path: string, body: unknown) =>
     request<T>(path, {
       method: "POST",

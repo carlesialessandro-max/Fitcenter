@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Navigate } from "react-router-dom"
-import { dataApi } from "@/api/data"
+import { campusDateRangeParts, dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 
 type Tab = "elenco" | "settimane"
@@ -240,12 +240,13 @@ export function Campus() {
   const queryClient = useQueryClient()
   if (role !== "admin" && role !== "campus" && role !== "operatore" && role !== "firme") return <Navigate to="/" replace />
 
+  const campusRange = campusDateRangeParts()
   const { data, isLoading, error } = useQuery({
-    queryKey: ["campus"],
+    queryKey: ["campus", campusRange.from, campusRange.to],
     queryFn: () => dataApi.getCampus(),
     retry: false,
-    refetchOnWindowFocus: false,
-    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   })
 
   const [search, setSearch] = useState("")
