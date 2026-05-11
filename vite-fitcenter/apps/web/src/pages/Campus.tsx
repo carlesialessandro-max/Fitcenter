@@ -302,7 +302,9 @@ export function Campus() {
       })
     const totVend = list.reduce((s, b) => s + Number(b.totaleVenduto ?? 0), 0)
     const totPag = list.reduce((s, b) => s + Number(b.totalePagato ?? 0), 0)
-    const totDue = list.reduce((s, b) => s + Number(b.totaleDaPagare ?? Math.max(0, Number(b.totaleVenduto ?? 0) - Number(b.totalePagato ?? 0))), 0)
+    // Non sommare max(0, v−p) per bambino: se per qualcuno pagato>venduto, la somma dei «da pagare»
+    // non coincide con venduto−pagato (effetto «stamattina» / cifre incoerenti nel riepilogo).
+    const totDue = Math.max(0, totVend - totPag)
     return { count: list.length, venduto: totVend, pagato: totPag, daPagare: totDue }
   }, [filtered, groupFilter, tab, weekKey])
 
