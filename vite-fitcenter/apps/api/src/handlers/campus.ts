@@ -117,12 +117,62 @@ function parseLooseDate(s: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d
 }
 
-function inClosedRange(d: Date, fromIso: string, toIso: string): boolean {
-  const rf = parseIsoDate(fromIso)
-  const rt = parseIsoDate(toIso)
-  if (!rf || !rt) return true
-  const t = d.getTime()
-  return t >= rf.getTime() && t <= rt.getTime()
+/** Giorno calendario in Europe/Rome (YYYY-MM-DD), allineato al gestionale IT. */
+function toDayIsoItaly(d: Date): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d)
+  } catch {
+    return d.toISOString().slice(0, 10)
+  }
+}
+
+/** Range inclusivo [fromIso,toIso] confrontando solo la data in Italia (evita shift timezone server/SQL). */
+function inClosedRangeItaly(d: Date, fromIso: string, toIso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso) || !/^\d{4}-\d{2}-\d{2}$/.test(toIso)) return true
+  const day = toDayIsoItaly(d)
+  return day >= fromIso && day <= toIso
+}
+
+/** Overlap tra periodo abbonamento e filtro usando stringhe YYYY-MM-DD (stesso criterio del gestionale su date pure). */
+function overlapsRangeItaly(aFrom: string, aTo: string, rangeFrom: string, rangeTo: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(rangeFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(rangeTo)) {
+    return overlapsRange(aFrom, aTo, rangeFrom, rangeTo)
+  }
+  const sliceIso = (s: string) => {
+    const t = String(s ?? "").trim()
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(t)
+    return m ? m[1]! : ""
+  }
+  const s = sliceIso(aFrom)
+  const e = sliceIso(aTo)
+  if (!s && !e) return true
+  const start = s || e
+  const end = e || s
+  if (!start || !end) return overlapsRange(aFrom, aTo, rangeFrom, rangeTo)
+  return end >= rangeFrom && start <= rangeTo
+}
+
+/** Incluso nel periodo «1 mar – oggi» come vendita campus: data inserimento/operazione, altrimenti overlap periodo lezione. */
+function campusAbbonamentoInDateRange(
+  row: Record<string, unknown>,
+  a: ReturnType<typeof rowToAbbonamento>,
+  rangeFrom: string,
+  rangeTo: string,
+): boolean {
+  const rif = pickDataAbbonamentoInserito(row)
+  if (rif && inClosedRangeItaly(rif, rangeFrom, rangeTo)) return true
+  const op = parseLooseDate(
+    (row as any).DataOperazione ?? (row as any).DataOperazioneAbbonamento ?? (row as any).AbbonamentiDataOperazione
+  )
+  if (op && inClosedRangeItaly(op, rangeFrom, rangeTo)) return true
+  const di = parseLooseDate((row as any).DataIscrizione ?? (row as any).DataIscrizioneAbbonamento)
+  if (di && inClosedRangeItaly(di, rangeFrom, rangeTo)) return true
+  return overlapsRangeItaly(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
 }
 
 function overlapsRange(aFrom: string, aTo: string, rangeFrom: string, rangeTo: string): boolean {
@@ -260,15 +310,11 @@ export async function getCampus(req: Request, res: Response) {
           if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
         const a = rowToAbbonamento(r)
-        const rifData = pickDataAbbonamentoInserito(r)
         const importoVenduto = campusImportoVendutoRvW(row)
-        return { a, rifData, importoVenduto }
+        return { a, importoVenduto, row }
       })
       .filter(({ a }) => isCampusAbb(a))
-      .filter(({ a, rifData }) => {
-        if (rifData) return inClosedRange(rifData, rangeFrom, rangeTo)
-        return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
-      })
+      .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
       .map(({ a, importoVenduto }) => ({ a, importoVenduto }))
     // Venduto = RVW_AbbonamentiUtenti.Importo (dedupe per IDIscrizione). Pagato = RVW_AbbonamentiPagamentiUtenti somma CassaMovimentiImporto.
     const seenIscrizione = new Set<string>()
@@ -429,11 +475,7 @@ export async function importCampusPlanningExcel(req: Request, res: Response) {
     const campusAbbonamenti = rows
       .map((r) => ({ r, a: rowToAbbonamento(r) }))
       .filter(({ a }) => isCampusAbb(a))
-      .filter(({ a, r }) => {
-        const rif = pickDataAbbonamentoInserito(r)
-        if (rif) return inClosedRange(rif, rangeFrom, rangeTo)
-        return overlapsRange(a.dataInizio, a.dataFine, rangeFrom, rangeTo)
-      })
+      .filter(({ a, r }) => campusAbbonamentoInDateRange(r as Record<string, unknown>, a, rangeFrom, rangeTo))
       .map(({ a }) => a)
     // Totale contrattuale dalla view pagamenti (RVW_AbbonamentiPagamentiUtenti): serve per acconti + rate.
     const totVendutoByIscrizione = new Map<string, number>()
