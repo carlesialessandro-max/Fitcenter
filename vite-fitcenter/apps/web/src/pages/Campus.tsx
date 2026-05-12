@@ -112,16 +112,21 @@ function CampusWeeksGrouped(props: {
                 <div className="mb-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={async () => {
-                      // Apri WhatsApp per tutti (solo consenso sì)
+                    onClick={() => {
                       const links = rows
                         .filter((x) => Boolean(x.b.consensoWhatsapp))
                         .map((x) => waHref(x.b.cellulare, `Ciao ${x.b.genitore ?? ""}, ti scrivo per il Campus Sportivi.`))
                         .filter(Boolean) as string[]
                       for (const href of links) {
-                        window.open(href, "_blank", "noreferrer")
-                        // eslint-disable-next-line no-await-in-loop
-                        await new Promise((r) => setTimeout(r, 350))
+                        const a = document.createElement("a")
+                        a.href = href
+                        a.target = "_blank"
+                        a.rel = "noreferrer"
+                        a.style.position = "fixed"
+                        a.style.left = "-9999px"
+                        document.body.appendChild(a)
+                        a.click()
+                        a.remove()
                       }
                     }}
                     disabled={groupPhonesWaOk.length === 0}

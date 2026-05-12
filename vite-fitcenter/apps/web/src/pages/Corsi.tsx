@@ -1118,15 +1118,33 @@ export function Corsi() {
     setWaCursor((x) => Math.min(modalWaLinks.length, x + 1))
   }
 
-  async function openWaAll(): Promise<void> {
+  /**
+   * Apre una scheda per ogni contatto nello stesso “turno” del click utente.
+   * `await`/setTimeout tra un `window.open` e l’altro fa perdere il gesto: il browser blocca i popup successivi.
+   */
+  function openWaAllSync(): void {
     if (modalWaLinks.length === 0) return
-    for (let i = 0; i < modalWaLinks.length; i += 1) {
-      openWaAt(i)
-      // piccola pausa per ridurre blocchi popup
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 350))
+    for (const { href } of modalWaLinks) {
+      const a = document.createElement("a")
+      a.href = href
+      a.target = "_blank"
+      a.rel = "noreferrer"
+      a.style.position = "fixed"
+      a.style.left = "-9999px"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
     }
     setWaCursor(modalWaLinks.length)
+  }
+
+  async function copyWaLinksAll(): Promise<void> {
+    const text = modalWaLinks.map((x) => x.href).join("\n")
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch {
+      window.prompt("Copia i link (Ctrl+C):", text)
+    }
   }
 
   return (
@@ -1209,7 +1227,9 @@ export function Corsi() {
             ) : (
               <div className="mt-4 space-y-2">
                 <p className="text-xs text-zinc-500">
-                  Apri WhatsApp sul telefono e invia il messaggio a ciascun contatto (numero da colonna SMS).
+                  Apri WhatsApp sul telefono e invia il messaggio a ciascun contatto (numero da colonna SMS). «Apri tutti»
+                  apre più schede in un solo click; se il browser ne blocca alcune, usa «Apri prossimo», i link singoli, o
+                  «Copia link».
                 </p>
                 {modalWaLinks.length === 0 ? (
                   <p className="rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-500">
@@ -1235,10 +1255,17 @@ export function Corsi() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => void openWaAll()}
+                          onClick={() => openWaAllSync()}
                           className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/60"
                         >
                           Apri tutti
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void copyWaLinksAll()}
+                          className="touch-manipulation rounded-lg border border-zinc-700 bg-zinc-900/40 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800/60"
+                        >
+                          Copia link
                         </button>
                       </div>
                     </div>
