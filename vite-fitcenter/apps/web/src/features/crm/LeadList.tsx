@@ -7,6 +7,7 @@ import type { Lead, LeadSource, LeadStatus } from "@/types/lead"
 import { LEAD_SOURCE_LABELS, LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
 import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
+import { CRM_CONSULENTI_LEAD } from "./crmConsulenti"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { Button } from "@workspace/ui/components/button"
 import { useAuth } from "@/contexts/AuthContext"
@@ -91,9 +92,7 @@ export function LeadList() {
     return m
   }, [filtered])
 
-  /** Solo Carmen, Serena e Ombretta nel dropdown (nessun altro nome). */
-  const CONSULENTI_OPZIONI = ["Carmen Severino", "Serena Del Prete", "Ombretta Zenoni"]
-  const consulenti = CONSULENTI_OPZIONI
+  const consulenti = CRM_CONSULENTI_LEAD.map((c) => c.nome)
 
   return (
     <div className="p-6">

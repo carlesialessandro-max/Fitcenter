@@ -308,16 +308,36 @@ export async function updateLead(req: Request, res: Response) {
   const lead = store.get(id)
   if (!lead) return res.status(404).json({ message: "Lead non trovato" })
 
-  // Admin: può aggiornare tutto.
-  // Consulente: può aggiornare solo stato/interesse/note sui lead assegnati a lei.
-  let payload: Record<string, unknown> = req.body as any
-  if (u.role !== "admin") {
+  // Admin: whitelist campi (inclusa riassegnazione consulente, es. errore Zapier).
+  // Consulente: solo stato/interesse/note sui lead assegnati a lei.
+  let payload: Record<string, unknown>
+  if (u.role === "admin") {
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const w: Record<string, unknown> = {}
+    const keys = [
+      "stato",
+      "interesse",
+      "interesseDettaglio",
+      "note",
+      "consulenteId",
+      "consulenteNome",
+      "categoria",
+      "fonteDettaglio",
+    ] as const
+    for (const k of keys) {
+      if (body[k] !== undefined) w[k] = body[k]
+    }
+    const cn = w.consulenteNome
+    const cid = w.consulenteId
+    if (cn === "" || cn === null) w.consulenteNome = undefined
+    if (cid === "" || cid === null) w.consulenteId = undefined
+    payload = w
+  } else {
     const me = (getOperatoreConsulenteNome(req) ?? "").trim().toLowerCase()
     const assigned = String(lead.consulenteNome ?? "").trim().toLowerCase()
     if (!me) return res.status(403).json({ message: "Solo operatore può aggiornare un lead" })
     if (!assigned || assigned !== me) return res.status(403).json({ message: "Lead non assegnato a te" })
 
-    // Whitelist campi aggiornabili.
     const body = (req.body ?? {}) as Record<string, unknown>
     payload = {}
     if (body.stato != null) payload.stato = body.stato

@@ -4,8 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { leadsApi } from "@/api/leads"
 import { useAuth } from "@/contexts/AuthContext"
-import type { LeadStatus, InteresseLead } from "@/types/lead"
+import type { LeadStatus, LeadUpdate } from "@/types/lead"
 import { LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
+import { crmConsulentiLeadOptionsForAssign, CRM_CONSULENTI_LEAD } from "./crmConsulenti"
 import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
 import { ChiamaButton } from "@/components/ChiamaButton"
@@ -25,10 +26,20 @@ export function LeadDetail() {
     enabled: !!id,
   })
   const lead = leads.find((l) => l.id === id)
+  const consulenteSelectValue = useMemo(() => {
+    if (!id) return ""
+    const l = leads.find((x) => x.id === id)
+    if (!l) return ""
+    const byId = l.consulenteId ? CRM_CONSULENTI_LEAD.find((x) => x.id === l.consulenteId) : undefined
+    if (byId) return byId.id
+    const byNome = l.consulenteNome ? CRM_CONSULENTI_LEAD.find((x) => x.nome === l.consulenteNome) : undefined
+    if (byNome) return byNome.id
+    if (l.consulenteNome || l.consulenteId) return "__unknown__"
+    return ""
+  }, [id, leads])
 
   const updateMutation = useMutation({
-    mutationFn: (updates: { stato?: LeadStatus; interesse?: InteresseLead; note?: string }) =>
-      leadsApi.update(id!, updates),
+    mutationFn: (updates: LeadUpdate) => leadsApi.update(id!, updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
     },
@@ -151,7 +162,38 @@ export function LeadDetail() {
             </div>
             <div>
               <dt className="text-zinc-500">Consulente</dt>
-              <dd className="text-zinc-100">{lead.consulenteNome ?? "Non assegnato"}</dd>
+              <dd className="text-zinc-100">
+                {role === "admin" ? (
+                  <select
+                    className="mt-1 w-full max-w-xs rounded-md border border-zinc-700 bg-zinc-950/50 px-2 py-1.5 text-sm text-zinc-100"
+                    value={consulenteSelectValue}
+                    disabled={updateMutation.isPending}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (v === "__unknown__") return
+                      const opt = crmConsulentiLeadOptionsForAssign().find((o) => o.id === v)
+                      if (!opt?.id) {
+                        updateMutation.mutate({ consulenteId: "", consulenteNome: "" })
+                      } else {
+                        updateMutation.mutate({ consulenteId: opt.id, consulenteNome: opt.nome })
+                      }
+                    }}
+                  >
+                    {consulenteSelectValue === "__unknown__" ? (
+                      <option value="__unknown__" disabled>
+                        {lead.consulenteNome ?? lead.consulenteId ?? "Assegnato"} (scegli dall&apos;elenco)
+                      </option>
+                    ) : null}
+                    {crmConsulentiLeadOptionsForAssign().map((o) => (
+                      <option key={o.id || "__none__"} value={o.id}>
+                        {o.nome}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  lead.consulenteNome ?? "Non assegnato"
+                )}
+              </dd>
             </div>
           </dl>
         </div>

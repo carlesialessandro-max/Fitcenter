@@ -1615,7 +1615,8 @@ export async function assignLeadToMe(req: Request, res: Response) {
     if (already && already.toLowerCase() !== consulenteNome.toLowerCase()) {
       return res.status(409).json({ message: `Lead già assegnato a ${already}` })
     }
-    const updated = leadsStore.update(id, { consulenteNome })
+    const consulenteId = (getScopedUser(req).username ?? "").trim() || undefined
+    const updated = leadsStore.update(id, { consulenteNome, ...(consulenteId ? { consulenteId } : {}) })
     if (!updated) return res.status(404).json({ message: "Lead non trovato" })
     res.json(updated)
   } catch (e) {
