@@ -1581,19 +1581,31 @@ export async function getTotaliAnni(req: Request, res: Response) {
   }
 }
 
-/** Lead: da sito, campagne FB e Google (store locale). Non si importano dal gestionale. Per consulente bambini (Irene) filtra solo categoria bambini. */
+/** Lead CRM: store locale. Admin vede tutto. Operatore: vede il pool della sua fascia (bambini vs generale)
+ *  e **sempre** i lead assegnati a lei (nome o username), anche se `categoria` non coincide (errori Zapier / riassegnazione). */
 export async function getLeadsFromGestionale(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
-    const filters: { categoria?: "bambini" | "generale" } = {}
-    // ACL:
-    // - admin: vede tutto
-    // - Irene (leadFilter=bambini): vede solo bambini
-    // - altri: non devono vedere i bambini
-    if (u?.role !== "admin") {
-      filters.categoria = u?.leadFilter === "bambini" ? "bambini" : "generale"
+    if (u.role === "admin") {
+      res.json(leadsStore.list({}))
+      return
     }
-    res.json(leadsStore.list(filters))
+    const meNome = (u.consulenteNome ?? u.nome ?? "").trim()
+    const meUser = (u.username ?? "").trim().toLowerCase()
+    const isBambiniScope = u.leadFilter === "bambini"
+    const all = leadsStore.list({})
+    const filtered = all.filter((lead) => {
+      const assignedNome = String(lead.consulenteNome ?? "").trim()
+      const assignedId = String(lead.consulenteId ?? "").trim().toLowerCase()
+      const assignedToMe =
+        (meNome.length > 0 && assignedNome.length > 0 && assignedNome.toLowerCase() === meNome.toLowerCase()) ||
+        (meUser.length > 0 && assignedId.length > 0 && assignedId === meUser)
+      if (assignedToMe) return true
+      const cat = lead.categoria ?? "generale"
+      if (isBambiniScope) return cat === "bambini"
+      return cat === "generale"
+    })
+    res.json(filtered)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
