@@ -536,6 +536,13 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
   return { start, end }
 }
 
+/** Per presenza/accessi in elenco partecipanti: orari lezione = quelli del corso aperto (`g`), non eventuali orari errati sulla singola riga prenotazione (es. stesso slot ripetuto su più corsi). */
+function participantForLessonAccess(g: CorsoGroup, p: PrenotazioneCorsoRow, giornoIso: string): PrenotazioneCorsoRow {
+  const oraInizio = String(g.oraInizio ?? "").trim() || String(p.oraInizio ?? "").trim()
+  const oraFine = String(g.oraFine ?? "").trim() || String(p.oraFine ?? "").trim()
+  return { ...p, giorno: giornoIso, oraInizio, oraFine }
+}
+
 type AccessEvent = { t: Date; kind: "in" | "out" }
 type AccessIndex = Map<string, AccessEvent[]> // idKey -> access events (sorted by time)
 
@@ -705,39 +712,47 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
   // - se l'ultimo evento è "in" => presente, se è "out" => assente
   const startMs = w.start.getTime()
   const endMs = (w.end ?? w.start).getTime()
-  // Finestra rilevante: da un po' prima dell'inizio lezione (transito / arrivo anticipato) fino a fine lezione.
-  // Esclude passaggi mattutini / di altri corsi che altrimenti finirebbero in `evsInLesson` e annullano il pallino.
+  // Finestra stretta: da un po' prima dell'inizio lezione fino a fine (esclude passaggi mattutini non correlati).
   const PRE_LEZIONE_MS = 45 * 60 * 1000
   const windowStartMs = startMs - PRE_LEZIONE_MS
-
-  // Presenza = ha fatto "in" nella finestra lezione,
-  // ed eventuali "out" nella stessa finestra dopo quell'ingresso annullano la presenza.
-  // Gli eventi dopo `oraFine` restano fuori (es. uscita ore dopo).
-  const evsInLesson = evs.filter((e) => {
-    const t = e.t.getTime()
-    return t >= windowStartMs && t <= endMs
-  })
-  if (evsInLesson.length === 0) return { present: false, entry: null, exit: null }
-
-  const insInLesson = evsInLesson.filter((e) => e.kind === "in").map((e) => e.t)
-  if (insInLesson.length === 0) return { present: false, entry: null, exit: null }
-
-  const lastIn = insInLesson[insInLesson.length - 1] ?? null
-  if (!lastIn) return { present: false, entry: null, exit: null }
-
-  // Uscita registrata pochi secondi/minuti dopo l’ingresso (doppio passaggio varco): non deve annullare la presenza.
   const MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL = 20 * 60 * 1000
-  const outsAfterLastIn = evsInLesson
-    .filter((e) => e.kind === "out" && e.t.getTime() >= lastIn.getTime() + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL)
-    .map((e) => e.t)
-  const hasOutAfterLastIn = outsAfterLastIn.length > 0
+  /** Oltre questa distanza ingresso→inizio lezione non consideriamo più lo stesso ingresso (evita pallino verso sera per accessi mattutini). */
+  const MAX_EARLY_IN_BEFORE_LESSON_MS = 5 * 60 * 60 * 1000
 
-  let present = !hasOutAfterLastIn
+  const insTimes = evs.filter((e) => e.kind === "in").map((e) => e.t.getTime()).sort((a, b) => a - b)
+  if (insTimes.length === 0) return { present: false, entry: null, exit: null }
 
-  // Entro fine lezione: ritardi (es. ingresso 9:44 per lezione 9:30–10:20) contano come presenti,
-  // purché l'ingresso sia avvenuto prima della fine lezione (già filtrato in evsInLesson).
-  // Mostriamo sempre l'orario dell'ultimo ingresso nella finestra (anche se poi risulta assente per uscita),
-  // così in UI si capisce il mismatch con l'appello manuale.
+  const outsTimes = evs.filter((e) => e.kind === "out").map((e) => e.t.getTime())
+
+  const insInStrict = insTimes.filter((t) => t >= windowStartMs && t <= endMs)
+  let lastInMs: number
+  if (insInStrict.length > 0) {
+    lastInMs = insInStrict[insInStrict.length - 1]!
+  } else {
+    // Piscina / più corsi nello stesso giorno: un solo ingresso (es. 12:54) prima della finestra del 2° corso
+    // ma senza uscita intermedia → ancora dentro. Richiede ingresso non troppo lontano dall'inizio lezione.
+    const beforeEnd = insTimes.filter((t) => t <= endMs)
+    if (beforeEnd.length === 0) return { present: false, entry: null, exit: null }
+    lastInMs = beforeEnd[beforeEnd.length - 1]!
+    if (lastInMs < windowStartMs) {
+      if (startMs - lastInMs > MAX_EARLY_IN_BEFORE_LESSON_MS) {
+        return { present: false, entry: null, exit: null }
+      }
+      const exitedBeforeLesson = outsTimes.some((o) => o >= lastInMs + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL && o < startMs)
+      if (exitedBeforeLesson) return { present: false, entry: null, exit: null }
+    }
+  }
+
+  const lastIn = new Date(lastInMs)
+
+  const hasOutAfterLastIn = outsTimes.some((o) => {
+    if (o < lastInMs + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL) return false
+    if (o < startMs) return true
+    if (o >= startMs && o <= endMs) return true
+    return false
+  })
+
+  const present = !hasOutAfterLastIn
 
   return { present, entry: lastIn, exit: null }
 }
@@ -750,7 +765,8 @@ function possibileUscitaAnticipata(g: CorsoGroup, p: PrenotazioneCorsoRow, acces
   const evs = accessIdx.get(stable) ?? []
   if (evs.length === 0) return false
 
-  const w = getLessonWindow(p, g.giorno)
+  const dayIso = String(g.giorno ?? "").trim()
+  const w = getLessonWindow(participantForLessonAccess(g, p, dayIso), dayIso)
   if (!w.start || !w.end) return false
   const startMs = w.start.getTime()
   const endMs = w.end.getTime()
@@ -1458,12 +1474,7 @@ export function Corsi() {
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
                     const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
                     const presentiCount = g.partecipanti.filter((p, idx) => {
-                      const pWithTimes: PrenotazioneCorsoRow = {
-                        ...p,
-                        giorno,
-                        oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
-                        oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
-                      }
+                      const pWithTimes = participantForLessonAccess(g, p, giorno)
                       const okAccesso = isPresentByAccess(accessIdxDay, pWithTimes, giorno).present
                       const ov = appelloOverride(g.key, p, idx)
                       return ov.hasOverride ? ov.value : okAccesso
@@ -1600,12 +1611,7 @@ export function Corsi() {
                             })
                           : ""
                         const note = (p.note ?? "").trim()
-                        const pWithTimes: PrenotazioneCorsoRow = {
-                          ...p,
-                          giorno,
-                          oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
-                          oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
-                        }
+                        const pWithTimes = participantForLessonAccess(g, p, giorno)
                         const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                         const okAccesso = access.present
                         const ov = appelloOverride(g.key, p, idx)
@@ -1715,12 +1721,7 @@ export function Corsi() {
                                 minute: "2-digit",
                               })
                             : ""
-                          const pWithTimes: PrenotazioneCorsoRow = {
-                            ...p,
-                            giorno,
-                            oraInizio: (p.oraInizio ?? "").trim() ? p.oraInizio : g.oraInizio,
-                            oraFine: (p.oraFine ?? "").trim() ? p.oraFine : g.oraFine,
-                          }
+                          const pWithTimes = participantForLessonAccess(g, p, giorno)
                           const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                           const okAccesso = access.present
                           const ov = appelloOverride(g.key, p, idx)
