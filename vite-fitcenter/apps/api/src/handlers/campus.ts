@@ -370,35 +370,9 @@ export async function getCampus(req: Request, res: Response) {
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
 
-    const vendutoDaMovimenti = (process.env.GESTIONALE_CAMPUS_VENDUTO_DA_MOVIMENTI ?? "true").toLowerCase() !== "false"
-    const idList = [
-      ...new Set(
-        campusRowsRaw
-          .map(({ a }) => normIscrizioneCampusKey(a.id))
-          .filter((k) => k.length > 0),
-      ),
-    ]
-    const vendutoMovByIscr =
-      vendutoDaMovimenti && gestionaleSql.isGestionaleConfigured() && idList.length > 0
-        ? await gestionaleSql.queryMovimentiVendutoSumByIscrizioneIds(rangeFrom, rangeTo, idList)
-        : new Map<string, number>()
-    const movGiaApplicato = new Set<string>()
-    const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW }) => {
-      const iscr = normIscrizioneCampusKey(a.id)
-      let importoVenduto = importoRvW
-      if (vendutoDaMovimenti && iscr && vendutoMovByIscr.has(iscr)) {
-        const m = vendutoMovByIscr.get(iscr) ?? 0
-        if (!movGiaApplicato.has(iscr)) {
-          importoVenduto = m
-          movGiaApplicato.add(iscr)
-        } else {
-          // Stessa iscrizione duplicata in RVW: il venduto da movimenti va contato una sola volta.
-          importoVenduto = 0
-        }
-      }
-      return { a, importoVenduto }
-    })
-    // Venduto = somma Importo movimenti vendita nel periodo (come «Abbonamenti venduti»), fallback RVW; pagato = cassa per IDIscrizione (dedup).
+    // Campus: venduto = somma colonna Importo dalla RVW_AbbonamentiUtenti (una riga = una quota campus).
+    const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW }) => ({ a, importoVenduto: importoRvW }))
+    // Pagato = somma CassaMovimentiImporto per IDIscrizione (dedup).
     const iscrizionePagatoGiaSommata = new Set<string>()
 
     const byCliente = new Map<
