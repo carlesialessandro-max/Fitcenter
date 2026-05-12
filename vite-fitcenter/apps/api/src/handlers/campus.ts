@@ -86,22 +86,30 @@ function parseMoneyIt(v: unknown): number {
 }
 
 /**
- * Solo la colonna **Importo** della RVW (come da gestionale): niente altri alias tipo
- * `AbbonamentiImporto` / `ImportoRiga` che possono differire e far comparire 164 al posto di 150.
- * Opzionale: `GESTIONALE_CAMPUS_COL_IMPORTO` se il DB espone un nome diverso ma è sempre «l’importo riga».
+ * Importo «venduto» Campus dalla RVW: nella vista `RVW_AbbonamentiUtenti` la colonna **Importo**
+ * può essere il listino (es. 164) mentre il valore mostrato in griglia come importo vendita coincide con **Totale** (es. 150).
+ * Override: `GESTIONALE_CAMPUS_COL_VENDUTO_RVW` (nome colonna) oppure legacy `GESTIONALE_CAMPUS_COL_IMPORTO`.
  */
 function campusImportoVendutoRvWWithSource(row: Record<string, unknown>): { value: number; source: string } {
-  const rawCol = (process.env.GESTIONALE_CAMPUS_COL_IMPORTO ?? "").trim().replace(/[\[\]]/g, "")
+  const rawCol = (process.env.GESTIONALE_CAMPUS_COL_VENDUTO_RVW ?? process.env.GESTIONALE_CAMPUS_COL_IMPORTO ?? "")
+    .trim()
+    .replace(/[\[\]]/g, "")
   if (rawCol && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawCol)) {
     const v = (row as any)[rawCol]
     if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: `env:${rawCol}` }
   }
-  for (const k of ["Importo", "importo"] as const) {
+  for (const k of ["Totale", "totale", "Importo", "importo"] as const) {
     const v = (row as any)[k]
     if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
   }
   for (const [k, v] of Object.entries(row)) {
-    if (k.replace(/\s/g, "").toLowerCase() !== "importo") continue
+    const nk = k.replace(/\s/g, "").toLowerCase()
+    if (nk !== "totale") continue
+    if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
+  }
+  for (const [k, v] of Object.entries(row)) {
+    const nk = k.replace(/\s/g, "").toLowerCase()
+    if (nk !== "importo") continue
     if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
   }
   return { value: 0, source: "none" }
@@ -360,7 +368,7 @@ export async function getCampus(req: Request, res: Response) {
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
 
-    // Campus: venduto = somma colonna Importo dalla RVW_AbbonamentiUtenti (una riga = una quota campus).
+    // Campus: venduto = somma dalla RVW (default Totale, come importo in griglia; Importo può essere listino diverso).
     const includeDebug = String(req.query.debug ?? "").trim() === "1"
     const debugName = String(req.query.debugName ?? "").trim().toLowerCase()
     const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW, importoRvWSource, row }) => {
