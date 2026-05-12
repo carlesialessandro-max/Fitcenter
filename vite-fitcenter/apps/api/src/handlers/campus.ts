@@ -86,8 +86,9 @@ function parseMoneyIt(v: unknown): number {
 }
 
 /**
- * Importo da RVW (fallback). Preferire colonne esplicite; opz. `GESTIONALE_CAMPUS_COL_IMPORTO`.
- * Niente match «fuzzy» su nomi che contengono importo (evita colonne tipo ImportoPagato).
+ * Solo la colonna **Importo** della RVW (come da gestionale): niente altri alias tipo
+ * `AbbonamentiImporto` / `ImportoRiga` che possono differire e far comparire 164 al posto di 150.
+ * Opzionale: `GESTIONALE_CAMPUS_COL_IMPORTO` se il DB espone un nome diverso ma è sempre «l’importo riga».
  */
 function campusImportoVendutoRvWWithSource(row: Record<string, unknown>): { value: number; source: string } {
   const rawCol = (process.env.GESTIONALE_CAMPUS_COL_IMPORTO ?? "").trim().replace(/[\[\]]/g, "")
@@ -95,18 +96,7 @@ function campusImportoVendutoRvWWithSource(row: Record<string, unknown>): { valu
     const v = (row as any)[rawCol]
     if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: `env:${rawCol}` }
   }
-  const keys = [
-    "Importo",
-    "importo",
-    "AbbonamentiImporto",
-    "Abbonamenti Importo",
-    "Abbonamenti_Importo",
-    "ImportoAbbonamento",
-    "ImportoRiga",
-    "ImportoVendita",
-    "ImportoIscrizione",
-  ]
-  for (const k of keys) {
+  for (const k of ["Importo", "importo"] as const) {
     const v = (row as any)[k]
     if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
   }
