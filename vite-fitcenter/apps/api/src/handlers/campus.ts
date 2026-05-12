@@ -89,11 +89,11 @@ function parseMoneyIt(v: unknown): number {
  * Importo da RVW (fallback). Preferire colonne esplicite; opz. `GESTIONALE_CAMPUS_COL_IMPORTO`.
  * Niente match «fuzzy» su nomi che contengono importo (evita colonne tipo ImportoPagato).
  */
-function campusImportoVendutoRvW(row: Record<string, unknown>): number {
+function campusImportoVendutoRvWWithSource(row: Record<string, unknown>): { value: number; source: string } {
   const rawCol = (process.env.GESTIONALE_CAMPUS_COL_IMPORTO ?? "").trim().replace(/[\[\]]/g, "")
   if (rawCol && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawCol)) {
     const v = (row as any)[rawCol]
-    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+    if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: `env:${rawCol}` }
   }
   const keys = [
     "Importo",
@@ -108,13 +108,13 @@ function campusImportoVendutoRvW(row: Record<string, unknown>): number {
   ]
   for (const k of keys) {
     const v = (row as any)[k]
-    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+    if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
   }
   for (const [k, v] of Object.entries(row)) {
     if (k.replace(/\s/g, "").toLowerCase() !== "importo") continue
-    if (v != null && String(v).trim() !== "") return parseMoneyIt(v)
+    if (v != null && String(v).trim() !== "") return { value: parseMoneyIt(v), source: k }
   }
-  return 0
+  return { value: 0, source: "none" }
 }
 
 /** Chiave IDIscrizione allineata tra RVW abbonamenti e righe cassa (numerico / ".0"). */
@@ -364,14 +364,29 @@ export async function getCampus(req: Request, res: Response) {
           if (email && !emailByClienteId.has(clienteId)) emailByClienteId.set(clienteId, email)
         }
         const a = rowToAbbonamento(r)
-        const importoRvW = campusImportoVendutoRvW(row)
-        return { a, importoRvW, row }
+        const { value: importoRvW, source: importoRvWSource } = campusImportoVendutoRvWWithSource(row)
+        return { a, importoRvW, importoRvWSource, row }
       })
       .filter(({ a }) => isCampusAbb(a))
       .filter(({ a, row }) => campusAbbonamentoInDateRange(row, a, rangeFrom, rangeTo))
 
     // Campus: venduto = somma colonna Importo dalla RVW_AbbonamentiUtenti (una riga = una quota campus).
-    const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW }) => ({ a, importoVenduto: importoRvW }))
+    const includeDebug = String(req.query.debug ?? "").trim() === "1"
+    const debugName = String(req.query.debugName ?? "").trim().toLowerCase()
+    const campusAbbonamenti = campusRowsRaw.map(({ a, importoRvW, importoRvWSource, row }) => {
+      const want = includeDebug && (!debugName || String(a.clienteNome ?? "").toLowerCase().includes(debugName))
+      const dbg = want
+        ? {
+            importoRvW,
+            importoRvWSource,
+            idIscrizione: a.id,
+            dataOperazione: (row as any).DataOperazione ?? (row as any)["Data operazione"] ?? (row as any).AbbonamentiDataOperazione ?? null,
+            rawImporto: (row as any).Importo ?? (row as any).importo ?? null,
+            rawTotale: (row as any).Totale ?? (row as any).totale ?? null,
+          }
+        : undefined
+      return { a, importoVenduto: importoRvW, dbg }
+    })
     // Pagato = somma CassaMovimentiImporto per IDIscrizione (dedup).
     const iscrizionePagatoGiaSommata = new Set<string>()
 
@@ -384,7 +399,7 @@ export async function getCampus(req: Request, res: Response) {
         cellulare?: string
         email?: string
         genitoreSql?: string
-        items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number }[]
+        items: { abbonamentoId: string; pianoNome: string; dataInizio: string; dataFine: string; settimane: string[]; prezzo: number; dbg?: unknown }[]
         totaleVenduto: number
         totalePagato: number
       }
@@ -398,7 +413,7 @@ export async function getCampus(req: Request, res: Response) {
       if (id) pagatoByIscrizione.set(id, tot)
     })
 
-    for (const { a, importoVenduto } of campusAbbonamenti) {
+    for (const { a, importoVenduto, dbg } of campusAbbonamenti) {
       const weeks = weeksForAbbonamento(a.dataInizio, a.dataFine, CAMPUS_WEEKS_2026)
       const entry =
         byCliente.get(a.clienteId) ??
@@ -420,6 +435,7 @@ export async function getCampus(req: Request, res: Response) {
         dataFine: a.dataFine,
         settimane: weeks,
         prezzo: importoVenduto,
+        dbg: dbg as any,
       })
       entry.totaleVenduto += importoVenduto
       const iscrId = normIscrizioneCampusKey(a.id)
