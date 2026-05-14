@@ -146,11 +146,48 @@ function isStaffName(s) {
   if (t.length < 3) return false
   if (/^\d+([.,]\d+)?$/.test(t)) return false
   if (t.length > 42) return false
+  const lettersOnly = t.replace(/[^A-Za-zÀ-ÿ]/g, "")
+  if (lettersOnly.length >= 3 && lettersOnly === lettersOnly.toLowerCase()) return false
   const up = t.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
   if (SKIP_STAFF_UPPER.has(up)) return false
   if (/^SPOGLIATOIO/i.test(t)) return false
   if (/^TURNI\s+DAL/i.test(t)) return false
   return true
+}
+
+function normCell(t) {
+  return String(t ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+}
+
+/** Prima colonna da ESCLUDERE (sostituzioni, RESP, disponibilità, elenco note a destra). */
+function findLaneGridExclusiveEnd(row) {
+  let end = row.length
+  for (let c = 1; c < row.length; c++) {
+    const n = normCell(row[c])
+    if (!n) continue
+    if (n === "SOSTITUZIONI" || n.startsWith("SOSTITUZION")) {
+      end = Math.min(end, c)
+      continue
+    }
+    if (n === "RESP") {
+      end = Math.min(end, c)
+      continue
+    }
+    if (n.includes("DISPONIBILITA")) {
+      end = Math.min(end, c)
+      continue
+    }
+    if (n.includes("CORSI BAMBINI") && c > 8) {
+      end = Math.min(end, c)
+      continue
+    }
+  }
+  return Math.min(end, 36)
 }
 
 function labelRowScore(row) {
@@ -160,6 +197,19 @@ function labelRowScore(row) {
     if (t.length >= 2 && !cellToStart(t)) n++
   }
   return n
+}
+
+/** Riga intestazioni corsie (A, B, PROVE, …) senza orario in colonna A. */
+function isLaneHeaderRow(row) {
+  if (cellToStart(row[0])) return false
+  if (findDowInRow(row) !== null) return false
+  let hasLane = false
+  for (let c = 1; c < Math.min(row.length, 30); c++) {
+    const t = normCell(row[c])
+    if (!t) continue
+    if (["A", "B", "C", "D", "E", "F", "A++", "B++", "PROVE", "AQ", "AQ1", "AQ2", "AQ3", "AQ 1", "AQ 2"].includes(t)) hasLane = true
+  }
+  return hasLane && labelRowScore(row) >= 2
 }
 
 /**
@@ -173,6 +223,8 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
   let dow = 1
   /** @type {string[]} */
   let lastLabels = []
+  /** Esclusivo: non leggere colonne >= questo indice (sostituzioni / RESP / note). */
+  let gridExclusiveEnd = 0
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] || []
@@ -180,17 +232,29 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
     if (dHit !== null) {
       dow = dHit
       lastLabels = []
+      gridExclusiveEnd = 0
+      continue
+    }
+
+    if (isLaneHeaderRow(row)) {
+      lastLabels = row.map((x) => String(x ?? "").trim())
+      gridExclusiveEnd = findLaneGridExclusiveEnd(row)
       continue
     }
 
     const t0 = cellToStart(row[0])
     if (t0) {
-      const maxC = Math.max(row.length, lastLabels.length, 20)
+      const limit =
+        gridExclusiveEnd > 0 ? gridExclusiveEnd : Math.min(Math.max(row.length, lastLabels.length, 14), 22)
+      const maxC = Math.max(limit, lastLabels.length + 1)
       while (lastLabels.length < maxC) lastLabels.push("")
-      for (let c = 1; c < row.length; c++) {
+      for (let c = 1; c < limit && c < row.length; c++) {
+        const lab = String(lastLabels[c] ?? "").trim()
+        const labN = normCell(lab)
+        if (labN === "SOSTITUZIONI" || labN.startsWith("SOSTITUZION") || labN === "RESP") continue
+
         const staff = String(row[c] ?? "").trim()
         if (!isStaffName(staff)) continue
-        const lab = String(lastLabels[c] ?? "").trim()
         const title = (lab ? `${lab} · ` : "") + sheetName.trim()
         const titleShort = title.slice(0, 120)
         events.push({
@@ -203,8 +267,9 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
           staff,
         })
       }
-    } else if (labelRowScore(row) >= 2 && !cellToStart(row[1])) {
+    } else if (labelRowScore(row) >= 2 && !cellToStart(row[1]) && !isLaneHeaderRow(row)) {
       lastLabels = row.map((x) => String(x ?? "").trim())
+      gridExclusiveEnd = findLaneGridExclusiveEnd(row)
     }
   }
 

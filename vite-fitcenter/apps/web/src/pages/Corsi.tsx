@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prenotazioniApi, type AccessoUtenteRow, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
+import { calendarioApi, type CalendarioMergedEventDto } from "@/api/calendario"
+import { corsiGestioneApi, type CorsiGestioneDayDto } from "@/api/corsiGestione"
 import { useAuth } from "@/contexts/AuthContext"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
@@ -806,6 +808,66 @@ function defaultMessageBody(g: CorsoGroup): string {
   return `Gentile socio,\n\nTi ricordiamo la lezione «${g.servizio}» in data ${fmtDateIt(g.giorno)}${g.oraInizio ? ` alle ${fmtTimeDot(g.oraInizio)}` : ""}${g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}.\n\nSportivi saluti.`
 }
 
+/** Lunedì=1 … Domenica=0 (come planning / getDay). */
+function dowFromIsoLocal(iso: string): number | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const d = Number(m[3])
+  return new Date(y, mo - 1, d).getDay()
+}
+
+function hhmmNormalized(v: string | undefined): string | null {
+  const t = String(v ?? "").trim()
+  const m = /^(\d{1,2}):(\d{2})(?::\d{2})?$/.exec(t)
+  if (!m) return null
+  const h = Math.min(23, Math.max(0, Number(m[1])))
+  return `${String(h).padStart(2, "0")}:${m[2]}`
+}
+
+function compactAlnum(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z0-9]/g, "")
+}
+
+function titleMatchesCalendarioCorso(servizio: string, eventTitle: string): boolean {
+  const a = compactAlnum(servizio)
+  const b = compactAlnum(eventTitle)
+  if (!a || !b) return false
+  if (a === b) return true
+  if (a.includes(b) || b.includes(a)) return true
+  return false
+}
+
+/** Note salvate nel calendario reparto «Corsi» (slot planning), mostrate in lettura sulla pagina Corsi. */
+function planningNotesFromCalendarioCorsi(
+  g: CorsoGroup,
+  events: CalendarioMergedEventDto[] | undefined,
+): string {
+  if (!events?.length) return ""
+  const dow = dowFromIsoLocal(g.giorno)
+  const hm = hhmmNormalized(g.oraInizio)
+  if (dow == null || hm == null) return ""
+  const seen = new Set<string>()
+  const parts: string[] = []
+  for (const e of events) {
+    const note = String(e.note ?? "").trim()
+    if (!note) continue
+    if (e.dow !== dow) continue
+    if (hhmmNormalized(e.start) !== hm) continue
+    if (!titleMatchesCalendarioCorso(g.servizio, e.title)) continue
+    const k = note.toLowerCase()
+    if (seen.has(k)) continue
+    seen.add(k)
+    parts.push(note)
+  }
+  return parts.join("\n\n")
+}
+
 export function Corsi() {
   const queryClient = useQueryClient()
   const { role } = useAuth()
@@ -815,11 +877,19 @@ export function Corsi() {
   const [messaggiChannel, setMessaggiChannel] = useState<"email" | "whatsapp">("email")
   const [messaggiSubject, setMessaggiSubject] = useState("")
   const [messaggiBody, setMessaggiBody] = useState("")
-  // Override manuale per la presenza (verde/grigio) salvato in localStorage.
-  // Valore: true=presente manualmente, false=assente manualmente.
-  const [appello, setAppello] = useState<Record<string, boolean>>({})
+  /** Note migrate da browser (prima del salvataggio server condiviso). */
+  const [legacyCourseNotes] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem("fitcenter-corsi-course-notes")
+      if (!raw) return {}
+      const parsed = JSON.parse(raw) as Record<string, string>
+      return parsed && typeof parsed === "object" ? parsed : {}
+    } catch {
+      return {}
+    }
+  })
+  const persistedNoteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [waCursor, setWaCursor] = useState(0)
-  const [courseNotes, setCourseNotes] = useState<Record<string, string>>({})
 
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
@@ -835,31 +905,10 @@ export function Corsi() {
   }, [])
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("fitcenter-corsi-course-notes")
-      if (!raw) return setCourseNotes({})
-      const parsed = JSON.parse(raw) as Record<string, string>
-      setCourseNotes(parsed && typeof parsed === "object" ? parsed : {})
-    } catch {
-      setCourseNotes({})
+    return () => {
+      for (const t of Object.values(persistedNoteTimers.current)) clearTimeout(t)
     }
   }, [])
-
-  function noteKeyForCourse(g: CorsoGroup): string {
-    // Key stabile anche se cambiano partecipanti; include giorno+servizio+orari
-    return `v1:${g.key}`
-  }
-
-  function updateCourseNote(g: CorsoGroup, text: string) {
-    const k = noteKeyForCourse(g)
-    setCourseNotes((prev) => {
-      const next = { ...prev, [k]: text }
-      try {
-        localStorage.setItem("fitcenter-corsi-course-notes", JSON.stringify(next))
-      } catch {}
-      return next
-    })
-  }
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["prenotazioni-corsi", giorno],
@@ -893,6 +942,63 @@ export function Corsi() {
     refetchOnWindowFocus: false,
     staleTime: 30_000,
   })
+
+  const calendarioCorsiQ = useQuery({
+    queryKey: ["calendario-comparto", "corsi"],
+    queryFn: () => calendarioApi.getComparto("corsi"),
+    enabled,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  const corsiGestioneQ = useQuery({
+    queryKey: ["corsi-gestione", giorno],
+    queryFn: () => corsiGestioneApi.getByDay(giorno),
+    enabled,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    retry: false,
+  })
+
+  const patchCorsiGestioneM = useMutation({
+    mutationFn: corsiGestioneApi.patch,
+    onSuccess: (_d, vars) => {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "corsi-gestione-range" })
+      if (vars.appello) void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] })
+    },
+  })
+
+  const courseNotesMerged = useMemo(
+    () => ({ ...legacyCourseNotes, ...(corsiGestioneQ.data?.courseNotes ?? {}) }),
+    [legacyCourseNotes, corsiGestioneQ.data?.courseNotes],
+  )
+
+  const mergedAppello = useMemo(
+    () => ({ ...readAppelloForDay(giorno), ...(corsiGestioneQ.data?.appello ?? {}) }),
+    [giorno, corsiGestioneQ.data?.appello],
+  )
+
+  function noteKeyForCourse(g: CorsoGroup): string {
+    return `v1:${g.key}`
+  }
+
+  function updateCourseNote(g: CorsoGroup, text: string) {
+    const k = noteKeyForCourse(g)
+    queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
+      courseNotes: { ...(prev?.courseNotes ?? {}), [k]: text },
+      appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? {}) },
+    }))
+    const prevT = persistedNoteTimers.current[k]
+    if (prevT) clearTimeout(prevT)
+    persistedNoteTimers.current[k] = setTimeout(() => {
+      delete persistedNoteTimers.current[k]
+      patchCorsiGestioneM.mutate(
+        { courseNote: { key: k, text } },
+        { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
+      )
+    }, 700)
+  }
 
   const notifyMutation = useMutation({
     mutationFn: async () => {
@@ -1068,37 +1174,26 @@ export function Corsi() {
     ].join(" | ")
   }
 
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(`fitcenter-corsi-appello:${giorno}`)
-      if (!raw) return setAppello({})
-      const parsed = JSON.parse(raw) as Record<string, boolean>
-      if (parsed && typeof parsed === "object") setAppello(parsed)
-      else setAppello({})
-    } catch {
-      setAppello({})
-    }
-  }, [giorno])
-
   function appelloOverride(groupKey: string, p: PrenotazioneCorsoRow, idx: number): { hasOverride: boolean; value: boolean } {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
     const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
-    if (Object.prototype.hasOwnProperty.call(appello, k)) return { hasOverride: true, value: !!appello[k] }
-    // Compatibilità: chiavi salvate con versione precedente (include idx sempre).
-    if (Object.prototype.hasOwnProperty.call(appello, old)) return { hasOverride: true, value: !!appello[old] }
+    if (Object.prototype.hasOwnProperty.call(mergedAppello, k)) return { hasOverride: true, value: !!mergedAppello[k] }
+    if (Object.prototype.hasOwnProperty.call(mergedAppello, old)) return { hasOverride: true, value: !!mergedAppello[old] }
     return { hasOverride: false, value: false }
   }
 
   function toggleAppello(groupKey: string, p: PrenotazioneCorsoRow, idx: number, nextValue: boolean): void {
     const k = `${groupKey}::${participantStableKey(p, idx)}`
     const old = `${groupKey}::${legacyParticipantKey(p, idx)}`
-    setAppello((prev) => {
-      const next = { ...prev, [k]: nextValue, [old]: nextValue }
-      try {
-        localStorage.setItem(`fitcenter-corsi-appello:${giorno}`, JSON.stringify(next))
-      } catch {}
-      return next
-    })
+    const merge = { [k]: nextValue, [old]: nextValue }
+    queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
+      courseNotes: { ...(prev?.courseNotes ?? corsiGestioneQ.data?.courseNotes ?? {}) },
+      appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? corsiGestioneQ.data?.appello ?? {}), ...merge },
+    }))
+    patchCorsiGestioneM.mutate(
+      { appello: { giorno, merge } },
+      { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
+    )
   }
 
   function openMessaggi(g: CorsoGroup) {
@@ -1481,7 +1576,8 @@ export function Corsi() {
                     const g = selectedCorso
                     const canMessaggi =
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
-                    const courseNote = courseNotes[noteKeyForCourse(g)] ?? ""
+                    const courseNote = courseNotesMerged[noteKeyForCourse(g)] ?? ""
+                    const planningNoteReadonly = planningNotesFromCalendarioCorsi(g, calendarioCorsiQ.data?.events)
                     const presentiCount = g.partecipanti.filter((p, idx) => {
                       const pWithTimes = participantForLessonAccess(g, p, giorno)
                       const okAccesso = isPresentByAccess(accessIdxDay, pWithTimes, giorno).present
@@ -1595,6 +1691,17 @@ export function Corsi() {
 
                         <div className="border-b border-zinc-800/60 px-5 py-3">
                           <label className="block text-xs font-medium text-zinc-400">Note corso</label>
+                          {planningNoteReadonly ? (
+                            <div className="mt-2 rounded-lg border border-sky-500/25 bg-sky-950/20 px-3 py-2 text-xs text-sky-100/95">
+                              <div className="font-semibold text-sky-200/90">Dal planning (calendario reparto Corsi)</div>
+                              <p className="mt-1 whitespace-pre-wrap text-sky-100/90">{planningNoteReadonly}</p>
+                            </div>
+                          ) : calendarioCorsiQ.isError ? (
+                            <p className="mt-2 text-xs text-zinc-500">
+                              Calendario Corsi non disponibile:{" "}
+                              {String((calendarioCorsiQ.error as Error)?.message ?? "—")}
+                            </p>
+                          ) : null}
                           <textarea
                             value={courseNote}
                             onChange={(e) => updateCourseNote(g, e.target.value)}
@@ -1851,6 +1958,22 @@ export function CorsiNoShow() {
     staleTime: 0,
   })
 
+  const gestioneRangeQ = useQuery({
+    queryKey: ["corsi-gestione-range", r.from, r.to],
+    queryFn: () => corsiGestioneApi.getByRange(r.from, r.to),
+    enabled: canManageNoShow,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+  })
+
+  function appelloMergedForDay(day: string): Record<string, boolean> {
+    return {
+      ...readAppelloForDay(day),
+      ...(gestioneRangeQ.data?.appelloByDay?.[day] ?? {}),
+    }
+  }
+
   const blockedByEmail = useMemo(() => {
     const m = new Map<string, { email: string; blockedAt: string; until?: string; reason: string; monthKey: string; count: number }>()
     for (const b of blocksQ.data?.rows ?? []) {
@@ -1911,7 +2034,7 @@ export function CorsiNoShow() {
 
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
-      const appello = readAppelloForDay(day)
+      const appello = appelloMergedForDay(day)
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
       const kStable = `${gk}::${pk}`
@@ -1933,7 +2056,7 @@ export function CorsiNoShow() {
     const out = [...counts.values()]
     out.sort((a, b) => b.count - a.count || a.cognome.localeCompare(b.cognome) || a.nome.localeCompare(b.nome) || a.email.localeCompare(b.email))
     return out
-  }, [rangeQ.data, accessiRangeQ.data, byDay, r.monthKey])
+  }, [rangeQ.data, accessiRangeQ.data, byDay, r.monthKey, gestioneRangeQ.data])
 
   const noShowCandidates = useMemo((): NoShowRow[] => {
     const needle = q.trim().toLowerCase()
@@ -1972,7 +2095,7 @@ export function CorsiNoShow() {
       if (!day) continue
       const gk = groupKeyForRow(p)
       const pk = participantStableKey(p, 0)
-      const appello = readAppelloForDay(day)
+      const appello = appelloMergedForDay(day)
       const accIdx = byDay.get(day) ?? new Map()
       const presenteAccessi = isPresentByAccess(accIdx, p, day).present
       const kStable = `${gk}::${pk}`
@@ -1985,7 +2108,7 @@ export function CorsiNoShow() {
     }
     out.sort((a, b) => a.day.localeCompare(b.day) || (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "") || a.servizio.localeCompare(b.servizio))
     return out
-  }, [selected, rangeQ.data, byDay])
+  }, [selected, rangeQ.data, byDay, gestioneRangeQ.data])
 
   const notifyBlockMutation = useMutation({
     mutationFn: async (input: { email: string; monthKey: string; count: number }) => {
