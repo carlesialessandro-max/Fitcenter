@@ -47,7 +47,7 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
-  if (comparto === "reception") return u.role === "admin" || u.role === "operatore" || u.role === "firme"
+  if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
   if (comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }
@@ -59,7 +59,7 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "piscina" || comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
-  if (comparto === "reception") return u.role === "admin" || u.role === "operatore" || u.role === "firme"
+  if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
   /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
   if (comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
