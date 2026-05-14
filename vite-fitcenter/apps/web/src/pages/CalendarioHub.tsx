@@ -28,6 +28,10 @@ export function CalendarioHub() {
     return <Navigate to={calendarioPath("campus")} replace />
   }
 
+  if ((role === "firme" || role === "operatore") && visible.length === 1) {
+    return <Navigate to={calendarioPath(visible[0]!.segmento)} replace />
+  }
+
   if (role !== "admin") {
     return <Navigate to="/" replace />
   }

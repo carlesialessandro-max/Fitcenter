@@ -88,6 +88,7 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/danza", label: "Danza" },
   { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
   { to: "/calendario/istruttori", label: "Istruttori" },
+  { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/calendario", label: "Piano operativo (hub)" },
 ]
 
@@ -100,7 +101,14 @@ function hourBucket(hm: string): number {
   return Math.floor(hmToMinutes(hm) / 60)
 }
 
-const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = ["corsi", "scuola_nuoto", "acquaticita", "spogliatoi", "piscina"]
+const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = [
+  "corsi",
+  "scuola_nuoto",
+  "acquaticita",
+  "spogliatoi",
+  "piscina",
+  "reception",
+]
 
 function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
@@ -143,6 +151,10 @@ function DropdownNav({ label, links }: { label: string; links: { to: string; lab
 function pillColClass(e: CalEvent): string {
   if (e.zona === "acqua") return "border-sky-500/40 bg-sky-500/15 text-sky-100"
   if (e.zona === "terra") return "border-amber-500/35 bg-amber-500/10 text-amber-100"
+  if (e.zona === "invernale") return "border-violet-500/40 bg-violet-500/15 text-violet-100"
+  if (e.zona === "interna") return "border-sky-400/45 bg-slate-900/80 text-sky-50"
+  if (e.zona === "esterna") return "border-amber-400/50 bg-amber-950/40 text-amber-50"
+  if (e.zona === "reception") return "border-emerald-500/35 bg-emerald-950/30 text-emerald-100"
   return "border-cyan-500/35 bg-cyan-500/10 text-cyan-100"
 }
 
@@ -191,13 +203,59 @@ const DOW_OPTIONS: { v: number; label: string }[] = [
   { v: 0, label: "Domenica" },
 ]
 
+const PISCINA_ZONE_PRESETS = ["invernale", "interna", "esterna", "piscina"] as const
+
+function PiscinaZonaEditor({ value, onChange }: { value: string; onChange: (z: string) => void }) {
+  const presets = PISCINA_ZONE_PRESETS as readonly string[]
+  const sel = presets.includes(value) ? value : "other"
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <label className="block text-xs font-medium text-zinc-400">
+        Piscina / periodo
+        <select
+          className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+          value={sel}
+          onChange={(e) => {
+            const v = e.target.value
+            if (v === "other") {
+              onChange(presets.includes(value) ? "" : value)
+            } else {
+              onChange(v)
+            }
+          }}
+        >
+          <option value="invernale">Invernale (un planning)</option>
+          <option value="interna">Estivo · piscina interna</option>
+          <option value="esterna">Estivo · piscina esterna</option>
+          <option value="piscina">Altro · zona «piscina»</option>
+          <option value="other">Altra zona (slug)</option>
+        </select>
+      </label>
+      {sel === "other" ? (
+        <label className="block text-xs font-medium text-zinc-400">
+          Slug zona (come nel planning Excel)
+          <input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            placeholder="es. acquaticita"
+            autoComplete="off"
+          />
+        </label>
+      ) : null}
+    </div>
+  )
+}
+
+type ScheduleEditMode = "none" | "corsi" | "piscina" | "reception"
+
 function EditEventModal({
   event,
   instructors,
   initialInstructorId,
   initialStaffText,
   initialNote,
-  corsiSchedule,
+  scheduleMode,
   onClose,
   onSave,
   onClearRevision,
@@ -208,7 +266,7 @@ function EditEventModal({
   initialInstructorId: string
   initialStaffText: string
   initialNote: string
-  corsiSchedule: boolean
+  scheduleMode: ScheduleEditMode
   onClose: () => void
   onSave: (p: {
     istruttoreId: string | null
@@ -228,7 +286,17 @@ function EditEventModal({
   const [dow, setDow] = useState(event.dow)
   const [start, setStart] = useState(event.start)
   const [title, setTitle] = useState(event.title)
-  const [zona, setZona] = useState(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
+  const [zona, setZona] = useState<string>(() =>
+    scheduleMode === "corsi"
+      ? event.zona === "acqua" || event.zona === "terra"
+        ? event.zona
+        : "terra"
+      : scheduleMode === "piscina"
+        ? event.zona || "invernale"
+        : scheduleMode === "reception"
+          ? event.zona || "reception"
+          : event.zona
+  )
 
   useEffect(() => {
     setIstruttoreId(initialInstructorId)
@@ -237,22 +305,35 @@ function EditEventModal({
     setDow(event.dow)
     setStart(event.start)
     setTitle(event.title)
-    setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
-  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote])
+    if (scheduleMode === "corsi") {
+      setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
+    } else if (scheduleMode === "piscina") {
+      setZona(event.zona || "invernale")
+    } else if (scheduleMode === "reception") {
+      setZona(event.zona || "reception")
+    } else {
+      setZona(event.zona)
+    }
+  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote, scheduleMode])
 
   const presets = ["Sostituzione", "Malattia", "Ferie", "Assente"]
   const isManual = event.stableKey.startsWith("manual-")
   const zonaLabel = event.zona === "acqua" ? "Acqua" : event.zona === "terra" ? "Terra" : event.zona
+  const scheduleFields = scheduleMode === "corsi" || scheduleMode === "piscina" || scheduleMode === "reception"
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true">
       <button type="button" className="absolute inset-0 bg-black/70" onClick={onClose} aria-label="Chiudi" />
       <div className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
-        <h2 className="text-base font-semibold text-zinc-100">{corsiSchedule ? title : event.title}</h2>
+        <h2 className="text-base font-semibold text-zinc-100">{scheduleFields ? title : event.title}</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          {corsiSchedule ? `${start} · ${zona === "acqua" ? "Acqua" : "Terra"} · ${event.sheet}` : `${event.start} · ${zonaLabel} · ${event.sheet}`}
+          {scheduleMode === "corsi"
+            ? `${start} · ${zona === "acqua" ? "Acqua" : "Terra"} · ${event.sheet}`
+            : scheduleMode === "piscina" || scheduleMode === "reception"
+              ? `${start} · ${zona} · ${event.sheet}`
+              : `${event.start} · ${zonaLabel} · ${event.sheet}`}
         </p>
-        {corsiSchedule ? (
+        {scheduleFields ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
               Giorno
@@ -268,7 +349,13 @@ function EditEventModal({
                 ))}
               </select>
             </label>
-            <label className="block text-xs font-medium text-zinc-400">
+            <label
+              className={
+                scheduleMode === "piscina" || scheduleMode === "reception"
+                  ? "block text-xs font-medium text-zinc-400 sm:col-span-2"
+                  : "block text-xs font-medium text-zinc-400"
+              }
+            >
               Inizio (HH:mm)
               <input
                 value={start}
@@ -278,19 +365,34 @@ function EditEventModal({
                 autoComplete="off"
               />
             </label>
-            <label className="block text-xs font-medium text-zinc-400">
-              Zona
-              <select
-                value={zona}
-                onChange={(ev) => setZona(ev.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-              >
-                <option value="terra">Terra</option>
-                <option value="acqua">Acqua</option>
-              </select>
-            </label>
+            {scheduleMode === "corsi" ? (
+              <label className="block text-xs font-medium text-zinc-400">
+                Zona
+                <select
+                  value={zona}
+                  onChange={(ev) => setZona(ev.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                >
+                  <option value="terra">Terra</option>
+                  <option value="acqua">Acqua</option>
+                </select>
+              </label>
+            ) : scheduleMode === "piscina" ? (
+              <PiscinaZonaEditor value={zona} onChange={setZona} />
+            ) : (
+              <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
+                Zona (slug planning)
+                <input
+                  value={zona}
+                  onChange={(ev) => setZona(ev.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  placeholder="reception"
+                  autoComplete="off"
+                />
+              </label>
+            )}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-              Titolo corso
+              {scheduleMode === "corsi" ? "Titolo corso" : "Titolo / attività"}
               <input
                 value={title}
                 onChange={(ev) => setTitle(ev.target.value)}
@@ -298,6 +400,18 @@ function EditEventModal({
                 autoComplete="off"
               />
             </label>
+            {scheduleMode === "piscina" ? (
+              <p className="text-[10px] text-zinc-500 sm:col-span-2">
+                In <strong className="font-medium text-zinc-400">estate</strong> con due vasche usa le zone{" "}
+                <code className="text-zinc-400">interna</code> e <code className="text-zinc-400">esterna</code>; in inverno resta{" "}
+                <code className="text-zinc-400">invernale</code> (import Excel).
+              </p>
+            ) : scheduleMode === "reception" ? (
+              <p className="text-[10px] text-zinc-500 sm:col-span-2">
+                La zona di default è <code className="text-zinc-400">reception</code>; se in futuro importerai un Excel con più sportelli, usa slug distinti (es. <code className="text-zinc-400">mattina</code>,{" "}
+                <code className="text-zinc-400">pomeriggio</code>).
+              </p>
+            ) : null}
           </div>
         ) : null}
         <label className="mt-4 block text-xs font-medium text-zinc-400">
@@ -349,7 +463,7 @@ function EditEventModal({
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
           <div className="mr-auto flex flex-wrap gap-2">
-            {corsiSchedule && !isManual && onHideFromCalendar ? (
+            {scheduleFields && !isManual && onHideFromCalendar ? (
               <button
                 type="button"
                 onClick={onHideFromCalendar}
@@ -363,7 +477,13 @@ function EditEventModal({
               onClick={onClearRevision}
               className="rounded-lg border border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
             >
-              {isManual ? "Elimina corso" : "Ripristina da Excel"}
+              {isManual
+                ? scheduleMode === "corsi"
+                  ? "Elimina corso"
+                  : scheduleMode === "piscina" || scheduleMode === "reception"
+                    ? "Elimina slot"
+                    : "Elimina"
+                : "Ripristina da Excel"}
             </button>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
@@ -376,10 +496,19 @@ function EditEventModal({
                 istruttoreId: istruttoreId || null,
                 staffText,
                 note,
-                dow: corsiSchedule ? dow : event.dow,
-                start: corsiSchedule ? start.trim() : event.start,
-                title: corsiSchedule ? title.trim() : event.title,
-                zona: corsiSchedule ? zona : event.zona,
+                dow: scheduleFields ? dow : event.dow,
+                start: scheduleFields ? start.trim() : event.start,
+                title: scheduleFields ? title.trim() : event.title,
+                zona:
+                  scheduleMode === "corsi"
+                    ? zona === "acqua" || zona === "terra"
+                      ? zona
+                      : "terra"
+                    : scheduleMode === "piscina"
+                      ? zona.trim() || "invernale"
+                      : scheduleMode === "reception"
+                        ? zona.trim() || "reception"
+                        : event.zona,
               })
             }
             className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900"
@@ -393,19 +522,23 @@ function EditEventModal({
   )
 }
 
-function CreateCorsoModal({
+function CreateSlotModal({
+  comparto,
   instructors,
   onClose,
   onCreated,
 }: {
+  comparto: "corsi" | "piscina" | "reception"
   instructors: CalendarioIstruttore[]
   onClose: () => void
   onCreated: () => void
 }) {
+  const isCorsi = comparto === "corsi"
+  const isReception = comparto === "reception"
   const [dow, setDow] = useState(1)
   const [start, setStart] = useState("09:00")
-  const [title, setTitle] = useState("")
-  const [zona, setZona] = useState<"terra" | "acqua">("terra")
+  const [title, setTitle] = useState(isCorsi ? "" : isReception ? "Sportello" : "Copertura")
+  const [zona, setZona] = useState<string>(isCorsi ? "terra" : isReception ? "reception" : "invernale")
   const [istruttoreId, setIstruttoreId] = useState("")
   const [staffText, setStaffText] = useState("")
   const [note, setNote] = useState("")
@@ -413,23 +546,30 @@ function CreateCorsoModal({
 
   async function submit(ev: FormEvent) {
     ev.preventDefault()
-    const t = title.trim()
-    if (!t) {
+    const tit = (title.trim() || (isCorsi ? "" : isReception ? "Sportello" : "Copertura")).trim()
+    if (!tit) {
       alert("Titolo obbligatorio")
       return
     }
     if (!istruttoreId.trim() && !staffText.trim()) {
-      alert("Scegli un istruttore dall'anagrafica oppure inserisci un nome in calendario")
+      alert("Scegli un istruttore dall'anagrafica oppure inserisci il nome in calendario")
       return
     }
     setBusy(true)
     try {
-      await calendarioApi.patchSlot("corsi", {
+      const zonaOut = isCorsi
+        ? zona === "terra" || zona === "acqua"
+          ? zona
+          : "terra"
+        : isReception
+          ? zona.trim() || "reception"
+          : zona.trim() || "invernale"
+      await calendarioApi.patchSlot(comparto, {
         create: true,
         dow,
         start: start.trim(),
-        title: t,
-        zona,
+        title: tit,
+        zona: zonaOut,
         istruttoreId: istruttoreId || null,
         staffOverride: istruttoreId ? null : staffText.trim() || null,
         note: note.trim() || null,
@@ -450,8 +590,16 @@ function CreateCorsoModal({
         onSubmit={submit}
         className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
       >
-        <h2 className="text-base font-semibold text-zinc-100">Nuovo corso</h2>
-        <p className="text-xs text-zinc-500">Aggiunge uno slot manuale sul planning corsi (terra/acqua).</p>
+        <h2 className="text-base font-semibold text-zinc-100">
+          {isCorsi ? "Nuovo corso" : isReception ? "Nuovo slot reception" : "Nuovo turno (bagnini)"}
+        </h2>
+        <p className="text-xs text-zinc-500">
+          {isCorsi
+            ? "Slot manuale sul planning corsi (terra/acqua)."
+            : isReception
+              ? "Turno allo sportello (salvato sul server). Zona di default «reception»; modifica se usi più fasce."
+              : "Turno manuale sul calendario piscina / bagnini (salvato sul server)."}
+        </p>
         <label className="block text-xs font-medium text-zinc-400">
           Giorno
           <select
@@ -467,7 +615,7 @@ function CreateCorsoModal({
           </select>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-medium text-zinc-400">
+          <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
             Inizio (HH:mm)
             <input
               value={start}
@@ -475,16 +623,35 @@ function CreateCorsoModal({
               className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
             />
           </label>
-          <label className="block text-xs font-medium text-zinc-400">
-            Zona
-            <select value={zona} onChange={(ev) => setZona(ev.target.value as "terra" | "acqua")} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">
-              <option value="terra">Terra</option>
-              <option value="acqua">Acqua</option>
-            </select>
-          </label>
+          {isCorsi ? (
+            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
+              Zona
+              <select
+                value={zona}
+                onChange={(ev) => setZona(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+              >
+                <option value="terra">Terra</option>
+                <option value="acqua">Acqua</option>
+              </select>
+            </label>
+          ) : null}
         </div>
+        {!isCorsi ? isReception ? (
+          <label className="block text-xs font-medium text-zinc-400">
+            Zona (slug)
+            <input
+              value={zona}
+              onChange={(ev) => setZona(ev.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+              placeholder="reception"
+            />
+          </label>
+        ) : (
+          <PiscinaZonaEditor value={zona} onChange={setZona} />
+        ) : null}
         <label className="block text-xs font-medium text-zinc-400">
-          Titolo
+          {isCorsi ? "Titolo" : "Titolo / attività"}
           <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
         </label>
         <label className="block text-xs font-medium text-zinc-400">
@@ -531,13 +698,14 @@ export function CalendarioRepartoPage() {
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
-  const [createCorsoOpen, setCreateCorsoOpen] = useState(false)
+  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception">(null)
 
   const compartoLabel = useMemo(() => CALENDARIO_SEGMENTI.find((x) => x.api === apiComparto)?.label ?? "Calendario", [apiComparto])
 
   const canRead = apiComparto != null && roleCanReadCalendarioComparto(role, apiComparto)
   const canWrite = apiComparto != null && roleCanWriteCalendarioComparto(role, apiComparto)
-  const corsiSchedule = apiComparto === "corsi"
+  const scheduleMode: ScheduleEditMode =
+    apiComparto === "corsi" ? "corsi" : apiComparto === "piscina" ? "piscina" : apiComparto === "reception" ? "reception" : "none"
   const canOpenInstructors =
     role === "admin" ||
     role === "corsi" ||
@@ -675,9 +843,24 @@ export function CalendarioRepartoPage() {
                   <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
                   <strong className="font-medium text-zinc-400">server</strong> (sincronizzati tra utenti).
                 </>
+              ) : apiComparto === "piscina" ? (
+                <>
+                  Turni da planning (INVERNALE / import Excel). In <strong className="font-medium text-zinc-400">estate</strong> con due vasche usa le zone{" "}
+                  <code className="text-xs text-zinc-400">interna</code> e <code className="text-xs text-zinc-400">esterna</code>; in inverno la zona tipica è{" "}
+                  <code className="text-xs text-zinc-400">invernale</code>. Puoi <strong className="font-medium text-zinc-400">aggiungere turni manuali</strong>,{" "}
+                  <strong className="font-medium text-zinc-400">spostare</strong> giorno/ora/titolo/zona, <strong className="font-medium text-zinc-400">nascondere</strong> uno slot importato e
+                  modificare <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
+                </>
+              ) : apiComparto === "reception" ? (
+                <>
+                  Orari <strong className="font-medium text-zinc-400">reception / sportello</strong>: slot da import (quando disponibile) o creati con{" "}
+                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong>. Puoi <strong className="font-medium text-zinc-400">spostare</strong> giorno/ora/titolo/zona,{" "}
+                  <strong className="font-medium text-zinc-400">nascondere</strong> uno slot importato e aggiornare <strong className="font-medium text-zinc-400">staff</strong> e{" "}
+                  <strong className="font-medium text-zinc-400">note</strong> sul server.
+                </>
               ) : hasPlanningGrid(apiComparto) ? (
                 <>
-                  Orari da Excel (scuola nuoto, acquaticità, spogliatoi; calendario bagnini anche da file INVERNALE se importato). Modifiche a{" "}
+                  Orari da Excel (scuola nuoto, acquaticità, spogliatoi). Modifiche a{" "}
                   <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
                 </>
               ) : (
@@ -713,6 +896,11 @@ export function CalendarioRepartoPage() {
             {apiComparto === "corsi" ? (
               <>
                 Nessun evento dal planning corsi: verifica <code className="text-xs">planning-weekly.json</code> e che l&apos;API legga il file sul server.
+              </>
+            ) : apiComparto === "reception" ? (
+              <>
+                Nessuno slot in elenco: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> per i turni manuali oppure collega un import Excel in{" "}
+                <code className="text-xs">eventsByComparto.reception</code> (vedi script di build planning).
               </>
             ) : (
               <>
@@ -750,13 +938,13 @@ export function CalendarioRepartoPage() {
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
-            {corsiSchedule && canWrite ? (
+            {scheduleMode !== "none" && canWrite ? (
               <button
                 type="button"
-                onClick={() => setCreateCorsoOpen(true)}
+                onClick={() => setCreateSlotComparto(scheduleMode)}
                 className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
               >
-                Aggiungi corso
+                {scheduleMode === "corsi" ? "Aggiungi corso" : scheduleMode === "piscina" ? "Aggiungi turno" : "Aggiungi slot"}
               </button>
             ) : null}
             {(
@@ -779,8 +967,13 @@ export function CalendarioRepartoPage() {
           </div>
         </div>
 
-        {createCorsoOpen && apiComparto === "corsi" && canWrite ? (
-          <CreateCorsoModal instructors={instructors} onClose={() => setCreateCorsoOpen(false)} onCreated={() => void reload()} />
+        {createSlotComparto && canWrite ? (
+          <CreateSlotModal
+            comparto={createSlotComparto}
+            instructors={instructors}
+            onClose={() => setCreateSlotComparto(null)}
+            onCreated={() => void reload()}
+          />
         ) : null}
 
         {editEvent && canWrite ? (
@@ -791,11 +984,11 @@ export function CalendarioRepartoPage() {
             initialInstructorId={editEvent.istruttoreId ?? ""}
             initialStaffText={editEvent.staffOverride ?? ""}
             initialNote={editEvent.note ?? ""}
-            corsiSchedule={corsiSchedule}
+            scheduleMode={scheduleMode}
             onClose={() => setEditEvent(null)}
             onSave={(p) => void saveEdit(editEvent, p)}
             onClearRevision={() => void resetEdit(editEvent)}
-            onHideFromCalendar={corsiSchedule ? () => void hideSlot(editEvent) : undefined}
+            onHideFromCalendar={scheduleMode !== "none" ? () => void hideSlot(editEvent) : undefined}
           />
         ) : null}
 

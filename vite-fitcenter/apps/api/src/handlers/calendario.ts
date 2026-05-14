@@ -47,12 +47,8 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
-  if (
-    comparto === "reception" ||
-    comparto === "sala_fitness" ||
-    comparto === "consulenti"
-  )
-    return false
+  if (comparto === "reception") return u.role === "admin" || u.role === "operatore" || u.role === "firme"
+  if (comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }
 
@@ -63,8 +59,9 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "piscina" || comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
+  if (comparto === "reception") return u.role === "admin" || u.role === "operatore" || u.role === "firme"
   /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
-  if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
+  if (comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }
 
@@ -114,7 +111,14 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     if (r.comparto === comparto) revByKey.set(r.stableKey, r)
   }
 
-  const compartiConPlanning: CalendarioComparto[] = ["corsi", "scuola_nuoto", "piscina", "acquaticita", "spogliatoi"]
+  const compartiConPlanning: CalendarioComparto[] = [
+    "corsi",
+    "scuola_nuoto",
+    "piscina",
+    "reception",
+    "acquaticita",
+    "spogliatoi",
+  ]
   if (!compartiConPlanning.includes(comparto)) {
     return []
   }
@@ -150,7 +154,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     if (baseKeys.has(r.stableKey)) continue
     out.push({
       id: r.stableKey,
-      zona: r.zona ?? "terra",
+      zona: r.zona ?? (comparto === "piscina" ? "invernale" : comparto === "reception" ? "reception" : "terra"),
       sheet: "Manuale",
       dow: r.dow,
       start: r.start,
@@ -226,11 +230,15 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const by = u.nome || u.username
 
   if (body.create === true) {
-    if (raw !== "corsi") return res.status(400).json({ message: "Aggiunta slot solo per comparto corsi" })
+    if (raw !== "corsi" && raw !== "piscina") {
+      return res.status(400).json({ message: "Aggiunta slot manuale solo per corsi o calendario bagnini (piscina)" })
+    }
     const dow = Number(body.dow)
     const start = String(body.start ?? "").trim()
-    const title = String(body.title ?? "").trim()
-    const zona = String(body.zona ?? "terra").trim() || "terra"
+    const defaultZona = raw === "piscina" ? "invernale" : "terra"
+    const titleIn = String(body.title ?? "").trim()
+    const title = titleIn || (raw === "piscina" ? "Copertura" : "")
+    const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })
     }
@@ -302,7 +310,12 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     dow,
     start,
     title,
-    zona: String(body.zona ?? baseEv?.zona ?? prevRev?.zona ?? "terra"),
+    zona: String(
+      body.zona ??
+        baseEv?.zona ??
+        prevRev?.zona ??
+        (raw === "piscina" ? "invernale" : raw === "reception" ? "reception" : "terra")
+    ),
     istruttoreId: body.istruttoreId === undefined ? prevRev?.istruttoreId ?? null : body.istruttoreId,
     staffOverride: body.staffOverride === undefined ? prevRev?.staffOverride : body.staffOverride,
     note: body.note === undefined ? prevRev?.note : body.note,

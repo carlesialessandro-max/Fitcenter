@@ -2,6 +2,9 @@
  * Importa il planning INVERNALE bagnini (settimana tipo) in `eventsByComparto.piscina`.
  * Eseguire dopo build-planning-piscina.mjs.
  *
+ * Estate (due vasche): nel JSON / revisioni usa le zone `interna` ed `esterna` per distinguere
+ * piscina interna ed esterna; l’import invernale qui sotto imposta di solito `invernale`.
+ *
  * Formato foglio (per ogni giorno, 3 colonne affiancate):
  * - Colonna sinistra: ore “piene” (07:00, 08:00, …) solo su alcune righe
  * - Colonna centrale: nomi bagnini (celle unite su più righe da 30 min)

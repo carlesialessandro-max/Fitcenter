@@ -397,7 +397,12 @@ function main() {
     console.log("[piscina]", sheetName, "→", comparto, ev.length, "eventi")
   }
 
-  payload.eventsByComparto = byComparto
+  const prevComparto =
+    payload.eventsByComparto && typeof payload.eventsByComparto === "object" && !Array.isArray(payload.eventsByComparto)
+      ? payload.eventsByComparto
+      : {}
+  /** Merge: i fogli piscina aggiornano solo i comparti mappati; altri (es. reception) restano da script successivi o manuali. */
+  payload.eventsByComparto = { ...prevComparto, ...byComparto }
   payload.piscinaSources = [path.relative(webRoot, piscinaPath).replace(/\\/g, "/")]
   payload.generatedAtPiscina = new Date().toISOString()
 
