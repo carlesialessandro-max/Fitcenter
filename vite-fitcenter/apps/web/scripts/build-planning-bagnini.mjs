@@ -1,6 +1,12 @@
 /**
- * Importa il planning INVERNALE bagnini (settimana tipo, colonne per giorno)
- * in `eventsByComparto.piscina`. Eseguire dopo build-planning-piscina.mjs.
+ * Importa il planning INVERNALE bagnini (settimana tipo) in `eventsByComparto.piscina`.
+ * Eseguire dopo build-planning-piscina.mjs.
+ *
+ * Formato foglio (per ogni giorno, 3 colonne affiancate):
+ * - Colonna sinistra: ore “piene” (07:00, 08:00, …) solo su alcune righe
+ * - Colonna centrale: nomi bagnini (celle unite su più righe da 30 min)
+ * - Colonna destra: mezze ore (06:30, 07:30, …) sulle altre righe
+ * Le righe sono slot da 30 minuti: su ogni riga compare **un solo** orario (sinistra **oppure** destra), a zig-zag.
  *
  * File (scegline uno):
  *   - apps/web/data/planning-import/INVERNALE 2025-2026.xlsx
@@ -111,6 +117,64 @@ function looksLikeStaffAbbrev(s) {
   return /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9.'\s-]*$/u.test(t)
 }
 
+function hmToMinutes(hm) {
+  const parts = String(hm).trim().split(":")
+  const h = Number(parts[0])
+  const m = Number(parts[1] ?? 0)
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return -1
+  return h * 60 + m
+}
+
+/** Inizio dello slot 30 min sulla riga (orario a zig-zag sinistra/destra). */
+function rowSlotStart(row, timeCol, timeRightCol) {
+  const tL = cellToStart(row[timeCol])
+  const tR = cellToStart(row[timeRightCol])
+  if (tL != null && tR != null) {
+    const a = hmToMinutes(tL)
+    const b = hmToMinutes(tR)
+    if (a >= 0 && b >= 0) return a <= b ? tL : tR
+  }
+  return tL ?? tR
+}
+
+function scoreTripleBase(rows, headerRow, base) {
+  if (base < 0) return -1
+  let score = 0
+  const last = Math.min(headerRow + 50, rows.length - 1)
+  for (let ri = headerRow + 1; ri <= last; ri++) {
+    const row = rows[ri] || []
+    if (base + 2 >= row.length) return -1
+    const tL = cellToStart(row[base])
+    const tR = cellToStart(row[base + 2])
+    const staffCell = String(row[base + 1] ?? "").trim()
+    if (tL || tR) score += 1
+    if (staffCell && looksLikeStaffAbbrev(staffCell)) score += 4
+    if (dayHeaderToDow(staffCell) != null) score -= 10
+  }
+  return score
+}
+
+/**
+ * La cella col nome del giorno può essere sulla 1ª o 2ª colonna del blocco da 3:
+ * scegliamo la base `timeCol` che massimizza orari + nomi nelle righe sotto l’intestazione.
+ * @param {unknown[][]} rows
+ * @param {number} headerRow
+ * @param {number} dayCol colonna in cui compare "Lunedì" / …
+ */
+function inferTripleBase(rows, headerRow, dayCol) {
+  const candidates = [dayCol - 2, dayCol - 1, dayCol].filter((b) => b >= 0)
+  let best = dayCol
+  let bestScore = -1
+  for (const b of candidates) {
+    const s = scoreTripleBase(rows, headerRow, b)
+    if (s > bestScore) {
+      bestScore = s
+      best = b
+    }
+  }
+  return best
+}
+
 /**
  * @param {unknown[][]} rows
  * @param {number} timeCol
@@ -128,13 +192,12 @@ function parseInvernaleDayBlock(rows, timeCol, staffCol, timeRightCol, startRow,
 
   for (let ri = startRow; ri < rows.length; ri++) {
     const row = rows[ri] || []
-    const tL = cellToStart(row[timeCol])
-    const tR = cellToStart(row[timeRightCol])
-    const t = tL ?? tR
+    const t = rowSlotStart(row, timeCol, timeRightCol)
     const staffRaw = String(row[staffCol] ?? "").trim()
     const staff = looksLikeStaffAbbrev(staffRaw) ? staffRaw : ""
 
-    const intruder = dayHeaderToDow(row[timeCol]) ?? dayHeaderToDow(row[staffCol])
+    const intruder =
+      dayHeaderToDow(row[timeCol]) ?? dayHeaderToDow(row[staffCol]) ?? dayHeaderToDow(row[timeRightCol])
     if (intruder != null && intruder !== dow && ri > startRow + 5) break
 
     if (staff) {
@@ -167,7 +230,7 @@ function parseInvernaleDayBlock(rows, timeCol, staffCol, timeRightCol, startRow,
 }
 
 /**
- * Trova la riga con più intestazioni giorno; colonne = inizio blocco (timeCol).
+ * Trova la riga con più intestazioni giorno; per ogni hit inferisce il blocco (time | staff | time) a 3 colonne.
  */
 function findDayBlocks(rows) {
   let bestHits = /** @type {{ r: number; c: number; dow: number }[]} */ ([])
@@ -186,9 +249,10 @@ function findDayBlocks(rows) {
   /** @type {{ dow: number; timeCol: number; staffCol: number; timeRightCol: number; headerRow: number }[]} */
   const blocks = []
   for (const h of bestHits) {
-    const timeCol = h.c
-    const staffCol = h.c + 1
-    const timeRightCol = h.c + 2
+    const base = inferTripleBase(rows, h.r, h.c)
+    const timeCol = base
+    const staffCol = base + 1
+    const timeRightCol = base + 2
     blocks.push({
       dow: h.dow,
       timeCol,
