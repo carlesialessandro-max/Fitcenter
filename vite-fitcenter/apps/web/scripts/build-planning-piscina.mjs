@@ -1,5 +1,6 @@
 /**
- * Legge PISCINAORARIO *.xlsx (scuola nuoto, acquaticità, spogliatoi, bambini estate)
+ * Legge PISCINAORARIO *.xlsx (scuola nuoto, acquaticità, spogliatoi da turni).
+ * Non importa: bambini estate, foglio disponibilità spogliatoi, altri fogli non mappati.
  * e aggiorna planning-weekly.json con `eventsByComparto`.
  *
  * File atteso (scegline uno):
@@ -75,10 +76,15 @@ function sheetToComparto(sheetName) {
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .replace(/\s+/g, " ")
-  if (n.includes("BAMBINI") && n.includes("ESTATE")) return "piscina"
+  /** Elenco disponibilità / sostituzioni: non importare. */
+  if (n.includes("DISPONIBILITA")) return null
+  /** Bambini estate: escluso su richiesta (non va nel planning). */
+  if (n.includes("BAMBINI") && n.includes("ESTATE")) return null
   if ((/S\.?\s*N/.test(sheetName) || n.includes("SCUOLA")) && n.includes("BAMBINI")) return "scuola_nuoto"
   if (n.includes("ACQUAT")) return "acquaticita"
-  if (n.includes("SPOGLIAT")) return "spogliatoi"
+  /** Griglia turni spogliatoi: titolo tipo "TURNI DAL …" oppure nome foglio con SPOGLIATOI + TURNI/DAL. */
+  if (n.includes("TURNI") && n.includes("DAL")) return "spogliatoi"
+  if ((n.includes("SPOGLIAT") || n.includes("SPOGLIATO")) && (n.includes("TURNI") || n.includes("DAL"))) return "spogliatoi"
   return null
 }
 
@@ -199,10 +205,54 @@ function labelRowScore(row) {
   return n
 }
 
-/** Riga intestazioni corsie (A, B, PROVE, …) senza orario in colonna A. */
-function isLaneHeaderRow(row) {
+function rowLooksDisponibilitaBlock(row) {
+  for (const cell of row) {
+    const z = normCell(cell)
+    if (z.includes("DISPONIBILITA")) return true
+    if (z.includes("DA SOSTITUIRE")) return true
+  }
+  return false
+}
+
+/** Intestazioni colonne solo AQ / lettera corsia (no titoli corsi tipo "GAIA DENTINI"). */
+function isAquaticitaLaneLabel(cell) {
+  const n = normCell(cell).replace(/\s+/g, " ").trim()
+  if (!n) return false
+  if (/^[A-F]$/.test(n)) return true
+  if (n === "AQ") return true
+  return /^AQ\s*\d+$/.test(n) || /^AQ\d+$/.test(n.replace(/\s/g, ""))
+}
+
+/** Riga intestazioni corsie: dipende dal comparto. */
+function isLaneHeaderRow(row, comparto) {
   if (cellToStart(row[0])) return false
   if (findDowInRow(row) !== null) return false
+
+  if (comparto === "acquaticita") {
+    let nLane = 0
+    for (let c = 1; c < Math.min(row.length, 30); c++) {
+      const raw = String(row[c] ?? "").trim()
+      if (!raw) continue
+      if (!isAquaticitaLaneLabel(raw)) return false
+      nLane++
+    }
+    return nLane >= 1
+  }
+
+  if (comparto === "spogliatoi") {
+    let nLab = 0
+    for (let c = 1; c < Math.min(row.length, 16); c++) {
+      const t = normCell(row[c])
+      if (!t) continue
+      if (t.includes("SPOGLIATOIO") || t === "M" || t === "F" || /^B\d?$/.test(t)) {
+        nLab++
+        continue
+      }
+      return false
+    }
+    return nLab >= 2
+  }
+
   let hasLane = false
   for (let c = 1; c < Math.min(row.length, 30); c++) {
     const t = normCell(row[c])
@@ -228,6 +278,9 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] || []
+
+    if (comparto === "acquaticita" && rowLooksDisponibilitaBlock(row)) break
+
     const dHit = findDowInRow(row)
     if (dHit !== null) {
       dow = dHit
@@ -236,7 +289,7 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
       continue
     }
 
-    if (isLaneHeaderRow(row)) {
+    if (isLaneHeaderRow(row, comparto)) {
       lastLabels = row.map((x) => String(x ?? "").trim())
       gridExclusiveEnd = findLaneGridExclusiveEnd(row)
       continue
@@ -252,6 +305,7 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
         const lab = String(lastLabels[c] ?? "").trim()
         const labN = normCell(lab)
         if (labN === "SOSTITUZIONI" || labN.startsWith("SOSTITUZION") || labN === "RESP") continue
+        if (comparto === "acquaticita" && lab && !isAquaticitaLaneLabel(lab)) continue
 
         const staff = String(row[c] ?? "").trim()
         if (!isStaffName(staff)) continue
@@ -267,13 +321,27 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
           staff,
         })
       }
-    } else if (labelRowScore(row) >= 2 && !cellToStart(row[1]) && !isLaneHeaderRow(row)) {
+    } else if (
+      comparto !== "acquaticita" &&
+      comparto !== "spogliatoi" &&
+      labelRowScore(row) >= 2 &&
+      !cellToStart(row[1]) &&
+      !isLaneHeaderRow(row, comparto)
+    ) {
       lastLabels = row.map((x) => String(x ?? "").trim())
       gridExclusiveEnd = findLaneGridExclusiveEnd(row)
     }
   }
 
-  return events
+  const seen = new Set()
+  const deduped = []
+  for (const e of events) {
+    const k = `${e.dow}|${e.start}|${e.title}|${e.staff}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    deduped.push(e)
+  }
+  return deduped
 }
 
 function resolvePiscinaPath() {
