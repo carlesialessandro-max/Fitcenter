@@ -82,9 +82,9 @@ function sheetToComparto(sheetName) {
   if (n.includes("BAMBINI") && n.includes("ESTATE")) return null
   if ((/S\.?\s*N/.test(sheetName) || n.includes("SCUOLA")) && n.includes("BAMBINI")) return "scuola_nuoto"
   if (n.includes("ACQUAT")) return "acquaticita"
-  /** Griglia turni spogliatoi: titolo tipo "TURNI DAL …" oppure nome foglio con SPOGLIATOI + TURNI/DAL. */
+  /** Turni spogliatoi: qualsiasi foglio “spogliatoi…” (non DISPONIBILITÀ) oppure titolo TURNI+DAL. */
   if (n.includes("TURNI") && n.includes("DAL")) return "spogliatoi"
-  if ((n.includes("SPOGLIAT") || n.includes("SPOGLIATO")) && (n.includes("TURNI") || n.includes("DAL"))) return "spogliatoi"
+  if (n.includes("SPOGLIAT") || n.includes("SPOGLIATO")) return "spogliatoi"
   return null
 }
 
@@ -275,6 +275,8 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
   let lastLabels = []
   /** Esclusivo: non leggere colonne >= questo indice (sostituzioni / RESP / note). */
   let gridExclusiveEnd = 0
+  /** Ultima ora letta in colonna A (righe senza ora = stesso turno, tipico spogliatoi). */
+  let lastSlotTime = null
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i] || []
@@ -286,17 +288,23 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
       dow = dHit
       lastLabels = []
       gridExclusiveEnd = 0
+      lastSlotTime = null
       continue
     }
 
     if (isLaneHeaderRow(row, comparto)) {
       lastLabels = row.map((x) => String(x ?? "").trim())
       gridExclusiveEnd = findLaneGridExclusiveEnd(row)
+      lastSlotTime = null
       continue
     }
 
     const t0 = cellToStart(row[0])
-    if (t0) {
+    if (t0) lastSlotTime = t0
+    const slotTime =
+      t0 != null ? t0 : comparto === "spogliatoi" && lastSlotTime != null ? lastSlotTime : null
+
+    if (slotTime) {
       const limit =
         gridExclusiveEnd > 0 ? gridExclusiveEnd : Math.min(Math.max(row.length, lastLabels.length, 14), 22)
       const maxC = Math.max(limit, lastLabels.length + 1)
@@ -312,11 +320,11 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
         const title = (lab ? `${lab} · ` : "") + sheetName.trim()
         const titleShort = title.slice(0, 120)
         events.push({
-          id: `${comparto}-${sheetName}-${i}-${c}-${t0}-${staff}`.replace(/\s+/g, "_").slice(0, 180),
+          id: `${comparto}-${sheetName}-${i}-${c}-${slotTime}-${staff}`.replace(/\s+/g, "_").slice(0, 180),
           zona: comparto,
           sheet: sheetName,
           dow,
-          start: t0,
+          start: slotTime,
           title: titleShort,
           staff,
         })
