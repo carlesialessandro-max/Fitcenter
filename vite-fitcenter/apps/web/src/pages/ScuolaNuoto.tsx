@@ -5,6 +5,8 @@ import { scuolaNuotoApi, type ScuolaNuotoCorso } from "@/api/scuolaNuoto"
 import { prenotazioniApi, type AccessoUtenteRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
 
+type WeekdayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom"
+
 function weekdayKeyIt(d: Date): WeekdayKey {
   const map: WeekdayKey[] = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"]
   return map[d.getDay()] ?? "lun"
