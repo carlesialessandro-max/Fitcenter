@@ -17,17 +17,20 @@ const navOperatore: NavItem[] = [
   { to: "/piscina", label: "Mappa Piscina" },
 ] as const
 
-const navCorsi: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] }] as const
-const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi" }] as const
+const navCorsi: NavItem[] = [
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }, { to: "/calendario/corsi", label: "Calendario corsi" }] },
+] as const
+const navIstruttore: NavItem[] = [{ to: "/corsi", label: "Corsi", children: [{ to: "/calendario/corsi", label: "Calendario corsi" }] }] as const
 const navCampus: NavItem[] = [{ to: "/campus", label: "Campus" }] as const
 // Reception: solo firma da cassa (no dashboard, no admin firme).
 const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa", children: [{ to: "/campus", label: "Campus" }] }] as const
-const navScuolaNuoto: NavItem[] = [{ to: "/scuola-nuoto", label: "Scuola Nuoto" }] as const
+const navScuolaNuoto: NavItem[] = [
+  { to: "/scuola-nuoto", label: "Scuola Nuoto", children: [{ to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" }] },
+] as const
 const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as const
 const navDanza: NavItem[] = [{ to: "/danza", label: "Danza" }] as const
 
 const navAdmin: NavItem[] = [
-  { to: "/admin", label: "Piano operativo" },
   {
     to: "__vendite_group__",
     label: "Vendite",
@@ -45,7 +48,8 @@ const navAdmin: NavItem[] = [
       { to: "/andamento-vendite", label: "Andamento vendite" },
     ],
   },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/calendario", label: "Piano operativo" },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }, { to: "/calendario/corsi", label: "Calendario corsi" }] },
   {
     to: "__admin_group__",
     label: "Altri",
@@ -57,6 +61,7 @@ const navAdmin: NavItem[] = [
       { to: "/firma-cassa", label: "Firma cassa" },
       { to: "/piscina", label: "Mappa piscina" },
       { to: "/scuola-nuoto", label: "Scuola nuoto" },
+      { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" },
       { to: "/campus", label: "Campus" },
       { to: "/danza", label: "Danza" },
     ],

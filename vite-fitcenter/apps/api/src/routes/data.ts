@@ -1,6 +1,14 @@
 import { Router } from "express"
 import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
+import {
+  deleteCalendarioInstructor,
+  getCalendarioComparto,
+  listCalendarioInstructors,
+  patchCalendarioSlot,
+  postCalendarioInstructor,
+  putCalendarioInstructor,
+} from "../handlers/calendario.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
 import { getIncassi } from "../handlers/incassi.js"
@@ -10,6 +18,13 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 
 export const dataRouter = Router()
 
 dataRouter.use(requireAuth)
+
+dataRouter.get("/calendario/instructors", listCalendarioInstructors)
+dataRouter.post("/calendario/instructors", postCalendarioInstructor)
+dataRouter.put("/calendario/instructors/:id", putCalendarioInstructor)
+dataRouter.delete("/calendario/instructors/:id", deleteCalendarioInstructor)
+dataRouter.get("/calendario/:comparto", getCalendarioComparto)
+dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 
 dataRouter.get("/debug-consulenti", getDebugConsulenti)
 dataRouter.get("/sql-status", getSqlStatus)

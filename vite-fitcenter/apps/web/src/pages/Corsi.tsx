@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prenotazioniApi, type AccessoUtenteRow, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
@@ -1339,6 +1340,14 @@ export function Corsi() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
+          <p className="mt-2">
+            <Link
+              to="/calendario/corsi"
+              className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
+            >
+              Calendario planning corsi
+            </Link>
+          </p>
           {enabled ? (
             <p className="mt-1 text-xs text-zinc-500">
               Accessi:{" "}

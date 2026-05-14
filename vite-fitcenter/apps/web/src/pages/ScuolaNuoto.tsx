@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
+import { Link, Navigate } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { scuolaNuotoApi, type ScuolaNuotoCorso } from "@/api/scuolaNuoto"
 import { prenotazioniApi, type AccessoUtenteRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
-import { Navigate } from "react-router-dom"
-
-type WeekdayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom"
 
 function weekdayKeyIt(d: Date): WeekdayKey {
   const map: WeekdayKey[] = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"]
@@ -546,6 +544,14 @@ export function ScuolaNuoto() {
               ) : (
                 "Corsi del giorno della settimana (per periodo)"
               )}
+            </p>
+            <p className="mt-2">
+              <Link
+                to="/calendario/scuola-nuoto"
+                className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
+              >
+                Calendario planning scuola nuoto
+              </Link>
             </p>
           </div>
           <div className="mt-3 flex w-full flex-col gap-2 sm:mt-0 sm:w-auto sm:flex-row sm:items-end">
