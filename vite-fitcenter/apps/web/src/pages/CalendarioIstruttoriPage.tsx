@@ -1,0 +1,206 @@
+import { useCallback, useEffect, useState, type FormEvent } from "react"
+import { Link } from "react-router-dom"
+import type { CalendarioIstruttore } from "@/api/calendario"
+import { calendarioApi } from "@/api/calendario"
+import { useAuth } from "@/contexts/AuthContext"
+
+const H2 = { blue: "#46A6D9" } as const
+
+function InstructorsPanel({
+  rows,
+  canManage,
+  onRefresh,
+}: {
+  rows: CalendarioIstruttore[]
+  canManage: boolean
+  onRefresh: () => void
+}) {
+  const [nome, setNome] = useState("")
+  const [cognome, setCognome] = useState("")
+  const [telefono, setTelefono] = useState("")
+  const [email, setEmail] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function add(e: FormEvent) {
+    e.preventDefault()
+    setErr(null)
+    setBusy(true)
+    try {
+      await calendarioApi.postInstructor({ nome, cognome, telefono, email })
+      setNome("")
+      setCognome("")
+      setTelefono("")
+      setEmail("")
+      onRefresh()
+    } catch (x) {
+      setErr(x instanceof Error ? x.message : "Errore")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(id: string) {
+    if (!confirm("Eliminare questo istruttore?")) return
+    setBusy(true)
+    try {
+      await calendarioApi.deleteInstructor(id)
+      onRefresh()
+    } catch (x) {
+      setErr(x instanceof Error ? x.message : "Errore")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!canManage) {
+    return (
+      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Istruttori</h2>
+        <p className="mt-1 text-xs text-zinc-600">Sola lettura. Per modificare l&apos;anagrafica servono permessi admin o utente Corsi.</p>
+        <ul className="mt-4 max-h-[60vh] space-y-1 overflow-y-auto text-sm">
+          {rows.map((r) => (
+            <li key={r.id} className="rounded border border-zinc-800/80 bg-zinc-950/40 px-2 py-1 text-zinc-300">
+              {r.cognome} {r.nome}
+              <span className="block truncate text-xs text-zinc-500">
+                {r.telefono || "—"} · {r.email || "—"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Anagrafica istruttori (server)</h2>
+      <p className="mt-1 text-xs text-zinc-600">Nome, cognome, telefono e email salvati sul server. Usabili nei calendari reparto.</p>
+      {err ? <p className="mt-2 text-xs text-red-400">{err}</p> : null}
+      <form onSubmit={add} className="mt-3 grid gap-2 sm:grid-cols-2">
+        <input
+          value={nome}
+          onChange={(ev) => setNome(ev.target.value)}
+          placeholder="Nome"
+          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+        />
+        <input
+          value={cognome}
+          onChange={(ev) => setCognome(ev.target.value)}
+          placeholder="Cognome"
+          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+        />
+        <input
+          value={telefono}
+          onChange={(ev) => setTelefono(ev.target.value)}
+          placeholder="Telefono"
+          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+        />
+        <input
+          value={email}
+          onChange={(ev) => setEmail(ev.target.value)}
+          placeholder="Email"
+          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+        />
+        <div className="sm:col-span-2">
+          <button
+            type="submit"
+            disabled={busy}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
+            style={{ backgroundColor: H2.blue }}
+          >
+            Aggiungi istruttore
+          </button>
+        </div>
+      </form>
+      <ul className="mt-4 max-h-48 space-y-1 overflow-y-auto text-sm">
+        {rows.map((r) => (
+          <li key={r.id} className="flex items-center justify-between gap-2 rounded border border-zinc-800/80 bg-zinc-950/40 px-2 py-1">
+            <span className="truncate text-zinc-300">
+              {r.cognome} {r.nome}
+              <span className="block truncate text-xs text-zinc-500">
+                {r.telefono || "—"} · {r.email || "—"}
+              </span>
+            </span>
+            <button type="button" onClick={() => remove(r.id)} className="shrink-0 text-xs text-red-400 hover:underline" disabled={busy}>
+              Elimina
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+export function CalendarioIstruttoriPage() {
+  const { role } = useAuth()
+  const [rows, setRows] = useState<CalendarioIstruttore[]>([])
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const canAccess =
+    role === "admin" ||
+    role === "corsi" ||
+    role === "istruttore" ||
+    role === "scuola_nuoto" ||
+    role === "bagnini" ||
+    role === "danza" ||
+    role === "campus"
+  const canManage = role === "admin" || role === "corsi"
+
+  const reload = useCallback(async () => {
+    setLoading(true)
+    setLoadErr(null)
+    try {
+      const data = await calendarioApi.listInstructors()
+      setRows(data.rows ?? [])
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : "Errore caricamento")
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!canAccess) return
+    void reload()
+  }, [canAccess, reload])
+
+  if (!canAccess) {
+    return (
+      <div className="min-h-full bg-zinc-950 p-6 text-zinc-100">
+        <p className="text-red-400">Permessi insufficienti.</p>
+        <Link to="/" className="mt-4 inline-block text-sm text-[#46A6D9]">
+          Home
+        </Link>
+      </div>
+    )
+  }
+
+  const hub = role === "admin" ? "/calendario" : "/"
+
+  return (
+    <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
+      <div className="mx-auto max-w-2xl space-y-4">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">Piano operativo · Istruttori</h1>
+            <p className="mt-1 text-sm text-zinc-500">Anagrafica condivisa per i calendari reparto.</p>
+            {loadErr ? <p className="mt-2 text-xs text-red-400">{loadErr}</p> : null}
+            {loading ? <p className="mt-2 text-xs text-zinc-500">Caricamento…</p> : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to={hub} className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+              {role === "admin" ? "Hub reparti" : "Home"}
+            </Link>
+            <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+              Dashboard
+            </Link>
+          </div>
+        </header>
+        <InstructorsPanel rows={rows} canManage={canManage} onRefresh={() => void reload()} />
+      </div>
+    </div>
+  )
+}

@@ -46,7 +46,10 @@ export type CalendarioCompartoResponse = {
 }
 
 export type PatchCalendarioSlotBody = {
-  stableKey: string
+  /** Obbligatorio salvo `create: true`. */
+  stableKey?: string
+  create?: boolean
+  removed?: boolean
   clear?: boolean
   dow?: number
   start?: string
@@ -61,7 +64,7 @@ export const calendarioApi = {
   getComparto: (comparto: CalendarioComparto) =>
     api.get<CalendarioCompartoResponse>(`/data/calendario/${encodeURIComponent(comparto)}`),
   patchSlot: (comparto: CalendarioComparto, body: PatchCalendarioSlotBody) =>
-    api.patch<{ ok: boolean }>(`/data/calendario/${encodeURIComponent(comparto)}/slot`, body),
+    api.patch<{ ok: boolean; stableKey?: string }>(`/data/calendario/${encodeURIComponent(comparto)}/slot`, body),
   listInstructors: () => api.get<{ rows: CalendarioIstruttore[] }>("/data/calendario/instructors"),
   postInstructor: (body: { nome: string; cognome: string; telefono?: string; email?: string }) =>
     api.post<CalendarioIstruttore>("/data/calendario/instructors", body),

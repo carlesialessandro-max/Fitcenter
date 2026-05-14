@@ -44,6 +44,8 @@ export type CalendarioSlotRevision = {
   /** Nome libero se non si usa anagrafica istruttori. */
   staffOverride?: string | null
   note?: string | null
+  /** Nasconde lo slot del planning Excel (solo corsi con revisione su stableKey originale). */
+  removed?: boolean
   updatedAt: string
   updatedBy: string
 }

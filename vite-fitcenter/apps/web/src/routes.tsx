@@ -27,6 +27,7 @@ import { Danza } from "@/pages/Danza"
 import { Referral } from "@/pages/Referral"
 import { AdminCalendario } from "@/pages/AdminCalendario"
 import { CalendarioHub } from "@/pages/CalendarioHub"
+import { CalendarioIstruttoriPage } from "@/pages/CalendarioIstruttoriPage"
 import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
 
 function DashboardOrRedirect() {
@@ -101,6 +102,7 @@ export const router = createBrowserRouter([
       { path: "stampa-report", element: <StampaReport /> },
       { path: "admin", element: <AdminCalendario /> },
       { path: "calendario", element: <CalendarioHub /> },
+      { path: "calendario/istruttori", element: <CalendarioIstruttoriPage /> },
       { path: "calendario/:segmento", element: <CalendarioRepartoPage /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },

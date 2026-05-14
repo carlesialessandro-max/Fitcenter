@@ -6,7 +6,6 @@ export type CalendarioSegmento =
   | "scuola-nuoto"
   | "piscina"
   | "reception"
-  | "danza"
   | "campus"
   | "sala-fitness"
   | "acquaticita"
@@ -16,9 +15,8 @@ export type CalendarioSegmento =
 export const CALENDARIO_SEGMENTI: { segmento: CalendarioSegmento; api: CalendarioComparto; label: string }[] = [
   { segmento: "corsi", api: "corsi", label: "Corsi (terra + acqua)" },
   { segmento: "scuola-nuoto", api: "scuola_nuoto", label: "Scuola nuoto" },
-  { segmento: "piscina", api: "piscina", label: "Piscina / bagnini" },
+  { segmento: "piscina", api: "piscina", label: "Calendario bagnini" },
   { segmento: "reception", api: "reception", label: "Reception" },
-  { segmento: "danza", api: "danza", label: "Danza" },
   { segmento: "campus", api: "campus", label: "Campus" },
   { segmento: "sala-fitness", api: "sala_fitness", label: "Sala fitness" },
   { segmento: "acquaticita", api: "acquaticita", label: "Acquaticità" },
@@ -46,7 +44,6 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
   if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
-  if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
   if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
@@ -58,7 +55,6 @@ export function roleCanWriteCalendarioComparto(role: Role, comparto: CalendarioC
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
   if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
-  if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
   if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
   return false

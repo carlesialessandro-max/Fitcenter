@@ -29,7 +29,7 @@ const IT_MONTHS = [
   "dicembre",
 ] as const
 const IT_DOW_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const
-const H2 = { blue: "#46A6D9", orange: "#F2941B" } as const
+const H2 = { blue: "#46A6D9" } as const
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0")
@@ -87,19 +87,9 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/campus", label: "Campus" },
   { to: "/danza", label: "Danza" },
   { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
+  { to: "/calendario/istruttori", label: "Istruttori" },
   { to: "/calendario", label: "Piano operativo (hub)" },
 ]
-
-const CAL_FILTERS = [
-  { id: "corsi", label: "Corsi (terra + acqua)" },
-  { id: "bagnini", label: "Bagnini" },
-  { id: "reception", label: "Reception" },
-  { id: "scuola_nuoto", label: "Scuola nuoto" },
-  { id: "acquaticita", label: "Acquaticità" },
-  { id: "spogliatoi", label: "Spogliatoi" },
-  { id: "consulenti", label: "Consulenti" },
-] as const
-type FilterId = (typeof CAL_FILTERS)[number]["id"]
 
 function hmToMinutes(hm: string): number {
   const [h, m] = hm.split(":").map((x) => Number(x))
@@ -109,29 +99,11 @@ function hmToMinutes(hm: string): number {
 function hourBucket(hm: string): number {
   return Math.floor(hmToMinutes(hm) / 60)
 }
-function filteredPlanningEvents(filters: Record<FilterId, boolean>, all: CalEvent[]): CalEvent[] {
-  const layerOn = CAL_FILTERS.some((f) => filters[f.id])
-  return all.filter((e) => {
-    const planning = e.zona === "terra" || e.zona === "acqua"
-    if (!planning) return false
-    if (!layerOn) return true
-    return filters.corsi
-  })
-}
 
 const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = ["corsi", "scuola_nuoto", "acquaticita", "spogliatoi", "piscina"]
 
 function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
-}
-
-function filteredCalendarEvents(
-  comparto: CalendarioComparto,
-  filters: Record<FilterId, boolean>,
-  all: CalEvent[]
-): CalEvent[] {
-  if (comparto === "corsi") return filteredPlanningEvents(filters, all)
-  return all
 }
 function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
   const dow = d.getDay()
@@ -209,45 +181,125 @@ function EventPill({
   )
 }
 
+const DOW_OPTIONS: { v: number; label: string }[] = [
+  { v: 1, label: "Lunedì" },
+  { v: 2, label: "Martedì" },
+  { v: 3, label: "Mercoledì" },
+  { v: 4, label: "Giovedì" },
+  { v: 5, label: "Venerdì" },
+  { v: 6, label: "Sabato" },
+  { v: 0, label: "Domenica" },
+]
+
 function EditEventModal({
   event,
   instructors,
   initialInstructorId,
   initialStaffText,
   initialNote,
+  corsiSchedule,
   onClose,
   onSave,
-  onResetExcel,
+  onClearRevision,
+  onHideFromCalendar,
 }: {
   event: CalEvent
   instructors: CalendarioIstruttore[]
   initialInstructorId: string
   initialStaffText: string
   initialNote: string
+  corsiSchedule: boolean
   onClose: () => void
-  onSave: (istruttoreId: string | null, staffText: string, note: string) => void
-  onResetExcel: () => void
+  onSave: (p: {
+    istruttoreId: string | null
+    staffText: string
+    note: string
+    dow: number
+    start: string
+    title: string
+    zona: string
+  }) => void
+  onClearRevision: () => void
+  onHideFromCalendar?: () => void
 }) {
   const [istruttoreId, setIstruttoreId] = useState(initialInstructorId)
   const [staffText, setStaffText] = useState(initialStaffText)
   const [note, setNote] = useState(initialNote)
+  const [dow, setDow] = useState(event.dow)
+  const [start, setStart] = useState(event.start)
+  const [title, setTitle] = useState(event.title)
+  const [zona, setZona] = useState(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
 
   useEffect(() => {
     setIstruttoreId(initialInstructorId)
     setStaffText(initialStaffText)
     setNote(initialNote)
-  }, [event.stableKey, initialInstructorId, initialStaffText, initialNote])
+    setDow(event.dow)
+    setStart(event.start)
+    setTitle(event.title)
+    setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
+  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote])
 
   const presets = ["Sostituzione", "Malattia", "Ferie", "Assente"]
+  const isManual = event.stableKey.startsWith("manual-")
+  const zonaLabel = event.zona === "acqua" ? "Acqua" : event.zona === "terra" ? "Terra" : event.zona
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true">
       <button type="button" className="absolute inset-0 bg-black/70" onClick={onClose} aria-label="Chiudi" />
       <div className="relative z-10 w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl">
-        <h2 className="text-base font-semibold text-zinc-100">{event.title}</h2>
+        <h2 className="text-base font-semibold text-zinc-100">{corsiSchedule ? title : event.title}</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          {event.start} · {event.zona === "acqua" ? "Acqua" : "Terra"} · {event.sheet}
+          {corsiSchedule ? `${start} · ${zona === "acqua" ? "Acqua" : "Terra"} · ${event.sheet}` : `${event.start} · ${zonaLabel} · ${event.sheet}`}
         </p>
+        {corsiSchedule ? (
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
+              Giorno
+              <select
+                value={dow}
+                onChange={(ev) => setDow(Number(ev.target.value))}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-[#46A6D9]/60 focus:outline-none focus:ring-1 focus:ring-[#46A6D9]/30"
+              >
+                {DOW_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-zinc-400">
+              Inizio (HH:mm)
+              <input
+                value={start}
+                onChange={(ev) => setStart(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                placeholder="09:00"
+                autoComplete="off"
+              />
+            </label>
+            <label className="block text-xs font-medium text-zinc-400">
+              Zona
+              <select
+                value={zona}
+                onChange={(ev) => setZona(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+              >
+                <option value="terra">Terra</option>
+                <option value="acqua">Acqua</option>
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
+              Titolo corso
+              <input
+                value={title}
+                onChange={(ev) => setTitle(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                autoComplete="off"
+              />
+            </label>
+          </div>
+        ) : null}
         <label className="mt-4 block text-xs font-medium text-zinc-400">
           Istruttore (anagrafica)
           <select
@@ -264,7 +316,7 @@ function EditEventModal({
           </select>
         </label>
         <label className="mt-3 block text-xs font-medium text-zinc-400">
-          Nome istruttore (testo libero, se non usi anagrafica)
+          Staff / nome in calendario (testo libero)
           <input
             value={staffText}
             onChange={(ev) => setStaffText(ev.target.value)}
@@ -296,19 +348,40 @@ function EditEventModal({
           ))}
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-          <button
-            type="button"
-            onClick={onResetExcel}
-            className="mr-auto rounded-lg border border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-          >
-            Ripristina da Excel
-          </button>
+          <div className="mr-auto flex flex-wrap gap-2">
+            {corsiSchedule && !isManual && onHideFromCalendar ? (
+              <button
+                type="button"
+                onClick={onHideFromCalendar}
+                className="rounded-lg border border-amber-600/50 px-3 py-2 text-xs text-amber-200 hover:bg-amber-950/40"
+              >
+                Nascondi dal calendario
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onClearRevision}
+              className="rounded-lg border border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            >
+              {isManual ? "Elimina corso" : "Ripristina da Excel"}
+            </button>
+          </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
             Annulla
           </button>
           <button
             type="button"
-            onClick={() => onSave(istruttoreId || null, staffText, note)}
+            onClick={() =>
+              onSave({
+                istruttoreId: istruttoreId || null,
+                staffText,
+                note,
+                dow: corsiSchedule ? dow : event.dow,
+                start: corsiSchedule ? start.trim() : event.start,
+                title: corsiSchedule ? title.trim() : event.title,
+                zona: corsiSchedule ? zona : event.zona,
+              })
+            }
             className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900"
             style={{ backgroundColor: H2.blue }}
           >
@@ -320,112 +393,129 @@ function EditEventModal({
   )
 }
 
-function InstructorsPanel({
-  rows,
-  canManage,
-  onRefresh,
+function CreateCorsoModal({
+  instructors,
+  onClose,
+  onCreated,
 }: {
-  rows: CalendarioIstruttore[]
-  canManage: boolean
-  onRefresh: () => void
+  instructors: CalendarioIstruttore[]
+  onClose: () => void
+  onCreated: () => void
 }) {
-  const [nome, setNome] = useState("")
-  const [cognome, setCognome] = useState("")
-  const [telefono, setTelefono] = useState("")
-  const [email, setEmail] = useState("")
+  const [dow, setDow] = useState(1)
+  const [start, setStart] = useState("09:00")
+  const [title, setTitle] = useState("")
+  const [zona, setZona] = useState<"terra" | "acqua">("terra")
+  const [istruttoreId, setIstruttoreId] = useState("")
+  const [staffText, setStaffText] = useState("")
+  const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
-  const [err, setErr] = useState<string | null>(null)
 
-  async function add(e: FormEvent) {
-    e.preventDefault()
-    setErr(null)
+  async function submit(ev: FormEvent) {
+    ev.preventDefault()
+    const t = title.trim()
+    if (!t) {
+      alert("Titolo obbligatorio")
+      return
+    }
+    if (!istruttoreId.trim() && !staffText.trim()) {
+      alert("Scegli un istruttore dall'anagrafica oppure inserisci un nome in calendario")
+      return
+    }
     setBusy(true)
     try {
-      await calendarioApi.postInstructor({ nome, cognome, telefono, email })
-      setNome("")
-      setCognome("")
-      setTelefono("")
-      setEmail("")
-      onRefresh()
-    } catch (x) {
-      setErr(x instanceof Error ? x.message : "Errore")
+      await calendarioApi.patchSlot("corsi", {
+        create: true,
+        dow,
+        start: start.trim(),
+        title: t,
+        zona,
+        istruttoreId: istruttoreId || null,
+        staffOverride: istruttoreId ? null : staffText.trim() || null,
+        note: note.trim() || null,
+      })
+      onCreated()
+      onClose()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Errore")
     } finally {
       setBusy(false)
     }
   }
-
-  async function remove(id: string) {
-    if (!confirm("Eliminare questo istruttore?")) return
-    setBusy(true)
-    try {
-      await calendarioApi.deleteInstructor(id)
-      onRefresh()
-    } catch (x) {
-      setErr(x instanceof Error ? x.message : "Errore")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!canManage) return null
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Anagrafica istruttori (server)</h2>
-      <p className="mt-1 text-xs text-zinc-600">Nome, cognome, telefono e email salvati sul server. Usabili nel calendario corsi.</p>
-      {err ? <p className="mt-2 text-xs text-red-400">{err}</p> : null}
-      <form onSubmit={add} className="mt-3 grid gap-2 sm:grid-cols-2">
-        <input
-          value={nome}
-          onChange={(ev) => setNome(ev.target.value)}
-          placeholder="Nome"
-          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-        />
-        <input
-          value={cognome}
-          onChange={(ev) => setCognome(ev.target.value)}
-          placeholder="Cognome"
-          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-        />
-        <input
-          value={telefono}
-          onChange={(ev) => setTelefono(ev.target.value)}
-          placeholder="Telefono"
-          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-        />
-        <input
-          value={email}
-          onChange={(ev) => setEmail(ev.target.value)}
-          placeholder="Email"
-          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-        />
-        <div className="sm:col-span-2">
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
-            style={{ backgroundColor: H2.blue }}
+    <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true">
+      <button type="button" className="absolute inset-0 bg-black/70" onClick={onClose} aria-label="Chiudi" />
+      <form
+        onSubmit={submit}
+        className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
+      >
+        <h2 className="text-base font-semibold text-zinc-100">Nuovo corso</h2>
+        <p className="text-xs text-zinc-500">Aggiunge uno slot manuale sul planning corsi (terra/acqua).</p>
+        <label className="block text-xs font-medium text-zinc-400">
+          Giorno
+          <select
+            value={dow}
+            onChange={(ev) => setDow(Number(ev.target.value))}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
           >
-            Aggiungi istruttore
+            {DOW_OPTIONS.map((o) => (
+              <option key={o.v} value={o.v}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs font-medium text-zinc-400">
+            Inizio (HH:mm)
+            <input
+              value={start}
+              onChange={(ev) => setStart(ev.target.value)}
+              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            />
+          </label>
+          <label className="block text-xs font-medium text-zinc-400">
+            Zona
+            <select value={zona} onChange={(ev) => setZona(ev.target.value as "terra" | "acqua")} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">
+              <option value="terra">Terra</option>
+              <option value="acqua">Acqua</option>
+            </select>
+          </label>
+        </div>
+        <label className="block text-xs font-medium text-zinc-400">
+          Titolo
+          <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+        </label>
+        <label className="block text-xs font-medium text-zinc-400">
+          Istruttore (anagrafica)
+          <select value={istruttoreId} onChange={(ev) => setIstruttoreId(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">
+            <option value="">— Nessuno —</option>
+            {instructors.map((ins) => (
+              <option key={ins.id} value={ins.id}>
+                {ins.cognome} {ins.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-xs font-medium text-zinc-400">
+          Nome in calendario (se senza anagrafica)
+          <input value={staffText} onChange={(ev) => setStaffText(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+        </label>
+        <label className="block text-xs font-medium text-zinc-400">
+          Note
+          <input value={note} onChange={(ev) => setNote(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+        </label>
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+            Annulla
+          </button>
+          <button type="submit" disabled={busy} className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50" style={{ backgroundColor: H2.blue }}>
+            Aggiungi
           </button>
         </div>
       </form>
-      <ul className="mt-4 max-h-48 space-y-1 overflow-y-auto text-sm">
-        {rows.map((r) => (
-          <li key={r.id} className="flex items-center justify-between gap-2 rounded border border-zinc-800/80 bg-zinc-950/40 px-2 py-1">
-            <span className="truncate text-zinc-300">
-              {r.cognome} {r.nome}
-              <span className="block truncate text-xs text-zinc-500">
-                {r.telefono || "—"} · {r.email || "—"}
-              </span>
-            </span>
-            <button type="button" onClick={() => remove(r.id)} className="shrink-0 text-xs text-red-400 hover:underline" disabled={busy}>
-              Elimina
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
+    </div>
   )
 }
 
@@ -436,20 +526,26 @@ export function CalendarioRepartoPage() {
 
   const [view, setView] = useState<CalView>("month")
   const [cursor, setCursor] = useState(() => new Date())
-  const [filters, setFilters] = useState<Record<FilterId, boolean>>(
-    () => Object.fromEntries(CAL_FILTERS.map((f) => [f.id, true])) as Record<FilterId, boolean>
-  )
   const [events, setEvents] = useState<CalEvent[]>([])
   const [instructors, setInstructors] = useState<CalendarioIstruttore[]>([])
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
+  const [createCorsoOpen, setCreateCorsoOpen] = useState(false)
 
   const compartoLabel = useMemo(() => CALENDARIO_SEGMENTI.find((x) => x.api === apiComparto)?.label ?? "Calendario", [apiComparto])
 
   const canRead = apiComparto != null && roleCanReadCalendarioComparto(role, apiComparto)
   const canWrite = apiComparto != null && roleCanWriteCalendarioComparto(role, apiComparto)
-  const canManageInstructors = role === "admin" || role === "corsi"
+  const corsiSchedule = apiComparto === "corsi"
+  const canOpenInstructors =
+    role === "admin" ||
+    role === "corsi" ||
+    role === "istruttore" ||
+    role === "scuola_nuoto" ||
+    role === "bagnini" ||
+    role === "danza" ||
+    role === "campus"
 
   const reload = useCallback(async () => {
     if (!apiComparto) return
@@ -473,20 +569,23 @@ export function CalendarioRepartoPage() {
   }, [reload])
 
   const saveEdit = useCallback(
-    async (e: CalEvent, istruttoreId: string | null, staffText: string, noteRaw: string) => {
+    async (
+      e: CalEvent,
+      p: { istruttoreId: string | null; staffText: string; note: string; dow: number; start: string; title: string; zona: string }
+    ) => {
       if (!apiComparto || !canWrite) return
-      const note = noteRaw.trim()
-      const staffTrim = staffText.trim()
+      const staffTrim = p.staffText.trim()
+      const noteTrim = p.note.trim()
       try {
         await calendarioApi.patchSlot(apiComparto, {
           stableKey: e.stableKey,
-          dow: e.dow,
-          start: e.start,
-          title: e.title,
-          zona: e.zona,
-          istruttoreId: istruttoreId || null,
-          staffOverride: istruttoreId ? null : staffTrim || null,
-          note: note || null,
+          dow: p.dow,
+          start: p.start,
+          title: p.title,
+          zona: p.zona,
+          istruttoreId: p.istruttoreId || null,
+          staffOverride: p.istruttoreId ? null : staffTrim || null,
+          note: noteTrim || null,
         })
         await reload()
         setEditEvent(null)
@@ -511,10 +610,21 @@ export function CalendarioRepartoPage() {
     [apiComparto, canWrite, reload]
   )
 
-  const visible = useMemo(
-    () => (apiComparto ? filteredCalendarEvents(apiComparto, filters, events) : []),
-    [apiComparto, filters, events]
+  const hideSlot = useCallback(
+    async (e: CalEvent) => {
+      if (!apiComparto || !canWrite) return
+      if (e.stableKey.startsWith("manual-")) return
+      try {
+        await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, removed: true })
+        await reload()
+        setEditEvent(null)
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Operazione fallita")
+      }
+    },
+    [apiComparto, canWrite, reload]
   )
+
   const monthLabel = useMemo(() => `${IT_MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`, [cursor])
   const weekDays = useMemo(() => {
     const start = startOfWeekMonday(cursor)
@@ -560,12 +670,14 @@ export function CalendarioRepartoPage() {
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
               {apiComparto === "corsi" ? (
                 <>
-                  Base orari da planning Excel; modifiche a <strong className="font-medium text-zinc-400">istruttore</strong> e{" "}
-                  <strong className="font-medium text-zinc-400">note</strong> salvate sul <strong className="font-medium text-zinc-400">server</strong> (sincronizzate tra utenti).
+                  Base orari da planning Excel; puoi <strong className="font-medium text-zinc-400">spostare</strong>,{" "}
+                  <strong className="font-medium text-zinc-400">rinominare</strong>, <strong className="font-medium text-zinc-400">nascondere</strong> o{" "}
+                  <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
+                  <strong className="font-medium text-zinc-400">server</strong> (sincronizzati tra utenti).
                 </>
               ) : hasPlanningGrid(apiComparto) ? (
                 <>
-                  Orari da Excel piscina (fogli S.N. Bambini, Acquaticità, Spogliatoi, Bambini estate). Modifiche a{" "}
+                  Orari da Excel (scuola nuoto, acquaticità, spogliatoi; calendario bagnini anche da file INVERNALE se importato). Modifiche a{" "}
                   <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
                 </>
               ) : (
@@ -588,6 +700,11 @@ export function CalendarioRepartoPage() {
             <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
               Dashboard
             </Link>
+            {canOpenInstructors ? (
+              <Link to="/calendario/istruttori" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Istruttori
+              </Link>
+            ) : null}
           </div>
         </header>
 
@@ -601,7 +718,8 @@ export function CalendarioRepartoPage() {
               <>
                 Nessun evento per questo comparto: copia <code className="text-xs">PISCINAORARIO…xlsx</code> in{" "}
                 <code className="text-xs">apps/web/data/planning-import/piscina-orario-2025-2026.xlsx</code> ed esegui{" "}
-                <code className="text-xs">pnpm run build:planning</code> (oppure <code className="text-xs">PISCINA_XLSX</code>).
+                <code className="text-xs">pnpm run build:planning</code> ( <code className="text-xs">PISCINA_XLSX</code>,{" "}
+                <code className="text-xs">BAGNINI_XLSX</code> per INVERNALE bagnini).
               </>
             )}
           </p>
@@ -631,7 +749,16 @@ export function CalendarioRepartoPage() {
               Oggi
             </button>
           </div>
-          <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-700 p-1">
+          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            {corsiSchedule && canWrite ? (
+              <button
+                type="button"
+                onClick={() => setCreateCorsoOpen(true)}
+                className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+              >
+                Aggiungi corso
+              </button>
+            ) : null}
             {(
               [
                 ["month", "Mese"],
@@ -652,27 +779,9 @@ export function CalendarioRepartoPage() {
           </div>
         </div>
 
-        {hasPlanningGrid(apiComparto) && apiComparto === "corsi" ? (
-          <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Layer calendario</h2>
-            <div className="mt-3 flex flex-wrap gap-3">
-              {CAL_FILTERS.map((f) => (
-                <label key={f.id} className="flex cursor-pointer items-center gap-2 text-sm text-zinc-300">
-                  <input
-                    type="checkbox"
-                    checked={filters[f.id]}
-                    onChange={(e) => setFilters((prev) => ({ ...prev, [f.id]: e.target.checked }))}
-                    className="h-4 w-4 rounded border-zinc-600"
-                    style={{ accentColor: H2.orange }}
-                  />
-                  {f.label}
-                </label>
-              ))}
-            </div>
-          </section>
+        {createCorsoOpen && apiComparto === "corsi" && canWrite ? (
+          <CreateCorsoModal instructors={instructors} onClose={() => setCreateCorsoOpen(false)} onCreated={() => void reload()} />
         ) : null}
-
-        <InstructorsPanel rows={instructors} canManage={canManageInstructors && apiComparto === "corsi"} onRefresh={() => void reload()} />
 
         {editEvent && canWrite ? (
           <EditEventModal
@@ -682,9 +791,11 @@ export function CalendarioRepartoPage() {
             initialInstructorId={editEvent.istruttoreId ?? ""}
             initialStaffText={editEvent.staffOverride ?? ""}
             initialNote={editEvent.note ?? ""}
+            corsiSchedule={corsiSchedule}
             onClose={() => setEditEvent(null)}
-            onSave={(id, staff, note) => void saveEdit(editEvent, id, staff, note)}
-            onResetExcel={() => void resetEdit(editEvent)}
+            onSave={(p) => void saveEdit(editEvent, p)}
+            onClearRevision={() => void resetEdit(editEvent)}
+            onHideFromCalendar={corsiSchedule ? () => void hideSlot(editEvent) : undefined}
           />
         ) : null}
 
@@ -700,7 +811,7 @@ export function CalendarioRepartoPage() {
             <div className="mt-px grid grid-cols-7 gap-px bg-zinc-800">
               {cells.map(({ date, inMonth }) => {
                 const wend = date.getDay() === 0 || date.getDay() === 6
-                const dayEv = eventsForDay(visible, date)
+                const dayEv = eventsForDay(events, date)
                 return (
                   <div
                     key={isoYmd(date)}
@@ -752,7 +863,7 @@ export function CalendarioRepartoPage() {
                     {pad2(h)}:00
                   </div>
                   {weekDays.map((d) => {
-                    const evs = eventsForDayAndHour(visible, d, h)
+                    const evs = eventsForDayAndHour(events, d, h)
                     return (
                       <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
                         {evs.map((e) => (
@@ -781,7 +892,7 @@ export function CalendarioRepartoPage() {
             </div>
             <div className="max-h-[75vh] overflow-y-auto">
               {hours.map((h) => {
-                const evs = eventsForDayAndHour(visible, dayOnly, h)
+                const evs = eventsForDayAndHour(events, dayOnly, h)
                 return (
                   <div key={h} className="flex border-b border-zinc-800/70">
                     <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>

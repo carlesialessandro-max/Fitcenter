@@ -120,19 +120,52 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
   }
 
   const base = baseEventsForComparto(comparto)
-  return base.map((e) => {
+  const baseKeys = new Set<string>()
+  const out: CalendarioMergedEvent[] = []
+
+  for (const e of base) {
     const sk = stableKeyFromParts(e.zona, e.dow, e.start, e.title)
+    baseKeys.add(sk)
     const r = revByKey.get(sk)
-    return {
+    if (r?.removed) continue
+    out.push({
       ...e,
+      dow: r?.dow ?? e.dow,
+      start: r?.start ?? e.start,
+      title: r?.title ?? e.title,
+      zona: r?.zona ?? e.zona,
       stableKey: sk,
       istruttoreId: r?.istruttoreId ?? null,
       staffOverride: r?.staffOverride ?? null,
       note: r?.note ?? null,
       updatedAt: r?.updatedAt,
       updatedBy: r?.updatedBy,
-    }
-  })
+    })
+  }
+
+  for (const r of db.revisions) {
+    if (r.comparto !== comparto) continue
+    if (!r.stableKey.startsWith("manual-")) continue
+    if (r.removed) continue
+    if (baseKeys.has(r.stableKey)) continue
+    out.push({
+      id: r.stableKey,
+      zona: r.zona ?? "terra",
+      sheet: "Manuale",
+      dow: r.dow,
+      start: r.start,
+      title: r.title,
+      staff: r.staffOverride?.trim() || "—",
+      stableKey: r.stableKey,
+      istruttoreId: r.istruttoreId ?? null,
+      staffOverride: r.staffOverride ?? null,
+      note: r.note ?? null,
+      updatedAt: r.updatedAt,
+      updatedBy: r.updatedBy,
+    })
+  }
+
+  return out
 }
 
 function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttore[]): string {
@@ -167,6 +200,8 @@ export function patchCalendarioSlot(req: Request, res: Response) {
 
   const body = req.body as {
     stableKey?: string
+    create?: boolean
+    removed?: boolean
     dow?: number
     start?: string
     title?: string
@@ -177,46 +212,117 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     clear?: boolean
   }
 
-  const stableKey = String(body.stableKey ?? "").trim()
-  if (!stableKey) return res.status(400).json({ message: "stableKey obbligatorio" })
-
   let db = readCalendarioDb()
 
   if (body.clear) {
+    const stableKey = String(body.stableKey ?? "").trim()
+    if (!stableKey) return res.status(400).json({ message: "stableKey obbligatorio" })
     db = deleteRevision(db, raw, stableKey)
     writeCalendarioDb(db)
     return res.json({ ok: true })
   }
 
-  const dow = Number(body.dow)
-  const start = String(body.start ?? "").trim()
-  const title = String(body.title ?? "").trim()
+  const now = new Date().toISOString()
+  const by = u.nome || u.username
+
+  if (body.create === true) {
+    if (raw !== "corsi") return res.status(400).json({ message: "Aggiunta slot solo per comparto corsi" })
+    const dow = Number(body.dow)
+    const start = String(body.start ?? "").trim()
+    const title = String(body.title ?? "").trim()
+    const zona = String(body.zona ?? "terra").trim() || "terra"
+    if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
+      return res.status(400).json({ message: "dow, start, title obbligatori" })
+    }
+    const staffOverride = body.staffOverride != null ? String(body.staffOverride).trim() : ""
+    const hasIns = body.istruttoreId != null && String(body.istruttoreId).trim() !== ""
+    if (!staffOverride && !hasIns) return res.status(400).json({ message: "Inserire istruttore da anagrafica o nome testuale" })
+    const stableKey = `manual-${crypto.randomUUID()}`
+    const rev: CalendarioSlotRevision = {
+      comparto: raw,
+      stableKey,
+      dow,
+      start,
+      title,
+      zona,
+      istruttoreId: hasIns ? String(body.istruttoreId).trim() : null,
+      staffOverride: staffOverride || null,
+      note: body.note === undefined ? undefined : body.note,
+      updatedAt: now,
+      updatedBy: by,
+    }
+    db = upsertRevision(db, rev)
+    writeCalendarioDb(db)
+    return res.json({ ok: true, stableKey })
+  }
+
+  const stableKey = String(body.stableKey ?? "").trim()
+  if (!stableKey) return res.status(400).json({ message: "stableKey obbligatorio" })
+
+  const baseEv = baseEventsForComparto(raw).find((e) => stableKeyFromParts(e.zona, e.dow, e.start, e.title) === stableKey)
+  const prevRev = db.revisions.find((r) => r.comparto === raw && r.stableKey === stableKey)
+
+  if (body.removed === true) {
+    if (stableKey.startsWith("manual-")) {
+      db = deleteRevision(db, raw, stableKey)
+      writeCalendarioDb(db)
+      return res.json({ ok: true })
+    }
+    if (!baseEv) return res.status(404).json({ message: "Slot non trovato" })
+    const rev: CalendarioSlotRevision = {
+      comparto: raw,
+      stableKey,
+      dow: baseEv.dow,
+      start: baseEv.start,
+      title: baseEv.title,
+      zona: baseEv.zona,
+      removed: true,
+      updatedAt: now,
+      updatedBy: by,
+    }
+    db = upsertRevision(db, rev)
+    writeCalendarioDb(db)
+    return res.json({ ok: true })
+  }
+
+  if (!baseEv && !stableKey.startsWith("manual-")) {
+    return res.status(404).json({ message: "Slot non trovato" })
+  }
+
+  const dow = Number(body.dow ?? baseEv?.dow ?? prevRev?.dow)
+  const start = String(body.start ?? baseEv?.start ?? prevRev?.start ?? "").trim()
+  const title = String(body.title ?? baseEv?.title ?? prevRev?.title ?? "").trim()
   if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
     return res.status(400).json({ message: "dow, start, title obbligatori per salvataggio" })
   }
 
-  const now = new Date().toISOString()
   const rev: CalendarioSlotRevision = {
     comparto: raw,
     stableKey,
     dow,
     start,
     title,
-    zona: body.zona != null ? String(body.zona) : undefined,
-    istruttoreId: body.istruttoreId === undefined ? undefined : body.istruttoreId,
-    staffOverride: body.staffOverride === undefined ? undefined : body.staffOverride,
-    note: body.note === undefined ? undefined : body.note,
+    zona: String(body.zona ?? baseEv?.zona ?? prevRev?.zona ?? "terra"),
+    istruttoreId: body.istruttoreId === undefined ? prevRev?.istruttoreId ?? null : body.istruttoreId,
+    staffOverride: body.staffOverride === undefined ? prevRev?.staffOverride : body.staffOverride,
+    note: body.note === undefined ? prevRev?.note : body.note,
+    removed: false,
     updatedAt: now,
-    updatedBy: u.nome || u.username,
+    updatedBy: by,
   }
 
-  const excelStaff =
-    baseEventsForComparto(raw).find((e) => stableKeyFromParts(e.zona, e.dow, e.start, e.title) === stableKey)?.staff.trim() ?? ""
-  const staffOverrideTrim = rev.staffOverride != null ? String(rev.staffOverride).trim() : ""
-  const sameStaffAsExcel = !rev.istruttoreId && (!staffOverrideTrim || staffOverrideTrim === excelStaff)
-  const noteTrim = rev.note != null ? String(rev.note).trim() : ""
-  if (sameStaffAsExcel && !noteTrim) {
-    db = deleteRevision(db, raw, stableKey)
+  if (baseEv) {
+    const excelStaff = baseEv.staff.trim()
+    const staffOverrideTrim = rev.staffOverride != null ? String(rev.staffOverride).trim() : ""
+    const sameStaffAsExcel = !rev.istruttoreId && (!staffOverrideTrim || staffOverrideTrim === excelStaff)
+    const noteTrim = rev.note != null ? String(rev.note).trim() : ""
+    const samePosAsExcel =
+      dow === baseEv.dow && start === baseEv.start && title === baseEv.title && String(rev.zona ?? baseEv.zona) === String(baseEv.zona)
+    if (sameStaffAsExcel && !noteTrim && samePosAsExcel) {
+      db = deleteRevision(db, raw, stableKey)
+    } else {
+      db = upsertRevision(db, rev)
+    }
   } else {
     db = upsertRevision(db, rev)
   }

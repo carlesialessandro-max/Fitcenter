@@ -22,7 +22,7 @@ export function CalendarioHub() {
     return <Navigate to={calendarioPath("piscina")} replace />
   }
   if (role === "danza") {
-    return <Navigate to={calendarioPath("danza")} replace />
+    return <Navigate to="/danza" replace />
   }
   if (role === "campus") {
     return <Navigate to={calendarioPath("campus")} replace />
