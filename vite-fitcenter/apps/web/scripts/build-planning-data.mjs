@@ -6,11 +6,36 @@
  */
 import fs from "node:fs"
 import path from "node:path"
+import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
-import XLSX from "xlsx"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const webRoot = path.resolve(__dirname, "..")
+
+/** xlsx: risoluzione robusta (pnpm / script in sottocartella / dipendenze non installate). */
+function loadXlsx() {
+  const req = createRequire(import.meta.url)
+  const tryPaths = [
+    () => req("xlsx"),
+    () => req(path.join(webRoot, "node_modules", "xlsx")),
+    () => req(path.join(webRoot, "..", "node_modules", "xlsx")),
+    () => req(path.join(webRoot, "..", "api", "node_modules", "xlsx")),
+  ]
+  for (const fn of tryPaths) {
+    try {
+      const m = fn()
+      if (m) return m
+    } catch {
+      /* prova successivo */
+    }
+  }
+  console.error(
+    "\n[xlsx] Pacchetto non trovato. Dalla root del monorepo (cartella con pnpm-workspace.yaml) esegui:\n  pnpm install\n"
+  )
+  process.exit(1)
+}
+
+const XLSX = loadXlsx()
 const importDir = path.join(webRoot, "data", "planning-import")
 const outFile = path.join(webRoot, "src", "data", "planning-weekly.json")
 
