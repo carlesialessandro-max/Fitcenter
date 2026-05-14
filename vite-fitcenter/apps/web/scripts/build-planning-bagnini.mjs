@@ -138,11 +138,13 @@ function parseInvernaleDayBlock(rows, timeCol, staffCol, timeRightCol, startRow,
     if (intruder != null && intruder !== dow && ri > startRow + 5) break
 
     if (staff) {
-      if (curStaff != null && curStaff !== staff && curStart && t) {
+      if (curStaff != null && curStaff !== staff && curStart) {
         out.push({ dow, start: curStart, staff: curStaff })
       }
-      curStaff = staff
-      curStart = t ?? curStart ?? "07:00"
+      if (curStaff !== staff) {
+        curStaff = staff
+        curStart = t ?? "07:00"
+      }
       emptyRun = 0
     } else if (t && curStaff) {
       emptyRun = 0
