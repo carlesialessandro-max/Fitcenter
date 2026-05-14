@@ -64,6 +64,7 @@ const navAdmin: NavItem[] = [
       { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" },
       { to: "/campus", label: "Campus" },
       { to: "/danza", label: "Danza" },
+      { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
     ],
   },
 ] as const

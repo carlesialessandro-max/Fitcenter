@@ -6,6 +6,7 @@ export type CalendarioComparto =
   | "reception"
   | "danza"
   | "campus"
+  | "sala_fitness"
   | "acquaticita"
   | "spogliatoi"
   | "consulenti"

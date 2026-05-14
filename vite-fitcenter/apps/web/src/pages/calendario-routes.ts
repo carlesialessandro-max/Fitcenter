@@ -8,6 +8,7 @@ export type CalendarioSegmento =
   | "reception"
   | "danza"
   | "campus"
+  | "sala-fitness"
   | "acquaticita"
   | "spogliatoi"
   | "consulenti"
@@ -19,6 +20,7 @@ export const CALENDARIO_SEGMENTI: { segmento: CalendarioSegmento; api: Calendari
   { segmento: "reception", api: "reception", label: "Reception" },
   { segmento: "danza", api: "danza", label: "Danza" },
   { segmento: "campus", api: "campus", label: "Campus" },
+  { segmento: "sala-fitness", api: "sala_fitness", label: "Sala fitness" },
   { segmento: "acquaticita", api: "acquaticita", label: "Acquaticità" },
   { segmento: "spogliatoi", api: "spogliatoi", label: "Spogliatoi" },
   { segmento: "consulenti", api: "consulenti", label: "Consulenti" },
@@ -45,7 +47,14 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
   if (comparto === "piscina") return role === "bagnini"
   if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
-  if (comparto === "reception" || comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "consulenti") return false
+  if (
+    comparto === "reception" ||
+    comparto === "sala_fitness" ||
+    comparto === "acquaticita" ||
+    comparto === "spogliatoi" ||
+    comparto === "consulenti"
+  )
+    return false
   return false
 }
 
@@ -56,6 +65,13 @@ export function roleCanWriteCalendarioComparto(role: Role, comparto: CalendarioC
   if (comparto === "piscina") return role === "bagnini"
   if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
-  if (comparto === "reception" || comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "consulenti") return role === "admin"
+  if (
+    comparto === "reception" ||
+    comparto === "sala_fitness" ||
+    comparto === "acquaticita" ||
+    comparto === "spogliatoi" ||
+    comparto === "consulenti"
+  )
+    return false
   return false
 }

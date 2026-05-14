@@ -86,6 +86,7 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/scuola-nuoto", label: "Scuola nuoto" },
   { to: "/campus", label: "Campus" },
   { to: "/danza", label: "Danza" },
+  { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
   { to: "/calendario", label: "Piano operativo (hub)" },
 ]
 
