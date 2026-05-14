@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } f
 import { Link, Navigate, useParams } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
-import type { CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
+import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
 import {
   CALENDARIO_SEGMENTI,
@@ -118,6 +118,21 @@ function filteredPlanningEvents(filters: Record<FilterId, boolean>, all: CalEven
     return filters.corsi
   })
 }
+
+const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = ["corsi", "scuola_nuoto", "acquaticita", "spogliatoi", "piscina"]
+
+function hasPlanningGrid(comparto: CalendarioComparto): boolean {
+  return COMPARTI_CALENDARIO_GRID.includes(comparto)
+}
+
+function filteredCalendarEvents(
+  comparto: CalendarioComparto,
+  filters: Record<FilterId, boolean>,
+  all: CalEvent[]
+): CalEvent[] {
+  if (comparto === "corsi") return filteredPlanningEvents(filters, all)
+  return all
+}
 function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
   const dow = d.getDay()
   return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
@@ -153,6 +168,12 @@ function DropdownNav({ label, links }: { label: string; links: { to: string; lab
   )
 }
 
+function pillColClass(e: CalEvent): string {
+  if (e.zona === "acqua") return "border-sky-500/40 bg-sky-500/15 text-sky-100"
+  if (e.zona === "terra") return "border-amber-500/35 bg-amber-500/10 text-amber-100"
+  return "border-cyan-500/35 bg-cyan-500/10 text-cyan-100"
+}
+
 function EventPill({
   e,
   staffLabel,
@@ -166,7 +187,7 @@ function EventPill({
   onOpen: () => void
   canEdit: boolean
 }) {
-  const col = e.zona === "acqua" ? "border-sky-500/40 bg-sky-500/15 text-sky-100" : "border-amber-500/35 bg-amber-500/10 text-amber-100"
+  const col = pillColClass(e)
   return (
     <button
       type="button"
@@ -490,7 +511,10 @@ export function CalendarioRepartoPage() {
     [apiComparto, canWrite, reload]
   )
 
-  const visible = useMemo(() => filteredPlanningEvents(filters, events), [filters, events])
+  const visible = useMemo(
+    () => (apiComparto ? filteredCalendarEvents(apiComparto, filters, events) : []),
+    [apiComparto, filters, events]
+  )
   const monthLabel = useMemo(() => `${IT_MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`, [cursor])
   const weekDays = useMemo(() => {
     const start = startOfWeekMonday(cursor)
@@ -539,6 +563,11 @@ export function CalendarioRepartoPage() {
                   Base orari da planning Excel; modifiche a <strong className="font-medium text-zinc-400">istruttore</strong> e{" "}
                   <strong className="font-medium text-zinc-400">note</strong> salvate sul <strong className="font-medium text-zinc-400">server</strong> (sincronizzate tra utenti).
                 </>
+              ) : hasPlanningGrid(apiComparto) ? (
+                <>
+                  Orari da Excel piscina (fogli S.N. Bambini, Acquaticità, Spogliatoi, Bambini estate). Modifiche a{" "}
+                  <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
+                </>
               ) : (
                 <>Calendario reparto: quando importeremo il planning per questo settore, gli slot appariranno qui.</>
               )}
@@ -562,13 +591,23 @@ export function CalendarioRepartoPage() {
           </div>
         </header>
 
-        {apiComparto === "corsi" && events.length === 0 && !loading && !loadErr ? (
+        {hasPlanningGrid(apiComparto) && events.length === 0 && !loading && !loadErr ? (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Nessun evento dal planning: verifica che <code className="text-xs">planning-weekly.json</code> sia generato nella build e che l&apos;API legga il file sul server.
+            {apiComparto === "corsi" ? (
+              <>
+                Nessun evento dal planning corsi: verifica <code className="text-xs">planning-weekly.json</code> e che l&apos;API legga il file sul server.
+              </>
+            ) : (
+              <>
+                Nessun evento per questo comparto: copia <code className="text-xs">PISCINAORARIO…xlsx</code> in{" "}
+                <code className="text-xs">apps/web/data/planning-import/piscina-orario-2025-2026.xlsx</code> ed esegui{" "}
+                <code className="text-xs">pnpm run build:planning</code> (oppure <code className="text-xs">PISCINA_XLSX</code>).
+              </>
+            )}
           </p>
         ) : null}
 
-        {apiComparto !== "corsi" && !loading ? (
+        {!hasPlanningGrid(apiComparto) && !loading ? (
           <p className="rounded-xl border border-zinc-700 bg-zinc-900/40 px-4 py-3 text-sm text-zinc-400">
             Nessun dato planning per questo reparto al momento. Struttura pronta per import futuro.
           </p>
@@ -613,7 +652,7 @@ export function CalendarioRepartoPage() {
           </div>
         </div>
 
-        {apiComparto === "corsi" ? (
+        {hasPlanningGrid(apiComparto) && apiComparto === "corsi" ? (
           <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Layer calendario</h2>
             <div className="mt-3 flex flex-wrap gap-3">
@@ -649,7 +688,7 @@ export function CalendarioRepartoPage() {
           />
         ) : null}
 
-        {view === "month" && apiComparto === "corsi" ? (
+        {view === "month" && hasPlanningGrid(apiComparto) ? (
           <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3">
             <div className="grid grid-cols-7 gap-px rounded-lg bg-zinc-800 text-center text-xs font-medium text-zinc-400">
               {IT_DOW_SHORT.map((d) => (
@@ -694,7 +733,7 @@ export function CalendarioRepartoPage() {
           </div>
         ) : null}
 
-        {view === "week" && apiComparto === "corsi" ? (
+        {view === "week" && hasPlanningGrid(apiComparto) ? (
           <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
             <div className="grid min-w-[780px]" style={{ gridTemplateColumns: "52px repeat(7, minmax(0,1fr))" }}>
               <div className="border-b border-zinc-800 bg-zinc-900/80" />
@@ -735,7 +774,7 @@ export function CalendarioRepartoPage() {
           </div>
         ) : null}
 
-        {view === "day" && apiComparto === "corsi" ? (
+        {view === "day" && hasPlanningGrid(apiComparto) ? (
           <div className="mx-auto max-w-lg overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
             <div className={cn("border-b border-zinc-800 bg-zinc-900/80 px-4 py-3 text-center text-sm font-medium", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
               {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}

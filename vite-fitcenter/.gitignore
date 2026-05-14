@@ -28,3 +28,6 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+
+# Planning Excel (import locale)
+apps/web/data/planning-import/*.xlsx

@@ -44,13 +44,12 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
+  if (comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   if (
     comparto === "reception" ||
     comparto === "sala_fitness" ||
-    comparto === "acquaticita" ||
-    comparto === "spogliatoi" ||
     comparto === "consulenti"
   )
     return false
@@ -61,18 +60,11 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (u.role === "admin") return true
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
-  if (comparto === "piscina") return u.role === "bagnini"
+  if (comparto === "piscina" || comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
-  if (
-    comparto === "reception" ||
-    comparto === "sala_fitness" ||
-    comparto === "acquaticita" ||
-    comparto === "spogliatoi" ||
-    comparto === "consulenti"
-  )
-    return false
+  if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }
 
@@ -90,18 +82,30 @@ function planningJsonCandidates(): string[] {
   ]
 }
 
-function loadPlanningBaseEvents(): CalendarioBaseEvent[] {
+function loadPlanningJson(): {
+  events?: CalendarioBaseEvent[]
+  eventsByComparto?: Partial<Record<CalendarioComparto, CalendarioBaseEvent[]>>
+} | null {
   for (const p of planningJsonCandidates()) {
     try {
       if (!existsSync(p)) continue
       const raw = readFileSync(p, "utf8")
-      const j = JSON.parse(raw) as { events?: CalendarioBaseEvent[] }
-      if (Array.isArray(j.events)) return j.events
+      return JSON.parse(raw) as {
+        events?: CalendarioBaseEvent[]
+        eventsByComparto?: Partial<Record<CalendarioComparto, CalendarioBaseEvent[]>>
+      }
     } catch {
       /* continue */
     }
   }
-  return []
+  return null
+}
+
+function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEvent[] {
+  const j = loadPlanningJson()
+  if (!j) return []
+  if (comparto === "corsi") return j.events ?? []
+  return j.eventsByComparto?.[comparto] ?? []
 }
 
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
@@ -110,11 +114,12 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     if (r.comparto === comparto) revByKey.set(r.stableKey, r)
   }
 
-  if (comparto !== "corsi") {
+  const compartiConPlanning: CalendarioComparto[] = ["corsi", "scuola_nuoto", "piscina", "acquaticita", "spogliatoi"]
+  if (!compartiConPlanning.includes(comparto)) {
     return []
   }
 
-  const base = loadPlanningBaseEvents()
+  const base = baseEventsForComparto(comparto)
   return base.map((e) => {
     const sk = stableKeyFromParts(e.zona, e.dow, e.start, e.title)
     const r = revByKey.get(sk)
@@ -205,7 +210,8 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     updatedBy: u.nome || u.username,
   }
 
-  const excelStaff = loadPlanningBaseEvents().find((e) => stableKeyFromParts(e.zona, e.dow, e.start, e.title) === stableKey)?.staff.trim() ?? ""
+  const excelStaff =
+    baseEventsForComparto(raw).find((e) => stableKeyFromParts(e.zona, e.dow, e.start, e.title) === stableKey)?.staff.trim() ?? ""
   const staffOverrideTrim = rev.staffOverride != null ? String(rev.staffOverride).trim() : ""
   const sameStaffAsExcel = !rev.istruttoreId && (!staffOverrideTrim || staffOverrideTrim === excelStaff)
   const noteTrim = rev.note != null ? String(rev.note).trim() : ""

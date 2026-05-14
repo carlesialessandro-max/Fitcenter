@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-14T09:28:57.483Z",
+  "generatedAt": "2026-05-14T10:54:27.526Z",
   "planningNote": "Solo foglio principale: Terra «dal 15 settembre», Acqua «PLANNING SETTEMBRE» (senza 1–14). PLANNING_INCLUDE_ALL=1 per tutti i fogli.",
   "sources": [
     "data\\planning-import\\terra-2025-26.xlsx",
@@ -1266,5 +1266,3196 @@
       "title": "ADDOMINALI",
       "staff": "TRAINER"
     }
-  ]
+  ],
+  "eventsByComparto": {
+    "scuola_nuoto": [
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-1-16:15-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-2-16:15-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-3-16:15-CIVININI_L",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "CIVININI L"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-5-16:15-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-7-16:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "C · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-12-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-13-16:15-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "sostituzioni · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-14-16:15-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-22-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "FLORENZI · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-23-16:15-sempre",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "mar ven · S.N. Bambini",
+        "staff": "sempre"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-25-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "VITTORIO · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-7-28-16:15-COCUZZA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "16:15",
+        "title": "DEBORA · S.N. Bambini",
+        "staff": "COCUZZA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-1-17:00-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-2-17:00-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-3-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-4-17:00-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-5-17:00-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-6-17:00-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-7-17:00-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-9-17:00-CIVININI_L",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "CIVININI L"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-10-17:00-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-13-17:00-PILIERO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "LOMBARDO · S.N. Bambini",
+        "staff": "PILIERO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-14-17:00-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "SARA · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-22-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "BEATRICE · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-23-17:00-sempre",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "sempre"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-25-17:00-LAURENNE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "BIANCO · S.N. Bambini",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-9-28-17:00-POLI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:00",
+        "title": "CEDROLA · S.N. Bambini",
+        "staff": "POLI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-1-17:45-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-3-17:45-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-5-17:45-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-6-17:45-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-7-17:45-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-8-17:45-CIVININI_L",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "CIVININI L"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-9-17:45-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-10-17:45-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-11-17:45-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-13-17:45-RICASOLI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "CAPUTO · S.N. Bambini",
+        "staff": "RICASOLI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-14-17:45-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "SARA · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-22-17:45-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "YLENIA · S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-23-17:45-lun_sab",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "lun e giov ven · S.N. Bambini",
+        "staff": "lun sab"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-25-17:45-MATILDE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "YLENIA · S.N. Bambini",
+        "staff": "MATILDE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-11-28-17:45-SANTISI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "17:45",
+        "title": "LEONARDO · S.N. Bambini",
+        "staff": "SANTISI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-13-18:18-BEATRICE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "MATTIACCI · S.N. Bambini",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-14-18:18-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "SARA · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-22-18:18-BERNARDI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "SIMONE · S.N. Bambini",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-23-18:18-mar_e_ven",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "sempre merc dalle 17 · S.N. Bambini",
+        "staff": "mar e ven"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-25-18:18-AURORA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "SIMONE · S.N. Bambini",
+        "staff": "AURORA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-13-28-18:18-PELLICANI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 1,
+        "start": "18:18",
+        "title": "BAGNI · S.N. Bambini",
+        "staff": "PELLICANI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-1-16:15-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-2-16:15-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-3-16:15-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-5-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-7-16:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "C · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-14-16:15-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-22-16:15-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "LOMBARDO · S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-23-16:15-3_gg_no_sab",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "mar giov · S.N. Bambini",
+        "staff": "3 gg no sab"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-19-25-16:15-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "16:15",
+        "title": "COCUZZA · S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-1-17:00-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-2-17:00-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-3-17:00-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-4-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-5-17:00-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-6-17:00-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-7-17:00-BERNARDI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-8-17:00-LOMBARDO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "LOMBARDO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-9-17:00-NADIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "NADIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-10-17:00-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-11-17:00-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-14-17:00-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "FLORENZI · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-22-17:00-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "GABRIELE · S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-23-17:00-2_gg",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "sempre · S.N. Bambini",
+        "staff": "2 gg"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-21-25-17:00-MITRESI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 2,
+        "start": "17:00",
+        "title": "POLI · S.N. Bambini",
+        "staff": "MITRESI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-25-14-18:18-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "18:18",
+        "title": "FLORENZI · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-25-22-18:18-NATIVI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "18:18",
+        "title": "GAIA · S.N. Bambini",
+        "staff": "NATIVI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-1-16:15-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-2-16:15-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-3-16:15-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-5-16:15-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-7-16:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "C · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-12-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-30-21-16:15-RICASOLI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "16:15",
+        "title": "DEL PISTOIA · S.N. Bambini",
+        "staff": "RICASOLI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-1-17:00-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-2-17:00-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-3-17:00-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-4-17:00-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-5-17:00-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-7-17:00-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-8-17:00-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-9-17:00-CAPUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "S.N. Bambini",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-12-17:00-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "BATTA · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-21-17:00-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "MATTIACCI · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-32-22-17:00-mar_e_ven",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:00",
+        "title": "sab · S.N. Bambini",
+        "staff": "mar e ven"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-1-17:45-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-2-17:45-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-3-17:45-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-4-17:45-CAPUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-5-17:45-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-7-17:45-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-8-17:45-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-9-17:45-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-34-12-17:45-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "17:45",
+        "title": "BATTA · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-36-12-18:18-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 3,
+        "start": "18:18",
+        "title": "BATTA · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-1-16:15-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-2-16:15-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-3-16:15-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-5-16:15-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-7-16:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "C · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-12-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-41-14-16:15-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "16:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-1-17:00-LOMBARDO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A · S.N. Bambini",
+        "staff": "LOMBARDO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-2-17:00-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A · S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-3-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-4-17:00-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-5-17:00-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "B · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-6-17:00-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "B · S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-7-17:00-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "C · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-8-17:00-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "C · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-9-17:00-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "D · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-10-17:00-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "E · S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-43-14-17:00-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:00",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-1-17:45-LOMBARDO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "A · S.N. Bambini",
+        "staff": "LOMBARDO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-2-17:45-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "A · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-3-17:45-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-4-17:45-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-5-17:45-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "B · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-6-17:45-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "B · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-7-17:45-CEDROLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "C · S.N. Bambini",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-9-17:45-DEL_PISTOIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "D · S.N. Bambini",
+        "staff": "DEL PISTOIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-10-17:45-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "E · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-11-17:45-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "F · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-45-14-17:45-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "17:45",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-47-14-18:18-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 4,
+        "start": "18:18",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-1-16:15-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-2-16:15-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-3-16:15-BEATRICE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-5-16:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-7-16:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "C · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-12-16:15-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-52-14-16:15-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "16:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-1-17:00-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A · S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-2-17:00-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A · S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-3-17:00-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A++ · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-4-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-5-17:00-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "B · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-6-17:00-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "B · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-7-17:00-BERNARDI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "C · S.N. Bambini",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-8-17:00-BEATRICE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "C · S.N. Bambini",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-9-17:00-NADIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "D · S.N. Bambini",
+        "staff": "NADIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-10-17:00-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "E · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-11-17:00-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "F · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-54-14-17:00-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:00",
+        "title": "RESP · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-1-17:45-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-2-17:45-BERNARDI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "A · S.N. Bambini",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-3-17:45-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-4-17:45-REBECCA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "REBECCA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-5-17:45-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "B · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-6-17:45-GAIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "B · S.N. Bambini",
+        "staff": "GAIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-7-17:45-BEATRICE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "C · S.N. Bambini",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-8-17:45-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "C · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-9-17:45-NADIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "D · S.N. Bambini",
+        "staff": "NADIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-10-17:45-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "E · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-12-17:45-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-56-14-17:45-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "17:45",
+        "title": "RESP · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-58-14-18:18-FLORENZI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 5,
+        "start": "18:18",
+        "title": "RESP · S.N. Bambini",
+        "staff": "FLORENZI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-1-09:45-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-2-09:45-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "A · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-3-09:45-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "A · S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-4-09:45-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "MATTIACCI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-5-09:45-PIRAS",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "A++ · S.N. Bambini",
+        "staff": "PIRAS"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-6-09:45-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "B · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-7-09:45-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "C · S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-8-09:45-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "D · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-9-09:45-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "E · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-11-09:45-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-64-14-09:45-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "09:45",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-1-10:18-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-2-10:18-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "A · S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-3-10:18-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "A · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-4-10:18-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "A++ · S.N. Bambini",
+        "staff": "MATTIACCI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-5-10:18-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "A++ · S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-6-10:18-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "B · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-7-10:18-GABRIELE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "C · S.N. Bambini",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-8-10:18-PIRAS",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "D · S.N. Bambini",
+        "staff": "PIRAS"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-9-10:18-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "E · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-11-10:18-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-66-14-10:18-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "10:18",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-1-11:15-NESTI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "A · S.N. Bambini",
+        "staff": "NESTI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-2-11:15-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "A · S.N. Bambini",
+        "staff": "MATTIACCI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-3-11:15-CAMILLA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "A · S.N. Bambini",
+        "staff": "CAMILLA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-4-11:15-SIMONE",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-5-11:15-PIRAS",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "PIRAS"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-6-11:15-GIULIA_D.B.",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "B · S.N. Bambini",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-7-11:15-IERVOLINO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "C · S.N. Bambini",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-10-11:15-YLENIA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "F · S.N. Bambini",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-11-11:15-BATTA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "PROVE · S.N. Bambini",
+        "staff": "BATTA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-68-14-11:15-SARA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "11:15",
+        "title": "RESP · S.N. Bambini",
+        "staff": "SARA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-71-1-15:18-GAIA_DENTINI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "15:18",
+        "title": "A · S.N. Bambini",
+        "staff": "GAIA DENTINI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-71-4-15:18-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "15:18",
+        "title": "A++ · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-71-6-15:18-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "15:18",
+        "title": "B · S.N. Bambini",
+        "staff": "MATTIACCI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-71-8-15:18-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "15:18",
+        "title": "D · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-73-1-16:15-GAIA_DENTINI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "16:15",
+        "title": "A · S.N. Bambini",
+        "staff": "GAIA DENTINI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-73-4-16:15-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "16:15",
+        "title": "A++ · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-73-6-16:15-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "16:15",
+        "title": "B · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-73-8-16:15-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "16:15",
+        "title": "D · S.N. Bambini",
+        "staff": "MATTIACCI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-75-1-17:00-GAIA_DENTINI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "17:00",
+        "title": "A · S.N. Bambini",
+        "staff": "GAIA DENTINI"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-75-4-17:00-GUARNUTO",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "17:00",
+        "title": "A++ · S.N. Bambini",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-75-6-17:00-ANDREA",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "17:00",
+        "title": "B · S.N. Bambini",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "scuola_nuoto-S.N._Bambini-75-9-17:00-MATTIACCI",
+        "zona": "scuola_nuoto",
+        "sheet": "S.N. Bambini",
+        "dow": 6,
+        "start": "17:00",
+        "title": "E · S.N. Bambini",
+        "staff": "MATTIACCI"
+      }
+    ],
+    "acquaticita": [
+      {
+        "id": "acquaticita-ACQUAT-5-1-15:15-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 2,
+        "start": "15:15",
+        "title": "AQ 1 · ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-5-9-15:15-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 2,
+        "start": "15:15",
+        "title": "ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-5-22-15:15-CEDROLA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 2,
+        "start": "15:15",
+        "title": "LOMBARDO · ACQUAT",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-5-23-15:15-3_gg_no_sab",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 2,
+        "start": "15:15",
+        "title": "mar giov · ACQUAT",
+        "staff": "3 gg no sab"
+      },
+      {
+        "id": "acquaticita-ACQUAT-5-25-15:15-CEDROLA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 2,
+        "start": "15:15",
+        "title": "COCUZZA · ACQUAT",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-10-1-10:15-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "10:15",
+        "title": "AQ 1 · ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-10-9-10:15-BEATRICE",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "10:15",
+        "title": "GAIA DENTINI · ACQUAT",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "acquaticita-ACQUAT-10-22-10:15-RICASOLI",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "10:15",
+        "title": "DEL PISTOIA · ACQUAT",
+        "staff": "RICASOLI"
+      },
+      {
+        "id": "acquaticita-ACQUAT-12-1-15:18-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "15:18",
+        "title": "ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-12-9-15:18-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "15:18",
+        "title": "GAIA DENTINI · ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-12-22-15:18-IERVOLINO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "15:18",
+        "title": "MATTIACCI · ACQUAT",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-12-23-15:18-mar_e_ven",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "15:18",
+        "title": "sab · ACQUAT",
+        "staff": "mar e ven"
+      },
+      {
+        "id": "acquaticita-ACQUAT-14-2-16:15-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "16:15",
+        "title": "ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-14-9-16:15-BEATRICE",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "16:15",
+        "title": "GAIA DENTINI · ACQUAT",
+        "staff": "BEATRICE"
+      },
+      {
+        "id": "acquaticita-ACQUAT-16-3-17:00-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "17:00",
+        "title": "ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-16-9-17:00-GAIA_DENTINI",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "17:00",
+        "title": "GAIA DENTINI · ACQUAT",
+        "staff": "GAIA DENTINI"
+      },
+      {
+        "id": "acquaticita-ACQUAT-18-2-17:45-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "17:45",
+        "title": "ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-18-9-17:45-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 3,
+        "start": "17:45",
+        "title": "CAPUTO · ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-26-1-10:15-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 5,
+        "start": "10:15",
+        "title": "AQ1 · ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-28-2-15:18-NADIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 5,
+        "start": "15:18",
+        "title": "AQ · ACQUAT",
+        "staff": "NADIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-35-1-09:18-YLENIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "09:18",
+        "title": "AQ 1 · ACQUAT",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-37-2-10:15-YLENIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "10:15",
+        "title": "AQ 2 · ACQUAT",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-39-3-11:00-YLENIA",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "11:00",
+        "title": "AQ 3 · ACQUAT",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "acquaticita-ACQUAT-42-1-15:15-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "15:15",
+        "title": "AQ 1 · ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-44-2-16:00-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "16:00",
+        "title": "AQ 2 · ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-46-3-16:45-CAPUTO",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 6,
+        "start": "16:45",
+        "title": "AQ 3 · ACQUAT",
+        "staff": "CAPUTO"
+      },
+      {
+        "id": "acquaticita-ACQUAT-52-3-09:18-A_GIRARE",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 0,
+        "start": "09:18",
+        "title": "ACQUAT",
+        "staff": "A GIRARE"
+      },
+      {
+        "id": "acquaticita-ACQUAT-54-2-10:15-A_GIRARE",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 0,
+        "start": "10:15",
+        "title": "ACQUAT",
+        "staff": "A GIRARE"
+      },
+      {
+        "id": "acquaticita-ACQUAT-56-3-11:00-A_GIRARE",
+        "zona": "acquaticita",
+        "sheet": "ACQUAT",
+        "dow": 0,
+        "start": "11:00",
+        "title": "ACQUAT",
+        "staff": "A GIRARE"
+      }
+    ],
+    "spogliatoi": [
+      {
+        "id": "spogliatoi-Spogliatoi-5-1-16:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-5-2-16:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-5-3-16:00-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-5-7-16:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:00",
+        "title": "LAURENNE · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-5-8-16:00-SEMPRE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:00",
+        "title": "15 · Spogliatoi",
+        "staff": "SEMPRE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-1-16:45-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-2-16:45-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-3-16:45-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-4-16:45-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-7-16:45-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "LAURENNE · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-6-8-16:45-GIOV_E_SAB_MATT",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "16:45",
+        "title": "15 · Spogliatoi",
+        "staff": "GIOV E SAB MATT"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-1-19:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-2-19:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-3-19:00-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-4-19:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-7-19:00-VALENTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "LAURENNE · Spogliatoi",
+        "staff": "VALENTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-7-8-19:00-SAB_MATT",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "19:00",
+        "title": "15 · Spogliatoi",
+        "staff": "SAB MATT"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-9-1-20:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "20:00",
+        "title": "DIEGO S. · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-9-4-20:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "20:00",
+        "title": "GRISELDA · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-9-7-20:00-ANDREA_R",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "20:00",
+        "title": "CHIARA · Spogliatoi",
+        "staff": "ANDREA R"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-9-8-20:00-2_VOLTE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 1,
+        "start": "20:00",
+        "title": "DAL LUN AL GIOV+ sost. · Spogliatoi",
+        "staff": "2 VOLTE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-15-1-16:00-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-15-2-16:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-15-3-16:00-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-16-1-16:45-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:45",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-16-2-16:45-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:45",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-16-3-16:45-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-16-4-16:45-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-17-1-19:00-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "19:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-17-2-19:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "19:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-17-3-19:00-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-17-4-19:00-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 2,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-24-1-16:00-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-24-2-16:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-24-3-16:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-25-1-16:45-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:45",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-25-2-16:45-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:45",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-25-3-16:45-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-25-4-16:45-MARTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "MARTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-26-1-19:00-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "19:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-26-2-19:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "19:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-26-3-19:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-26-4-19:00-MARTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "MARTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-28-1-20:00-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "20:00",
+        "title": "GUARNUTO · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-28-4-20:00-MARTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 3,
+        "start": "20:00",
+        "title": "MARTINA · Spogliatoi",
+        "staff": "MARTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-33-1-16:00-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-33-2-16:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-33-3-16:00-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-34-1-16:45-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:45",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-34-2-16:45-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:45",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-34-3-16:45-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-34-4-16:45-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-35-1-19:00-DAVIDE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "19:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DAVIDE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-35-2-19:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "19:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-35-3-19:00-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-35-4-19:00-CHIARA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 4,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "CHIARA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-40-1-16:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-40-2-16:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-40-3-16:00-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-41-1-16:45-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:45",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-41-2-16:45-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:45",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-41-3-16:45-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-41-4-16:45-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "16:45",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-42-1-19:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "19:00",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-42-2-19:00-LAURENNE",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "19:00",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "LAURENNE"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-42-3-19:00-DILETTA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DILETTA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-42-4-19:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "19:00",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-44-1-20:00-DIEGO_S.",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "20:00",
+        "title": "DIEGO S. · Spogliatoi",
+        "staff": "DIEGO S."
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-44-4-20:00-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 5,
+        "start": "20:00",
+        "title": "GRISELDA · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-50-1-09:30-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "09:30",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-50-2-09:30-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "09:30",
+        "title": "SPOGLIATOIO F · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-50-3-09:30-VALENTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "09:30",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "VALENTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-50-4-09:30-VITTORIA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "09:30",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "VITTORIA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-50-6-09:30-VALENTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "09:30",
+        "title": "DA SOSTITUIRE · Spogliatoi",
+        "staff": "VALENTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-54-1-12:30-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:30",
+        "title": "GUARNUTO · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-54-2-12:30-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:30",
+        "title": "GRISELDA · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-54-3-12:30-VALENTINA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:30",
+        "title": "VALENTINA · Spogliatoi",
+        "staff": "VALENTINA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-54-4-12:30-VITTORIA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:30",
+        "title": "VITTORIA · Spogliatoi",
+        "staff": "VITTORIA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-55-1-12:45-GUARNUTO",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:45",
+        "title": "GUARNUTO · Spogliatoi",
+        "staff": "GUARNUTO"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-55-2-12:45-GRISELDA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "12:45",
+        "title": "GRISELDA · Spogliatoi",
+        "staff": "GRISELDA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-58-1-15:15-ANDREA_R",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "15:15",
+        "title": "SPOGLIATOIO M · Spogliatoi",
+        "staff": "ANDREA R"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-58-4-15:15-DEBORA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "15:15",
+        "title": "SPOGLIATOIO B · Spogliatoi",
+        "staff": "DEBORA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-60-1-16:15-ANDREA_R",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "16:15",
+        "title": "ANDREA R · Spogliatoi",
+        "staff": "ANDREA R"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-60-4-16:15-DEBORA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "16:15",
+        "title": "DEBORA · Spogliatoi",
+        "staff": "DEBORA"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-62-1-18:15-ANDREA_R",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "18:15",
+        "title": "ANDREA R · Spogliatoi",
+        "staff": "ANDREA R"
+      },
+      {
+        "id": "spogliatoi-Spogliatoi-62-4-18:15-DEBORA",
+        "zona": "spogliatoi",
+        "sheet": "Spogliatoi",
+        "dow": 6,
+        "start": "18:15",
+        "title": "DEBORA · Spogliatoi",
+        "staff": "DEBORA"
+      }
+    ],
+    "piscina": [
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-1-17:00-YLENIA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-2-17:00-GIULIA_D.B.",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-3-17:00-SIMONE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "A++ · BAMBINI ESTATE",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-5-17:00-MAURIZIO",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "B · BAMBINI ESTATE",
+        "staff": "MAURIZIO"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-7-17:00-GABRIELE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "C · BAMBINI ESTATE",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-8-17:00-CONTRI",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "D · BAMBINI ESTATE",
+        "staff": "CONTRI"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-3-12-17:00-GIULIA_D.B.",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 1,
+        "start": "17:00",
+        "title": "SPOGLIATOIO F · BAMBINI ESTATE",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-1-17:00-BERNARDI",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-2-17:00-MAURIZIO",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "MAURIZIO"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-3-17:00-GABRIELE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "A++ · BAMBINI ESTATE",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-5-17:00-SIMONE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "B · BAMBINI ESTATE",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-7-17:00-BATTA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "C · BAMBINI ESTATE",
+        "staff": "BATTA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-8-9-17:00-CONTRI",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 2,
+        "start": "17:00",
+        "title": "D · BAMBINI ESTATE",
+        "staff": "CONTRI"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-13-1-17:00-IERVOLINO",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 3,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "IERVOLINO"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-13-3-17:00-CEDROLA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 3,
+        "start": "17:00",
+        "title": "A++ · BAMBINI ESTATE",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-13-5-17:00-GABRIELE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 3,
+        "start": "17:00",
+        "title": "B · BAMBINI ESTATE",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-13-10-17:00-BATTA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 3,
+        "start": "17:00",
+        "title": "F · BAMBINI ESTATE",
+        "staff": "BATTA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-1-17:00-YLENIA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-2-17:00-GABRIELE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-3-17:00-SIMONE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "A++ · BAMBINI ESTATE",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-5-17:00-ANDREA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "B · BAMBINI ESTATE",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-7-17:00-BERNARDI",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "C · BAMBINI ESTATE",
+        "staff": "BERNARDI"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-8-17:00-GIULIA_D.B.",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "D · BAMBINI ESTATE",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-19-12-17:00-GIULIA_D.B.",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 4,
+        "start": "17:00",
+        "title": "SPOGLIATOIO F · BAMBINI ESTATE",
+        "staff": "GIULIA D.B."
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-1-17:00-GABRIELE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "GABRIELE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-2-17:00-CEDROLA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A · BAMBINI ESTATE",
+        "staff": "CEDROLA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-3-17:00-YLENIA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "A++ · BAMBINI ESTATE",
+        "staff": "YLENIA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-5-17:00-ANDREA",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "B · BAMBINI ESTATE",
+        "staff": "ANDREA"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-7-17:00-SIMONE",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "C · BAMBINI ESTATE",
+        "staff": "SIMONE"
+      },
+      {
+        "id": "piscina-BAMBINI_ESTATE_-25-9-17:00-CONTRI",
+        "zona": "piscina",
+        "sheet": "BAMBINI ESTATE ",
+        "dow": 5,
+        "start": "17:00",
+        "title": "D · BAMBINI ESTATE",
+        "staff": "CONTRI"
+      }
+    ]
+  },
+  "piscinaSources": [
+    "data/planning-import/piscina-orario-2025-2026.xlsx"
+  ],
+  "generatedAtPiscina": "2026-05-14T10:54:27.830Z"
 }

@@ -45,16 +45,10 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
   if (comparto === "corsi") return role === "corsi" || role === "istruttore"
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
+  if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
   if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
-  if (
-    comparto === "reception" ||
-    comparto === "sala_fitness" ||
-    comparto === "acquaticita" ||
-    comparto === "spogliatoi" ||
-    comparto === "consulenti"
-  )
-    return false
+  if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }
 
@@ -63,15 +57,9 @@ export function roleCanWriteCalendarioComparto(role: Role, comparto: CalendarioC
   if (comparto === "corsi") return role === "corsi" || role === "istruttore"
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
+  if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
   if (comparto === "danza") return role === "danza"
   if (comparto === "campus") return role === "campus"
-  if (
-    comparto === "reception" ||
-    comparto === "sala_fitness" ||
-    comparto === "acquaticita" ||
-    comparto === "spogliatoi" ||
-    comparto === "consulenti"
-  )
-    return false
+  if (comparto === "reception" || comparto === "sala_fitness" || comparto === "consulenti") return false
   return false
 }

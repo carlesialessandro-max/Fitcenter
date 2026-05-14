@@ -1,8 +1,10 @@
 /**
  * Legge i planning Excel (TERRA / ACQUA) dalla cartella data/planning-import
  * e genera src/data/planning-weekly.json per il calendario web.
+ * Subito dopo, `build-planning-piscina.mjs` (stesso pnpm build:planning) aggiunge
+ * gli orari piscina da `piscina-orario-2025-2026.xlsx` o da PISCINA_XLSX.
  *
- * Uso: da apps/web →  node scripts/build-planning-data.mjs
+ * Uso: da apps/web →  pnpm run build:planning
  */
 import fs from "node:fs"
 import path from "node:path"

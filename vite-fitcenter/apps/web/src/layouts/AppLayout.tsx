@@ -27,7 +27,17 @@ const navFirme: NavItem[] = [{ to: "/firma-cassa", label: "Firma Cassa", childre
 const navScuolaNuoto: NavItem[] = [
   { to: "/scuola-nuoto", label: "Scuola Nuoto", children: [{ to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" }] },
 ] as const
-const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as const
+const navBagnini: NavItem[] = [
+  {
+    to: "/piscina",
+    label: "Mappa Piscina",
+    children: [
+      { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
+      { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
+      { to: "/calendario/piscina", label: "Calendario bambini estate" },
+    ],
+  },
+] as const
 const navDanza: NavItem[] = [{ to: "/danza", label: "Danza" }] as const
 
 const navAdmin: NavItem[] = [
@@ -61,7 +71,10 @@ const navAdmin: NavItem[] = [
       { to: "/firma-cassa", label: "Firma cassa" },
       { to: "/piscina", label: "Mappa piscina" },
       { to: "/scuola-nuoto", label: "Scuola nuoto" },
-      { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" },
+      { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto (S.N. bambini)" },
+      { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
+      { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
+      { to: "/calendario/piscina", label: "Calendario bambini estate" },
       { to: "/campus", label: "Campus" },
       { to: "/danza", label: "Danza" },
       { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
@@ -74,7 +87,10 @@ export function AppLayout() {
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true })
-  const mustRedirectBagnini = role === "bagnini" && !location.pathname.startsWith("/piscina")
+  const mustRedirectBagnini =
+    role === "bagnini" &&
+    !location.pathname.startsWith("/piscina") &&
+    !location.pathname.startsWith("/calendario")
   const nav: NavItem[] =
     leadFilter === "bambini"
       ? [{ to: "/crm" as const, label: "CRM Vendita" }]
