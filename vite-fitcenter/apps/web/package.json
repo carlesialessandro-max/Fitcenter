@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "pnpm run build:planning && tsc -b && vite build",
+    "build:planning": "node scripts/build-planning-data.mjs",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
@@ -35,6 +36,7 @@
     "globals": "^17.2.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "xlsx": "^0.18.5"
   }
 }

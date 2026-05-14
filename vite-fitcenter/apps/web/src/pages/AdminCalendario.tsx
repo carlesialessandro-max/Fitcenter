@@ -2,8 +2,19 @@ import { Fragment, useMemo, useState } from "react"
 import { Link, Navigate } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
+import planningPayload from "@/data/planning-weekly.json"
 
 type CalView = "month" | "week" | "day"
+
+export type PlanningEvent = {
+  id: string
+  zona: string
+  sheet: string
+  dow: number
+  start: string
+  title: string
+  staff: string
+}
 
 const IT_MONTHS = [
   "gennaio",
@@ -40,9 +51,9 @@ function addDays(d: Date, n: number): Date {
   return x
 }
 
-/** Lunedì = 0 … domenica = 6 */
+/** Lunedì = 0 … domenica = 6 (stessa convenzione degli header Excel → getDay). */
 function mondayIndex(d: Date): number {
-  const js = d.getDay() // 0 Sun … 6 Sat
+  const js = d.getDay()
   return (js + 6) % 7
 }
 
@@ -90,7 +101,7 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
 ]
 
 const CAL_FILTERS = [
-  { id: "corsi", label: "Corsi" },
+  { id: "corsi", label: "Corsi (terra + acqua)" },
   { id: "bagnini", label: "Bagnini" },
   { id: "reception", label: "Reception" },
   { id: "scuola_nuoto", label: "Scuola nuoto" },
@@ -100,6 +111,36 @@ const CAL_FILTERS = [
 ] as const
 
 type FilterId = (typeof CAL_FILTERS)[number]["id"]
+
+function hmToMinutes(hm: string): number {
+  const [h, m] = hm.split(":").map((x) => Number(x))
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0
+  return h * 60 + m
+}
+
+function hourBucket(hm: string): number {
+  return Math.floor(hmToMinutes(hm) / 60)
+}
+
+function filteredPlanningEvents(filters: Record<FilterId, boolean>, all: PlanningEvent[]): PlanningEvent[] {
+  const layerOn = CAL_FILTERS.some((f) => filters[f.id])
+  return all.filter((e) => {
+    const planning = e.zona === "terra" || e.zona === "acqua"
+    if (!planning) return false
+    if (!layerOn) return true
+    return filters.corsi
+  })
+}
+
+function eventsForDay(events: PlanningEvent[], d: Date): PlanningEvent[] {
+  const dow = d.getDay()
+  return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+}
+
+function eventsForDayAndHour(events: PlanningEvent[], d: Date, hour: number): PlanningEvent[] {
+  const dow = d.getDay()
+  return events.filter((e) => e.dow === dow && hourBucket(e.start) === hour)
+}
 
 function DropdownNav({ label, links }: { label: string; links: { to: string; label: string }[] }) {
   return (
@@ -128,6 +169,16 @@ function DropdownNav({ label, links }: { label: string; links: { to: string; lab
   )
 }
 
+function EventPill({ e }: { e: PlanningEvent }) {
+  const col = e.zona === "acqua" ? "border-sky-500/40 bg-sky-500/15 text-sky-100" : "border-amber-500/35 bg-amber-500/10 text-amber-100"
+  return (
+    <div className={cn("rounded border px-1 py-0.5 text-[10px] leading-tight", col)} title={`${e.sheet} · ${e.staff}`}>
+      <span className="font-semibold text-zinc-200">{e.start}</span> {e.title}
+      {e.staff ? <span className="block truncate text-zinc-500">({e.staff})</span> : null}
+    </div>
+  )
+}
+
 export function AdminCalendario() {
   const { role } = useAuth()
   const [view, setView] = useState<CalView>("month")
@@ -135,6 +186,9 @@ export function AdminCalendario() {
   const [filters, setFilters] = useState<Record<FilterId, boolean>>(() =>
     Object.fromEntries(CAL_FILTERS.map((f) => [f.id, true])) as Record<FilterId, boolean>
   )
+
+  const allEvents = (planningPayload as { events: PlanningEvent[] }).events
+  const visible = useMemo(() => filteredPlanningEvents(filters, allEvents), [filters, allEvents])
 
   const monthLabel = useMemo(() => {
     return `${IT_MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`
@@ -147,7 +201,7 @@ export function AdminCalendario() {
 
   const dayOnly = useMemo(() => startOfDay(cursor), [cursor])
 
-  const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), []) // 06–22
+  const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
 
   if (role !== "admin") {
     return <Navigate to="/" replace />
@@ -178,6 +232,8 @@ export function AdminCalendario() {
 
   const cells = view === "month" ? monthMatrix(cursor) : []
 
+  const planningNote = String((planningPayload as { planningNote?: string }).planningNote ?? "")
+
   return (
     <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
       <div className="mx-auto max-w-7xl space-y-4">
@@ -185,8 +241,11 @@ export function AdminCalendario() {
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-zinc-100">Piano operativo</h1>
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
-              Calendario centro (anteprima): mese, settimana o giorno. I filtri e gli eventi verranno collegati al gestionale in un secondo momento.
+              Orari corsi da planning Excel (terra + acqua), ricorrenti ogni settimana. Aggiorna i file in{" "}
+              <code className="text-zinc-400">apps/web/data/planning-import</code> e lancia{" "}
+              <code className="text-zinc-400">pnpm run build:planning</code>.
             </p>
+            {planningNote ? <p className="mt-2 text-xs text-zinc-600">{planningNote}</p> : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <DropdownNav label="Vendite" links={VENDITE_LINKS} />
@@ -274,7 +333,9 @@ export function AdminCalendario() {
               </label>
             ))}
           </div>
-          <p className="mt-2 text-xs text-zinc-600">Selezione solo locale: in seguito filtrerà gli eventi caricati dal gestionale.</p>
+          <p className="mt-2 text-xs text-zinc-600">
+            Oggi i corsi terra/acqua arrivano dal planning Excel. Gli altri layer sono segnaposto per integrazioni future.
+          </p>
         </section>
 
         {view === "month" ? (
@@ -289,11 +350,12 @@ export function AdminCalendario() {
             <div className="mt-px grid grid-cols-7 gap-px bg-zinc-800">
               {cells.map(({ date, inMonth }) => {
                 const wend = date.getDay() === 0 || date.getDay() === 6
+                const dayEv = eventsForDay(visible, date)
                 return (
                   <div
                     key={isoYmd(date)}
                     className={cn(
-                      "min-h-[4.5rem] bg-zinc-900/90 p-1.5 text-left sm:min-h-[5.5rem]",
+                      "min-h-[5.5rem] bg-zinc-900/90 p-1.5 text-left sm:min-h-[6.25rem]",
                       !inMonth && "opacity-40",
                       isToday(date) && "ring-1 ring-inset",
                       wend && inMonth && "text-red-300/90"
@@ -301,7 +363,14 @@ export function AdminCalendario() {
                     style={isToday(date) ? { boxShadow: `inset 0 0 0 1px ${H2.blue}` } : undefined}
                   >
                     <div className="text-sm font-medium text-zinc-200">{date.getDate()}</div>
-                    <div className="mt-1 text-[10px] text-zinc-600">—</div>
+                    <div className="mt-1 flex max-h-[4.5rem] flex-col gap-0.5 overflow-y-auto">
+                      {dayEv.slice(0, 8).map((e) => (
+                        <EventPill key={e.id} e={e} />
+                      ))}
+                      {dayEv.length > 8 ? (
+                        <div className="text-[10px] text-zinc-500">+{dayEv.length - 8}…</div>
+                      ) : null}
+                    </div>
                   </div>
                 )
               })}
@@ -311,7 +380,7 @@ export function AdminCalendario() {
 
         {view === "week" ? (
           <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
-            <div className="grid min-w-[720px]" style={{ gridTemplateColumns: "48px repeat(7, minmax(0,1fr))" }}>
+            <div className="grid min-w-[780px]" style={{ gridTemplateColumns: "52px repeat(7, minmax(0,1fr))" }}>
               <div className="border-b border-zinc-800 bg-zinc-900/80" />
               {weekDays.map((d, i) => (
                 <div
@@ -330,12 +399,19 @@ export function AdminCalendario() {
                   <div className="border-b border-zinc-800/80 py-1 pr-1 text-right text-[10px] text-zinc-500">
                     {pad2(h)}:00
                   </div>
-                  {weekDays.map((d) => (
-                    <div
-                      key={`${isoYmd(d)}-${h}`}
-                      className="min-h-[2rem] border-b border-l border-zinc-800/60 bg-zinc-950/30"
-                    />
-                  ))}
+                  {weekDays.map((d) => {
+                    const evs = eventsForDayAndHour(visible, d, h)
+                    return (
+                      <div
+                        key={`${isoYmd(d)}-${h}`}
+                        className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top"
+                      >
+                        {evs.map((e) => (
+                          <EventPill key={e.id} e={e} />
+                        ))}
+                      </div>
+                    )
+                  })}
                 </Fragment>
               ))}
             </div>
@@ -343,7 +419,7 @@ export function AdminCalendario() {
         ) : null}
 
         {view === "day" ? (
-          <div className="mx-auto max-w-md overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
+          <div className="mx-auto max-w-lg overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
             <div
               className={cn(
                 "border-b border-zinc-800 bg-zinc-900/80 px-4 py-3 text-center text-sm font-medium",
@@ -352,13 +428,20 @@ export function AdminCalendario() {
             >
               {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
             </div>
-            <div className="max-h-[70vh] overflow-y-auto">
-              {hours.map((h) => (
-                <div key={h} className="flex border-b border-zinc-800/70">
-                  <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
-                  <div className="min-h-[3rem] flex-1 border-l border-zinc-800/60 bg-zinc-900/20" />
-                </div>
-              ))}
+            <div className="max-h-[75vh] overflow-y-auto">
+              {hours.map((h) => {
+                const evs = eventsForDayAndHour(visible, dayOnly, h)
+                return (
+                  <div key={h} className="flex border-b border-zinc-800/70">
+                    <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
+                    <div className="min-h-[3.25rem] flex-1 space-y-0.5 border-l border-zinc-800/60 bg-zinc-900/20 p-1">
+                      {evs.map((e) => (
+                        <EventPill key={e.id} e={e} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           </div>
         ) : null}

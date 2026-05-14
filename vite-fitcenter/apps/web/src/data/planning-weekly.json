@@ -1,0 +1,1270 @@
+{
+  "generatedAt": "2026-05-14T09:28:57.483Z",
+  "planningNote": "Solo foglio principale: Terra «dal 15 settembre», Acqua «PLANNING SETTEMBRE» (senza 1–14). PLANNING_INCLUDE_ALL=1 per tutti i fogli.",
+  "sources": [
+    "data\\planning-import\\terra-2025-26.xlsx",
+    "data\\planning-import\\acqua-2025-26.xlsx"
+  ],
+  "events": [
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-4-1-08:45-ACQUA_TABATA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "08:45",
+      "title": "ACQUA TABATA",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-3-1-08:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "08:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-6-1-09:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "09:30",
+      "title": "ACQUA GYM",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-5-1-09:30-TOTALBODY",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "09:30",
+      "title": "TOTALBODY",
+      "staff": "STELLA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-7-1-10:15-ACQUA_KOMBAT",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "10:15",
+      "title": "ACQUA KOMBAT",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-7-1-10:30-GINNASTICA_POSTURALE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "10:30",
+      "title": "GINNASTICA POSTURALE",
+      "staff": "STELLA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-12-1-13:00-NUOTO_MASTER",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "13:00",
+      "title": "NUOTO MASTER",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-1-13:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "13:30",
+      "title": "ACQUA GYM",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-12-1-13:30-H2_SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "13:30",
+      "title": "H2 SPINNING",
+      "staff": "ALEX"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-11-1-13:30-STEP_ENERGY",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "13:30",
+      "title": "STEP ENERGY",
+      "staff": "STELLA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-14-1-14:30-ACQUA_POLE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "14:30",
+      "title": "ACQUA POLE",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-14-1-14:30-PILATES",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "14:30",
+      "title": "PILATES",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-16-1-16:00-CORSO_MAMMA&FIGLIO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "16:00",
+      "title": "CORSO MAMMA&FIGLIO",
+      "staff": "VIRGINIA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-18-1-17:00-HATHA_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "17:00",
+      "title": "HATHA YOGA",
+      "staff": "ALESSIA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-19-1-18:00-G.A.G",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "18:00",
+      "title": "G.A.G",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-22-1-18:30-ANIMAL_FLOW",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "18:30",
+      "title": "ANIMAL FLOW",
+      "staff": "VIRGINIA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-23-1-18:30-H2_SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "18:30",
+      "title": "H2 SPINNING",
+      "staff": "MARTINA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-16-1-18:40-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "18:40",
+      "title": "ACQUA GYM",
+      "staff": "VALENTINA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-26-1-19:00-POLE_DANCE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "19:00",
+      "title": "POLE DANCE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-24-1-19:00-SPARTAN",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "19:00",
+      "title": "SPARTAN",
+      "staff": "ALESSANDRO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-25-1-19:00-TOTALBODY_HIIT",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "19:00",
+      "title": "TOTALBODY HIIT",
+      "staff": "VIRGINIA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-17-1-19:30-ACQUA_KOMBAT",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "19:30",
+      "title": "ACQUA KOMBAT",
+      "staff": "VALENTINA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-18-1-19:30-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "19:30",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-29-1-19:50-GABBIA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "19:50",
+      "title": "GABBIA",
+      "staff": "ALESSANDRO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-30-1-20:00-FLEX_&_TONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "FLEX & TONE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-34-1-20:00-GABBIA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "GABBIA",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-36-1-20:00-SALA_DANZA_A",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "SALA DANZA A",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-37-1-20:00-SALA_DANZA_C",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "SALA DANZA C",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-35-1-20:00-SALA_GREY",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "SALA GREY",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-33-1-20:00-SALA_ORANGE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 1,
+      "start": "20:00",
+      "title": "SALA ORANGE",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-19-1-20:15-NUOTO_MASTER_20.15_82-280_(TRAINER)",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "20:15",
+      "title": "NUOTO MASTER 20.15 82-280 (TRAINER)",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-22-1-20:30-CORSO_FITNESS_VASCA_25",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "20:30",
+      "title": "CORSO FITNESS VASCA 25",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-21-1-20:30-CORSO_FITNESS_VASCA_LUDICA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 1,
+      "start": "20:30",
+      "title": "CORSO FITNESS VASCA LUDICA",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-3-2-08:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "08:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-5-2-09:00-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "09:00",
+      "title": "ACQUA GYM",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-5-2-09:30-HATHA_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "09:30",
+      "title": "HATHA YOGA",
+      "staff": "SVETLANA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-6-2-09:45-ACQUA_TABATA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "09:45",
+      "title": "ACQUA TABATA",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-6-2-10:00-SBARRA_A_TERRA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "10:00",
+      "title": "SBARRA A TERRA",
+      "staff": "CLAUDIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-8-2-10:30-ACQUA_BIKE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "10:30",
+      "title": "ACQUA BIKE",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-11-2-12:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "12:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-10-2-13:00-GABBIA&BIKE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "13:00",
+      "title": "GABBIA&BIKE",
+      "staff": "ANDREA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-2-13:30-ACQUA_TABATA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "13:30",
+      "title": "ACQUA TABATA",
+      "staff": "LAURENNE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-12-2-13:30-H2_WALKING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "13:30",
+      "title": "H2 WALKING",
+      "staff": "FABRIZIO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-11-2-13:30-POWER_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "13:30",
+      "title": "POWER YOGA",
+      "staff": "SVETLANA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-14-2-14:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "14:30",
+      "title": "ACQUA GYM",
+      "staff": "LAURENNE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-14-2-14:30-G.A.G",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "14:30",
+      "title": "G.A.G",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-19-2-18:00-SBARRA_A_TERRA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "18:00",
+      "title": "SBARRA A TERRA",
+      "staff": "CLAUDIO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-22-2-18:30-H2_WALKING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "18:30",
+      "title": "H2 WALKING",
+      "staff": "MARTINA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-16-2-18:40-ACQUA_CROSS",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "18:40",
+      "title": "ACQUA CROSS",
+      "staff": "ANDREA B."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-24-2-19:00-BODY_TONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "19:00",
+      "title": "BODY TONE",
+      "staff": "LAURA R."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-17-2-19:30-ACQUA_JUMP",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "19:30",
+      "title": "ACQUA JUMP",
+      "staff": "ANDREA B."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-18-2-19:30-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 2,
+      "start": "19:30",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-28-2-19:30-SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "19:30",
+      "title": "SPINNING",
+      "staff": "DONATELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-29-2-19:45-POLE_DANCE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "19:45",
+      "title": "POLE DANCE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-36-2-20:00-CARDIO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "CARDIO",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-37-2-20:00-CORSO_A_PAGAMENTO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "CORSO A PAGAMENTO",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-30-2-20:00-FITBOXE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "FITBOXE",
+      "staff": "LAURA R."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-34-2-20:00-FUNZIONALE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "FUNZIONALE",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-35-2-20:00-OLISTICO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "OLISTICO",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-33-2-20:00-TONIFICAZIONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 2,
+      "start": "20:00",
+      "title": "TONIFICAZIONE",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-4-3-08:45-ACQUA_BIKE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "08:45",
+      "title": "ACQUA BIKE",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-3-3-08:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "08:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-4-3-09:00-CORSO_MAMMA&FIGLIO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "09:00",
+      "title": "CORSO MAMMA&FIGLIO",
+      "staff": "VIRGINIA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-6-3-09:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "09:30",
+      "title": "ACQUA GYM",
+      "staff": "STELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-5-3-09:30-G.A.G",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "09:30",
+      "title": "G.A.G",
+      "staff": "ALINA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-7-3-10:15-ACQUA_BELT",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "10:15",
+      "title": "ACQUA BELT",
+      "staff": "STELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-7-3-10:30-PILATES",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "10:30",
+      "title": "PILATES",
+      "staff": "ALINA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-9-3-11:00-CORSO_GESTANTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "11:00",
+      "title": "CORSO GESTANTI",
+      "staff": "NADIA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-12-3-13:00-NUOTO_MASTER",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "13:00",
+      "title": "NUOTO MASTER",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-3-13:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "13:30",
+      "title": "ACQUA GYM",
+      "staff": "ROBERTA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-11-3-13:30-BODY_TONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "13:30",
+      "title": "BODY TONE",
+      "staff": "SVETLANA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-12-3-13:30-H2_SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "13:30",
+      "title": "H2 SPINNING",
+      "staff": "ALEX"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-14-3-14:30-ACQUA_BIKE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "14:30",
+      "title": "ACQUA BIKE",
+      "staff": "ROBERTA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-14-3-14:30-PILATES",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "14:30",
+      "title": "PILATES",
+      "staff": "SVETLANA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-19-3-18:00-GINNASTICA_POSTURALE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "18:00",
+      "title": "GINNASTICA POSTURALE",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-20-3-18:00-POLE_DANCE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "18:00",
+      "title": "POLE DANCE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-16-3-18:40-ACQUA_TABATA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "18:40",
+      "title": "ACQUA TABATA",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-25-3-19:00-FUNZIONALE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "19:00",
+      "title": "FUNZIONALE",
+      "staff": "ANDREA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-26-3-19:00-POLE_DANCE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "19:00",
+      "title": "POLE DANCE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-24-3-19:00-TOTALBODY",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "19:00",
+      "title": "TOTALBODY",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-17-3-19:30-ACQUA_POLE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "19:30",
+      "title": "ACQUA POLE",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-28-3-19:30-SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "19:30",
+      "title": "SPINNING",
+      "staff": "DONATELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-33-3-20:00-COREOGRAFICO",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "20:00",
+      "title": "COREOGRAFICO",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-35-3-20:00-CORSO_PER_GESTANTI",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "20:00",
+      "title": "CORSO PER GESTANTI",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-30-3-20:00-HATHA_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "20:00",
+      "title": "HATHA YOGA",
+      "staff": "JESSICA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-34-3-20:00-PILLOLA_20_MIN",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "20:00",
+      "title": "PILLOLA 20 MIN",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-36-3-20:00-Rif.deibera_CONI_n.1569_del_10/05/2017",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 3,
+      "start": "20:00",
+      "title": "Rif.deibera CONI n.1569 del 10/05/2017",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-21-3-20:30-CARDIO",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "20:30",
+      "title": "CARDIO",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-20-3-20:30-NUOTO_MASTER",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "20:30",
+      "title": "NUOTO MASTER",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-22-3-20:30-TONIFICAZIONE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 3,
+      "start": "20:30",
+      "title": "TONIFICAZIONE",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-3-4-08:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "08:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-5-4-09:00-ACQUA_CIRCUIT",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "09:00",
+      "title": "ACQUA CIRCUIT",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-5-4-09:30-H2_WALKING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "09:30",
+      "title": "H2 WALKING",
+      "staff": "FABRIZIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-6-4-09:45-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "09:45",
+      "title": "ACQUA GYM",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-8-4-10:30-ACQUA_BIKE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "10:30",
+      "title": "ACQUA BIKE",
+      "staff": "MATTEO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-7-4-10:30-HATHA_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "10:30",
+      "title": "HATHA YOGA",
+      "staff": "GIULIA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-11-4-12:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "12:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-10-4-13:00-TRX",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "13:00",
+      "title": "TRX",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-4-13:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "13:30",
+      "title": "ACQUA GYM",
+      "staff": "STELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-11-4-13:30-PILATES",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "13:30",
+      "title": "PILATES",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-14-4-14:30-ACQUA_TABATA",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "14:30",
+      "title": "ACQUA TABATA",
+      "staff": "STELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-14-4-14:30-TOTALBODY",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "14:30",
+      "title": "TOTALBODY",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-18-4-17:00-HATHA_YOGA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "17:00",
+      "title": "HATHA YOGA",
+      "staff": "ALESSIA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-19-4-18:00-BODY_TONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "18:00",
+      "title": "BODY TONE",
+      "staff": "LAURA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-22-4-18:30-H2_WALKING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "18:30",
+      "title": "H2 WALKING",
+      "staff": "FABRIZIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-16-4-18:40-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "18:40",
+      "title": "ACQUA GYM",
+      "staff": "ANDREA T."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-24-4-19:00-PILATES",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "19:00",
+      "title": "PILATES",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-26-4-19:00-POLE_DANCE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "19:00",
+      "title": "POLE DANCE",
+      "staff": "LAURA M."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-17-4-19:30-ACQUA_CROSS",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "19:30",
+      "title": "ACQUA CROSS",
+      "staff": "ANDREA T."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-18-4-19:30-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "19:30",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-28-4-19:30-SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 4,
+      "start": "19:30",
+      "title": "SPINNING",
+      "staff": "FABRIZIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-21-4-20:30-CORSO_NUOTO",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "20:30",
+      "title": "CORSO NUOTO",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-22-4-20:30-CORSO_PER_GESTANTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 4,
+      "start": "20:30",
+      "title": "CORSO PER GESTANTI",
+      "staff": ""
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-4-5-08:45-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "08:45",
+      "title": "ACQUA GYM",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-3-5-08:45-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "08:45",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-6-5-09:30-ACQUA_CROSS",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "09:30",
+      "title": "ACQUA CROSS",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-5-5-09:30-TONIFICAZIONE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "09:30",
+      "title": "TONIFICAZIONE",
+      "staff": "STELLA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-7-5-10:15-ACQUA_JUMP",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "10:15",
+      "title": "ACQUA JUMP",
+      "staff": "ANGIE"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-7-5-10:30-POSTURALE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "10:30",
+      "title": "POSTURALE",
+      "staff": "STELLA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-9-5-11:00-CORSO_GESTANTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "11:00",
+      "title": "CORSO GESTANTI",
+      "staff": "NADIA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-12-5-13:00-NUOTO_MASTER",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "13:00",
+      "title": "NUOTO MASTER",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-5-13:30-ACQUA_STRONG",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "13:30",
+      "title": "ACQUA STRONG",
+      "staff": "ROBERTA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-11-5-13:30-FITBOXE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "13:30",
+      "title": "FITBOXE",
+      "staff": "STELLA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-12-5-13:30-H2_SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "13:30",
+      "title": "H2 SPINNING",
+      "staff": "ALEX"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-13-5-13:30-SBARRA_A_TERRA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "13:30",
+      "title": "SBARRA A TERRA",
+      "staff": "CLAUDIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-14-5-14:30-ACQUA_JUMP",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "14:30",
+      "title": "ACQUA JUMP",
+      "staff": "ROBERTA"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-21-5-18:15-SBARRA_A_TERRA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "18:15",
+      "title": "SBARRA A TERRA",
+      "staff": "CLAUDIO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-22-5-18:30-GABBIA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "18:30",
+      "title": "GABBIA",
+      "staff": "ALESSANDRO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-16-5-18:40-ACQUA_STRONG",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "18:40",
+      "title": "ACQUA STRONG",
+      "staff": "ANDREA B."
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-24-5-19:00-H2_SPINNING",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "19:00",
+      "title": "H2 SPINNING",
+      "staff": "VALERIO"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-27-5-19:15-JUST_BARRE",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 5,
+      "start": "19:15",
+      "title": "JUST BARRE",
+      "staff": "REBECCA"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-17-5-19:30-ACQUA_BIKE",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "19:30",
+      "title": "ACQUA BIKE",
+      "staff": "ANDREA B."
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-18-5-19:30-NUOTO_ADULTI",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "19:30",
+      "title": "NUOTO ADULTI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-19-5-20:15-NUOTO_MASTER_20.15_82-280_(TRAINER)",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 5,
+      "start": "20:15",
+      "title": "NUOTO MASTER 20.15 82-280 (TRAINER)",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-8-6-11:00-ADDOMINALI",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 6,
+      "start": "11:00",
+      "title": "ADDOMINALI",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-9-6-12:00-SBARRA_A_TERRA",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 6,
+      "start": "12:00",
+      "title": "SBARRA A TERRA",
+      "staff": "CLAUDIO"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-12-6-13:00-NUOTO_MASTER",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 6,
+      "start": "13:00",
+      "title": "NUOTO MASTER",
+      "staff": "TRAINER"
+    },
+    {
+      "id": "acqua-PLANNING_SETTEMBRE-13-6-13:30-ACQUA_GYM",
+      "zona": "acqua",
+      "sheet": "PLANNING SETTEMBRE",
+      "dow": 6,
+      "start": "13:30",
+      "title": "ACQUA GYM",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-17-6-17:30-ADDOMINALI",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 6,
+      "start": "17:30",
+      "title": "ADDOMINALI",
+      "staff": ""
+    },
+    {
+      "id": "terra-DAL_15_SETTEMBRE_2025-18-6-17:30-ADDOMINALI",
+      "zona": "terra",
+      "sheet": "DAL 15 SETTEMBRE 2025",
+      "dow": 6,
+      "start": "17:30",
+      "title": "ADDOMINALI",
+      "staff": "TRAINER"
+    }
+  ]
+}
