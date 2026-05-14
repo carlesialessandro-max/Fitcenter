@@ -517,20 +517,22 @@ export function ScuolaNuoto() {
     onSuccess: () => q.refetch(),
   })
 
-  // Sync drafts on selection changes
-  useMemo(() => {
-    if (selected) {
-      setCourseNoteDraft(overrides.courseNotes?.[selected.baseKey] ?? "")
+  // Sync bozze note da override server (stesso giorno settimana su date future).
+  useEffect(() => {
+    if (!selected) {
+      setCourseNoteDraft("")
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.baseKey, overrides.courseNotes])
+    setCourseNoteDraft(overrides.courseNotes?.[selected.baseKey] ?? "")
+  }, [selected, overrides.courseNotes])
 
-  useMemo(() => {
-    if (selected && activeChild) {
-      setChildNoteDraft(overrides.childNotes?.[`${activeChild.key}::${selected.baseKey}`] ?? "")
+  useEffect(() => {
+    if (!selected || !activeChild) {
+      setChildNoteDraft("")
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.baseKey, activeChild?.key, overrides.childNotes])
+    setChildNoteDraft(overrides.childNotes?.[`${activeChild.key}::${selected.baseKey}`] ?? "")
+  }, [selected, activeChild, overrides.childNotes])
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 p-4 sm:p-6">

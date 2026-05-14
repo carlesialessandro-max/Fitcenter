@@ -291,6 +291,15 @@ function pickColumnByKeyContains(cols: string[], needles: string[]): string | nu
   return null
 }
 
+/** Hash deterministico (senza crypto) per chiavi partecipante stabili quando manca id/email. */
+function stableAnonKey(parts: string[]): string {
+  const s = parts.map((x) => normalizeText(String(x ?? "").trim())).join("|")
+  let h = 5381
+  for (let i = 0; i < s.length; i++) h = Math.imul(h, 33) ^ s.charCodeAt(i)
+  const u = h >>> 0
+  return `anon:${u.toString(16)}`
+}
+
 function normalizeParticipantKey(input: { id?: unknown; email?: unknown; nome?: unknown; cognome?: unknown; cellulare?: unknown }): string {
   const id = String(input.id ?? "").trim()
   if (id) return `id:${id}`
@@ -301,7 +310,7 @@ function normalizeParticipantKey(input: { id?: unknown; email?: unknown; nome?: 
   if (name && tel) return `name_tel:${name}:${tel}`
   if (name) return `name:${name}`
   if (tel) return `tel:${tel}`
-  return `anon:${Math.random().toString(36).slice(2)}`
+  return stableAnonKey([String(input.nome ?? ""), String(input.cognome ?? ""), email, tel])
 }
 
 function parseRequestedDay(raw: unknown): WeekdayKey | null {
@@ -493,20 +502,25 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
       label ??
       "Corso"
 
-    const baseKey = `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${from ?? ""}-${to ?? ""}::${normalizeText(
-      corsia ?? ""
-    )}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
+    const idCorsoRaw = String(firstNonEmpty(raw, ["IDCorso", "IdCorso", "CorsiIDCorso"]) ?? "").trim()
+    const idCorsoNum = Number(idCorsoRaw)
+    const hasStableCorsoId = Number.isFinite(idCorsoNum) && idCorsoNum > 0
+
+    const rangeStr = from && to ? `${from}-${to}` : from || to ? `${from ?? ""}${to ?? ""}` : ""
+
+    /** Chiave stabile tra le date: preferisci ID corso SQL; altrimenti fallback (può variare se cambia parsing orario). */
+    const baseKey = hasStableCorsoId
+      ? `corso:${idCorsoNum}`
+      : `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${rangeStr}::${normalizeText(
+          corsia ?? ""
+        )}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
     const key = `${baseKey}::${normalizeText(livello ?? "")}`
     const existing = groups.get(key)
     if (!existing) {
       groups.set(key, {
         key,
         baseKey,
-        idCorso: (() => {
-          const s = String(firstNonEmpty(raw, ["IDCorso", "IdCorso", "CorsiIDCorso"]) ?? "").trim()
-          const n = Number(s)
-          return Number.isFinite(n) ? n : null
-        })(),
+        idCorso: hasStableCorsoId ? idCorsoNum : null,
         corso: corsoName,
         oraInizio: from,
         oraFine: to,
