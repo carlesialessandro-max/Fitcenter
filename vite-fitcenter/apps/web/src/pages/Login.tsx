@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { authApi, type LoginResponse } from "@/api/auth"
+import { BrandLogo } from "@/components/BrandLogo"
 
 export function Login() {
   const navigate = useNavigate()
@@ -56,9 +57,9 @@ export function Login() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-zinc-950 p-4">
       <div className="w-full max-w-sm rounded-xl border border-zinc-800 bg-zinc-900/80 p-6 shadow-xl">
-        <div className="mb-6 text-center">
-          <span className="text-2xl font-semibold tracking-tight text-amber-400">FitCenter</span>
-          <p className="mt-1 text-sm text-zinc-500">Accesso area gestione</p>
+        <div className="mb-6 flex flex-col items-center gap-3 text-center">
+          <BrandLogo variant="payoff" className="justify-center" imgClassName="mx-auto max-h-[5rem]" />
+          <p className="text-sm text-zinc-500">Accesso area gestione · FitCenter</p>
         </div>
 
         {step === "password" ? (

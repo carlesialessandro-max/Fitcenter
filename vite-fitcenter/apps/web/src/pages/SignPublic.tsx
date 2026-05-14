@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { signaturesApi } from "@/api/signatures"
 import type { SignaturePublicInfo } from "@/types/signature"
+import { BrandLogo } from "@/components/BrandLogo"
 
 export function SignPublicPage() {
   const { token = "" } = useParams()
@@ -423,11 +424,30 @@ export function SignPublicPage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-zinc-500">Caricamento...</div>
-  if (!info) return <div className="p-6 text-red-400">{err ?? "Link non valido"}</div>
+  if (loading)
+    return (
+      <div className="min-h-svh bg-zinc-950 p-6 text-zinc-500">
+        <div className="mx-auto mb-6 max-w-3xl">
+          <BrandLogo variant="compact" />
+        </div>
+        <p className="mx-auto max-w-3xl">Caricamento...</p>
+      </div>
+    )
+  if (!info)
+    return (
+      <div className="min-h-svh bg-zinc-950 p-6 text-red-400">
+        <div className="mx-auto mb-6 max-w-3xl">
+          <BrandLogo variant="compact" />
+        </div>
+        <p className="mx-auto max-w-3xl">{err ?? "Link non valido"}</p>
+      </div>
+    )
 
   return (
     <div className="min-h-svh bg-zinc-950 p-6 text-zinc-100">
+      <div className="mx-auto mb-6 flex max-w-3xl justify-center sm:justify-start">
+        <BrandLogo variant="compact" />
+      </div>
       <div className="mx-auto max-w-3xl rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
         <h1 className="text-2xl font-semibold">Firma documento</h1>
         <p className="mt-1 text-sm text-zinc-500">{info.documentOriginalName}</p>

@@ -1,11 +1,15 @@
 import { Link } from "react-router-dom"
+import { BrandLogo } from "@/components/BrandLogo"
 
 export function InformativaPrivacy() {
   return (
     <div className="min-h-svh bg-zinc-950 p-6 text-zinc-100">
       <div className="mx-auto max-w-3xl rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold text-zinc-100">Informativa Privacy</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800/80 pb-4">
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center">
+            <BrandLogo variant="compact" />
+            <h1 className="text-xl font-semibold text-zinc-100">Informativa Privacy</h1>
+          </div>
           <Link to="/" className="text-sm text-amber-400 hover:underline">
             Torna alla home
           </Link>

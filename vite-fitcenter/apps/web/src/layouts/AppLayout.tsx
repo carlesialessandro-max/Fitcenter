@@ -2,8 +2,9 @@ import { useEffect, useState } from "react"
 import { Outlet, Link, useLocation, Navigate } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
+import { BrandLogo } from "@/components/BrandLogo"
 
-type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean }
+type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
 
 const navOperatore: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
@@ -26,31 +27,38 @@ const navBagnini: NavItem[] = [{ to: "/piscina", label: "Mappa Piscina" }] as co
 const navDanza: NavItem[] = [{ to: "/danza", label: "Danza" }] as const
 
 const navAdmin: NavItem[] = [
+  { to: "/admin", label: "Piano operativo" },
   {
-    to: "/",
-    label: "Dashboard",
+    to: "__vendite_group__",
+    label: "Vendite",
+    group: true,
+    groupKey: "vendite",
     children: [
+      { to: "/", label: "Dashboard" },
       { to: "/stampa-report", label: "Stampa report" },
       { to: "/referral", label: "Referral" },
+      { to: "/convalide-consulenti", label: "Convalide" },
+      { to: "/attivi-analisi", label: "Attivi" },
+      { to: "/crm", label: "CRM vendita" },
+      { to: "/telefonate", label: "Telefonate" },
+      { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
+      { to: "/andamento-vendite", label: "Andamento vendite" },
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
   {
     to: "__admin_group__",
-    label: "Admin",
+    label: "Altri",
     group: true,
+    groupKey: "admin",
     children: [
-      { to: "/convalide-consulenti", label: "Convalide" },
-      { to: "/attivi-analisi", label: "Attivi" },
-      { to: "/firme", label: "Firme" },
-      { to: "/firma-cassa", label: "Firma Cassa" },
-      { to: "/crm", label: "CRM Vendita" },
-      { to: "/telefonate", label: "Telefonate" },
-      { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
-      { to: "/andamento-vendite", label: "Andamento Vendite" },
       { to: "/incassi", label: "Incassi" },
-      { to: "/piscina", label: "Mappa Piscina" },
-      { to: "/scuola-nuoto", label: "Scuola Nuoto" },
+      { to: "/firme", label: "Firme" },
+      { to: "/firma-cassa", label: "Firma cassa" },
+      { to: "/piscina", label: "Mappa piscina" },
+      { to: "/scuola-nuoto", label: "Scuola nuoto" },
+      { to: "/campus", label: "Campus" },
+      { to: "/danza", label: "Danza" },
     ],
   },
 ] as const
@@ -59,7 +67,7 @@ export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [adminOpen, setAdminOpen] = useState<boolean>(true)
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true })
   const mustRedirectBagnini = role === "bagnini" && !location.pathname.startsWith("/piscina")
   const nav: NavItem[] =
     leadFilter === "bambini"
@@ -84,9 +92,11 @@ export function AppLayout() {
 
   const Sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900/95 sm:w-56 sm:bg-zinc-900/50">
-      <div className="flex h-14 flex-col justify-center border-b border-zinc-800 px-4">
-        <span className="font-semibold tracking-tight text-amber-400">FitCenter</span>
-        <span className="text-xs text-zinc-500">Gestione Centro</span>
+      <div className="flex min-h-[4.5rem] flex-col justify-center gap-1 border-b border-zinc-800 px-3 py-2">
+        <Link to="/" className="block outline-none ring-offset-2 ring-offset-zinc-900 focus-visible:ring-2 focus-visible:ring-[#46A6D9]" onClick={() => setMobileOpen(false)}>
+          <BrandLogo variant="compact" />
+        </Link>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">FitCenter · gestione</span>
       </div>
       <div className="border-b border-zinc-800 px-3 py-2">
         <p className="text-xs text-zinc-500">Connesso come</p>
@@ -121,29 +131,35 @@ export function AppLayout() {
         </button>
       </div>
       <nav className="flex flex-col gap-0.5 p-2">
-        {nav.map(({ to, label, children, group }) => (
+        {nav.map(({ to, label, children, group, groupKey }) => (
           <div key={to}>
             {group ? (
               <>
                 <button
                   type="button"
                   onClick={() => {
-                    const next = !adminOpen
-                    setAdminOpen(next)
-                    try {
-                      localStorage.setItem("fitcenter-nav-admin-open", next ? "1" : "0")
-                    } catch {}
+                    const key = groupKey ?? "admin"
+                    setGroupOpen((prev) => {
+                      const next = { ...prev, [key]: !prev[key] }
+                      try {
+                        localStorage.setItem("fitcenter-nav-groups", JSON.stringify(next))
+                        if (key === "admin") {
+                          localStorage.setItem("fitcenter-nav-admin-open", next.admin ? "1" : "0")
+                        }
+                      } catch {}
+                      return next
+                    })
                   }}
                   className={cn(
                     "flex w-full items-center justify-between rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    adminOpen ? "text-zinc-200 hover:bg-zinc-800" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+                    (groupOpen[groupKey ?? "admin"] ?? true) ? "text-zinc-200 hover:bg-zinc-800" : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
                   )}
-                  aria-expanded={adminOpen}
+                  aria-expanded={groupOpen[groupKey ?? "admin"] ?? true}
                 >
                   <span>{label}</span>
-                  <span className="text-xs text-zinc-500">{adminOpen ? "▾" : "▸"}</span>
+                  <span className="text-xs text-zinc-500">{(groupOpen[groupKey ?? "admin"] ?? true) ? "▾" : "▸"}</span>
                 </button>
-                {adminOpen && children?.length ? (
+                {(groupOpen[groupKey ?? "admin"] ?? true) && children?.length ? (
                   <div className="mt-1 flex flex-col gap-0.5 pl-2">
                     {children.map((c) => (
                       <Link
@@ -206,9 +222,20 @@ export function AppLayout() {
 
   useEffect(() => {
     try {
-      setAdminOpen(localStorage.getItem("fitcenter-nav-admin-open") !== "0")
+      const raw = localStorage.getItem("fitcenter-nav-groups")
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, boolean>
+        if (parsed && typeof parsed === "object") {
+          setGroupOpen((prev) => ({ ...prev, ...parsed }))
+          return
+        }
+      }
+      const legacy = localStorage.getItem("fitcenter-nav-admin-open")
+      if (legacy != null) {
+        setGroupOpen((prev) => ({ ...prev, admin: legacy !== "0" }))
+      }
     } catch {
-      setAdminOpen(true)
+      setGroupOpen({ vendite: true, admin: true })
     }
   }, [])
 
@@ -231,8 +258,11 @@ export function AppLayout() {
           >
             Menu
           </button>
-          <div className="min-w-0 text-right">
-            <div className="truncate text-sm font-semibold text-amber-400">FitCenter</div>
+          <Link to="/" className="min-w-0 shrink-0" onClick={() => setMobileOpen(false)}>
+            <BrandLogo variant="compact" className="max-w-[120px]" imgClassName="h-8" />
+          </Link>
+          <div className="min-w-0 flex-1 text-right">
+            <div className="truncate text-[11px] font-medium text-zinc-400">FitCenter</div>
             <div className="truncate text-[11px] text-zinc-500">{user?.nome ?? "—"}</div>
           </div>
         </div>

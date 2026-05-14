@@ -25,6 +25,7 @@ import { PiscinaMappa } from "@/pages/PiscinaMappa"
 import { Incassi } from "@/pages/Incassi"
 import { Danza } from "@/pages/Danza"
 import { Referral } from "@/pages/Referral"
+import { AdminCalendario } from "@/pages/AdminCalendario"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
@@ -96,6 +97,7 @@ export const router = createBrowserRouter([
       { path: "firme", element: <SignaturesAdmin /> },
       { path: "firma-cassa", element: <FirmaDaCassa /> },
       { path: "stampa-report", element: <StampaReport /> },
+      { path: "admin", element: <AdminCalendario /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
