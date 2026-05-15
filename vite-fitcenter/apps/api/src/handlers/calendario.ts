@@ -105,7 +105,38 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return j.eventsByComparto?.[comparto] ?? []
 }
 
+/** Reception: solo slot creati/modificati sul server (nessun Excel in build). */
+function mergeReceptionFromDb(db: CalendarioDb): CalendarioMergedEvent[] {
+  const out: CalendarioMergedEvent[] = []
+  for (const r of db.revisions) {
+    if (r.comparto !== "reception") continue
+    if (!r.stableKey.startsWith("manual-")) continue
+    if (r.removed) continue
+    out.push({
+      id: r.stableKey,
+      zona: r.zona ?? "reception",
+      sheet: "Calendario",
+      dow: r.dow,
+      start: r.start,
+      title: r.title,
+      staff: r.staffOverride?.trim() || "—",
+      stableKey: r.stableKey,
+      istruttoreId: r.istruttoreId ?? null,
+      staffOverride: r.staffOverride ?? null,
+      note: r.note ?? null,
+      updatedAt: r.updatedAt,
+      updatedBy: r.updatedBy,
+    })
+  }
+  const order = (d: number) => (d === 0 ? 7 : d)
+  return out.sort(
+    (a, b) => order(a.dow) - order(b.dow) || a.start.localeCompare(b.start) || a.title.localeCompare(b.title)
+  )
+}
+
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
+  if (comparto === "reception") return mergeReceptionFromDb(db)
+
   const revByKey = new Map<string, CalendarioSlotRevision>()
   for (const r of db.revisions) {
     if (r.comparto === comparto) revByKey.set(r.stableKey, r)
@@ -115,7 +146,6 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     "corsi",
     "scuola_nuoto",
     "piscina",
-    "reception",
     "acquaticita",
     "spogliatoi",
   ]
@@ -154,7 +184,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     if (baseKeys.has(r.stableKey)) continue
     out.push({
       id: r.stableKey,
-      zona: r.zona ?? (comparto === "piscina" ? "invernale" : comparto === "reception" ? "reception" : "terra"),
+      zona: r.zona ?? (comparto === "piscina" ? "invernale" : "terra"),
       sheet: "Manuale",
       dow: r.dow,
       start: r.start,
@@ -230,14 +260,16 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const by = u.nome || u.username
 
   if (body.create === true) {
-    if (raw !== "corsi" && raw !== "piscina") {
-      return res.status(400).json({ message: "Aggiunta slot manuale solo per corsi o calendario bagnini (piscina)" })
+    if (raw !== "corsi" && raw !== "piscina" && raw !== "reception") {
+      return res.status(400).json({
+        message: "Aggiunta slot manuale solo per corsi, piscina (bagnini) o reception",
+      })
     }
     const dow = Number(body.dow)
     const start = String(body.start ?? "").trim()
-    const defaultZona = raw === "piscina" ? "invernale" : "terra"
+    const defaultZona = raw === "piscina" ? "invernale" : raw === "reception" ? "reception" : "terra"
     const titleIn = String(body.title ?? "").trim()
-    const title = titleIn || (raw === "piscina" ? "Copertura" : "")
+    const title = titleIn || (raw === "piscina" ? "Copertura" : raw === "reception" ? "Sportello" : "")
     const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })

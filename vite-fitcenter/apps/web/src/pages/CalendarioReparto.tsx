@@ -6,12 +6,6 @@ import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto
 import { calendarioApi } from "@/api/calendario"
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import {
-  filterReceptionEventsByDate,
-  listReceptionPlanningSheets,
-  receptionPlanningSheetForDate,
-  receptionSheetLabel,
-} from "@/lib/reception-planning-week"
-import {
   CALENDARIO_SEGMENTI,
   roleCanReadCalendarioComparto,
   roleCanWriteCalendarioComparto,
@@ -120,16 +114,12 @@ const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = [
 function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
 }
-type EventsForDayOpts = { receptionSheets?: string[] }
-
-function eventsForDay(events: CalEvent[], d: Date, opts?: EventsForDayOpts): CalEvent[] {
-  const base =
-    opts?.receptionSheets?.length ? filterReceptionEventsByDate(events, d, opts.receptionSheets) : events
+function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
   const dow = d.getDay()
-  return base.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+  return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
 }
-function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, opts?: EventsForDayOpts): CalEvent[] {
-  return eventsForDay(events, d, opts).filter((e) => hourBucket(e.start) === hour)
+function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number): CalEvent[] {
+  return eventsForDay(events, d).filter((e) => hourBucket(e.start) === hour)
 }
 function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
@@ -763,26 +753,6 @@ export function CalendarioRepartoPage() {
     void reload()
   }, [reload])
 
-  const receptionSheets = useMemo(
-    () => (apiComparto === "reception" ? listReceptionPlanningSheets(events) : []),
-    [apiComparto, events]
-  )
-
-  const eventsForDayOpts = useMemo((): EventsForDayOpts | undefined => {
-    if (apiComparto !== "reception" || !receptionSheets.length) return undefined
-    return { receptionSheets }
-  }, [apiComparto, receptionSheets])
-
-  const activeReceptionSheet = useMemo(() => {
-    if (apiComparto !== "reception" || !receptionSheets.length) return null
-    return receptionPlanningSheetForDate(cursor, receptionSheets)
-  }, [apiComparto, cursor, receptionSheets])
-
-  const turnazioniEvents = useMemo(() => {
-    if (apiComparto !== "reception" || !receptionSheets.length) return events
-    return filterReceptionEventsByDate(events, cursor, receptionSheets)
-  }, [apiComparto, events, cursor, receptionSheets])
-
   const saveEdit = useCallback(
     async (
       e: CalEvent,
@@ -900,16 +870,9 @@ export function CalendarioRepartoPage() {
                 </>
               ) : apiComparto === "reception" ? (
                 <>
-                  Orari <strong className="font-medium text-zinc-400">reception / sportello</strong> dal foglio Excel della settimana del mese (es.{" "}
-                  <strong className="font-medium text-zinc-400">11–17</strong>, <strong className="font-medium text-zinc-400">18–24</strong>, <strong className="font-medium text-zinc-400">25–31</strong>
-                  ): in calendario vedi solo il turno che corrisponde alla <strong className="font-medium text-zinc-400">data</strong> che stai guardando, non tutti i lunedì del mese insieme.
-                  {activeReceptionSheet ? (
-                    <>
-                      {" "}
-                      Turnazione attiva per la data selezionata:{" "}
-                      <strong className="font-medium text-emerald-400/90">{receptionSheetLabel(activeReceptionSheet)}</strong>.
-                    </>
-                  ) : null}
+                  Calendario <strong className="font-medium text-zinc-400">reception</strong> (mese, settimana, giorno): crea gli slot con{" "}
+                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong>, assegna chi copre il turno dall&apos;anagrafica istruttori e modifica orari/note.{" "}
+                  <strong className="font-medium text-zinc-400">Tutto resta salvato sul server</strong> — il build dell&apos;app non sovrascrive più gli orari da Excel.
                 </>
               ) : hasPlanningGrid(apiComparto) ? (
                 <>
@@ -952,8 +915,7 @@ export function CalendarioRepartoPage() {
               </>
             ) : apiComparto === "reception" ? (
               <>
-                Nessuno slot in elenco: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> per i turni manuali oppure collega un import Excel in{" "}
-                <code className="text-xs">eventsByComparto.reception</code> (vedi script di build planning).
+                Nessuno slot ancora: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> per ogni fascia oraria (giorno della settimana + ora + istruttore). Le modifiche restano sul server.
               </>
             ) : (
               <>
@@ -1066,7 +1028,7 @@ export function CalendarioRepartoPage() {
             <div className="mt-px grid grid-cols-7 gap-px bg-zinc-800">
               {cells.map(({ date, inMonth }) => {
                 const wend = date.getDay() === 0 || date.getDay() === 6
-                const dayEv = eventsForDay(events, date, eventsForDayOpts)
+                const dayEv = eventsForDay(events, date)
                 return (
                   <div
                     key={isoYmd(date)}
@@ -1118,7 +1080,7 @@ export function CalendarioRepartoPage() {
                     {pad2(h)}:00
                   </div>
                   {weekDays.map((d) => {
-                    const evs = eventsForDayAndHour(events, d, h, eventsForDayOpts)
+                    const evs = eventsForDayAndHour(events, d, h)
                     return (
                       <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
                         {evs.map((e) => (
@@ -1147,7 +1109,7 @@ export function CalendarioRepartoPage() {
             </div>
             <div className="max-h-[75vh] overflow-y-auto">
               {hours.map((h) => {
-                const evs = eventsForDayAndHour(events, dayOnly, h, eventsForDayOpts)
+                const evs = eventsForDayAndHour(events, dayOnly, h)
                 return (
                   <div key={h} className="flex border-b border-zinc-800/70">
                     <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
@@ -1176,7 +1138,7 @@ export function CalendarioRepartoPage() {
             onClose={() => setTurnazioniOpen(false)}
             compartoLabel={compartoLabel}
             cursor={cursor}
-            events={turnazioniEvents}
+            events={events}
             instructors={instructors}
             comparto={apiComparto}
           />

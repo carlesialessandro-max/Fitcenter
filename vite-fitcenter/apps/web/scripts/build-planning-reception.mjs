@@ -1,6 +1,6 @@
 /**
- * Importa l'orario reception da OrarioReception.xlsx in `eventsByComparto.reception`.
- * Eseguire dopo build-planning-piscina.mjs e build-planning-bagnini.mjs (catena `pnpm run build:planning`).
+ * (Opzionale, non in build:planning) Importa OrarioReception.xlsx in planning-weekly.json.
+ * Il calendario reception in app usa solo slot salvati sul server; esegui manualmente solo se serve seed JSON.
  *
  * Formato foglio (OrarioReception.xlsx):
  * - Riga intestazione: LUNEDI, MARTEDI, … (colonna orario + 2–3 colonne staff per giorno).

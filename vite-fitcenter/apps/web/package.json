@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "pnpm run build:planning && tsc -b && vite build",
-    "build:planning": "node scripts/build-planning-data.mjs && node scripts/build-planning-piscina.mjs && node scripts/build-planning-bagnini.mjs && node scripts/build-planning-reception.mjs",
+    "build:planning": "node scripts/build-planning-data.mjs && node scripts/build-planning-piscina.mjs && node scripts/build-planning-bagnini.mjs",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
