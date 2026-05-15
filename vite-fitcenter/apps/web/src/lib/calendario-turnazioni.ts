@@ -54,8 +54,7 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
     const max = comparto === "reception" ? 14 * 60 : 8 * 60
     if (d > 0 && d <= max) return d
   }
-  if (comparto === "reception") return 6 * 60
-  if (comparto === "piscina") return 30
+  if (comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness") return 6 * 60
   if (comparto === "scuola_nuoto" || comparto === "acquaticita" || comparto === "spogliatoi") return 45
   return 60
 }

@@ -5,11 +5,17 @@ import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
+import { InstructorSearchSelect } from "@/components/InstructorSearchSelect"
+import {
+  compartoUsesShiftRange,
+  defaultActivityForShiftComparto,
+  defaultZonaForShiftComparto,
+} from "@/lib/calendario-shift"
 import {
   addHoursToHm,
-  buildReceptionTitle,
+  buildShiftTitle,
   eventTimeRange,
-  receptionEventInHour,
+  shiftEventInHour,
 } from "@/lib/reception-shift"
 import {
   CALENDARIO_SEGMENTI,
@@ -115,6 +121,7 @@ const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = [
   "spogliatoi",
   "piscina",
   "reception",
+  "sala_fitness",
 ]
 
 function hasPlanningGrid(comparto: CalendarioComparto): boolean {
@@ -124,17 +131,16 @@ function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
   const dow = d.getDay()
   return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
 }
-function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, receptionGrid?: boolean): CalEvent[] {
+function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRangeGrid?: boolean): CalEvent[] {
   return eventsForDay(events, d).filter((e) =>
-    receptionGrid ? receptionEventInHour(e, hour) : hourBucket(e.start) === hour
+    shiftRangeGrid ? shiftEventInHour(e, hour) : hourBucket(e.start) === hour
   )
 }
 function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
 }
 
-/** Etichetta compatta per pill reception (evita "14:00 Reception · 14:00"). */
-function receptionPillLine(e: CalEvent): string {
+function shiftPillLine(e: CalEvent): string {
   const { start, end } = eventTimeRange(e)
   return `${start}–${end}`
 }
@@ -169,6 +175,7 @@ function pillColClass(e: CalEvent): string {
   if (e.zona === "interna") return "border-sky-400/45 bg-slate-900/80 text-sky-50"
   if (e.zona === "esterna") return "border-amber-400/50 bg-amber-950/40 text-amber-50"
   if (e.zona === "reception") return "border-emerald-500/35 bg-emerald-950/30 text-emerald-100"
+  if (e.zona === "sala_fitness") return "border-orange-500/35 bg-orange-950/25 text-orange-100"
   return "border-cyan-500/35 bg-cyan-500/10 text-cyan-100"
 }
 
@@ -179,6 +186,7 @@ function EventPill({
   onOpen,
   canEdit,
   receptionContinuation,
+  showShiftLine,
 }: {
   e: CalEvent
   staffLabel: string
@@ -186,6 +194,7 @@ function EventPill({
   onOpen: () => void
   canEdit: boolean
   receptionContinuation?: boolean
+  showShiftLine?: boolean
 }) {
   const col = pillColClass(e)
   if (receptionContinuation) {
@@ -216,9 +225,9 @@ function EventPill({
       )}
       title={canEdit ? "Clic per modificare istruttore e note" : "Sola lettura"}
     >
-      {e.zona === "reception" ? (
+      {showShiftLine ? (
         <>
-          <span className="font-semibold text-zinc-200">{receptionPillLine(e)}</span>
+          <span className="font-semibold text-zinc-200">{shiftPillLine(e)}</span>
           <span className="block truncate text-zinc-300">· {staffLabel}</span>
         </>
       ) : (
@@ -286,7 +295,7 @@ function PiscinaZonaEditor({ value, onChange }: { value: string; onChange: (z: s
   )
 }
 
-type ScheduleEditMode = "none" | "corsi" | "piscina" | "reception"
+type ScheduleEditMode = "none" | "corsi" | "piscina" | "reception" | "sala_fitness"
 
 function EditEventModal({
   event,
@@ -324,16 +333,19 @@ function EditEventModal({
   const [note, setNote] = useState(initialNote)
   const [dow, setDow] = useState(event.dow)
   const [start, setStart] = useState(event.start)
-  const initialReception =
-    scheduleMode === "reception"
+  const isShiftRangeMode = scheduleMode !== "corsi" && scheduleMode !== "none"
+  const shiftComparto =
+    scheduleMode === "piscina" || scheduleMode === "reception" || scheduleMode === "sala_fitness" ? scheduleMode : null
+  const initialShift =
+    isShiftRangeMode && shiftComparto
       ? (() => {
           const r = eventTimeRange(event)
-          const act = event.title.includes("·") ? event.title.split("·")[0].trim() : "Sportello"
-          return { activity: act || "Sportello", end: r.end }
+          const act = event.title.includes("·") ? event.title.split("·")[0].trim() : defaultActivityForShiftComparto(shiftComparto)
+          return { activity: act || defaultActivityForShiftComparto(shiftComparto), end: r.end }
         })()
       : null
-  const [end, setEnd] = useState(initialReception?.end ?? "14:00")
-  const [activity, setActivity] = useState(initialReception?.activity ?? "Sportello")
+  const [end, setEnd] = useState(initialShift?.end ?? "14:00")
+  const [activity, setActivity] = useState(initialShift?.activity ?? "Sportello")
   const [title, setTitle] = useState(event.title)
   const [zona, setZona] = useState<string>(() =>
     scheduleMode === "corsi"
@@ -344,7 +356,9 @@ function EditEventModal({
         ? event.zona || "invernale"
         : scheduleMode === "reception"
           ? event.zona || "reception"
-          : event.zona
+          : scheduleMode === "sala_fitness"
+            ? event.zona || "sala_fitness"
+            : event.zona
   )
 
   useEffect(() => {
@@ -354,10 +368,14 @@ function EditEventModal({
     setDow(event.dow)
     setStart(event.start)
     setTitle(event.title)
-    if (scheduleMode === "reception") {
+    if (isShiftRangeMode && shiftComparto) {
       const r = eventTimeRange(event)
       setEnd(r.end)
-      setActivity(event.title.includes("·") ? event.title.split("·")[0].trim() || "Sportello" : "Sportello")
+      setActivity(
+        event.title.includes("·")
+          ? event.title.split("·")[0].trim() || defaultActivityForShiftComparto(shiftComparto)
+          : defaultActivityForShiftComparto(shiftComparto)
+      )
     }
     if (scheduleMode === "corsi") {
       setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
@@ -365,6 +383,8 @@ function EditEventModal({
       setZona(event.zona || "invernale")
     } else if (scheduleMode === "reception") {
       setZona(event.zona || "reception")
+    } else if (scheduleMode === "sala_fitness") {
+      setZona(event.zona || "sala_fitness")
     } else {
       setZona(event.zona)
     }
@@ -373,7 +393,7 @@ function EditEventModal({
   const presets = ["Sostituzione", "Malattia", "Ferie", "Assente"]
   const isManual = event.stableKey.startsWith("manual-")
   const zonaLabel = event.zona === "acqua" ? "Acqua" : event.zona === "terra" ? "Terra" : event.zona
-  const scheduleFields = scheduleMode === "corsi" || scheduleMode === "piscina" || scheduleMode === "reception"
+  const scheduleFields = scheduleMode !== "none"
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end justify-center p-4 sm:items-center" role="dialog" aria-modal="true">
@@ -383,7 +403,7 @@ function EditEventModal({
         <p className="mt-1 text-xs text-zinc-500">
           {scheduleMode === "corsi"
             ? `${start} · ${zona === "acqua" ? "Acqua" : "Terra"} · ${event.sheet}`
-            : scheduleMode === "piscina" || scheduleMode === "reception"
+            : isShiftRangeMode
               ? `${start} · ${zona} · ${event.sheet}`
               : `${event.start} · ${zonaLabel} · ${event.sheet}`}
         </p>
@@ -403,7 +423,7 @@ function EditEventModal({
                 ))}
               </select>
             </label>
-            {scheduleMode === "reception" ? (
+            {isShiftRangeMode ? (
               <>
                 <label className="block text-xs font-medium text-zinc-400">
                   Dalle (HH:mm)
@@ -460,23 +480,21 @@ function EditEventModal({
               <PiscinaZonaEditor value={zona} onChange={setZona} />
             ) : (
               <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-                Zona (slug planning)
+                Zona (slug)
                 <input
                   value={zona}
                   onChange={(ev) => setZona(ev.target.value)}
                   className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-                  placeholder="reception"
+                  placeholder={scheduleMode === "sala_fitness" ? "sala_fitness" : "reception"}
                   autoComplete="off"
                 />
               </label>
             )}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-              {scheduleMode === "corsi" ? "Titolo corso" : scheduleMode === "reception" ? "Attività (es. Sportello)" : "Titolo / attività"}
+              {scheduleMode === "corsi" ? "Titolo corso" : "Attività (es. Sportello, Copertura, Turno sala)"}
               <input
-                value={scheduleMode === "reception" ? activity : title}
-                onChange={(ev) =>
-                  scheduleMode === "reception" ? setActivity(ev.target.value) : setTitle(ev.target.value)
-                }
+                value={isShiftRangeMode ? activity : title}
+                onChange={(ev) => (isShiftRangeMode ? setActivity(ev.target.value) : setTitle(ev.target.value))}
                 className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
                 autoComplete="off"
               />
@@ -487,27 +505,21 @@ function EditEventModal({
                 <code className="text-zinc-400">interna</code> e <code className="text-zinc-400">esterna</code>; in inverno resta{" "}
                 <code className="text-zinc-400">invernale</code> (import Excel).
               </p>
-            ) : scheduleMode === "reception" ? (
+            ) : isShiftRangeMode ? (
               <p className="text-[10px] text-zinc-500 sm:col-span-2">
-                Imposta la fascia oraria (es. 08:00–14:00, 6 ore). Zona default <code className="text-zinc-400">reception</code>.
+                Fascia oraria (es. 08:00–14:00). Salvataggio sul server; il build non usa più Excel per questo reparto.
               </p>
             ) : null}
           </div>
         ) : null}
         <label className="mt-4 block text-xs font-medium text-zinc-400">
           Istruttore (anagrafica)
-          <select
+          <InstructorSearchSelect
+            className="mt-1"
+            instructors={instructors}
             value={istruttoreId}
-            onChange={(ev) => setIstruttoreId(ev.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-[#46A6D9]/60 focus:outline-none focus:ring-1 focus:ring-[#46A6D9]/30"
-          >
-            <option value="">— Nessuno (usa testo sotto) —</option>
-            {instructors.map((ins) => (
-              <option key={ins.id} value={ins.id}>
-                {ins.cognome} {ins.nome}
-              </option>
-            ))}
-          </select>
+            onChange={setIstruttoreId}
+          />
         </label>
         <label className="mt-3 block text-xs font-medium text-zinc-400">
           Staff / nome in calendario (testo libero)
@@ -560,7 +572,7 @@ function EditEventModal({
               {isManual
                 ? scheduleMode === "corsi"
                   ? "Elimina corso"
-                  : scheduleMode === "piscina" || scheduleMode === "reception"
+                  : isShiftRangeMode
                     ? "Elimina slot"
                     : "Elimina"
                 : "Ripristina da Excel"}
@@ -579,8 +591,8 @@ function EditEventModal({
                 dow: scheduleFields ? dow : event.dow,
                 start: scheduleFields ? start.trim() : event.start,
                 title: scheduleFields
-                  ? scheduleMode === "reception"
-                    ? buildReceptionTitle(activity, start.trim(), end.trim())
+                  ? isShiftRangeMode && shiftComparto
+                    ? buildShiftTitle(activity, start.trim(), end.trim())
                     : title.trim()
                   : event.title,
                 zona:
@@ -592,7 +604,9 @@ function EditEventModal({
                       ? zona.trim() || "invernale"
                       : scheduleMode === "reception"
                         ? zona.trim() || "reception"
-                        : event.zona,
+                        : scheduleMode === "sala_fitness"
+                          ? zona.trim() || "sala_fitness"
+                          : event.zona,
               })
             }
             className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900"
@@ -612,19 +626,20 @@ function CreateSlotModal({
   onClose,
   onCreated,
 }: {
-  comparto: "corsi" | "piscina" | "reception"
+  comparto: "corsi" | "piscina" | "reception" | "sala_fitness"
   instructors: CalendarioIstruttore[]
   onClose: () => void
   onCreated: () => void
 }) {
   const isCorsi = comparto === "corsi"
-  const isReception = comparto === "reception"
+  const isShiftRange = comparto !== "corsi"
+  const shiftComparto = isShiftRange ? comparto : "piscina"
   const [dow, setDow] = useState(1)
-  const [start, setStart] = useState(isReception ? "08:00" : "09:00")
-  const [end, setEnd] = useState(isReception ? "14:00" : "10:00")
-  const [activity, setActivity] = useState("Sportello")
-  const [title, setTitle] = useState(isCorsi ? "" : isReception ? "Sportello" : "Copertura")
-  const [zona, setZona] = useState<string>(isCorsi ? "terra" : isReception ? "reception" : "invernale")
+  const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
+  const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
+  const [activity, setActivity] = useState(isCorsi ? "" : defaultActivityForShiftComparto(shiftComparto))
+  const [title, setTitle] = useState(isCorsi ? "" : defaultActivityForShiftComparto(shiftComparto))
+  const [zona, setZona] = useState<string>(isCorsi ? "terra" : defaultZonaForShiftComparto(shiftComparto))
   const [istruttoreId, setIstruttoreId] = useState("")
   const [staffText, setStaffText] = useState("")
   const [note, setNote] = useState("")
@@ -632,11 +647,11 @@ function CreateSlotModal({
 
   async function submit(ev: FormEvent) {
     ev.preventDefault()
-    const tit = isReception
-      ? buildReceptionTitle(activity, start.trim(), end.trim())
+    const tit = isShiftRange
+      ? buildShiftTitle(activity, start.trim(), end.trim())
       : (title.trim() || (isCorsi ? "" : "Copertura")).trim()
     if (!tit) {
-      alert(isReception ? "Controlla orari e attività" : "Titolo obbligatorio")
+      alert(isShiftRange ? "Controlla orari e attività" : "Titolo obbligatorio")
       return
     }
     if (!istruttoreId.trim() && !staffText.trim()) {
@@ -649,8 +664,8 @@ function CreateSlotModal({
         ? zona === "terra" || zona === "acqua"
           ? zona
           : "terra"
-        : isReception
-          ? zona.trim() || "reception"
+        : isShiftRange
+          ? zona.trim() || defaultZonaForShiftComparto(shiftComparto)
           : zona.trim() || "invernale"
       await calendarioApi.patchSlot(comparto, {
         create: true,
@@ -679,13 +694,19 @@ function CreateSlotModal({
         className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
       >
         <h2 className="text-base font-semibold text-zinc-100">
-          {isCorsi ? "Nuovo corso" : isReception ? "Nuovo slot reception" : "Nuovo turno (bagnini)"}
+          {isCorsi
+            ? "Nuovo corso"
+            : comparto === "sala_fitness"
+              ? "Nuovo turno sala fitness"
+              : comparto === "reception"
+                ? "Nuovo slot reception"
+                : "Nuovo turno (bagnini)"}
         </h2>
         <p className="text-xs text-zinc-500">
           {isCorsi
             ? "Slot manuale sul planning corsi (terra/acqua)."
-            : isReception
-              ? "Turno allo sportello (salvato sul server). Zona di default «reception»; modifica se usi più fasce."
+            : isShiftRange
+              ? "Turno con fascia oraria (salvato sul server). Nessun import Excel al build."
               : "Turno manuale sul calendario piscina / bagnini (salvato sul server)."}
         </p>
         <label className="block text-xs font-medium text-zinc-400">
@@ -703,7 +724,7 @@ function CreateSlotModal({
           </select>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          {isReception ? (
+          {isShiftRange ? (
             <>
               <label className="block text-xs font-medium text-zinc-400">
                 Dalle (HH:mm)
@@ -752,40 +773,35 @@ function CreateSlotModal({
             </label>
           ) : null}
         </div>
-        {!isCorsi ? isReception ? (
-          <label className="block text-xs font-medium text-zinc-400">
-            Zona (slug)
-            <input
-              value={zona}
-              onChange={(ev) => setZona(ev.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-              placeholder="reception"
-            />
-          </label>
-        ) : (
-          <PiscinaZonaEditor value={zona} onChange={setZona} />
+        {!isCorsi ? (
+          comparto === "piscina" ? (
+            <PiscinaZonaEditor value={zona} onChange={setZona} />
+          ) : (
+            <label className="block text-xs font-medium text-zinc-400">
+              Zona (slug)
+              <input
+                value={zona}
+                onChange={(ev) => setZona(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                placeholder={defaultZonaForShiftComparto(shiftComparto)}
+              />
+            </label>
+          )
         ) : null}
-        {!isReception ? (
+        {!isShiftRange ? (
           <label className="block text-xs font-medium text-zinc-400">
             {isCorsi ? "Titolo" : "Titolo / attività"}
             <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
           </label>
         ) : (
           <label className="block text-xs font-medium text-zinc-400">
-            Attività (es. Sportello)
+            Attività (es. Sportello, Copertura, Turno sala)
             <input value={activity} onChange={(ev) => setActivity(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
           </label>
         )}
         <label className="block text-xs font-medium text-zinc-400">
           Istruttore (anagrafica)
-          <select value={istruttoreId} onChange={(ev) => setIstruttoreId(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">
-            <option value="">— Nessuno —</option>
-            {instructors.map((ins) => (
-              <option key={ins.id} value={ins.id}>
-                {ins.cognome} {ins.nome}
-              </option>
-            ))}
-          </select>
+          <InstructorSearchSelect className="mt-1" instructors={instructors} value={istruttoreId} onChange={setIstruttoreId} />
         </label>
         <label className="block text-xs font-medium text-zinc-400">
           Nome in calendario (se senza anagrafica)
@@ -820,7 +836,7 @@ export function CalendarioRepartoPage() {
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
-  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception">(null)
+  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception" | "sala_fitness">(null)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
 
   const compartoLabel = useMemo(() => CALENDARIO_SEGMENTI.find((x) => x.api === apiComparto)?.label ?? "Calendario", [apiComparto])
@@ -828,7 +844,15 @@ export function CalendarioRepartoPage() {
   const canRead = apiComparto != null && roleCanReadCalendarioComparto(role, apiComparto)
   const canWrite = apiComparto != null && roleCanWriteCalendarioComparto(role, apiComparto)
   const scheduleMode: ScheduleEditMode =
-    apiComparto === "corsi" ? "corsi" : apiComparto === "piscina" ? "piscina" : apiComparto === "reception" ? "reception" : "none"
+    apiComparto === "corsi"
+      ? "corsi"
+      : apiComparto === "piscina"
+        ? "piscina"
+        : apiComparto === "reception"
+          ? "reception"
+          : apiComparto === "sala_fitness"
+            ? "sala_fitness"
+            : "none"
   const canOpenInstructors =
     role === "admin" ||
     role === "corsi" ||
@@ -839,7 +863,7 @@ export function CalendarioRepartoPage() {
     role === "bagnini" ||
     role === "danza" ||
     role === "campus"
-  const receptionGrid = apiComparto === "reception"
+  const shiftRangeGrid = compartoUsesShiftRange(apiComparto)
 
   const reload = useCallback(async () => {
     if (!apiComparto) return
@@ -969,13 +993,18 @@ export function CalendarioRepartoPage() {
                   <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
                   <strong className="font-medium text-zinc-400">server</strong> (sincronizzati tra utenti).
                 </>
-              ) : apiComparto === "piscina" ? (
+              ) : apiComparto === "piscina" || apiComparto === "sala_fitness" ? (
                 <>
-                  Turni da planning (INVERNALE / import Excel). In <strong className="font-medium text-zinc-400">estate</strong> con due vasche usa le zone{" "}
-                  <code className="text-xs text-zinc-400">interna</code> e <code className="text-xs text-zinc-400">esterna</code>; in inverno la zona tipica è{" "}
-                  <code className="text-xs text-zinc-400">invernale</code>. Puoi <strong className="font-medium text-zinc-400">aggiungere turni manuali</strong>,{" "}
-                  <strong className="font-medium text-zinc-400">spostare</strong> giorno/ora/titolo/zona, <strong className="font-medium text-zinc-400">nascondere</strong> uno slot importato e
-                  modificare <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
+                  Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>: crea turni con{" "}
+                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong> (fascia oraria, es. 08:00–14:00), assegna il dipendente dall&apos;anagrafica.{" "}
+                  <strong className="font-medium text-zinc-400">Tutto sul server</strong> — non serve più Excel al build per bagnini/sala fitness.
+                  {apiComparto === "piscina" ? (
+                    <>
+                      {" "}
+                      Zone piscina: <code className="text-xs text-zinc-400">invernale</code>, <code className="text-xs text-zinc-400">interna</code>,{" "}
+                      <code className="text-xs text-zinc-400">esterna</code>.
+                    </>
+                  ) : null}
                 </>
               ) : apiComparto === "reception" ? (
                 <>
@@ -1022,16 +1051,13 @@ export function CalendarioRepartoPage() {
               <>
                 Nessun evento dal planning corsi: verifica <code className="text-xs">planning-weekly.json</code> e che l&apos;API legga il file sul server.
               </>
-            ) : apiComparto === "reception" ? (
+            ) : compartoUsesShiftRange(apiComparto) ? (
               <>
-                Nessuno slot ancora: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> per ogni fascia oraria (giorno della settimana + ora + istruttore). Le modifiche restano sul server.
+                Nessuno slot ancora: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> (giorno, dalle/alle, istruttore). Le modifiche restano sul server.
               </>
             ) : (
               <>
-                Nessun evento per questo comparto: copia <code className="text-xs">PISCINAORARIO…xlsx</code> in{" "}
-                <code className="text-xs">apps/web/data/planning-import/piscina-orario-2025-2026.xlsx</code> ed esegui{" "}
-                <code className="text-xs">pnpm run build:planning</code> ( <code className="text-xs">PISCINA_XLSX</code>,{" "}
-                <code className="text-xs">BAGNINI_XLSX</code> per INVERNALE bagnini).
+                Nessun evento per questo comparto: verifica import Excel e <code className="text-xs">pnpm run build:planning</code> (solo corsi / scuola nuoto).
               </>
             )}
           </p>
@@ -1077,7 +1103,13 @@ export function CalendarioRepartoPage() {
                 onClick={() => setCreateSlotComparto(scheduleMode)}
                 className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
               >
-                {scheduleMode === "corsi" ? "Aggiungi corso" : scheduleMode === "piscina" ? "Aggiungi turno" : "Aggiungi slot"}
+                {scheduleMode === "corsi"
+                  ? "Aggiungi corso"
+                  : scheduleMode === "sala_fitness"
+                    ? "Aggiungi turno sala"
+                    : scheduleMode === "piscina"
+                      ? "Aggiungi turno"
+                      : "Aggiungi slot"}
               </button>
             ) : null}
             {(
@@ -1159,6 +1191,7 @@ export function CalendarioRepartoPage() {
                           note={noteFor(e)}
                           onOpen={() => setEditEvent(e)}
                           canEdit={canWrite}
+                          showShiftLine={shiftRangeGrid}
                         />
                       ))}
                       {dayEv.length > 8 ? <div className="text-[10px] text-zinc-500">+{dayEv.length - 8}…</div> : null}
@@ -1189,11 +1222,11 @@ export function CalendarioRepartoPage() {
                     {pad2(h)}:00
                   </div>
                   {weekDays.map((d) => {
-                    const evs = eventsForDayAndHour(events, d, h, receptionGrid)
+                    const evs = eventsForDayAndHour(events, d, h, shiftRangeGrid)
                     return (
                       <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
                         {evs.map((e) => {
-                          const shiftStart = receptionGrid ? hourBucket(eventTimeRange(e).start) === h : true
+                          const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
                           return (
                             <EventPill
                               key={e.id}
@@ -1202,7 +1235,8 @@ export function CalendarioRepartoPage() {
                               note={noteFor(e)}
                               onOpen={() => setEditEvent(e)}
                               canEdit={canWrite}
-                              receptionContinuation={receptionGrid && !shiftStart}
+                              showShiftLine={shiftRangeGrid}
+                              receptionContinuation={shiftRangeGrid && !shiftStart}
                             />
                           )
                         })}
@@ -1222,13 +1256,13 @@ export function CalendarioRepartoPage() {
             </div>
             <div className="max-h-[75vh] overflow-y-auto">
               {hours.map((h) => {
-                const evs = eventsForDayAndHour(events, dayOnly, h, receptionGrid)
+                const evs = eventsForDayAndHour(events, dayOnly, h, shiftRangeGrid)
                 return (
                   <div key={h} className="flex border-b border-zinc-800/70">
                     <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
                     <div className="min-h-[3.25rem] flex-1 space-y-0.5 border-l border-zinc-800/60 bg-zinc-900/20 p-1">
                       {evs.map((e) => {
-                        const shiftStart = receptionGrid ? hourBucket(eventTimeRange(e).start) === h : true
+                        const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
                         return (
                           <EventPill
                             key={e.id}
@@ -1237,7 +1271,8 @@ export function CalendarioRepartoPage() {
                             note={noteFor(e)}
                             onOpen={() => setEditEvent(e)}
                             canEdit={canWrite}
-                            receptionContinuation={receptionGrid && !shiftStart}
+                            showShiftLine={shiftRangeGrid}
+                            receptionContinuation={shiftRangeGrid && !shiftStart}
                           />
                         )
                       })}

@@ -155,7 +155,7 @@ export function CalendarioIstruttoriPage() {
     role === "bagnini" ||
     role === "danza" ||
     role === "campus"
-  const canManage = role === "admin" || role === "corsi" || role === "operatore" || role === "firme"
+  const canManage = role === "admin" || role === "corsi" || role === "operatore" || role === "firme" || role === "bagnini"
 
   const reload = useCallback(async () => {
     setLoading(true)

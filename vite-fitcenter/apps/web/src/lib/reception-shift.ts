@@ -41,6 +41,11 @@ export function buildReceptionTitle(activity: string, start: string, end: string
   return `${label} · ${s}–${e}`
 }
 
+/** Fascia oraria (reception, bagnini, sala fitness). */
+export function buildShiftTitle(activity: string, start: string, end: string): string {
+  return buildReceptionTitle(activity, start, end)
+}
+
 /** Slot visibile nella riga oraria h (0–23). */
 export function receptionEventInHour(e: { title: string; start: string }, hour: number): boolean {
   const { start, end } = eventTimeRange(e)
@@ -53,6 +58,8 @@ export function receptionEventInHour(e: { title: string; start: string }, hour: 
   const hourEnd = hourStart + 60
   return sm < hourEnd && endMin > hourStart
 }
+
+export const shiftEventInHour = receptionEventInHour
 
 export function addHoursToHm(hm: string, hours: number): string {
   const m = parseHm(hm)

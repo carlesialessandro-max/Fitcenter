@@ -46,7 +46,8 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
   if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
   if (comparto === "campus") return role === "campus"
   if (comparto === "reception") return role === "operatore" || role === "firme"
-  if (comparto === "sala_fitness" || comparto === "consulenti") return false
+  if (comparto === "sala_fitness") return role === "bagnini"
+  if (comparto === "consulenti") return false
   return false
 }
 
@@ -58,6 +59,7 @@ export function roleCanWriteCalendarioComparto(role: Role, comparto: CalendarioC
   if (comparto === "acquaticita" || comparto === "spogliatoi") return role === "bagnini"
   if (comparto === "campus") return role === "campus"
   if (comparto === "reception") return role === "operatore" || role === "firme"
-  if (comparto === "sala_fitness" || comparto === "consulenti") return false
+  if (comparto === "sala_fitness") return role === "bagnini"
+  if (comparto === "consulenti") return false
   return false
 }

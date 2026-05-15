@@ -80,6 +80,7 @@ const navBagnini: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/piscina", label: "Calendario bagnini" },
+      { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
       { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
       { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
       { to: "/calendario/istruttori", label: "Istruttori" },

@@ -61,12 +61,19 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "campus") return u.role === "campus"
   if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
   /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
-  if (comparto === "sala_fitness" || comparto === "consulenti") return false
+  if (comparto === "sala_fitness") return u.role === "bagnini"
+  if (comparto === "consulenti") return false
   return false
 }
 
 function canManageInstructors(u: User): boolean {
-  return u.role === "admin" || u.role === "corsi" || u.role === "operatore" || u.role === "firme"
+  return (
+    u.role === "admin" ||
+    u.role === "corsi" ||
+    u.role === "operatore" ||
+    u.role === "firme" ||
+    u.role === "bagnini"
+  )
 }
 
 function planningJsonCandidates(): string[] {
@@ -105,16 +112,24 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return j.eventsByComparto?.[comparto] ?? []
 }
 
-/** Reception: solo slot creati/modificati sul server (nessun Excel in build). */
-function mergeReceptionFromDb(db: CalendarioDb): CalendarioMergedEvent[] {
+const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "sala_fitness"]
+
+function defaultZonaManual(comparto: CalendarioComparto): string {
+  if (comparto === "reception") return "reception"
+  if (comparto === "sala_fitness") return "sala_fitness"
+  return "invernale"
+}
+
+/** Turni solo da calendario web (nessun Excel in build). */
+function mergeManualOnlyFromDb(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   const out: CalendarioMergedEvent[] = []
   for (const r of db.revisions) {
-    if (r.comparto !== "reception") continue
+    if (r.comparto !== comparto) continue
     if (!r.stableKey.startsWith("manual-")) continue
     if (r.removed) continue
     out.push({
       id: r.stableKey,
-      zona: r.zona ?? "reception",
+      zona: r.zona ?? defaultZonaManual(comparto),
       sheet: "Calendario",
       dow: r.dow,
       start: r.start,
@@ -135,7 +150,7 @@ function mergeReceptionFromDb(db: CalendarioDb): CalendarioMergedEvent[] {
 }
 
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
-  if (comparto === "reception") return mergeReceptionFromDb(db)
+  if (MANUAL_ONLY_COMPARTI.includes(comparto)) return mergeManualOnlyFromDb(comparto, db)
 
   const revByKey = new Map<string, CalendarioSlotRevision>()
   for (const r of db.revisions) {
@@ -260,16 +275,24 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const by = u.nome || u.username
 
   if (body.create === true) {
-    if (raw !== "corsi" && raw !== "piscina" && raw !== "reception") {
+    if (raw !== "corsi" && !MANUAL_ONLY_COMPARTI.includes(raw)) {
       return res.status(400).json({
-        message: "Aggiunta slot manuale solo per corsi, piscina (bagnini) o reception",
+        message: "Aggiunta slot manuale solo per corsi, reception, piscina (bagnini) o sala fitness",
       })
     }
     const dow = Number(body.dow)
     const start = String(body.start ?? "").trim()
-    const defaultZona = raw === "piscina" ? "invernale" : raw === "reception" ? "reception" : "terra"
+    const defaultZona = raw === "corsi" ? "terra" : defaultZonaManual(raw)
     const titleIn = String(body.title ?? "").trim()
-    const title = titleIn || (raw === "piscina" ? "Copertura" : raw === "reception" ? "Sportello" : "")
+    const title =
+      titleIn ||
+      (raw === "corsi"
+        ? ""
+        : raw === "reception"
+          ? "Sportello"
+          : raw === "sala_fitness"
+            ? "Turno sala"
+            : "Copertura")
     const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })
@@ -386,7 +409,8 @@ export function listCalendarioInstructors(req: Request, res: Response) {
     u.role === "danza" ||
     u.role === "campus" ||
     u.role === "operatore" ||
-    u.role === "firme"
+    u.role === "firme" ||
+    u.role === "bagnini"
   if (!allow) return res.status(403).json({ message: "Permessi insufficienti" })
   const db = readCalendarioDb()
   res.json({ rows: db.instructors })
