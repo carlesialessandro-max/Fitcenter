@@ -268,22 +268,25 @@ function main() {
   }
 
   const wb = XLSX.readFile(rPath, { cellDates: false, raw: false })
-  const byKey = new Map()
+  /** Ogni foglio = una settimana del mese: non unire i lunedì di fogli diversi in un’unica colonna. */
+  const all = []
 
   for (const sheetName of wb.SheetNames) {
     const sh = wb.Sheets[sheetName]
     const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "" })
     const evs = parseReceptionSheet(rows, sheetName)
     console.log("[reception]", sheetName, "→", evs.length, "eventi")
-    for (const e of evs) {
-      const k = `${e.dow}|${e.start}|${e.staff}`
-      byKey.set(k, e)
-    }
+    all.push(...evs)
   }
 
-  const merged = [...byKey.values()].sort((a, b) => {
+  const merged = all.sort((a, b) => {
     const order = (d) => (d === 0 ? 7 : d)
-    return order(a.dow) - order(b.dow) || a.start.localeCompare(b.start) || a.staff.localeCompare(b.staff)
+    return (
+      String(a.sheet).localeCompare(String(b.sheet)) ||
+      order(a.dow) - order(b.dow) ||
+      a.start.localeCompare(b.start) ||
+      a.staff.localeCompare(b.staff)
+    )
   })
 
   payload.eventsByComparto.reception = merged
