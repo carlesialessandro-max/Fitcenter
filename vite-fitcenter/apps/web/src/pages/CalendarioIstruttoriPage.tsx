@@ -24,10 +24,19 @@ function InstructorsPanel({
 
   async function add(e: FormEvent) {
     e.preventDefault()
+    if (!nome.trim() || !cognome.trim()) {
+      setErr("Nome e cognome obbligatori")
+      return
+    }
     setErr(null)
     setBusy(true)
     try {
-      await calendarioApi.postInstructor({ nome, cognome, telefono, email })
+      await calendarioApi.postInstructor({
+        nome: nome.trim(),
+        cognome: cognome.trim(),
+        telefono: telefono.trim(),
+        email: email.trim(),
+      })
       setNome("")
       setCognome("")
       setTelefono("")
@@ -146,7 +155,7 @@ export function CalendarioIstruttoriPage() {
     role === "bagnini" ||
     role === "danza" ||
     role === "campus"
-  const canManage = role === "admin" || role === "corsi"
+  const canManage = role === "admin" || role === "corsi" || role === "operatore" || role === "firme"
 
   const reload = useCallback(async () => {
     setLoading(true)

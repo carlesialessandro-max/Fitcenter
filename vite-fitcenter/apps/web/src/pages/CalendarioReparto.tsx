@@ -6,6 +6,12 @@ import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto
 import { calendarioApi } from "@/api/calendario"
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import {
+  addHoursToHm,
+  buildReceptionTitle,
+  eventTimeRange,
+  receptionEventInHour,
+} from "@/lib/reception-shift"
+import {
   CALENDARIO_SEGMENTI,
   roleCanReadCalendarioComparto,
   roleCanWriteCalendarioComparto,
@@ -118,8 +124,10 @@ function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
   const dow = d.getDay()
   return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
 }
-function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number): CalEvent[] {
-  return eventsForDay(events, d).filter((e) => hourBucket(e.start) === hour)
+function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, receptionGrid?: boolean): CalEvent[] {
+  return eventsForDay(events, d).filter((e) =>
+    receptionGrid ? receptionEventInHour(e, hour) : hourBucket(e.start) === hour
+  )
 }
 function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
@@ -127,9 +135,8 @@ function noteFor(e: CalEvent): string {
 
 /** Etichetta compatta per pill reception (evita "14:00 Reception · 14:00"). */
 function receptionPillLine(e: CalEvent): string {
-  const m = e.title.match(/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/)
-  if (m) return `${m[1]}–${m[2]}`
-  return e.start
+  const { start, end } = eventTimeRange(e)
+  return `${start}–${end}`
 }
 
 function DropdownNav({ label, links }: { label: string; links: { to: string; label: string }[] }) {
@@ -171,14 +178,30 @@ function EventPill({
   note,
   onOpen,
   canEdit,
+  receptionContinuation,
 }: {
   e: CalEvent
   staffLabel: string
   note: string
   onOpen: () => void
   canEdit: boolean
+  receptionContinuation?: boolean
 }) {
   const col = pillColClass(e)
+  if (receptionContinuation) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (canEdit) onOpen()
+        }}
+        disabled={!canEdit}
+        className={cn("mt-0.5 block h-2 w-full rounded-sm border opacity-80", col, canEdit && "cursor-pointer hover:brightness-110")}
+        title={canEdit ? "Turno in corso — clic per modificare" : "Sola lettura"}
+        aria-label="Continuazione turno reception"
+      />
+    )
+  }
   return (
     <button
       type="button"
@@ -301,6 +324,16 @@ function EditEventModal({
   const [note, setNote] = useState(initialNote)
   const [dow, setDow] = useState(event.dow)
   const [start, setStart] = useState(event.start)
+  const initialReception =
+    scheduleMode === "reception"
+      ? (() => {
+          const r = eventTimeRange(event)
+          const act = event.title.includes("·") ? event.title.split("·")[0].trim() : "Sportello"
+          return { activity: act || "Sportello", end: r.end }
+        })()
+      : null
+  const [end, setEnd] = useState(initialReception?.end ?? "14:00")
+  const [activity, setActivity] = useState(initialReception?.activity ?? "Sportello")
   const [title, setTitle] = useState(event.title)
   const [zona, setZona] = useState<string>(() =>
     scheduleMode === "corsi"
@@ -321,6 +354,11 @@ function EditEventModal({
     setDow(event.dow)
     setStart(event.start)
     setTitle(event.title)
+    if (scheduleMode === "reception") {
+      const r = eventTimeRange(event)
+      setEnd(r.end)
+      setActivity(event.title.includes("·") ? event.title.split("·")[0].trim() || "Sportello" : "Sportello")
+    }
     if (scheduleMode === "corsi") {
       setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
     } else if (scheduleMode === "piscina") {
@@ -365,22 +403,47 @@ function EditEventModal({
                 ))}
               </select>
             </label>
-            <label
-              className={
-                scheduleMode === "piscina" || scheduleMode === "reception"
-                  ? "block text-xs font-medium text-zinc-400 sm:col-span-2"
-                  : "block text-xs font-medium text-zinc-400"
-              }
-            >
-              Inizio (HH:mm)
-              <input
-                value={start}
-                onChange={(ev) => setStart(ev.target.value)}
-                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-                placeholder="09:00"
-                autoComplete="off"
-              />
-            </label>
+            {scheduleMode === "reception" ? (
+              <>
+                <label className="block text-xs font-medium text-zinc-400">
+                  Dalle (HH:mm)
+                  <input
+                    value={start}
+                    onChange={(ev) => setStart(ev.target.value)}
+                    className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                    placeholder="08:00"
+                    autoComplete="off"
+                  />
+                </label>
+                <label className="block text-xs font-medium text-zinc-400">
+                  Alle (HH:mm)
+                  <input
+                    value={end}
+                    onChange={(ev) => setEnd(ev.target.value)}
+                    className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                    placeholder="14:00"
+                    autoComplete="off"
+                  />
+                </label>
+              </>
+            ) : (
+              <label
+                className={
+                  scheduleMode === "piscina"
+                    ? "block text-xs font-medium text-zinc-400 sm:col-span-2"
+                    : "block text-xs font-medium text-zinc-400"
+                }
+              >
+                Inizio (HH:mm)
+                <input
+                  value={start}
+                  onChange={(ev) => setStart(ev.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  placeholder="09:00"
+                  autoComplete="off"
+                />
+              </label>
+            )}
             {scheduleMode === "corsi" ? (
               <label className="block text-xs font-medium text-zinc-400">
                 Zona
@@ -408,10 +471,12 @@ function EditEventModal({
               </label>
             )}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-              {scheduleMode === "corsi" ? "Titolo corso" : "Titolo / attività"}
+              {scheduleMode === "corsi" ? "Titolo corso" : scheduleMode === "reception" ? "Attività (es. Sportello)" : "Titolo / attività"}
               <input
-                value={title}
-                onChange={(ev) => setTitle(ev.target.value)}
+                value={scheduleMode === "reception" ? activity : title}
+                onChange={(ev) =>
+                  scheduleMode === "reception" ? setActivity(ev.target.value) : setTitle(ev.target.value)
+                }
                 className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
                 autoComplete="off"
               />
@@ -424,8 +489,7 @@ function EditEventModal({
               </p>
             ) : scheduleMode === "reception" ? (
               <p className="text-[10px] text-zinc-500 sm:col-span-2">
-                La zona di default è <code className="text-zinc-400">reception</code>; se in futuro importerai un Excel con più sportelli, usa slug distinti (es. <code className="text-zinc-400">mattina</code>,{" "}
-                <code className="text-zinc-400">pomeriggio</code>).
+                Imposta la fascia oraria (es. 08:00–14:00, 6 ore). Zona default <code className="text-zinc-400">reception</code>.
               </p>
             ) : null}
           </div>
@@ -514,7 +578,11 @@ function EditEventModal({
                 note,
                 dow: scheduleFields ? dow : event.dow,
                 start: scheduleFields ? start.trim() : event.start,
-                title: scheduleFields ? title.trim() : event.title,
+                title: scheduleFields
+                  ? scheduleMode === "reception"
+                    ? buildReceptionTitle(activity, start.trim(), end.trim())
+                    : title.trim()
+                  : event.title,
                 zona:
                   scheduleMode === "corsi"
                     ? zona === "acqua" || zona === "terra"
@@ -552,7 +620,9 @@ function CreateSlotModal({
   const isCorsi = comparto === "corsi"
   const isReception = comparto === "reception"
   const [dow, setDow] = useState(1)
-  const [start, setStart] = useState("09:00")
+  const [start, setStart] = useState(isReception ? "08:00" : "09:00")
+  const [end, setEnd] = useState(isReception ? "14:00" : "10:00")
+  const [activity, setActivity] = useState("Sportello")
   const [title, setTitle] = useState(isCorsi ? "" : isReception ? "Sportello" : "Copertura")
   const [zona, setZona] = useState<string>(isCorsi ? "terra" : isReception ? "reception" : "invernale")
   const [istruttoreId, setIstruttoreId] = useState("")
@@ -562,9 +632,11 @@ function CreateSlotModal({
 
   async function submit(ev: FormEvent) {
     ev.preventDefault()
-    const tit = (title.trim() || (isCorsi ? "" : isReception ? "Sportello" : "Copertura")).trim()
+    const tit = isReception
+      ? buildReceptionTitle(activity, start.trim(), end.trim())
+      : (title.trim() || (isCorsi ? "" : "Copertura")).trim()
     if (!tit) {
-      alert("Titolo obbligatorio")
+      alert(isReception ? "Controlla orari e attività" : "Titolo obbligatorio")
       return
     }
     if (!istruttoreId.trim() && !staffText.trim()) {
@@ -631,14 +703,41 @@ function CreateSlotModal({
           </select>
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-            Inizio (HH:mm)
-            <input
-              value={start}
-              onChange={(ev) => setStart(ev.target.value)}
-              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-            />
-          </label>
+          {isReception ? (
+            <>
+              <label className="block text-xs font-medium text-zinc-400">
+                Dalle (HH:mm)
+                <input
+                  value={start}
+                  onChange={(ev) => {
+                    const v = ev.target.value
+                    setStart(v)
+                    if (!end || end <= v) setEnd(addHoursToHm(v, 6))
+                  }}
+                  className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  placeholder="08:00"
+                />
+              </label>
+              <label className="block text-xs font-medium text-zinc-400">
+                Alle (HH:mm)
+                <input
+                  value={end}
+                  onChange={(ev) => setEnd(ev.target.value)}
+                  className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  placeholder="14:00"
+                />
+              </label>
+            </>
+          ) : (
+            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
+              Inizio (HH:mm)
+              <input
+                value={start}
+                onChange={(ev) => setStart(ev.target.value)}
+                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+              />
+            </label>
+          )}
           {isCorsi ? (
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
               Zona
@@ -666,10 +765,17 @@ function CreateSlotModal({
         ) : (
           <PiscinaZonaEditor value={zona} onChange={setZona} />
         ) : null}
-        <label className="block text-xs font-medium text-zinc-400">
-          {isCorsi ? "Titolo" : "Titolo / attività"}
-          <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
-        </label>
+        {!isReception ? (
+          <label className="block text-xs font-medium text-zinc-400">
+            {isCorsi ? "Titolo" : "Titolo / attività"}
+            <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+          </label>
+        ) : (
+          <label className="block text-xs font-medium text-zinc-400">
+            Attività (es. Sportello)
+            <input value={activity} onChange={(ev) => setActivity(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+          </label>
+        )}
         <label className="block text-xs font-medium text-zinc-400">
           Istruttore (anagrafica)
           <select value={istruttoreId} onChange={(ev) => setIstruttoreId(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100">
@@ -726,11 +832,14 @@ export function CalendarioRepartoPage() {
   const canOpenInstructors =
     role === "admin" ||
     role === "corsi" ||
+    role === "operatore" ||
+    role === "firme" ||
     role === "istruttore" ||
     role === "scuola_nuoto" ||
     role === "bagnini" ||
     role === "danza" ||
     role === "campus"
+  const receptionGrid = apiComparto === "reception"
 
   const reload = useCallback(async () => {
     if (!apiComparto) return
@@ -1080,19 +1189,23 @@ export function CalendarioRepartoPage() {
                     {pad2(h)}:00
                   </div>
                   {weekDays.map((d) => {
-                    const evs = eventsForDayAndHour(events, d, h)
+                    const evs = eventsForDayAndHour(events, d, h, receptionGrid)
                     return (
                       <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
-                        {evs.map((e) => (
-                          <EventPill
-                            key={e.id}
-                            e={e}
-                            staffLabel={e.staffDisplay}
-                            note={noteFor(e)}
-                            onOpen={() => setEditEvent(e)}
-                            canEdit={canWrite}
-                          />
-                        ))}
+                        {evs.map((e) => {
+                          const shiftStart = receptionGrid ? hourBucket(eventTimeRange(e).start) === h : true
+                          return (
+                            <EventPill
+                              key={e.id}
+                              e={e}
+                              staffLabel={e.staffDisplay}
+                              note={noteFor(e)}
+                              onOpen={() => setEditEvent(e)}
+                              canEdit={canWrite}
+                              receptionContinuation={receptionGrid && !shiftStart}
+                            />
+                          )
+                        })}
                       </div>
                     )
                   })}
@@ -1109,21 +1222,25 @@ export function CalendarioRepartoPage() {
             </div>
             <div className="max-h-[75vh] overflow-y-auto">
               {hours.map((h) => {
-                const evs = eventsForDayAndHour(events, dayOnly, h)
+                const evs = eventsForDayAndHour(events, dayOnly, h, receptionGrid)
                 return (
                   <div key={h} className="flex border-b border-zinc-800/70">
                     <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
                     <div className="min-h-[3.25rem] flex-1 space-y-0.5 border-l border-zinc-800/60 bg-zinc-900/20 p-1">
-                      {evs.map((e) => (
-                        <EventPill
-                          key={e.id}
-                          e={e}
-                          staffLabel={e.staffDisplay}
-                          note={noteFor(e)}
-                          onOpen={() => setEditEvent(e)}
-                          canEdit={canWrite}
-                        />
-                      ))}
+                      {evs.map((e) => {
+                        const shiftStart = receptionGrid ? hourBucket(eventTimeRange(e).start) === h : true
+                        return (
+                          <EventPill
+                            key={e.id}
+                            e={e}
+                            staffLabel={e.staffDisplay}
+                            note={noteFor(e)}
+                            onOpen={() => setEditEvent(e)}
+                            canEdit={canWrite}
+                            receptionContinuation={receptionGrid && !shiftStart}
+                          />
+                        )
+                      })}
                     </div>
                   </div>
                 )

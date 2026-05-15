@@ -66,7 +66,7 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
 }
 
 function canManageInstructors(u: User): boolean {
-  return u.role === "admin" || u.role === "corsi"
+  return u.role === "admin" || u.role === "corsi" || u.role === "operatore" || u.role === "firme"
 }
 
 function planningJsonCandidates(): string[] {
@@ -384,7 +384,9 @@ export function listCalendarioInstructors(req: Request, res: Response) {
     u.role === "scuola_nuoto" ||
     u.role === "bagnini" ||
     u.role === "danza" ||
-    u.role === "campus"
+    u.role === "campus" ||
+    u.role === "operatore" ||
+    u.role === "firme"
   if (!allow) return res.status(403).json({ message: "Permessi insufficienti" })
   const db = readCalendarioDb()
   res.json({ rows: db.instructors })
@@ -392,7 +394,7 @@ export function listCalendarioInstructors(req: Request, res: Response) {
 
 export function postCalendarioInstructor(req: Request, res: Response) {
   const u = req.user!
-  if (!canManageInstructors(u)) return res.status(403).json({ message: "Solo admin o utente corsi" })
+  if (!canManageInstructors(u)) return res.status(403).json({ message: "Permessi insufficienti per modificare l'anagrafica" })
 
   const b = req.body as { nome?: string; cognome?: string; telefono?: string; email?: string }
   const nome = String(b.nome ?? "").trim()
@@ -419,7 +421,7 @@ export function postCalendarioInstructor(req: Request, res: Response) {
 
 export function putCalendarioInstructor(req: Request, res: Response) {
   const u = req.user!
-  if (!canManageInstructors(u)) return res.status(403).json({ message: "Solo admin o utente corsi" })
+  if (!canManageInstructors(u)) return res.status(403).json({ message: "Permessi insufficienti per modificare l'anagrafica" })
 
   const id = String(req.params.id ?? "").trim()
   const db = readCalendarioDb()
@@ -448,7 +450,7 @@ export function putCalendarioInstructor(req: Request, res: Response) {
 
 export function deleteCalendarioInstructor(req: Request, res: Response) {
   const u = req.user!
-  if (!canManageInstructors(u)) return res.status(403).json({ message: "Solo admin o utente corsi" })
+  if (!canManageInstructors(u)) return res.status(403).json({ message: "Permessi insufficienti per modificare l'anagrafica" })
   const id = String(req.params.id ?? "").trim()
   let db = readCalendarioDb()
   if (!db.instructors.some((x) => x.id === id)) return res.status(404).json({ message: "Istruttore non trovato" })
