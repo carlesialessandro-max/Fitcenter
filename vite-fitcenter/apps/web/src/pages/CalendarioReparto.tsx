@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
+import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import {
   CALENDARIO_SEGMENTI,
   roleCanReadCalendarioComparto,
@@ -699,6 +700,7 @@ export function CalendarioRepartoPage() {
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
   const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception">(null)
+  const [turnazioniOpen, setTurnazioniOpen] = useState(false)
 
   const compartoLabel = useMemo(() => CALENDARIO_SEGMENTI.find((x) => x.api === apiComparto)?.label ?? "Calendario", [apiComparto])
 
@@ -938,6 +940,15 @@ export function CalendarioRepartoPage() {
             </button>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+            {hasPlanningGrid(apiComparto) && events.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setTurnazioniOpen(true)}
+                className="rounded-lg border border-[#46A6D9]/40 bg-[#46A6D9]/10 px-3 py-1.5 text-sm font-medium text-[#46A6D9] hover:bg-[#46A6D9]/20"
+              >
+                Turnazioni
+              </button>
+            ) : null}
             {scheduleMode !== "none" && canWrite ? (
               <button
                 type="button"
@@ -1106,6 +1117,18 @@ export function CalendarioRepartoPage() {
               })}
             </div>
           </div>
+        ) : null}
+
+        {apiComparto && hasPlanningGrid(apiComparto) ? (
+          <CalendarioTurnazioniModal
+            open={turnazioniOpen}
+            onClose={() => setTurnazioniOpen(false)}
+            compartoLabel={compartoLabel}
+            cursor={cursor}
+            events={events}
+            instructors={instructors}
+            comparto={apiComparto}
+          />
         ) : null}
       </div>
     </div>
