@@ -1,12 +1,12 @@
 /**
  * Importa anagrafica istruttori da Excel in calendario-reparti.json (merge, no duplicati).
  *
- * Uso:
- *   pnpm --filter api run import:istruttori
- *   ISTRUTTORI_XLSX=C:\path\istruttori.xlsx pnpm --filter api run import:istruttori
+ * Uso (dalla cartella apps/api o root monorepo):
+ *   pnpm run import:istruttori
+ *   pnpm run import:istruttori -- C:\percorso\istruttori.xlsx
+ *   ISTRUTTORI_XLSX=C:\percorso\istruttori.xlsx pnpm run import:istruttori
  *
- * File di default: apps/api/data/planning-import/istruttori.xlsx
- * Colonna A: "Cognome Nome" (ultima parola = nome). Righe che iniziano con "X " sono escluse.
+ * File di default: <data>/planning-import/istruttori.xlsx (stessa cartella data dell'API).
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -19,16 +19,64 @@ const apiRoot = path.resolve(__dirname, "..")
 const req = createRequire(import.meta.url)
 const XLSX = req("xlsx")
 
-function dataDir() {
-  const candidates = [
+/** Stessi candidati di apps/api/src/store/persist.ts (+ cwd in apps/api). */
+function dataDirCandidates() {
+  return [
     path.join(apiRoot, "data"),
+    path.resolve(process.cwd(), "data"),
     path.resolve(process.cwd(), "apps/api/data"),
     path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/vite-fitcenter/apps/api/data"),
+    path.resolve(process.cwd(), "../data"),
+    path.resolve(process.cwd(), "../../apps/api/data"),
   ]
+}
+
+function resolveDataDir() {
+  const candidates = dataDirCandidates()
   const existing = candidates.find((d) => fs.existsSync(d))
   const dir = existing ?? candidates[0]
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(dir, { recursive: true })
+  fs.mkdirSync(path.join(dir, "planning-import"), { recursive: true })
   return dir
+}
+
+function resolveIstruttoriXlsx(dataDir) {
+  const fromEnv = process.env.ISTRUTTORI_XLSX?.trim()
+  if (fromEnv) return path.resolve(fromEnv)
+
+  const fromArg = process.argv.slice(2).find((a) => a && !a.startsWith("-"))
+  if (fromArg) return path.resolve(fromArg)
+
+  const staticCandidates = [
+    path.join(dataDir, "planning-import", "istruttori.xlsx"),
+    path.join(apiRoot, "data", "planning-import", "istruttori.xlsx"),
+    path.join(apiRoot, "..", "web", "data", "planning-import", "istruttori.xlsx"),
+    path.join(apiRoot, "..", "..", "web", "data", "planning-import", "istruttori.xlsx"),
+  ]
+
+  let dir = process.cwd()
+  for (let i = 0; i < 10; i++) {
+    staticCandidates.push(path.join(dir, "istruttori.xlsx"))
+    staticCandidates.push(path.join(dir, "apps", "api", "data", "planning-import", "istruttori.xlsx"))
+    staticCandidates.push(path.join(dir, "vite-fitcenter", "apps", "api", "data", "planning-import", "istruttori.xlsx"))
+    staticCandidates.push(
+      path.join(dir, "vite-fitcenter", "vite-fitcenter", "apps", "api", "data", "planning-import", "istruttori.xlsx")
+    )
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+
+  const tried = []
+  for (const p of staticCandidates) {
+    const resolved = path.resolve(p)
+    if (tried.includes(resolved)) continue
+    tried.push(resolved)
+    if (fs.existsSync(resolved)) return resolved
+  }
+
+  return { missing: true, defaultPath: path.join(dataDir, "planning-import", "istruttori.xlsx"), tried }
 }
 
 function normName(s) {
@@ -59,15 +107,26 @@ function parsePersonCell(raw) {
 }
 
 function main() {
-  const defaultXlsx = path.join(dataDir(), "planning-import", "istruttori.xlsx")
-  const xlsxPath = process.env.ISTRUTTORI_XLSX?.trim() || process.argv[2]?.trim() || defaultXlsx
-  if (!fs.existsSync(xlsxPath)) {
-    console.error("[istruttori] File non trovato:", xlsxPath)
-    console.error("Copia istruttori.xlsx in apps/api/data/planning-import/ oppure imposta ISTRUTTORI_XLSX.")
+  const dataDir = resolveDataDir()
+  const resolved = resolveIstruttoriXlsx(dataDir)
+
+  if (resolved && typeof resolved === "object" && resolved.missing) {
+    console.error("[istruttori] File non trovato.")
+    console.error("[istruttori] Percorso atteso (crea la cartella e copia il file):")
+    console.error("  ", resolved.defaultPath)
+    console.error("[istruttori] Percorsi controllati:")
+    for (const p of resolved.tried.slice(0, 12)) console.error("  -", p)
+    if (resolved.tried.length > 12) console.error("  ... e altri", resolved.tried.length - 12)
+    console.error("")
+    console.error("Esempi:")
+    console.error('  copy C:\\Users\\...\\Downloads\\istruttori.xlsx "' + resolved.defaultPath + '"')
+    console.error('  $env:ISTRUTTORI_XLSX="C:\\percorso\\istruttori.xlsx"; pnpm run import:istruttori')
+    console.error('  pnpm run import:istruttori -- "C:\\percorso\\istruttori.xlsx"')
     process.exit(1)
   }
 
-  const dbPath = path.join(dataDir(), "calendario-reparti.json")
+  const xlsxPath = resolved
+  const dbPath = path.join(dataDir, "calendario-reparti.json")
   const db = fs.existsSync(dbPath)
     ? JSON.parse(fs.readFileSync(dbPath, "utf8"))
     : { instructors: [], revisions: [] }
@@ -111,7 +170,9 @@ function main() {
   const tmp = dbPath + ".tmp"
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2), "utf8")
   fs.renameSync(tmp, dbPath)
-  console.log("[istruttori] File:", xlsxPath)
+  console.log("[istruttori] Data API:", dataDir)
+  console.log("[istruttori] File Excel:", xlsxPath)
+  console.log("[istruttori] DB:", dbPath)
   console.log("[istruttori] Aggiunti:", added, "| saltati/vuoti:", skipped, "| totale anagrafica:", db.instructors.length)
 }
 

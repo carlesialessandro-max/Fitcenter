@@ -5,9 +5,11 @@ import { fileURLToPath } from "url"
 function dataDirCandidates(): string[] {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
   return [
-    path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
-    path.resolve(process.cwd(), "apps/api/data"),
     path.resolve(__dirname, "../../data"),
+    path.resolve(process.cwd(), "data"),
+    path.resolve(process.cwd(), "apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/vite-fitcenter/apps/api/data"),
   ]
 }
 
