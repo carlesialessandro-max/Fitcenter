@@ -4,8 +4,10 @@ import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
+import { CalendarioInviaTurniModal } from "@/components/CalendarioInviaTurniModal"
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import { InstructorSearchSelect } from "@/components/InstructorSearchSelect"
+import { staffColorKey, staffPillClasses } from "@/lib/staff-colors"
 import {
   compartoUsesShiftRange,
   defaultActivityForShiftComparto,
@@ -168,7 +170,11 @@ function DropdownNav({ label, links }: { label: string; links: { to: string; lab
   )
 }
 
-function pillColClass(e: CalEvent): string {
+function pillColClass(e: CalEvent, colorByStaff?: boolean): string {
+  if (colorByStaff) {
+    const key = staffColorKey(e)
+    if (key !== "unknown") return staffPillClasses(key)
+  }
   if (e.zona === "acqua") return "border-sky-500/40 bg-sky-500/15 text-sky-100"
   if (e.zona === "terra") return "border-amber-500/35 bg-amber-500/10 text-amber-100"
   if (e.zona === "invernale") return "border-violet-500/40 bg-violet-500/15 text-violet-100"
@@ -188,6 +194,7 @@ function EventPill({
   receptionContinuation,
   showShiftLine,
   overlapCompact,
+  colorByStaff,
 }: {
   e: CalEvent
   staffLabel: string
@@ -198,8 +205,9 @@ function EventPill({
   showShiftLine?: boolean
   /** Turni sovrapposti nella stessa ora: pillola compatta affiancata */
   overlapCompact?: boolean
+  colorByStaff?: boolean
 }) {
-  const col = pillColClass(e)
+  const col = pillColClass(e, colorByStaff)
   if (overlapCompact) {
     return (
       <button
@@ -855,6 +863,7 @@ export function CalendarioRepartoPage() {
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
   const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception" | "sala_fitness">(null)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
+  const [inviaTurniOpen, setInviaTurniOpen] = useState(false)
 
   const compartoLabel = useMemo(() => CALENDARIO_SEGMENTI.find((x) => x.api === apiComparto)?.label ?? "Calendario", [apiComparto])
 
@@ -1086,7 +1095,7 @@ export function CalendarioRepartoPage() {
           </p>
         ) : null}
 
-        <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={prev} className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm hover:bg-zinc-800" aria-label="Periodo precedente">
               ←
@@ -1094,7 +1103,7 @@ export function CalendarioRepartoPage() {
             <button type="button" onClick={next} className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm hover:bg-zinc-800" aria-label="Periodo successivo">
               →
             </button>
-            <span className="min-w-[10rem] text-center text-sm font-medium capitalize text-zinc-200 sm:text-left">
+            <span className="min-w-0 flex-1 text-center text-sm font-medium capitalize text-zinc-200 sm:min-w-[10rem] sm:flex-none sm:text-left">
               {view === "month" && monthLabel}
               {view === "week" &&
                 `Settimana ${pad2(weekDays[0]!.getDate())}/${pad2(weekDays[0]!.getMonth() + 1)} – ${pad2(weekDays[6]!.getDate())}/${pad2(weekDays[6]!.getMonth() + 1)} ${weekDays[6]!.getFullYear()}`}
@@ -1104,7 +1113,29 @@ export function CalendarioRepartoPage() {
               Oggi
             </button>
           </div>
-          <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <div className="grid w-full grid-cols-3 gap-1">
+            {(
+              [
+                ["month", "Mese"],
+                ["week", "Settimana"],
+                ["day", "Giorno"],
+              ] as const
+            ).map(([k, lab]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setView(k)}
+                className={cn(
+                  "rounded-md px-2 py-2 text-center text-sm font-medium transition-colors",
+                  view === k ? "text-zinc-900" : "border border-zinc-700 text-zinc-400 hover:text-zinc-200"
+                )}
+                style={view === k ? { backgroundColor: H2.blue } : undefined}
+              >
+                {lab}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             {hasPlanningGrid(apiComparto) && events.length > 0 ? (
               <button
                 type="button"
@@ -1112,6 +1143,15 @@ export function CalendarioRepartoPage() {
                 className="rounded-lg border border-[#46A6D9]/40 bg-[#46A6D9]/10 px-3 py-1.5 text-sm font-medium text-[#46A6D9] hover:bg-[#46A6D9]/20"
               >
                 Turnazioni
+              </button>
+            ) : null}
+            {apiComparto === "piscina" && canWrite ? (
+              <button
+                type="button"
+                onClick={() => setInviaTurniOpen(true)}
+                className="rounded-lg border border-emerald-600/40 bg-emerald-950/30 px-3 py-1.5 text-sm font-medium text-emerald-200 hover:bg-emerald-950/50"
+              >
+                Invia turni email
               </button>
             ) : null}
             {scheduleMode !== "none" && canWrite ? (
@@ -1129,23 +1169,6 @@ export function CalendarioRepartoPage() {
                       : "Aggiungi slot"}
               </button>
             ) : null}
-            {(
-              [
-                ["month", "Mese"],
-                ["week", "Settimana"],
-                ["day", "Giorno"],
-              ] as const
-            ).map(([k, lab]) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setView(k)}
-                className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition-colors", view === k ? "text-zinc-900" : "text-zinc-400 hover:text-zinc-200")}
-                style={view === k ? { backgroundColor: H2.blue } : undefined}
-              >
-                {lab}
-              </button>
-            ))}
           </div>
         </div>
 
@@ -1209,6 +1232,7 @@ export function CalendarioRepartoPage() {
                           onOpen={() => setEditEvent(e)}
                           canEdit={canWrite}
                           showShiftLine={shiftRangeGrid}
+                          colorByStaff={shiftRangeGrid}
                         />
                       ))}
                       {dayEv.length > 8 ? <div className="text-[10px] text-zinc-500">+{dayEv.length - 8}…</div> : null}
@@ -1260,6 +1284,7 @@ export function CalendarioRepartoPage() {
                               onOpen={() => setEditEvent(e)}
                               canEdit={canWrite}
                               showShiftLine={shiftRangeGrid}
+                              colorByStaff={shiftRangeGrid}
                               overlapCompact={overlapHour}
                               receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
                             />
@@ -1303,6 +1328,7 @@ export function CalendarioRepartoPage() {
                             onOpen={() => setEditEvent(e)}
                             canEdit={canWrite}
                             showShiftLine={shiftRangeGrid}
+                            colorByStaff={shiftRangeGrid}
                             overlapCompact={overlapHour}
                             receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
                           />
@@ -1314,6 +1340,17 @@ export function CalendarioRepartoPage() {
               })}
             </div>
           </div>
+        ) : null}
+
+        {apiComparto === "piscina" && canWrite ? (
+          <CalendarioInviaTurniModal
+            open={inviaTurniOpen}
+            onClose={() => setInviaTurniOpen(false)}
+            instructors={instructors}
+            events={events}
+            weekStart={weekDays[0]!}
+            weekEnd={weekDays[6]!}
+          />
         ) : null}
 
         {apiComparto && hasPlanningGrid(apiComparto) ? (

@@ -71,4 +71,9 @@ export const calendarioApi = {
   putInstructor: (id: string, body: { nome?: string; cognome?: string; telefono?: string; email?: string }) =>
     api.put<CalendarioIstruttore>(`/data/calendario/instructors/${encodeURIComponent(id)}`, body),
   deleteInstructor: (id: string) => api.delete<{ ok: boolean }>(`/data/calendario/instructors/${encodeURIComponent(id)}`),
+  sendTurniEmail: (comparto: "piscina", body: { istruttoreId: string; weekStart?: string }) =>
+    api.post<{ ok: boolean; sent: boolean; to: string }>(
+      `/data/calendario/${encodeURIComponent(comparto)}/send-turni`,
+      body
+    ),
 }

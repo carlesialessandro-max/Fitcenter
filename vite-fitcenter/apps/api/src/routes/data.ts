@@ -7,6 +7,7 @@ import {
   listCalendarioInstructors,
   patchCalendarioSlot,
   postCalendarioInstructor,
+  postCalendarioSendTurni,
   putCalendarioInstructor,
 } from "../handlers/calendario.js"
 import { getCorsiGestione, patchCorsiGestione } from "../handlers/corsiGestione.js"
@@ -24,6 +25,7 @@ dataRouter.get("/calendario/instructors", listCalendarioInstructors)
 dataRouter.post("/calendario/instructors", postCalendarioInstructor)
 dataRouter.put("/calendario/instructors/:id", putCalendarioInstructor)
 dataRouter.delete("/calendario/instructors/:id", deleteCalendarioInstructor)
+dataRouter.post("/calendario/:comparto/send-turni", postCalendarioSendTurni)
 dataRouter.get("/calendario/:comparto", getCalendarioComparto)
 dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 dataRouter.get("/corsi/gestione", getCorsiGestione)

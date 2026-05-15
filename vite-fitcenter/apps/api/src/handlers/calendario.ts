@@ -21,6 +21,7 @@ import {
   upsertRevision,
   writeCalendarioDb,
 } from "../store/calendario-db.js"
+import { isSmtpConfigured, sendMail } from "../services/mailer.js"
 
 const COMPARTI: CalendarioComparto[] = [
   "corsi",
@@ -470,6 +471,112 @@ export function putCalendarioInstructor(req: Request, res: Response) {
   const next = upsertInstructor(db, row)
   writeCalendarioDb(next)
   res.json(row)
+}
+
+const IT_DOW_FULL = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"] as const
+
+function isIsoDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+
+function parseIsoLocal(s: string): Date | null {
+  if (!isIsoDate(s)) return null
+  const [y, m, d] = s.split("-").map(Number)
+  const dt = new Date(y!, m! - 1, d!, 0, 0, 0, 0)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+
+function startOfWeekMonday(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0)
+  const off = (x.getDay() + 6) % 7
+  x.setDate(x.getDate() - off)
+  return x
+}
+
+function fmtItDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}
+
+function parseShiftRange(title: string, start: string): { start: string; end: string } {
+  const m = String(title ?? "").match(/(\d{1,2})[:.](\d{2})\s*[–\-]\s*(\d{1,2})[:.](\d{2})/)
+  if (!m) return { start, end: start }
+  const pad = (h: string, min: string) => `${String(Number(h)).padStart(2, "0")}:${min}`
+  return { start: pad(m[1]!, m[2]!), end: pad(m[3]!, m[4]!) }
+}
+
+function zonaLabelPiscina(z: string): string {
+  const z0 = String(z ?? "").trim().toLowerCase()
+  if (z0 === "invernale") return "Piscina invernale"
+  if (z0 === "interna") return "Piscina interna"
+  if (z0 === "esterna") return "Piscina esterna"
+  return z0 || "—"
+}
+
+function formatTurnoLine(e: CalendarioMergedEvent): string {
+  const { start, end } = parseShiftRange(e.title, e.start)
+  const activity = String(e.title ?? "")
+    .replace(/\s*·\s*\d{1,2}[:.]\d{2}\s*[–\-]\s*\d{1,2}[:.]\d{2}.*$/i, "")
+    .trim()
+  return `${start}–${end} · ${activity || e.title} · ${zonaLabelPiscina(e.zona)}`
+}
+
+/** Invia via email i turni settimana tipo al bagnino (solo calendario piscina). */
+export async function postCalendarioSendTurni(req: Request, res: Response) {
+  const u = req.user!
+  const raw = String(req.params.comparto ?? "").trim()
+  if (raw !== "piscina") return res.status(400).json({ message: "Invio email disponibile solo per il calendario bagnini" })
+  if (!canWriteComparto(u, "piscina")) return res.status(403).json({ message: "Permessi insufficienti" })
+
+  const body = req.body as { istruttoreId?: string; weekStart?: string }
+  const istruttoreId = String(body.istruttoreId ?? "").trim()
+  if (!istruttoreId) return res.status(400).json({ message: "istruttoreId obbligatorio" })
+
+  const db = readCalendarioDb()
+  const ins = db.instructors.find((x) => x.id === istruttoreId)
+  if (!ins) return res.status(404).json({ message: "Bagnino non trovato in anagrafica" })
+  const to = String(ins.email ?? "").trim().toLowerCase()
+  if (!to) {
+    return res.status(400).json({ message: "Email mancante per questo bagnino. Aggiungila in Anagrafica istruttori." })
+  }
+
+  const anchor = body.weekStart ? parseIsoLocal(String(body.weekStart).trim()) : new Date()
+  if (body.weekStart && !anchor) return res.status(400).json({ message: "weekStart non valido (YYYY-MM-DD)" })
+  const monday = startOfWeekMonday(anchor ?? new Date())
+  const sunday = new Date(monday)
+  sunday.setDate(sunday.getDate() + 6)
+  const weekLabel = `${fmtItDate(monday)} – ${fmtItDate(sunday)}`
+
+  const events = mergeManualOnlyFromDb("piscina", db).filter((e) => e.istruttoreId === istruttoreId)
+  const lines: string[] = []
+  for (let dow = 0; dow <= 6; dow++) {
+    const daySlots = events
+      .filter((e) => e.dow === dow)
+      .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+    if (daySlots.length === 0) continue
+    lines.push(`${IT_DOW_FULL[dow]}`)
+    for (const e of daySlots) lines.push(`  - ${formatTurnoLine(e)}`)
+    lines.push("")
+  }
+  if (lines.length === 0) {
+    return res.status(400).json({ message: "Nessun turno assegnato a questo bagnino nel calendario" })
+  }
+
+  const nome = ins.nome.trim() || ins.cognome
+  const text =
+    `Ciao ${nome},\n\n` +
+    `Ecco i tuoi turni bagnino (settimana tipo ${weekLabel}):\n\n` +
+    `${lines.join("\n").trim()}\n\n` +
+    `— FitCenter / H2 Sport`
+
+  const subject = `Turni bagnino · settimana ${weekLabel}`
+  const { sent } = await sendMail({ to, subject, text })
+  if (!sent && !isSmtpConfigured()) {
+    return res.status(503).json({
+      message: "SMTP non configurato sul server (SMTP_HOST, SMTP_USER, SMTP_PASS).",
+    })
+  }
+  res.json({ ok: true, sent, to })
 }
 
 export function deleteCalendarioInstructor(req: Request, res: Response) {
