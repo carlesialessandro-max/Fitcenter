@@ -126,6 +126,13 @@ function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
 }
 
+/** Etichetta compatta per pill reception (evita "14:00 Reception · 14:00"). */
+function receptionPillLine(e: CalEvent): string {
+  const m = e.title.match(/(\d{1,2}:\d{2})\s*[–\-]\s*(\d{1,2}:\d{2})/)
+  if (m) return `${m[1]}–${m[2]}`
+  return e.start
+}
+
 function DropdownNav({ label, links }: { label: string; links: { to: string; label: string }[] }) {
   return (
     <details className="group relative">
@@ -187,8 +194,17 @@ function EventPill({
       )}
       title={canEdit ? "Clic per modificare istruttore e note" : "Sola lettura"}
     >
-      <span className="font-semibold text-zinc-200">{e.start}</span> {e.title}
-      <span className="block truncate text-zinc-300">· {staffLabel}</span>
+      {e.zona === "reception" ? (
+        <>
+          <span className="font-semibold text-zinc-200">{receptionPillLine(e)}</span>
+          <span className="block truncate text-zinc-300">· {staffLabel}</span>
+        </>
+      ) : (
+        <>
+          <span className="font-semibold text-zinc-200">{e.start}</span> {e.title}
+          <span className="block truncate text-zinc-300">· {staffLabel}</span>
+        </>
+      )}
       {note ? <span className="mt-0.5 block truncate text-[9px] text-amber-200/90">{note}</span> : null}
     </button>
   )

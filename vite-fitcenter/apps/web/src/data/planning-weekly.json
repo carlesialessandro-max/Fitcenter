@@ -4183,7 +4183,16 @@
     ],
     "reception": [
       {
-        "id": "reception-25-31-d1-08:00-SIMO-3",
+        "id": "reception-11-17-d1-08:00-ALBA-3-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-08:00-SIMO-3-c1",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
@@ -4192,7 +4201,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d1-09:30-SIMO-4",
+        "id": "reception-18-24-d1-08:00-VICTORIA-3-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-09:30-ALBA-4-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-09:30-SIMO-4-c1",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
@@ -4201,7 +4228,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d1-10:00-SIMO-5",
+        "id": "reception-18-24-d1-09:30-VICTORIA-4-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-10:00-ALBA-5-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-10:00-SIMO-5-c1",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
@@ -4210,7 +4255,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d1-10:30-SIMO-6",
+        "id": "reception-18-24-d1-10:00-VICTORIA-5-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-10:30-ALBA-6-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-10:30-SIMO-6-c1",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
@@ -4219,7 +4282,34 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d1-11:00-SIMO-7",
+        "id": "reception-18-24-d1-10:30-VICTORIA-6-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-11:00-ALBA-7-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d1-11:00-ALE-7-c3",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d1-11:00-SIMO-7-c1",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
@@ -4228,178 +4318,547 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d1-11:30-SIMO_ALE-8",
+        "id": "reception-18-24-d1-11:00-VICTORIA-7-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-11:30-ALBA-8-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-11:30-ALE-8-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "11:30",
         "title": "Reception · 11:30–12:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-12:00-SIMO_ALE-9",
+        "id": "reception-25-31-d1-11:30-SIMO-8-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-11:30-VICTORIA-8-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-12:00-ALBA-9-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-12:00-ALE-9-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "12:00",
         "title": "Reception · 12:00–12:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-12:30-SIMO_ALE-10",
+        "id": "reception-25-31-d1-12:00-SIMO-9-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-12:00-VICTORIA-9-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d1-12:30-ALBA-10-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d1-12:30-ALE-10-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "12:30",
         "title": "Reception · 12:30–13:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-13:00-SIMO_ALE-11",
+        "id": "reception-25-31-d1-12:30-SIMO-10-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-12:30-VICTORIA-10-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d1-13:00-ALE-11-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "13:00",
         "title": "Reception · 13:00–13:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-13:30-SIMO_ALE-12",
+        "id": "reception-25-31-d1-13:00-SIMO-11-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-13:00-VICTORIA-11-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d1-13:30-ALE-12-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "13:30",
         "title": "Reception · 13:30–14:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-14:00-TOMMASO_ALE-13",
+        "id": "reception-25-31-d1-13:30-SIMO-12-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-13:30-VICTORIA-12-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d1-14:00-ALE-13-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "14:00",
-        "title": "Reception · 14:00",
-        "staff": "TOMMASO · ALE"
+        "title": "Reception · 14:00–14:30",
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-14:30-TOMMASO_ALE-14",
+        "id": "reception-11-17-d1-14:00-SIMO-13-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "14:00",
+        "title": "Reception · 14:00–14:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-14:00-TOMMASO-13-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "14:00",
+        "title": "Reception · 14:00–14:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-14:30-ALE-14-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "14:30",
         "title": "Reception · 14:30–15:00",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-15:00-TOMMASO_ALE-15",
+        "id": "reception-11-17-d1-14:30-SIMO-14-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "14:30",
+        "title": "Reception · 14:30–15:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-14:30-TOMMASO-14-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "14:30",
+        "title": "Reception · 14:30–15:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-15:00-ALE-15-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "15:00",
         "title": "Reception · 15:00–15:30",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-15:30-TOMMASO_ALE-16",
+        "id": "reception-11-17-d1-15:00-SIMO-15-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-15:00-TOMMASO-15-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-15:30-ALE-16-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "15:30",
         "title": "Reception · 15:30–16:00",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-16:00-TOMMASO_ALE-17",
+        "id": "reception-11-17-d1-15:30-SIMO-16-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-15:30-TOMMASO-16-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-16:00-ALE-17-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "16:00",
         "title": "Reception · 16:00–16:30",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-16:30-TOMMASO_ALE-18",
+        "id": "reception-18-24-d1-16:00-IRENE-17-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d1-16:00-SIMO-17-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-16:00-TOMMASO-17-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-16:30-ALE-18-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "16:30",
         "title": "Reception · 16:30–17:00",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-17:00-TOMMASO_ALE-19",
+        "id": "reception-18-24-d1-16:30-IRENE-18-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d1-16:30-SIMO-18-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-16:30-TOMMASO-18-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-17:00-ALE-19-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "17:00",
         "title": "Reception · 17:00–17:30",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-17:30-TOMMASO_ALE-20",
+        "id": "reception-18-24-d1-17:00-IRENE-19-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d1-17:00-SIMO-19-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-17:00-TOMMASO-19-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-17:30-ALE-20-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "17:30",
         "title": "Reception · 17:30–18:00",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-18:00-TOMMASO_ALE-21",
+        "id": "reception-18-24-d1-17:30-IRENE-20-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d1-17:30-SIMO-20-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-17:30-TOMMASO-20-c1",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 1,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-25-31-d1-18:00-ALE-21-c3",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 1,
         "start": "18:00",
         "title": "Reception · 18:00–18:30",
-        "staff": "TOMMASO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d1-18:30--22",
+        "id": "reception-18-24-d1-18:00-IRENE-21-c2",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 1,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d1-18:00-SIMO-21-c1",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d1-18:00-TOMMASO-21-c1",
         "zona": "reception",
         "sheet": "25-31",
+        "dow": 1,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d1-18:30-IRENE-22-c2",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 1,
         "start": "18:30",
         "title": "Reception · 18:30–19:00",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d1-19:00--23",
+        "id": "reception-11-17-d1-18:30-SIMO-22-c1",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-19:00-IRENE-23-c2",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 1,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d1-19:30--24",
+        "id": "reception-11-17-d1-19:00-SIMO-23-c1",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-19:30-IRENE-24-c2",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 1,
         "start": "19:30",
         "title": "Reception · 19:30–20:00",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d1-20:00--25",
+        "id": "reception-11-17-d1-19:30-SIMO-24-c1",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 1,
+        "start": "19:30",
+        "title": "Reception · 19:30–20:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d1-20:00-IRENE-25-c2",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 1,
         "start": "20:00",
         "title": "Reception · 20:00–20:30",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d1-21:00--26",
+        "id": "reception-18-24-d1-21:00-IRENE-26-c2",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 1,
         "start": "21:00",
-        "title": "Reception · 21:00",
-        "staff": "—"
+        "title": "Reception · 21:00–21:30",
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d2-08:00-SIMO-3",
+        "id": "reception-18-24-d2-08:00-ALBA-3-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-08:00-SIMO-3-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4408,7 +4867,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-09:30-SIMO-4",
+        "id": "reception-18-24-d2-09:30-ALBA-4-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d2-09:30-ALE-4-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d2-09:30-SIMO-4-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4417,7 +4894,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-10:00-SIMO-5",
+        "id": "reception-18-24-d2-10:00-ALBA-5-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d2-10:00-ALE-5-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d2-10:00-SIMO-5-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4426,7 +4921,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-10:30-SIMO-6",
+        "id": "reception-18-24-d2-10:30-ALBA-6-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d2-10:30-ALE-6-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d2-10:30-SIMO-6-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4435,7 +4948,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-11:00-SIMO-7",
+        "id": "reception-18-24-d2-11:00-ALBA-7-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d2-11:00-ALE-7-c6",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d2-11:00-SIMO-7-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4444,70 +4975,169 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-11:30-SIMO_ALE-8",
+        "id": "reception-18-24-d2-11:30-ALBA-8-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-11:30-ALE-8-c6",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
         "start": "11:30",
         "title": "Reception · 11:30–12:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-12:00-SIMO_ALE-9",
+        "id": "reception-25-31-d2-11:30-SIMO-8-c5",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 2,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d2-12:00-ALBA-9-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-12:00-ALE-9-c6",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
         "start": "12:00",
         "title": "Reception · 12:00–12:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-12:30-SIMO_ALE-10",
+        "id": "reception-25-31-d2-12:00-SIMO-9-c5",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 2,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d2-12:30-ALBA-10-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-12:30-ALE-10-c6",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
         "start": "12:30",
         "title": "Reception · 12:30–13:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-13:00-SIMO_ALE-11",
+        "id": "reception-25-31-d2-12:30-SIMO-10-c5",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 2,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d2-13:00-ALBA-11-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-13:00-ALE-11-c6",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
         "start": "13:00",
         "title": "Reception · 13:00–13:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-13:30-SIMO_ALE-12",
+        "id": "reception-25-31-d2-13:00-SIMO-11-c5",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 2,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d2-13:30-ALBA-12-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d2-13:30-ALE-12-c6",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
         "start": "13:30",
         "title": "Reception · 13:30–14:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-14:00--13",
+        "id": "reception-25-31-d2-13:30-SIMO-12-c5",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
-        "start": "14:00",
-        "title": "Reception · 14:00",
-        "staff": "—"
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d2-14:30--14",
+        "id": "reception-18-24-d2-14:00-ALE-13-c5",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "14:00",
+        "title": "Reception · 14:00–14:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d2-14:30-ALE-14-c5",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 2,
         "start": "14:30",
         "title": "Reception · 14:30–15:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d2-15:00-TOMMASO-15",
+        "id": "reception-18-24-d2-15:00-ALE-15-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d2-15:00-TOMMASO-15-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4516,7 +5146,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-15:30-TOMMASO-16",
+        "id": "reception-18-24-d2-15:30-ALE-16-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d2-15:30-IRENE-16-c7",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-15:30-TOMMASO-16-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4525,7 +5173,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-16:00-TOMMASO-17",
+        "id": "reception-18-24-d2-16:00-ALE-17-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d2-16:00-IRENE-17-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-16:00-TOMMASO-17-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4534,7 +5200,34 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-16:30-TOMMASO-18",
+        "id": "reception-18-24-d2-16:00-VICTORIA-17-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d2-16:30-ALE-18-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d2-16:30-IRENE-18-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-16:30-TOMMASO-18-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4543,7 +5236,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-17:00-TOMMASO-19",
+        "id": "reception-18-24-d2-16:30-VICTORIA-18-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-17:00-ALBA-19-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d2-17:00-ALE-19-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d2-17:00-IRENE-19-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-17:00-TOMMASO-19-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4552,7 +5281,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-17:30-TOMMASO-20",
+        "id": "reception-18-24-d2-17:00-VICTORIA-19-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-17:30-ALBA-20-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d2-17:30-ALE-20-c5",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d2-17:30-IRENE-20-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-17:30-TOMMASO-20-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4561,7 +5326,34 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-18:00-TOMMASO-21",
+        "id": "reception-18-24-d2-17:30-VICTORIA-20-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-18:00-ALBA-21-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d2-18:00-IRENE-21-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-18:00-TOMMASO-21-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4570,7 +5362,34 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-18:30-TOMMASO-22",
+        "id": "reception-18-24-d2-18:00-VICTORIA-21-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-18:30-ALBA-22-c6",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 2,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d2-18:30-IRENE-22-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d2-18:30-TOMMASO-22-c7",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 2,
@@ -4579,43 +5398,133 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d2-19:00--23",
+        "id": "reception-18-24-d2-18:30-VICTORIA-22-c8",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-19:00-ALBA-23-c6",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 2,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d2-19:30--24",
+        "id": "reception-18-24-d2-19:00-IRENE-23-c7",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d2-19:00-VICTORIA-23-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-19:30-ALBA-24-c6",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 2,
         "start": "19:30",
         "title": "Reception · 19:30–20:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d2-20:00--25",
+        "id": "reception-18-24-d2-19:30-IRENE-24-c7",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "19:30",
+        "title": "Reception · 19:30–20:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d2-19:30-VICTORIA-24-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "19:30",
+        "title": "Reception · 19:30–20:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-20:00-ALBA-25-c6",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 2,
         "start": "20:00",
         "title": "Reception · 20:00–20:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d2-21:00--26",
+        "id": "reception-18-24-d2-20:00-IRENE-25-c7",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "20:00",
+        "title": "Reception · 20:00–20:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d2-20:00-VICTORIA-25-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "20:00",
+        "title": "Reception · 20:00–20:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d2-21:00-ALBA-26-c6",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 2,
         "start": "21:00",
-        "title": "Reception · 21:00",
-        "staff": "—"
+        "title": "Reception · 21:00–21:30",
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-08:00-SIMO-3",
+        "id": "reception-18-24-d2-21:00-IRENE-26-c7",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "21:00",
+        "title": "Reception · 21:00–21:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d2-21:00-VICTORIA-26-c8",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 2,
+        "start": "21:00",
+        "title": "Reception · 21:00–21:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-08:00-ALBA-3-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-08:00-SIMO-3-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4624,7 +5533,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-09:30-SIMO-4",
+        "id": "reception-18-24-d3-08:00-VICTORIA-3-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-09:30-ALBA-4-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-09:30-SIMO-4-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4633,7 +5560,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-10:00-SIMO-5",
+        "id": "reception-18-24-d3-09:30-VICTORIA-4-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-10:00-ALBA-5-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-10:00-SIMO-5-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4642,7 +5587,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-10:30-SIMO-6",
+        "id": "reception-18-24-d3-10:00-VICTORIA-5-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-10:30-ALBA-6-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-10:30-SIMO-6-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4651,7 +5614,34 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-11:00-SIMO-7",
+        "id": "reception-18-24-d3-10:30-VICTORIA-6-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-11:00-ALBA-7-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d3-11:00-ALE-7-c11",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d3-11:00-SIMO-7-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4660,7 +5650,34 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-11:30-SIMO-8",
+        "id": "reception-18-24-d3-11:00-VICTORIA-7-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-11:30-ALBA-8-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-18-24-d3-11:30-ALE-8-c11",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d3-11:30-SIMO-8-c9",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4669,52 +5686,151 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d3-12:00-SIMO_ALE-9",
+        "id": "reception-18-24-d3-11:30-VICTORIA-8-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-12:00-ALBA-9-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-12:00-ALE-9-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "12:00",
         "title": "Reception · 12:00–12:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-12:30-SIMO_ALE-10",
+        "id": "reception-25-31-d3-12:00-SIMO-9-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d3-12:00-VICTORIA-9-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-11-17-d3-12:30-ALBA-10-c9",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-25-31-d3-12:30-ALE-10-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "12:30",
         "title": "Reception · 12:30–13:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-13:00-SIMO_ALE-11",
+        "id": "reception-25-31-d3-12:30-SIMO-10-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d3-12:30-VICTORIA-10-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d3-13:00-ALE-11-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "13:00",
         "title": "Reception · 13:00–13:30",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-13:30-SIMO_ALE-12",
+        "id": "reception-25-31-d3-13:00-SIMO-11-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d3-13:00-VICTORIA-11-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d3-13:30-ALE-12-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "13:30",
         "title": "Reception · 13:30–14:00",
-        "staff": "SIMO · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-14:00-ALE-13",
+        "id": "reception-25-31-d3-13:30-SIMO-12-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d3-13:30-VICTORIA-12-c12",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 3,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d3-14:00-ALE-13-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "14:00",
-        "title": "Reception · 14:00",
+        "title": "Reception · 14:00–14:30",
         "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-14:30-ALE-14",
+        "id": "reception-25-31-d3-14:30-ALE-14-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4723,7 +5839,7 @@
         "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-15:00-ALE-15",
+        "id": "reception-25-31-d3-15:00-ALE-15-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4732,79 +5848,259 @@
         "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-15:30-IRENE_ALE-16",
+        "id": "reception-11-17-d3-15:00-SIMO-15-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-15:30-ALE-16-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "15:30",
         "title": "Reception · 15:30–16:00",
-        "staff": "IRENE · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-16:00-IRENE_ALE-17",
+        "id": "reception-25-31-d3-15:30-IRENE-16-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-15:30-SIMO-16-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-16:00-ALE-17-c10",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "16:00",
         "title": "Reception · 16:00–16:30",
-        "staff": "IRENE · ALE"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d3-16:30-IRENE_ALE_ALBA-18",
+        "id": "reception-25-31-d3-16:00-IRENE-17-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-16:00-SIMO-17-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-16:30-ALBA-18-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "16:30",
         "title": "Reception · 16:30–17:00",
-        "staff": "IRENE · ALE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-17:00-IRENE_ALE_ALBA-19",
+        "id": "reception-25-31-d3-16:30-ALE-18-c10",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d3-16:30-IRENE-18-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-16:30-SIMO-18-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-17:00-ALBA-19-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "17:00",
         "title": "Reception · 17:00–17:30",
-        "staff": "IRENE · ALE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-17:30-IRENE_ALE_ALBA-20",
+        "id": "reception-25-31-d3-17:00-ALE-19-c10",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d3-17:00-IRENE-19-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-17:00-SIMO-19-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-17:30-ALBA-20-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "17:30",
         "title": "Reception · 17:30–18:00",
-        "staff": "IRENE · ALE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-18:00-IRENE_ALBA-21",
+        "id": "reception-25-31-d3-17:30-ALE-20-c10",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d3-17:30-IRENE-20-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-17:30-SIMO-20-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-18:00-ALBA-21-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "18:00",
         "title": "Reception · 18:00–18:30",
-        "staff": "IRENE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-18:30-IRENE_ALBA-22",
+        "id": "reception-25-31-d3-18:00-IRENE-21-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-18:00-SIMO-21-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-18:30-ALBA-22-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "18:30",
         "title": "Reception · 18:30–19:00",
-        "staff": "IRENE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-19:00-IRENE_ALBA-23",
+        "id": "reception-25-31-d3-18:30-IRENE-22-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-18:30-SIMO-22-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-19:00-ALBA-23-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "IRENE · ALBA"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-19:30-ALBA-24",
+        "id": "reception-25-31-d3-19:00-IRENE-23-c9",
+        "zona": "reception",
+        "sheet": "25-31",
+        "dow": 3,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d3-19:00-SIMO-23-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-19:30-ALBA-24-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4813,7 +6109,16 @@
         "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-20:00-ALBA-25",
+        "id": "reception-11-17-d3-19:30-SIMO-24-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "19:30",
+        "title": "Reception · 19:30–20:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-20:00-ALBA-25-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
@@ -4822,16 +6127,34 @@
         "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d3-21:00-ALBA-26",
+        "id": "reception-11-17-d3-20:00-SIMO-25-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "20:00",
+        "title": "Reception · 20:00–20:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d3-21:00-ALBA-26-c11",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 3,
         "start": "21:00",
-        "title": "Reception · 21:00",
+        "title": "Reception · 21:00–21:30",
         "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d4-08:00-SIMO-3",
+        "id": "reception-11-17-d3-21:00-SIMO-26-c10",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 3,
+        "start": "21:00",
+        "title": "Reception · 21:00–21:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-25-31-d4-08:00-SIMO-3-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4840,7 +6163,16 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-09:30-SIMO-4",
+        "id": "reception-18-24-d4-08:00-VICTORIA-3-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d4-09:30-SIMO-4-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4849,7 +6181,16 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-10:00-SIMO-5",
+        "id": "reception-18-24-d4-09:30-VICTORIA-4-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d4-10:00-SIMO-5-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4858,7 +6199,16 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-10:30-SIMO-6",
+        "id": "reception-18-24-d4-10:00-VICTORIA-5-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-25-31-d4-10:30-SIMO-6-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4867,7 +6217,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-11:00-SIMO-7",
+        "id": "reception-18-24-d4-10:30-VICTORIA-6-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-11:00-ALE-7-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-11:00-SIMO-7-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4876,7 +6244,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-11:30-SIMO-8",
+        "id": "reception-18-24-d4-11:00-VICTORIA-7-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-11:30-ALE-8-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-11:30-SIMO-8-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4885,7 +6271,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-12:00-SIMO-9",
+        "id": "reception-18-24-d4-11:30-VICTORIA-8-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-12:00-ALE-9-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-12:00-SIMO-9-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4894,7 +6298,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-12:30-SIMO-10",
+        "id": "reception-18-24-d4-12:00-VICTORIA-9-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-12:30-ALE-10-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-12:30-SIMO-10-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4903,7 +6325,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-13:00-SIMO-11",
+        "id": "reception-18-24-d4-12:30-VICTORIA-10-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-13:00-ALE-11-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-13:00-SIMO-11-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4912,7 +6352,25 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-13:30-SIMO-12",
+        "id": "reception-18-24-d4-13:00-VICTORIA-11-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "VICTORIA"
+      },
+      {
+        "id": "reception-18-24-d4-13:30-ALE-12-c15",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-13:30-SIMO-12-c13",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4921,16 +6379,43 @@
         "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d4-14:00--13",
+        "id": "reception-18-24-d4-13:30-VICTORIA-12-c16",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 4,
-        "start": "14:00",
-        "title": "Reception · 14:00",
-        "staff": "—"
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "VICTORIA"
       },
       {
-        "id": "reception-25-31-d4-14:30-TOMMASO-14",
+        "id": "reception-18-24-d4-14:00-ALE-13-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "14:00",
+        "title": "Reception · 14:00–14:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d4-14:00-TOMMASO-13-c14",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 4,
+        "start": "14:00",
+        "title": "Reception · 14:00–14:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d4-14:30-ALE-14-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "14:30",
+        "title": "Reception · 14:30–15:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-14:30-TOMMASO-14-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4939,7 +6424,16 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-15:00-TOMMASO-15",
+        "id": "reception-18-24-d4-15:00-ALE-15-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-15:00-TOMMASO-15-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4948,7 +6442,16 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-15:30-TOMMASO-16",
+        "id": "reception-18-24-d4-15:30-ALE-16-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-25-31-d4-15:30-TOMMASO-16-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4957,7 +6460,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-16:00-TOMMASO-17",
+        "id": "reception-18-24-d4-16:00-ALE-17-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d4-16:00-IRENE-17-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-16:00-TOMMASO-17-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4966,7 +6487,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-16:30-TOMMASO-18",
+        "id": "reception-18-24-d4-16:30-ALE-18-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d4-16:30-IRENE-18-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-16:30-TOMMASO-18-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4975,7 +6514,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-17:00-TOMMASO-19",
+        "id": "reception-18-24-d4-17:00-ALE-19-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d4-17:00-IRENE-19-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-17:00-TOMMASO-19-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4984,7 +6541,25 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-17:30-TOMMASO-20",
+        "id": "reception-18-24-d4-17:30-ALE-20-c14",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d4-17:30-IRENE-20-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-17:30-TOMMASO-20-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -4993,7 +6568,16 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-18:00-TOMMASO-21",
+        "id": "reception-18-24-d4-18:00-IRENE-21-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-18:00-TOMMASO-21-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -5002,7 +6586,16 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-18:30-TOMMASO-22",
+        "id": "reception-18-24-d4-18:30-IRENE-22-c16",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 4,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d4-18:30-TOMMASO-22-c14",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 4,
@@ -5011,268 +6604,619 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d4-19:00--23",
+        "id": "reception-18-24-d4-19:00-IRENE-23-c16",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 4,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d4-19:30--24",
+        "id": "reception-18-24-d4-19:30-IRENE-24-c16",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 4,
         "start": "19:30",
         "title": "Reception · 19:30–20:00",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d4-20:00--25",
+        "id": "reception-18-24-d4-20:00-IRENE-25-c16",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 4,
         "start": "20:00",
         "title": "Reception · 20:00–20:30",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d4-21:00--26",
+        "id": "reception-18-24-d4-21:00-IRENE-26-c16",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 4,
         "start": "21:00",
-        "title": "Reception · 21:00",
-        "staff": "—"
+        "title": "Reception · 21:00–21:30",
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d5-08:00--3",
+        "id": "reception-18-24-d5-08:00-SIMO-3-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 5,
         "start": "08:00",
         "title": "Reception · 08:00–08:30",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d5-09:30--4",
+        "id": "reception-18-24-d5-08:00-TOMMASO-3-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "08:00",
+        "title": "Reception · 08:00–08:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-09:30-SIMO-4-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "09:30",
         "title": "Reception · 09:30–10:00",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d5-10:00--5",
+        "id": "reception-18-24-d5-09:30-TOMMASO-4-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-10:00-SIMO-5-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "10:00",
         "title": "Reception · 10:00–10:30",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d5-10:30--6",
+        "id": "reception-18-24-d5-10:00-TOMMASO-5-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-10:30-SIMO-6-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "10:30",
         "title": "Reception · 10:30–11:00",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d5-11:00--7",
+        "id": "reception-18-24-d5-10:30-TOMMASO-6-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-11:00-ALE-7-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "11:00",
         "title": "Reception · 11:00–11:30",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-11:30--8",
+        "id": "reception-18-24-d5-11:00-SIMO-7-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-11:00-TOMMASO-7-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-11:30-ALE-8-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "11:30",
         "title": "Reception · 11:30–12:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-12:00--9",
+        "id": "reception-18-24-d5-11:30-SIMO-8-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-11:30-TOMMASO-8-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-12:00-ALE-9-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "12:00",
         "title": "Reception · 12:00–12:30",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-12:30--10",
+        "id": "reception-18-24-d5-12:00-SIMO-9-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-12:00-TOMMASO-9-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-12:30-ALE-10-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "12:30",
         "title": "Reception · 12:30–13:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-13:00--11",
+        "id": "reception-18-24-d5-12:30-SIMO-10-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-12:30-TOMMASO-10-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-13:00-ALE-11-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "13:00",
         "title": "Reception · 13:00–13:30",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-13:30--12",
+        "id": "reception-18-24-d5-13:00-SIMO-11-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "13:00",
+        "title": "Reception · 13:00–13:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-13:30-ALE-12-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "13:30",
         "title": "Reception · 13:30–14:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-14:00--13",
+        "id": "reception-18-24-d5-13:30-SIMO-12-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "13:30",
+        "title": "Reception · 13:30–14:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d5-14:00-ALE-13-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "14:00",
-        "title": "Reception · 14:00",
-        "staff": "—"
+        "title": "Reception · 14:00–14:30",
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-14:30--14",
+        "id": "reception-18-24-d5-14:30-ALE-14-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 5,
         "start": "14:30",
         "title": "Reception · 14:30–15:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-15:00--15",
+        "id": "reception-11-17-d5-14:30-TOMMASO-14-c19",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "14:30",
+        "title": "Reception · 14:30–15:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-15:00-ALE-15-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "15:00",
         "title": "Reception · 15:00–15:30",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-15:30--16",
+        "id": "reception-11-17-d5-15:00-TOMMASO-15-c19",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "15:00",
+        "title": "Reception · 15:00–15:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-15:30-ALE-16-c18",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "15:30",
         "title": "Reception · 15:30–16:00",
-        "staff": "—"
+        "staff": "ALE"
       },
       {
-        "id": "reception-25-31-d5-16:00--17",
+        "id": "reception-18-24-d5-15:30-IRENE-16-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-15:30-TOMMASO-16-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-11-17-d5-16:00-ALBA-17-c18",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 5,
         "start": "16:00",
         "title": "Reception · 16:00–16:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-16:30--18",
+        "id": "reception-18-24-d5-16:00-ALE-17-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d5-16:00-IRENE-17-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-16:00-TOMMASO-17-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-11-17-d5-16:30-ALBA-18-c18",
+        "zona": "reception",
+        "sheet": "11-17",
         "dow": 5,
         "start": "16:30",
         "title": "Reception · 16:30–17:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-17:00--19",
+        "id": "reception-18-24-d5-16:30-ALE-18-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d5-16:30-IRENE-18-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-16:30-TOMMASO-18-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-17:00-ALBA-19-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "17:00",
         "title": "Reception · 17:00–17:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-17:30--20",
+        "id": "reception-18-24-d5-17:00-ALE-19-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d5-17:00-IRENE-19-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-17:00-TOMMASO-19-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-17:30-ALBA-20-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "17:30",
         "title": "Reception · 17:30–18:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-18:00--21",
+        "id": "reception-18-24-d5-17:30-ALE-20-c18",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d5-17:30-IRENE-20-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-17:30-TOMMASO-20-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-18:00-ALBA-21-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "18:00",
         "title": "Reception · 18:00–18:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-18:30--22",
+        "id": "reception-11-17-d5-18:00-ALE-21-c17",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-18-24-d5-18:00-IRENE-21-c20",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-11-17-d5-18:00-TOMMASO-21-c19",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 5,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "TOMMASO"
+      },
+      {
+        "id": "reception-18-24-d5-18:30-ALBA-22-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "18:30",
         "title": "Reception · 18:30–19:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-19:00--23",
+        "id": "reception-18-24-d5-18:30-IRENE-22-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d5-19:00-ALBA-23-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-19:30--24",
+        "id": "reception-18-24-d5-19:00-IRENE-23-c20",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
+        "dow": 5,
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d5-19:30-ALBA-24-c19",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 5,
         "start": "19:30",
         "title": "Reception · 19:30–20:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-20:00--25",
+        "id": "reception-18-24-d5-20:00-ALBA-25-c19",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 5,
         "start": "20:00",
         "title": "Reception · 20:00–20:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d5-21:00--26",
+        "id": "reception-18-24-d5-21:00-ALBA-26-c19",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 5,
         "start": "21:00",
-        "title": "Reception · 21:00",
-        "staff": "—"
+        "title": "Reception · 21:00–21:30",
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-09:00--3",
+        "id": "reception-11-17-d6-09:00-ILARIA-3-c22",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
         "dow": 6,
         "start": "09:00",
         "title": "Reception · 09:00–09:30",
-        "staff": "—"
+        "staff": "ILARIA"
       },
       {
-        "id": "reception-25-31-d6-09:30-TOMMASO-4",
+        "id": "reception-18-24-d6-09:00-IRENE-3-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "09:00",
+        "title": "Reception · 09:00–09:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-18-24-d6-09:30-ALBA-4-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-09:30-ILARIA-4-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-09:30-IRENE-4-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "09:30",
+        "title": "Reception · 09:30–10:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-09:30-TOMMASO-4-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5281,7 +7225,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-10:00-TOMMASO-5",
+        "id": "reception-18-24-d6-10:00-ALBA-5-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-10:00-ALE-5-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-10:00-ILARIA-5-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-10:00-IRENE-5-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "10:00",
+        "title": "Reception · 10:00–10:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-10:00-TOMMASO-5-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5290,7 +7270,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-10:30-TOMMASO-6",
+        "id": "reception-18-24-d6-10:30-ALBA-6-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-10:30-ALE-6-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-10:30-ILARIA-6-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-10:30-IRENE-6-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "10:30",
+        "title": "Reception · 10:30–11:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-10:30-TOMMASO-6-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5299,7 +7315,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-11:00-TOMMASO-7",
+        "id": "reception-18-24-d6-11:00-ALBA-7-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-11:00-ALE-7-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-11:00-ILARIA-7-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-11:00-IRENE-7-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "11:00",
+        "title": "Reception · 11:00–11:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-11:00-TOMMASO-7-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5308,7 +7360,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-11:30-TOMMASO-8",
+        "id": "reception-18-24-d6-11:30-ALBA-8-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-11:30-ALE-8-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-11:30-ILARIA-8-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-11:30-IRENE-8-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "11:30",
+        "title": "Reception · 11:30–12:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-11:30-TOMMASO-8-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5317,7 +7405,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-12:00-TOMMASO-9",
+        "id": "reception-18-24-d6-12:00-ALBA-9-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-12:00-ALE-9-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-12:00-ILARIA-9-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-12:00-IRENE-9-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "12:00",
+        "title": "Reception · 12:00–12:30",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-12:00-TOMMASO-9-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5326,7 +7450,43 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-12:30-TOMMASO-10",
+        "id": "reception-18-24-d6-12:30-ALBA-10-c24",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALBA"
+      },
+      {
+        "id": "reception-11-17-d6-12:30-ALE-10-c23",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ALE"
+      },
+      {
+        "id": "reception-11-17-d6-12:30-ILARIA-10-c22",
+        "zona": "reception",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "ILARIA"
+      },
+      {
+        "id": "reception-18-24-d6-12:30-IRENE-10-c23",
+        "zona": "reception",
+        "sheet": "18-24",
+        "dow": 6,
+        "start": "12:30",
+        "title": "Reception · 12:30–13:00",
+        "staff": "IRENE"
+      },
+      {
+        "id": "reception-25-31-d6-12:30-TOMMASO-10-c22",
         "zona": "reception",
         "sheet": "25-31",
         "dow": 6,
@@ -5335,211 +7495,256 @@
         "staff": "TOMMASO"
       },
       {
-        "id": "reception-25-31-d6-13:00--11",
+        "id": "reception-18-24-d6-13:00-IRENE-11-c23",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 6,
         "start": "13:00",
         "title": "Reception · 13:00–13:30",
-        "staff": "—"
+        "staff": "IRENE"
       },
       {
-        "id": "reception-25-31-d6-13:30--12",
+        "id": "reception-11-17-d6-13:30-SIMO-13-c21",
         "zona": "reception",
-        "sheet": "25-31",
-        "dow": 6,
-        "start": "13:30",
-        "title": "Reception · 13:30",
-        "staff": "—"
-      },
-      {
-        "id": "reception-25-31-d6-13:30--13",
-        "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
         "dow": 6,
         "start": "13:30",
         "title": "Reception · 13:30–14:00",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d6-14:30--14",
+        "id": "reception-11-17-d6-14:30-SIMO-14-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
         "dow": 6,
         "start": "14:30",
         "title": "Reception · 14:30–15:00",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d6-15:00--15",
+        "id": "reception-11-17-d6-15:00-SIMO-15-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
         "dow": 6,
         "start": "15:00",
         "title": "Reception · 15:00–15:30",
-        "staff": "—"
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d6-15:30--16",
+        "id": "reception-18-24-d6-15:30-ALBA-16-c24",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 6,
         "start": "15:30",
         "title": "Reception · 15:30–16:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-16:00--17",
+        "id": "reception-11-17-d6-15:30-SIMO-16-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "15:30",
+        "title": "Reception · 15:30–16:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-16:00-ALBA-17-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "16:00",
         "title": "Reception · 16:00–16:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-16:30--18",
+        "id": "reception-11-17-d6-16:00-SIMO-17-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "16:00",
+        "title": "Reception · 16:00–16:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-16:30-ALBA-18-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "16:30",
         "title": "Reception · 16:30–17:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-17:00--19",
+        "id": "reception-11-17-d6-16:30-SIMO-18-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "16:30",
+        "title": "Reception · 16:30–17:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-17:00-ALBA-19-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "17:00",
         "title": "Reception · 17:00–17:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-17:30--20",
+        "id": "reception-11-17-d6-17:00-SIMO-19-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "17:00",
+        "title": "Reception · 17:00–17:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-17:30-ALBA-20-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "17:30",
         "title": "Reception · 17:30–18:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-18:00--21",
+        "id": "reception-11-17-d6-17:30-SIMO-20-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "17:30",
+        "title": "Reception · 17:30–18:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-18:00-ALBA-21-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "18:00",
         "title": "Reception · 18:00–18:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-18:30--22",
+        "id": "reception-11-17-d6-18:00-SIMO-21-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "18:00",
+        "title": "Reception · 18:00–18:30",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-18:30-ALBA-22-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "18:30",
         "title": "Reception · 18:30–19:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-19:00--23",
+        "id": "reception-11-17-d6-18:30-SIMO-22-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
+        "dow": 6,
+        "start": "18:30",
+        "title": "Reception · 18:30–19:00",
+        "staff": "SIMO"
+      },
+      {
+        "id": "reception-18-24-d6-19:00-ALBA-23-c24",
+        "zona": "reception",
+        "sheet": "18-24",
         "dow": 6,
         "start": "19:00",
         "title": "Reception · 19:00–19:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d6-19:30--24",
+        "id": "reception-11-17-d6-19:00-SIMO-23-c21",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "11-17",
         "dow": 6,
-        "start": "19:30",
-        "title": "Reception · 19:30",
-        "staff": "—"
+        "start": "19:00",
+        "title": "Reception · 19:00–19:30",
+        "staff": "SIMO"
       },
       {
-        "id": "reception-25-31-d0-09:00--3",
+        "id": "reception-18-24-d0-09:00-ALBA-3-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "09:00",
         "title": "Reception · 09:00–09:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-09:30--4",
+        "id": "reception-18-24-d0-09:30-ALBA-4-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "09:30",
         "title": "Reception · 09:30–10:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-10:00--5",
+        "id": "reception-18-24-d0-10:00-ALBA-5-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "10:00",
         "title": "Reception · 10:00–10:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-10:30--6",
+        "id": "reception-18-24-d0-10:30-ALBA-6-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "10:30",
         "title": "Reception · 10:30–11:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-11:00--7",
+        "id": "reception-18-24-d0-11:00-ALBA-7-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "11:00",
         "title": "Reception · 11:00–11:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-11:30--8",
+        "id": "reception-18-24-d0-11:30-ALBA-8-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "11:30",
         "title": "Reception · 11:30–12:00",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-12:00--9",
+        "id": "reception-18-24-d0-12:00-ALBA-9-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "12:00",
         "title": "Reception · 12:00–12:30",
-        "staff": "—"
+        "staff": "ALBA"
       },
       {
-        "id": "reception-25-31-d0-12:30--10",
+        "id": "reception-18-24-d0-12:30-ALBA-10-c28",
         "zona": "reception",
-        "sheet": "25-31",
+        "sheet": "18-24",
         "dow": 0,
         "start": "12:30",
         "title": "Reception · 12:30–13:00",
-        "staff": "—"
-      },
-      {
-        "id": "reception-25-31-d0-13:00--11",
-        "zona": "reception",
-        "sheet": "25-31",
-        "dow": 0,
-        "start": "13:00",
-        "title": "Reception · 13:00",
-        "staff": "—"
+        "staff": "ALBA"
       }
     ],
     "piscina": [
@@ -5822,5 +8027,5 @@
   "receptionSources": [
     "data/planning-import/OrarioReception.xlsx"
   ],
-  "generatedAtReception": "2026-05-14T15:55:27.067Z"
+  "generatedAtReception": "2026-05-15T09:27:17.574Z"
 }

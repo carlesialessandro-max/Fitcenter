@@ -2,14 +2,12 @@
  * Importa l'orario reception da OrarioReception.xlsx in `eventsByComparto.reception`.
  * Eseguire dopo build-planning-piscina.mjs e build-planning-bagnini.mjs (catena `pnpm run build:planning`).
  *
- * Formato atteso (come in OrarioReception.xlsx):
- * - Una riga intestazione con nomi giorno (LUNEDI, MARTEDI, …, DOMENICA) e numeri data sotto.
- * - Sotto: per ogni colonna giorno, cella orario (es. "08:00/08:30" o "14:00") e celle successive con nomi staff.
- * - Fogli multipli (es. settimane 11–17, 18–24, 25–31): stesso dow/orario viene sovrascritto dal foglio successivo (ultima settimana vince).
+ * Formato foglio (OrarioReception.xlsx):
+ * - Riga intestazione: LUNEDI, MARTEDI, … (colonna orario + 2–3 colonne staff per giorno).
+ * - Righe dati: in ogni blocco giorno la prima colonna ha l'orario (08:00/08:30 o 14:00), le successive i nomi.
+ * - Un evento JSON per ogni nome (stesso orario = più persone in parallelo, come in Excel).
  *
- * File (scegline uno):
- *   - apps/web/data/planning-import/OrarioReception.xlsx
- *   - oppure RECEPTION_XLSX=percorso\assoluto\file.xlsx
+ * File: apps/web/data/planning-import/OrarioReception.xlsx oppure RECEPTION_XLSX=…
  */
 import fs from "node:fs"
 import path from "node:path"
@@ -48,6 +46,17 @@ function pad2(n) {
   return String(n).padStart(2, "0")
 }
 
+function hmToMinutes(hm) {
+  const [h, m] = hm.split(":").map((x) => Number(x))
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return 0
+  return h * 60 + m
+}
+
+function minutesToHm(total) {
+  const t = ((total % (24 * 60)) + 24 * 60) % (24 * 60)
+  return `${pad2(Math.floor(t / 60))}:${pad2(t % 60)}`
+}
+
 function normToken(cell) {
   return String(cell ?? "")
     .trim()
@@ -58,7 +67,7 @@ function normToken(cell) {
     .replace(/^['"]+|['"]+$/g, "")
 }
 
-/** Primo orario HH:mm in una cella (es. "08:00/08:30" → 08:00). */
+/** Primo orario HH:mm in una cella. */
 function cellToStart(text) {
   const s = String(text ?? "").trim()
   if (!s) return null
@@ -69,21 +78,50 @@ function cellToStart(text) {
   return `${pad2(hh)}:${pad2(mm)}`
 }
 
-/** Titolo stabile per stableKey: include fascia oraria originale. */
-function titleFromTimeCell(timeCell, startHm) {
-  const raw = String(timeCell ?? "").trim().replace(/\s+/g, "")
-  if (raw.includes("/")) {
-    const parts = raw.split("/").map((p) => cellToStart(p.replace(/-/g, ":")))
-    if (parts[0] && parts[1]) return `Reception · ${parts[0]}–${parts[1]}`
-  }
-  return `Reception · ${startHm}`
+/** Nome operatore plausibile (esclude note di fondo foglio). */
+function isStaffName(raw) {
+  const t = String(raw ?? "").trim()
+  if (!t || t.length < 2 || t.length > 32) return false
+  if (cellToStart(t) === t) return false
+  const u = t.toUpperCase()
+  if (u.startsWith("NO ") || u.includes("NON VIENE") || u.includes("STA CON") || u.includes("MALATA")) return false
+  if (/^\d+$/.test(t)) return false
+  return /^[A-Za-z][A-Za-z0-9.\s'-]{0,30}$/.test(t)
 }
 
-/** Mappa intestazione giorno → dow (JS: domenica=0). */
+/** Fascia oraria da cella orario; se solo "14:00" usa fine = inizio slot successivo nella stessa colonna o +30 min. */
+function parseCellTimeRange(timeCell, nextTimeInColumn) {
+  const raw = String(timeCell ?? "").trim()
+  if (!raw) return null
+
+  if (raw.includes("/")) {
+    const parts = raw.split("/")
+    const start = cellToStart(parts[0])
+    const end = cellToStart(parts[1])
+    if (start && end) {
+      let endMin = hmToMinutes(end)
+      const startMin = hmToMinutes(start)
+      if (endMin <= startMin) endMin = startMin + 30
+      const endHm = minutesToHm(endMin)
+      return { start, end: endHm, title: `Reception · ${start}–${endHm}` }
+    }
+  }
+
+  const start = cellToStart(raw)
+  if (!start) return null
+  const startMin = hmToMinutes(start)
+  let endHm = nextTimeInColumn
+  if (endHm) {
+    let endMin = hmToMinutes(endHm)
+    if (endMin <= startMin) endHm = null
+  }
+  if (!endHm) endHm = minutesToHm(startMin + 30)
+  return { start, end: endHm, title: `Reception · ${start}–${endHm}` }
+}
+
 function headerCellToDow(cell) {
   const h = normToken(cell)
   if (!h) return null
-  /** "PRIMA " troncato da Excel per MERCOLEDI. */
   if (h.startsWith("PRIMA")) return 3
   const map = {
     LUNEDI: 1,
@@ -112,7 +150,6 @@ function findHeaderRow(rows) {
   return -1
 }
 
-/** Colonne inizio blocco giorno (stessa colonna del nome giorno = cella orario nelle righe dati). */
 function findDayBlocks(headerRow) {
   /** @type {{ col: number; dow: number }[]} */
   const blocks = []
@@ -123,6 +160,14 @@ function findDayBlocks(headerRow) {
   }
   blocks.sort((a, b) => a.col - b.col)
   return blocks
+}
+
+function findNextTimeInColumn(rows, fromRow, col) {
+  for (let i = fromRow + 1; i < rows.length; i++) {
+    const t = cellToStart(String(rows[i]?.[col] ?? ""))
+    if (t) return t
+  }
+  return null
 }
 
 function slug(s) {
@@ -147,37 +192,47 @@ function parseReceptionSheet(rows, sheetName) {
 
   /** @type {object[]} */
   const events = []
+  let emptyRun = 0
 
   for (let ri = hi + 1; ri < rows.length; ri++) {
     const row = rows[ri] || []
+    let rowHasSlot = false
+
     for (let bi = 0; bi < blocks.length; bi++) {
       const { col, dow } = blocks[bi]
       const nextCol = bi + 1 < blocks.length ? blocks[bi + 1].col : row.length
       const timeCell = String(row[col] ?? "").trim()
-      const start = cellToStart(timeCell)
-      if (!start) continue
+      if (!timeCell) continue
 
-      /** Staff: colonne dopo l'orario fino al prossimo blocco (esclusi valori che sembrano solo orari). */
-      const staffParts = []
+      const tr = parseCellTimeRange(timeCell, findNextTimeInColumn(rows, ri, col))
+      if (!tr) continue
+
+      rowHasSlot = true
       for (let c = col + 1; c < nextCol; c++) {
-        const raw = String(row[c] ?? "").trim()
-        if (!raw || raw.length < 2) continue
-        if (cellToStart(raw) === raw) continue
-        staffParts.push(raw)
-      }
-      const staff = staffParts.length ? staffParts.join(" · ") : "—"
-      const title = titleFromTimeCell(timeCell, start)
+        const staffRaw = String(row[c] ?? "").trim()
+        if (!isStaffName(staffRaw)) continue
 
-      const id = `reception-${slug(sheetName)}-d${dow}-${start}-${slug(staff)}-${ri}`.replace(/_+/g, "_").slice(0, 180)
-      events.push({
-        id,
-        zona: "reception",
-        sheet: String(sheetName).slice(0, 80),
-        dow,
-        start,
-        title,
-        staff,
-      })
+        const staff = staffRaw.toUpperCase()
+        const id = `reception-${slug(sheetName)}-d${dow}-${tr.start}-${slug(staff)}-${ri}-c${c}`
+          .replace(/_+/g, "_")
+          .slice(0, 180)
+
+        events.push({
+          id,
+          zona: "reception",
+          sheet: String(sheetName).slice(0, 80),
+          dow,
+          start: tr.start,
+          title: tr.title,
+          staff,
+        })
+      }
+    }
+
+    if (rowHasSlot) emptyRun = 0
+    else {
+      emptyRun++
+      if (emptyRun >= 4) break
     }
   }
   return events
@@ -213,7 +268,6 @@ function main() {
   }
 
   const wb = XLSX.readFile(rPath, { cellDates: false, raw: false })
-  /** Ultimo foglio processato vince su stesso dow+start+titolo (settimane successive nel mese). */
   const byKey = new Map()
 
   for (const sheetName of wb.SheetNames) {
@@ -222,14 +276,14 @@ function main() {
     const evs = parseReceptionSheet(rows, sheetName)
     console.log("[reception]", sheetName, "→", evs.length, "eventi")
     for (const e of evs) {
-      const k = `${e.dow}|${e.start}|${e.title}`
+      const k = `${e.dow}|${e.start}|${e.staff}`
       byKey.set(k, e)
     }
   }
 
   const merged = [...byKey.values()].sort((a, b) => {
     const order = (d) => (d === 0 ? 7 : d)
-    return order(a.dow) - order(b.dow) || a.start.localeCompare(b.start) || a.title.localeCompare(b.title)
+    return order(a.dow) - order(b.dow) || a.start.localeCompare(b.start) || a.staff.localeCompare(b.staff)
   })
 
   payload.eventsByComparto.reception = merged
