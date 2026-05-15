@@ -17,7 +17,7 @@ export function formatHm(total: number): string {
 
 const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-]\s*(\d{1,2})[:.](\d{2})/
 
-export function parseRangeFromTitle(title: string, startFallback: string): { start: string; end: string } | null {
+export function parseRangeFromTitle(title: string): { start: string; end: string } | null {
   const m = String(title ?? "").match(RANGE_RE)
   if (!m) return null
   return {
@@ -27,7 +27,7 @@ export function parseRangeFromTitle(title: string, startFallback: string): { sta
 }
 
 export function eventTimeRange(e: { title: string; start: string }): { start: string; end: string } {
-  const fromTitle = parseRangeFromTitle(e.title, e.start)
+  const fromTitle = parseRangeFromTitle(e.title)
   if (fromTitle) return fromTitle
   const s = parseHm(e.start)
   if (s == null) return { start: e.start, end: e.start }
