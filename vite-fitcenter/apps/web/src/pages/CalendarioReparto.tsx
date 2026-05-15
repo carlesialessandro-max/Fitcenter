@@ -447,13 +447,7 @@ function EditEventModal({
                 </label>
               </>
             ) : (
-              <label
-                className={
-                  scheduleMode === "piscina"
-                    ? "block text-xs font-medium text-zinc-400 sm:col-span-2"
-                    : "block text-xs font-medium text-zinc-400"
-                }
-              >
+              <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
                 Inizio (HH:mm)
                 <input
                   value={start}
