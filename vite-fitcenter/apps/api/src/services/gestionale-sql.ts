@@ -3667,6 +3667,24 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
     return false
   }
 
+  const isMerchandisingBracciale = (row: Record<string, unknown>): boolean => {
+    const caus = String(
+      firstNonEmpty(row, [
+        "CassaMovimentiCausale",
+        "Causale",
+        "Descrizione",
+        "CasseMovimentiCausale",
+        "CassaMovimentiCausa",
+        "CassaMovimentiDescrizione",
+      ]) ?? ""
+    )
+      .trim()
+      .toUpperCase()
+    if (caus.includes("BRACCIALE")) return true
+    if (caus.includes("BADGE") && caus.includes("MERCHANDISING")) return true
+    return false
+  }
+
   if (params.segment === "ticket") {
     return rows.filter((row) => isTicketing(row as any))
   }
@@ -3678,10 +3696,16 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
         ? "KIDS"
         : "DANZA"
 
-  return rows.filter(
-    (row) =>
-      String((row as any).CategoriaDescrizione ?? "").trim().toUpperCase() === want && !isTicketing(row as any)
-  )
+  return rows.filter((row) => {
+    if (isTicketing(row as any)) return false
+    const cat = String((row as any).CategoriaDescrizione ?? "")
+      .trim()
+      .toUpperCase()
+    if (cat === want) return true
+    // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: non escludere dagli incassi adulti.
+    if (params.segment === "adulti" && isMerchandisingBracciale(row)) return true
+    return false
+  })
 }
 
 /**

@@ -187,6 +187,7 @@ function EventPill({
   canEdit,
   receptionContinuation,
   showShiftLine,
+  overlapCompact,
 }: {
   e: CalEvent
   staffLabel: string
@@ -195,8 +196,30 @@ function EventPill({
   canEdit: boolean
   receptionContinuation?: boolean
   showShiftLine?: boolean
+  /** Turni sovrapposti nella stessa ora: pillola compatta affiancata */
+  overlapCompact?: boolean
 }) {
   const col = pillColClass(e)
+  if (overlapCompact) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (canEdit) onOpen()
+        }}
+        disabled={!canEdit}
+        className={cn(
+          "min-w-0 flex-1 rounded border px-0.5 py-0.5 text-left text-[9px] leading-tight",
+          col,
+          canEdit ? "cursor-pointer hover:brightness-110" : "cursor-default opacity-90"
+        )}
+        title={canEdit ? "Clic per modificare" : "Sola lettura"}
+      >
+        <span className="block truncate font-semibold text-zinc-200">{shiftPillLine(e)}</span>
+        <span className="block truncate text-zinc-300">{staffLabel}</span>
+      </button>
+    )
+  }
   if (receptionContinuation) {
     return (
       <button
@@ -1217,8 +1240,15 @@ export function CalendarioRepartoPage() {
                   </div>
                   {weekDays.map((d) => {
                     const evs = eventsForDayAndHour(events, d, h, shiftRangeGrid)
+                    const overlapHour = shiftRangeGrid && evs.length > 1
                     return (
-                      <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
+                      <div
+                        key={`${isoYmd(d)}-${h}`}
+                        className={cn(
+                          "min-h-[3.25rem] border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top",
+                          overlapHour ? "flex gap-0.5" : "space-y-0.5"
+                        )}
+                      >
                         {evs.map((e) => {
                           const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
                           return (
@@ -1230,7 +1260,8 @@ export function CalendarioRepartoPage() {
                               onOpen={() => setEditEvent(e)}
                               canEdit={canWrite}
                               showShiftLine={shiftRangeGrid}
-                              receptionContinuation={shiftRangeGrid && !shiftStart}
+                              overlapCompact={overlapHour}
+                              receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
                             />
                           )
                         })}
@@ -1251,10 +1282,16 @@ export function CalendarioRepartoPage() {
             <div className="max-h-[75vh] overflow-y-auto">
               {hours.map((h) => {
                 const evs = eventsForDayAndHour(events, dayOnly, h, shiftRangeGrid)
+                const overlapHour = shiftRangeGrid && evs.length > 1
                 return (
                   <div key={h} className="flex border-b border-zinc-800/70">
                     <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
-                    <div className="min-h-[3.25rem] flex-1 space-y-0.5 border-l border-zinc-800/60 bg-zinc-900/20 p-1">
+                    <div
+                      className={cn(
+                        "min-h-[3.25rem] flex-1 border-l border-zinc-800/60 bg-zinc-900/20 p-1",
+                        overlapHour ? "flex gap-0.5" : "space-y-0.5"
+                      )}
+                    >
                       {evs.map((e) => {
                         const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
                         return (
@@ -1266,7 +1303,8 @@ export function CalendarioRepartoPage() {
                             onOpen={() => setEditEvent(e)}
                             canEdit={canWrite}
                             showShiftLine={shiftRangeGrid}
-                            receptionContinuation={shiftRangeGrid && !shiftStart}
+                            overlapCompact={overlapHour}
+                            receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
                           />
                         )
                       })}
