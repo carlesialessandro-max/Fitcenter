@@ -293,6 +293,16 @@ const DOW_OPTIONS: { v: number; label: string }[] = [
   { v: 0, label: "Domenica" },
 ]
 
+function dowLabel(dow: number): string {
+  return DOW_OPTIONS.find((o) => o.v === dow)?.label ?? "—"
+}
+
+function parseIsoLocal(iso: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(y, m - 1, d)
+}
+
 const PISCINA_ZONE_PRESETS = ["invernale", "interna", "esterna", "piscina"] as const
 
 function PiscinaZonaEditor({ value, onChange }: { value: string; onChange: (z: string) => void }) {
@@ -664,8 +674,15 @@ function CreateSlotModal({
   const isCorsiLike = comparto === "corsi" || comparto === "scuola_nuoto"
   const isShiftRange = !isCorsiLike
   const shiftComparto = isShiftRange ? comparto : "piscina"
-  const dateIso = isoYmd(calendarDate)
+  const [slotDateIso, setSlotDateIso] = useState(() => isoYmd(calendarDate))
   const [dow, setDow] = useState(() => calendarDate.getDay())
+
+  function setSlotDayFromIso(iso: string) {
+    const d = parseIsoLocal(iso)
+    if (!d) return
+    setSlotDateIso(iso)
+    setDow(d.getDay())
+  }
   const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
   const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
   const [activity, setActivity] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(shiftComparto))
@@ -705,7 +722,7 @@ function CreateSlotModal({
       await calendarioApi.patchSlot(comparto, {
         create: true,
         dow,
-        dateIso: isCorsiLike ? null : dateIso,
+        dateIso: isCorsiLike ? null : slotDateIso,
         start: start.trim(),
         title: tit,
         zona: zonaOut,
@@ -742,31 +759,26 @@ function CreateSlotModal({
         </h2>
         <p className="text-xs text-zinc-500">
           {comparto === "scuola_nuoto"
-            ? "Lezione settimanale salvata sul server (stesso giorno ogni settimana)."
+            ? "Lezione settimanale sul server (si ripete ogni settimana nel giorno scelto)."
             : isCorsiLike
-            ? "Slot manuale sul planning corsi (terra/acqua)."
-            : `Turno per il giorno ${dateIso} (salvato sul server; non si ripete sulle altre settimane).`}
+              ? "Corso settimanale sul planning (stesso giorno ogni settimana)."
+              : "Turno salvato sul server solo per la data scelta (non si ripete nelle altre settimane)."}
         </p>
+        <label className="block text-xs font-medium text-zinc-400">
+          Giorno
+          <input
+            type="date"
+            value={slotDateIso}
+            onChange={(ev) => setSlotDayFromIso(ev.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            required
+          />
+        </label>
         {isCorsiLike ? (
-          <label className="block text-xs font-medium text-zinc-400">
-            Giorno
-            <select
-              value={dow}
-              onChange={(ev) => setDow(Number(ev.target.value))}
-              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-            >
-              {DOW_OPTIONS.map((o) => (
-                <option key={o.v} value={o.v}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <p className="text-sm text-zinc-300">
-            Data: <span className="font-medium text-zinc-100">{dateIso}</span>
+          <p className="text-xs text-zinc-500">
+            Ripetizione settimanale: ogni <span className="font-medium text-zinc-300">{dowLabel(dow)}</span>
           </p>
-        )}
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2">
           {isShiftRange ? (
             <>
@@ -1064,7 +1076,7 @@ export function CalendarioRepartoPage() {
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
                   Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}
-                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong> nel giorno o nella settimana che stai guardando (fascia oraria + istruttore). Le modifiche valgono{" "}
+                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong> e scegli il giorno nel modulo (fascia oraria + istruttore). Le modifiche valgono{" "}
                   <strong className="font-medium text-zinc-400">solo per quel giorno</strong>, non per tutte le settimane. Tutto salvato sul server.
                   {apiComparto === "piscina" ? (
                     <>
