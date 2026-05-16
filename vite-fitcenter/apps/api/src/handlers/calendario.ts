@@ -116,8 +116,8 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
 
 const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "sala_fitness", "acquaticita", "spogliatoi"]
 
-/** Import Excel una tantum (script import:*), poi solo calendario-reparti.json. */
-const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["corsi", "scuola_nuoto"]
+/** PISCINAORARIO (S.N. Bambini): import una tantum, poi solo calendario-reparti.json. */
+const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto"]
 
 function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -134,7 +134,6 @@ function defaultZonaManual(comparto: CalendarioComparto): string {
 
 function defaultZonaSeeded(comparto: CalendarioComparto): string {
   if (comparto === "scuola_nuoto") return "scuola_nuoto"
-  if (comparto === "corsi") return "terra"
   return defaultZonaManual(comparto)
 }
 
@@ -242,7 +241,61 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     return events
   }
 
-  return []
+  if (comparto !== "corsi") return []
+
+  const revByKey = new Map<string, CalendarioSlotRevision>()
+  for (const r of db.revisions) {
+    if (r.comparto === comparto) revByKey.set(r.stableKey, r)
+  }
+
+  const base = baseEventsForComparto("corsi")
+  const baseKeys = new Set<string>()
+  const out: CalendarioMergedEvent[] = []
+
+  for (const e of base) {
+    const sk = stableKeyFromParts(e.zona, e.dow, e.start, e.title)
+    baseKeys.add(sk)
+    const r = revByKey.get(sk)
+    if (r?.removed) continue
+    out.push({
+      ...e,
+      dow: r?.dow ?? e.dow,
+      dateIso: r?.dateIso ?? null,
+      start: r?.start ?? e.start,
+      title: r?.title ?? e.title,
+      zona: r?.zona ?? e.zona,
+      stableKey: sk,
+      istruttoreId: r?.istruttoreId ?? null,
+      staffOverride: r?.staffOverride ?? null,
+      note: r?.note ?? null,
+      updatedAt: r?.updatedAt,
+      updatedBy: r?.updatedBy,
+    })
+  }
+
+  for (const r of db.revisions) {
+    if (r.comparto !== comparto) continue
+    if (!r.stableKey.startsWith("manual-")) continue
+    if (r.removed) continue
+    if (baseKeys.has(r.stableKey)) continue
+    out.push({
+      id: r.stableKey,
+      zona: r.zona ?? "terra",
+      sheet: "Manuale",
+      dow: r.dow,
+      start: r.start,
+      title: r.title,
+      staff: r.staffOverride?.trim() || "—",
+      stableKey: r.stableKey,
+      istruttoreId: r.istruttoreId ?? null,
+      staffOverride: r.staffOverride ?? null,
+      note: r.note ?? null,
+      updatedAt: r.updatedAt,
+      updatedBy: r.updatedBy,
+    })
+  }
+
+  return out
 }
 
 function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttore[]): string {
@@ -382,7 +435,21 @@ export function patchCalendarioSlot(req: Request, res: Response) {
       writeCalendarioDb(db)
       return res.json({ ok: true })
     }
-    return res.status(404).json({ message: "Slot non trovato" })
+    if (!baseEv) return res.status(404).json({ message: "Slot non trovato" })
+    const rev: CalendarioSlotRevision = {
+      comparto: raw,
+      stableKey,
+      dow: baseEv.dow,
+      start: baseEv.start,
+      title: baseEv.title,
+      zona: baseEv.zona,
+      removed: true,
+      updatedAt: now,
+      updatedBy: by,
+    }
+    db = upsertRevision(db, rev)
+    writeCalendarioDb(db)
+    return res.json({ ok: true })
   }
 
   if (!baseEv && !stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw)) {
@@ -433,7 +500,21 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     updatedBy: by,
   }
 
-  db = upsertRevision(db, rev)
+  if (baseEv && !SERVER_SEEDED_COMPARTI.includes(raw)) {
+    const excelStaff = baseEv.staff.trim()
+    const staffOverrideTrim = rev.staffOverride != null ? String(rev.staffOverride).trim() : ""
+    const sameStaffAsExcel = !rev.istruttoreId && (!staffOverrideTrim || staffOverrideTrim === excelStaff)
+    const noteTrim = rev.note != null ? String(rev.note).trim() : ""
+    const samePosAsExcel =
+      dow === baseEv.dow && start === baseEv.start && title === baseEv.title && String(rev.zona ?? baseEv.zona) === String(baseEv.zona)
+    if (sameStaffAsExcel && !noteTrim && samePosAsExcel) {
+      db = deleteRevision(db, raw, stableKey)
+    } else {
+      db = upsertRevision(db, rev)
+    }
+  } else {
+    db = upsertRevision(db, rev)
+  }
   writeCalendarioDb(db)
   res.json({ ok: true })
 }

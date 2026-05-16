@@ -1048,14 +1048,18 @@ export function CalendarioRepartoPage() {
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-zinc-100">Piano operativo · {compartoLabel}</h1>
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
-              {compartoIsServerSeeded(apiComparto) ? (
+              {apiComparto === "corsi" ? (
                 <>
-                  Calendario sul <strong className="font-medium text-zinc-400">server</strong>: puoi{" "}
-                  <strong className="font-medium text-zinc-400">modificare</strong>,{" "}
-                  <strong className="font-medium text-zinc-400">aggiungere</strong> o{" "}
-                  <strong className="font-medium text-zinc-400">nascondere</strong>{" "}
-                  {apiComparto === "scuola_nuoto" ? "lezioni" : "corsi"}. L&apos;Excel serve solo per l&apos;import iniziale (una
-                  volta).
+                  Base orari da planning; puoi <strong className="font-medium text-zinc-400">spostare</strong>,{" "}
+                  <strong className="font-medium text-zinc-400">rinominare</strong>, <strong className="font-medium text-zinc-400">nascondere</strong> o{" "}
+                  <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
+                  <strong className="font-medium text-zinc-400">server</strong>.
+                </>
+              ) : apiComparto === "scuola_nuoto" ? (
+                <>
+                  Calendario sul <strong className="font-medium text-zinc-400">server</strong> (import iniziale da{" "}
+                  <strong className="font-medium text-zinc-400">PISCINAORARIO</strong>, foglio S.N. Bambini): modifica, aggiungi o
+                  nascondi lezioni online.
                 </>
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
@@ -1100,13 +1104,15 @@ export function CalendarioRepartoPage() {
 
         {hasPlanningGrid(apiComparto) && events.length === 0 && !loading && !loadErr ? (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            {compartoIsServerSeeded(apiComparto) ? (
+            {apiComparto === "corsi" ? (
               <>
-                Calendario vuoto. Import iniziale (una tantum):{" "}
-                <code className="text-xs">
-                  cd apps/api && pnpm run import:{apiComparto === "scuola_nuoto" ? "scuola-nuoto" : "corsi"}
-                </code>
-                (opz. <code className="text-xs">--from-xlsx</code>). Poi modifica tutto dal calendario.
+                Nessun corso: verifica <code className="text-xs">planning-weekly.json</code> sul server.
+              </>
+            ) : apiComparto === "scuola_nuoto" ? (
+              <>
+                Nessuna lezione. Import PISCINAORARIO (una tantum):{" "}
+                <code className="text-xs">cd apps/api && pnpm run import:scuola-nuoto</code>
+                {" "}(opz. <code className="text-xs">--from-xlsx</code>).
               </>
             ) : compartoIsManualServer(apiComparto) ? (
               <>
