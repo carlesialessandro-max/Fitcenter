@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type FormEvent } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { Link, Navigate, useParams } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
@@ -303,6 +303,107 @@ function parseIsoLocal(iso: string): Date | null {
   return new Date(y, m - 1, d)
 }
 
+function compartoDisplayLabel(comparto: CalendarioComparto): string {
+  return CALENDARIO_SEGMENTI.find((x) => x.api === comparto)?.label ?? comparto
+}
+
+function createSlotModalTitle(comparto: CreateSlotComparto): string {
+  if (comparto === "scuola_nuoto") return "Nuova lezione"
+  if (comparto === "corsi") return "Nuovo corso"
+  return `Nuovo turno · ${compartoDisplayLabel(comparto)}`
+}
+
+function formatDateIt(iso: string): string {
+  const d = parseIsoLocal(iso)
+  if (!d) return iso
+  return d.toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+}
+
+function SlotDayPicker({ valueIso, onChange }: { valueIso: string; onChange: (iso: string) => void }) {
+  const hiddenDateRef = useRef<HTMLInputElement>(null)
+  const anchor = parseIsoLocal(valueIso) ?? new Date()
+  const weekStart = startOfWeekMonday(anchor)
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart.getTime()])
+
+  function shiftWeek(delta: number) {
+    const d = parseIsoLocal(valueIso) ?? new Date()
+    onChange(isoYmd(addDays(d, delta * 7)))
+  }
+
+  function pickDay(iso: string) {
+    const d = parseIsoLocal(iso)
+    if (!d) return
+    onChange(iso)
+  }
+
+  return (
+    <div className="space-y-2">
+      <span className="block text-xs font-medium text-zinc-400">Giorno</span>
+      <div className="flex items-stretch gap-1">
+        <button
+          type="button"
+          aria-label="Settimana precedente"
+          onClick={() => shiftWeek(-1)}
+          className="rounded-lg border border-zinc-600 px-2 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+        >
+          ←
+        </button>
+        <div className="grid flex-1 grid-cols-7 gap-1">
+          {weekDays.map((d) => {
+            const iso = isoYmd(d)
+            const selected = iso === valueIso
+            return (
+              <button
+                key={iso}
+                type="button"
+                onClick={() => pickDay(iso)}
+                className={cn(
+                  "flex min-w-0 flex-col items-center rounded-lg border py-1.5 text-[10px] leading-tight transition-colors",
+                  selected
+                    ? "border-[#46A6D9] bg-[#46A6D9]/25 text-zinc-100"
+                    : "border-zinc-700 bg-zinc-950 text-zinc-400 hover:border-zinc-500 hover:bg-zinc-800"
+                )}
+              >
+                <span className="uppercase opacity-80">{IT_DOW_SHORT[mondayIndex(d)]}</span>
+                <span className="text-sm font-semibold text-zinc-100">{d.getDate()}</span>
+              </button>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          aria-label="Settimana successiva"
+          onClick={() => shiftWeek(1)}
+          className="rounded-lg border border-zinc-600 px-2 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+        >
+          →
+        </button>
+      </div>
+      <p className="text-sm font-medium capitalize text-zinc-200">{formatDateIt(valueIso)}</p>
+      <button
+        type="button"
+        onClick={() => {
+          const el = hiddenDateRef.current
+          if (el && typeof el.showPicker === "function") el.showPicker()
+          else el?.focus()
+        }}
+        className="text-xs font-medium text-[#46A6D9] hover:underline"
+      >
+        Apri calendario per un&apos;altra data…
+      </button>
+      <input
+        ref={hiddenDateRef}
+        type="date"
+        value={valueIso}
+        onChange={(ev) => pickDay(ev.target.value)}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+      />
+    </div>
+  )
+}
+
 const PISCINA_ZONE_PRESETS = ["invernale", "interna", "esterna", "piscina"] as const
 
 function PiscinaZonaEditor({ value, onChange }: { value: string; onChange: (z: string) => void }) {
@@ -356,6 +457,7 @@ function EditEventModal({
   initialStaffText,
   initialNote,
   scheduleMode,
+  calendarDateIso,
   onClose,
   onSave,
   onClearRevision,
@@ -367,6 +469,7 @@ function EditEventModal({
   initialStaffText: string
   initialNote: string
   scheduleMode: ScheduleEditMode
+  calendarDateIso?: string | null
   onClose: () => void
   onSave: (p: {
     istruttoreId: string | null
@@ -376,6 +479,7 @@ function EditEventModal({
     start: string
     title: string
     zona: string
+    dateIso?: string | null
   }) => void
   onClearRevision: () => void
   onHideFromCalendar?: () => void
@@ -383,9 +487,24 @@ function EditEventModal({
   const [istruttoreId, setIstruttoreId] = useState(initialInstructorId)
   const [staffText, setStaffText] = useState(initialStaffText)
   const [note, setNote] = useState(initialNote)
+  const [slotDateIso, setSlotDateIso] = useState(() => {
+    const fromEv = String(event.dateIso ?? "").trim()
+    if (fromEv) return fromEv
+    const fromCal = String(calendarDateIso ?? "").trim()
+    if (fromCal) return fromCal
+    return isoYmd(new Date())
+  })
   const [dow, setDow] = useState(event.dow)
   const [start, setStart] = useState(event.start)
   const isShiftRangeMode = scheduleMode !== "corsi" && scheduleMode !== "none"
+  const isCorsiLikeEdit = scheduleMode === "corsi"
+
+  function setSlotDayFromIso(iso: string) {
+    const d = parseIsoLocal(iso)
+    if (!d) return
+    setSlotDateIso(iso)
+    setDow(d.getDay())
+  }
   const shiftComparto = scheduleMode !== "none" && scheduleMode !== "corsi" ? scheduleMode : null
   const initialShift =
     isShiftRangeMode && shiftComparto
@@ -412,6 +531,8 @@ function EditEventModal({
     setIstruttoreId(initialInstructorId)
     setStaffText(initialStaffText)
     setNote(initialNote)
+    const fromEv = String(event.dateIso ?? "").trim()
+    setSlotDateIso(fromEv || String(calendarDateIso ?? "").trim() || isoYmd(new Date()))
     setDow(event.dow)
     setStart(event.start)
     setTitle(event.title)
@@ -431,7 +552,7 @@ function EditEventModal({
     } else {
       setZona(event.zona)
     }
-  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote, scheduleMode, shiftComparto])
+  }, [event.stableKey, event.dow, event.start, event.title, event.zona, event.dateIso, initialInstructorId, initialStaffText, initialNote, scheduleMode, shiftComparto, calendarDateIso])
 
   const presets = ["Sostituzione", "Malattia", "Ferie", "Assente"]
   const isManual = event.stableKey.startsWith("manual-")
@@ -452,20 +573,14 @@ function EditEventModal({
         </p>
         {scheduleFields ? (
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-              Giorno
-              <select
-                value={dow}
-                onChange={(ev) => setDow(Number(ev.target.value))}
-                className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 focus:border-[#46A6D9]/60 focus:outline-none focus:ring-1 focus:ring-[#46A6D9]/30"
-              >
-                {DOW_OPTIONS.map((o) => (
-                  <option key={o.v} value={o.v}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="sm:col-span-2">
+              <SlotDayPicker valueIso={slotDateIso} onChange={setSlotDayFromIso} />
+              {isCorsiLikeEdit ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Ripetizione settimanale: ogni <span className="font-medium text-zinc-300">{dowLabel(dow)}</span>
+                </p>
+              ) : null}
+            </div>
             {isShiftRangeMode ? (
               <>
                 <label className="block text-xs font-medium text-zinc-400">
@@ -515,18 +630,18 @@ function EditEventModal({
               </label>
             ) : scheduleMode === "piscina" ? (
               <PiscinaZonaEditor value={zona} onChange={setZona} />
-            ) : (
+            ) : shiftComparto ? (
               <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
                 Zona (slug)
                 <input
                   value={zona}
                   onChange={(ev) => setZona(ev.target.value)}
                   className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-                  placeholder={scheduleMode === "sala_fitness" ? "sala_fitness" : "reception"}
+                  placeholder={defaultZonaForShiftComparto(shiftComparto)}
                   autoComplete="off"
                 />
               </label>
-            )}
+            ) : null}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
               {scheduleMode === "corsi" ? "Titolo corso" : "Attività (es. Sportello, Copertura, Turno sala)"}
               <input
@@ -637,13 +752,16 @@ function EditEventModal({
                     ? zona === "acqua" || zona === "terra"
                       ? zona
                       : "terra"
-                    : scheduleMode === "piscina"
-                      ? zona.trim() || "invernale"
-                      : scheduleMode === "reception"
-                        ? zona.trim() || "reception"
-                        : scheduleMode === "sala_fitness"
-                          ? zona.trim() || "sala_fitness"
-                          : event.zona,
+                    : shiftComparto
+                      ? zona.trim() || defaultZonaForShiftComparto(shiftComparto)
+                      : event.zona,
+                dateIso: scheduleFields
+                  ? isShiftRangeMode
+                    ? slotDateIso
+                    : isCorsiLikeEdit
+                      ? null
+                      : undefined
+                  : undefined,
               })
             }
             className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900"
@@ -673,7 +791,6 @@ function CreateSlotModal({
 }) {
   const isCorsiLike = comparto === "corsi" || comparto === "scuola_nuoto"
   const isShiftRange = !isCorsiLike
-  const shiftComparto = isShiftRange ? comparto : "piscina"
   const [slotDateIso, setSlotDateIso] = useState(() => isoYmd(calendarDate))
   const [dow, setDow] = useState(() => calendarDate.getDay())
 
@@ -685,10 +802,10 @@ function CreateSlotModal({
   }
   const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
   const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
-  const [activity, setActivity] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(shiftComparto))
-  const [title, setTitle] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(shiftComparto))
+  const [activity, setActivity] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(comparto))
+  const [title, setTitle] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(comparto))
   const [zona, setZona] = useState<string>(
-    comparto === "scuola_nuoto" ? "scuola_nuoto" : isCorsiLike ? "terra" : defaultZonaForShiftComparto(shiftComparto)
+    comparto === "scuola_nuoto" ? "scuola_nuoto" : isCorsiLike ? "terra" : defaultZonaForShiftComparto(comparto)
   )
   const [istruttoreId, setIstruttoreId] = useState("")
   const [staffText, setStaffText] = useState("")
@@ -717,7 +834,7 @@ function CreateSlotModal({
             ? zona
             : "terra"
         : isShiftRange
-          ? zona.trim() || defaultZonaForShiftComparto(shiftComparto)
+          ? zona.trim() || defaultZonaForShiftComparto(comparto)
           : zona.trim() || "invernale"
       await calendarioApi.patchSlot(comparto, {
         create: true,
@@ -746,17 +863,7 @@ function CreateSlotModal({
         onSubmit={submit}
         className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
       >
-        <h2 className="text-base font-semibold text-zinc-100">
-          {comparto === "scuola_nuoto"
-            ? "Nuova lezione"
-            : isCorsiLike
-            ? "Nuovo corso"
-            : comparto === "sala_fitness"
-              ? "Nuovo turno sala fitness"
-              : comparto === "reception"
-                ? "Nuovo slot reception"
-                : "Nuovo turno (bagnini)"}
-        </h2>
+        <h2 className="text-base font-semibold text-zinc-100">{createSlotModalTitle(comparto)}</h2>
         <p className="text-xs text-zinc-500">
           {comparto === "scuola_nuoto"
             ? "Lezione settimanale sul server (si ripete ogni settimana nel giorno scelto)."
@@ -764,16 +871,7 @@ function CreateSlotModal({
               ? "Corso settimanale sul planning (stesso giorno ogni settimana)."
               : "Turno salvato sul server solo per la data scelta (non si ripete nelle altre settimane)."}
         </p>
-        <label className="block text-xs font-medium text-zinc-400">
-          Giorno
-          <input
-            type="date"
-            value={slotDateIso}
-            onChange={(ev) => setSlotDayFromIso(ev.target.value)}
-            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-            required
-          />
-        </label>
+        <SlotDayPicker valueIso={slotDateIso} onChange={setSlotDayFromIso} />
         {isCorsiLike ? (
           <p className="text-xs text-zinc-500">
             Ripetizione settimanale: ogni <span className="font-medium text-zinc-300">{dowLabel(dow)}</span>
@@ -839,7 +937,7 @@ function CreateSlotModal({
                 value={zona}
                 onChange={(ev) => setZona(ev.target.value)}
                 className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-                placeholder={defaultZonaForShiftComparto(shiftComparto)}
+                placeholder={defaultZonaForShiftComparto(comparto)}
               />
             </label>
           )
@@ -943,18 +1041,29 @@ export function CalendarioRepartoPage() {
   const saveEdit = useCallback(
     async (
       e: CalEvent,
-      p: { istruttoreId: string | null; staffText: string; note: string; dow: number; start: string; title: string; zona: string }
+      p: {
+        istruttoreId: string | null
+        staffText: string
+        note: string
+        dow: number
+        start: string
+        title: string
+        zona: string
+        dateIso?: string | null
+      }
     ) => {
       if (!apiComparto || !canWrite) return
       const staffTrim = p.staffText.trim()
       const noteTrim = p.note.trim()
       try {
         const dateIso =
-          compartoIsManualServer(apiComparto) && editCalendarDate
-            ? editCalendarDate
-            : compartoIsManualServer(apiComparto)
-              ? e.dateIso ?? editCalendarDate
-              : undefined
+          p.dateIso !== undefined
+            ? p.dateIso
+            : compartoIsManualServer(apiComparto) && editCalendarDate
+              ? editCalendarDate
+              : compartoIsManualServer(apiComparto)
+                ? e.dateIso ?? editCalendarDate
+                : undefined
         await calendarioApi.patchSlot(apiComparto, {
           stableKey: e.stableKey,
           dow: p.dow,
@@ -1243,6 +1352,7 @@ export function CalendarioRepartoPage() {
             initialStaffText={editEvent.staffOverride ?? ""}
             initialNote={editEvent.note ?? ""}
             scheduleMode={scheduleMode}
+            calendarDateIso={editCalendarDate}
             onClose={() => {
               setEditEvent(null)
               setEditCalendarDate(null)
