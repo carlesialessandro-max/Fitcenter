@@ -27,6 +27,8 @@ export type CalendarioMergedEventDto = {
   zona: string
   sheet: string
   dow: number
+  /** YYYY-MM-DD: slot solo per quel giorno (calendari server). */
+  dateIso?: string | null
   start: string
   title: string
   staff: string
@@ -52,6 +54,7 @@ export type PatchCalendarioSlotBody = {
   removed?: boolean
   clear?: boolean
   dow?: number
+  dateIso?: string | null
   start?: string
   title?: string
   zona?: string

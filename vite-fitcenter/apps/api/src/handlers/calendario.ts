@@ -45,7 +45,7 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
-  if (comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
+  if (comparto === "acquaticita" || comparto === "spogliatoi") return false
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
@@ -57,12 +57,13 @@ function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (u.role === "admin") return true
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
-  if (comparto === "piscina" || comparto === "acquaticita" || comparto === "spogliatoi") return u.role === "bagnini"
+  if (comparto === "piscina") return u.role === "bagnini"
+  if (comparto === "acquaticita" || comparto === "spogliatoi") return false
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
   /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
-  if (comparto === "sala_fitness") return u.role === "bagnini"
+  if (comparto === "sala_fitness") return false
   if (comparto === "consulenti") return false
   return false
 }
@@ -113,11 +114,25 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return j.eventsByComparto?.[comparto] ?? []
 }
 
-const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "sala_fitness"]
+const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = [
+  "reception",
+  "piscina",
+  "sala_fitness",
+  "acquaticita",
+  "spogliatoi",
+  "scuola_nuoto",
+]
+
+function isIsoDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
 
 function defaultZonaManual(comparto: CalendarioComparto): string {
   if (comparto === "reception") return "reception"
   if (comparto === "sala_fitness") return "sala_fitness"
+  if (comparto === "acquaticita") return "acquaticita"
+  if (comparto === "spogliatoi") return "spogliatoi"
+  if (comparto === "scuola_nuoto") return "acqua"
   return "invernale"
 }
 
@@ -133,6 +148,7 @@ function mergeManualOnlyFromDb(comparto: CalendarioComparto, db: CalendarioDb): 
       zona: r.zona ?? defaultZonaManual(comparto),
       sheet: "Calendario",
       dow: r.dow,
+      dateIso: r.dateIso ?? null,
       start: r.start,
       title: r.title,
       staff: r.staffOverride?.trim() || "—",
@@ -158,13 +174,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
     if (r.comparto === comparto) revByKey.set(r.stableKey, r)
   }
 
-  const compartiConPlanning: CalendarioComparto[] = [
-    "corsi",
-    "scuola_nuoto",
-    "piscina",
-    "acquaticita",
-    "spogliatoi",
-  ]
+  const compartiConPlanning: CalendarioComparto[] = ["corsi"]
   if (!compartiConPlanning.includes(comparto)) {
     return []
   }
@@ -253,6 +263,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     create?: boolean
     removed?: boolean
     dow?: number
+    dateIso?: string | null
     start?: string
     title?: string
     zona?: string
@@ -278,11 +289,16 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   if (body.create === true) {
     if (raw !== "corsi" && !MANUAL_ONLY_COMPARTI.includes(raw)) {
       return res.status(400).json({
-        message: "Aggiunta slot manuale solo per corsi, reception, piscina (bagnini) o sala fitness",
+        message: "Aggiunta slot manuale non consentita per questo comparto",
       })
     }
     const dow = Number(body.dow)
     const start = String(body.start ?? "").trim()
+    const dateIsoRaw = body.dateIso != null ? String(body.dateIso).trim() : ""
+    const dateIso = dateIsoRaw && isIsoDate(dateIsoRaw) ? dateIsoRaw : null
+    if (MANUAL_ONLY_COMPARTI.includes(raw) && !dateIso) {
+      return res.status(400).json({ message: "dateIso obbligatorio (YYYY-MM-DD) per slot su un giorno specifico" })
+    }
     const defaultZona = raw === "corsi" ? "terra" : defaultZonaManual(raw)
     const titleIn = String(body.title ?? "").trim()
     const title =
@@ -293,7 +309,13 @@ export function patchCalendarioSlot(req: Request, res: Response) {
           ? "Sportello"
           : raw === "sala_fitness"
             ? "Turno sala"
-            : "Copertura")
+            : raw === "acquaticita"
+              ? "Acquaticità"
+              : raw === "spogliatoi"
+                ? "Spogliatoi"
+                : raw === "scuola_nuoto"
+                  ? "Lezione"
+                  : "Copertura")
     const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })
@@ -306,6 +328,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
       comparto: raw,
       stableKey,
       dow,
+      dateIso: MANUAL_ONLY_COMPARTI.includes(raw) ? dateIso : null,
       start,
       title,
       zona,
@@ -356,6 +379,13 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const dow = Number(body.dow ?? baseEv?.dow ?? prevRev?.dow)
   const start = String(body.start ?? baseEv?.start ?? prevRev?.start ?? "").trim()
   const title = String(body.title ?? baseEv?.title ?? prevRev?.title ?? "").trim()
+  const dateIsoBody = body.dateIso !== undefined ? String(body.dateIso ?? "").trim() : undefined
+  const dateIso =
+    dateIsoBody !== undefined
+      ? dateIsoBody && isIsoDate(dateIsoBody)
+        ? dateIsoBody
+        : null
+      : prevRev?.dateIso ?? (baseEv as { dateIso?: string | null } | undefined)?.dateIso ?? null
   if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
     return res.status(400).json({ message: "dow, start, title obbligatori per salvataggio" })
   }
@@ -364,6 +394,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     comparto: raw,
     stableKey,
     dow,
+    dateIso: MANUAL_ONLY_COMPARTI.includes(raw) || stableKey.startsWith("manual-") ? dateIso : undefined,
     start,
     title,
     zona: String(
@@ -474,10 +505,6 @@ export function putCalendarioInstructor(req: Request, res: Response) {
 }
 
 const IT_DOW_FULL = ["Domenica", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato"] as const
-
-function isIsoDate(s: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(s)
-}
 
 function parseIsoLocal(s: string): Date | null {
   if (!isIsoDate(s)) return null

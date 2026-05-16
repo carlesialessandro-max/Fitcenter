@@ -8,11 +8,14 @@ import { CalendarioInviaTurniModal } from "@/components/CalendarioInviaTurniModa
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import { InstructorSearchSelect } from "@/components/InstructorSearchSelect"
 import { staffColorKey, staffPillClasses } from "@/lib/staff-colors"
+import { compartoIsManualServer, eventMatchesCalendarDay, MANUAL_SERVER_COMPARTI } from "@/lib/calendario-manual"
 import {
   compartoUsesShiftRange,
   defaultActivityForShiftComparto,
   defaultZonaForShiftComparto,
 } from "@/lib/calendario-shift"
+
+type ManualSlotComparto = (typeof MANUAL_SERVER_COMPARTI)[number]
 import {
   addHoursToHm,
   buildShiftTitle,
@@ -130,8 +133,9 @@ function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
 }
 function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
-  const dow = d.getDay()
-  return events.filter((e) => e.dow === dow).sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+  return events
+    .filter((e) => eventMatchesCalendarDay(e, d))
+    .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
 }
 function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRangeGrid?: boolean): CalEvent[] {
   return eventsForDay(events, d).filter((e) =>
@@ -326,7 +330,7 @@ function PiscinaZonaEditor({ value, onChange }: { value: string; onChange: (z: s
   )
 }
 
-type ScheduleEditMode = "none" | "corsi" | "piscina" | "reception" | "sala_fitness"
+type ScheduleEditMode = "none" | "corsi" | ManualSlotComparto
 
 function EditEventModal({
   event,
@@ -365,8 +369,7 @@ function EditEventModal({
   const [dow, setDow] = useState(event.dow)
   const [start, setStart] = useState(event.start)
   const isShiftRangeMode = scheduleMode !== "corsi" && scheduleMode !== "none"
-  const shiftComparto =
-    scheduleMode === "piscina" || scheduleMode === "reception" || scheduleMode === "sala_fitness" ? scheduleMode : null
+  const shiftComparto = scheduleMode !== "none" && scheduleMode !== "corsi" ? scheduleMode : null
   const initialShift =
     isShiftRangeMode && shiftComparto
       ? (() => {
@@ -383,13 +386,9 @@ function EditEventModal({
       ? event.zona === "acqua" || event.zona === "terra"
         ? event.zona
         : "terra"
-      : scheduleMode === "piscina"
-        ? event.zona || "invernale"
-        : scheduleMode === "reception"
-          ? event.zona || "reception"
-          : scheduleMode === "sala_fitness"
-            ? event.zona || "sala_fitness"
-            : event.zona
+      : shiftComparto
+        ? event.zona || defaultZonaForShiftComparto(shiftComparto)
+        : event.zona
   )
 
   useEffect(() => {
@@ -410,16 +409,12 @@ function EditEventModal({
     }
     if (scheduleMode === "corsi") {
       setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
-    } else if (scheduleMode === "piscina") {
-      setZona(event.zona || "invernale")
-    } else if (scheduleMode === "reception") {
-      setZona(event.zona || "reception")
-    } else if (scheduleMode === "sala_fitness") {
-      setZona(event.zona || "sala_fitness")
+    } else if (shiftComparto) {
+      setZona(event.zona || defaultZonaForShiftComparto(shiftComparto))
     } else {
       setZona(event.zona)
     }
-  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote, scheduleMode])
+  }, [event.stableKey, event.dow, event.start, event.title, event.zona, initialInstructorId, initialStaffText, initialNote, scheduleMode, shiftComparto])
 
   const presets = ["Sostituzione", "Malattia", "Ferie", "Assente"]
   const isManual = event.stableKey.startsWith("manual-")
@@ -648,18 +643,22 @@ function EditEventModal({
 function CreateSlotModal({
   comparto,
   instructors,
+  calendarDate,
   onClose,
   onCreated,
 }: {
-  comparto: "corsi" | "piscina" | "reception" | "sala_fitness"
+  comparto: "corsi" | ManualSlotComparto
   instructors: CalendarioIstruttore[]
+  /** Giorno di calendario per cui creare lo slot (solo quel giorno/settimana). */
+  calendarDate: Date
   onClose: () => void
   onCreated: () => void
 }) {
   const isCorsi = comparto === "corsi"
   const isShiftRange = comparto !== "corsi"
   const shiftComparto = isShiftRange ? comparto : "piscina"
-  const [dow, setDow] = useState(1)
+  const dateIso = isoYmd(calendarDate)
+  const [dow, setDow] = useState(() => calendarDate.getDay())
   const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
   const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
   const [activity, setActivity] = useState(isCorsi ? "" : defaultActivityForShiftComparto(shiftComparto))
@@ -695,6 +694,7 @@ function CreateSlotModal({
       await calendarioApi.patchSlot(comparto, {
         create: true,
         dow,
+        dateIso: isCorsi ? null : dateIso,
         start: start.trim(),
         title: tit,
         zona: zonaOut,
@@ -730,24 +730,28 @@ function CreateSlotModal({
         <p className="text-xs text-zinc-500">
           {isCorsi
             ? "Slot manuale sul planning corsi (terra/acqua)."
-            : isShiftRange
-              ? "Turno con fascia oraria (salvato sul server). Nessun import Excel al build."
-              : "Turno manuale sul calendario piscina / bagnini (salvato sul server)."}
+            : `Turno per il giorno ${dateIso} (salvato sul server; non si ripete sulle altre settimane).`}
         </p>
-        <label className="block text-xs font-medium text-zinc-400">
-          Giorno
-          <select
-            value={dow}
-            onChange={(ev) => setDow(Number(ev.target.value))}
-            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-          >
-            {DOW_OPTIONS.map((o) => (
-              <option key={o.v} value={o.v}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        {isCorsi ? (
+          <label className="block text-xs font-medium text-zinc-400">
+            Giorno
+            <select
+              value={dow}
+              onChange={(ev) => setDow(Number(ev.target.value))}
+              className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            >
+              {DOW_OPTIONS.map((o) => (
+                <option key={o.v} value={o.v}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <p className="text-sm text-zinc-300">
+            Data: <span className="font-medium text-zinc-100">{dateIso}</span>
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           {isShiftRange ? (
             <>
@@ -861,7 +865,8 @@ export function CalendarioRepartoPage() {
   const [loading, setLoading] = useState(true)
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
-  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | "piscina" | "reception" | "sala_fitness">(null)
+  const [editCalendarDate, setEditCalendarDate] = useState<string | null>(null)
+  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | ManualSlotComparto>(null)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
   const [inviaTurniOpen, setInviaTurniOpen] = useState(false)
 
@@ -872,13 +877,9 @@ export function CalendarioRepartoPage() {
   const scheduleMode: ScheduleEditMode =
     apiComparto === "corsi"
       ? "corsi"
-      : apiComparto === "piscina"
-        ? "piscina"
-        : apiComparto === "reception"
-          ? "reception"
-          : apiComparto === "sala_fitness"
-            ? "sala_fitness"
-            : "none"
+      : apiComparto && compartoIsManualServer(apiComparto)
+        ? apiComparto
+        : "none"
   const canOpenInstructors =
     role === "admin" ||
     role === "corsi" ||
@@ -921,9 +922,16 @@ export function CalendarioRepartoPage() {
       const staffTrim = p.staffText.trim()
       const noteTrim = p.note.trim()
       try {
+        const dateIso =
+          compartoIsManualServer(apiComparto) && editCalendarDate
+            ? editCalendarDate
+            : compartoIsManualServer(apiComparto)
+              ? e.dateIso ?? editCalendarDate
+              : undefined
         await calendarioApi.patchSlot(apiComparto, {
           stableKey: e.stableKey,
           dow: p.dow,
+          dateIso: dateIso ?? null,
           start: p.start,
           title: p.title,
           zona: p.zona,
@@ -933,11 +941,12 @@ export function CalendarioRepartoPage() {
         })
         await reload()
         setEditEvent(null)
+        setEditCalendarDate(null)
       } catch (err) {
         alert(err instanceof Error ? err.message : "Salvataggio fallito")
       }
     },
-    [apiComparto, canWrite, reload]
+    [apiComparto, canWrite, reload, editCalendarDate]
   )
 
   const resetEdit = useCallback(
@@ -947,6 +956,7 @@ export function CalendarioRepartoPage() {
         await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, clear: true })
         await reload()
         setEditEvent(null)
+        setEditCalendarDate(null)
       } catch (err) {
         alert(err instanceof Error ? err.message : "Ripristino fallito")
       }
@@ -975,6 +985,7 @@ export function CalendarioRepartoPage() {
     return Array.from({ length: 7 }, (_, i) => addDays(start, i))
   }, [cursor])
   const dayOnly = useMemo(() => startOfDay(cursor), [cursor])
+  const slotAnchorDate = useMemo(() => (view === "day" ? dayOnly : startOfDay(cursor)), [view, dayOnly, cursor])
   const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
   const cells = view === "month" ? monthMatrix(cursor) : []
 
@@ -1019,29 +1030,22 @@ export function CalendarioRepartoPage() {
                   <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
                   <strong className="font-medium text-zinc-400">server</strong> (sincronizzati tra utenti).
                 </>
-              ) : apiComparto === "piscina" || apiComparto === "sala_fitness" ? (
+              ) : compartoIsManualServer(apiComparto) ? (
                 <>
-                  Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>: crea turni con{" "}
-                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong> (fascia oraria, es. 08:00–14:00), assegna il dipendente dall&apos;anagrafica.{" "}
-                  <strong className="font-medium text-zinc-400">Tutto sul server</strong> — non serve più Excel al build per bagnini/sala fitness.
+                  Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}
+                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong> nel giorno o nella settimana che stai guardando (fascia oraria + istruttore). Le modifiche valgono{" "}
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>, non per tutte le settimane. Tutto salvato sul server.
                   {apiComparto === "piscina" ? (
                     <>
                       {" "}
-                      Zone piscina: <code className="text-xs text-zinc-400">invernale</code>, <code className="text-xs text-zinc-400">interna</code>,{" "}
+                      Zone: <code className="text-xs text-zinc-400">invernale</code>, <code className="text-xs text-zinc-400">interna</code>,{" "}
                       <code className="text-xs text-zinc-400">esterna</code>.
                     </>
                   ) : null}
                 </>
-              ) : apiComparto === "reception" ? (
-                <>
-                  Calendario <strong className="font-medium text-zinc-400">reception</strong> (mese, settimana, giorno): crea gli slot con{" "}
-                  <strong className="font-medium text-zinc-400">Aggiungi slot</strong>, assegna chi copre il turno dall&apos;anagrafica istruttori e modifica orari/note.{" "}
-                  <strong className="font-medium text-zinc-400">Tutto resta salvato sul server</strong> — il build dell&apos;app non sovrascrive più gli orari da Excel.
-                </>
               ) : hasPlanningGrid(apiComparto) ? (
                 <>
-                  Orari da Excel (scuola nuoto, acquaticità, spogliatoi). Modifiche a{" "}
-                  <strong className="font-medium text-zinc-400">staff</strong> e <strong className="font-medium text-zinc-400">note</strong> sul server.
+                  Base orari da planning Excel; modifiche a staff e note sul server.
                 </>
               ) : (
                 <>Calendario reparto: quando importeremo il planning per questo settore, gli slot appariranno qui.</>
@@ -1077,13 +1081,14 @@ export function CalendarioRepartoPage() {
               <>
                 Nessun evento dal planning corsi: verifica <code className="text-xs">planning-weekly.json</code> e che l&apos;API legga il file sul server.
               </>
-            ) : compartoUsesShiftRange(apiComparto) ? (
+            ) : compartoIsManualServer(apiComparto) ? (
               <>
-                Nessuno slot ancora: usa <strong className="font-medium text-amber-200/90">Aggiungi slot</strong> (giorno, dalle/alle, istruttore). Le modifiche restano sul server.
+                Nessuno slot in questo periodo: vai alla settimana/giorno desiderato e usa{" "}
+                <strong className="font-medium text-amber-200/90">Aggiungi slot</strong>. I turni restano salvati sul server.
               </>
             ) : (
               <>
-                Nessun evento per questo comparto: verifica import Excel e <code className="text-xs">pnpm run build:planning</code> (solo corsi / scuola nuoto).
+                Nessun evento per questo comparto: verifica import Excel e <code className="text-xs">pnpm run build:planning</code> (solo corsi).
               </>
             )}
           </p>
@@ -1176,6 +1181,7 @@ export function CalendarioRepartoPage() {
           <CreateSlotModal
             comparto={createSlotComparto}
             instructors={instructors}
+            calendarDate={slotAnchorDate}
             onClose={() => setCreateSlotComparto(null)}
             onCreated={() => void reload()}
           />
@@ -1190,7 +1196,10 @@ export function CalendarioRepartoPage() {
             initialStaffText={editEvent.staffOverride ?? ""}
             initialNote={editEvent.note ?? ""}
             scheduleMode={scheduleMode}
-            onClose={() => setEditEvent(null)}
+            onClose={() => {
+              setEditEvent(null)
+              setEditCalendarDate(null)
+            }}
             onSave={(p) => void saveEdit(editEvent, p)}
             onClearRevision={() => void resetEdit(editEvent)}
             onHideFromCalendar={scheduleMode !== "none" ? () => void hideSlot(editEvent) : undefined}
@@ -1229,7 +1238,10 @@ export function CalendarioRepartoPage() {
                           e={e}
                           staffLabel={e.staffDisplay}
                           note={noteFor(e)}
-                          onOpen={() => setEditEvent(e)}
+                          onOpen={() => {
+                            setEditCalendarDate(isoYmd(date))
+                            setEditEvent(e)
+                          }}
                           canEdit={canWrite}
                           showShiftLine={shiftRangeGrid}
                           colorByStaff={shiftRangeGrid}
@@ -1281,7 +1293,10 @@ export function CalendarioRepartoPage() {
                               e={e}
                               staffLabel={e.staffDisplay}
                               note={noteFor(e)}
-                              onOpen={() => setEditEvent(e)}
+                              onOpen={() => {
+                                setEditCalendarDate(isoYmd(d))
+                                setEditEvent(e)
+                              }}
                               canEdit={canWrite}
                               showShiftLine={shiftRangeGrid}
                               colorByStaff={shiftRangeGrid}
@@ -1325,7 +1340,10 @@ export function CalendarioRepartoPage() {
                             e={e}
                             staffLabel={e.staffDisplay}
                             note={noteFor(e)}
-                            onOpen={() => setEditEvent(e)}
+                            onOpen={() => {
+                              setEditCalendarDate(isoYmd(dayOnly))
+                              setEditEvent(e)
+                            }}
                             canEdit={canWrite}
                             showShiftLine={shiftRangeGrid}
                             colorByStaff={shiftRangeGrid}
