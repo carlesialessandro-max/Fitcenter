@@ -8,7 +8,12 @@ import { CalendarioInviaTurniModal } from "@/components/CalendarioInviaTurniModa
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import { InstructorSearchSelect } from "@/components/InstructorSearchSelect"
 import { staffColorKey, staffPillClasses } from "@/lib/staff-colors"
-import { compartoIsManualServer, eventMatchesCalendarDay, MANUAL_SERVER_COMPARTI } from "@/lib/calendario-manual"
+import {
+  compartoIsManualServer,
+  compartoIsServerSeeded,
+  eventMatchesCalendarDay,
+  MANUAL_SERVER_COMPARTI,
+} from "@/lib/calendario-manual"
 import {
   compartoUsesShiftRange,
   defaultActivityForShiftComparto,
@@ -16,6 +21,8 @@ import {
 } from "@/lib/calendario-shift"
 
 type ManualSlotComparto = (typeof MANUAL_SERVER_COMPARTI)[number]
+type CourseLikeComparto = "corsi" | "scuola_nuoto"
+type CreateSlotComparto = CourseLikeComparto | ManualSlotComparto
 import {
   addHoursToHm,
   buildShiftTitle,
@@ -647,23 +654,25 @@ function CreateSlotModal({
   onClose,
   onCreated,
 }: {
-  comparto: "corsi" | ManualSlotComparto
+  comparto: CreateSlotComparto
   instructors: CalendarioIstruttore[]
   /** Giorno di calendario per cui creare lo slot (solo quel giorno/settimana). */
   calendarDate: Date
   onClose: () => void
   onCreated: () => void
 }) {
-  const isCorsi = comparto === "corsi"
-  const isShiftRange = comparto !== "corsi"
+  const isCorsiLike = comparto === "corsi" || comparto === "scuola_nuoto"
+  const isShiftRange = !isCorsiLike
   const shiftComparto = isShiftRange ? comparto : "piscina"
   const dateIso = isoYmd(calendarDate)
   const [dow, setDow] = useState(() => calendarDate.getDay())
   const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
   const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
-  const [activity, setActivity] = useState(isCorsi ? "" : defaultActivityForShiftComparto(shiftComparto))
-  const [title, setTitle] = useState(isCorsi ? "" : defaultActivityForShiftComparto(shiftComparto))
-  const [zona, setZona] = useState<string>(isCorsi ? "terra" : defaultZonaForShiftComparto(shiftComparto))
+  const [activity, setActivity] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(shiftComparto))
+  const [title, setTitle] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(shiftComparto))
+  const [zona, setZona] = useState<string>(
+    comparto === "scuola_nuoto" ? "scuola_nuoto" : isCorsiLike ? "terra" : defaultZonaForShiftComparto(shiftComparto)
+  )
   const [istruttoreId, setIstruttoreId] = useState("")
   const [staffText, setStaffText] = useState("")
   const [note, setNote] = useState("")
@@ -673,7 +682,7 @@ function CreateSlotModal({
     ev.preventDefault()
     const tit = isShiftRange
       ? buildShiftTitle(activity, start.trim(), end.trim())
-      : (title.trim() || (isCorsi ? "" : "Copertura")).trim()
+      : (title.trim() || (isCorsiLike ? "" : "Copertura")).trim()
     if (!tit) {
       alert(isShiftRange ? "Controlla orari e attività" : "Titolo obbligatorio")
       return
@@ -684,17 +693,19 @@ function CreateSlotModal({
     }
     setBusy(true)
     try {
-      const zonaOut = isCorsi
-        ? zona === "terra" || zona === "acqua"
-          ? zona
-          : "terra"
+      const zonaOut = isCorsiLike
+        ? comparto === "scuola_nuoto"
+          ? "scuola_nuoto"
+          : zona === "terra" || zona === "acqua"
+            ? zona
+            : "terra"
         : isShiftRange
           ? zona.trim() || defaultZonaForShiftComparto(shiftComparto)
           : zona.trim() || "invernale"
       await calendarioApi.patchSlot(comparto, {
         create: true,
         dow,
-        dateIso: isCorsi ? null : dateIso,
+        dateIso: isCorsiLike ? null : dateIso,
         start: start.trim(),
         title: tit,
         zona: zonaOut,
@@ -719,7 +730,9 @@ function CreateSlotModal({
         className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
       >
         <h2 className="text-base font-semibold text-zinc-100">
-          {isCorsi
+          {comparto === "scuola_nuoto"
+            ? "Nuova lezione"
+            : isCorsiLike
             ? "Nuovo corso"
             : comparto === "sala_fitness"
               ? "Nuovo turno sala fitness"
@@ -728,11 +741,13 @@ function CreateSlotModal({
                 : "Nuovo turno (bagnini)"}
         </h2>
         <p className="text-xs text-zinc-500">
-          {isCorsi
+          {comparto === "scuola_nuoto"
+            ? "Lezione settimanale salvata sul server (stesso giorno ogni settimana)."
+            : isCorsiLike
             ? "Slot manuale sul planning corsi (terra/acqua)."
             : `Turno per il giorno ${dateIso} (salvato sul server; non si ripete sulle altre settimane).`}
         </p>
-        {isCorsi ? (
+        {isCorsiLike ? (
           <label className="block text-xs font-medium text-zinc-400">
             Giorno
             <select
@@ -788,7 +803,7 @@ function CreateSlotModal({
               />
             </label>
           )}
-          {isCorsi ? (
+          {comparto === "corsi" ? (
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
               Zona
               <select
@@ -802,7 +817,7 @@ function CreateSlotModal({
             </label>
           ) : null}
         </div>
-        {!isCorsi ? (
+        {!isCorsiLike ? (
           comparto === "piscina" ? (
             <PiscinaZonaEditor value={zona} onChange={setZona} />
           ) : (
@@ -819,7 +834,7 @@ function CreateSlotModal({
         ) : null}
         {!isShiftRange ? (
           <label className="block text-xs font-medium text-zinc-400">
-            {isCorsi ? "Titolo" : "Titolo / attività"}
+            {comparto === "scuola_nuoto" ? "Titolo lezione" : comparto === "corsi" ? "Titolo" : "Titolo / attività"}
             <input value={title} onChange={(ev) => setTitle(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
           </label>
         ) : (
@@ -866,7 +881,7 @@ export function CalendarioRepartoPage() {
   const [loadErr, setLoadErr] = useState<string | null>(null)
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
   const [editCalendarDate, setEditCalendarDate] = useState<string | null>(null)
-  const [createSlotComparto, setCreateSlotComparto] = useState<null | "corsi" | ManualSlotComparto>(null)
+  const [createSlotComparto, setCreateSlotComparto] = useState<null | CreateSlotComparto>(null)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
   const [inviaTurniOpen, setInviaTurniOpen] = useState(false)
 
@@ -875,7 +890,7 @@ export function CalendarioRepartoPage() {
   const canRead = apiComparto != null && roleCanReadCalendarioComparto(role, apiComparto)
   const canWrite = apiComparto != null && roleCanWriteCalendarioComparto(role, apiComparto)
   const scheduleMode: ScheduleEditMode =
-    apiComparto === "corsi"
+    apiComparto === "corsi" || apiComparto === "scuola_nuoto"
       ? "corsi"
       : apiComparto && compartoIsManualServer(apiComparto)
         ? apiComparto
@@ -967,7 +982,17 @@ export function CalendarioRepartoPage() {
   const hideSlot = useCallback(
     async (e: CalEvent) => {
       if (!apiComparto || !canWrite) return
-      if (e.stableKey.startsWith("manual-")) return
+      if (compartoIsManualServer(apiComparto) && e.stableKey.startsWith("manual-")) {
+        try {
+          await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, clear: true })
+          await reload()
+          setEditEvent(null)
+        } catch (err) {
+          alert(err instanceof Error ? err.message : "Operazione fallita")
+        }
+        return
+      }
+      if (apiComparto !== "corsi" && !compartoIsServerSeeded(apiComparto)) return
       try {
         await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, removed: true })
         await reload()
@@ -1023,12 +1048,14 @@ export function CalendarioRepartoPage() {
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-zinc-100">Piano operativo · {compartoLabel}</h1>
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
-              {apiComparto === "corsi" ? (
+              {compartoIsServerSeeded(apiComparto) ? (
                 <>
-                  Base orari da planning Excel; puoi <strong className="font-medium text-zinc-400">spostare</strong>,{" "}
-                  <strong className="font-medium text-zinc-400">rinominare</strong>, <strong className="font-medium text-zinc-400">nascondere</strong> o{" "}
-                  <strong className="font-medium text-zinc-400">aggiungere</strong> corsi. Istruttori e note sul{" "}
-                  <strong className="font-medium text-zinc-400">server</strong> (sincronizzati tra utenti).
+                  Calendario sul <strong className="font-medium text-zinc-400">server</strong>: puoi{" "}
+                  <strong className="font-medium text-zinc-400">modificare</strong>,{" "}
+                  <strong className="font-medium text-zinc-400">aggiungere</strong> o{" "}
+                  <strong className="font-medium text-zinc-400">nascondere</strong>{" "}
+                  {apiComparto === "scuola_nuoto" ? "lezioni" : "corsi"}. L&apos;Excel serve solo per l&apos;import iniziale (una
+                  volta).
                 </>
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
@@ -1042,10 +1069,6 @@ export function CalendarioRepartoPage() {
                       <code className="text-xs text-zinc-400">esterna</code>.
                     </>
                   ) : null}
-                </>
-              ) : hasPlanningGrid(apiComparto) ? (
-                <>
-                  Base orari da planning Excel; modifiche a staff e note sul server.
                 </>
               ) : (
                 <>Calendario reparto: quando importeremo il planning per questo settore, gli slot appariranno qui.</>
@@ -1077,20 +1100,20 @@ export function CalendarioRepartoPage() {
 
         {hasPlanningGrid(apiComparto) && events.length === 0 && !loading && !loadErr ? (
           <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            {apiComparto === "corsi" ? (
+            {compartoIsServerSeeded(apiComparto) ? (
               <>
-                Nessun evento dal planning corsi: verifica <code className="text-xs">planning-weekly.json</code> e che l&apos;API legga il file sul server.
+                Calendario vuoto. Import iniziale (una tantum):{" "}
+                <code className="text-xs">
+                  cd apps/api && pnpm run import:{apiComparto === "scuola_nuoto" ? "scuola-nuoto" : "corsi"}
+                </code>
+                (opz. <code className="text-xs">--from-xlsx</code>). Poi modifica tutto dal calendario.
               </>
             ) : compartoIsManualServer(apiComparto) ? (
               <>
                 Nessuno slot in questo periodo: vai alla settimana/giorno desiderato e usa{" "}
                 <strong className="font-medium text-amber-200/90">Aggiungi slot</strong>. I turni restano salvati sul server.
               </>
-            ) : (
-              <>
-                Nessun evento per questo comparto: verifica import Excel e <code className="text-xs">pnpm run build:planning</code> (solo corsi).
-              </>
-            )}
+            ) : null}
           </p>
         ) : null}
 
@@ -1162,11 +1185,17 @@ export function CalendarioRepartoPage() {
             {scheduleMode !== "none" && canWrite ? (
               <button
                 type="button"
-                onClick={() => setCreateSlotComparto(scheduleMode)}
+                onClick={() =>
+                  setCreateSlotComparto(
+                    apiComparto === "corsi" || apiComparto === "scuola_nuoto" ? apiComparto : scheduleMode
+                  )
+                }
                 className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
               >
                 {scheduleMode === "corsi"
-                  ? "Aggiungi corso"
+                  ? apiComparto === "scuola_nuoto"
+                    ? "Aggiungi lezione"
+                    : "Aggiungi corso"
                   : scheduleMode === "sala_fitness"
                     ? "Aggiungi turno sala"
                     : scheduleMode === "piscina"

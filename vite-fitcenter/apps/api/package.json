@@ -10,7 +10,9 @@
     "precompute:dashboard-cache": "tsx scripts/precompute-dashboard-cache.ts",
     "abbonamenti:attivi-reconcile": "tsx scripts/abbonamenti-attivi-reconcile.ts",
     "abbonamenti:attivi-xls": "tsx scripts/abbonamenti-attivi-reconcile.ts --layout attivi-xls",
-    "import:istruttori": "node scripts/import-istruttori-calendario.mjs"
+    "import:istruttori": "node scripts/import-istruttori-calendario.mjs",
+    "import:corsi": "node scripts/import-calendario-comparto.mjs corsi",
+    "import:scuola-nuoto": "node scripts/import-calendario-comparto.mjs scuola_nuoto"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

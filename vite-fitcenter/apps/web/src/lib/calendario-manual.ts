@@ -1,17 +1,24 @@
 import type { CalendarioComparto, CalendarioMergedEventDto } from "@/api/calendario"
 
 /** Calendari gestiti solo su server (nessun Excel in build). */
+/** Turni manuali (reception, bagnini, …): solo DB, fascia oraria, opz. dataIso. */
 export const MANUAL_SERVER_COMPARTI: CalendarioComparto[] = [
   "reception",
   "piscina",
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
-  "scuola_nuoto",
 ]
+
+/** Corsi/lezioni importati una volta da Excel, poi solo DB (modifiche da calendario). */
+export const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["corsi", "scuola_nuoto"]
 
 export function compartoIsManualServer(comparto: CalendarioComparto | null | undefined): boolean {
   return comparto != null && MANUAL_SERVER_COMPARTI.includes(comparto)
+}
+
+export function compartoIsServerSeeded(comparto: CalendarioComparto | null | undefined): boolean {
+  return comparto != null && SERVER_SEEDED_COMPARTI.includes(comparto)
 }
 
 function isoYmd(d: Date): string {
