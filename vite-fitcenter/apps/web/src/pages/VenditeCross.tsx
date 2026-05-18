@@ -61,8 +61,8 @@ export function VenditeCross() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Vendite da upgrade abbonamento: rate pagate nel mese e rate future sul piano collegato.
-          Non incluse nella dashboard (allineata ad Andamento vendite).
+          Da RVW_AbbonamentiPagamentiUtenti: abbonamenti CROSS per iscrizione, totale = somma
+          AbbonamentiPagamentiImporto (rate pagate nel mese e future). Non in dashboard.
         </p>
       </div>
 
@@ -120,7 +120,7 @@ export function VenditeCross() {
       <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-6">
         {isLoading ? (
           <div className="py-10 text-center text-zinc-400">
-            Caricamento cross… (query pesante, fino a 2 minuti)
+            Caricamento cross…
           </div>
         ) : error ? (
           <div className="py-6 text-center text-red-400">{(error as Error).message}</div>
