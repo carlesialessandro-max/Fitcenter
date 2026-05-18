@@ -456,6 +456,11 @@ export function getAbbonamentiTableName(): string {
   return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"
 }
 
+/** Tabella iscrizioni (IDUtente, DataInizio): per join log cross, non la RVW lista abbonamenti. */
+function getAbbonamentiIscrizioneTableName(): string {
+  return process.env.GESTIONALE_TABLE_ABBONAMENTI_ISCRIZIONE?.trim() || "AbbonamentiIscrizione"
+}
+
 /** View venditore da anagrafica (es. RVW_AbbonamentiUtentiCapofamiglia): IDVenditoreAbbonamento, NomeVenditoreAbbonamento, colonna join IDIscrizione. */
 function getViewVenditoreAbbonamento(): { view: string; colId: string; colNome: string; colJoin: string } | null {
   const view = process.env.GESTIONALE_VIEW_VENDITORE_ABBONAMENTO?.trim()
@@ -2716,7 +2721,7 @@ async function queryVenditeCrossDeltaSum(args: {
 }): Promise<number> {
   const { p, viewCfg, ids, fromIso, toIso } = args
   const tblMov = defaultTables.movimentiVenduto
-  const tblA = getAbbonamentiTableName()
+  const tblA = getAbbonamentiIscrizioneTableName()
   const tblU = defaultTables.clienti
   const logView = getLogUtentiViewName()
   const lq = qualifySqlObject(logView).query
@@ -2945,17 +2950,17 @@ async function queryVenditeSum(
       const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
       const crossExcludeBase = includeCross
         ? {
-            tblA: getAbbonamentiTableName(),
+            tblA: getAbbonamentiIscrizioneTableName(),
             tblU: defaultTables.clienti,
             logViewQuery: qualifySqlObject(getLogUtentiViewName()).query,
           }
         : undefined
-      if (giorno != null) {
-        const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-        let req = p.request().input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
-        ids.forEach((id, i) => {
-          req = req.input(`id${i}`, sql.Int, id)
-        })
+      const queryBaseTotale = async (
+        req: sql.Request,
+        fromParam: "@dataInizio" | "@from",
+        toParam: "@dataFine" | "@to",
+        withCrossExclude: boolean
+      ): Promise<number> => {
         const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
         const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
         const r = await req.query(
@@ -2965,18 +2970,36 @@ async function queryVenditeSum(
             colJoin,
             idWhereR,
             colTotale,
-            fromParam: "@dataInizio",
-            toParam: "@dataFine",
-            crossExclude: crossExcludeBase
-              ? {
-                  ...crossExcludeBase,
-                  legacyAppLogUnion: sqlUnionLegacyAppLogCross("@dataInizio", "@dataFine"),
-                }
-              : undefined,
+            fromParam,
+            toParam,
+            crossExclude:
+              withCrossExclude && crossExcludeBase
+                ? {
+                    ...crossExcludeBase,
+                    legacyAppLogUnion: sqlUnionLegacyAppLogCross(fromParam, toParam),
+                  }
+                : undefined,
           })
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-        const base = Number(row?.Totale ?? row?.totale) || 0
+        return Number(row?.Totale ?? row?.totale) || 0
+      }
+      if (giorno != null) {
+        const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
+        let req = p.request().input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
+        ids.forEach((id, i) => {
+          req = req.input(`id${i}`, sql.Int, id)
+        })
+        let base = 0
+        try {
+          base = await queryBaseTotale(req, "@dataInizio", "@dataFine", true)
+        } catch {
+          try {
+            base = await queryBaseTotale(req, "@dataInizio", "@dataFine", false)
+          } catch {
+            throw new Error("__FITCENTER_VENDITE_BASE_FAILED__")
+          }
+        }
         if (!includeCross) return base
         try {
           const cross = await queryVenditeCrossDeltaSum({
@@ -3007,27 +3030,16 @@ async function queryVenditeSum(
       ids.forEach((id, i) => {
         req = req.input(`id${i}`, sql.Int, id)
       })
-      const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-      const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-      const r = await req.query(
-        sqlTotaleReportPerIscrizione({
-          tblMov: tbl,
-          view,
-          colJoin,
-          idWhereR,
-          colTotale,
-          fromParam: "@dataInizio",
-          toParam: "@dataFine",
-          crossExclude: crossExcludeBase
-            ? {
-                ...crossExcludeBase,
-                legacyAppLogUnion: sqlUnionLegacyAppLogCross("@dataInizio", "@dataFine"),
-              }
-            : undefined,
-        })
-      )
-      const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-      const base = Number(row?.Totale ?? row?.totale) || 0
+      let base = 0
+      try {
+        base = await queryBaseTotale(req, "@dataInizio", "@dataFine", true)
+      } catch {
+        try {
+          base = await queryBaseTotale(req, "@dataInizio", "@dataFine", false)
+        } catch {
+          throw new Error("__FITCENTER_VENDITE_BASE_FAILED__")
+        }
+      }
       if (!includeCross) return base
       try {
         const cross = await queryVenditeCrossDeltaSum({
