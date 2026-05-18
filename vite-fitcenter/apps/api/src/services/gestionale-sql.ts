@@ -1658,6 +1658,17 @@ function pickBestDateCol(colsLower: string[], candidates: string[]): string | nu
   return fuzzy ? fuzzy : null
 }
 
+/** Solo colonne «data pagato» (no DataRata / scadenza — evita rate da pagare nei cross). */
+function pickPaidDateColStrict(colsLower: string[]): string | null {
+  return pickBestDateCol(colsLower, [
+    "DataPagato",
+    "Data Pagato",
+    "DataPagamento",
+    "AbbonamentiPagamentiDataPagato",
+    "CassaMovimentiDataPagato",
+  ])
+}
+
 function pickBestNumberCol(colsLower: string[], candidates: string[]): string | null {
   const set = new Set(colsLower)
   for (const c of candidates) {
@@ -2604,8 +2615,10 @@ function sqlMovimentoAttribuitoConsulente(
  *
  * Fonti (come report andamento / gestionale):
  * - Log: RVW_LogUtenti.AppLogDescrizione («ABBONAMENTO MODIFICA: … cambiato tipo abbonamento»), opz. AppLog legacy.
- * - Importo: prima MovimentiVenduto TipoOperazione='U' (±5 min dal log); se assente, incasso in RVW_AbbonamentiPagamentiUtenti
- *   (Data pagato, stessa finestra) — tipico quando l’upgrade compare come rata nei pagamenti.
+ * - Importo: prima MovimentiVenduto TipoOperazione='U' (±5 min dal log); se assente, solo incassi **già pagati**
+ *   (Data pagato valorizzata, CassaMovimentiImporto) nella finestra del log — non le rate «da pagare» (Data rata).
+ * - Se la view ha già Totale listino > 0 per l’iscrizione, il delta da pagamenti non si somma (evita doppio conteggio
+ *   con il consuntivo per iscrizione, allineato ad Andamento vendite).
  *
  * Attribuzione al consulente: view venditore sull’iscrizione, oppure IDVenditore/IDOperatore sul movimento o sul pagamento.
  */
@@ -2637,6 +2650,9 @@ async function queryVenditeCrossDeltaSum(args: {
     : "1=1"
   const movAttrIds = ids ? sqlMovimentoAttribuitoIdsSuMovimento(idParams, "V2") : null
   const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale =
+    rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
 
   const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
   const logUnionLegacy = legacyAppLog
@@ -2667,16 +2683,9 @@ async function queryVenditeCrossDeltaSum(args: {
         pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
         pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"])
       const cassaCol =
-        pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Importo", "Cassa"]) ??
-        pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Importo"])
-      const dateCol =
-        pickBestDateCol(colsLower, [
-          "DataPagato",
-          "DataPagamento",
-          "AbbonamentiPagamentiDataPagato",
-          "CassaMovimentiDataPagato",
-          "DataOperazione",
-        ]) ?? null
+        pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"]) ??
+        pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"])
+      const paidDateCol = pickPaidDateColStrict(colsLower)
       const vendCol =
         pickBestNumberCol(colsLower, [
           "IDVenditore",
@@ -2684,23 +2693,24 @@ async function queryVenditeCrossDeltaSum(args: {
           "AbbonamentiIDVenditore",
           "IDOperatore",
         ]) ?? null
-      if (idCol && cassaCol && dateCol) {
+      if (idCol && cassaCol && paidDateCol) {
         const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
         const cassaExpr = `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
-        const dateExpr = `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATETIME)`
+        const paidDateExpr = `TRY_CONVERT(datetime, ${bracketCol(paidDateCol)})`
         const vendFilter =
           ids && vendCol
             ? ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) IN (${idParams})`
             : ""
         pagCte = `
     Pag AS (
-      SELECT ${idExpr} AS IDIscrizione, ${dateExpr} AS DataPag, ${cassaExpr} AS Importo
+      SELECT ${idExpr} AS IDIscrizione, CAST(${paidDateExpr} AS DATETIME) AS DataPag, ${cassaExpr} AS Importo
       FROM ${pvq}
       WHERE ${idExpr} IS NOT NULL
+        AND ${paidDateExpr} IS NOT NULL
         AND ${cassaExpr} IS NOT NULL
         AND ${cassaExpr} <> 0
-        AND CAST(${dateExpr} AS DATE) >= CAST(@from AS DATE)
-        AND CAST(${dateExpr} AS DATE) <= CAST(@to AS DATE)
+        AND CAST(${paidDateExpr} AS DATE) >= CAST(@from AS DATE)
+        AND CAST(${paidDateExpr} AS DATE) <= CAST(@to AS DATE)
         ${vendFilter}
     ),`
         pagApply = `
@@ -2804,8 +2814,10 @@ async function queryVenditeCrossDeltaSum(args: {
         T.IDIscrizione,
         MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
         MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg,
-        MAX(${pagApply ? "COALESCE(PagSum.SumPag, 0)" : "0"}) AS PagDelta
+        MAX(${pagApply ? "COALESCE(PagSum.SumPag, 0)" : "0"}) AS PagDelta,
+        MAX(COALESCE(TL.TotaleListino, 0)) AS TotaleListino
       FROM Target T
+      LEFT JOIN TotaleListino TL ON TL.IDIscrizione = T.IDIscrizione
       LEFT JOIN Mov V
         ON V.IDIscrizione = T.IDIscrizione
        AND V.DataMov >= DATEADD(minute, -5, T.LogData)
@@ -2816,6 +2828,7 @@ async function queryVenditeCrossDeltaSum(args: {
     SELECT COALESCE(SUM(
       CASE
         WHEN COALESCE(Pos, 0) + COALESCE(Neg, 0) <> 0 THEN COALESCE(Pos, 0) + COALESCE(Neg, 0)
+        WHEN TotaleListino > 0 THEN 0
         ELSE PagDelta
       END
     ), 0) AS TotaleCross
