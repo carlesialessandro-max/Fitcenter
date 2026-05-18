@@ -2551,6 +2551,78 @@ function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): stri
   `
 }
 
+/** CTE condivisa: iscrizioni con log «cambio tipo abbonamento» nel periodo. */
+function sqlCteCrossLogsAndIscrizioni(args: {
+  tblA: string
+  tblU: string
+  logViewQuery: string
+  legacyAppLogUnion: string
+  fromParam: string
+  toParam: string
+}): string {
+  const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
+  return `
+    LogsFromView AS (
+      SELECT
+        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
+        TRY_CONVERT(int, L.[IDUtente]) AS IDUtente,
+        L.[Cognome],
+        L.[Nome],
+        L.[AppLogDescrizione] AS LogTesto,
+        ${parseDesc("L.[AppLogDescrizione]")} AS IDIscrizioneParsed
+      FROM ${args.logViewQuery} L
+      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(${args.fromParam} AS DATE)
+        AND CAST(L.[DataOperazione] AS DATE) <= CAST(${args.toParam} AS DATE)
+        AND ${sqlWhereLogCambioTipoAbbonamento("L.[AppLogDescrizione]")}
+      ${args.legacyAppLogUnion}
+    ),
+    LogsResolved AS (
+      SELECT
+        V.LogData,
+        COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) AS IDIscrizione
+      FROM LogsFromView V
+      OUTER APPLY (
+        SELECT TOP 1 a.[IDIscrizione] AS IDIscrizione
+        FROM [${args.tblU}] u
+        INNER JOIN [${args.tblA}] a ON a.[IDUtente] = u.[IDUtente]
+        WHERE (
+            (V.IDUtente IS NOT NULL AND u.[IDUtente] = V.IDUtente)
+            OR (
+              (V.IDUtente IS NULL OR LTRIM(RTRIM(CAST(V.IDUtente AS NVARCHAR(64)))) = N'')
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Cognome], N''))))
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Nome], N''))))
+            )
+          )
+        ORDER BY a.[IDIscrizione] DESC
+      ) Rslv
+      WHERE COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) IS NOT NULL
+    ),
+    CrossIscrizioni AS (
+      SELECT IDIscrizione, MAX(LogData) AS LogData
+      FROM LogsResolved
+      GROUP BY IDIscrizione
+    )`
+}
+
+function sqlUnionLegacyAppLogCross(fromParam: string, toParam: string): string {
+  const legacy = (process.env.GESTIONALE_VENDITE_CROSS_LEGACY_APPLOG ?? "false").toLowerCase() === "true"
+  if (!legacy) return ""
+  const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
+  return `
+      UNION ALL
+      SELECT
+        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
+        CAST(NULL AS INT) AS IDUtente,
+        CAST(NULL AS NVARCHAR(128)) AS Cognome,
+        CAST(NULL AS NVARCHAR(128)) AS Nome,
+        L.[Descrizione] AS LogTesto,
+        ${parseDesc("L.[Descrizione]")} AS IDIscrizioneParsed
+      FROM [AppLog] L
+      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(${fromParam} AS DATE)
+        AND CAST(L.[DataOperazione] AS DATE) <= CAST(${toParam} AS DATE)
+        AND ${sqlWhereLogCambioTipoAbbonamento("L.[Descrizione]")}`
+}
+
 function sqlTotaleReportPerIscrizione(args: {
   tblMov: string
   view: string
@@ -2559,16 +2631,34 @@ function sqlTotaleReportPerIscrizione(args: {
   colTotale: string
   fromParam: "@dataInizio" | "@from"
   toParam: "@dataFine" | "@to"
+  /** Esclude dal venduto le iscrizioni cross (conteggiate a parte con piano rate). */
+  crossExclude?: {
+    tblA: string
+    tblU: string
+    logViewQuery: string
+    legacyAppLogUnion: string
+  }
 }): string {
   const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
   const dateExpr = (col: string) =>
     dateShiftH
       ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
       : `CAST(${col} AS DATE)`
-  // Replica report: Temp_Stampe = IDIscrizione con movimento nel periodo (da MovimentiVenduto),
-  // poi somma Totale dalla view una volta per iscrizione (MAX per sicurezza).
   const whereTipo = sqlWhereTipoOperazioneMovimentoVendita("M")
-  return `;WITH Temp_Stampe AS (
+  const crossCte = args.crossExclude
+    ? `${sqlCteCrossLogsAndIscrizioni({
+        tblA: args.crossExclude.tblA,
+        tblU: args.crossExclude.tblU,
+        logViewQuery: args.crossExclude.logViewQuery,
+        legacyAppLogUnion: args.crossExclude.legacyAppLogUnion,
+        fromParam: args.fromParam,
+        toParam: args.toParam,
+      })},`
+    : ""
+  const crossFilter = args.crossExclude
+    ? `AND NOT EXISTS (SELECT 1 FROM CrossIscrizioni CI WHERE CI.IDIscrizione = T.ID)`
+    : ""
+  return `;WITH ${crossCte} Temp_Stampe AS (
     SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
     FROM [${args.tblMov}] M
     WHERE M.[${COL_IMPORTO}] <> 0
@@ -2583,6 +2673,7 @@ function sqlTotaleReportPerIscrizione(args: {
     WHERE ${args.idWhereR}
       ${whereEsclusioniVenditeView("R")}
       ${whereExcludeUispTesseramenti("R")}
+      ${crossFilter}
     GROUP BY T.ID
   )
   SELECT COALESCE(SUM(Totale), 0) AS Totale FROM UnaPerIscrizione`
@@ -2611,16 +2702,10 @@ function sqlMovimentoAttribuitoConsulente(
 }
 
 /**
- * Delta cross (cambio tipologia abbonamento) attribuito al consulente nelle vendite dashboard.
- *
- * Fonti (come report andamento / gestionale):
- * - Log: RVW_LogUtenti.AppLogDescrizione («ABBONAMENTO MODIFICA: … cambiato tipo abbonamento»), opz. AppLog legacy.
- * - Importo: prima MovimentiVenduto TipoOperazione='U' (±5 min dal log); se assente, solo incassi **già pagati**
- *   (Data pagato valorizzata, CassaMovimentiImporto) nella finestra del log — non le rate «da pagare» (Data rata).
- * - Se la view ha già Totale listino > 0 per l’iscrizione, il delta da pagamenti non si somma (evita doppio conteggio
- *   con il consuntivo per iscrizione, allineato ad Andamento vendite).
- *
- * Attribuzione al consulente: view venditore sull’iscrizione, oppure IDVenditore/IDOperatore sul movimento o sul pagamento.
+ * Vendite cross (solo cambio tipologia abbonamento): escluse dal venduto base.
+ * Valore = movimenti U (±5 min dal log) oppure piano rate del cliente:
+ * rate pagate nel mese + rate future (da pagare) sulle iscrizioni legate al cross.
+ * Tutto il resto resta «venduto» (Totale per iscrizione / andamento).
  */
 async function queryVenditeCrossDeltaSum(args: {
   p: sql.ConnectionPool
@@ -2635,7 +2720,7 @@ async function queryVenditeCrossDeltaSum(args: {
   const tblU = defaultTables.clienti
   const logView = getLogUtentiViewName()
   const lq = qualifySqlObject(logView).query
-  const legacyAppLog = (process.env.GESTIONALE_VENDITE_CROSS_LEGACY_APPLOG ?? "false").toLowerCase() === "true"
+  const legacyUnion = sqlUnionLegacyAppLogCross("@from", "@to")
   const includePagamenti =
     (process.env.GESTIONALE_VENDITE_CROSS_INCLUDE_PAGAMENTI ?? "true").toLowerCase() !== "false"
 
@@ -2650,30 +2735,9 @@ async function queryVenditeCrossDeltaSum(args: {
     : "1=1"
   const movAttrIds = ids ? sqlMovimentoAttribuitoIdsSuMovimento(idParams, "V2") : null
   const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
-  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-  const colTotale =
-    rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-
-  const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
-  const logUnionLegacy = legacyAppLog
-    ? `
-      UNION ALL
-      SELECT
-        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
-        CAST(NULL AS INT) AS IDUtente,
-        CAST(NULL AS NVARCHAR(128)) AS Cognome,
-        CAST(NULL AS NVARCHAR(128)) AS Nome,
-        L.[Descrizione] AS LogTesto,
-        ${parseDesc("L.[Descrizione]")} AS IDIscrizioneParsed
-      FROM [AppLog] L
-      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
-        AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
-        AND ${sqlWhereLogCambioTipoAbbonamento("L.[Descrizione]")}
-    `
-    : ""
 
   let pagCte = ""
-  let pagApply = ""
+  let pianoRateJoin = ""
   if (includePagamenti) {
     try {
       const pagView = getAbbonamentiPagamentiViewName()
@@ -2685,6 +2749,9 @@ async function queryVenditeCrossDeltaSum(args: {
       const cassaCol =
         pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"]) ??
         pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"])
+      const importoCol =
+        pickBestNumberCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"]) ??
+        pickBestTextCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"])
       const paidDateCol = pickPaidDateColStrict(colsLower)
       const vendCol =
         pickBestNumberCol(colsLower, [
@@ -2693,9 +2760,12 @@ async function queryVenditeCrossDeltaSum(args: {
           "AbbonamentiIDVenditore",
           "IDOperatore",
         ]) ?? null
-      if (idCol && cassaCol && paidDateCol) {
+      if (idCol && importoCol && paidDateCol) {
         const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
-        const cassaExpr = `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+        const cassaExpr = cassaCol
+          ? `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+          : `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+        const importoExpr = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
         const paidDateExpr = `TRY_CONVERT(datetime, ${bracketCol(paidDateCol)})`
         const vendFilter =
           ids && vendCol
@@ -2703,27 +2773,44 @@ async function queryVenditeCrossDeltaSum(args: {
             : ""
         pagCte = `
     Pag AS (
-      SELECT ${idExpr} AS IDIscrizione, CAST(${paidDateExpr} AS DATETIME) AS DataPag, ${cassaExpr} AS Importo
+      SELECT
+        ${idExpr} AS IDIscrizione,
+        CAST(${paidDateExpr} AS DATETIME) AS DataPagato,
+        ${cassaExpr} AS Cassa,
+        ${importoExpr} AS ImportoRata
       FROM ${pvq}
       WHERE ${idExpr} IS NOT NULL
-        AND ${paidDateExpr} IS NOT NULL
-        AND ${cassaExpr} IS NOT NULL
-        AND ${cassaExpr} <> 0
-        AND CAST(${paidDateExpr} AS DATE) >= CAST(@from AS DATE)
-        AND CAST(${paidDateExpr} AS DATE) <= CAST(@to AS DATE)
+        AND ${importoExpr} IS NOT NULL
+        AND ${importoExpr} <> 0
         ${vendFilter}
     ),`
-        pagApply = `
+        pianoRateJoin = `
       OUTER APPLY (
-        SELECT COALESCE(SUM(P.Importo), 0) AS SumPag
+        SELECT
+          COALESCE(SUM(
+            CASE
+              WHEN P.DataPagato IS NOT NULL
+                AND P.Cassa IS NOT NULL
+                AND P.Cassa <> 0
+                AND CAST(P.DataPagato AS DATE) >= CAST(@from AS DATE)
+                AND CAST(P.DataPagato AS DATE) <= CAST(@to AS DATE)
+              THEN P.Cassa
+              ELSE 0
+            END
+          ), 0) AS RatePagateMese,
+          COALESCE(SUM(
+            CASE
+              WHEN P.DataPagato IS NULL THEN P.ImportoRata
+              ELSE 0
+            END
+          ), 0) AS RateFuture
         FROM Pag P
-        WHERE P.IDIscrizione = T.IDIscrizione
-          AND P.DataPag >= DATEADD(minute, -5, T.LogData)
-          AND P.DataPag <= DATEADD(minute,  5, T.LogData)
-      ) PagSum`
+        INNER JOIN IscrizioniPiano IP ON IP.IDIscrizione = P.IDIscrizione
+        WHERE IP.CrossIDIscrizione = T.IDIscrizione
+      ) Piano`
       }
     } catch {
-      /* pagamenti view non disponibile: solo movimenti U */
+      /* view pagamenti assente */
     }
   }
 
@@ -2731,71 +2818,49 @@ async function queryVenditeCrossDeltaSum(args: {
     ? `(
         EXISTS (
           SELECT 1 FROM [${viewCfg.view}] R
-          WHERE R.[${viewCfg.colJoin}] = L.IDIscrizione
+          WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione
             AND ${idWhereR}
             ${exView}
         )
         OR EXISTS (
           SELECT 1 FROM [${tblMov}] V2
-          WHERE V2.[${COL_ISCRIZIONE}] = L.IDIscrizione
+          WHERE V2.[${COL_ISCRIZIONE}] = CI.IDIscrizione
             AND V2.[TipoOperazione] = 'U'
-            AND CAST(V2.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, L.LogData)
-            AND CAST(V2.[${COL_DATA}] AS DATETIME) <= DATEADD(minute,  5, L.LogData)
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, CI.LogData)
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) <= DATEADD(minute,  5, CI.LogData)
             AND ${movAttrIds}
         )
-        ${pagCte ? `OR EXISTS (
-          SELECT 1 FROM Pag P0
-          WHERE P0.IDIscrizione = L.IDIscrizione
-            AND P0.DataPag >= DATEADD(minute, -5, L.LogData)
-            AND P0.DataPag <= DATEADD(minute,  5, L.LogData)
-        )` : ""}
       )`
     : "1=1"
 
+  const crossCte = sqlCteCrossLogsAndIscrizioni({
+    tblA,
+    tblU,
+    logViewQuery: lq,
+    legacyAppLogUnion: legacyUnion,
+    fromParam: "@from",
+    toParam: "@to",
+  })
+
   const q = `
-    ;WITH LogsFromView AS (
-      SELECT
-        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
-        TRY_CONVERT(int, L.[IDUtente]) AS IDUtente,
-        L.[Cognome],
-        L.[Nome],
-        L.[AppLogDescrizione] AS LogTesto,
-        ${parseDesc("L.[AppLogDescrizione]")} AS IDIscrizioneParsed
-      FROM ${lq} L
-      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
-        AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
-        AND ${sqlWhereLogCambioTipoAbbonamento("L.[AppLogDescrizione]")}
-      ${logUnionLegacy}
+    ;WITH ${crossCte},
+    ClientiCross AS (
+      SELECT CI.IDIscrizione, CI.LogData, a.[IDUtente]
+      FROM CrossIscrizioni CI
+      INNER JOIN [${tblA}] a ON a.[IDIscrizione] = CI.IDIscrizione
     ),
-    LogsResolved AS (
+    IscrizioniPiano AS (
       SELECT
-        V.LogData,
-        COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) AS IDIscrizione
-      FROM LogsFromView V
-      OUTER APPLY (
-        SELECT TOP 1 a.[IDIscrizione] AS IDIscrizione
-        FROM [${tblU}] u
-        INNER JOIN [${tblA}] a ON a.[IDUtente] = u.[IDUtente]
-        WHERE (
-            (V.IDUtente IS NOT NULL AND u.[IDUtente] = V.IDUtente)
-            OR (
-              (V.IDUtente IS NULL OR LTRIM(RTRIM(CAST(V.IDUtente AS NVARCHAR(64)))) = N'')
-              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Cognome], N''))))
-              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Nome], N''))))
-            )
-          )
-        ORDER BY a.[IDIscrizione] DESC
-      ) Rslv
-      WHERE COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) IS NOT NULL
-    ),
-    Logs AS (
-      SELECT IDIscrizione, MAX(LogData) AS LogData
-      FROM LogsResolved
-      GROUP BY IDIscrizione
+        cc.IDIscrizione AS CrossIDIscrizione,
+        a.[IDIscrizione] AS IDIscrizione
+      FROM ClientiCross cc
+      INNER JOIN [${tblA}] a ON a.[IDUtente] = cc.[IDUtente]
+      WHERE a.[IDIscrizione] = cc.IDIscrizione
+         OR TRY_CONVERT(date, a.[DataInizio]) >= CAST(cc.LogData AS DATE)
     ),${pagCte}
     Target AS (
-      SELECT L.IDIscrizione, L.LogData
-      FROM Logs L
+      SELECT CI.IDIscrizione, CI.LogData
+      FROM CrossIscrizioni CI
       WHERE ${targetAttrib}
     ),
     Mov AS (
@@ -2809,30 +2874,28 @@ async function queryVenditeCrossDeltaSum(args: {
         AND M.[TipoOperazione] = 'U'
         ${tipoServWhere}
     ),
-    PerIscrizione AS (
+    PerCross AS (
       SELECT
         T.IDIscrizione,
         MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
         MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg,
-        MAX(${pagApply ? "COALESCE(PagSum.SumPag, 0)" : "0"}) AS PagDelta,
-        MAX(COALESCE(TL.TotaleListino, 0)) AS TotaleListino
+        MAX(${pianoRateJoin ? "COALESCE(Piano.RatePagateMese, 0)" : "0"}) AS RatePagateMese,
+        MAX(${pianoRateJoin ? "COALESCE(Piano.RateFuture, 0)" : "0"}) AS RateFuture
       FROM Target T
-      LEFT JOIN TotaleListino TL ON TL.IDIscrizione = T.IDIscrizione
       LEFT JOIN Mov V
         ON V.IDIscrizione = T.IDIscrizione
        AND V.DataMov >= DATEADD(minute, -5, T.LogData)
        AND V.DataMov <= DATEADD(minute,  5, T.LogData)
-      ${pagApply}
+      ${pianoRateJoin}
       GROUP BY T.IDIscrizione
     )
     SELECT COALESCE(SUM(
       CASE
         WHEN COALESCE(Pos, 0) + COALESCE(Neg, 0) <> 0 THEN COALESCE(Pos, 0) + COALESCE(Neg, 0)
-        WHEN TotaleListino > 0 THEN 0
-        ELSE PagDelta
+        ELSE COALESCE(RatePagateMese, 0) + COALESCE(RateFuture, 0)
       END
     ), 0) AS TotaleCross
-    FROM PerIscrizione;
+    FROM PerCross;
   `
 
   let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
@@ -2879,6 +2942,14 @@ async function queryVenditeSum(
       const colJoin = viewCfg.colJoin
       const idParams = ids.map((_, i) => `@id${i}`).join(", ")
       const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
+      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
+      const crossExcludeBase = includeCross
+        ? {
+            tblA: getAbbonamentiTableName(),
+            tblU: defaultTables.clienti,
+            logViewQuery: qualifySqlObject(getLogUtentiViewName()).query,
+          }
+        : undefined
       if (giorno != null) {
         const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
         let req = p.request().input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
@@ -2896,11 +2967,16 @@ async function queryVenditeSum(
             colTotale,
             fromParam: "@dataInizio",
             toParam: "@dataFine",
+            crossExclude: crossExcludeBase
+              ? {
+                  ...crossExcludeBase,
+                  legacyAppLogUnion: sqlUnionLegacyAppLogCross("@dataInizio", "@dataFine"),
+                }
+              : undefined,
           })
         )
         const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
         const base = Number(row?.Totale ?? row?.totale) || 0
-        const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
         if (!includeCross) return base
         try {
           const cross = await queryVenditeCrossDeltaSum({
@@ -2942,11 +3018,16 @@ async function queryVenditeSum(
           colTotale,
           fromParam: "@dataInizio",
           toParam: "@dataFine",
+          crossExclude: crossExcludeBase
+            ? {
+                ...crossExcludeBase,
+                legacyAppLogUnion: sqlUnionLegacyAppLogCross("@dataInizio", "@dataFine"),
+              }
+            : undefined,
         })
       )
       const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
       const base = Number(row?.Totale ?? row?.totale) || 0
-      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
       if (!includeCross) return base
       try {
         const cross = await queryVenditeCrossDeltaSum({
