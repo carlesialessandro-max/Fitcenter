@@ -1519,7 +1519,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
   }
 }
 
-const VENDITE_CROSS_SQL_TIMEOUT_MS = Number(process.env.VENDITE_CROSS_SQL_TIMEOUT_MS ?? 90_000)
+const VENDITE_CROSS_SQL_TIMEOUT_MS = gestionaleSql.getVenditeCrossRequestTimeoutMs()
 
 function withVenditeCrossSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([

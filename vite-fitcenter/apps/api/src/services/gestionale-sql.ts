@@ -95,6 +95,18 @@ function ensureSqlTimeouts(cs: string): string {
   return out
 }
 
+/** Timeout singola request SQL (ms). Default pool = 45s; query cross usano valore più alto. */
+export function getVenditeCrossRequestTimeoutMs(): number {
+  const n = Number(process.env.VENDITE_CROSS_SQL_TIMEOUT_MS ?? 120_000)
+  return Number.isFinite(n) && n >= 60_000 ? n : 120_000
+}
+
+function poolRequestWithTimeout(p: sql.ConnectionPool, timeoutMs?: number): sql.Request {
+  const req = p.request()
+  if (timeoutMs != null && timeoutMs > 0) req.timeout = timeoutMs
+  return req
+}
+
 export function getSqlConnectionInfo(): { server: string | null; database: string | null } {
   const cs = getConnectionString()
   if (!cs) return { server: null, database: null }
@@ -3054,51 +3066,61 @@ export async function getVenditeCrossElenco(
       )`
     : ""
 
-  let pagCte = ""
-  let pianoRateJoin = ""
+  const includePagamenti =
+    (process.env.GESTIONALE_VENDITE_CROSS_INCLUDE_PAGAMENTI ?? "true").toLowerCase() !== "false"
+  let pagAndRateCtes = ""
   try {
-    const pagView = getAbbonamentiPagamentiViewName()
-    const { query: pvq } = qualifySqlObject(pagView)
-    const colsLower = await prenGetCols(pagView)
-    const idCol =
-      pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
-      pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"])
-    const cassaCol =
-      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"]) ??
-      pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"])
-    const importoCol =
-      pickBestNumberCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"]) ??
-      pickBestTextCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"])
-    const paidDateCol = pickPaidDateColStrict(colsLower)
-    if (idCol && importoCol && paidDateCol) {
-      const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
-      const cassaExpr = cassaCol
-        ? `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
-        : `TRY_CONVERT(float, ${bracketCol(importoCol)})`
-      const importoExpr = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
-      const paidDateExpr = `TRY_CONVERT(datetime, ${bracketCol(paidDateCol)})`
-      pagCte = `
+    if (includePagamenti) {
+      const pagView = getAbbonamentiPagamentiViewName()
+      const { query: pvq } = qualifySqlObject(pagView)
+      const colsLower = await prenGetCols(pagView)
+      const idCol =
+        pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
+        pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"])
+      const cassaCol =
+        pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"]) ??
+        pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"])
+      const importoCol =
+        pickBestNumberCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"]) ??
+        pickBestTextCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"])
+      const paidDateCol = pickPaidDateColStrict(colsLower)
+      if (idCol && importoCol && paidDateCol) {
+        const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
+        const cassaExpr = cassaCol
+          ? `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+          : `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+        const importoExpr = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+        const paidDateExpr = `TRY_CONVERT(datetime, ${bracketCol(paidDateCol)})`
+        pagAndRateCtes = `
     Pag AS (
       SELECT ${idExpr} AS IDIscrizione,
         CAST(${paidDateExpr} AS DATETIME) AS DataPagato,
         ${cassaExpr} AS Cassa,
         ${importoExpr} AS ImportoRata
-      FROM ${pvq}
+      FROM ${pvq} P
       WHERE ${idExpr} IS NOT NULL AND ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
+        AND (
+          ${paidDateExpr} IS NULL
+          OR (
+            CAST(${paidDateExpr} AS DATE) >= CAST(@from AS DATE)
+            AND CAST(${paidDateExpr} AS DATE) <= CAST(@to AS DATE)
+          )
+        )
+        AND EXISTS (SELECT 1 FROM IscrizioniPiano IP WHERE IP.IDIscrizione = ${idExpr})
+    ),
+    RatePerCross AS (
+      SELECT IP.CrossIDIscrizione AS IDIscrizione,
+        COALESCE(SUM(CASE
+          WHEN Pg.DataPagato IS NOT NULL AND Pg.Cassa IS NOT NULL AND Pg.Cassa <> 0
+            AND CAST(Pg.DataPagato AS DATE) >= CAST(@from AS DATE)
+            AND CAST(Pg.DataPagato AS DATE) <= CAST(@to AS DATE)
+          THEN Pg.Cassa ELSE 0 END), 0) AS RatePagateMese,
+        COALESCE(SUM(CASE WHEN Pg.DataPagato IS NULL THEN Pg.ImportoRata ELSE 0 END), 0) AS RateFuture
+      FROM IscrizioniPiano IP
+      INNER JOIN Pag Pg ON Pg.IDIscrizione = IP.IDIscrizione
+      GROUP BY IP.CrossIDIscrizione
     ),`
-      pianoRateJoin = `
-      OUTER APPLY (
-        SELECT
-          COALESCE(SUM(CASE
-            WHEN P.DataPagato IS NOT NULL AND P.Cassa IS NOT NULL AND P.Cassa <> 0
-              AND CAST(P.DataPagato AS DATE) >= CAST(@from AS DATE)
-              AND CAST(P.DataPagato AS DATE) <= CAST(@to AS DATE)
-            THEN P.Cassa ELSE 0 END), 0) AS RatePagateMese,
-          COALESCE(SUM(CASE WHEN P.DataPagato IS NULL THEN P.ImportoRata ELSE 0 END), 0) AS RateFuture
-        FROM Pag P
-        INNER JOIN IscrizioniPiano IP ON IP.IDIscrizione = P.IDIscrizione
-        WHERE IP.CrossIDIscrizione = B.IDIscrizione
-      ) Rp`
+      }
     }
   } catch {
     /* senza pagamenti: solo movimenti U */
@@ -3111,6 +3133,11 @@ export async function getVenditeCrossElenco(
     fromParam: "@from",
     toParam: "@to",
   })
+
+  const rateSelect = pagAndRateCtes
+    ? "COALESCE(Rc.RatePagateMese, 0) AS RatePagateMese, COALESCE(Rc.RateFuture, 0) AS RateFuture"
+    : "CAST(0 AS float) AS RatePagateMese, CAST(0 AS float) AS RateFuture"
+  const rateJoin = pagAndRateCtes ? "LEFT JOIN RatePerCross Rc ON Rc.IDIscrizione = B.IDIscrizione" : ""
 
   const q = `
     ;WITH ${crossCte},
@@ -3134,17 +3161,16 @@ export async function getVenditeCrossElenco(
       INNER JOIN ${av} a ON a.[IDUtente] = cc.[IDUtente]
       WHERE a.[IDIscrizione] = cc.IDIscrizione
          OR TRY_CONVERT(date, COALESCE(a.[DataInizio], a.[DataOperazione])) >= CAST(cc.LogData AS DATE)
-    ),${pagCte}
-    Base AS (
-      SELECT cc.IDIscrizione, cc.LogData, cc.Cognome, cc.Nome, cc.Abbonamento
-      FROM ClientiCross cc
-    ),
+    ),${pagAndRateCtes}
     Mov AS (
       SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione,
         CAST(M.[${COL_DATA}] AS DATETIME) AS DataMov,
         TRY_CONVERT(float, M.[${COL_IMPORTO}]) AS Importo
       FROM [${tblMov}] M
+      INNER JOIN CrossFiltrati CF ON CF.IDIscrizione = M.[${COL_ISCRIZIONE}]
       WHERE M.[TipoOperazione] = 'U' ${tipoServWhere}
+        AND CAST(M.[${COL_DATA}] AS DATE) >= DATEADD(day, -7, CAST(@from AS DATE))
+        AND CAST(M.[${COL_DATA}] AS DATE) <= DATEADD(day, 7, CAST(@to AS DATE))
     ),
     Righe AS (
       SELECT
@@ -3154,14 +3180,15 @@ export async function getVenditeCrossElenco(
         B.Nome,
         B.Abbonamento,
         MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
-        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg
-        ${pianoRateJoin ? ", MAX(COALESCE(Rp.RatePagateMese, 0)) AS RatePagateMese, MAX(COALESCE(Rp.RateFuture, 0)) AS RateFuture" : ", CAST(0 AS float) AS RatePagateMese, CAST(0 AS float) AS RateFuture"}
-      FROM Base B
+        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg,
+        ${rateSelect}
+      FROM ClientiCross B
       LEFT JOIN Mov V ON V.IDIscrizione = B.IDIscrizione
         AND V.DataMov >= DATEADD(minute, -5, B.LogData)
         AND V.DataMov <= DATEADD(minute, 5, B.LogData)
-      ${pianoRateJoin ?? ""}
+      ${rateJoin}
       GROUP BY B.IDIscrizione, B.LogData, B.Cognome, B.Nome, B.Abbonamento
+        ${pagAndRateCtes ? ", Rc.RatePagateMese, Rc.RateFuture" : ""}
     )
     SELECT
       IDIscrizione,
@@ -3179,7 +3206,9 @@ export async function getVenditeCrossElenco(
     ORDER BY LogData DESC, IDIscrizione DESC
   `
 
-  let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+  let req = poolRequestWithTimeout(p, getVenditeCrossRequestTimeoutMs())
+    .input("from", sql.VarChar(10), from)
+    .input("to", sql.VarChar(10), to)
   ids.forEach((id, i) => {
     req = req.input(`id${i}`, sql.Int, id)
   })

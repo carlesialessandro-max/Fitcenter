@@ -50,7 +50,8 @@ export function VenditeCross() {
       }),
     retry: false,
     refetchOnWindowFocus: false,
-    staleTime: 60_000,
+    staleTime: 120_000,
+    gcTime: 300_000,
   })
 
   const rows = data?.rows ?? []
@@ -119,7 +120,7 @@ export function VenditeCross() {
       <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-6">
         {isLoading ? (
           <div className="py-10 text-center text-zinc-400">
-            Caricamento cross… (può richiedere un minuto)
+            Caricamento cross… (query pesante, fino a 2 minuti)
           </div>
         ) : error ? (
           <div className="py-6 text-center text-red-400">{(error as Error).message}</div>
