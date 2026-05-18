@@ -39,7 +39,6 @@ function DashboardOrRedirect() {
   if (role === "scuola_nuoto") return <Navigate to="/scuola-nuoto" replace />
   if (role === "bagnini") return <Navigate to="/piscina" replace />
   if (role === "danza") return <Navigate to="/danza" replace />
-  if (role === "admin") return <Navigate to="/calendario" replace />
   return <Dashboard />
 }
 

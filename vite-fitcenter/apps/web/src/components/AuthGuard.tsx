@@ -20,7 +20,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
 /** Se già loggato, vai alla home invece della login */
 export function LoginRedirect({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth()
+  const { isAuthenticated, isLoading, role } = useAuth()
 
   if (isLoading) {
     return (
@@ -30,6 +30,7 @@ export function LoginRedirect({ children }: { children: React.ReactNode }) {
     )
   }
   if (isAuthenticated) {
+    if (role === "admin") return <Navigate to="/calendario" replace />
     return <Navigate to="/" replace />
   }
   return <>{children}</>
