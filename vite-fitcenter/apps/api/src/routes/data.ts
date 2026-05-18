@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
   deleteCalendarioInstructor,
@@ -38,6 +38,7 @@ dataRouter.get("/sql-status", getSqlStatus)
 dataRouter.get("/dashboard", getDashboard)
 dataRouter.get("/vendite-storico", getVenditeStorico)
 dataRouter.get("/vendite-movimenti-andamento", getVenditeMovimentiCategoriaDurata)
+dataRouter.get("/vendite-cross", getVenditeCross)
 dataRouter.get("/totali-anni", requireAdmin, getTotaliAnni)
 dataRouter.get("/dettaglio-mese", getDettaglioMese)
 dataRouter.get("/dettaglio-anno", requireAdmin, getDettaglioAnno)

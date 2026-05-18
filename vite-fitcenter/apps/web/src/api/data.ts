@@ -167,6 +167,26 @@ export const dataApi = {
       `/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`
     )
   },
+  getVenditeCross: (params: { anno: number; mese: number; consulente?: string }) => {
+    const q = new URLSearchParams({ anno: String(params.anno), mese: String(params.mese) })
+    if (params.consulente) q.set("consulente", params.consulente)
+    return api.get<{
+      from: string
+      to: string
+      totale: number
+      consulente: string | null
+      rows: {
+        idIscrizione: number
+        dataCross: string
+        cliente: string
+        abbonamento: string
+        ratePagateMese: number
+        rateFuture: number
+        movimentoU: number
+        totale: number
+      }[]
+    }>(`/data/vendite-cross?${q}`)
+  },
   getDettaglioMese: (anno: number, mese: number, giorno?: number, consulente?: string, asOf?: string) => {
     const params = new URLSearchParams({ anno: String(anno), mese: String(mese) })
     if (giorno != null) params.set("giorno", String(giorno))

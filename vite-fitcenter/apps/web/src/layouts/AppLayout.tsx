@@ -15,6 +15,7 @@ const navOperatore: NavItem[] = [
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
+  { to: "/vendite-cross", label: "Cross" },
   { to: "/piscina", label: "Mappa Piscina" },
 ] as const
 
@@ -115,6 +116,7 @@ const navAdmin: NavItem[] = [
       { to: "/telefonate", label: "Telefonate" },
       { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
       { to: "/andamento-vendite", label: "Andamento vendite" },
+      { to: "/vendite-cross", label: "Cross" },
     ],
   },
   {

@@ -1519,6 +1519,55 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
   }
 }
 
+const VENDITE_CROSS_SQL_TIMEOUT_MS = Number(process.env.VENDITE_CROSS_SQL_TIMEOUT_MS ?? 90_000)
+
+function withVenditeCrossSqlTimeout<T>(p: Promise<T>): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, rej) =>
+      setTimeout(() => rej(new Error("__FITCENTER_VENDITE_CROSS_SQL_TIMEOUT__")), VENDITE_CROSS_SQL_TIMEOUT_MS)
+    ),
+  ])
+}
+
+/** Elenco cross (cambio tipologia): rate pagate nel mese + rate future. Pagina dedicata, non in dashboard. */
+export async function getVenditeCross(req: Request, res: Response) {
+  try {
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      return res.status(503).json({ message: "Gestionale SQL non configurato" })
+    }
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+
+    const now = new Date()
+    const anno = parseIntParam(req.query.anno, 2000, 2100) ?? now.getFullYear()
+    const mese = parseIntParam(req.query.mese, 1, 12) ?? now.getMonth() + 1
+    const ultimoGiorno = new Date(anno, mese, 0).getDate()
+    const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+    const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
+
+    let idUtente = await resolveConsultantId(consulente)
+    if (!idUtente && !operatoreNome) {
+      const labels = budgetPerConsulente.getConsulentiLabels()
+      const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
+      idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
+    }
+
+    const { rows, totale } = await withVenditeCrossSqlTimeout(
+      gestionaleSql.getVenditeCrossElenco(from, to, idUtente ?? undefined)
+    )
+    res.json({ from, to, rows, totale, consulente: consulente ?? null })
+  } catch (e) {
+    const msg = (e as Error).message
+    if (msg === "__FITCENTER_VENDITE_CROSS_SQL_TIMEOUT__") {
+      return res.status(504).json({
+        message: `Timeout SQL cross dopo ${VENDITE_CROSS_SQL_TIMEOUT_MS} ms — restringi il mese o riprova`,
+      })
+    }
+    res.status(500).json({ message: msg })
+  }
+}
+
 /** Totale vendite e budget per anno (admin). Vendite da MovimentiVenduto se disponibile. */
 export async function getTotaliAnni(req: Request, res: Response) {
   try {

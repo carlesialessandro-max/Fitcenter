@@ -3004,6 +3004,207 @@ async function queryVenditeCrossDeltaSum(args: {
   return Number(row?.TotaleCross ?? row?.totalecross) || 0
 }
 
+export type VenditeCrossRow = {
+  idIscrizione: number
+  dataCross: string
+  cliente: string
+  abbonamento: string
+  ratePagateMese: number
+  rateFuture: number
+  movimentoU: number
+  totale: number
+}
+
+/**
+ * Elenco cross del periodo (pagina dedicata): rate pagate nel mese + rate future da RVW_AbbonamentiPagamentiUtenti.
+ * Non usare nella dashboard (query pesante).
+ */
+export async function getVenditeCrossElenco(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ rows: VenditeCrossRow[]; totale: number }> {
+  const p = await getPool()
+  if (!p) return { rows: [], totale: 0 }
+  const viewCfg = getViewVenditeGestionale()
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const abbView = viewCfg.view
+  const av = qualifySqlObject(abbView).query
+  const lq = qualifySqlObject(getLogUtentiViewName()).query
+  const legacyUnion = sqlUnionLegacyAppLogCross("@from", "@to")
+  const tblMov = defaultTables.movimentiVenduto
+  const tipoServ = movimentoTipoServizioVendita()
+  const tipoServWhere = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
+  const idParams = ids.length > 0 ? ids.map((_, i) => `@id${i}`).join(", ") : ""
+  const idWhereR =
+    ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : ids.length > 0 ? `R.[${viewCfg.colId}] IN (${idParams})` : "1=1"
+  const movAttrIds = ids.length > 0 ? sqlMovimentoAttribuitoIdsSuMovimento(idParams, "V2") : "1=1"
+  const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
+  const attribFilter = ids.length
+    ? `AND (
+        EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})
+        OR EXISTS (
+          SELECT 1 FROM [${tblMov}] V2
+          WHERE V2.[${COL_ISCRIZIONE}] = CI.IDIscrizione
+            AND V2.[TipoOperazione] = 'U'
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, CI.LogData)
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) <= DATEADD(minute, 5, CI.LogData)
+            AND ${movAttrIds}
+        )
+      )`
+    : ""
+
+  let pagCte = ""
+  let pianoRateJoin = ""
+  try {
+    const pagView = getAbbonamentiPagamentiViewName()
+    const { query: pvq } = qualifySqlObject(pagView)
+    const colsLower = await prenGetCols(pagView)
+    const idCol =
+      pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
+      pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"])
+    const cassaCol =
+      pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"]) ??
+      pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Cassa"])
+    const importoCol =
+      pickBestNumberCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"]) ??
+      pickBestTextCol(colsLower, ["Importo", "ImportoRata", "AbbonamentiPagamentiImporto"])
+    const paidDateCol = pickPaidDateColStrict(colsLower)
+    if (idCol && importoCol && paidDateCol) {
+      const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
+      const cassaExpr = cassaCol
+        ? `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+        : `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+      const importoExpr = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+      const paidDateExpr = `TRY_CONVERT(datetime, ${bracketCol(paidDateCol)})`
+      pagCte = `
+    Pag AS (
+      SELECT ${idExpr} AS IDIscrizione,
+        CAST(${paidDateExpr} AS DATETIME) AS DataPagato,
+        ${cassaExpr} AS Cassa,
+        ${importoExpr} AS ImportoRata
+      FROM ${pvq}
+      WHERE ${idExpr} IS NOT NULL AND ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
+    ),`
+      pianoRateJoin = `
+      OUTER APPLY (
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN P.DataPagato IS NOT NULL AND P.Cassa IS NOT NULL AND P.Cassa <> 0
+              AND CAST(P.DataPagato AS DATE) >= CAST(@from AS DATE)
+              AND CAST(P.DataPagato AS DATE) <= CAST(@to AS DATE)
+            THEN P.Cassa ELSE 0 END), 0) AS RatePagateMese,
+          COALESCE(SUM(CASE WHEN P.DataPagato IS NULL THEN P.ImportoRata ELSE 0 END), 0) AS RateFuture
+        FROM Pag P
+        INNER JOIN IscrizioniPiano IP ON IP.IDIscrizione = P.IDIscrizione
+        WHERE IP.CrossIDIscrizione = B.IDIscrizione
+      ) Rp`
+    }
+  } catch {
+    /* senza pagamenti: solo movimenti U */
+  }
+
+  const crossCte = sqlCteCrossLogsAndIscrizioni({
+    abbView,
+    logViewQuery: lq,
+    legacyAppLogUnion: legacyUnion,
+    fromParam: "@from",
+    toParam: "@to",
+  })
+
+  const q = `
+    ;WITH ${crossCte},
+    CrossFiltrati AS (
+      SELECT CI.IDIscrizione, CI.LogData
+      FROM CrossIscrizioni CI
+      WHERE 1=1 ${attribFilter}
+    ),
+    ClientiCross AS (
+      SELECT CF.IDIscrizione, CF.LogData, MAX(a.[IDUtente]) AS IDUtente,
+        MAX(LTRIM(RTRIM(ISNULL(a.[Cognome], N'')))) AS Cognome,
+        MAX(LTRIM(RTRIM(ISNULL(a.[Nome], N'')))) AS Nome,
+        MAX(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], a.[AbbonamentoDurataDescrizione], N'')))) AS Abbonamento
+      FROM CrossFiltrati CF
+      INNER JOIN ${av} a ON a.[IDIscrizione] = CF.IDIscrizione
+      GROUP BY CF.IDIscrizione, CF.LogData
+    ),
+    IscrizioniPiano AS (
+      SELECT cc.IDIscrizione AS CrossIDIscrizione, a.[IDIscrizione] AS IDIscrizione
+      FROM ClientiCross cc
+      INNER JOIN ${av} a ON a.[IDUtente] = cc.[IDUtente]
+      WHERE a.[IDIscrizione] = cc.IDIscrizione
+         OR TRY_CONVERT(date, COALESCE(a.[DataInizio], a.[DataOperazione])) >= CAST(cc.LogData AS DATE)
+    ),${pagCte}
+    Base AS (
+      SELECT cc.IDIscrizione, cc.LogData, cc.Cognome, cc.Nome, cc.Abbonamento
+      FROM ClientiCross cc
+    ),
+    Mov AS (
+      SELECT M.[${COL_ISCRIZIONE}] AS IDIscrizione,
+        CAST(M.[${COL_DATA}] AS DATETIME) AS DataMov,
+        TRY_CONVERT(float, M.[${COL_IMPORTO}]) AS Importo
+      FROM [${tblMov}] M
+      WHERE M.[TipoOperazione] = 'U' ${tipoServWhere}
+    ),
+    Righe AS (
+      SELECT
+        B.IDIscrizione,
+        B.LogData,
+        B.Cognome,
+        B.Nome,
+        B.Abbonamento,
+        MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
+        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg
+        ${pianoRateJoin ? ", MAX(COALESCE(Rp.RatePagateMese, 0)) AS RatePagateMese, MAX(COALESCE(Rp.RateFuture, 0)) AS RateFuture" : ", CAST(0 AS float) AS RatePagateMese, CAST(0 AS float) AS RateFuture"}
+      FROM Base B
+      LEFT JOIN Mov V ON V.IDIscrizione = B.IDIscrizione
+        AND V.DataMov >= DATEADD(minute, -5, B.LogData)
+        AND V.DataMov <= DATEADD(minute, 5, B.LogData)
+      ${pianoRateJoin ?? ""}
+      GROUP BY B.IDIscrizione, B.LogData, B.Cognome, B.Nome, B.Abbonamento
+    )
+    SELECT
+      IDIscrizione,
+      CONVERT(varchar(10), CAST(LogData AS DATE), 23) AS DataCross,
+      LTRIM(RTRIM(Cognome + N' ' + Nome)) AS Cliente,
+      Abbonamento,
+      RatePagateMese,
+      RateFuture,
+      COALESCE(Pos, 0) + COALESCE(Neg, 0) AS MovimentoU,
+      CASE
+        WHEN COALESCE(Pos, 0) + COALESCE(Neg, 0) <> 0 THEN COALESCE(Pos, 0) + COALESCE(Neg, 0)
+        ELSE RatePagateMese + RateFuture
+      END AS Totale
+    FROM Righe
+    ORDER BY LogData DESC, IDIscrizione DESC
+  `
+
+  let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req = req.input(`id${i}`, sql.Int, id)
+  })
+  const r = await req.query(q)
+  const recordset = (r.recordset ?? []) as Record<string, unknown>[]
+  const rows: VenditeCrossRow[] = recordset.map((row) => {
+    const ratePagateMese = Number(row.RatePagateMese ?? row.ratepagatemese) || 0
+    const rateFuture = Number(row.RateFuture ?? row.ratefuture) || 0
+    const movimentoU = Number(row.MovimentoU ?? row.movimentou) || 0
+    const totale = Number(row.Totale ?? row.totale) || 0
+    return {
+      idIscrizione: Number(row.IDIscrizione ?? row.idiscrizione) || 0,
+      dataCross: String(row.DataCross ?? row.datacross ?? ""),
+      cliente: String(row.Cliente ?? row.cliente ?? "").trim(),
+      abbonamento: String(row.Abbonamento ?? row.abbonamento ?? "").trim(),
+      ratePagateMese,
+      rateFuture,
+      movimentoU,
+      totale,
+    }
+  })
+  const totale = rows.reduce((s, x) => s + x.totale, 0)
+  return { rows, totale }
+}
+
 /**
  * Totale vendite: con view venditore si usa **SUM(M.Importo)** su MovimentiVenduto join view (stesso criterio
  * del gestionale: una riga = un movimento). La vecchia logica MAX(R.Totale) per IDIscrizione sottostimava
@@ -3029,11 +3230,6 @@ async function queryVenditeSum(
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
     try {
-      const view = viewCfg.view
-      const colId = viewCfg.colId
-      const colJoin = viewCfg.colJoin
-      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "false").toLowerCase() === "true"
-
       const ultimoGiorno = new Date(anno, mese, 0).getDate()
       let fromStr: string
       let toStr: string
@@ -3047,21 +3243,7 @@ async function queryVenditeSum(
             : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
       }
 
-      let total = await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
-      if (includeCross) {
-        try {
-          total += await queryVenditeCrossDeltaSum({
-            p,
-            viewCfg: { view, colId, colJoin },
-            ids,
-            fromIso: fromStr,
-            toIso: toStr,
-          })
-        } catch {
-          /* cross opzionale: resta totale andamento */
-        }
-      }
-      return total
+      return await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
     } catch {
       return 0
     }
