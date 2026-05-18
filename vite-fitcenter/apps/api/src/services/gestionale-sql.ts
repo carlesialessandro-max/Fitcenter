@@ -2804,17 +2804,9 @@ function sqlMovimentoAttribuitoConsulente(
   )`
 }
 
-function venditeDashboardIncludeCross(): boolean {
-  return (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_IN_DASHBOARD ?? "true").toLowerCase() !== "false"
-}
-
-function venditeEscludiCrossDaAndamento(): boolean {
-  return (process.env.GESTIONALE_VENDITE_ESCLUDI_CROSS_DA_ANDAMENTO ?? "true").toLowerCase() !== "false"
-}
-
 /**
  * Totale vendite = stessa logica di «Andamento vendite» (Temp_Stampe + RVW_AbbonamentiUtenti.Totale).
- * Opzionale: esclude iscrizioni cross (contate a parte con pagamenti).
+ * Usata da dashboard, dettaglio mese e pagina Andamento vendite.
  */
 async function queryVenditeTotaleComeAndamento(
   p: sql.ConnectionPool,
@@ -2829,20 +2821,6 @@ async function queryVenditeTotaleComeAndamento(
   ids.forEach((id, i) => {
     req.input(`id${i}`, sql.Int, id)
   })
-
-  const escludiCross = venditeEscludiCrossDaAndamento()
-  const crossCtePrefix = escludiCross
-    ? `${sqlCteCrossLogsAndIscrizioni({
-        abbView: viewCfg.view,
-        logViewQuery: qualifySqlObject(getLogUtentiViewName()).query,
-        legacyAppLogUnion: sqlUnionLegacyAppLogCross("@from", "@to"),
-        fromParam: "@from",
-        toParam: "@to",
-      })},`
-    : ""
-  const crossExcludeWhere = escludiCross
-    ? `AND NOT EXISTS (SELECT 1 FROM CrossIscrizioni CI WHERE CI.IDIscrizione = PerIscrizione.ID)`
-    : ""
 
   const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
   const dateExpr = (col: string) =>
@@ -2872,7 +2850,7 @@ async function queryVenditeTotaleComeAndamento(
       : ""
 
   const r = await req.query(
-    `;WITH ${crossCtePrefix}Temp_Stampe AS (
+    `;WITH Temp_Stampe AS (
        SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
        FROM [${tblM}] M
        ${whereBase}
@@ -2901,8 +2879,7 @@ async function queryVenditeTotaleComeAndamento(
        GROUP BY ID, Categoria, DurataMesi
      )
      SELECT COALESCE(SUM(TotaleEuro), 0) AS Totale
-     FROM PerIscrizione
-     WHERE 1=1 ${crossExcludeWhere}`
+     FROM PerIscrizione`
   )
   const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
   return Number(row?.Totale ?? row?.totale) || 0
@@ -3281,20 +3258,7 @@ async function queryVenditeSum(
             : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
       }
 
-      let total = 0
-      try {
-        total = await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
-      } catch {
-        /* andamento: continua con cross */
-      }
-      if (venditeDashboardIncludeCross()) {
-        try {
-          total += await queryVenditeCrossTotaleDaLogPagamenti(p, fromStr, toStr, idConsultant)
-        } catch {
-          /* cross opzionale */
-        }
-      }
-      return total
+      return await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
     } catch {
       return 0
     }
