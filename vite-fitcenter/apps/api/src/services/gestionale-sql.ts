@@ -2623,6 +2623,7 @@ function sqlCteCrossLogsAndIscrizioni(args: {
     LogsResolved AS (
       SELECT
         V.LogData,
+        V.IDUtente,
         COALESCE(V.IDIscrizioneParsed, IdDay.IDIscrizione, Rslv.IDIscrizione) AS IDIscrizione
       FROM LogsFromView V
       OUTER APPLY (
@@ -2651,9 +2652,9 @@ function sqlCteCrossLogsAndIscrizioni(args: {
       WHERE COALESCE(V.IDIscrizioneParsed, IdDay.IDIscrizione, Rslv.IDIscrizione) IS NOT NULL
     ),
     CrossIscrizioni AS (
-      SELECT IDIscrizione, MAX(LogData) AS LogData
-      FROM LogsResolved
-      GROUP BY IDIscrizione
+      SELECT MIN(LR.IDIscrizione) AS IDIscrizione, MAX(LR.LogData) AS LogData
+      FROM LogsResolved LR
+      GROUP BY COALESCE(LR.IDUtente, -ABS(LR.IDIscrizione)), CAST(LR.LogData AS DATE)
     )`
 }
 
@@ -3184,25 +3185,33 @@ export async function getVenditeCrossElenco(
         CF.IDIscrizione,
         MAX(CF.LogData) AS LogData,
         ${ratePagateExpr} AS RatePagateMese,
-        ${rateFutureExpr} AS RateFuture,
-        COALESCE(SUM(${importoExpr}), 0) AS Totale
+        ${rateFutureExpr} AS RateFuture
       FROM CrossFiltrati CF
       INNER JOIN ${pvq} P ON ${idExpr} = CF.IDIscrizione
       WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
       GROUP BY CF.IDIscrizione
-      HAVING COALESCE(SUM(${importoExpr}), 0) <> 0
+    ),
+    AbbOne AS (
+      SELECT
+        R.[${viewCfg.colJoin}] AS IDIscrizione,
+        MAX(LTRIM(RTRIM(ISNULL(R.[Cognome], N'')))) AS Cognome,
+        MAX(LTRIM(RTRIM(ISNULL(R.[Nome], N'')))) AS Nome,
+        MAX(LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N'')))) AS Abbonamento
+      FROM ${av} R
+      GROUP BY R.[${viewCfg.colJoin}]
     )
     SELECT
       PC.IDIscrizione,
       CONVERT(varchar(10), CAST(PC.LogData AS DATE), 23) AS DataCross,
-      LTRIM(RTRIM(COALESCE(R.[Cognome], N'') + N' ' + COALESCE(R.[Nome], N''))) AS Cliente,
-      LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N''))) AS Abbonamento,
+      LTRIM(RTRIM(COALESCE(A.Cognome, N'') + N' ' + COALESCE(A.Nome, N''))) AS Cliente,
+      COALESCE(A.Abbonamento, N'') AS Abbonamento,
       PC.RatePagateMese,
       PC.RateFuture,
       CAST(0 AS float) AS MovimentoU,
-      PC.Totale
+      PC.RatePagateMese + PC.RateFuture AS Totale
     FROM PagamentiPerCross PC
-    LEFT JOIN ${av} R ON R.[${viewCfg.colJoin}] = PC.IDIscrizione
+    LEFT JOIN AbbOne A ON A.IDIscrizione = PC.IDIscrizione
+    WHERE PC.RatePagateMese + PC.RateFuture <> 0
     ORDER BY PC.LogData DESC, PC.IDIscrizione DESC
   `
 
@@ -3272,7 +3281,12 @@ async function queryVenditeSum(
             : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
       }
 
-      let total = await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
+      let total = 0
+      try {
+        total = await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
+      } catch {
+        /* andamento: continua con cross */
+      }
       if (venditeDashboardIncludeCross()) {
         try {
           total += await queryVenditeCrossTotaleDaLogPagamenti(p, fromStr, toStr, idConsultant)

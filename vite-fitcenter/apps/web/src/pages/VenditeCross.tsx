@@ -61,9 +61,8 @@ export function VenditeCross() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Cross da log gestionale (Cross selling, cambio tipo abbonamento): per ogni IDIscrizione
-          trovata si somma AbbonamentiPagamentiImporto da RVW_AbbonamentiPagamentiUtenti.
-          Incluso anche nel totale dashboard.
+          Un evento cross nel log = una riga (prima IDIscrizione del cliente nel giorno).
+          Totale = rate pagate nel mese + rate future. Stesso importo incluso in dashboard.
         </p>
       </div>
 
