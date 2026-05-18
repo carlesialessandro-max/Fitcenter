@@ -451,20 +451,34 @@ export async function debugPrenotazioniCountForDayExpr(args: {
   }
 }
 
-/** Nome tabella/vista abbonamenti in uso (per debug e query): letto ogni volta da process.env così rispetta il .env caricato in index.ts. */
+/** Nome vista abbonamenti (default come stampe gestionale: RVW_AbbonamentiUtenti). */
 export function getAbbonamentiTableName(): string {
-  return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "AbbonamentiIscrizione"
-}
-
-/** Tabella iscrizioni (IDUtente, DataInizio): per join log cross, non la RVW lista abbonamenti. */
-function getAbbonamentiIscrizioneTableName(): string {
-  return process.env.GESTIONALE_TABLE_ABBONAMENTI_ISCRIZIONE?.trim() || "AbbonamentiIscrizione"
+  return process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() || "RVW_AbbonamentiUtenti"
 }
 
 /** View venditore da anagrafica (es. RVW_AbbonamentiUtentiCapofamiglia): IDVenditoreAbbonamento, NomeVenditoreAbbonamento, colonna join IDIscrizione. */
 function getViewVenditoreAbbonamento(): { view: string; colId: string; colNome: string; colJoin: string } | null {
   const view = process.env.GESTIONALE_VIEW_VENDITORE_ABBONAMENTO?.trim()
   if (!view) return null
+  return {
+    view,
+    colId: process.env.GESTIONALE_VIEW_COL_ID_VENDITORE?.trim() ?? "IDVenditoreAbbonamento",
+    colNome: process.env.GESTIONALE_VIEW_COL_NOME_VENDITORE?.trim() ?? "NomeVenditoreAbbonamento",
+    colJoin: process.env.GESTIONALE_VIEW_COL_JOIN?.trim() ?? "IDIscrizione",
+  }
+}
+
+/**
+ * Vista vendite / stampe gestionale (Temp_Stampe → SUM Totale per IDVenditoreAbbonamento).
+ * Default: RVW_AbbonamentiUtenti. Override opzionale con GESTIONALE_VIEW_VENDITORE_ABBONAMENTO (es. Capofamiglia).
+ */
+function getViewVenditeGestionale(): { view: string; colId: string; colNome: string; colJoin: string } {
+  const fromEnv = getViewVenditoreAbbonamento()
+  if (fromEnv) return fromEnv
+  const view =
+    process.env.GESTIONALE_VIEW_ABBONAMENTI_VENDITE?.trim() ||
+    process.env.GESTIONALE_TABLE_ABBONAMENTI?.trim() ||
+    "RVW_AbbonamentiUtenti"
   return {
     view,
     colId: process.env.GESTIONALE_VIEW_COL_ID_VENDITORE?.trim() ?? "IDVenditoreAbbonamento",
@@ -2558,14 +2572,14 @@ function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): stri
 
 /** CTE condivisa: iscrizioni con log «cambio tipo abbonamento» nel periodo. */
 function sqlCteCrossLogsAndIscrizioni(args: {
-  tblA: string
-  tblU: string
+  abbView: string
   logViewQuery: string
   legacyAppLogUnion: string
   fromParam: string
   toParam: string
 }): string {
   const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
+  const av = qualifySqlObject(args.abbView).query
   return `
     LogsFromView AS (
       SELECT
@@ -2588,14 +2602,13 @@ function sqlCteCrossLogsAndIscrizioni(args: {
       FROM LogsFromView V
       OUTER APPLY (
         SELECT TOP 1 a.[IDIscrizione] AS IDIscrizione
-        FROM [${args.tblU}] u
-        INNER JOIN [${args.tblA}] a ON a.[IDUtente] = u.[IDUtente]
+        FROM ${av} a
         WHERE (
-            (V.IDUtente IS NOT NULL AND u.[IDUtente] = V.IDUtente)
+            (V.IDUtente IS NOT NULL AND a.[IDUtente] = V.IDUtente)
             OR (
               (V.IDUtente IS NULL OR LTRIM(RTRIM(CAST(V.IDUtente AS NVARCHAR(64)))) = N'')
-              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Cognome], N''))))
-              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Nome], N''))))
+              AND UPPER(LTRIM(RTRIM(ISNULL(a.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Cognome], N''))))
+              AND UPPER(LTRIM(RTRIM(ISNULL(a.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Nome], N''))))
             )
           )
         ORDER BY a.[IDIscrizione] DESC
@@ -2638,8 +2651,7 @@ function sqlTotaleReportPerIscrizione(args: {
   toParam: "@dataFine" | "@to"
   /** Esclude dal venduto le iscrizioni cross (conteggiate a parte con piano rate). */
   crossExclude?: {
-    tblA: string
-    tblU: string
+    abbView: string
     logViewQuery: string
     legacyAppLogUnion: string
   }
@@ -2652,8 +2664,7 @@ function sqlTotaleReportPerIscrizione(args: {
   const whereTipo = sqlWhereTipoOperazioneMovimentoVendita("M")
   const crossCte = args.crossExclude
     ? `${sqlCteCrossLogsAndIscrizioni({
-        tblA: args.crossExclude.tblA,
-        tblU: args.crossExclude.tblU,
+        abbView: args.crossExclude.abbView,
         logViewQuery: args.crossExclude.logViewQuery,
         legacyAppLogUnion: args.crossExclude.legacyAppLogUnion,
         fromParam: args.fromParam,
@@ -2721,8 +2732,8 @@ async function queryVenditeCrossDeltaSum(args: {
 }): Promise<number> {
   const { p, viewCfg, ids, fromIso, toIso } = args
   const tblMov = defaultTables.movimentiVenduto
-  const tblA = getAbbonamentiIscrizioneTableName()
-  const tblU = defaultTables.clienti
+  const abbView = viewCfg.view
+  const av = qualifySqlObject(abbView).query
   const logView = getLogUtentiViewName()
   const lq = qualifySqlObject(logView).query
   const legacyUnion = sqlUnionLegacyAppLogCross("@from", "@to")
@@ -2839,8 +2850,7 @@ async function queryVenditeCrossDeltaSum(args: {
     : "1=1"
 
   const crossCte = sqlCteCrossLogsAndIscrizioni({
-    tblA,
-    tblU,
+    abbView,
     logViewQuery: lq,
     legacyAppLogUnion: legacyUnion,
     fromParam: "@from",
@@ -2852,16 +2862,16 @@ async function queryVenditeCrossDeltaSum(args: {
     ClientiCross AS (
       SELECT CI.IDIscrizione, CI.LogData, a.[IDUtente]
       FROM CrossIscrizioni CI
-      INNER JOIN [${tblA}] a ON a.[IDIscrizione] = CI.IDIscrizione
+      INNER JOIN ${av} a ON a.[IDIscrizione] = CI.IDIscrizione
     ),
     IscrizioniPiano AS (
       SELECT
         cc.IDIscrizione AS CrossIDIscrizione,
         a.[IDIscrizione] AS IDIscrizione
       FROM ClientiCross cc
-      INNER JOIN [${tblA}] a ON a.[IDUtente] = cc.[IDUtente]
+      INNER JOIN ${av} a ON a.[IDUtente] = cc.[IDUtente]
       WHERE a.[IDIscrizione] = cc.IDIscrizione
-         OR TRY_CONVERT(date, a.[DataInizio]) >= CAST(cc.LogData AS DATE)
+         OR TRY_CONVERT(date, COALESCE(a.[DataInizio], a.[DataOperazione])) >= CAST(cc.LogData AS DATE)
     ),${pagCte}
     Target AS (
       SELECT CI.IDIscrizione, CI.LogData
@@ -2929,16 +2939,13 @@ async function queryVenditeSum(
   progressivoGiorno?: number
 ): Promise<number> {
   const tbl = defaultTables.movimentiVenduto
-  const viewCfg = getViewVenditoreAbbonamento()
-  // Allineamento gestionale: la query del gestionale somma RVW_AbbonamentiUtenti.Totale filtrata da Temp_Stampe
-  // (cioè "per iscrizione"). Questo deve essere il default quando la view è configurata.
+  const viewCfg = getViewVenditeGestionale()
+  // Allineamento gestionale stampe: RVW_AbbonamentiUtenti.Totale × Temp_Stampe (movimenti nel periodo).
   // Se vuoi la somma dei movimenti (Importo) abilita: GESTIONALE_VENDITE_BY_MOVIMENTO=true
   const byMovimento = process.env.GESTIONALE_VENDITE_BY_MOVIMENTO === "true"
   const byIscrizione = !byMovimento
 
-  // Dashboard: per default allineiamo al gestionale "Flusso movimenti abbonamenti venduti"
-  // usando la logica "per iscrizione" (SUM Totale su RVW_AbbonamentiUtenti join Temp_Stampe).
-  if (viewCfg && idConsultant && byIscrizione) {
+  if (idConsultant && byIscrizione) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
     try {
@@ -2950,8 +2957,7 @@ async function queryVenditeSum(
       const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
       const crossExcludeBase = includeCross
         ? {
-            tblA: getAbbonamentiIscrizioneTableName(),
-            tblU: defaultTables.clienti,
+            abbView: viewCfg.view,
             logViewQuery: qualifySqlObject(getLogUtentiViewName()).query,
           }
         : undefined
@@ -3058,9 +3064,7 @@ async function queryVenditeSum(
     }
   }
 
-  // Somma Importo per movimento, con attribuzione consulente come in getVenditeTotaleRangeView (+ filtri tipo come Temp_Stampe).
-  // Allinea la dashboard alla colonna «Importo» della griglia «Abbonamenti venduti», non al Totale listino per iscrizione.
-  if (viewCfg && idConsultant && byMovimento) {
+  if (idConsultant && byMovimento) {
     const ids = parseConsultantIds(idConsultant)
     if (ids.length === 0) return 0
     try {
@@ -3364,11 +3368,10 @@ export async function getVenditeMovimentiCategoriaDurata(
   if (!p) return { totalCount: 0, rows: [], byAbbonamento: [] }
 
   const tblM = defaultTables.movimentiVenduto
-  const viewCfg = getViewVenditoreAbbonamento()
+  const viewCfg = getViewVenditeGestionale()
   const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
   try {
     const ids = idConsultant ? parseConsultantIds(idConsultant) : []
-    if (!viewCfg) return { totalCount: 0, rows: [], byAbbonamento: [] }
 
     const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))

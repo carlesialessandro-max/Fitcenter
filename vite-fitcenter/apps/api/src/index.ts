@@ -142,7 +142,7 @@ app.listen(Number(PORT), HOST, () => {
   const tableAbb = process.env.GESTIONALE_TABLE_ABBONAMENTI
   const envLoaded = existsSync(apiEnvPath)
   console.log(`  .env: ${envLoaded ? "trovato " + apiEnvPath : "NON trovato " + apiEnvPath}`)
-  console.log(`  GESTIONALE_TABLE_ABBONAMENTI: ${tableAbb ?? "(non impostato → si usa AbbonamentiIscrizione)"}`)
+  console.log(`  GESTIONALE_TABLE_ABBONAMENTI: ${tableAbb ?? "(non impostato → si usa RVW_AbbonamentiUtenti)"}`)
   const sqlEnv = process.env.SQL_CONNECTION_STRING
   if (sqlEnv) {
     console.log("  SQL: configurato (verifica: GET /api/data/sql-status)")
