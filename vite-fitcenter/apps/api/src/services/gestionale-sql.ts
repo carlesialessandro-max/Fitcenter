@@ -2829,7 +2829,7 @@ async function queryVenditeTotaleComeAndamento(
     req.input(`id${i}`, sql.Int, id)
   })
 
-  const escludiCross = venditeEscludiCrossDaAndamento() && venditeDashboardIncludeCross()
+  const escludiCross = venditeEscludiCrossDaAndamento()
   const crossCtePrefix = escludiCross
     ? `${sqlCteCrossLogsAndIscrizioni({
         abbView: viewCfg.view,
@@ -3153,7 +3153,7 @@ export async function getVenditeCrossElenco(
   const idWhereR =
     ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : ids.length > 0 ? `R.[${viewCfg.colId}] IN (${idParams})` : "1=1"
   const attribFilter = ids.length
-    ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CF.IDIscrizione AND ${idWhereR} ${exView})`
+    ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})`
     : ""
 
   const crossCte = sqlCteCrossLogsAndIscrizioni({
