@@ -2402,11 +2402,37 @@ function colsAttribuzioneVenditaSuMovimento(): string[] {
   return [...new Set([prim, ...extras])]
 }
 
-function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string): string {
+function sqlMovimentoAttribuitoIdsSuMovimento(idParams: string, alias = "M"): string {
   const orM = colsAttribuzioneVenditaSuMovimento()
-    .map((col) => `M.[${col}] IN (${idParams})`)
+    .map((col) => `${alias}.[${col}] IN (${idParams})`)
     .join(" OR ")
   return `(${orM})`
+}
+
+/** Estrae IDIscrizione da testo log gestionale «… (IDIscrizione = 12345).» */
+function sqlParseIdIscrizioneFromLogDescrizione(descExpr: string): string {
+  return `TRY_CONVERT(int, NULLIF(LTRIM(RTRIM(
+    SUBSTRING(
+      ${descExpr},
+      CHARINDEX(N'IDIscrizione =', ${descExpr}) + LEN(N'IDIscrizione ='),
+      CASE
+        WHEN CHARINDEX(N')', ${descExpr}, CHARINDEX(N'IDIscrizione =', ${descExpr})) >
+             CHARINDEX(N'IDIscrizione =', ${descExpr})
+        THEN CHARINDEX(N')', ${descExpr}, CHARINDEX(N'IDIscrizione =', ${descExpr}))
+             - (CHARINDEX(N'IDIscrizione =', ${descExpr}) + LEN(N'IDIscrizione ='))
+        ELSE 0
+      END
+    )
+  )), N''))`
+}
+
+/** Cambio tipologia abbonamento (cross / upgrade) nei log RVW_LogUtenti o AppLog legacy. */
+function sqlWhereLogCambioTipoAbbonamento(descCol: string): string {
+  return `(
+    ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
+    OR ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
+    OR ${descCol} LIKE N'%ABBONAMENTI MODIFICA:%'
+  )`
 }
 
 function movimentoTipoOperazioneVenditaList(): string[] {
@@ -2574,15 +2600,14 @@ function sqlMovimentoAttribuitoConsulente(
 }
 
 /**
- * Delta cross (upgrade/modifica abbonamento) attribuito al consulente.
+ * Delta cross (cambio tipologia abbonamento) attribuito al consulente nelle vendite dashboard.
  *
- * Dati osservati:
- * - AppLog: "ABBONAMENTI MODIFICA: ..." con "(IDIscrizione = NNN)."
- * - MovimentiVenduto: righe TipoOperazione='U' (TipoServizio='A') con importi +/-.
- *   Il valore corretto da conteggiare nel venduto è la differenza: max(importo>0) + min(importo<0)
- *   nella finestra vicino al log, una sola volta per IDIscrizione.
+ * Fonti (come report andamento / gestionale):
+ * - Log: RVW_LogUtenti.AppLogDescrizione («ABBONAMENTO MODIFICA: … cambiato tipo abbonamento»), opz. AppLog legacy.
+ * - Importo: prima MovimentiVenduto TipoOperazione='U' (±5 min dal log); se assente, incasso in RVW_AbbonamentiPagamentiUtenti
+ *   (Data pagato, stessa finestra) — tipico quando l’upgrade compare come rata nei pagamenti.
  *
- * Nota: usiamo la view venditore per attribuire l'iscrizione al consulente (evita dipendenze su NomeOperatore del log).
+ * Attribuzione al consulente: view venditore sull’iscrizione, oppure IDVenditore/IDOperatore sul movimento o sul pagamento.
  */
 async function queryVenditeCrossDeltaSum(args: {
   p: sql.ConnectionPool
@@ -2593,7 +2618,13 @@ async function queryVenditeCrossDeltaSum(args: {
 }): Promise<number> {
   const { p, viewCfg, ids, fromIso, toIso } = args
   const tblMov = defaultTables.movimentiVenduto
-  const tblLog = "AppLog"
+  const tblA = getAbbonamentiTableName()
+  const tblU = defaultTables.clienti
+  const logView = getLogUtentiViewName()
+  const lq = qualifySqlObject(logView).query
+  const legacyAppLog = (process.env.GESTIONALE_VENDITE_CROSS_LEGACY_APPLOG ?? "false").toLowerCase() === "true"
+  const includePagamenti =
+    (process.env.GESTIONALE_VENDITE_CROSS_INCLUDE_PAGAMENTI ?? "true").toLowerCase() !== "false"
 
   const tipoServ = movimentoTipoServizioVendita()
   const tipoServWhere = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
@@ -2604,42 +2635,158 @@ async function queryVenditeCrossDeltaSum(args: {
       ? `R.[${viewCfg.colId}] = @id0`
       : `R.[${viewCfg.colId}] IN (${idParams})`
     : "1=1"
+  const movAttrIds = ids ? sqlMovimentoAttribuitoIdsSuMovimento(idParams, "V2") : null
+  const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
 
-  // Finestra di correlazione: stessa usata nel debug SQL (± 5 minuti).
-  // Per limitare scansioni, restringiamo MovimentiVenduto al range globale esteso (± 10 minuti).
-  const q = `
-    ;WITH LogsRaw AS (
+  const parseDesc = sqlParseIdIscrizioneFromLogDescrizione
+  const logUnionLegacy = legacyAppLog
+    ? `
+      UNION ALL
       SELECT
         CAST(L.[DataOperazione] AS DATETIME) AS LogData,
-        TRY_CONVERT(int,
-          LTRIM(RTRIM(
-            SUBSTRING(
-              L.[Descrizione],
-              CHARINDEX('IDIscrizione =', L.[Descrizione]) + LEN('IDIscrizione ='),
-              CHARINDEX(')', L.[Descrizione], CHARINDEX('IDIscrizione =', L.[Descrizione])) -
-              (CHARINDEX('IDIscrizione =', L.[Descrizione]) + LEN('IDIscrizione ='))
-            )
-          ))
-        ) AS IDIscrizione
-      FROM [${tblLog}] L
+        CAST(NULL AS INT) AS IDUtente,
+        CAST(NULL AS NVARCHAR(128)) AS Cognome,
+        CAST(NULL AS NVARCHAR(128)) AS Nome,
+        L.[Descrizione] AS LogTesto,
+        ${parseDesc("L.[Descrizione]")} AS IDIscrizioneParsed
+      FROM [AppLog] L
       WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
         AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
-        AND L.[Descrizione] LIKE N'ABBONAMENTI MODIFICA:%'
-        AND L.[Descrizione] LIKE N'%(IDIscrizione = %'
+        AND ${sqlWhereLogCambioTipoAbbonamento("L.[Descrizione]")}
+    `
+    : ""
+
+  let pagCte = ""
+  let pagApply = ""
+  if (includePagamenti) {
+    try {
+      const pagView = getAbbonamentiPagamentiViewName()
+      const { query: pvq } = qualifySqlObject(pagView)
+      const colsLower = await prenGetCols(pagView)
+      const idCol =
+        pickBestNumberCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"]) ??
+        pickBestTextCol(colsLower, ["IDIscrizione", "IdIscrizione", "AbbonamentiIDIscrizione"])
+      const cassaCol =
+        pickBestNumberCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Importo", "Cassa"]) ??
+        pickBestTextCol(colsLower, ["CassaMovimentiImporto", "CassaImporto", "Importo"])
+      const dateCol =
+        pickBestDateCol(colsLower, [
+          "DataPagato",
+          "DataPagamento",
+          "AbbonamentiPagamentiDataPagato",
+          "CassaMovimentiDataPagato",
+          "DataOperazione",
+        ]) ?? null
+      const vendCol =
+        pickBestNumberCol(colsLower, [
+          "IDVenditore",
+          "IDVenditoreAbbonamento",
+          "AbbonamentiIDVenditore",
+          "IDOperatore",
+        ]) ?? null
+      if (idCol && cassaCol && dateCol) {
+        const idExpr = `TRY_CONVERT(int, ${bracketCol(idCol)})`
+        const cassaExpr = `TRY_CONVERT(float, ${bracketCol(cassaCol)})`
+        const dateExpr = `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATETIME)`
+        const vendFilter =
+          ids && vendCol
+            ? ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) IN (${idParams})`
+            : ""
+        pagCte = `
+    Pag AS (
+      SELECT ${idExpr} AS IDIscrizione, ${dateExpr} AS DataPag, ${cassaExpr} AS Importo
+      FROM ${pvq}
+      WHERE ${idExpr} IS NOT NULL
+        AND ${cassaExpr} IS NOT NULL
+        AND ${cassaExpr} <> 0
+        AND CAST(${dateExpr} AS DATE) >= CAST(@from AS DATE)
+        AND CAST(${dateExpr} AS DATE) <= CAST(@to AS DATE)
+        ${vendFilter}
+    ),`
+        pagApply = `
+      OUTER APPLY (
+        SELECT COALESCE(SUM(P.Importo), 0) AS SumPag
+        FROM Pag P
+        WHERE P.IDIscrizione = T.IDIscrizione
+          AND P.DataPag >= DATEADD(minute, -5, T.LogData)
+          AND P.DataPag <= DATEADD(minute,  5, T.LogData)
+      ) PagSum`
+      }
+    } catch {
+      /* pagamenti view non disponibile: solo movimenti U */
+    }
+  }
+
+  const targetAttrib = ids
+    ? `(
+        EXISTS (
+          SELECT 1 FROM [${viewCfg.view}] R
+          WHERE R.[${viewCfg.colJoin}] = L.IDIscrizione
+            AND ${idWhereR}
+            ${exView}
+        )
+        OR EXISTS (
+          SELECT 1 FROM [${tblMov}] V2
+          WHERE V2.[${COL_ISCRIZIONE}] = L.IDIscrizione
+            AND V2.[TipoOperazione] = 'U'
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, L.LogData)
+            AND CAST(V2.[${COL_DATA}] AS DATETIME) <= DATEADD(minute,  5, L.LogData)
+            AND ${movAttrIds}
+        )
+        ${pagCte ? `OR EXISTS (
+          SELECT 1 FROM Pag P0
+          WHERE P0.IDIscrizione = L.IDIscrizione
+            AND P0.DataPag >= DATEADD(minute, -5, L.LogData)
+            AND P0.DataPag <= DATEADD(minute,  5, L.LogData)
+        )` : ""}
+      )`
+    : "1=1"
+
+  const q = `
+    ;WITH LogsFromView AS (
+      SELECT
+        CAST(L.[DataOperazione] AS DATETIME) AS LogData,
+        TRY_CONVERT(int, L.[IDUtente]) AS IDUtente,
+        L.[Cognome],
+        L.[Nome],
+        L.[AppLogDescrizione] AS LogTesto,
+        ${parseDesc("L.[AppLogDescrizione]")} AS IDIscrizioneParsed
+      FROM ${lq} L
+      WHERE CAST(L.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(L.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
+        AND ${sqlWhereLogCambioTipoAbbonamento("L.[AppLogDescrizione]")}
+      ${logUnionLegacy}
+    ),
+    LogsResolved AS (
+      SELECT
+        V.LogData,
+        COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) AS IDIscrizione
+      FROM LogsFromView V
+      OUTER APPLY (
+        SELECT TOP 1 a.[IDIscrizione] AS IDIscrizione
+        FROM [${tblU}] u
+        INNER JOIN [${tblA}] a ON a.[IDUtente] = u.[IDUtente]
+        WHERE (
+            (V.IDUtente IS NOT NULL AND u.[IDUtente] = V.IDUtente)
+            OR (
+              (V.IDUtente IS NULL OR LTRIM(RTRIM(CAST(V.IDUtente AS NVARCHAR(64)))) = N'')
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Cognome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Cognome], N''))))
+              AND UPPER(LTRIM(RTRIM(ISNULL(u.[Nome], N'')))) = UPPER(LTRIM(RTRIM(ISNULL(V.[Nome], N''))))
+            )
+          )
+        ORDER BY a.[IDIscrizione] DESC
+      ) Rslv
+      WHERE COALESCE(V.IDIscrizioneParsed, Rslv.IDIscrizione) IS NOT NULL
     ),
     Logs AS (
       SELECT IDIscrizione, MAX(LogData) AS LogData
-      FROM LogsRaw
-      WHERE IDIscrizione IS NOT NULL
+      FROM LogsResolved
       GROUP BY IDIscrizione
-    ),
+    ),${pagCte}
     Target AS (
       SELECT L.IDIscrizione, L.LogData
       FROM Logs L
-      INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = L.IDIscrizione
-      WHERE ${idWhereR}
-        ${whereEsclusioniVenditeView("R")}
-        ${whereExcludeUispTesseramenti("R")}
+      WHERE ${targetAttrib}
     ),
     Mov AS (
       SELECT
@@ -2656,15 +2803,22 @@ async function queryVenditeCrossDeltaSum(args: {
       SELECT
         T.IDIscrizione,
         MAX(CASE WHEN V.Importo > 0 THEN V.Importo END) AS Pos,
-        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg
+        MIN(CASE WHEN V.Importo < 0 THEN V.Importo END) AS Neg,
+        MAX(${pagApply ? "COALESCE(PagSum.SumPag, 0)" : "0"}) AS PagDelta
       FROM Target T
-      INNER JOIN Mov V
+      LEFT JOIN Mov V
         ON V.IDIscrizione = T.IDIscrizione
        AND V.DataMov >= DATEADD(minute, -5, T.LogData)
        AND V.DataMov <= DATEADD(minute,  5, T.LogData)
+      ${pagApply}
       GROUP BY T.IDIscrizione
     )
-    SELECT COALESCE(SUM(COALESCE(Pos,0) + COALESCE(Neg,0)), 0) AS TotaleCross
+    SELECT COALESCE(SUM(
+      CASE
+        WHEN COALESCE(Pos, 0) + COALESCE(Neg, 0) <> 0 THEN COALESCE(Pos, 0) + COALESCE(Neg, 0)
+        ELSE PagDelta
+      END
+    ), 0) AS TotaleCross
     FROM PerIscrizione;
   `
 
