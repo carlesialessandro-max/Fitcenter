@@ -101,8 +101,11 @@ export function getVenditeCrossRequestTimeoutMs(): number {
   return Number.isFinite(n) && n >= 60_000 ? n : 120_000
 }
 
+/** node-mssql supporta `request.timeout` (ms); @types/mssql non lo dichiara. */
+type MssqlRequestWithTimeout = sql.Request & { timeout?: number }
+
 function poolRequestWithTimeout(p: sql.ConnectionPool, timeoutMs?: number): sql.Request {
-  const req = p.request()
+  const req = p.request() as MssqlRequestWithTimeout
   if (timeoutMs != null && timeoutMs > 0) req.timeout = timeoutMs
   return req
 }
