@@ -112,7 +112,7 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/campus", label: "Campus" },
   { to: "/danza", label: "Danza" },
   { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
-  { to: "/calendario/istruttori", label: "Istruttori" },
+  { to: "/calendario/personale", label: "Personale" },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/calendario", label: "Piano operativo (hub)" },
 ]
@@ -1210,14 +1210,14 @@ export function CalendarioRepartoPage() {
               </>
             ) : null}
             <Link to={hubBack} className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-              {role === "admin" ? "Hub reparti" : "Home"}
+              {role === "admin" ? "Piano operativo" : "Home"}
             </Link>
             <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
               Dashboard
             </Link>
             {canOpenInstructors ? (
-              <Link to="/calendario/istruttori" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-                Istruttori
+              <Link to="/calendario/personale" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Personale
               </Link>
             ) : null}
           </div>

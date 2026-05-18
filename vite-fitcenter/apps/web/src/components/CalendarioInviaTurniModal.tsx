@@ -61,7 +61,7 @@ export function CalendarioInviaTurniModal({ open, onClose, instructors, events, 
     }
     const ins = instructors.find((i) => i.id === istruttoreId)
     if (!ins?.email?.trim()) {
-      setErr("Email mancante: aggiungila in Anagrafica istruttori.")
+      setErr("Email mancante: aggiungila in Anagrafica personale.")
       return
     }
     if (preview.length === 0) {

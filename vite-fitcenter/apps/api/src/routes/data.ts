@@ -4,6 +4,7 @@ import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWe
 import {
   deleteCalendarioInstructor,
   getCalendarioComparto,
+  getCalendarioPianoOperativo,
   listCalendarioInstructors,
   patchCalendarioSlot,
   postCalendarioInstructor,
@@ -26,6 +27,7 @@ dataRouter.post("/calendario/instructors", postCalendarioInstructor)
 dataRouter.put("/calendario/instructors/:id", putCalendarioInstructor)
 dataRouter.delete("/calendario/instructors/:id", deleteCalendarioInstructor)
 dataRouter.post("/calendario/:comparto/send-turni", postCalendarioSendTurni)
+dataRouter.get("/calendario/piano-operativo", getCalendarioPianoOperativo)
 dataRouter.get("/calendario/:comparto", getCalendarioComparto)
 dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 dataRouter.get("/corsi/gestione", getCorsiGestione)

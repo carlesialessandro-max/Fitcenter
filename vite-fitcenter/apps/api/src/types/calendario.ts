@@ -17,6 +17,10 @@ export type CalendarioIstruttore = {
   cognome: string
   telefono: string
   email: string
+  /** Ruolo / attività svolta in sede (es. bagnino, reception, corsi acqua). */
+  attivitaSvolta?: string
+  /** Costo orario in euro (opzionale). */
+  costoOrario?: number | null
   createdAt: string
   updatedAt: string
 }

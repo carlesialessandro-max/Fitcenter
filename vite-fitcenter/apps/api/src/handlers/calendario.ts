@@ -123,6 +123,48 @@ function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
 
+function isoYmdFromDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0")
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function eventMatchesCalendarDay(e: CalendarioMergedEvent, d: Date): boolean {
+  const dateIso = String(e.dateIso ?? "").trim()
+  if (dateIso) return dateIso === isoYmdFromDate(d)
+  return e.dow === d.getDay()
+}
+
+function parseCostoOrario(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null
+  const n = Number(String(v).replace(",", "."))
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null
+}
+
+const COMPARTO_LABELS: Record<CalendarioComparto, string> = {
+  corsi: "Corsi (terra + acqua)",
+  scuola_nuoto: "Scuola nuoto",
+  piscina: "Bagnini",
+  reception: "Reception",
+  danza: "Danza",
+  campus: "Campus",
+  sala_fitness: "Sala fitness",
+  acquaticita: "Acquaticità",
+  spogliatoi: "Spogliatoi",
+  consulenti: "Consulenti",
+}
+
+const PIANO_OPERATIVO_COMPARTI: CalendarioComparto[] = [
+  "reception",
+  "corsi",
+  "scuola_nuoto",
+  "piscina",
+  "acquaticita",
+  "spogliatoi",
+  "sala_fitness",
+  "campus",
+  "danza",
+]
+
 function defaultZonaManual(comparto: CalendarioComparto): string {
   if (comparto === "reception") return "reception"
   if (comparto === "sala_fitness") return "sala_fitness"
@@ -305,6 +347,34 @@ function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttor
   }
   if (e.staffOverride != null && String(e.staffOverride).trim()) return String(e.staffOverride).trim()
   return e.staff.trim() || "—"
+}
+
+export function getCalendarioPianoOperativo(req: Request, res: Response) {
+  const u = req.user!
+  if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+
+  const dateRaw = String(req.query.date ?? "").trim()
+  const date = dateRaw && isIsoDate(dateRaw) ? parseIsoLocal(dateRaw) : new Date()
+  if (!date) return res.status(400).json({ message: "Data non valida (YYYY-MM-DD)" })
+
+  const dateIso = isoYmdFromDate(date)
+  const db = readCalendarioDb()
+  const reparti = PIANO_OPERATIVO_COMPARTI.map((comparto) => {
+    const events = mergeForComparto(comparto, db)
+      .filter((e) => eventMatchesCalendarDay(e, date))
+      .map((e) => ({
+        ...e,
+        staffDisplay: displayStaff(e, db.instructors),
+      }))
+      .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+    return {
+      comparto,
+      label: COMPARTO_LABELS[comparto],
+      events,
+    }
+  })
+
+  res.json({ dateIso, reparti, instructors: db.instructors })
 }
 
 export function getCalendarioComparto(req: Request, res: Response) {
@@ -541,11 +611,20 @@ export function postCalendarioInstructor(req: Request, res: Response) {
   const u = req.user!
   if (!canManageInstructors(u)) return res.status(403).json({ message: "Permessi insufficienti per modificare l'anagrafica" })
 
-  const b = req.body as { nome?: string; cognome?: string; telefono?: string; email?: string }
+  const b = req.body as {
+    nome?: string
+    cognome?: string
+    telefono?: string
+    email?: string
+    attivitaSvolta?: string
+    costoOrario?: unknown
+  }
   const nome = String(b.nome ?? "").trim()
   const cognome = String(b.cognome ?? "").trim()
   const telefono = String(b.telefono ?? "").trim()
   const email = String(b.email ?? "").trim().toLowerCase()
+  const attivitaSvolta = String(b.attivitaSvolta ?? "").trim()
+  const costoOrario = parseCostoOrario(b.costoOrario)
   if (!nome || !cognome) return res.status(400).json({ message: "Nome e cognome obbligatori" })
 
   const now = new Date().toISOString()
@@ -555,6 +634,8 @@ export function postCalendarioInstructor(req: Request, res: Response) {
     cognome,
     telefono,
     email,
+    attivitaSvolta,
+    costoOrario,
     createdAt: now,
     updatedAt: now,
   }
@@ -571,13 +652,22 @@ export function putCalendarioInstructor(req: Request, res: Response) {
   const id = String(req.params.id ?? "").trim()
   const db = readCalendarioDb()
   const prev = db.instructors.find((x) => x.id === id)
-  if (!prev) return res.status(404).json({ message: "Istruttore non trovato" })
+  if (!prev) return res.status(404).json({ message: "Personale non trovato" })
 
-  const b = req.body as { nome?: string; cognome?: string; telefono?: string; email?: string }
+  const b = req.body as {
+    nome?: string
+    cognome?: string
+    telefono?: string
+    email?: string
+    attivitaSvolta?: string
+    costoOrario?: unknown
+  }
   const nome = b.nome !== undefined ? String(b.nome).trim() : prev.nome
   const cognome = b.cognome !== undefined ? String(b.cognome).trim() : prev.cognome
   const telefono = b.telefono !== undefined ? String(b.telefono).trim() : prev.telefono
   const email = b.email !== undefined ? String(b.email).trim().toLowerCase() : prev.email
+  const attivitaSvolta = b.attivitaSvolta !== undefined ? String(b.attivitaSvolta).trim() : (prev.attivitaSvolta ?? "")
+  const costoOrario = b.costoOrario !== undefined ? parseCostoOrario(b.costoOrario) : (prev.costoOrario ?? null)
   if (!nome || !cognome) return res.status(400).json({ message: "Nome e cognome obbligatori" })
 
   const row: CalendarioIstruttore = {
@@ -586,6 +676,8 @@ export function putCalendarioInstructor(req: Request, res: Response) {
     cognome,
     telefono,
     email,
+    attivitaSvolta,
+    costoOrario,
     updatedAt: new Date().toISOString(),
   }
   const next = upsertInstructor(db, row)

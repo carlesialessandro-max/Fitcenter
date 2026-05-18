@@ -58,7 +58,7 @@ export function InstructorSearchSelect({ instructors, value, onChange, className
         <div
           className="max-h-52 overflow-y-auto rounded-lg border border-zinc-600 bg-zinc-950"
           role="listbox"
-          aria-label="Risultati ricerca istruttori"
+          aria-label="Risultati ricerca personale"
         >
           <button
             type="button"

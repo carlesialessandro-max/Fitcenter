@@ -18,8 +18,22 @@ export type CalendarioIstruttore = {
   cognome: string
   telefono: string
   email: string
+  attivitaSvolta?: string
+  costoOrario?: number | null
   createdAt: string
   updatedAt: string
+}
+
+export type PianoOperativoRepartoDto = {
+  comparto: CalendarioComparto
+  label: string
+  events: CalendarioMergedEventDto[]
+}
+
+export type PianoOperativoResponse = {
+  dateIso: string
+  reparti: PianoOperativoRepartoDto[]
+  instructors: CalendarioIstruttore[]
 }
 
 export type CalendarioMergedEventDto = {
@@ -64,14 +78,32 @@ export type PatchCalendarioSlotBody = {
 }
 
 export const calendarioApi = {
+  getPianoOperativo: (dateIso: string) =>
+    api.get<PianoOperativoResponse>(`/data/calendario/piano-operativo?date=${encodeURIComponent(dateIso)}`),
   getComparto: (comparto: CalendarioComparto) =>
     api.get<CalendarioCompartoResponse>(`/data/calendario/${encodeURIComponent(comparto)}`),
   patchSlot: (comparto: CalendarioComparto, body: PatchCalendarioSlotBody) =>
     api.patch<{ ok: boolean; stableKey?: string }>(`/data/calendario/${encodeURIComponent(comparto)}/slot`, body),
   listInstructors: () => api.get<{ rows: CalendarioIstruttore[] }>("/data/calendario/instructors"),
-  postInstructor: (body: { nome: string; cognome: string; telefono?: string; email?: string }) =>
-    api.post<CalendarioIstruttore>("/data/calendario/instructors", body),
-  putInstructor: (id: string, body: { nome?: string; cognome?: string; telefono?: string; email?: string }) =>
+  postInstructor: (body: {
+    nome: string
+    cognome: string
+    telefono?: string
+    email?: string
+    attivitaSvolta?: string
+    costoOrario?: number | null
+  }) => api.post<CalendarioIstruttore>("/data/calendario/instructors", body),
+  putInstructor: (
+    id: string,
+    body: {
+      nome?: string
+      cognome?: string
+      telefono?: string
+      email?: string
+      attivitaSvolta?: string
+      costoOrario?: number | null
+    }
+  ) =>
     api.put<CalendarioIstruttore>(`/data/calendario/instructors/${encodeURIComponent(id)}`, body),
   deleteInstructor: (id: string) => api.delete<{ ok: boolean }>(`/data/calendario/instructors/${encodeURIComponent(id)}`),
   sendTurniEmail: (comparto: "piscina", body: { istruttoreId: string; weekStart?: string }) =>

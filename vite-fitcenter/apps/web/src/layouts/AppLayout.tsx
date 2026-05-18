@@ -26,7 +26,7 @@ const navCorsi: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/corsi", label: "Calendario corsi" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
@@ -39,7 +39,7 @@ const navIstruttore: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/corsi", label: "Calendario corsi" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/corsi", label: "Corsi" },
@@ -52,7 +52,7 @@ const navCampus: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/campus", label: "Calendario campus" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/campus", label: "Campus" },
@@ -70,7 +70,7 @@ const navScuolaNuoto: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/scuola-nuoto", label: "Scuola Nuoto" },
@@ -83,7 +83,7 @@ const navBagnini: NavItem[] = [
     groupKey: "piano",
     children: [
       { to: "/calendario/piscina", label: "Calendario bagnini" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/piscina", label: "Mappa Piscina" },
@@ -94,7 +94,7 @@ const navDanza: NavItem[] = [
     label: "Piano operativo",
     group: true,
     groupKey: "piano",
-    children: [{ to: "/calendario/istruttori", label: "Istruttori" }],
+    children: [{ to: "/calendario/personale", label: "Personale" }],
   },
   { to: "/danza", label: "Danza" },
 ] as const
@@ -123,9 +123,9 @@ const navAdmin: NavItem[] = [
     group: true,
     groupKey: "piano",
     children: [
-      { to: "/calendario", label: "Hub reparti" },
+      { to: "/calendario", label: "Piano operativo" },
       { to: "/calendario/corsi", label: "Calendario corsi" },
-      { to: "/calendario/istruttori", label: "Istruttori" },
+      { to: "/calendario/personale", label: "Personale" },
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
@@ -160,6 +160,7 @@ export function AppLayout() {
     role === "bagnini" &&
     !location.pathname.startsWith("/piscina") &&
     location.pathname !== "/calendario/piscina" &&
+    location.pathname !== "/calendario/personale" &&
     location.pathname !== "/calendario/istruttori"
   const nav: NavItem[] =
     leadFilter === "bambini"

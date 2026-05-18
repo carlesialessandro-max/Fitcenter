@@ -39,6 +39,7 @@ function DashboardOrRedirect() {
   if (role === "scuola_nuoto") return <Navigate to="/scuola-nuoto" replace />
   if (role === "bagnini") return <Navigate to="/piscina" replace />
   if (role === "danza") return <Navigate to="/danza" replace />
+  if (role === "admin") return <Navigate to="/calendario" replace />
   return <Dashboard />
 }
 
@@ -102,7 +103,8 @@ export const router = createBrowserRouter([
       { path: "stampa-report", element: <StampaReport /> },
       { path: "admin", element: <AdminCalendario /> },
       { path: "calendario", element: <CalendarioHub /> },
-      { path: "calendario/istruttori", element: <CalendarioIstruttoriPage /> },
+      { path: "calendario/personale", element: <CalendarioIstruttoriPage /> },
+      { path: "calendario/istruttori", element: <Navigate to="/calendario/personale" replace /> },
       { path: "calendario/:segmento", element: <CalendarioRepartoPage /> },
       { path: "clienti", element: <ClientiDisabilitata /> },
       { path: "*", element: <Navigate to="/" replace /> },
