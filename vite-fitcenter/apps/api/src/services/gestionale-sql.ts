@@ -2718,6 +2718,86 @@ function sqlMovimentoAttribuitoConsulente(
 }
 
 /**
+ * Totale vendite = stessa logica di «Andamento vendite» (Temp_Stampe + RVW_AbbonamentiUtenti.Totale).
+ * Una query veloce, senza CTE log cross.
+ */
+async function queryVenditeTotaleComeAndamento(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<number> {
+  const tblM = defaultTables.movimentiVenduto
+  const viewCfg = getViewVenditeGestionale()
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req.input(`id${i}`, sql.Int, id)
+  })
+
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+
+  const whereBase = `
+    WHERE M.[${COL_IMPORTO}] <> 0
+      AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+      AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+      ${sqlWhereTipoOperazioneMovimentoVendita("M")}
+  `
+
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+  const durataCol = "Durata"
+  const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+  const whereAndamentoEsclusioniView = `
+    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+    ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+    ${whereExcludeAbbonamentiSpecificiIds("R")}
+  `
+  const consultantFilter =
+    idConsultant && ids.length > 0
+      ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+      : ""
+
+  const r = await req.query(
+    `;WITH Temp_Stampe AS (
+       SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
+       FROM [${tblM}] M
+       ${whereBase}
+     ),
+     RigheView AS (
+       SELECT
+         R.[${viewCfg.colJoin}] AS ID,
+         ${categoriaExpr} AS Categoria,
+         R.[${durataCol}] AS DurataMesi,
+         TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
+       FROM [${viewCfg.view}] R
+       INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
+       WHERE 1=1
+         ${consultantFilter}
+        ${whereAndamentoEsclusioniView}
+     ),
+     PerIscrizione AS (
+       SELECT
+         ID,
+         Categoria,
+         DurataMesi,
+         MAX(TotaleEuro) AS TotaleEuro
+       FROM RigheView
+       WHERE 1=1
+         ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
+       GROUP BY ID, Categoria, DurataMesi
+     )
+     SELECT COALESCE(SUM(TotaleEuro), 0) AS Totale FROM PerIscrizione`
+  )
+  const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+  return Number(row?.Totale ?? row?.totale) || 0
+}
+
+/**
  * Vendite cross (solo cambio tipologia abbonamento): escluse dal venduto base.
  * Valore = movimenti U (±5 min dal log) oppure piano rate del cliente:
  * rate pagate nel mese + rate future (da pagare) sulle iscrizioni legate al cross.
@@ -2952,113 +3032,36 @@ async function queryVenditeSum(
       const view = viewCfg.view
       const colId = viewCfg.colId
       const colJoin = viewCfg.colJoin
-      const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-      const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
-      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "true").toLowerCase() !== "false"
-      const crossExcludeBase = includeCross
-        ? {
-            abbView: viewCfg.view,
-            logViewQuery: qualifySqlObject(getLogUtentiViewName()).query,
-          }
-        : undefined
-      const queryBaseTotale = async (
-        req: sql.Request,
-        fromParam: "@dataInizio" | "@from",
-        toParam: "@dataFine" | "@to",
-        withCrossExclude: boolean
-      ): Promise<number> => {
-        const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
-        const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-        const r = await req.query(
-          sqlTotaleReportPerIscrizione({
-            tblMov: tbl,
-            view,
-            colJoin,
-            idWhereR,
-            colTotale,
-            fromParam,
-            toParam,
-            crossExclude:
-              withCrossExclude && crossExcludeBase
-                ? {
-                    ...crossExcludeBase,
-                    legacyAppLogUnion: sqlUnionLegacyAppLogCross(fromParam, toParam),
-                  }
-                : undefined,
-          })
-        )
-        const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
-        return Number(row?.Totale ?? row?.totale) || 0
-      }
+      const includeCross = (process.env.GESTIONALE_VENDITE_INCLUDE_CROSS_DELTA ?? "false").toLowerCase() === "true"
+
+      const ultimoGiorno = new Date(anno, mese, 0).getDate()
+      let fromStr: string
+      let toStr: string
       if (giorno != null) {
-        const dataStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-        let req = p.request().input("dataInizio", sql.VarChar(10), dataStr).input("dataFine", sql.VarChar(10), dataStr)
-        ids.forEach((id, i) => {
-          req = req.input(`id${i}`, sql.Int, id)
-        })
-        let base = 0
+        fromStr = toStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
+      } else {
+        fromStr = `${anno}-${String(mese).padStart(2, "0")}-01`
+        toStr =
+          progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
+            ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
+            : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
+      }
+
+      let total = await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
+      if (includeCross) {
         try {
-          base = await queryBaseTotale(req, "@dataInizio", "@dataFine", true)
-        } catch {
-          try {
-            base = await queryBaseTotale(req, "@dataInizio", "@dataFine", false)
-          } catch {
-            throw new Error("__FITCENTER_VENDITE_BASE_FAILED__")
-          }
-        }
-        if (!includeCross) return base
-        try {
-          const cross = await queryVenditeCrossDeltaSum({
+          total += await queryVenditeCrossDeltaSum({
             p,
             viewCfg: { view, colId, colJoin },
             ids,
-            fromIso: dataStr,
-            toIso: dataStr,
+            fromIso: fromStr,
+            toIso: toStr,
           })
-          return base + cross
         } catch {
-          return base
+          /* cross opzionale: resta totale andamento */
         }
       }
-
-      const ultimoGiorno = new Date(anno, mese, 0).getDate()
-      const dataInizioStr = `${anno}-${String(mese).padStart(2, "0")}-01`
-      const dataFineStr = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
-      // progressivo: da inizio mese fino a progressivoGiorno (incluso)
-      const dataFineEffettiva =
-        progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
-          ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
-          : dataFineStr
-      let req = p
-        .request()
-        .input("dataInizio", sql.VarChar(10), dataInizioStr)
-        .input("dataFine", sql.VarChar(10), dataFineEffettiva)
-      ids.forEach((id, i) => {
-        req = req.input(`id${i}`, sql.Int, id)
-      })
-      let base = 0
-      try {
-        base = await queryBaseTotale(req, "@dataInizio", "@dataFine", true)
-      } catch {
-        try {
-          base = await queryBaseTotale(req, "@dataInizio", "@dataFine", false)
-        } catch {
-          throw new Error("__FITCENTER_VENDITE_BASE_FAILED__")
-        }
-      }
-      if (!includeCross) return base
-      try {
-        const cross = await queryVenditeCrossDeltaSum({
-          p,
-          viewCfg: { view, colId, colJoin },
-          ids,
-          fromIso: dataInizioStr,
-          toIso: dataFineEffettiva,
-        })
-        return base + cross
-      } catch {
-        return base
-      }
+      return total
     } catch {
       return 0
     }
@@ -3202,76 +3205,22 @@ export async function getVenditePerMeseAnno(
 ): Promise<{ mese: number; totale: number }[]> {
   const p = await getPool()
   if (!p) return []
-  const tbl = defaultTables.movimentiVenduto
-  const viewCfg = getViewVenditoreAbbonamento()
-  const mapRows = (recordset: Record<string, unknown>[]) =>
-    recordset.map((row) => ({
-      mese: Number(row.Mese ?? row.mese),
-      totale: Number(row.Totale ?? row.totale) || 0,
-    }))
-
-  if (viewCfg && idConsultant) {
-    const ids = parseConsultantIds(idConsultant)
-    if (ids.length === 0) return []
-    try {
-      const idParams = ids.map((_, i) => `@id${i}`).join(", ")
-      const idWhereR = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
-      const matchCons = sqlMovimentoAttribuitoConsulente(viewCfg.view, viewCfg.colJoin, idWhereR, idParams)
-      let req = p.request().input("anno", sql.Int, anno)
-      ids.forEach((id, i) => {
-        req = req.input(`id${i}`, sql.Int, id)
+  if (!idConsultant) return []
+  try {
+    const mesi = await Promise.all(
+      Array.from({ length: 12 }, async (_, i) => {
+        const mese = i + 1
+        const ultimo = new Date(anno, mese, 0).getDate()
+        const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+        const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
+        const totale = await queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
+        return { mese, totale }
       })
-      const r = await req.query(
-        `SELECT MONTH(M.[${COL_DATA}]) AS Mese, SUM(M.[${COL_IMPORTO}]) AS Totale
-         FROM [${tbl}] M
-         WHERE M.[${COL_IMPORTO}] <> 0 AND YEAR(M.[${COL_DATA}]) = @anno AND ${matchCons}
-         GROUP BY MONTH(M.[${COL_DATA}]) ORDER BY Mese`
-      )
-      return mapRows((r.recordset ?? []) as Record<string, unknown>[])
-    } catch {
-      return []
-    }
+    )
+    return mesi
+  } catch {
+    return []
   }
-
-  const runNoFilter = async () => {
-    const r = await p
-      .request()
-      .input("anno", sql.Int, anno)
-      .query(
-        `SELECT MONTH([${COL_DATA}]) AS Mese, SUM([${COL_IMPORTO}]) AS Totale FROM [${tbl}]
-         WHERE [${COL_IMPORTO}] > 0 AND YEAR([${COL_DATA}]) = @anno
-         GROUP BY MONTH([${COL_DATA}]) ORDER BY Mese`
-      )
-    return mapRows((r.recordset ?? []) as Record<string, unknown>[])
-  }
-  const runWithCol = async (col: string) => {
-    const { type, value } = idParamType(idConsultant!)
-    const r = await p
-      .request()
-      .input("anno", sql.Int, anno)
-      .input("id", type, value)
-      .query(
-        `SELECT MONTH([${COL_DATA}]) AS Mese, SUM([${COL_IMPORTO}]) AS Totale FROM [${tbl}]
-         WHERE [${COL_IMPORTO}] > 0 AND YEAR([${COL_DATA}]) = @anno AND [${col}] = @id
-         GROUP BY MONTH([${COL_DATA}]) ORDER BY Mese`
-      )
-    return mapRows((r.recordset ?? []) as Record<string, unknown>[])
-  }
-
-  if (!idConsultant) return runNoFilter()
-
-  // Vendita attribuita al venditore (IDVenditore), non all'operatore.
-  const envCol = process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE?.trim()
-  const colsToTry = envCol ? [envCol, "IDVenditore"] : ["IDVenditore"]
-  for (const col of colsToTry) {
-    try {
-      const rows = await runWithCol(col)
-      if (rows.length > 0) return rows
-    } catch {
-      // skip
-    }
-  }
-  return []
 }
 
 /** Totali vendite per anno (admin/report): calcolo in SQL senza full scan in Node. */
