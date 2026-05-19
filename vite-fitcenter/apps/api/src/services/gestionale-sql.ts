@@ -2471,23 +2471,56 @@ function sqlParseIdIscrizioneFromLogDescrizione(descExpr: string): string {
   )), N''))`
 }
 
-/** Cambio tipologia abbonamento (cross / upgrade) nei log RVW_LogUtenti o AppLog legacy. */
+/** Cambio tipologia abbonamento nei log RVW_LogUtenti (solo testo esplicito «cambiato tipo»). */
 function sqlWhereLogCambioTipoAbbonamento(descCol: string): string {
   return `(
     ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
     OR ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
-    OR ${descCol} LIKE N'%ABBONAMENTI MODIFICA:%'
   )`
 }
 
-/** Eventi cross nel log (cambio tipo, Cross selling CRM, ecc.) — non dalla descrizione abbonamento. */
+/** Esclude tesseramenti / ASI+iscrizione dal log (non sono cambi tipologia abbonamento). */
+function sqlWhereLogExcludeTesseramentoAsi(descCol: string): string {
+  return `
+    AND UPPER(${descCol}) NOT LIKE N'%TESSERAMENT%'
+    AND NOT (UPPER(${descCol}) LIKE N'%ASI%' AND UPPER(${descCol}) LIKE N'%ISCRIZIONE%')
+  `
+}
+
+/** Eventi cross nel log: solo cambio tipo abbonamento (+ opz. Cross selling CRM via env). */
 function sqlWhereLogCrossEvent(descCol: string): string {
-  return `(
-    ${sqlWhereLogCambioTipoAbbonamento(descCol)}
-    OR ${descCol} LIKE N'%Cross selling%'
+  const includeCrossSelling =
+    (process.env.GESTIONALE_VENDITE_CROSS_INCLUDE_CROSS_SELLING ?? "false").toLowerCase() === "true"
+  const crossSelling = includeCrossSelling
+    ? ` OR ${descCol} LIKE N'%Cross selling%'
     OR ${descCol} LIKE N'%CROSS SELLING%'
-    OR ${descCol} LIKE N'%Cross Selling%'
-  )`
+    OR ${descCol} LIKE N'%Cross Selling%'`
+    : ""
+  return `(
+    ${sqlWhereLogCambioTipoAbbonamento(descCol)}${crossSelling}
+  )${sqlWhereLogExcludeTesseramentoAsi(descCol)}`
+}
+
+/** Esclude abbonamenti tesseramento / ASI+iscrizione dalla descrizione vista. */
+function whereExcludeAsiTesseramentoDescrizione(expr: string): string {
+  const u = `UPPER(LTRIM(RTRIM(COALESCE(${expr}, N''))))`
+  return `
+    AND ${u} NOT LIKE N'%TESSERAMENT%'
+    AND NOT (${u} LIKE N'%ASI%' AND ${u} LIKE N'%ISCRIZIONE%')
+  `
+}
+
+function sqlCrossDashboardCte(fromParam: "@from" | "@dataInizio", toParam: "@to" | "@dataFine"): string {
+  const abbView = getViewVenditeGestionale().view
+  const lq = qualifySqlObject(getLogUtentiViewName()).query
+  const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
+  return `${sqlCteCrossLogsAndIscrizioni({
+    abbView,
+    logViewQuery: lq,
+    legacyAppLogUnion: legacyUnion,
+    fromParam,
+    toParam,
+  })},`
 }
 
 function movimentoTipoOperazioneVenditaList(): string[] {
@@ -2848,9 +2881,15 @@ async function queryVenditeTotaleComeAndamento(
     idConsultant && ids.length > 0
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
+  const dashboardIncludeCross =
+    (process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() !== "false"
+  const crossCte = dashboardIncludeCross ? sqlCrossDashboardCte("@from", "@to") : ""
+  const crossFilter = dashboardIncludeCross
+    ? `AND NOT EXISTS (SELECT 1 FROM CrossIscrizioni CI WHERE CI.IDIscrizione = T.ID)`
+    : ""
 
   const r = await req.query(
-    `;WITH Temp_Stampe AS (
+    `;WITH ${crossCte}Temp_Stampe AS (
        SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
        FROM [${tblM}] M
        ${whereBase}
@@ -2866,6 +2905,7 @@ async function queryVenditeTotaleComeAndamento(
        WHERE 1=1
          ${consultantFilter}
         ${whereAndamentoEsclusioniView}
+        ${crossFilter}
      ),
      PerIscrizione AS (
        SELECT
@@ -3189,6 +3229,7 @@ export async function getVenditeCrossElenco(
     FROM PagamentiPerCross PC
     LEFT JOIN AbbOne A ON A.IDIscrizione = PC.IDIscrizione
     WHERE PC.RatePagateMese + PC.RateFuture <> 0
+      ${whereExcludeAsiTesseramentoDescrizione("COALESCE(A.Abbonamento, N'')")}
     ORDER BY PC.LogData DESC, PC.IDIscrizione DESC
   `
 
@@ -3363,6 +3404,24 @@ export async function getVenditeTotaleMese(
   }
 }
 
+/** Euro cross (rate mese + future) per intervallo; 0 se pagamenti non disponibili. */
+async function queryVenditeCrossEuroRange(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<number> {
+  if ((process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() === "false") {
+    return 0
+  }
+  if (!idConsultant) return 0
+  try {
+    return await queryVenditeCrossTotaleDaLogPagamenti(p, from, to, idConsultant)
+  } catch {
+    return 0
+  }
+}
+
 /** Consuntivo progressivo: vendite da inizio mese fino a giorno (incluso). Usare per "entrate mese" alla data di oggi. */
 export async function getVenditeProgressivoMese(
   anno: number,
@@ -3373,7 +3432,15 @@ export async function getVenditeProgressivoMese(
   const p = await getPool()
   if (!p) return 0
   try {
-    return await queryVenditeSum(p, anno, mese, undefined, idConsultant, giorno)
+    const ultimoGiorno = new Date(anno, mese, 0).getDate()
+    const g = Math.min(Math.max(1, giorno), ultimoGiorno)
+    const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+    const to = `${anno}-${String(mese).padStart(2, "0")}-${String(g).padStart(2, "0")}`
+    const [base, cross] = await Promise.all([
+      queryVenditeSum(p, anno, mese, undefined, idConsultant, g),
+      queryVenditeCrossEuroRange(p, from, to, idConsultant),
+    ])
+    return base + cross
   } catch {
     return 0
   }
@@ -3410,8 +3477,11 @@ export async function getVenditePerMeseAnno(
         const ultimo = new Date(anno, mese, 0).getDate()
         const from = `${anno}-${String(mese).padStart(2, "0")}-01`
         const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
-        const totale = await queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
-        return { mese, totale }
+        const [base, cross] = await Promise.all([
+          queryVenditeTotaleComeAndamento(p, from, to, idConsultant),
+          queryVenditeCrossEuroRange(p, from, to, idConsultant),
+        ])
+        return { mese, totale: base + cross }
       })
     )
     return mesi

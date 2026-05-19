@@ -61,8 +61,8 @@ export function VenditeCross() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Un evento cross nel log = una riga (prima IDIscrizione del cliente nel giorno).
-          Totale = rate pagate nel mese + rate future. La dashboard usa Andamento vendite.
+          Solo cambi tipo abbonamento nel log (esclusi tesseramento e ASI+iscrizione).
+          Totale = rate pagate nel mese + rate future; sommato alle entrate in dashboard.
         </p>
       </div>
 

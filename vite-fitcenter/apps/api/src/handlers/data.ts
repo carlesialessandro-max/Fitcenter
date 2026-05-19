@@ -1530,7 +1530,7 @@ function withVenditeCrossSqlTimeout<T>(p: Promise<T>): Promise<T> {
   ])
 }
 
-/** Elenco cross (cambio tipologia): rate pagate nel mese + rate future. Pagina dedicata, non in dashboard. */
+/** Elenco cross (cambio tipologia): rate pagate nel mese + rate future; totale incluso in dashboard entrate. */
 export async function getVenditeCross(req: Request, res: Response) {
   try {
     if (!gestionaleSql.isGestionaleConfigured()) {
