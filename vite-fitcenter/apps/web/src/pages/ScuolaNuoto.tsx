@@ -499,14 +499,14 @@ export function ScuolaNuoto() {
   const saveCourseNoteM = useMutation({
     mutationFn: async () => {
       if (!selected) return
-      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, dayKey)
+      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, dayKey, q.data?.today ?? date)
     },
     onSuccess: () => ovQ.refetch(),
   })
   const saveChildNoteM = useMutation({
     mutationFn: async () => {
       if (!selected || !activeChild) return
-      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, dayKey)
+      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, dayKey, q.data?.today ?? date)
     },
     onSuccess: () => ovQ.refetch(),
   })
@@ -549,12 +549,18 @@ export function ScuolaNuoto() {
                 "Corsi del giorno della settimana (per periodo)"
               )}
             </p>
-            <p className="mt-2">
+            <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
               <Link
                 to="/calendario/scuola-nuoto"
                 className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
               >
                 Calendario planning scuola nuoto
+              </Link>
+              <Link
+                to="/scuola-nuoto/note"
+                className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
+              >
+                Archivio note (settimana / mese)
               </Link>
             </p>
           </div>

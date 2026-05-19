@@ -2,6 +2,7 @@ import { Router } from "express"
 import { requireAuth, requireAdmin, requireAdminOrScuolaNuoto } from "../middleware/auth.js"
 import { getScuolaNuotoToday } from "../handlers/scuolaNuoto.js"
 import {
+  getScuolaNuotoNotesArchive,
   getScuolaNuotoOverrides,
   postScuolaNuotoChildNote,
   postScuolaNuotoCourseNote,
@@ -16,6 +17,7 @@ scuolaNuotoRouter.get("/today", requireAuth, requireAdminOrScuolaNuoto, getScuol
 
 // Note / override locali (persistenza su server).
 scuolaNuotoRouter.get("/overrides", requireAuth, requireAdminOrScuolaNuoto, getScuolaNuotoOverrides)
+scuolaNuotoRouter.get("/notes", requireAuth, requireAdminOrScuolaNuoto, getScuolaNuotoNotesArchive)
 scuolaNuotoRouter.post("/course-note", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoCourseNote)
 scuolaNuotoRouter.post("/child-note", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoChildNote)
 scuolaNuotoRouter.post("/level-override", requireAuth, requireAdminOrScuolaNuoto, postScuolaNuotoLevelOverride)

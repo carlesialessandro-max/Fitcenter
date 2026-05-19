@@ -74,7 +74,11 @@ const navScuolaNuoto: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/scuola-nuoto", label: "Scuola Nuoto" },
+  {
+    to: "/scuola-nuoto",
+    label: "Scuola Nuoto",
+    children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
+  },
 ] as const
 const navBagnini: NavItem[] = [
   {
@@ -141,7 +145,11 @@ const navAdmin: NavItem[] = [
       { to: "/firme", label: "Firme" },
       { to: "/firma-cassa", label: "Firma cassa" },
       { to: "/piscina", label: "Mappa piscina" },
-      { to: "/scuola-nuoto", label: "Scuola nuoto" },
+      {
+        to: "/scuola-nuoto",
+        label: "Scuola nuoto",
+        children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
+      },
       { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto (S.N. bambini)" },
       { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
       { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },

@@ -22,6 +22,7 @@ import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
 import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
+import { ScuolaNuotoNoteArchivio } from "@/pages/ScuolaNuotoNoteArchivio"
 import { PiscinaMappa } from "@/pages/PiscinaMappa"
 import { Incassi } from "@/pages/Incassi"
 import { Danza } from "@/pages/Danza"
@@ -87,6 +88,7 @@ export const router = createBrowserRouter([
       { path: "danza", element: <Danza /> },
       { path: "referral", element: <Referral /> },
       { path: "scuola-nuoto", element: <ScuolaNuoto /> },
+      { path: "scuola-nuoto/note", element: <ScuolaNuotoNoteArchivio /> },
       { path: "piscina", element: <PiscinaMappa /> },
       { path: "incassi", element: <Incassi /> },
       { path: "crm", element: <LeadList /> },
