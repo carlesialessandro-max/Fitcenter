@@ -2471,11 +2471,13 @@ function sqlParseIdIscrizioneFromLogDescrizione(descExpr: string): string {
   )), N''))`
 }
 
-/** Cambio tipologia abbonamento nei log RVW_LogUtenti (solo testo esplicito «cambiato tipo»). */
+/** Cambio tipologia abbonamento nei log: deve comparire «cambiato tipo» (varianti gestionale). */
 function sqlWhereLogCambioTipoAbbonamento(descCol: string): string {
   return `(
-    ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo abbonamento%'
-    OR ${descCol} LIKE N'%ABBONAMENTO MODIFICA:%cambiato tipo%Abbonamento%'
+    ${descCol} LIKE N'%cambiato tipo%'
+    OR ${descCol} LIKE N'%cambiato il tipo%'
+    OR ${descCol} LIKE N'%tipo abbonamento%cambiato%'
+    OR ${descCol} LIKE N'%tipo%Abbonamento%cambiato%'
   )`
 }
 
@@ -2508,19 +2510,6 @@ function whereExcludeAsiTesseramentoDescrizione(expr: string): string {
     AND ${u} NOT LIKE N'%TESSERAMENT%'
     AND NOT (${u} LIKE N'%ASI%' AND ${u} LIKE N'%ISCRIZIONE%')
   `
-}
-
-function sqlCrossDashboardCte(fromParam: "@from" | "@dataInizio", toParam: "@to" | "@dataFine"): string {
-  const abbView = getViewVenditeGestionale().view
-  const lq = qualifySqlObject(getLogUtentiViewName()).query
-  const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
-  return `${sqlCteCrossLogsAndIscrizioni({
-    abbView,
-    logViewQuery: lq,
-    legacyAppLogUnion: legacyUnion,
-    fromParam,
-    toParam,
-  })},`
 }
 
 function movimentoTipoOperazioneVenditaList(): string[] {
@@ -2881,15 +2870,9 @@ async function queryVenditeTotaleComeAndamento(
     idConsultant && ids.length > 0
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
-  const dashboardIncludeCross =
-    (process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() !== "false"
-  const crossCte = dashboardIncludeCross ? sqlCrossDashboardCte("@from", "@to") : ""
-  const crossFilter = dashboardIncludeCross
-    ? `AND NOT EXISTS (SELECT 1 FROM CrossIscrizioni CI WHERE CI.IDIscrizione = T.ID)`
-    : ""
 
   const r = await req.query(
-    `;WITH ${crossCte}Temp_Stampe AS (
+    `;WITH Temp_Stampe AS (
        SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
        FROM [${tblM}] M
        ${whereBase}
@@ -2905,7 +2888,6 @@ async function queryVenditeTotaleComeAndamento(
        WHERE 1=1
          ${consultantFilter}
         ${whereAndamentoEsclusioniView}
-        ${crossFilter}
      ),
      PerIscrizione AS (
        SELECT
@@ -3172,7 +3154,7 @@ export async function getVenditeCrossElenco(
     ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : ids.length > 0 ? `R.[${viewCfg.colId}] IN (${idParams})` : "1=1"
   const attribFilter = ids.length
     ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})`
-    : ""
+    : `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione ${exView})`
 
   const crossCte = sqlCteCrossLogsAndIscrizioni({
     abbView,
@@ -3431,19 +3413,23 @@ export async function getVenditeProgressivoMese(
 ): Promise<number> {
   const p = await getPool()
   if (!p) return 0
+  const ultimoGiorno = new Date(anno, mese, 0).getDate()
+  const g = Math.min(Math.max(1, giorno), ultimoGiorno)
+  const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+  const to = `${anno}-${String(mese).padStart(2, "0")}-${String(g).padStart(2, "0")}`
+  let base = 0
+  let cross = 0
   try {
-    const ultimoGiorno = new Date(anno, mese, 0).getDate()
-    const g = Math.min(Math.max(1, giorno), ultimoGiorno)
-    const from = `${anno}-${String(mese).padStart(2, "0")}-01`
-    const to = `${anno}-${String(mese).padStart(2, "0")}-${String(g).padStart(2, "0")}`
-    const [base, cross] = await Promise.all([
-      queryVenditeSum(p, anno, mese, undefined, idConsultant, g),
-      queryVenditeCrossEuroRange(p, from, to, idConsultant),
-    ])
-    return base + cross
+    base = await queryVenditeSum(p, anno, mese, undefined, idConsultant, g)
   } catch {
-    return 0
+    /* andamento */
   }
+  try {
+    cross = await queryVenditeCrossEuroRange(p, from, to, idConsultant)
+  } catch {
+    /* cross opzionale */
+  }
+  return base + cross
 }
 
 /** Totale vendite del giorno (calcolo in SQL). */
