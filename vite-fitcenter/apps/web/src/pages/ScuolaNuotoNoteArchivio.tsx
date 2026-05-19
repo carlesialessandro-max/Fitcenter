@@ -26,17 +26,15 @@ function fmtItDate(iso: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`
 }
 
-function noteSubject(row: ScuolaNuotoArchivedNote): string {
-  if (row.baseKey.startsWith("corso:")) {
-    return `Corso #${row.baseKey.slice("corso:".length)}`
+function noteHeading(row: ScuolaNuotoArchivedNote): { title: string; subtitle?: string } {
+  if (row.kind === "child") {
+    const title = row.childName?.trim() || row.childKey || "Partecipante"
+    const subtitle = row.corsoLabel?.trim()
+    return subtitle ? { title, subtitle } : { title }
   }
-  if (row.kind === "child" && row.childKey) {
-    const ck = row.childKey
-    if (ck.startsWith("name:")) return ck.slice("name:".length)
-    if (ck.startsWith("id:")) return `Utente #${ck.slice("id:".length)}`
-    return ck
-  }
-  return row.baseKey
+  const title = row.corsoLabel?.trim() || row.baseKey
+  const bits = [row.oraInizio, row.livello ? `Liv. ${row.livello}` : null].filter(Boolean)
+  return bits.length ? { title, subtitle: bits.join(" · ") } : { title }
 }
 
 function groupByDate(rows: ScuolaNuotoArchivedNote[]): { date: string; items: ScuolaNuotoArchivedNote[] }[] {
@@ -120,26 +118,32 @@ export function ScuolaNuotoNoteArchivio() {
                   {WEEKDAY_IT[items[0]?.weekday ?? ""] ?? items[0]?.weekday} · {fmtItDate(date)}
                 </h3>
                 <ul className="mt-2 flex flex-col gap-2">
-                  {items.map((row, i) => (
-                    <li
-                      key={`${row.date}-${row.kind}-${row.baseKey}-${row.childKey ?? ""}-${i}`}
-                      className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
-                        <span
-                          className={
-                            row.kind === "course"
-                              ? "rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-300"
-                              : "rounded bg-violet-500/15 px-1.5 py-0.5 text-violet-300"
-                          }
-                        >
-                          {row.kind === "course" ? "Corso" : "Partecipante"}
-                        </span>
-                        <span className="text-zinc-400">{noteSubject(row)}</span>
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">{row.note}</p>
-                    </li>
-                  ))}
+                  {items.map((row, i) => {
+                    const head = noteHeading(row)
+                    return (
+                      <li
+                        key={`${row.date}-${row.kind}-${row.baseKey}-${row.childKey ?? ""}-${i}`}
+                        className="rounded-lg border border-zinc-800 bg-zinc-950/60 p-3"
+                      >
+                        <div className="flex flex-wrap items-start gap-2">
+                          <span
+                            className={
+                              row.kind === "course"
+                                ? "rounded bg-sky-500/15 px-1.5 py-0.5 text-xs text-sky-300"
+                                : "rounded bg-violet-500/15 px-1.5 py-0.5 text-xs text-violet-300"
+                            }
+                          >
+                            {row.kind === "course" ? "Corso" : "Bambino"}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-zinc-100">{head.title}</p>
+                            {head.subtitle ? <p className="text-xs text-zinc-500">{head.subtitle}</p> : null}
+                          </div>
+                        </div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">{row.note}</p>
+                      </li>
+                    )
+                  })}
                 </ul>
               </section>
             ))}

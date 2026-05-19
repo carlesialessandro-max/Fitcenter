@@ -6,10 +6,27 @@ import {
   type ScuolaNuotoNotesPeriod,
 } from "./scuola-nuoto-notes-period.js"
 
+export type ScuolaNuotoCourseNoteMeta = {
+  corsoLabel: string
+  corso?: string | null
+  oraInizio?: string | null
+  oraFine?: string | null
+  livello?: string | null
+  istruttore?: string | null
+}
+
+export type ScuolaNuotoChildNoteMeta = {
+  childName: string
+  corsoLabel: string
+  livello?: string | null
+}
+
 type NotesNode = {
   courseNotes: Record<string, string>
   childNotes: Record<string, string>
   levelOverrides: Record<string, string>
+  courseMeta?: Record<string, ScuolaNuotoCourseNoteMeta>
+  childMeta?: Record<string, ScuolaNuotoChildNoteMeta>
   updatedAt?: string
 }
 
@@ -32,6 +49,10 @@ export type ScuolaNuotoArchivedNote = {
   childKey?: string
   note: string
   updatedAt?: string
+  corsoLabel?: string
+  childName?: string
+  oraInizio?: string | null
+  livello?: string | null
 }
 
 const FILE = "scuola-nuoto-overrides.json"
@@ -78,6 +99,20 @@ function ensureDate(v: OverridesFile, isoDate: string | null): { dateKey: string
   return { dateKey, node }
 }
 
+function applyCourseMeta(row: ScuolaNuotoArchivedNote, meta?: ScuolaNuotoCourseNoteMeta): void {
+  if (!meta) return
+  if (meta.corsoLabel) row.corsoLabel = meta.corsoLabel
+  if (meta.oraInizio != null) row.oraInizio = meta.oraInizio
+  if (meta.livello != null) row.livello = meta.livello
+}
+
+function applyChildMeta(row: ScuolaNuotoArchivedNote, meta?: ScuolaNuotoChildNoteMeta): void {
+  if (!meta) return
+  if (meta.childName) row.childName = meta.childName
+  if (meta.corsoLabel) row.corsoLabel = meta.corsoLabel
+  if (meta.livello != null) row.livello = meta.livello
+}
+
 function collectNotesFromNode(
   iso: string,
   node: NotesNode,
@@ -88,7 +123,9 @@ function collectNotesFromNode(
   for (const [baseKey, note] of Object.entries(node.courseNotes ?? {})) {
     const n = String(note ?? "").trim()
     if (!n) continue
-    out.push({ date: iso, weekday, kind: "course", baseKey, note: n, updatedAt })
+    const row: ScuolaNuotoArchivedNote = { date: iso, weekday, kind: "course", baseKey, note: n, updatedAt }
+    applyCourseMeta(row, node.courseMeta?.[baseKey])
+    out.push(row)
   }
   for (const [compound, note] of Object.entries(node.childNotes ?? {})) {
     const n = String(note ?? "").trim()
@@ -97,7 +134,38 @@ function collectNotesFromNode(
     const childKey = sep >= 0 ? compound.slice(0, sep) : compound
     const baseKey = sep >= 0 ? compound.slice(sep + 2) : ""
     if (!baseKey) continue
-    out.push({ date: iso, weekday, kind: "child", baseKey, childKey, note: n, updatedAt })
+    const row: ScuolaNuotoArchivedNote = { date: iso, weekday, kind: "child", baseKey, childKey, note: n, updatedAt }
+    applyChildMeta(row, node.childMeta?.[compound])
+    out.push(row)
+  }
+}
+
+function writeCourseMeta(node: NotesNode, baseKey: string, meta?: ScuolaNuotoCourseNoteMeta | null): void {
+  if (!node.courseMeta) node.courseMeta = {}
+  if (!meta?.corsoLabel?.trim()) {
+    delete node.courseMeta[baseKey]
+    return
+  }
+  node.courseMeta[baseKey] = {
+    corsoLabel: meta.corsoLabel.trim(),
+    corso: meta.corso ?? null,
+    oraInizio: meta.oraInizio ?? null,
+    oraFine: meta.oraFine ?? null,
+    livello: meta.livello ?? null,
+    istruttore: meta.istruttore ?? null,
+  }
+}
+
+function writeChildMeta(node: NotesNode, compoundKey: string, meta?: ScuolaNuotoChildNoteMeta | null): void {
+  if (!node.childMeta) node.childMeta = {}
+  if (!meta?.childName?.trim() || !meta?.corsoLabel?.trim()) {
+    delete node.childMeta[compoundKey]
+    return
+  }
+  node.childMeta[compoundKey] = {
+    childName: meta.childName.trim(),
+    corsoLabel: meta.corsoLabel.trim(),
+    livello: meta.livello ?? null,
   }
 }
 
@@ -118,25 +186,48 @@ export const scuolaNuotoOverridesStore = {
     }
   },
 
-  setCourseNote(baseKey: string, note: string, day?: string | null, isoDate?: string | null) {
+  setCourseNote(
+    baseKey: string,
+    note: string,
+    day?: string | null,
+    isoDate?: string | null,
+    meta?: ScuolaNuotoCourseNoteMeta | null
+  ) {
     const v = load()
     const { node } = ensureDay(v, day ?? null)
     const key = String(baseKey ?? "").trim()
     if (!key) return
     const n = String(note ?? "").trim()
-    if (!n) delete node.courseNotes[key]
-    else node.courseNotes[key] = n
+    if (!n) {
+      delete node.courseNotes[key]
+      delete node.courseMeta?.[key]
+    } else {
+      node.courseNotes[key] = n
+      writeCourseMeta(node, key, meta)
+    }
     touchNode(node)
     const dated = ensureDate(v, isoDate ?? null)
     if (dated) {
-      if (!n) delete dated.node.courseNotes[key]
-      else dated.node.courseNotes[key] = n
+      if (!n) {
+        delete dated.node.courseNotes[key]
+        delete dated.node.courseMeta?.[key]
+      } else {
+        dated.node.courseNotes[key] = n
+        writeCourseMeta(dated.node, key, meta)
+      }
       touchNode(dated.node)
     }
     save(v)
   },
 
-  setChildNote(childKey: string, baseKey: string, note: string, day?: string | null, isoDate?: string | null) {
+  setChildNote(
+    childKey: string,
+    baseKey: string,
+    note: string,
+    day?: string | null,
+    isoDate?: string | null,
+    meta?: ScuolaNuotoChildNoteMeta | null
+  ) {
     const v = load()
     const { node } = ensureDay(v, day ?? null)
     const ck = String(childKey ?? "").trim()
@@ -144,13 +235,23 @@ export const scuolaNuotoOverridesStore = {
     if (!ck || !bk) return
     const n = String(note ?? "").trim()
     const key = k(ck, bk)
-    if (!n) delete node.childNotes[key]
-    else node.childNotes[key] = n
+    if (!n) {
+      delete node.childNotes[key]
+      delete node.childMeta?.[key]
+    } else {
+      node.childNotes[key] = n
+      writeChildMeta(node, key, meta)
+    }
     touchNode(node)
     const dated = ensureDate(v, isoDate ?? null)
     if (dated) {
-      if (!n) delete dated.node.childNotes[key]
-      else dated.node.childNotes[key] = n
+      if (!n) {
+        delete dated.node.childNotes[key]
+        delete dated.node.childMeta?.[key]
+      } else {
+        dated.node.childNotes[key] = n
+        writeChildMeta(dated.node, key, meta)
+      }
       touchNode(dated.node)
     }
     save(v)

@@ -39,6 +39,21 @@ export type ScuolaNuotoTodayResponse = {
 
 export type ScuolaNuotoNotesPeriod = "current_week" | "previous_week" | "month"
 
+export type ScuolaNuotoCourseNoteMeta = {
+  corsoLabel: string
+  corso?: string | null
+  oraInizio?: string | null
+  oraFine?: string | null
+  livello?: string | null
+  istruttore?: string | null
+}
+
+export type ScuolaNuotoChildNoteMeta = {
+  childName: string
+  corsoLabel: string
+  livello?: string | null
+}
+
 export type ScuolaNuotoArchivedNote = {
   date: string
   weekday: string
@@ -47,6 +62,10 @@ export type ScuolaNuotoArchivedNote = {
   childKey?: string
   note: string
   updatedAt?: string
+  corsoLabel?: string
+  childName?: string
+  oraInizio?: string | null
+  livello?: string | null
 }
 
 export type ScuolaNuotoNotesArchiveResponse = {
@@ -72,10 +91,21 @@ export const scuolaNuotoApi = {
     ),
   notesArchive: (period: ScuolaNuotoNotesPeriod) =>
     api.get<ScuolaNuotoNotesArchiveResponse>(`/scuola-nuoto/notes?period=${encodeURIComponent(period)}`),
-  setCourseNote: (baseKey: string, note: string, day?: string, date?: string) =>
-    api.post<{ ok: true }>(`/scuola-nuoto/course-note`, { baseKey, note, day, date }),
-  setChildNote: (childKey: string, baseKey: string, note: string, day?: string, date?: string) =>
-    api.post<{ ok: true }>(`/scuola-nuoto/child-note`, { childKey, baseKey, note, day, date }),
+  setCourseNote: (
+    baseKey: string,
+    note: string,
+    day?: string,
+    date?: string,
+    meta?: ScuolaNuotoCourseNoteMeta
+  ) => api.post<{ ok: true }>(`/scuola-nuoto/course-note`, { baseKey, note, day, date, ...meta }),
+  setChildNote: (
+    childKey: string,
+    baseKey: string,
+    note: string,
+    day?: string,
+    date?: string,
+    meta?: ScuolaNuotoChildNoteMeta
+  ) => api.post<{ ok: true }>(`/scuola-nuoto/child-note`, { childKey, baseKey, note, day, date, ...meta }),
   setLevelOverride: (childKey: string, baseKey: string, livello: string, day?: string) =>
     api.post<{ ok: true }>(`/scuola-nuoto/level-override`, { childKey, baseKey, livello, day }),
   moveIscrizione: (body: { idIscrizione: number; targetIdCorso: number; idUtente?: number | null }) =>

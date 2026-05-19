@@ -213,6 +213,22 @@ function buildAccessKeysIndex(rows: AccessoUtenteRow[]): { presentKeys: Set<stri
 }
 
 
+function participantDisplayName(u: { nome?: string | null; cognome?: string | null; key?: string }): string {
+  const s = [u.cognome, u.nome].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ")
+  return s || String(u.key ?? "").trim() || "—"
+}
+
+function courseNoteMeta(c: ScuolaNuotoCorso) {
+  return {
+    corsoLabel: corsoTitle(c),
+    corso: c.corso,
+    oraInizio: c.oraInizio,
+    oraFine: c.oraFine,
+    livello: c.livello,
+    istruttore: c.istruttore,
+  }
+}
+
 function corsoTitle(c: ScuolaNuotoCorso): string {
   const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
   const parts = [
@@ -499,14 +515,24 @@ export function ScuolaNuoto() {
   const saveCourseNoteM = useMutation({
     mutationFn: async () => {
       if (!selected) return
-      await scuolaNuotoApi.setCourseNote(selected.baseKey, courseNoteDraft, dayKey, q.data?.today ?? date)
+      await scuolaNuotoApi.setCourseNote(
+        selected.baseKey,
+        courseNoteDraft,
+        dayKey,
+        q.data?.today ?? date,
+        courseNoteMeta(selected)
+      )
     },
     onSuccess: () => ovQ.refetch(),
   })
   const saveChildNoteM = useMutation({
     mutationFn: async () => {
       if (!selected || !activeChild) return
-      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, dayKey, q.data?.today ?? date)
+      await scuolaNuotoApi.setChildNote(activeChild.key, selected.baseKey, childNoteDraft, dayKey, q.data?.today ?? date, {
+        childName: participantDisplayName(activeChild),
+        corsoLabel: corsoTitle(selected),
+        livello: selected.livello,
+      })
     },
     onSuccess: () => ovQ.refetch(),
   })
