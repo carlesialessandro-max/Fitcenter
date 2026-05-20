@@ -2103,7 +2103,9 @@ export async function getDettaglioMese(req: Request, res: Response) {
         : budgetPerConsulente.getTotaleMese(anno, mese) || (budgetStore.get(anno, mese) ?? 0)
       if (!useMovimenti) {
         try {
-          const rows = await withDettaglioSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
+          const rows = isAsOfToday(asOf.key)
+            ? await withDettaglioSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
+            : []
           abbonamenti = rows.map((r) => rowToAbbonamento(r))
         } catch (e) {
           if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {

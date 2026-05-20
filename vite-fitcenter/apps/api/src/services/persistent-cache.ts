@@ -114,8 +114,74 @@ export async function getBudgetDepSig(): Promise<string> {
   const b = await getMeta("v:budget")
   // Bump quando cambia la logica SQL vendite (invalida cache dashboard/dettaglio su SQLite).
   // La cache resta persistente su app.sqlite; solo la chiave dep_sig cambia così i totali si ricalcolano.
-  const vendSig = "v24-id-durata-esclusione-opzionale"
+  const vendSig = "v25-zero-cache-guard"
   return `${b}.${vendSig}`
+}
+
+function parseYmdKey(key: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  if (!m) return null
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }
+}
+
+/** Cache storica recente con vendite 0: di solito errore/timeout, non un mese davvero vuoto. */
+export function isLikelyPoisonedZeroCache(name: string, asOf: string, value: unknown): boolean {
+  if (!isHistoricalTotalsCacheName(name)) return false
+  const todayKey = getTodayCacheKey()
+  if (asOf === todayKey) return false
+  const p = parseYmdKey(asOf)
+  const t = parseYmdKey(todayKey)
+  if (!p || !t) return false
+  const diffDays =
+    (Date.UTC(t.year, t.month - 1, t.day) - Date.UTC(p.year, p.month - 1, p.day)) / 86_400_000
+  if (diffDays < 1 || diffDays > 120) return false
+
+  if (name === "data.dashboard") {
+    const d = value as { entrateMese?: number }
+    return (d.entrateMese ?? 0) === 0
+  }
+  if (name === "data.dettaglio-mese") {
+    const d = value as {
+      dettaglioMese?: { consuntivo?: number }
+      dettaglioGiorno?: { consuntivo?: number }
+    }
+    return (d.dettaglioMese?.consuntivo ?? 0) === 0 && (d.dettaglioGiorno?.consuntivo ?? 0) === 0
+  }
+  return false
+}
+
+/** Elimina righe cache (es. rigenerazione precompute --force). */
+export async function purgeCacheEntries(opts: {
+  names?: string[]
+  scope?: string
+  asOfFrom?: string
+  asOfTo?: string
+}): Promise<number> {
+  const db = await getDb()
+  const clauses: string[] = []
+  const params: unknown[] = []
+  if (opts.names?.length) {
+    clauses.push(`name IN (${opts.names.map(() => "?").join(",")})`)
+    params.push(...opts.names)
+  }
+  if (opts.scope) {
+    clauses.push("scope = ?")
+    params.push(opts.scope)
+  }
+  if (opts.asOfFrom) {
+    clauses.push("asof >= ?")
+    params.push(opts.asOfFrom)
+  }
+  if (opts.asOfTo) {
+    clauses.push("asof <= ?")
+    params.push(opts.asOfTo)
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""
+  const before = db.exec(`SELECT COUNT(*) AS c FROM cache_results ${where};`, params)
+  const countBefore = Number(before?.[0]?.values?.[0]?.[0] ?? 0)
+  db.run(`DELETE FROM cache_results ${where};`, params)
+  if (!PERSIST_CACHE_AT_END) persistDb(db)
+  return countBefore
 }
 
 export function getTodayCacheKey(): string {
@@ -198,14 +264,20 @@ export async function cacheGet<T>(args: {
   const tryRead = (asOf: string, depSig: string | null): T | null =>
     readCacheRow<T>(db, args.name, args.scope, paramsHash, asOf, depSig, treatAsNoExpiry, now)
 
-  let hit = tryRead(args.asOf, args.depSig)
+  const accept = (hit: T | null): T | null => {
+    if (hit == null) return null
+    if (isLikelyPoisonedZeroCache(args.name, args.asOf, hit)) return null
+    return hit
+  }
+
+  let hit = accept(tryRead(args.asOf, args.depSig))
   if (hit) return hit
 
   if (treatAsNoExpiry) {
-    hit = tryRead(args.asOf, frozenDepSigForAsOf(args.asOf))
+    hit = accept(tryRead(args.asOf, frozenDepSigForAsOf(args.asOf)))
     if (hit) return hit
     // Precompute / versioni precedenti: ignora dep_sig (totali vendita immutabili).
-    hit = tryRead(args.asOf, null)
+    hit = accept(tryRead(args.asOf, null))
     if (hit) return hit
   }
 
@@ -228,6 +300,9 @@ export async function cacheSet(args: {
   const expiresAt = now + Math.max(0, args.ttlMs)
   const todayKey = getTodayCacheKey()
   const treatAsNoExpiry = isHistoricalCacheEntry(args.name, args.asOf, todayKey)
+  if (treatAsNoExpiry && isLikelyPoisonedZeroCache(args.name, args.asOf, args.value)) {
+    return
+  }
   const depSig = treatAsNoExpiry ? frozenDepSigForAsOf(args.asOf) : args.depSig
   db.run(
     `INSERT INTO cache_results(name, scope, params_hash, asof, dep_sig, value_json, created_at_ms, expires_at_ms)

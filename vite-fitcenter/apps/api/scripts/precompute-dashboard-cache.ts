@@ -9,7 +9,7 @@
  *   pnpm --filter api run precompute:dashboard-cache
  */
 import { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } from "../src/handlers/data.js"
-import { cacheGet, getBudgetDepSig } from "../src/services/persistent-cache.js"
+import { cacheGet, getBudgetDepSig, purgeCacheEntries } from "../src/services/persistent-cache.js"
 import dotenv from "dotenv"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -146,12 +146,25 @@ async function main() {
   const yearsBack = Number(parseArgValue("--years-back") ?? process.env.PRECOMPUTE_YEARS_BACK ?? 3)
   const yearsOverride = parseYearsArg(parseArgValue("--years") ?? undefined)
   const includeCurrentMonth = parseBoolFlag("--include-current-month") || (process.env.PRECOMPUTE_INCLUDE_CURRENT_MONTH ?? "false").toLowerCase() === "true"
+  const force = parseBoolFlag("--force")
   const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "true").toLowerCase() !== "false"
   const depSig = await getBudgetDepSig()
   const scope = "admin"
   const consulenteParams = { consulente: null }
 
   const { start, end } = computeMonthRange(now, yearsBack, yearsOverride, includeCurrentMonth)
+
+  if (force) {
+    const asOfFrom = `${start.year}-${pad2(start.month)}-01`
+    const asOfTo = `${end.year}-${pad2(end.month)}-${pad2(end.day)}`
+    const removed = await purgeCacheEntries({
+      names: ["data.dashboard", "data.dettaglio-mese", "data.dettaglio-anno", "data.report-consulenti"],
+      scope,
+      asOfFrom,
+      asOfTo,
+    })
+    console.log(`[precompute] --force: rimosse ${removed} righe cache (${asOfFrom}..${asOfTo})`)
+  }
   console.log(
     `[precompute] ${
       yearsOverride?.length ? `years=${yearsOverride.join(",")}` : `years-back=${yearsBack}`
@@ -181,7 +194,7 @@ async function main() {
         depSig,
       })
 
-      if (dashCached) {
+      if (dashCached && !force) {
         console.log(`[precompute] skip mese ${y}-${pad2(m)} (asOf=${asOf}) cache HIT dashboard`)
         continue
       }
@@ -266,6 +279,39 @@ async function main() {
       const msg = `[precompute] storico data.dettaglio-anno NON salvato per asOf=${asOf} (anno=${y}).`
       if (strictSql) throw new Error(msg)
       console.warn(msg)
+    }
+  }
+
+  // Mese corrente: precompute per ogni giorno (ieri, ecc.) così la UI con data picker è istantanea.
+  if (includeCurrentMonth) {
+    const y = end.year
+    const m = end.month
+    const lastPrecomputed = end.day
+    console.log(`[precompute] giorni mese corrente ${y}-${pad2(m)} (1..${lastPrecomputed})`)
+    for (let d = 1; d <= lastPrecomputed; d++) {
+      const asOf = ymdToAsOfKey(y, m, d)
+      const dashCached = await cacheGet({
+        name: "data.dashboard",
+        scope,
+        params: consulenteParams,
+        asOf,
+        depSig,
+      })
+      if (!dashCached || force) {
+        console.log(`[precompute] giorno ${y}-${pad2(m)}-${pad2(d)} dashboard`)
+        await call(getDashboard as any, { asOf })
+      }
+      const meseCached = await cacheGet({
+        name: "data.dettaglio-mese",
+        scope,
+        params: { anno: y, mese: m, giorno: d, consulente: null },
+        asOf,
+        depSig,
+      })
+      if (!meseCached || force) {
+        console.log(`[precompute] giorno ${y}-${pad2(m)}-${pad2(d)} dettaglio-mese`)
+        await call(getDettaglioMese as any, { anno: y, mese: m, giorno: d, asOf })
+      }
     }
   }
 
