@@ -58,6 +58,8 @@ export interface LeadCreate {
 export interface LeadUpdate {
   stato?: LeadStatus
   interesse?: InteresseLead
+  interesseDettaglio?: string
+  categoria?: LeadCategoria
   consulenteId?: string
   consulenteNome?: string
   note?: string

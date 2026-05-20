@@ -25,18 +25,33 @@ export function LeadDetail() {
     queryFn: () => dataApi.getLeads(),
     enabled: !!id,
   })
-  const lead = leads.find((l) => l.id === id)
+
+  const lead = useMemo(() => (id ? leads.find((l) => l.id === id) : undefined), [id, leads])
+
   const consulenteSelectValue = useMemo(() => {
-    if (!id) return ""
-    const l = leads.find((x) => x.id === id)
-    if (!l) return ""
-    const byId = l.consulenteId ? CRM_CONSULENTI_LEAD.find((x) => x.id === l.consulenteId) : undefined
+    if (!lead) return ""
+    const byId = lead.consulenteId ? CRM_CONSULENTI_LEAD.find((x) => x.id === lead.consulenteId) : undefined
     if (byId) return byId.id
-    const byNome = l.consulenteNome ? CRM_CONSULENTI_LEAD.find((x) => x.nome === l.consulenteNome) : undefined
+    const byNome = lead.consulenteNome ? CRM_CONSULENTI_LEAD.find((x) => x.nome === lead.consulenteNome) : undefined
     if (byNome) return byNome.id
-    if (l.consulenteNome || l.consulenteId) return "__unknown__"
+    if (lead.consulenteNome || lead.consulenteId) return "__unknown__"
     return ""
-  }, [id, leads])
+  }, [lead])
+
+  const today = new Date()
+  const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
+  const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
+  const cognomeCrm = String(lead?.cognome ?? "").trim()
+  const nomeCrm = String(lead?.nome ?? "").trim()
+  const canQueryCrm = !!id && !!lead && !!cognomeCrm && !!nomeCrm && cognomeCrm !== "—" && nomeCrm !== "—"
+  const crmClienteQ = useQuery({
+    queryKey: ["data", "crm-appuntamenti-cliente", cognomeCrm, nomeCrm, fromIso, toIso],
+    queryFn: () => dataApi.getCrmAppuntamentiCliente({ cognome: cognomeCrm, nome: nomeCrm, from: fromIso, to: toIso }),
+    enabled: canQueryCrm,
+    retry: false,
+  })
+  const crmAppuntamenti = useMemo(() => crmClienteQ.data?.rows ?? [], [crmClienteQ.data])
+  const loadingCrm = crmClienteQ.isLoading
 
   const updateMutation = useMutation({
     mutationFn: (updates: LeadUpdate) => leadsApi.update(id!, updates),
@@ -77,22 +92,6 @@ export function LeadDetail() {
       </div>
     )
   }
-
-  // CRM mese corrente: mostra per Nome+Cognome cliente (indipendente dall'operatore).
-  const today = new Date()
-  const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
-  const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
-  const cognomeCrm = String(lead.cognome ?? "").trim()
-  const nomeCrm = String(lead.nome ?? "").trim()
-  const canQueryCrm = !!cognomeCrm && !!nomeCrm
-  const crmClienteQ = useQuery({
-    queryKey: ["data", "crm-appuntamenti-cliente", cognomeCrm, nomeCrm, fromIso, toIso],
-    queryFn: () => dataApi.getCrmAppuntamentiCliente({ cognome: cognomeCrm, nome: nomeCrm, from: fromIso, to: toIso }),
-    enabled: canQueryCrm,
-    retry: false,
-  })
-  const crmAppuntamenti = useMemo(() => crmClienteQ.data?.rows ?? [], [crmClienteQ.data])
-  const loadingCrm = crmClienteQ.isLoading
 
   return (
     <div className="p-6">

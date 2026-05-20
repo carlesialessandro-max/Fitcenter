@@ -154,8 +154,19 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const parsed = parseFromRawString(rawCandidate)
   const labeled = parseFromLabeledText(rawCandidate)
 
-  const nome = nomePick || labeled.nome || parsed.nome || ""
-  const cognome = cognomePick || labeled.cognome || parsed.cognome || ""
+  let nome = nomePick || labeled.nome || parsed.nome || ""
+  let cognome = cognomePick || labeled.cognome || parsed.cognome || ""
+  const splitIfNeeded = () => {
+    const n = nome.trim()
+    const c = cognome.trim()
+    if (c && c !== "—" && c.toLowerCase() !== n.toLowerCase()) return
+    const parts = n.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      nome = parts[0]!
+      cognome = parts.slice(1).join(" ")
+    }
+  }
+  splitIfNeeded()
   const email = emailPick || labeled.email || parsed.email || ""
   const telefono = telefonoPick || labeled.telefono || parsed.telefono || ""
   let fonte: LeadSource = "zapier"
@@ -185,13 +196,35 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
       "Tipo",
     ]) || ""
 
-  const interesseRaw =
+  let interesseRaw =
     pick(["interesse", "Interesse", "interest", "Interest"]) ||
     (body.interesse != null ? unwrap(body.interesse) : "") ||
     labeled.tipologia ||
     tipologiaRaw
-  const interesseValido = interesseRaw && VALID_INTERESSE.includes(interesseRaw as InteresseLead) ? (interesseRaw as InteresseLead) : undefined
-  const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw.trim() : undefined
+  if (!interesseRaw.trim()) {
+    for (const [fk, fv] of Object.entries(flat)) {
+      if (/interess|tipolog|scuola|nuoto|campus|bambin/i.test(fk)) {
+        interesseRaw = fv.trim()
+        break
+      }
+    }
+  }
+  if (!interesseRaw.trim()) {
+    for (const fv of Object.values(flat)) {
+      const v = fv.trim()
+      if (/scuola\s*nuoto|nuoto\s*bambin|bambin|campus|festa\s+della\s+mamma/i.test(v)) {
+        interesseRaw = v
+        break
+      }
+    }
+  }
+  interesseRaw = interesseRaw.trim()
+  const interesseNorm = interesseRaw.toLowerCase()
+  const interesseValido =
+    interesseRaw && VALID_INTERESSE.includes(interesseNorm as InteresseLead)
+      ? (interesseNorm as InteresseLead)
+      : undefined
+  const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw : undefined
 
   const oggetto =
     pick(["oggetto", "Oggetto", "subject", "Subject", "titolo", "Titolo"]) ||
@@ -222,7 +255,8 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     .toLowerCase()
   const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw} ${oggetto} ${messaggio} ${noteOut ?? ""} ${flatBlob}`.toLowerCase()
   const categoria =
-    categoriaRaw === "bambini" || /\b(bambin|campus|scuola\s*nuoto|acquatic)\b/i.test(blobCat)
+    categoriaRaw === "bambini" ||
+    /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquatic|festa\s+della\s+mamma)\b/i.test(blobCat)
       ? ("bambini" as const)
       : undefined
   return {
@@ -289,11 +323,21 @@ export async function webhookZapier(req: Request, res: Response) {
       const payload = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {}
       const leadPayload = normalizeZapierBody(payload)
       const lead = store.create(leadPayload)
-      // Routing bambini: assegna automaticamente a Irene (username/ID logico).
-      if ((leadPayload.categoria ?? "generale") === "bambini") {
-        store.update(lead.id, { consulenteNome: "Irene", consulenteId: "irene" } as any)
+      const isBambini =
+        (leadPayload.categoria ?? "generale") === "bambini" ||
+        /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(
+          `${leadPayload.interesseDettaglio ?? ""} ${leadPayload.note ?? ""} ${leadPayload.categoria ?? ""}`
+        )
+      if (isBambini) {
+        const patched = store.update(lead.id, {
+          consulenteNome: "Irene",
+          consulenteId: "irene",
+          categoria: "bambini",
+        })
+        created.push(patched ?? lead)
+      } else {
+        created.push(lead)
       }
-      created.push(lead)
     }
     res.status(201).json({ created: created.length, leads: created })
   } catch (e) {
