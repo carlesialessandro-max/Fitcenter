@@ -118,17 +118,27 @@ export async function getBudgetDepSig(): Promise<string> {
   return `${b}.${vendSig}`
 }
 
+/** Data calendario da chiave cache (accetta anche `YYYY-MM-DDTHH` per «oggi»). */
+export function baseAsOfDateKey(asOf: string): string {
+  return asOf.length >= 10 ? asOf.slice(0, 10) : asOf
+}
+
 function parseYmdKey(key: string): { year: number; month: number; day: number } | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(key)
   if (!m) return null
   return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }
+}
+
+export function isTodayCacheAsOf(asOf: string, todayKey?: string): boolean {
+  const t = todayKey ?? getTodayCacheKey()
+  return baseAsOfDateKey(asOf) === t
 }
 
 /** Cache storica recente con vendite 0: di solito errore/timeout, non un mese davvero vuoto. */
 export function isLikelyPoisonedZeroCache(name: string, asOf: string, value: unknown): boolean {
   if (!isHistoricalTotalsCacheName(name)) return false
   const todayKey = getTodayCacheKey()
-  if (asOf === todayKey) return false
+  if (isTodayCacheAsOf(asOf, todayKey)) return false
   const p = parseYmdKey(asOf)
   const t = parseYmdKey(todayKey)
   if (!p || !t) return false
@@ -204,9 +214,10 @@ function isHistoricalTotalsCacheName(name: string): boolean {
 
 function isHistoricalCacheEntry(name: string, asOf: string, todayKey: string): boolean {
   const isHistoricalTotalsName = isHistoricalTotalsCacheName(name)
+  const dateKey = baseAsOfDateKey(asOf)
   const isHistoricalReportConsulenti =
-    name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(asOf) && asOf < todayKey
-  return (isHistoricalTotalsName && asOf !== todayKey) || isHistoricalReportConsulenti
+    name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey < todayKey
+  return (isHistoricalTotalsName && !isTodayCacheAsOf(asOf, todayKey)) || isHistoricalReportConsulenti
 }
 
 function readCacheRow<T>(

@@ -35,6 +35,16 @@ function fmtDateIt(iso: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`
 }
 
+/** Allineato alla cache API «oggi» per blocco orario. */
+function currentHourBucket(): number {
+  return new Date().getHours()
+}
+
+function msUntilNextHour(): number {
+  const d = new Date()
+  return Math.max(60_000, ((60 - d.getMinutes()) * 60 - d.getSeconds()) * 1000 + 500)
+}
+
 
 export function Dashboard() {
   const queryClient = useQueryClient()
@@ -45,6 +55,8 @@ export function Dashboard() {
   const [asOf, setAsOf] = useState(() => localIsoDate())
   const todayIso = localIsoDate()
   const isAdminToday = role === "admin" ? asOf === todayIso : true
+  const todayHourBucket = isAdminToday ? currentHourBucket() : null
+  const todayStaleMs = isAdminToday ? msUntilNextHour() : 30_000
   const [budgetAnno, setBudgetAnno] = useState(annoInCorso)
   const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
   const [budgetPerConsulente, setBudgetPerConsulente] = useState<Record<string, number>>({})
@@ -120,25 +132,25 @@ export function Dashboard() {
   const giornoOggi = role === "admin" ? oggiDate.getDate() : Math.min(giornoConsulente, giorniNelMeseSel)
 
   const { data: dettaglioGiornoMese } = useQuery({
-    queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null],
+    queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDettaglioMese(annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : undefined),
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : 30_000,
-    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
+    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
     placeholderData: (prev) => prev,
   })
 
   const { data: dettaglioAnnoData } = useQuery({
-    queryKey: ["dettaglio-anno", annoOggi, role === "admin" ? asOf : null],
+    queryKey: ["dettaglio-anno", annoOggi, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDettaglioAnno(annoOggi, role === "admin" ? asOf : undefined),
     enabled: role === "admin",
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : 30_000,
-    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
+    gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
   })
 
   const annoOre = now.getFullYear()

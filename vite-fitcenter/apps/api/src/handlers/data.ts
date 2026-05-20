@@ -9,7 +9,14 @@ import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
 import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
-import { bumpMetaVersion, cacheGet, cacheSet, getBudgetDepSig } from "../services/persistent-cache.js"
+import {
+  bumpMetaVersion,
+  cacheGet,
+  cacheSet,
+  getBudgetDepSig,
+  baseAsOfDateKey,
+  isTodayCacheAsOf,
+} from "../services/persistent-cache.js"
 import { rowToCliente, rowToAbbonamento } from "../data/map-sql-to-types.js"
 import type {
   Cliente,
@@ -367,11 +374,30 @@ function dettaglioAnnoCacheAsOf(anno: number, asOfKey: string): string {
 }
 
 function isAsOfToday(asOfKey: string): boolean {
-  return asOfKey === getTodayKey()
+  return isTodayCacheAsOf(asOfKey, getTodayKey())
 }
 
-function getCacheTtlMsForAsOf(asOfKey: string, fallbackMs: number): number {
-  return isAsOfToday(asOfKey) ? fallbackMs : HISTORICAL_TTL_MS
+/** Chiave cache «oggi»: blocco orario (es. 2026-05-20T14) — istantaneo se esci e rientri nella stessa ora. */
+function todayHourCacheKey(dateKey: string): string {
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const d = new Date()
+  const h = useLocal ? d.getHours() : d.getUTCHours()
+  return `${baseAsOfDateKey(dateKey)}T${pad2(h)}`
+}
+
+/** TTL cache oggi: fino al cambio ora (override con TODAY_CACHE_TTL_MS, min 60s). */
+function getTodayCacheTtlMs(): number {
+  const env = Number(process.env.TODAY_CACHE_TTL_MS)
+  if (Number.isFinite(env) && env >= 60_000) return env
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const d = new Date()
+  const min = useLocal ? d.getMinutes() : d.getUTCMinutes()
+  const sec = useLocal ? d.getSeconds() : d.getUTCSeconds()
+  return Math.max(60_000, ((59 - min) * 60 + (59 - sec) + 1) * 1000)
+}
+
+function getCacheTtlMsForAsOf(asOfKey: string, _fallbackMs: number): number {
+  return isAsOfToday(asOfKey) ? getTodayCacheTtlMs() : HISTORICAL_TTL_MS
 }
 
 /**
@@ -525,7 +551,7 @@ export async function getDashboard(req: Request, res: Response) {
           params: cacheKeyParams,
           asOf: cacheAsOf,
           depSig,
-          ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 60_000),
+          ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
           value: stats,
         })
         return res.json(stats)
@@ -560,7 +586,7 @@ export async function getDashboard(req: Request, res: Response) {
       params: cacheKeyParams,
       asOf: cacheAsOf,
       depSig,
-      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 60_000),
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: stats,
     })
     res.json(stats)
@@ -2272,7 +2298,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
       params: cacheParams,
       asOf: cacheAsOf,
       depSig,
-      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(cacheAsOf, 60_000),
+      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: result,
     })
     res.json(result)
@@ -2346,7 +2372,7 @@ export async function getDettaglioAnno(req: Request, res: Response) {
       params: cacheKeyParams,
       asOf: cacheAsOf,
       depSig,
-      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 10 * 60_000),
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: payload,
     })
     res.json(payload)
