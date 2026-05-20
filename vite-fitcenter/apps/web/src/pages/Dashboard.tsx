@@ -80,7 +80,7 @@ export function Dashboard() {
       const consulenti = budgetData?.consulenti ?? []
       for (const label of consulenti) {
         const val = budgetPerConsulente[label]
-        if (typeof val === "number") {
+        if (typeof val === "number" && Number.isFinite(val) && val >= 0) {
           await dataApi.setBudget(budgetAnno, budgetMese, val, label)
         }
       }
@@ -102,8 +102,16 @@ export function Dashboard() {
     budgetData.perConsulente
       .filter((p) => p.anno === budgetAnno && p.mese === budgetMese)
       .forEach((p) => { byLabel[p.consulenteLabel] = p.budget })
-    setBudgetPerConsulente((prev) => ({ ...byLabel, ...prev }))
+    setBudgetPerConsulente(byLabel)
   }, [budgetModal, budgetData?.perConsulente, budgetAnno, budgetMese])
+
+  const totaleBudgetForm = (budgetData?.consulenti ?? []).reduce((s, label) => {
+    const v = budgetPerConsulente[label]
+    return s + (typeof v === "number" && Number.isFinite(v) ? v : 0)
+  }, 0)
+
+  const shortConsulente = (label: string) => label.split(" ")[0] ?? label
+  const mesiBudget = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
 
   const oggiDate = role === "admin" ? new Date(`${asOf}T12:00:00Z`) : new Date(annoConsulente, meseConsulente - 1, 15)
   const annoOggi = role === "admin" ? oggiDate.getFullYear() : annoConsulente
@@ -518,8 +526,9 @@ export function Dashboard() {
 
       {budgetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-900 p-4">
             <h3 className="text-lg font-semibold text-zinc-100">Budget per consulente (totale mese = somma)</h3>
+            <p className="mt-1 text-xs text-zinc-500">I valori vengono salvati per anno e mese e restano consultabili negli anni successivi.</p>
             <div className="mt-4 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -555,21 +564,67 @@ export function Dashboard() {
                   <label className="block text-xs text-zinc-500">Budget {label} (€)</label>
                   <input
                     type="number"
-                    value={budgetPerConsulente[label] ?? 20000}
-                    onChange={(e) => setBudgetPerConsulente((prev) => ({ ...prev, [label]: Number(e.target.value) }))}
+                    min={0}
+                    step={100}
+                    placeholder="es. 28000"
+                    value={budgetPerConsulente[label] ?? ""}
+                    onChange={(e) => {
+                      const raw = e.target.value
+                      setBudgetPerConsulente((prev) => {
+                        const next = { ...prev }
+                        if (raw === "") delete next[label]
+                        else next[label] = Number(raw)
+                        return next
+                      })
+                    }}
                     className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100"
                   />
                 </div>
               ))}
               <p className="text-xs text-zinc-500">
-                Totale mese: €
-                {Math.round(
-                  (budgetData?.consulenti ?? []).reduce(
-                    (s, label) => s + (budgetPerConsulente[label] ?? 20000),
-                    0
-                  )
-                ).toLocaleString("it-IT")}
+                Totale mese: €{Math.round(totaleBudgetForm).toLocaleString("it-IT")}
+                {totaleBudgetForm === 0 && (
+                  <span className="ml-1 text-amber-500/90">— inserisci i tre importi e salva</span>
+                )}
               </p>
+              {budgetData?.storico && (
+                <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
+                  <h4 className="text-xs font-medium text-zinc-400">Storico salvato — {budgetAnno}</h4>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full min-w-[28rem] text-left text-xs text-zinc-300">
+                      <thead>
+                        <tr className="border-b border-zinc-800 text-zinc-500">
+                          <th className="py-1 pr-2">Mese</th>
+                          {(budgetData.consulenti ?? []).map((l) => (
+                            <th key={l} className="py-1 pr-2 text-right">{shortConsulente(l)}</th>
+                          ))}
+                          <th className="py-1 text-right">Totale</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {budgetData.storico.map((row) => (
+                          <tr
+                            key={row.mese}
+                            className={`border-b border-zinc-800/60 ${row.mese === budgetMese ? "bg-amber-500/10" : ""}`}
+                          >
+                            <td className="py-1 pr-2">{mesiBudget[row.mese - 1]}</td>
+                            {(budgetData.consulenti ?? []).map((l) => (
+                              <td key={l} className="py-1 pr-2 text-right tabular-nums">
+                                {row.perConsulente[l] != null
+                                  ? `€${row.perConsulente[l].toLocaleString("it-IT")}`
+                                  : "—"}
+                              </td>
+                            ))}
+                            <td className="py-1 text-right font-medium tabular-nums text-zinc-100">
+                              {row.salvato ? `€${row.totale.toLocaleString("it-IT")}` : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="mt-4 flex gap-2">
               <button type="button" onClick={() => setBudgetModal(false)} className="rounded-md border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">

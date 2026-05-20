@@ -20,10 +20,26 @@ import type {
   DettaglioMeseResponse,
 } from "../types/gestionale.js"
 
-/** Budget: solo da admin (store). Default 12 mesi per l'anno indicato. */
-function getDefaultBudgetList(anno?: number): { anno: number; mese: number; budget: number }[] {
-  const y = anno ?? new Date().getFullYear()
-  return Array.from({ length: 12 }, (_, i) => ({ anno: y, mese: i + 1, budget: 60000 }))
+/** Budget mensile: solo valori salvati (somma consulenti o snapshot totale). */
+function getBudgetListForYear(anno: number): { anno: number; mese: number; budget: number; vendite?: number }[] {
+  return Array.from({ length: 12 }, (_, i) => {
+    const mese = i + 1
+    let budget = budgetPerConsulente.getTotaleMese(anno, mese)
+    if (budget <= 0) {
+      const snap = budgetStore.get(anno, mese)
+      if (typeof snap === "number" && snap > 0) budget = snap
+    }
+    return { anno, mese, budget }
+  })
+}
+
+function persistBudgetMeseSnapshot(anno: number, mese: number): void {
+  const totale = budgetPerConsulente.getTotaleMese(anno, mese)
+  if (totale > 0) budgetStore.set(anno, mese, totale)
+}
+
+function budgetConsulenteSalvato(anno: number, mese: number, label: string): number {
+  return budgetPerConsulente.getSaved(anno, mese, label) ?? 0
 }
 
 /**
@@ -394,7 +410,7 @@ export async function getDashboard(req: Request, res: Response) {
               const leadTotali = leads.length
               const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
               const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-              const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
+              const budgetList = getBudgetListForYear(new Date().getFullYear())
               const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
               return buildDashboardFromData(
                 [],
@@ -423,7 +439,7 @@ export async function getDashboard(req: Request, res: Response) {
             const leadTotali = leads.length
             const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
             const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-            const budgetList = mergeBudgetWithStore(getDefaultBudgetList(undefined))
+            const budgetList = getBudgetListForYear(new Date().getFullYear())
             const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
             return buildDashboardFromData(
               [],
@@ -490,21 +506,6 @@ export async function getDashboard(req: Request, res: Response) {
   }
 }
 
-function mergeBudgetWithStore(budget: { anno: number; mese: number; budget: number; vendite?: number }[]) {
-  const overrides = budgetStore.getAll()
-  const map = new Map<string, typeof budget[0]>()
-  budget.forEach((b) => map.set(`${b.anno}-${b.mese}`, { ...b }))
-  overrides.forEach((o) => {
-    const existing = map.get(`${o.anno}-${o.mese}`)
-    map.set(`${o.anno}-${o.mese}`, { anno: o.anno, mese: o.mese, budget: o.budget, vendite: existing?.vendite })
-  })
-  const result = Array.from(map.values()).sort((a, b) => a.anno - b.anno || a.mese - b.mese)
-  result.forEach((r) => {
-    const totalePerConsulente = budgetPerConsulente.getTotaleMese(r.anno, r.mese)
-    r.budget = Math.round(totalePerConsulente)
-  })
-  return result
-}
 
 function buildDashboardFromData(
   clienti: Cliente[],
@@ -532,7 +533,7 @@ function buildDashboardFromData(
   const inScadenza = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in30)
   const inScadenza60 = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
-  const budgetVal = budgetCorrente?.budget ?? 60000
+  const budgetVal = budgetCorrente?.budget && budgetCorrente.budget > 0 ? budgetCorrente.budget : 0
   /** Totale anno = somma esatta dei budget mese (ogni mese = somma Carmen + Serena + Ombretta). */
   const budgetAnno = Math.round(
     budget
@@ -1398,10 +1399,15 @@ export async function getBudget(req: Request, res: Response) {
   try {
     const y = Number(req.query.anno)
     const anno = Number.isNaN(y) || req.query.anno === "" ? new Date().getFullYear() : y
-    const defaultList = getDefaultBudgetList(anno)
-    const budget = mergeBudgetWithStore(defaultList)
+    const budget = getBudgetListForYear(anno)
     const perConsulente = budgetPerConsulente.getAll(anno)
-    res.json({ list: budget, perConsulente, consulenti: budgetPerConsulente.getConsulentiLabels() })
+    res.json({
+      list: budget,
+      perConsulente,
+      consulenti: budgetPerConsulente.getConsulentiLabels(),
+      storico: budgetPerConsulente.getStoricoAnno(anno),
+      anniDisponibili: budgetPerConsulente.getAnniDisponibili(),
+    })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -1417,15 +1423,17 @@ export async function setBudget(req: Request, res: Response) {
     if (consulenteLabel != null && consulenteLabel !== "") {
       if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio per consulente" })
       budgetPerConsulente.set(anno, mese, consulenteLabel, Math.round(budget))
+      persistBudgetMeseSnapshot(anno, mese)
       await bumpMetaVersion("budget")
-      return res.json({ anno, mese, consulenteLabel, budget })
+      return res.json({ anno, mese, consulenteLabel, budget, totaleMese: budgetPerConsulente.getTotaleMese(anno, mese) })
     }
     if (typeof budget !== "number") return res.status(400).json({ message: "budget obbligatorio" })
     budgetPerConsulente.getConsulentiLabels().forEach((label) => {
       budgetPerConsulente.set(anno, mese, label, Math.round(budget / 3))
     })
+    persistBudgetMeseSnapshot(anno, mese)
     await bumpMetaVersion("budget")
-    res.json({ anno, mese, budget })
+    res.json({ anno, mese, budget, totaleMese: budgetPerConsulente.getTotaleMese(anno, mese) })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -1443,7 +1451,7 @@ export async function getVenditeStorico(req: Request, res: Response) {
     const MESI_NOMI = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
     const fromSql = gestionaleSql.isGestionaleConfigured()
     const idUtente = await resolveConsultantId(consulente)
-    const budgetList = mergeBudgetWithStore(getDefaultBudgetList(anno))
+    const budgetList = getBudgetListForYear(anno)
     let venditePerMese: { mese: string; anno: number; meseNum: number; vendite: number; budget: number; percentuale: number }[]
 
     if (fromSql) {
@@ -1609,7 +1617,7 @@ export async function getTotaliAnni(req: Request, res: Response) {
             .filter((a) => !a.isTesseramento && !isEsclusoVenditeListe(a))
             .filter((a) => new Date(a.dataInizio).getFullYear() === anno)
             .reduce((s, a) => s + a.prezzo, 0)
-      const budgetList = mergeBudgetWithStore(getDefaultBudgetList(anno))
+      const budgetList = getBudgetListForYear(anno)
       const budget = budgetList.reduce((s, b) => s + b.budget, 0)
       const percentuale = budget ? Math.round((vendite / budget) * 1000) / 10 : 0
       return { anno, vendite, budget, percentuale }
@@ -2027,10 +2035,9 @@ export async function getDettaglioMese(req: Request, res: Response) {
     const useMovimenti = movimenti.length > 0
 
     if (fromSql) {
-      const merged = mergeBudgetWithStore(getDefaultBudgetList(anno))
       budgetMese = consulente
-        ? budgetPerConsulente.get(anno, mese, consulente)
-        : (merged.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000)
+        ? budgetConsulenteSalvato(anno, mese, consulente)
+        : budgetPerConsulente.getTotaleMese(anno, mese) || (budgetStore.get(anno, mese) ?? 0)
       if (!useMovimenti) {
         try {
           const rows = await withDettaglioSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
@@ -2070,7 +2077,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
               const perConsulenteMese: DettaglioConsulente[] = []
               for (const label of labels) {
                 const id = await resolveConsultantId(label)
-                const budgetCons = budgetPerConsulente.get(anno, mese, label)
+                const budgetCons = budgetConsulenteSalvato(anno, mese, label)
                 const budgetGiornoCons = budgetCons / giorniNelMese
                 const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
                 const [venditeGiorno, venditeMese] = await Promise.all([
@@ -2242,7 +2249,7 @@ export async function getDettaglioAnno(req: Request, res: Response) {
       let budgetAnno = 0
       let budgetProgressivoAnno = 0
       for (let m = 1; m <= 12; m++) {
-        const b = budgetPerConsulente.get(anno, m, label)
+        const b = budgetConsulenteSalvato(anno, m, label)
         budgetAnno += b
         if (anno < oggi.year || (anno === oggi.year && m < oggi.month)) {
           budgetProgressivoAnno += b
@@ -2659,7 +2666,7 @@ function budgetProRataCalendarParts(
     const ed = Math.max(1, Math.min(endD, dim))
     if (sd <= ed) {
       const giorni = ed - sd + 1
-      const budgetMese = budgetPerConsulente.get(y, m, consulenteNome)
+      const budgetMese = budgetConsulenteSalvato(y, m, consulenteNome)
       sum += dim > 0 ? (budgetMese / dim) * giorni : 0
     }
     m += 1
@@ -2821,9 +2828,9 @@ export async function getReportConsulenti(req: Request, res: Response) {
         budget = faCal && taCal ? budgetProRataCalendarParts(faCal, taCal, consulenteNome) : 0
       } else if (periodo === "year") {
         const y = asOf.getUTCFullYear()
-        for (let m = 1; m <= 12; m++) budget += budgetPerConsulente.get(y, m, consulenteNome)
+        for (let m = 1; m <= 12; m++) budget += budgetConsulenteSalvato(y, m, consulenteNome)
       } else if (periodo === "month") {
-        budget = budgetPerConsulente.get(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
+        budget = budgetConsulenteSalvato(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
       } else {
         budget = budgetProRataCalendarParts(toDateParts(from), toDateParts(to), consulenteNome)
       }

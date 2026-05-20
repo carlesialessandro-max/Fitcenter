@@ -102,6 +102,14 @@ export const dataApi = {
       list: BudgetMensile[]
       perConsulente: { anno: number; mese: number; consulenteLabel: string; budget: number }[]
       consulenti: string[]
+      storico?: {
+        anno: number
+        mese: number
+        totale: number
+        salvato: boolean
+        perConsulente: Record<string, number>
+      }[]
+      anniDisponibili?: number[]
     }>(`/data/budget${anno != null ? `?anno=${anno}` : ""}`),
   setBudget: (anno: number, mese: number, budget: number, consulenteLabel?: string) =>
     api.post<{ anno: number; mese: number; budget?: number; consulenteLabel?: string }>("/data/budget", {
