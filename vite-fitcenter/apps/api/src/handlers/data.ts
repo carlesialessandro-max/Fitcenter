@@ -302,9 +302,68 @@ function cacheScope(req: Request): string {
 
 const HISTORICAL_TTL_MS = Number(process.env.HISTORICAL_TTL_MS ?? 10 * 365 * 24 * 60 * 60 * 1000) // ~10 anni
 
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
 function getTodayKey(): string {
   const nowParts = toDateParts(new Date())
-  return `${nowParts.year}-${String(nowParts.month).padStart(2, "0")}-${String(nowParts.day).padStart(2, "0")}`
+  return `${nowParts.year}-${pad2(nowParts.month)}-${pad2(nowParts.day)}`
+}
+
+function parseYmdKey(key: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  if (!m) return null
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) }
+}
+
+function lastDayOfMonthKey(year: number, month: number): string {
+  const last = new Date(Date.UTC(year, month, 0, 12, 0, 0)).getUTCDate()
+  return `${year}-${pad2(month)}-${pad2(last)}`
+}
+
+function isPastCalendarMonth(anno: number, mese: number): boolean {
+  const t = parseYmdKey(getTodayKey())
+  if (!t) return false
+  return anno < t.year || (anno === t.year && mese < t.month)
+}
+
+/** Per mesi già chiusi, i totali coincidono con l'ultimo giorno (allineato al precompute). */
+function cacheAsOfKeyForTotals(asOfKey: string): string {
+  if (isAsOfToday(asOfKey)) return asOfKey
+  const p = parseYmdKey(asOfKey)
+  const t = parseYmdKey(getTodayKey())
+  if (!p || !t) return asOfKey
+  const pastMonth = p.year < t.year || (p.year === t.year && p.month < t.month)
+  if (pastMonth) return lastDayOfMonthKey(p.year, p.month)
+  return asOfKey
+}
+
+function dettaglioMeseCacheLookup(
+  asOfKey: string,
+  anno: number,
+  mese: number,
+  giorno: number,
+  consulente: string | undefined
+): { cacheAsOf: string; cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null } } {
+  if (isPastCalendarMonth(anno, mese)) {
+    const last = new Date(anno, mese, 0).getDate()
+    return {
+      cacheAsOf: lastDayOfMonthKey(anno, mese),
+      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null },
+    }
+  }
+  return {
+    cacheAsOf: cacheAsOfKeyForTotals(asOfKey),
+    cacheParams: { anno, mese, giorno, consulente: consulente ?? null },
+  }
+}
+
+function dettaglioAnnoCacheAsOf(anno: number, asOfKey: string): string {
+  const t = parseYmdKey(getTodayKey())
+  if (!t) return asOfKey
+  if (anno < t.year) return `${anno}-12-31`
+  return cacheAsOfKeyForTotals(asOfKey)
 }
 
 function isAsOfToday(asOfKey: string): boolean {
@@ -341,13 +400,14 @@ export async function getDashboard(req: Request, res: Response) {
     const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
-    const depSig = await getBudgetDepSig()
+    const cacheAsOf = cacheAsOfKeyForTotals(asOf.key)
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = { consulente: consulente ?? null }
     const cached = await cacheGet<DashboardStats>({
       name: "data.dashboard",
       scope,
       params: cacheKeyParams,
-      asOf: asOf.key,
+      asOf: cacheAsOf,
       depSig,
     })
     if (cached) return res.json(cached)
@@ -366,7 +426,10 @@ export async function getDashboard(req: Request, res: Response) {
               const labels = budgetPerConsulente.getConsulentiLabels()
               const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
               const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-              const abbonamentiRows = await gestionaleSql.queryAbbonamenti(undefined)
+              // Storico: solo totali vendite (immutabili); evita queryAbbonamenti pesante su cache miss.
+              const abbonamentiRows = isAsOfToday(asOf.key)
+                ? await gestionaleSql.queryAbbonamenti(undefined)
+                : []
               if (mergedIds) {
                 const [prog, perMeseRaw] = await Promise.all([
                   gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds),
@@ -410,7 +473,7 @@ export async function getDashboard(req: Request, res: Response) {
               const leadTotali = leads.length
               const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
               const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-              const budgetList = getBudgetListForYear(new Date().getFullYear())
+              const budgetList = getBudgetListForYear(anno)
               const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
               return buildDashboardFromData(
                 [],
@@ -427,7 +490,7 @@ export async function getDashboard(req: Request, res: Response) {
               )
             }
             const [abbonamentiRows, venditeMeseSqlSingle, venditePerMeseSqlSingle] = await Promise.all([
-              gestionaleSql.queryAbbonamenti(idUtente),
+              isAsOfToday(asOf.key) ? gestionaleSql.queryAbbonamenti(idUtente) : Promise.resolve([]),
               gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
               gestionaleSql.getVenditePerMeseAnno(anno, idUtente),
             ])
@@ -439,7 +502,7 @@ export async function getDashboard(req: Request, res: Response) {
             const leadTotali = leads.length
             const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
             const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-            const budgetList = getBudgetListForYear(new Date().getFullYear())
+            const budgetList = getBudgetListForYear(anno)
             const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
             return buildDashboardFromData(
               [],
@@ -460,9 +523,9 @@ export async function getDashboard(req: Request, res: Response) {
           name: "data.dashboard",
           scope,
           params: cacheKeyParams,
-          asOf: asOf.key,
+          asOf: cacheAsOf,
           depSig,
-          ttlMs: getCacheTtlMsForAsOf(asOf.key, 60_000),
+          ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 60_000),
           value: stats,
         })
         return res.json(stats)
@@ -478,7 +541,7 @@ export async function getDashboard(req: Request, res: Response) {
             name: "data.dashboard",
             scope,
             params: cacheKeyParams,
-            asOf: asOf.key,
+            asOf: cacheAsOf,
             depSig,
             ttlMs: 10_000,
             value: stats,
@@ -495,9 +558,9 @@ export async function getDashboard(req: Request, res: Response) {
       name: "data.dashboard",
       scope,
       params: cacheKeyParams,
-      asOf: asOf.key,
+      asOf: cacheAsOf,
       depSig,
-      ttlMs: getCacheTtlMsForAsOf(asOf.key, 60_000),
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 60_000),
       value: stats,
     })
     res.json(stats)
@@ -2015,13 +2078,13 @@ export async function getDettaglioMese(req: Request, res: Response) {
 
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
-    const depSig = await getBudgetDepSig()
-    const cacheKeyParams = { anno, mese, giorno, consulente: consulente ?? null }
+    const { cacheAsOf, cacheParams } = dettaglioMeseCacheLookup(asOf.key, anno, mese, giorno, consulente)
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cached = await cacheGet<DettaglioMeseResponse>({
       name: "data.dettaglio-mese",
       scope,
-      params: cacheKeyParams,
-      asOf: asOf.key,
+      params: cacheParams,
+      asOf: cacheAsOf,
       depSig,
     })
     if (cached) return res.json(cached)
@@ -2204,10 +2267,10 @@ export async function getDettaglioMese(req: Request, res: Response) {
     await cacheSet({
       name: "data.dettaglio-mese",
       scope,
-      params: cacheKeyParams,
-      asOf: asOf.key,
+      params: cacheParams,
+      asOf: cacheAsOf,
       depSig,
-      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(asOf.key, 60_000),
+      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(cacheAsOf, 60_000),
       value: result,
     })
     res.json(result)
@@ -2226,13 +2289,14 @@ export async function getDettaglioAnno(req: Request, res: Response) {
     }
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
-    const depSig = await getBudgetDepSig()
+    const cacheAsOf = dettaglioAnnoCacheAsOf(anno, asOf.key)
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = { anno }
     const cached = await cacheGet<{ anno: number; annoLabel: string; dettaglio: DettaglioBlocco }>({
       name: "data.dettaglio-anno",
       scope,
       params: cacheKeyParams,
-      asOf: asOf.key,
+      asOf: cacheAsOf,
       depSig,
     })
     if (cached) return res.json(cached)
@@ -2278,9 +2342,9 @@ export async function getDettaglioAnno(req: Request, res: Response) {
       name: "data.dettaglio-anno",
       scope,
       params: cacheKeyParams,
-      asOf: asOf.key,
+      asOf: cacheAsOf,
       depSig,
-      ttlMs: getCacheTtlMsForAsOf(asOf.key, 10 * 60_000),
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 10 * 60_000),
       value: payload,
     })
     res.json(payload)

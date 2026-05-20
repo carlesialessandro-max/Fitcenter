@@ -118,45 +118,54 @@ export async function getBudgetDepSig(): Promise<string> {
   return `${b}.${vendSig}`
 }
 
-export async function cacheGet<T>(args: {
-  name: string
-  scope: string
-  params: unknown
-  asOf: string
-  depSig: string
-}): Promise<T | null> {
-  const db = await getDb()
-  const paramsHash = sha1(stableJson(args.params))
-  const now = Date.now()
-
-  // Se si tratta di dati storici (asOf != oggi) e sono "totali" di vendita,
-  // non devono mai scadere: anche se un TTL precedente li ha fatti scadere,
-  // continuiamo a usarli perché sono definitivi una volta calcolati.
-  const isHistoricalTotalsName =
-    args.name === "data.dashboard" || args.name === "data.dettaglio-mese" || args.name === "data.dettaglio-anno"
+export function getTodayCacheKey(): string {
   const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
   const d = new Date()
   const year = useLocal ? d.getFullYear() : d.getUTCFullYear()
   const month = (useLocal ? d.getMonth() : d.getUTCMonth()) + 1
   const day = useLocal ? d.getDate() : d.getUTCDate()
-  const todayKey = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
-  const isHistoricalReportConsulenti =
-    args.name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(args.asOf) && args.asOf < todayKey
-  const treatAsNoExpiry =
-    (isHistoricalTotalsName && args.asOf !== todayKey) || isHistoricalReportConsulenti
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
 
+/** dep_sig stabile per totali storici: non invalidare al cambio budget/chiamate. */
+export function frozenDepSigForAsOf(asOf: string): string {
+  return `frozen:${asOf}`
+}
+
+function isHistoricalTotalsCacheName(name: string): boolean {
+  return name === "data.dashboard" || name === "data.dettaglio-mese" || name === "data.dettaglio-anno"
+}
+
+function isHistoricalCacheEntry(name: string, asOf: string, todayKey: string): boolean {
+  const isHistoricalTotalsName = isHistoricalTotalsCacheName(name)
+  const isHistoricalReportConsulenti =
+    name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(asOf) && asOf < todayKey
+  return (isHistoricalTotalsName && asOf !== todayKey) || isHistoricalReportConsulenti
+}
+
+function readCacheRow<T>(
+  db: any,
+  name: string,
+  scope: string,
+  paramsHash: string,
+  asOf: string,
+  depSig: string | null,
+  treatAsNoExpiry: boolean,
+  now: number
+): T | null {
   const rows = db.exec(
-    treatAsNoExpiry
+    depSig
       ? `SELECT value_json, expires_at_ms FROM cache_results
          WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ? AND dep_sig = ?
          ORDER BY created_at_ms DESC
          LIMIT 1;`
       : `SELECT value_json, expires_at_ms FROM cache_results
-         WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ? AND dep_sig = ?
+         WHERE name = ? AND scope = ? AND params_hash = ? AND asof = ?
+         ORDER BY created_at_ms DESC
          LIMIT 1;`,
-    treatAsNoExpiry
-      ? [args.name, args.scope, paramsHash, args.asOf, args.depSig]
-      : [args.name, args.scope, paramsHash, args.asOf, args.depSig]
+    depSig
+      ? [name, scope, paramsHash, asOf, depSig]
+      : [name, scope, paramsHash, asOf]
   )
   const row = rows?.[0]?.values?.[0]
   if (!row) return null
@@ -173,6 +182,36 @@ export async function cacheGet<T>(args: {
   }
 }
 
+export async function cacheGet<T>(args: {
+  name: string
+  scope: string
+  params: unknown
+  asOf: string
+  depSig: string
+}): Promise<T | null> {
+  const db = await getDb()
+  const paramsHash = sha1(stableJson(args.params))
+  const now = Date.now()
+  const todayKey = getTodayCacheKey()
+  const treatAsNoExpiry = isHistoricalCacheEntry(args.name, args.asOf, todayKey)
+
+  const tryRead = (asOf: string, depSig: string | null): T | null =>
+    readCacheRow<T>(db, args.name, args.scope, paramsHash, asOf, depSig, treatAsNoExpiry, now)
+
+  let hit = tryRead(args.asOf, args.depSig)
+  if (hit) return hit
+
+  if (treatAsNoExpiry) {
+    hit = tryRead(args.asOf, frozenDepSigForAsOf(args.asOf))
+    if (hit) return hit
+    // Precompute / versioni precedenti: ignora dep_sig (totali vendita immutabili).
+    hit = tryRead(args.asOf, null)
+    if (hit) return hit
+  }
+
+  return null
+}
+
 export async function cacheSet(args: {
   name: string
   scope: string
@@ -187,6 +226,9 @@ export async function cacheSet(args: {
   const now = Date.now()
   const createdAt = now
   const expiresAt = now + Math.max(0, args.ttlMs)
+  const todayKey = getTodayCacheKey()
+  const treatAsNoExpiry = isHistoricalCacheEntry(args.name, args.asOf, todayKey)
+  const depSig = treatAsNoExpiry ? frozenDepSigForAsOf(args.asOf) : args.depSig
   db.run(
     `INSERT INTO cache_results(name, scope, params_hash, asof, dep_sig, value_json, created_at_ms, expires_at_ms)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
@@ -197,7 +239,7 @@ export async function cacheSet(args: {
       args.scope,
       paramsHash,
       args.asOf,
-      args.depSig,
+      depSig,
       JSON.stringify(args.value),
       createdAt,
       expiresAt,

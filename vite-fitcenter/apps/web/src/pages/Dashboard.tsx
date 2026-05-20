@@ -57,7 +57,7 @@ export function Dashboard() {
   const [oraLavorataInizio, setOraLavorataInizio] = useState("09:00")
   const [oraLavorataFine, setOraLavorataFine] = useState("18:00")
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, isFetching, error } = useQuery({
     queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null],
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
     retry: false,
@@ -131,8 +131,8 @@ export function Dashboard() {
   })
 
   const { data: dettaglioAnnoData } = useQuery({
-    queryKey: ["dettaglio-anno", annoInCorso, role === "admin" ? asOf : null],
-    queryFn: () => dataApi.getDettaglioAnno(annoInCorso, role === "admin" ? asOf : undefined),
+    queryKey: ["dettaglio-anno", annoOggi, role === "admin" ? asOf : null],
+    queryFn: () => dataApi.getDettaglioAnno(annoOggi, role === "admin" ? asOf : undefined),
     enabled: role === "admin",
     retry: false,
     refetchOnWindowFocus: false,
@@ -168,17 +168,25 @@ export function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ore-lavorate"] }),
   })
 
-  if (isLoading) {
+  if (isLoading && !data) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-zinc-400">
         Caricamento...
       </div>
     )
   }
-  if (error || !data) {
+  if (error && !data) {
+    const errMsg = (error as Error)?.message?.trim()
     return (
       <div className="p-6 text-red-400">
-        Errore: {(error as Error)?.message ?? "Dati non disponibili"}. Avvia l’API backend.
+        Errore: {errMsg || "connessione all’API non disponibile (timeout o server spento)"}. Verifica che l’API backend sia avviata.
+      </div>
+    )
+  }
+  if (!data) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center text-zinc-400">
+        Dati non disponibili.
       </div>
     )
   }
@@ -195,6 +203,14 @@ export function Dashboard() {
 
   return (
     <div className="p-6">
+      {isFetching && !isAdminToday && (
+        <p className="mb-3 text-sm text-amber-400/90">Caricamento totali per {fmtDateIt(asOf)}…</p>
+      )}
+      {error && (
+        <p className="mb-3 text-sm text-red-400">
+          Aggiornamento non riuscito: {(error as Error)?.message?.trim() || "errore di rete"}. I dati mostrati sono quelli dell’ultima richiesta riuscita.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">
