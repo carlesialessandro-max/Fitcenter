@@ -20,12 +20,34 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0")
 }
 
-function seatLabelPos(shapes: Seat["shapes"]): { x: number; y: number } {
-  const first = shapes[0]
-  if (first.kind === "circle") {
-    return { x: first.cx, y: first.cy + 4 }
+function seatBounds(shapes: Seat["shapes"]) {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const sh of shapes) {
+    if (sh.kind === "circle") {
+      minX = Math.min(minX, sh.cx - sh.r)
+      maxX = Math.max(maxX, sh.cx + sh.r)
+      minY = Math.min(minY, sh.cy - sh.r)
+      maxY = Math.max(maxY, sh.cy + sh.r)
+    } else {
+      minX = Math.min(minX, sh.x)
+      maxX = Math.max(maxX, sh.x + sh.w)
+      minY = Math.min(minY, sh.y)
+      maxY = Math.max(maxY, sh.y + sh.h)
+    }
   }
-  return { x: first.x + first.w / 2, y: first.y + first.h / 2 + 4 }
+  return { minX, minY, maxX, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 }
+}
+
+function seatLabelBadge(label: string, shapes: Seat["shapes"], isBooked: boolean) {
+  const b = seatBounds(shapes)
+  const w = Math.max(30, label.length * 6.8 + 10)
+  const h = 13
+  const x = b.cx - w / 2
+  const y = b.maxY + 3
+  return { x, y, w, h, textY: y + h - 3.5 }
 }
 
 function buildSeats(): Seat[] {
@@ -98,8 +120,8 @@ function buildSeats(): Seat[] {
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX, sxStartY + i * 36)
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX + sxDx, sxStartY + i * 36)
   for (let i = 0; i < 7; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
-  // SX28: ombrellone + 2 lettini, margine sinistro in basso
-  addPostazione("sx", 28, sxStartX, sxStartY + 10 * 36 + 8)
+  // SX28: sotto SX27 (terza colonna)
+  addPostazione("sx", 28, sxStartX + sxDx * 2, sxStartY + 7 * 40)
 
   // --- Prato centrale (3 file): 2 + 4 + 3 postazioni, posizionate dove sono le "X" (screenshot) ---
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
@@ -258,14 +280,21 @@ export function PiscinaMappa() {
             {seats.map((s) => {
               const b = bookedBySeat.get(s.bookId)
               const isBooked = Boolean(b)
-              const fillLettino = isBooked ? "#ef4444" : "#f4f4f5"
-              const fillUmb = isBooked ? "#ef4444" : "#fb923c"
-              const stroke = isBooked ? "#7f1d1d" : "#3f3f46"
+              const isPostazione = s.bookId.startsWith("pr-")
+              const isDeck = s.bookId.startsWith("bp-") && s.shapes[0]?.kind === "rect" && (s.shapes[0].y ?? 0) < 200
+              const fillLettino = isBooked ? "#b91c1c" : isDeck ? "#c4a574" : "#64748b"
+              const fillUmb = isBooked ? "#dc2626" : "#ea580c"
+              const stroke = isBooked ? "#450a0a" : isDeck ? "#713f12" : "#0f172a"
+              const badge = showLabels ? seatLabelBadge(s.label, s.shapes, isBooked) : null
               return (
                 <g key={s.id} onClick={() => onSeatClick(s.bookId)} style={{ cursor: "pointer" }}>
                   {s.shapes.map((sh, idx) =>
                     sh.kind === "circle" ? (
-                      <circle key={idx} cx={sh.cx} cy={sh.cy} r={sh.r} fill={fillUmb} stroke={stroke} strokeWidth="2" opacity={0.95} />
+                      <g key={idx}>
+                        <circle cx={sh.cx} cy={sh.cy} r={sh.r + 1.5} fill="none" stroke={stroke} strokeWidth="1" opacity={0.5} />
+                        <circle cx={sh.cx} cy={sh.cy} r={sh.r} fill={fillUmb} stroke={stroke} strokeWidth="2" />
+                        <circle cx={sh.cx - 2} cy={sh.cy - 2} r={Math.max(2, sh.r * 0.35)} fill="#fdba74" opacity={isBooked ? 0.2 : 0.55} />
+                      </g>
                     ) : (
                       <rect
                         key={idx}
@@ -277,32 +306,34 @@ export function PiscinaMappa() {
                         fill={fillLettino}
                         stroke={stroke}
                         strokeWidth="1.5"
-                        opacity={0.92}
                       />
                     )
                   )}
-                  {/* Etichetta */}
-                  {showLabels
-                    ? (() => {
-                        const { x, y } = seatLabelPos(s.shapes)
-                        return (
-                          <text
-                            x={x}
-                            y={y}
-                            fontSize={s.label.length > 3 ? "9" : "11"}
-                            fill="#ffffff"
-                            stroke="#0a0a0a"
-                            strokeWidth="1.2"
-                            paintOrder="stroke"
-                            textAnchor="middle"
-                            fontWeight="700"
-                            pointerEvents="none"
-                          >
-                            {s.label}
-                          </text>
-                        )
-                      })()
-                    : null}
+                  {badge ? (
+                    <g pointerEvents="none">
+                      <rect
+                        x={badge.x}
+                        y={badge.y}
+                        width={badge.w}
+                        height={badge.h}
+                        rx={3}
+                        fill={isBooked ? "#450a0a" : "#18181b"}
+                        stroke={isBooked ? "#f87171" : isPostazione ? "#fbbf24" : "#a3a3a3"}
+                        strokeWidth="1"
+                        opacity="0.96"
+                      />
+                      <text
+                        x={badge.x + badge.w / 2}
+                        y={badge.textY}
+                        fontSize={s.label.length > 3 ? "8" : "9"}
+                        fill={isBooked ? "#fecaca" : "#fef9c3"}
+                        textAnchor="middle"
+                        fontWeight="700"
+                      >
+                        {s.label}
+                      </text>
+                    </g>
+                  ) : null}
                   <title>{b ? `${s.bookId} — prenotato da ${b.by}` : `${s.bookId} — libero`}</title>
                 </g>
               )
@@ -311,13 +342,16 @@ export function PiscinaMappa() {
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-zinc-400">
           <span className="inline-flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-sm border border-zinc-700 bg-zinc-100" /> libero (lettino)
+            <span className="inline-block h-3 w-3 rounded-sm border border-amber-900 bg-amber-700" /> lettino bordo vasca
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full border border-zinc-700 bg-orange-400" /> ombrellone
+            <span className="inline-block h-3 w-3 rounded-sm border border-slate-900 bg-slate-500" /> lettino prato
           </span>
           <span className="inline-flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-sm border border-red-900 bg-red-500" /> prenotato
+            <span className="inline-block h-3 w-3 rounded-full border border-orange-900 bg-orange-600" /> ombrellone
+          </span>
+          <span className="inline-flex items-center gap-2">
+            <span className="inline-block h-3 w-3 rounded-sm border border-red-900 bg-red-700" /> prenotato
           </span>
           {createM.isPending || deleteM.isPending ? <span className="text-zinc-500">Salvataggio...</span> : null}
         </div>
