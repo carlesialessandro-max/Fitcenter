@@ -20,6 +20,14 @@ function pad2(n: number): string {
   return String(n).padStart(2, "0")
 }
 
+function seatLabelPos(shapes: Seat["shapes"]): { x: number; y: number } {
+  const first = shapes[0]
+  if (first.kind === "circle") {
+    return { x: first.cx, y: first.cy + 4 }
+  }
+  return { x: first.x + first.w / 2, y: first.y + first.h / 2 + 4 }
+}
+
 function buildSeats(): Seat[] {
   // Coordinate in viewBox 0..1000 (x) e 0..700 (y).
   // Bordo piscina: lettino singolo numerato 1..28.
@@ -82,16 +90,16 @@ function buildSeats(): Seat[] {
   for (let i = 0; i < 9; i++) addLet(38 + i, pgX2, pgYTop + i * pgDy)
   for (let i = 0; i < 7; i++) addLet(47 + i, pgX3, pgYTop + i * pgDy)
 
-  // --- Prato sinistra (3 file): 10, 10, 8 postazioni ---
-  // Le righe sono vicino alla siepe (foto 2)
+  // --- Prato sinistra (3 file): 10, 10, 7 + SX28 in basso a sinistra ---
   let sx = 1
-  // Allinea alla siepe (x vicino al bordo sinistro del prato) e sposta tutto nel verde (y >= 210)
   const sxStartX = 30
   const sxStartY = 290
   const sxDx = 75
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX, sxStartY + i * 36)
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX + sxDx, sxStartY + i * 36)
-  for (let i = 0; i < 8; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
+  for (let i = 0; i < 7; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
+  // SX28: ombrellone + 2 lettini, margine sinistro in basso
+  addPostazione("sx", 28, sxStartX, sxStartY + 10 * 36 + 8)
 
   // --- Prato centrale (3 file): 2 + 4 + 3 postazioni, posizionate dove sono le "X" (screenshot) ---
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
@@ -108,15 +116,13 @@ function buildSeats(): Seat[] {
     for (const x of cxRightXs) addPostazione("cx", cx++, x, y)
   }
 
-  // --- Prato destra (2 file): 5 e 6 postazioni ---
+  // --- Prato destra (2 file): 5 + 6 + DX12 ---
   let dx = 1
-  // Allinea al margine destro del prato e sposta tutto nel verde (y >= 210)
-  // Sposta ancora a destra (~100px) per evitare overlap con il blocco centrale
   const dxBaseX = 1020
   const dxBaseY = 340
   for (let i = 0; i < 5; i++) addPostazione("dx", dx++, dxBaseX, dxBaseY + i * 55)
-  // Seconda colonna più vicina per rientrare nel viewBox
   for (let i = 0; i < 6; i++) addPostazione("dx", dx++, dxBaseX + 60, dxBaseY + i * 50)
+  addPostazione("dx", 12, dxBaseX, dxBaseY + 5 * 55 + 8)
 
   return out
 }
@@ -128,7 +134,7 @@ export function PiscinaMappa() {
 
   const [date, setDate] = useState<string>(isoTodayLocal())
   const [zoom, setZoom] = useState<number>(0.8)
-  const [showLabels, setShowLabels] = useState<boolean>(false)
+  const [showLabels, setShowLabels] = useState<boolean>(true)
   const seats = useMemo(() => buildSeats(), [])
 
   const q = useQuery({
@@ -278,11 +284,20 @@ export function PiscinaMappa() {
                   {/* Etichetta */}
                   {showLabels
                     ? (() => {
-                        const first = s.shapes[0]
-                        const tx = first.kind === "circle" ? first.cx : first.x + 4
-                        const ty = first.kind === "circle" ? first.cy + 4 : first.y + 9
+                        const { x, y } = seatLabelPos(s.shapes)
                         return (
-                          <text x={tx} y={ty} fontSize="10" fill={isBooked ? "#fff" : "#111"} fontWeight="700">
+                          <text
+                            x={x}
+                            y={y}
+                            fontSize={s.label.length > 3 ? "9" : "11"}
+                            fill="#ffffff"
+                            stroke="#0a0a0a"
+                            strokeWidth="1.2"
+                            paintOrder="stroke"
+                            textAnchor="middle"
+                            fontWeight="700"
+                            pointerEvents="none"
+                          >
                             {s.label}
                           </text>
                         )
