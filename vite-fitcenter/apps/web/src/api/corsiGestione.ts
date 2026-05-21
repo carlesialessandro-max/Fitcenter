@@ -3,17 +3,20 @@ import { api } from "./client"
 /** Risposta GET ?giorno=YYYY-MM-DD */
 export type CorsiGestioneDayDto = {
   courseNotes: Record<string, string>
+  courseInstructors?: Record<string, string>
   appello: Record<string, boolean>
 }
 
 /** Risposta GET ?from=&to= (es. mese assenze) */
 export type CorsiGestioneRangeDto = {
   courseNotes: Record<string, string>
+  courseInstructors?: Record<string, string>
   appelloByDay: Record<string, Record<string, boolean>>
 }
 
 export type CorsiGestionePatchBody = {
   courseNote?: { key: string; text: string | null }
+  courseInstructor?: { key: string; name: string | null }
   appello?: { giorno: string; merge: Record<string, boolean> }
 }
 

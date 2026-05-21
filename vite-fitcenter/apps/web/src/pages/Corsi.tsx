@@ -868,6 +868,24 @@ function planningNotesFromCalendarioCorsi(
   return parts.join("\n\n")
 }
 
+function planningInstructorFromCalendarioCorsi(
+  g: CorsoGroup,
+  events: CalendarioMergedEventDto[] | undefined,
+): string {
+  if (!events?.length) return ""
+  const dow = dowFromIsoLocal(g.giorno)
+  const hm = hhmmNormalized(g.oraInizio)
+  if (dow == null || hm == null) return ""
+  for (const e of events) {
+    if (e.dow !== dow) continue
+    if (hhmmNormalized(e.start) !== hm) continue
+    if (!titleMatchesCalendarioCorso(g.servizio, e.title)) continue
+    const name = String(e.staffDisplay ?? e.staff ?? "").trim()
+    if (name) return name
+  }
+  return ""
+}
+
 export function Corsi() {
   const queryClient = useQueryClient()
   const { role } = useAuth()
@@ -889,10 +907,12 @@ export function Corsi() {
     }
   })
   const persistedNoteTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const persistedInstructorTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const [waCursor, setWaCursor] = useState(0)
 
   const enabled = role === "admin" || role === "corsi" || role === "istruttore"
   const canSendMessages = role === "admin" || role === "corsi"
+  const canEditCourseInstructor = canSendMessages
   const canManageNoShow = canSendMessages
   const [debugCorsi, setDebugCorsi] = useState(false)
 
@@ -907,6 +927,7 @@ export function Corsi() {
   useEffect(() => {
     return () => {
       for (const t of Object.values(persistedNoteTimers.current)) clearTimeout(t)
+      for (const t of Object.values(persistedInstructorTimers.current)) clearTimeout(t)
     }
   }, [])
 
@@ -922,7 +943,7 @@ export function Corsi() {
   const blocchiCorsiQ = useQuery({
     queryKey: ["prenotazioni-blocchi-corsi", giorno],
     queryFn: () => prenotazioniApi.listBlocchiCorsi(giorno),
-    enabled,
+    enabled: role === "admin" || role === "corsi",
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   })
@@ -965,13 +986,20 @@ export function Corsi() {
     mutationFn: corsiGestioneApi.patch,
     onSuccess: (_d, vars) => {
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "corsi-gestione-range" })
-      if (vars.appello) void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] })
+      if (vars.appello || vars.courseNote || vars.courseInstructor) {
+        void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] })
+      }
     },
   })
 
   const courseNotesMerged = useMemo(
     () => ({ ...legacyCourseNotes, ...(corsiGestioneQ.data?.courseNotes ?? {}) }),
     [legacyCourseNotes, corsiGestioneQ.data?.courseNotes],
+  )
+
+  const courseInstructorsMerged = useMemo(
+    () => ({ ...(corsiGestioneQ.data?.courseInstructors ?? {}) }),
+    [corsiGestioneQ.data?.courseInstructors],
   )
 
   const mergedAppello = useMemo(
@@ -987,6 +1015,7 @@ export function Corsi() {
     const k = noteKeyForCourse(g)
     queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
       courseNotes: { ...(prev?.courseNotes ?? {}), [k]: text },
+      courseInstructors: { ...(prev?.courseInstructors ?? {}) },
       appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? {}) },
     }))
     const prevT = persistedNoteTimers.current[k]
@@ -995,6 +1024,24 @@ export function Corsi() {
       delete persistedNoteTimers.current[k]
       patchCorsiGestioneM.mutate(
         { courseNote: { key: k, text } },
+        { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
+      )
+    }, 700)
+  }
+
+  function updateCourseInstructor(g: CorsoGroup, name: string) {
+    const k = noteKeyForCourse(g)
+    queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
+      courseNotes: { ...(prev?.courseNotes ?? {}) },
+      courseInstructors: { ...(prev?.courseInstructors ?? {}), [k]: name },
+      appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? {}) },
+    }))
+    const prevT = persistedInstructorTimers.current[k]
+    if (prevT) clearTimeout(prevT)
+    persistedInstructorTimers.current[k] = setTimeout(() => {
+      delete persistedInstructorTimers.current[k]
+      patchCorsiGestioneM.mutate(
+        { courseInstructor: { key: k, name } },
         { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
       )
     }, 700)
@@ -1577,6 +1624,9 @@ export function Corsi() {
                     const canMessaggi =
                       canSendMessages && (uniqueValidEmails(g.partecipanti).length > 0 || hasWhatsAppableContacts(g))
                     const courseNote = courseNotesMerged[noteKeyForCourse(g)] ?? ""
+                    const planningInstructor = planningInstructorFromCalendarioCorsi(g, calendarioCorsiQ.data?.events)
+                    const instructorOverride = courseInstructorsMerged[noteKeyForCourse(g)] ?? ""
+                    const courseInstructorDisplay = instructorOverride || planningInstructor
                     const planningNoteReadonly = planningNotesFromCalendarioCorsi(g, calendarioCorsiQ.data?.events)
                     const presentiCount = g.partecipanti.filter((p, idx) => {
                       const pWithTimes = participantForLessonAccess(g, p, giorno)
@@ -1603,6 +1653,22 @@ export function Corsi() {
                               {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
                               {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
                             </div>
+                            {courseInstructorDisplay || canEditCourseInstructor ? (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
+                                <span className="font-medium text-zinc-500">Istruttore</span>
+                                {canEditCourseInstructor ? (
+                                  <input
+                                    type="text"
+                                    value={instructorOverride || planningInstructor}
+                                    onChange={(e) => updateCourseInstructor(g, e.target.value)}
+                                    placeholder={planningInstructor ? "Override dal calendario…" : "Nome istruttore…"}
+                                    className="min-w-[10rem] flex-1 rounded-md border border-zinc-700 bg-zinc-950/30 px-2 py-1 text-sm text-zinc-200 placeholder:text-zinc-600"
+                                  />
+                                ) : (
+                                  <span className="text-zinc-300">{courseInstructorDisplay || "—"}</span>
+                                )}
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex flex-wrap items-center justify-end gap-2">
                             <div className="hidden items-center gap-2 text-xs text-zinc-400 sm:flex">
@@ -1686,6 +1752,12 @@ export function Corsi() {
                         {blocchiCorsiQ.isError ? (
                           <div className="mt-1 text-xs text-red-300">
                             Errore lettura blocchi: {String((blocchiCorsiQ.error as any)?.message ?? "—")}
+                          </div>
+                        ) : null}
+
+                        {corsiGestioneQ.isError ? (
+                          <div className="mt-1 px-5 text-xs text-red-300">
+                            Errore sincronizzazione note: {String((corsiGestioneQ.error as any)?.message ?? "—")}
                           </div>
                         ) : null}
 

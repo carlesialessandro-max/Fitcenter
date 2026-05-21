@@ -11,13 +11,21 @@ function isYmd(s: string): boolean {
 }
 
 /** Note corso: la chiave contiene `__giorno__` (formato gruppo Corsi). */
-function filterCourseNotesForDay(db: CorsiGestioneDb, giorno: string): Record<string, string> {
+function filterCourseKeysForDay(map: Record<string, string>, giorno: string): Record<string, string> {
   const needle = `__${giorno}__`
   const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(db.courseNotes)) {
+  for (const [k, v] of Object.entries(map)) {
     if (k.includes(needle)) out[k] = v
   }
   return out
+}
+
+function filterCourseNotesForDay(db: CorsiGestioneDb, giorno: string): Record<string, string> {
+  return filterCourseKeysForDay(db.courseNotes, giorno)
+}
+
+function filterCourseInstructorsForDay(db: CorsiGestioneDb, giorno: string): Record<string, string> {
+  return filterCourseKeysForDay(db.courseInstructors ?? {}, giorno)
 }
 
 function filterCourseNotesForRange(db: CorsiGestioneDb, from: string, to: string): Record<string, string> {
@@ -31,6 +39,22 @@ function filterCourseNotesForRange(db: CorsiGestioneDb, from: string, to: string
     const d = String(cur.getDate()).padStart(2, "0")
     const giorno = `${y}-${mo}-${d}`
     Object.assign(out, filterCourseNotesForDay(db, giorno))
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
+
+function filterCourseInstructorsForRange(db: CorsiGestioneDb, from: string, to: string): Record<string, string> {
+  if (from > to) return {}
+  const out: Record<string, string> = {}
+  const cur = new Date(`${from}T12:00:00`)
+  const end = new Date(`${to}T12:00:00`)
+  while (cur.getTime() <= end.getTime()) {
+    const y = cur.getFullYear()
+    const mo = String(cur.getMonth() + 1).padStart(2, "0")
+    const d = String(cur.getDate()).padStart(2, "0")
+    const giorno = `${y}-${mo}-${d}`
+    Object.assign(out, filterCourseInstructorsForDay(db, giorno))
     cur.setDate(cur.getDate() + 1)
   }
   return out
@@ -59,6 +83,7 @@ export function getCorsiGestione(req: Request, res: Response) {
     if (!isYmd(from) || !isYmd(to)) return res.status(400).json({ message: "from e to devono essere YYYY-MM-DD" })
     return res.json({
       courseNotes: filterCourseNotesForRange(db, from, to),
+      courseInstructors: filterCourseInstructorsForRange(db, from, to),
       appelloByDay: sliceAppelloRange(db, from, to),
     })
   }
@@ -67,6 +92,7 @@ export function getCorsiGestione(req: Request, res: Response) {
     if (!isYmd(giorno)) return res.status(400).json({ message: "giorno deve essere YYYY-MM-DD" })
     return res.json({
       courseNotes: filterCourseNotesForDay(db, giorno),
+      courseInstructors: filterCourseInstructorsForDay(db, giorno),
       appello: db.appelloByDay[giorno] && typeof db.appelloByDay[giorno] === "object" ? { ...db.appelloByDay[giorno] } : {},
     })
   }
@@ -75,6 +101,7 @@ export function getCorsiGestione(req: Request, res: Response) {
 }
 
 const MAX_NOTE = 12_000
+const MAX_INSTRUCTOR = 200
 const MAX_KEY = 400
 
 export function patchCorsiGestione(req: Request, res: Response) {
@@ -83,6 +110,7 @@ export function patchCorsiGestione(req: Request, res: Response) {
 
   const body = req.body as {
     courseNote?: { key?: string; text?: string | null }
+    courseInstructor?: { key?: string; name?: string | null }
     appello?: { giorno?: string; merge?: Record<string, boolean> }
   }
 
@@ -109,6 +137,29 @@ export function patchCorsiGestione(req: Request, res: Response) {
     }
   }
 
+  if (body.courseInstructor) {
+    if (u.role !== "admin" && u.role !== "corsi") {
+      return res.status(403).json({ message: "Solo responsabile corsi può modificare l'istruttore" })
+    }
+    const key = String(body.courseInstructor.key ?? "").trim()
+    if (!key || key.length > MAX_KEY) return res.status(400).json({ message: "courseInstructor.key non valida" })
+    const nameRaw = body.courseInstructor.name
+    const name = nameRaw == null ? "" : String(nameRaw).trim()
+    if (name.length > MAX_INSTRUCTOR) return res.status(400).json({ message: "Nome istruttore troppo lungo" })
+    const prevMap = db.courseInstructors ?? {}
+    if (!name) {
+      if (prevMap[key] !== undefined) {
+        const next = { ...prevMap }
+        delete next[key]
+        db = { ...db, courseInstructors: next }
+        changed = true
+      }
+    } else {
+      db = { ...db, courseInstructors: { ...prevMap, [key]: name } }
+      changed = true
+    }
+  }
+
   if (body.appello) {
     const giorno = String(body.appello.giorno ?? "").trim()
     const merge = body.appello.merge
@@ -125,7 +176,7 @@ export function patchCorsiGestione(req: Request, res: Response) {
   }
 
   if (!changed) {
-    if (body.courseNote && !body.appello) return res.json({ ok: true })
+    if ((body.courseNote || body.courseInstructor) && !body.appello) return res.json({ ok: true })
     return res.status(400).json({ message: "Nessun aggiornamento richiesto" })
   }
   writeCorsiGestioneDb(db)
