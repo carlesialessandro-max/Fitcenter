@@ -52,7 +52,7 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
 
 export function roleCanWriteCalendarioComparto(role: Role, comparto: CalendarioComparto): boolean {
   if (role === "admin") return true
-  if (comparto === "corsi") return role === "corsi" || role === "istruttore"
+  if (comparto === "corsi") return role === "corsi"
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
   if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "sala_fitness") return false

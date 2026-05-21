@@ -55,7 +55,7 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
 
 function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (u.role === "admin") return true
-  if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
+  if (comparto === "corsi") return u.role === "corsi"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
   if (comparto === "acquaticita" || comparto === "spogliatoi") return false
