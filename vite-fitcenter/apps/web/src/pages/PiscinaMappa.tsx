@@ -41,13 +41,55 @@ function seatBounds(shapes: Seat["shapes"]) {
   return { minX, minY, maxX, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 }
 }
 
-function seatLabelBadge(label: string, shapes: Seat["shapes"]) {
+type LabelLayout =
+  | { kind: "on-center"; x: number; y: number; fontSize: number }
+  | { kind: "badge"; x: number; y: number; w: number; h: number; textY: number; fontSize: number }
+
+function seatLabelLayout(label: string, shapes: Seat["shapes"], bookId: string): LabelLayout {
   const b = seatBounds(shapes)
-  const w = Math.max(30, label.length * 6.8 + 10)
-  const h = 13
-  const x = b.cx - w / 2
-  const y = b.maxY + 3
-  return { x, y, w, h, textY: y + h - 3.5 }
+  const isPostazione = bookId.startsWith("pr-")
+  const isGrassLettino = bookId.startsWith("bp-") && b.minY > 200
+
+  if (isPostazione) {
+    const circle = shapes.find((s): s is ShapeCircle => s.kind === "circle")
+    if (circle) {
+      return {
+        kind: "on-center",
+        x: circle.cx,
+        y: circle.cy + (label.length > 3 ? 3 : 4),
+        fontSize: label.length > 3 ? 7.5 : 9,
+      }
+    }
+  }
+
+  if (isGrassLettino) {
+    const rect = shapes.find((s): s is ShapeRect => s.kind === "rect")
+    if (rect) {
+      const w = Math.max(14, label.length * 5.5 + 6)
+      const h = 11
+      return {
+        kind: "badge",
+        x: rect.x + rect.w + 3,
+        y: rect.y + rect.h / 2 - h / 2,
+        w,
+        h,
+        textY: rect.y + rect.h / 2 + 3.5,
+        fontSize: 9,
+      }
+    }
+  }
+
+  const w = Math.max(label.length > 3 ? 32 : 14, label.length * (label.length > 3 ? 6 : 5.5) + 8)
+  const h = 11
+  return {
+    kind: "badge",
+    x: b.cx - w / 2,
+    y: b.cy - h / 2,
+    w,
+    h,
+    textY: b.cy + 3.5,
+    fontSize: label.length > 3 ? 7.5 : 9,
+  }
 }
 
 function buildSeats(): Seat[] {
@@ -112,16 +154,18 @@ function buildSeats(): Seat[] {
   for (let i = 0; i < 9; i++) addLet(38 + i, pgX2, pgYTop + i * pgDy)
   for (let i = 0; i < 7; i++) addLet(47 + i, pgX3, pgYTop + i * pgDy)
 
-  // --- Prato sinistra (3 file): 10, 10, 7 + SX28 in basso a sinistra ---
+  // --- Prato sinistra: 3 colonne + SX28/SX29 in terza colonna ---
   let sx = 1
   const sxStartX = 30
   const sxStartY = 290
   const sxDx = 75
+  const sxCol3X = sxStartX + sxDx * 2
+  const sxCol3Dy = 40
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX, sxStartY + i * 36)
   for (let i = 0; i < 10; i++) addPostazione("sx", sx++, sxStartX + sxDx, sxStartY + i * 36)
-  for (let i = 0; i < 7; i++) addPostazione("sx", sx++, sxStartX + sxDx * 2, sxStartY + i * 40)
-  // SX28: sotto SX27 (terza colonna)
-  addPostazione("sx", 28, sxStartX + sxDx * 2, sxStartY + 7 * 40)
+  for (let i = 0; i < 7; i++) addPostazione("sx", sx++, sxCol3X, sxStartY + i * sxCol3Dy)
+  addPostazione("sx", 28, sxCol3X, sxStartY + 7 * sxCol3Dy)
+  addPostazione("sx", 29, sxCol3X, sxStartY + 8 * sxCol3Dy)
 
   // --- Prato centrale (3 file): 2 + 4 + 3 postazioni, posizionate dove sono le "X" (screenshot) ---
   // (cioè nella fascia centrale alta, sopra le postazioni basse e sotto il bordo vasca)
@@ -285,7 +329,7 @@ export function PiscinaMappa() {
               const fillLettino = isBooked ? "#b91c1c" : isDeck ? "#c4a574" : "#64748b"
               const fillUmb = isBooked ? "#dc2626" : "#ea580c"
               const stroke = isBooked ? "#450a0a" : isDeck ? "#713f12" : "#0f172a"
-              const badge = showLabels ? seatLabelBadge(s.label, s.shapes) : null
+              const badge = showLabels ? seatLabelLayout(s.label, s.shapes, s.bookId) : null
               return (
                 <g key={s.id} onClick={() => onSeatClick(s.bookId)} style={{ cursor: "pointer" }}>
                   {s.shapes.map((sh, idx) =>
@@ -309,7 +353,23 @@ export function PiscinaMappa() {
                       />
                     )
                   )}
-                  {badge ? (
+                  {badge && badge.kind === "on-center" ? (
+                    <text
+                      x={badge.x}
+                      y={badge.y}
+                      fontSize={badge.fontSize}
+                      fill={isBooked ? "#fecaca" : "#fef9c3"}
+                      stroke="#422006"
+                      strokeWidth="0.7"
+                      paintOrder="stroke"
+                      textAnchor="middle"
+                      fontWeight="800"
+                      pointerEvents="none"
+                    >
+                      {s.label}
+                    </text>
+                  ) : null}
+                  {badge && badge.kind === "badge" ? (
                     <g pointerEvents="none">
                       <rect
                         x={badge.x}
@@ -317,18 +377,18 @@ export function PiscinaMappa() {
                         width={badge.w}
                         height={badge.h}
                         rx={3}
-                        fill={isBooked ? "#450a0a" : "#18181b"}
-                        stroke={isBooked ? "#f87171" : isPostazione ? "#fbbf24" : "#a3a3a3"}
-                        strokeWidth="1"
-                        opacity="0.96"
+                        fill={isBooked ? "#450a0a" : "#0f172a"}
+                        stroke={isBooked ? "#f87171" : isPostazione ? "#fbbf24" : "#fde047"}
+                        strokeWidth="1.2"
+                        opacity="0.98"
                       />
                       <text
                         x={badge.x + badge.w / 2}
                         y={badge.textY}
-                        fontSize={s.label.length > 3 ? "8" : "9"}
-                        fill={isBooked ? "#fecaca" : "#fef9c3"}
+                        fontSize={badge.fontSize}
+                        fill={isBooked ? "#fecaca" : "#fef08a"}
                         textAnchor="middle"
-                        fontWeight="700"
+                        fontWeight="800"
                       >
                         {s.label}
                       </text>
