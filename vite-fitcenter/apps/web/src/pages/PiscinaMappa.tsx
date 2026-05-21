@@ -41,7 +41,7 @@ function seatBounds(shapes: Seat["shapes"]) {
   return { minX, minY, maxX, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 }
 }
 
-function seatLabelBadge(label: string, shapes: Seat["shapes"], isBooked: boolean) {
+function seatLabelBadge(label: string, shapes: Seat["shapes"]) {
   const b = seatBounds(shapes)
   const w = Math.max(30, label.length * 6.8 + 10)
   const h = 13
@@ -285,7 +285,7 @@ export function PiscinaMappa() {
               const fillLettino = isBooked ? "#b91c1c" : isDeck ? "#c4a574" : "#64748b"
               const fillUmb = isBooked ? "#dc2626" : "#ea580c"
               const stroke = isBooked ? "#450a0a" : isDeck ? "#713f12" : "#0f172a"
-              const badge = showLabels ? seatLabelBadge(s.label, s.shapes, isBooked) : null
+              const badge = showLabels ? seatLabelBadge(s.label, s.shapes) : null
               return (
                 <g key={s.id} onClick={() => onSeatClick(s.bookId)} style={{ cursor: "pointer" }}>
                   {s.shapes.map((sh, idx) =>
