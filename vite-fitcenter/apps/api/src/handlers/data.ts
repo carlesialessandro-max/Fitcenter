@@ -2597,22 +2597,44 @@ export async function deleteOraLavorata(req: Request, res: Response) {
 }
 
 type ReportPeriodo = "week" | "month" | "year"
+type ReportMovimentoDettaglio = {
+  data: string
+  cliente: string
+  abbonamento: string
+  importo: number
+}
+type ReportCrossDettaglio = {
+  data: string
+  cliente: string
+  abbonamento: string
+  totale: number
+}
 type ReportRow = {
   consulenteNome: string
   vendite: number
   /** Iscrizioni distinte con movimento nel periodo (stesso filtro di Andamento vendite). */
   movimentiAndamento: number
+  /** Budget mese intero salvato (mese di «to»). */
+  budgetMese: number
+  /** Budget prorata sul periodo Dal/Al. */
   budget: number
   percentualeBudget: number
   telefonate: number
   clientiNuovi: number
   rinnovi: number
   invitoClienti: number
-  /** Passaggi a CROSS da dbo.RVW_LogUtenti (modifica tipo abbonamento + testo CROSS). */
+  /** Passaggi a CROSS (elenco vendite cross). */
   crossAbbonamenti: number
+  crossTotaleEuro: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+  dettaglioClientiNuovi: ReportMovimentoDettaglio[]
+  dettaglioRinnovi: ReportMovimentoDettaglio[]
+  dettaglioInvito: ReportMovimentoDettaglio[]
+  dettaglioCross: ReportCrossDettaglio[]
+  totaleEuroClientiNuovi: number
+  totaleEuroRinnovi: number
 }
 
 function normalizeCategoryToken(s: string | undefined): string {
@@ -2866,7 +2888,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const scope = cacheScope(req)
     const depSig = await getBudgetDepSig()
     const consulentiKey = labelsFiltered.join("|")
-    const cacheKeyParams = { from: fromIso, to: toIso, consulenti: consulentiKey || null }
+    const cacheKeyParams = { v: 2, from: fromIso, to: toIso, consulenti: consulentiKey || null }
     const cached = await cacheGet<any>({
       name: "data.report-consulenti",
       scope,
@@ -2914,17 +2936,23 @@ export async function getReportConsulenti(req: Request, res: Response) {
       let venditeAbbRows: Abbonamento[] = []
       let reportCountRows: Abbonamento[] = []
 
-      // Budget periodo per consulente (prorata calendario = dettaglio mese; Dal/Al = stringhe picker senza UTC)
+      // Budget periodo per consulente (prorata calendario = dettaglio mese; Dal/Al = stringe picker senza UTC)
       let budget = 0
+      let budgetMese = 0
       if (hasCustomRange) {
         budget = faCal && taCal ? budgetProRataCalendarParts(faCal, taCal, consulenteNome) : 0
+        if (taCal) budgetMese = budgetConsulenteSalvato(taCal.year, taCal.month, consulenteNome)
       } else if (periodo === "year") {
         const y = asOf.getUTCFullYear()
         for (let m = 1; m <= 12; m++) budget += budgetConsulenteSalvato(y, m, consulenteNome)
+        budgetMese = budgetConsulenteSalvato(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
       } else if (periodo === "month") {
         budget = budgetConsulenteSalvato(asOf.getUTCFullYear(), asOf.getUTCMonth() + 1, consulenteNome)
+        budgetMese = budget
       } else {
         budget = budgetProRataCalendarParts(toDateParts(from), toDateParts(to), consulenteNome)
+        const tp = toDateParts(to)
+        budgetMese = budgetConsulenteSalvato(tp.year, tp.month, consulenteNome)
       }
 
       if (gestionaleSql.isGestionaleConfigured() && idUtente) {
@@ -3060,9 +3088,58 @@ export async function getReportConsulenti(req: Request, res: Response) {
       }
 
       let crossAbbonamenti = 0
+      let crossTotaleEuro = 0
+      const dettaglioCross: ReportCrossDettaglio[] = []
       if (idUtente) {
-        for (const vid of gestionaleSql.parseConsultantIds(idUtente)) {
-          crossAbbonamenti += crossByVenditore.get(vid) ?? 0
+        try {
+          const crossElenco = await withReportConsulentiSqlTimeout(
+            gestionaleSql.getVenditeCrossElenco(fromIso, toIso, idUtente)
+          )
+          crossAbbonamenti = crossElenco.rows.length
+          crossTotaleEuro = Math.round(crossElenco.totale * 100) / 100
+          for (const cr of crossElenco.rows) {
+            dettaglioCross.push({
+              data: cr.dataCross,
+              cliente: cr.cliente,
+              abbonamento: cr.abbonamento,
+              totale: Math.round(cr.totale * 100) / 100,
+            })
+          }
+        } catch {
+          for (const vid of gestionaleSql.parseConsultantIds(idUtente)) {
+            crossAbbonamenti += crossByVenditore.get(vid) ?? 0
+          }
+        }
+      }
+
+      let dettaglioClientiNuovi: ReportMovimentoDettaglio[] = []
+      let dettaglioRinnovi: ReportMovimentoDettaglio[] = []
+      let dettaglioInvito: ReportMovimentoDettaglio[] = []
+      let totaleEuroClientiNuovi = 0
+      let totaleEuroRinnovi = 0
+      if (gestionaleSql.isGestionaleConfigured() && idUtente) {
+        try {
+          const [nuovi, rin, inv] = await Promise.all([
+            withReportConsulentiSqlTimeout(gestionaleSql.getReportMovimentiElenco(fromIso, toIso, idUtente, "clientiNuovi")),
+            withReportConsulentiSqlTimeout(gestionaleSql.getReportMovimentiElenco(fromIso, toIso, idUtente, "rinnovi")),
+            withReportConsulentiSqlTimeout(gestionaleSql.getReportInvitoElenco(fromIso, toIso, idUtente)),
+          ])
+          if (nuovi.ok) {
+            dettaglioClientiNuovi = nuovi.rows
+            totaleEuroClientiNuovi = nuovi.totaleEuro
+            if (clientiNuovi === 0) clientiNuovi = nuovi.rows.length
+          }
+          if (rin.ok) {
+            dettaglioRinnovi = rin.rows
+            totaleEuroRinnovi = rin.totaleEuro
+            if (rinnovi === 0) rinnovi = rin.rows.length
+          }
+          if (inv.ok) {
+            dettaglioInvito = inv.rows
+            if (invitoClienti === 0) invitoClienti = inv.rows.length
+          }
+        } catch {
+          /* mantieni conteggi aggregati */
         }
       }
 
@@ -3070,6 +3147,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         consulenteNome,
         vendite: Math.round(vendite * 100) / 100,
         movimentiAndamento,
+        budgetMese: Math.round(budgetMese * 100) / 100,
         budget: Math.round(budget * 100) / 100,
         percentualeBudget,
         telefonate,
@@ -3077,9 +3155,16 @@ export async function getReportConsulenti(req: Request, res: Response) {
         rinnovi,
         invitoClienti,
         crossAbbonamenti,
+        crossTotaleEuro,
         oreLavorate: Math.round(oreLavorate * 10) / 10,
         oreAttese,
         percentualeOre,
+        dettaglioClientiNuovi,
+        dettaglioRinnovi,
+        dettaglioInvito,
+        dettaglioCross,
+        totaleEuroClientiNuovi,
+        totaleEuroRinnovi,
       })
     }
 
@@ -3087,12 +3172,16 @@ export async function getReportConsulenti(req: Request, res: Response) {
 
     const sumV = rows.reduce((s, r) => s + r.vendite, 0)
     const sumB = rows.reduce((s, r) => s + r.budget, 0)
+    const sumBMese = rows.reduce((s, r) => s + r.budgetMese, 0)
     const sumMov = rows.reduce((s, r) => s + r.movimentiAndamento, 0)
     const sumTel = rows.reduce((s, r) => s + r.telefonate, 0)
     const sumNuovi = rows.reduce((s, r) => s + r.clientiNuovi, 0)
     const sumRin = rows.reduce((s, r) => s + r.rinnovi, 0)
     const sumInv = rows.reduce((s, r) => s + r.invitoClienti, 0)
     const sumCross = rows.reduce((s, r) => s + r.crossAbbonamenti, 0)
+    const sumCrossEuro = rows.reduce((s, r) => s + r.crossTotaleEuro, 0)
+    const sumEuroNuovi = rows.reduce((s, r) => s + r.totaleEuroClientiNuovi, 0)
+    const sumEuroRin = rows.reduce((s, r) => s + r.totaleEuroRinnovi, 0)
     const sumOre = rows.reduce((s, r) => s + r.oreLavorate, 0)
     const scost = Math.round((sumV - sumB) * 100) / 100
     const pctB = sumB > 0 ? Math.round((sumV / sumB) * 1000) / 10 : 0
@@ -3113,6 +3202,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
       totals: {
         movimentiAndamento: sumMov,
         vendite: Math.round(sumV * 100) / 100,
+        budgetMese: Math.round(sumBMese * 100) / 100,
         budget: Math.round(sumB * 100) / 100,
         scostamento: scost,
         percentualeBudget: pctB,
@@ -3121,6 +3211,9 @@ export async function getReportConsulenti(req: Request, res: Response) {
         rinnovi: sumRin,
         invitoClienti: sumInv,
         crossAbbonamenti: sumCross,
+        crossTotaleEuro: Math.round(sumCrossEuro * 100) / 100,
+        totaleEuroClientiNuovi: Math.round(sumEuroNuovi * 100) / 100,
+        totaleEuroRinnovi: Math.round(sumEuroRin * 100) / 100,
         oreLavorate: Math.round(sumOre * 10) / 10,
         oreAttese: oreAtteseRiga,
         percentualeOre: pctOre,

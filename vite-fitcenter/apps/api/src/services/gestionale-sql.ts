@@ -3918,6 +3918,184 @@ export async function getReportConteggiAndamento(
   }
 }
 
+export type ReportMovimentoDettaglioRow = {
+  data: string
+  cliente: string
+  abbonamento: string
+  importo: number
+}
+
+const EMPTY_REPORT_MOVIMENTI = { ok: false as const, rows: [] as ReportMovimentoDettaglioRow[], totaleEuro: 0 }
+
+/** Elenco movimenti report (nuovi / rinnovi), stessi filtri di `getReportConteggiAndamento`. */
+export async function getReportMovimentiElenco(
+  from: string,
+  to: string,
+  idConsultant: string | undefined,
+  tipo: "clientiNuovi" | "rinnovi"
+): Promise<{ ok: true; rows: ReportMovimentoDettaglioRow[]; totaleEuro: number } | typeof EMPTY_REPORT_MOVIMENTI> {
+  const p = await getPool()
+  if (!p) return EMPTY_REPORT_MOVIMENTI
+
+  const tblM = defaultTables.movimentiVenduto
+  const viewCfg = getViewVenditoreAbbonamento()
+  const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
+  const colMacro = process.env.GESTIONALE_VIEW_COL_MACRO?.trim() ?? "MacroCategoriaAbbonamentoDescrizione"
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+
+  if (!viewCfg) return EMPTY_REPORT_MOVIMENTI
+
+  try {
+    const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+
+    const whereBase = `
+      WHERE M.[${COL_IMPORTO}] <> 0
+        AND CAST(M.[${COL_DATA}] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(M.[${COL_DATA}] AS DATE) <= CAST(@to AS DATE)
+    `
+    const upperCatAbbonExpr = "UPPER(COALESCE(R.[CategoriaAbbonamentoDescrizione], ''))"
+    const upperCatExpr = "UPPER(COALESCE(R.[CategoriaDescrizione], ''))"
+    const upperMacroExpr = `UPPER(LTRIM(RTRIM(COALESCE(R.[${colMacro}], ''))))`
+    const whereTesseramento = `
+      AND COALESCE(R.[IDCategoriaUtente], -1) <> 19
+      AND ${upperCatAbbonExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatAbbonExpr} LIKE '%ASI%' AND ${upperCatAbbonExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%TESSERAMENT%'
+      AND NOT (${upperCatExpr} LIKE '%ASI%' AND ${upperCatExpr} LIKE '%ISCRIZIONE%')
+      AND ${upperCatExpr} NOT LIKE '%VARIE%'
+    `
+    const whereCategorieEscluse = `
+      AND ${upperCatAbbonExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatExpr} NOT LIKE '%DANZA%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatExpr} NOT LIKE '%CAMPUS%'
+      AND ${upperCatAbbonExpr} NOT LIKE '%ACQUATIC%'
+      AND ${upperCatExpr} NOT LIKE '%ACQUATIC%'
+      AND NOT (
+        (${upperCatAbbonExpr} LIKE '%SCUOLA%' AND ${upperCatAbbonExpr} LIKE '%NUOT%')
+        AND ${upperCatAbbonExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatAbbonExpr} NOT LIKE '%MASTER%'
+      )
+      AND NOT (
+        (${upperCatExpr} LIKE '%SCUOLA%' AND ${upperCatExpr} LIKE '%NUOT%')
+        AND ${upperCatExpr} NOT LIKE '%ADULT%'
+        AND ${upperCatExpr} NOT LIKE '%MASTER%'
+      )
+    `
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        : ""
+    const macroFilter =
+      tipo === "clientiNuovi"
+        ? `${upperMacroExpr} IN (N'NUOVI', N'GOLD ESTIVO', N'GOLD ESITVO', N'GOLD PREMIUM')`
+        : `${upperMacroExpr} = N'RINNOVI'`
+
+    const r = await req.query(
+      `;WITH Righe AS (
+        SELECT
+          M.[${COL_ISCRIZIONE}] AS IDIscrizione,
+          CONVERT(varchar(10), CAST(M.[${COL_DATA}] AS DATE), 23) AS DataMov,
+          LTRIM(RTRIM(COALESCE(R.[Cognome], N'') + N' ' + COALESCE(R.[Nome], N''))) AS Cliente,
+          LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N''))) AS Abbonamento,
+          TRY_CONVERT(float, R.[${colTotale}]) AS Importo
+        FROM [${tblM}] M
+        INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = M.[${COL_ISCRIZIONE}]
+        ${whereBase}
+        ${consultantFilter}
+        ${whereTesseramento}
+        ${whereCategorieEscluse}
+        AND ${macroFilter}
+        ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+        ${whereExcludeAbbonamentiSpecificiIds("R")}
+      ),
+      PerIscrizione AS (
+        SELECT
+          IDIscrizione,
+          MAX(DataMov) AS DataMov,
+          MAX(Cliente) AS Cliente,
+          MAX(Abbonamento) AS Abbonamento,
+          MAX(Importo) AS Importo
+        FROM Righe
+        GROUP BY IDIscrizione
+      )
+      SELECT DataMov, Cliente, Abbonamento, Importo
+      FROM PerIscrizione
+      ORDER BY DataMov DESC, Cliente`
+    )
+    const rows: ReportMovimentoDettaglioRow[] = (r.recordset ?? []).map((row: Record<string, unknown>) => ({
+      data: String(row.DataMov ?? row.datamov ?? "").trim(),
+      cliente: String(row.Cliente ?? row.cliente ?? "").trim(),
+      abbonamento: String(row.Abbonamento ?? row.abbonamento ?? "").trim(),
+      importo: Math.round((Number(row.Importo ?? row.importo) || 0) * 100) / 100,
+    }))
+    const totaleEuro = Math.round(rows.reduce((s, x) => s + x.importo, 0) * 100) / 100
+    return { ok: true, rows, totaleEuro }
+  } catch (e) {
+    if (strict) throw e
+    return EMPTY_REPORT_MOVIMENTI
+  }
+}
+
+/** Elenco inviti (PROVE / importo 0), stessi filtri del conteggio report. */
+export async function getReportInvitoElenco(
+  from: string,
+  to: string,
+  idConsultant: string | undefined
+): Promise<{ ok: true; rows: ReportMovimentoDettaglioRow[]; totaleEuro: number } | typeof EMPTY_REPORT_MOVIMENTI> {
+  const p = await getPool()
+  if (!p) return EMPTY_REPORT_MOVIMENTI
+  const viewCfg = getViewVenditoreAbbonamento()
+  if (!viewCfg) return EMPTY_REPORT_MOVIMENTI
+  const tblA = getAbbonamentiTableName()
+  const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
+  try {
+    const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+    const upperCatAbbExpr =
+      "UPPER(LTRIM(RTRIM(COALESCE(A.[CategoriaAbbonamentoDescrizione], A.[CategoriaDescrizione], R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione], ''))))"
+    const normCatAbbNoSpace = `REPLACE(REPLACE(${upperCatAbbExpr}, N' ', N''), N'_', N'')`
+    const upperAbbDescExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDescrizione], ''))))"
+    const upperDurataExpr = "UPPER(LTRIM(RTRIM(COALESCE(A.[AbbonamentoDurataDescrizione], ''))))"
+    const totExpr = "TRY_CONVERT(float, COALESCE(A.[Totale], A.[Importo], 0))"
+    const consultantFilter =
+      idConsultant && ids.length > 0
+        ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+        : ""
+    const r = await req.query(
+      `SELECT DISTINCT
+        CONVERT(varchar(10), CAST(A.[DataOperazione] AS DATE), 23) AS DataMov,
+        LTRIM(RTRIM(COALESCE(R.[Cognome], N'') + N' ' + COALESCE(R.[Nome], N''))) AS Cliente,
+        LTRIM(RTRIM(COALESCE(A.[AbbonamentoDescrizione], A.[AbbonamentoDurataDescrizione], N''))) AS Abbonamento,
+        ${totExpr} AS Importo
+      FROM [${tblA}] A
+      INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = A.[IDIscrizione]
+      WHERE CAST(A.[DataOperazione] AS DATE) >= CAST(@from AS DATE)
+        AND CAST(A.[DataOperazione] AS DATE) <= CAST(@to AS DATE)
+        AND ${totExpr} = 0
+        AND ${normCatAbbNoSpace} = N'INVITO'
+        AND ${upperAbbDescExpr} = N'PROVE'
+        AND ${upperDurataExpr} = N'SETTIMANA PROVA INGRESSI'
+        ${consultantFilter}
+      ORDER BY DataMov DESC, Cliente`
+    )
+    const rows: ReportMovimentoDettaglioRow[] = (r.recordset ?? []).map((row: Record<string, unknown>) => ({
+      data: String(row.DataMov ?? row.datamov ?? "").trim(),
+      cliente: String(row.Cliente ?? row.cliente ?? "").trim(),
+      abbonamento: String(row.Abbonamento ?? row.abbonamento ?? "").trim(),
+      importo: Math.round((Number(row.Importo ?? row.importo) || 0) * 100) / 100,
+    }))
+    return { ok: true, rows, totaleEuro: 0 }
+  } catch (e) {
+    if (strict) throw e
+    return EMPTY_REPORT_MOVIMENTI
+  }
+}
+
 const ZERO_CROSS_LOG = { ok: false as const, rows: [] as { idVenditore: number; cnt: number }[] }
 
 /**

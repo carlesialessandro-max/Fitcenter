@@ -356,22 +356,46 @@ export interface ReportConsulenteRow {
   vendite: number
   /** Stesso conteggio di Andamento vendite (iscrizioni distinte nel periodo). */
   movimentiAndamento: number
+  /** Budget mese intero salvato. */
+  budgetMese: number
   budget: number
   percentualeBudget: number
   telefonate: number
   clientiNuovi: number
   rinnovi: number
   invitoClienti: number
-  /** Passaggi a CROSS (log RVW_LogUtenti). */
+  /** Passaggi a CROSS (elenco vendite cross). */
   crossAbbonamenti: number
+  crossTotaleEuro: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+  dettaglioClientiNuovi?: ReportMovimentoDettaglioRow[]
+  dettaglioRinnovi?: ReportMovimentoDettaglioRow[]
+  dettaglioInvito?: ReportMovimentoDettaglioRow[]
+  dettaglioCross?: ReportCrossDettaglioRow[]
+  totaleEuroClientiNuovi?: number
+  totaleEuroRinnovi?: number
+}
+
+export interface ReportMovimentoDettaglioRow {
+  data: string
+  cliente: string
+  abbonamento: string
+  importo: number
+}
+
+export interface ReportCrossDettaglioRow {
+  data: string
+  cliente: string
+  abbonamento: string
+  totale: number
 }
 
 export interface ReportConsulentiTotals {
   movimentiAndamento: number
   vendite: number
+  budgetMese: number
   budget: number
   scostamento: number
   percentualeBudget: number
@@ -380,6 +404,9 @@ export interface ReportConsulentiTotals {
   rinnovi: number
   invitoClienti: number
   crossAbbonamenti: number
+  crossTotaleEuro: number
+  totaleEuroClientiNuovi: number
+  totaleEuroRinnovi: number
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
