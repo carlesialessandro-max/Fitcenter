@@ -36,6 +36,7 @@ export function ChiamaButton({
   clienteId,
   className = "",
   registraAlClick = true,
+  compact = false,
 }: Props) {
   const queryClient = useQueryClient()
   const { consulenteNome } = useConsulente()
