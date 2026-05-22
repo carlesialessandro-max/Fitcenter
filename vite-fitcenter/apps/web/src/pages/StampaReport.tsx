@@ -47,6 +47,8 @@ function monthStartIso(iso: string): string {
 
 const PDF_MARGIN_X = 10
 const PDF_HEAD_BLUE: [number, number, number] = [70, 166, 217]
+const PDF_FOOT_GRAY: [number, number, number] = [240, 240, 240]
+const PDF_ALT_ROW: [number, number, number] = [248, 248, 248]
 
 function tableWidth(doc: JsPdfInstance): number {
   return doc.internal.pageSize.getWidth() - PDF_MARGIN_X * 2
@@ -65,8 +67,8 @@ const pdfTableBase = {
   margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X },
   styles: { fontSize: 8, halign: "left" as const, valign: "middle" as const, cellPadding: 1.8 },
   headStyles: { fillColor: PDF_HEAD_BLUE, textColor: 255, halign: "left" as const, fontStyle: "bold" as const },
-  footStyles: { fillColor: [240, 240, 240], textColor: 20, fontStyle: "bold" as const, fontSize: 8, halign: "left" as const },
-  alternateRowStyles: { fillColor: [248, 248, 248] },
+  footStyles: { fillColor: PDF_FOOT_GRAY, textColor: 20, fontStyle: "bold" as const, fontSize: 8, halign: "left" as const },
+  alternateRowStyles: { fillColor: PDF_ALT_ROW },
 }
 
 const detailColumnStyles = {
