@@ -13,6 +13,7 @@ const navOperatore: NavItem[] = [
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/telefonate", label: "Telefonate" },
+  { to: "/stampa-report", label: "Stampa report" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
   { to: "/andamento-vendite", label: "Andamento Vendite" },
   { to: "/vendite-cross", label: "Cross" },

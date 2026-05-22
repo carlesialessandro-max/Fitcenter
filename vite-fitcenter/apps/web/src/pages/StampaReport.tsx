@@ -274,6 +274,90 @@ function appendCrossSection(doc: JsPdfWithAutoTable, y: number, rows: ReportCons
   return appendSummaryTable(doc, y, ["Consulente", "Cross", "Totale €"], summaryBody, summary3ColStyles(tw))
 }
 
+function appendOreConvalidazioniSection(
+  doc: JsPdfWithAutoTable,
+  y: number,
+  rows: ReportConsulenteRow[],
+  totals: ReportConsulentiResponse["totals"],
+  mode: PrintMode,
+) {
+  const tw = tableWidth(doc)
+  y = sectionTitle(doc, y, "ORE LAVORATE E CONVALIDAZIONI")
+
+  if (mode === "dettaglio") {
+    const body: string[][] = []
+    for (const r of rows) {
+      for (const o of r.dettaglioOreLavorate ?? []) {
+        body.push([
+          r.consulenteNome,
+          fmtDateShort(o.giorno),
+          o.oraInizio,
+          o.oraFine,
+          String(o.ore),
+          o.convalidato ? "Sì" : "No",
+        ])
+      }
+    }
+    if (body.length === 0) {
+      body.push(["—", "—", "Nessuna ora registrata nel periodo", "—", "—", "—"])
+    }
+    autoTable(doc, {
+      ...pdfTableBase,
+      tableWidth: tw,
+      startY: y + 2,
+      head: [["Consulente", "Giorno", "Inizio", "Fine", "Ore", "Convalidato"]],
+      body,
+      columnStyles: {
+        0: { cellWidth: 38 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 18 },
+        4: { cellWidth: 16, halign: "right" },
+        5: { cellWidth: 24, halign: "center" },
+      },
+      showFoot: "never",
+    })
+    y = autoTableNextY(doc, y + 16, 4)
+  }
+
+  const summaryBody = rows.map((r) => [
+    r.consulenteNome,
+    String(r.oreLavorate ?? 0),
+    String(r.oreAttese ?? 0),
+    `${(r.percentualeOre ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 1 })}%`,
+    String(r.giorniConvalidati ?? 0),
+    r.giorniConvalidatiLista || "—",
+  ])
+  summaryBody.push([
+    "TOTALE",
+    String(totals.oreLavorate ?? 0),
+    String(totals.oreAttese ?? 0),
+    `${(totals.percentualeOre ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 1 })}%`,
+    String(totals.giorniConvalidati ?? 0),
+    "—",
+  ])
+
+  y = ensurePdfSpace(doc, y, 36)
+  autoTable(doc, {
+    ...pdfTableBase,
+    tableWidth: tw,
+    startY: y,
+    head: [["Consulente", "Ore lav.", "Ore attese", "% Ore", "Giorni conv.", "Elenco giorni convalidati"]],
+    body: summaryBody,
+    columnStyles: {
+      0: { cellWidth: 34 },
+      1: { cellWidth: 18, halign: "right" },
+      2: { cellWidth: 20, halign: "right" },
+      3: { cellWidth: 16, halign: "right" },
+      4: { cellWidth: 20, halign: "right" },
+      5: { cellWidth: 72 },
+    },
+    showHead: "firstPage",
+    didParseCell: styleTotalRows(new Set([summaryBody.length - 1])),
+  })
+  return autoTableNextY(doc, y + 12)
+}
+
 function buildPdf(
   reportData: ReportConsulentiResponse,
   consulentiEffective: string[],
@@ -346,6 +430,9 @@ function buildPdf(
     footStyles: { fillColor: PDF_FOOT_GRAY, textColor: 20, fontStyle: "bold" },
     didParseCell: stylePdfFootCell,
   })
+  y = autoTableNextY(doc, y + 18)
+
+  y = appendOreConvalidazioniSection(doc, y, rows, totals, mode)
 
   doc.addPage()
   y = 14
@@ -395,18 +482,26 @@ function buildPdf(
 }
 
 export function StampaReport() {
-  const { role } = useAuth()
-  if (role !== "admin") return <Navigate to="/" replace />
+  const { role, consulenteNome } = useAuth()
+  const isOperatore = role === "operatore"
+  if (role !== "admin" && !isOperatore) return <Navigate to="/" replace />
 
   const todayIso = localIsoDate()
   const [from, setFrom] = useState(() => monthStartIso(todayIso))
   const [to, setTo] = useState(() => todayIso)
   const [printMode, setPrintMode] = useState<PrintMode>("dettaglio")
 
-  const allConsulenti = useMemo(() => [...DEFAULT_CONSULENTI].sort((a, b) => a.localeCompare(b)), [])
+  const allConsulenti = useMemo(() => {
+    if (isOperatore && consulenteNome.trim()) return [consulenteNome.trim()]
+    return [...DEFAULT_CONSULENTI].sort((a, b) => a.localeCompare(b))
+  }, [isOperatore, consulenteNome])
 
   const [consulentiSel, setConsulentiSel] = useState<string[]>([])
-  const consulentiEffective = consulentiSel.length > 0 ? consulentiSel : allConsulenti
+  const consulentiEffective = isOperatore
+    ? allConsulenti
+    : consulentiSel.length > 0
+      ? consulentiSel
+      : allConsulenti
 
   const reportQuery = useQuery({
     queryKey: ["report-consulenti", from, to, consulentiEffective.join("|")],
@@ -434,7 +529,7 @@ export function StampaReport() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Stampa report</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Pagina 1: budget e produzione. Pagina 2: categorie con riepilogo per consulente (totali solo a fine sezione).
+            Pagina 1: budget, produzione e ore/convalidazioni. Pagina 2: categorie con riepilogo per consulente.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -503,42 +598,44 @@ export function StampaReport() {
         </button>
       </div>
 
-      <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-        <h2 className="text-sm font-medium text-zinc-300">Consulenti</h2>
-        <p className="mt-1 text-xs text-zinc-500">
-          Se non selezioni nulla, verranno usate automaticamente quelle presenti nel dettaglio mese del giorno selezionato in “Al”.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {allConsulenti.map((c) => {
-            const active = consulentiSel.includes(c)
-            return (
+      {!isOperatore && (
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+          <h2 className="text-sm font-medium text-zinc-300">Consulenti</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Se non selezioni nulla, verranno usate automaticamente quelle presenti nel dettaglio mese del giorno selezionato in “Al”.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {allConsulenti.map((c) => {
+              const active = consulentiSel.includes(c)
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setConsulentiSel((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]))}
+                  className={`rounded border px-3 py-1.5 text-xs ${
+                    active
+                      ? "border-amber-500 bg-amber-500/20 text-amber-400"
+                      : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                  }`}
+                  title={active ? "Inclusa nel report" : "Esclusa dal report"}
+                >
+                  {c}
+                </button>
+              )
+            })}
+            {allConsulenti.length > 0 && (
               <button
-                key={c}
                 type="button"
-                onClick={() => setConsulentiSel((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]))}
-                className={`rounded border px-3 py-1.5 text-xs ${
-                  active
-                    ? "border-amber-500 bg-amber-500/20 text-amber-400"
-                    : "border-zinc-700 text-zinc-400 hover:bg-zinc-800"
-                }`}
-                title={active ? "Inclusa nel report" : "Esclusa dal report"}
+                onClick={() => setConsulentiSel([])}
+                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800"
+                title="Reset selezione (auto)"
               >
-                {c}
+                Reset (Auto)
               </button>
-            )
-          })}
-          {allConsulenti.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setConsulentiSel([])}
-              className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-800"
-              title="Reset selezione (auto)"
-            >
-              Reset (Auto)
-            </button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

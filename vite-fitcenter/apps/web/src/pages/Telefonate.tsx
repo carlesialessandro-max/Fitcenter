@@ -135,7 +135,7 @@ export function Telefonate() {
                     <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400"></th>
+                    <th className="min-w-[9rem] px-3 py-2 font-medium text-zinc-400"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -148,14 +148,15 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{r.tipoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.esitoDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-zinc-300">{r.crmDescrizione || "—"}</td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
                         {r.telefono ? (
-                          <div className="flex flex-wrap items-center justify-end gap-1">
+                          <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                             <ChiamaButton
                               telefono={r.telefono}
                               nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
                               tipo="cliente"
                               registraAlClick
+                              compact
                             />
                             <RegistraTelefonataButton
                               telefono={r.telefono}
@@ -195,7 +196,7 @@ export function Telefonate() {
                     <th className="px-3 py-2 font-medium text-zinc-400">Nome</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
                     <th className="px-3 py-2 font-medium text-zinc-400">Tel</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400"></th>
+                    <th className="min-w-[9rem] px-3 py-2 font-medium text-zinc-400"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -205,8 +206,8 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{c.nomeContatto}</td>
                       <td className="px-3 py-2 text-zinc-300">{c.tipo}</td>
                       <td className="px-3 py-2 text-zinc-300">{c.telefono}</td>
-                      <td className="px-3 py-2 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-1">
+                      <td className="whitespace-nowrap px-3 py-2 text-right">
+                        <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
                           <ChiamaButton
                             telefono={c.telefono}
                             nomeContatto={c.nomeContatto}
@@ -214,6 +215,7 @@ export function Telefonate() {
                             leadId={c.leadId}
                             clienteId={c.clienteId}
                             registraAlClick={false}
+                            compact
                           />
                           <RegistraTelefonataButton
                             telefono={c.telefono}

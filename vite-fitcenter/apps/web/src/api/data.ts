@@ -370,6 +370,9 @@ export interface ReportConsulenteRow {
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+  giorniConvalidati: number
+  giorniConvalidatiLista: string
+  dettaglioOreLavorate?: ReportOreDettaglioRow[]
   dettaglioClientiNuovi?: ReportMovimentoDettaglioRow[]
   dettaglioRinnovi?: ReportMovimentoDettaglioRow[]
   dettaglioInvito?: ReportMovimentoDettaglioRow[]
@@ -392,6 +395,14 @@ export interface ReportCrossDettaglioRow {
   totale: number
 }
 
+export interface ReportOreDettaglioRow {
+  giorno: string
+  oraInizio: string
+  oraFine: string
+  ore: number
+  convalidato: boolean
+}
+
 export interface ReportConsulentiTotals {
   movimentiAndamento: number
   vendite: number
@@ -410,6 +421,7 @@ export interface ReportConsulentiTotals {
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+  giorniConvalidati: number
 }
 
 export interface ReportConsulentiResponse {

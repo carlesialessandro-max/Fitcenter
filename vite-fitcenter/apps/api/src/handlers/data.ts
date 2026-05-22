@@ -2609,6 +2609,13 @@ type ReportCrossDettaglio = {
   abbonamento: string
   totale: number
 }
+type ReportOreDettaglio = {
+  giorno: string
+  oraInizio: string
+  oraFine: string
+  ore: number
+  convalidato: boolean
+}
 type ReportRow = {
   consulenteNome: string
   vendite: number
@@ -2629,6 +2636,9 @@ type ReportRow = {
   oreLavorate: number
   oreAttese: number
   percentualeOre: number
+  giorniConvalidati: number
+  giorniConvalidatiLista: string
+  dettaglioOreLavorate: ReportOreDettaglio[]
   dettaglioClientiNuovi: ReportMovimentoDettaglio[]
   dettaglioRinnovi: ReportMovimentoDettaglio[]
   dettaglioInvito: ReportMovimentoDettaglio[]
@@ -2838,9 +2848,39 @@ function oreDiff(oraInizio: string, oraFine: string): number {
   return Math.max(0, mins / 60)
 }
 
+function convalidatiInRange(consulenteNome: string, fromIso: string, toIso: string): { count: number; lista: string } {
+  const fa = parseIsoDatePartsCalendar(fromIso)
+  const ta = parseIsoDatePartsCalendar(toIso)
+  if (!fa || !ta) return { count: 0, lista: "—" }
+  const giorni: string[] = []
+  const cur = new Date(fa.year, fa.month - 1, fa.day)
+  const end = new Date(ta.year, ta.month - 1, ta.day)
+  while (cur <= end) {
+    const y = cur.getFullYear()
+    const m = cur.getMonth() + 1
+    const d = cur.getDate()
+    if (convalidazioniStore.get(consulenteNome, y, m, d)) {
+      giorni.push(`${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`)
+    }
+    cur.setDate(cur.getDate() + 1)
+  }
+  return { count: giorni.length, lista: giorni.length ? giorni.join(", ") : "—" }
+}
+
+function isGiornoConvalidato(consulenteNome: string, giornoIso: string): boolean {
+  const p = parseIsoDatePartsCalendar(giornoIso)
+  if (!p) return false
+  return convalidazioniStore.get(consulenteNome, p.year, p.month, p.day)
+}
+
 /** Report per consulenti: vendite + telefonate + ore lavorate con % ore (ore/attese) su settimana/mese/anno. */
 export async function getReportConsulenti(req: Request, res: Response) {
   try {
+    const u = getScopedUser(req)
+    if (u.role !== "admin" && u.role !== "operatore") {
+      return res.status(403).json({ message: "Permessi insufficienti" })
+    }
+
     const periodo = String(req.query.periodo ?? "week") as ReportPeriodo
     const asOfRaw = String(req.query.asOf ?? "")
     const asOf = asOfRaw && /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) ? new Date(`${asOfRaw}T12:00:00Z`) : new Date()
@@ -2853,7 +2893,12 @@ export async function getReportConsulenti(req: Request, res: Response) {
       .filter(Boolean)
 
     const labels = budgetPerConsulente.getConsulentiLabels()
-    const labelsFiltered = selectedConsulenti.length > 0 ? labels.filter((l) => selectedConsulenti.includes(l)) : labels
+    let labelsFiltered = selectedConsulenti.length > 0 ? labels.filter((l) => selectedConsulenti.includes(l)) : labels
+    const scopedConsulente = u.role === "operatore" ? getOperatoreConsulenteNome(req) : null
+    if (scopedConsulente) {
+      labelsFiltered = labelsFiltered.filter((l) => l === scopedConsulente)
+      if (labelsFiltered.length === 0) labelsFiltered = [scopedConsulente]
+    }
 
     let from: Date
     let to: Date
@@ -2888,7 +2933,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const scope = cacheScope(req)
     const depSig = await getBudgetDepSig()
     const consulentiKey = labelsFiltered.join("|")
-    const cacheKeyParams = { v: 2, from: fromIso, to: toIso, consulenti: consulentiKey || null }
+    const cacheKeyParams = { v: 3, from: fromIso, to: toIso, consulenti: consulentiKey || null }
     const cached = await cacheGet<any>({
       name: "data.report-consulenti",
       scope,
@@ -3057,6 +3102,17 @@ export async function getReportConsulenti(req: Request, res: Response) {
         .filter((r) => r.giorno >= fromIso && r.giorno <= toIso)
       const oreLavorate = oreRows.reduce((s, r) => s + oreDiff(r.oraInizio, r.oraFine), 0)
       const percentualeOre = oreAttese > 0 ? Math.round((oreLavorate / oreAttese) * 1000) / 10 : 0
+      const { count: giorniConvalidati, lista: giorniConvalidatiLista } = convalidatiInRange(consulenteNome, fromIso, toIso)
+      const dettaglioOreLavorate: ReportOreDettaglio[] = oreRows
+        .slice()
+        .sort((a, b) => a.giorno.localeCompare(b.giorno) || a.oraInizio.localeCompare(b.oraInizio))
+        .map((r) => ({
+          giorno: r.giorno,
+          oraInizio: r.oraInizio,
+          oraFine: r.oraFine,
+          ore: Math.round(oreDiff(r.oraInizio, r.oraFine) * 10) / 10,
+          convalidato: isGiornoConvalidato(consulenteNome, r.giorno),
+        }))
       const percentualeBudget = budget > 0 ? Math.round((vendite / budget) * 1000) / 10 : 0
 
       let clientiNuovi = 0
@@ -3159,6 +3215,9 @@ export async function getReportConsulenti(req: Request, res: Response) {
         oreLavorate: Math.round(oreLavorate * 10) / 10,
         oreAttese,
         percentualeOre,
+        giorniConvalidati,
+        giorniConvalidatiLista,
+        dettaglioOreLavorate,
         dettaglioClientiNuovi,
         dettaglioRinnovi,
         dettaglioInvito,
@@ -3183,6 +3242,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const sumEuroNuovi = rows.reduce((s, r) => s + r.totaleEuroClientiNuovi, 0)
     const sumEuroRin = rows.reduce((s, r) => s + r.totaleEuroRinnovi, 0)
     const sumOre = rows.reduce((s, r) => s + r.oreLavorate, 0)
+    const sumConvalidati = rows.reduce((s, r) => s + r.giorniConvalidati, 0)
     const scost = Math.round((sumV - sumB) * 100) / 100
     const pctB = sumB > 0 ? Math.round((sumV / sumB) * 1000) / 10 : 0
     const oreAtteseRiga = rows.length > 0 ? rows[0].oreAttese : 0
@@ -3217,6 +3277,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         oreLavorate: Math.round(sumOre * 10) / 10,
         oreAttese: oreAtteseRiga,
         percentualeOre: pctOre,
+        giorniConvalidati: sumConvalidati,
       },
     }
 
