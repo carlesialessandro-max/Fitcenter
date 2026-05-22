@@ -53,8 +53,13 @@ export function Telefonate() {
   const chiamateCliente = useMemo(() => chiamate.filter((c) => c.tipo === "cliente"), [chiamate])
   const chiamateLead = useMemo(() => chiamate.filter((c) => c.tipo === "lead"), [chiamate])
 
-  const fmtDateTime = (iso: string) =>
-    iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"
+  const fmtDateShort = (iso: string) =>
+    iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"
+
+  const stickyActionsHead =
+    "sticky right-0 z-10 bg-zinc-900/95 px-2 py-2 text-right font-medium text-zinc-400 shadow-[-8px_0_12px_rgba(0,0,0,0.35)]"
+  const stickyActionsCell =
+    "sticky right-0 z-10 bg-zinc-900/95 px-2 py-2 text-right shadow-[-8px_0_12px_rgba(0,0,0,0.35)] group-hover:bg-zinc-900"
 
   return (
     <div className="p-6">
@@ -114,7 +119,7 @@ export function Telefonate() {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+      <div className="mt-6 flex flex-col gap-6">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">CRM programmati</h2>
           {loadingCrm ? (
@@ -125,59 +130,82 @@ export function Telefonate() {
             <p className="mt-2 text-sm text-zinc-500">Nessun appuntamento programmato nel range.</p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
-              <table className="min-w-full text-left text-sm">
+              <table className="w-full min-w-[720px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[6.5rem]" />
+                  <col className="w-[8rem]" />
+                  <col className="w-[7rem]" />
+                  <col className="w-[9rem]" />
+                  <col className="w-[5rem]" />
+                  <col />
+                  <col className="w-[11.5rem]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                    <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Nome</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Cognome</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Tel</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Esito</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">CRM</th>
-                    <th className="min-w-[9rem] px-3 py-2 font-medium text-zinc-400"></th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Data</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Nome</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Tel</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Tipo</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Esito</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">CRM</th>
+                    <th className={stickyActionsHead}>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(crm?.rows ?? []).map((r, i) => (
-                    <tr key={i} className="border-b border-zinc-900 last:border-0">
-                      <td className="px-3 py-2 text-zinc-200">{fmtDateTime(r.dataAppuntamento)}</td>
-                      <td className="px-3 py-2 text-zinc-300">{(r.nome ?? "").trim() || "—"}</td>
-                      <td className="px-3 py-2 text-zinc-300">{(r.cognome ?? "").trim() || "—"}</td>
-                      <td className="px-3 py-2 text-zinc-300">{r.telefono || "—"}</td>
-                      <td className="px-3 py-2 text-zinc-300">{r.tipoDescrizione || "—"}</td>
-                      <td className="px-3 py-2 text-zinc-300">{r.esitoDescrizione || "—"}</td>
-                      <td className="px-3 py-2 text-zinc-300">{r.crmDescrizione || "—"}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right">
-                        {r.telefono ? (
-                          <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
-                            <ChiamaButton
-                              telefono={r.telefono}
-                              nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
-                              tipo="cliente"
-                              registraAlClick
-                              compact
-                            />
-                            <RegistraTelefonataButton
-                              telefono={r.telefono}
-                              nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
-                              tipo="cliente"
-                              consulenteNomeOverride={effectiveConsulente || undefined}
-                            />
-                          </div>
-                        ) : (
-                          <span className="text-xs text-zinc-500">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                  {(crm?.rows ?? []).map((r, i) => {
+                    const nome = (r.nome ?? "").trim()
+                    const cognome = (r.cognome ?? "").trim()
+                    const cliente = [nome, cognome].filter(Boolean).join(" ") || "—"
+                    const contatto = cliente !== "—" ? cliente : r.crmDescrizione || "CRM"
+                    const tipo = r.tipoDescrizione || "—"
+                    const esito = r.esitoDescrizione || "—"
+                    const crmNote = r.crmDescrizione || "—"
+                    return (
+                      <tr key={i} className="group border-b border-zinc-900 last:border-0">
+                        <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{fmtDateShort(r.dataAppuntamento)}</td>
+                        <td className="truncate px-2 py-2 text-zinc-300" title={cliente !== "—" ? cliente : undefined}>
+                          {cliente}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{r.telefono || "—"}</td>
+                        <td className="truncate px-2 py-2 text-zinc-300" title={tipo !== "—" ? tipo : undefined}>
+                          {tipo}
+                        </td>
+                        <td className="truncate px-2 py-2 text-zinc-300" title={esito !== "—" ? esito : undefined}>
+                          {esito}
+                        </td>
+                        <td className="truncate px-2 py-2 text-zinc-300" title={crmNote !== "—" ? crmNote : undefined}>
+                          {crmNote}
+                        </td>
+                        <td className={stickyActionsCell}>
+                          {r.telefono ? (
+                            <div className="flex flex-col items-end gap-1">
+                              <ChiamaButton
+                                telefono={r.telefono}
+                                nomeContatto={contatto}
+                                tipo="cliente"
+                                registraAlClick
+                              />
+                              <RegistraTelefonataButton
+                                telefono={r.telefono}
+                                nomeContatto={contatto}
+                                tipo="cliente"
+                                consulenteNomeOverride={effectiveConsulente || undefined}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-xs text-zinc-500">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </div>
 
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4 lg:max-w-3xl">
           <h2 className="text-sm font-medium text-zinc-400">Chiamate effettuate</h2>
           {loadingChiamate ? (
             <p className="mt-2 text-sm text-zinc-500">Caricamento...</p>
@@ -189,25 +217,34 @@ export function Telefonate() {
             </p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
-              <table className="min-w-full text-left text-sm">
+              <table className="w-full min-w-[520px] table-fixed text-left text-sm">
+                <colgroup>
+                  <col className="w-[7rem]" />
+                  <col />
+                  <col className="w-[4.5rem]" />
+                  <col className="w-[7rem]" />
+                  <col className="w-[11.5rem]" />
+                </colgroup>
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/60">
-                    <th className="px-3 py-2 font-medium text-zinc-400">Data</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Nome</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Tipo</th>
-                    <th className="px-3 py-2 font-medium text-zinc-400">Tel</th>
-                    <th className="min-w-[9rem] px-3 py-2 font-medium text-zinc-400"></th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Data</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Nome</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Tipo</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Tel</th>
+                    <th className={stickyActionsHead}>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
                   {chiamate.map((c: Chiamata) => (
-                    <tr key={c.id} className="border-b border-zinc-900 last:border-0">
-                      <td className="px-3 py-2 text-zinc-200">{fmtDateTime(c.dataOra)}</td>
-                      <td className="px-3 py-2 text-zinc-300">{c.nomeContatto}</td>
-                      <td className="px-3 py-2 text-zinc-300">{c.tipo}</td>
-                      <td className="px-3 py-2 text-zinc-300">{c.telefono}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right">
-                        <div className="flex flex-col items-end gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+                    <tr key={c.id} className="group border-b border-zinc-900 last:border-0">
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{fmtDateShort(c.dataOra)}</td>
+                      <td className="truncate px-2 py-2 text-zinc-300" title={c.nomeContatto || undefined}>
+                        {c.nomeContatto}
+                      </td>
+                      <td className="truncate px-2 py-2 text-zinc-300">{c.tipo}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{c.telefono}</td>
+                      <td className={stickyActionsCell}>
+                        <div className="flex flex-col items-end gap-1">
                           <ChiamaButton
                             telefono={c.telefono}
                             nomeContatto={c.nomeContatto}
@@ -215,7 +252,6 @@ export function Telefonate() {
                             leadId={c.leadId}
                             clienteId={c.clienteId}
                             registraAlClick={false}
-                            compact
                           />
                           <RegistraTelefonataButton
                             telefono={c.telefono}

@@ -101,7 +101,7 @@ export function ChiamaButton({
       title={title}
       aria-label={title}
     >
-      <span aria-hidden>{role === "operatore" ? "💬" : "📞"}</span>
+      <span aria-hidden>📞</span>
       {!compact && label}
     </a>
   )
