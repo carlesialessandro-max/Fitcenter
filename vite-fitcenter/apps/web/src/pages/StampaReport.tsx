@@ -66,8 +66,9 @@ function ensurePdfSpace(doc: JsPdfWithAutoTable, y: number, reserveMm = 52): num
 
 const pdfTableBase: Partial<UserOptions> = {
   margin: { left: PDF_MARGIN_X, right: PDF_MARGIN_X },
-  styles: { fontSize: 8, halign: "left", valign: "middle", cellPadding: 1.8 },
+  styles: { fontSize: 8, halign: "left", valign: "middle", cellPadding: 1.8, textColor: 20 },
   headStyles: { fillColor: PDF_HEAD_BLUE, textColor: 255, halign: "left", fontStyle: "bold" },
+  footStyles: { fillColor: PDF_FOOT_GRAY, textColor: 20, fontStyle: "bold", halign: "left" },
   alternateRowStyles: { fillColor: PDF_ALT_ROW },
   showFoot: "lastPage",
 }
@@ -91,11 +92,23 @@ const summary2ColStyles = (tw: number): UserOptions["columnStyles"] => ({
   1: { cellWidth: tw * 0.38, halign: "right" },
 })
 
+function stylePdfFootCell(data: CellHookData) {
+  if (data.section !== "foot") return
+  data.cell.styles.textColor = 20
+  data.cell.styles.halign = data.column.index === 0 ? "left" : "right"
+}
+
 function styleTotalRows(totalRowIndexes: Set<number>) {
   return (data: CellHookData) => {
+    if (data.section === "foot") {
+      data.cell.styles.textColor = 20
+      data.cell.styles.halign = data.column.index === 0 ? "left" : "right"
+      return
+    }
     if (data.section !== "body" || !totalRowIndexes.has(data.row.index)) return
     data.cell.styles.fillColor = PDF_FOOT_GRAY
     data.cell.styles.fontStyle = "bold"
+    data.cell.styles.textColor = 20
     if (data.column.index > 0) data.cell.styles.halign = "right"
   }
 }
@@ -291,7 +304,7 @@ function buildPdf(
     body: rows.map((r) => [r.consulenteNome, fmtEuro(r.budgetMese ?? 0)]),
     foot: [["TOTALE", fmtEuro(totals.budgetMese ?? rows.reduce((s, r) => s + (r.budgetMese ?? 0), 0))]],
     columnStyles: { 0: { cellWidth: tw * 0.55 }, 1: { cellWidth: tw * 0.45, halign: "right" } },
-    footStyles: { fillColor: PDF_FOOT_GRAY, fontStyle: "bold", halign: "right" },
+    didParseCell: stylePdfFootCell,
   })
   y = autoTableNextY(doc, y + 18)
 
@@ -330,12 +343,9 @@ function buildPdf(
       5: { cellWidth: 28, halign: "right" },
       6: { cellWidth: 18, halign: "right" },
     },
-    footStyles: { fillColor: PDF_FOOT_GRAY, fontStyle: "bold", halign: "right" },
-    didParseCell: (data) => {
-      if (data.section === "foot" && data.column.index === 0) data.cell.styles.halign = "left"
-    },
+    footStyles: { fillColor: PDF_FOOT_GRAY, textColor: 20, fontStyle: "bold" },
+    didParseCell: stylePdfFootCell,
   })
-  y = autoTableNextY(doc, y + 24)
 
   doc.addPage()
   y = 14
@@ -377,10 +387,7 @@ function buildPdf(
     body: rows.map((r) => [r.consulenteNome, String(r.telefonate)]),
     foot: [["TOTALE", String(totals.telefonate)]],
     columnStyles: { 0: { cellWidth: tw * 0.55 }, 1: { cellWidth: tw * 0.45, halign: "right" } },
-    footStyles: { fillColor: PDF_FOOT_GRAY, fontStyle: "bold", halign: "right" },
-    didParseCell: (data) => {
-      if (data.section === "foot" && data.column.index === 0) data.cell.styles.halign = "left"
-    },
+    didParseCell: stylePdfFootCell,
   })
 
   const suffix = mode === "riepilogo" ? "-riepilogo" : "-dettaglio"

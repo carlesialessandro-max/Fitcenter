@@ -9,6 +9,7 @@ import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
 import { CRM_CONSULENTI_LEAD } from "./crmConsulenti"
 import { ChiamaButton } from "@/components/ChiamaButton"
+import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -222,12 +223,20 @@ export function LeadList() {
                         </button>
                       )}
                       {lead.telefono && (
-                        <ChiamaButton
-                          telefono={lead.telefono}
-                          nomeContatto={`${lead.nome} ${lead.cognome}`}
-                          tipo="lead"
-                          leadId={lead.id}
-                        />
+                        <>
+                          <ChiamaButton
+                            telefono={lead.telefono}
+                            nomeContatto={`${lead.nome} ${lead.cognome}`}
+                            tipo="lead"
+                            leadId={lead.id}
+                          />
+                          <RegistraTelefonataButton
+                            telefono={lead.telefono}
+                            nomeContatto={`${lead.nome} ${lead.cognome}`}
+                            tipo="lead"
+                            leadId={lead.id}
+                          />
+                        </>
                       )}
                       <Link to={`/crm/lead/${lead.id}`} className="text-zinc-400 hover:text-zinc-200" title="Dettaglio">
                         👁

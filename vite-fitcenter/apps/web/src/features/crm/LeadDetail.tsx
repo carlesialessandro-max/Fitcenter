@@ -10,6 +10,7 @@ import { crmConsulentiLeadOptionsForAssign, CRM_CONSULENTI_LEAD } from "./crmCon
 import { LeadSourceBadge } from "./LeadSourceBadge"
 import { LeadStatusBadge } from "./LeadStatusBadge"
 import { ChiamaButton } from "@/components/ChiamaButton"
+import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 
 const STATUSES: LeadStatus[] = ["nuovo", "contattato", "appuntamento", "tour", "proposta", "chiuso_vinto", "chiuso_perso"]
@@ -138,12 +139,20 @@ export function LeadDetail() {
               <dd className="flex items-center gap-2 text-zinc-100">
                 {lead.telefono}
                 {lead.telefono && (
-                  <ChiamaButton
-                    telefono={lead.telefono}
-                    nomeContatto={`${lead.nome} ${lead.cognome}`}
-                    tipo="lead"
-                    leadId={lead.id}
-                  />
+                  <>
+                    <ChiamaButton
+                      telefono={lead.telefono}
+                      nomeContatto={`${lead.nome} ${lead.cognome}`}
+                      tipo="lead"
+                      leadId={lead.id}
+                    />
+                    <RegistraTelefonataButton
+                      telefono={lead.telefono}
+                      nomeContatto={`${lead.nome} ${lead.cognome}`}
+                      tipo="lead"
+                      leadId={lead.id}
+                    />
+                  </>
                 )}
               </dd>
             </div>

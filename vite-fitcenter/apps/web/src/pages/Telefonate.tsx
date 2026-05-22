@@ -4,6 +4,7 @@ import { chiamateApi, type Chiamata } from "@/api/chiamate"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
+import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 
 function isoToday(): string {
   const d = new Date()
@@ -146,12 +147,20 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{r.crmDescrizione || "—"}</td>
                       <td className="px-3 py-2 text-right">
                         {r.telefono ? (
-                          <ChiamaButton
-                            telefono={r.telefono}
-                            nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
-                            tipo="cliente"
-                            registraAlClick
-                          />
+                          <div className="flex flex-wrap items-center justify-end gap-1">
+                            <ChiamaButton
+                              telefono={r.telefono}
+                              nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
+                              tipo="cliente"
+                              registraAlClick
+                            />
+                            <RegistraTelefonataButton
+                              telefono={r.telefono}
+                              nomeContatto={`${(r.nome ?? "").trim()} ${(r.cognome ?? "").trim()}`.trim() || r.crmDescrizione || "CRM"}
+                              tipo="cliente"
+                              consulenteNomeOverride={effectiveConsulente || undefined}
+                            />
+                          </div>
                         ) : (
                           <span className="text-xs text-zinc-500">—</span>
                         )}
@@ -192,13 +201,24 @@ export function Telefonate() {
                       <td className="px-3 py-2 text-zinc-300">{c.tipo}</td>
                       <td className="px-3 py-2 text-zinc-300">{c.telefono}</td>
                       <td className="px-3 py-2 text-right">
-                        <ChiamaButton
-                          telefono={c.telefono}
-                          nomeContatto={c.nomeContatto}
-                          tipo={c.tipo}
-                          leadId={c.leadId}
-                          clienteId={c.clienteId}
-                        />
+                        <div className="flex flex-wrap items-center justify-end gap-1">
+                          <ChiamaButton
+                            telefono={c.telefono}
+                            nomeContatto={c.nomeContatto}
+                            tipo={c.tipo}
+                            leadId={c.leadId}
+                            clienteId={c.clienteId}
+                            registraAlClick={false}
+                          />
+                          <RegistraTelefonataButton
+                            telefono={c.telefono}
+                            nomeContatto={c.nomeContatto}
+                            tipo={c.tipo}
+                            leadId={c.leadId}
+                            clienteId={c.clienteId}
+                            consulenteNomeOverride={effectiveConsulente || c.consulenteNome}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}
