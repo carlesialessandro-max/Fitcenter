@@ -5,6 +5,7 @@ import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
+import { InserisciTelefonataForm } from "@/components/InserisciTelefonataForm"
 
 function isoToday(): string {
   const d = new Date()
@@ -80,6 +81,8 @@ export function Telefonate() {
           <p className="text-xs text-zinc-500">Se vuoto: per le chiamate mostra tutte; per CRM mostra quelle assegnate all’operatore selezionato.</p>
         </div>
       )}
+
+      <InserisciTelefonataForm consulenteNomeOverride={effectiveConsulente || undefined} />
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
@@ -180,7 +183,9 @@ export function Telefonate() {
           ) : errChiamate ? (
             <p className="mt-2 text-sm text-red-400">{(errChiamate as Error).message}</p>
           ) : chiamate.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Nessuna chiamata nel range.</p>
+            <p className="mt-2 text-sm text-zinc-500">
+              Nessuna chiamata nel range. Usa il modulo <strong className="font-medium text-zinc-400">Inserisci telefonata</strong> sopra.
+            </p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
               <table className="min-w-full text-left text-sm">
