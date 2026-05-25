@@ -59,10 +59,11 @@ const navCampus: NavItem[] = [
   },
   { to: "/campus", label: "Campus" },
 ] as const
-// Reception: solo firma da cassa (no dashboard, no admin firme).
+// Reception: firma da cassa, calendario e mappa piscina.
 const navFirme: NavItem[] = [
   { to: "/firma-cassa", label: "Firma Cassa", children: [{ to: "/campus", label: "Campus" }] },
   { to: "/calendario/reception", label: "Calendario reception" },
+  { to: "/piscina", label: "Mappa Piscina" },
 ] as const
 const navScuolaNuoto: NavItem[] = [
   {

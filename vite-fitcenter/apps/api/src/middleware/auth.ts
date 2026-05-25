@@ -64,7 +64,7 @@ export function requireAdminOrDanza(req: Request, res: Response, next: NextFunct
 export function requirePiscina(req: Request, res: Response, next: NextFunction) {
   const u = req.user
   if (!u) return res.status(401).json({ message: "Token mancante" })
-  if (u.role !== "admin" && u.role !== "operatore" && u.role !== "bagnini") {
+  if (u.role !== "admin" && u.role !== "operatore" && u.role !== "bagnini" && u.role !== "firme") {
     return res.status(403).json({ message: "Permessi insufficienti" })
   }
   next()
