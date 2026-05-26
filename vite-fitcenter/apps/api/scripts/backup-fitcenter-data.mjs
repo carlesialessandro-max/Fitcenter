@@ -7,7 +7,7 @@
  *   node scripts/backup-fitcenter-data.mjs --list
  *   node scripts/backup-fitcenter-data.mjs --restore "C:\\backups\\fitcenter-data-2026-05-26_230000" --yes
  *
- * Variabili ambiente:
+ * Variabili ambiente (o riga in apps/api/.env):
  *   FITCENTER_BACKUP_DIR   cartella destinazione backup (default: ../backups accanto a data/)
  *   FITCENTER_BACKUP_KEEP  quanti backup tenere (default: 14)
  *   FITCENTER_BACKUP_INCLUDE_ENV=1  copia anche apps/api/.env nel backup (consigliato, fuori da git)
@@ -15,9 +15,13 @@
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
+import dotenv from "dotenv"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiRoot = path.resolve(__dirname, "..")
+
+// Legge FITCENTER_BACKUP_DIR anche da apps/api/.env (così list e backup usano lo stesso percorso).
+dotenv.config({ path: path.join(apiRoot, ".env") })
 
 function pad2(n) {
   return String(n).padStart(2, "0")
@@ -39,8 +43,13 @@ function resolveDataDir() {
 }
 
 function resolveBackupRoot(dataDir) {
-  if (process.env.FITCENTER_BACKUP_DIR?.trim()) {
-    return path.resolve(process.env.FITCENTER_BACKUP_DIR.trim())
+  const raw = process.env.FITCENTER_BACKUP_DIR?.trim()
+  if (raw) {
+    // Percorsi UNC (\\server\share) o drive (C:\): non passare da path.resolve.
+    if (raw.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(raw)) {
+      return raw
+    }
+    return path.resolve(raw)
   }
   return path.resolve(dataDir, "..", "backups")
 }
@@ -94,7 +103,23 @@ function runBackup() {
     process.exit(1)
   }
 
-  const files = copyDirFiles(dataDir, dest)
+  try {
+    fs.mkdirSync(backupRoot, { recursive: true })
+  } catch (e) {
+    console.error(`Impossibile creare/accedere alla cartella backup: ${backupRoot}`)
+    console.error(e instanceof Error ? e.message : String(e))
+    console.error("Verifica percorso UNC (\\\\server\\condivisione) e permessi di scrittura.")
+    process.exit(1)
+  }
+
+  let files
+  try {
+    files = copyDirFiles(dataDir, dest)
+  } catch (e) {
+    console.error(`Errore copia verso: ${dest}`)
+    console.error(e instanceof Error ? e.message : String(e))
+    process.exit(1)
+  }
   const manifest = {
     createdAt: new Date().toISOString(),
     dataDir,

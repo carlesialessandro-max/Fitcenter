@@ -5,6 +5,9 @@
 #
 # Opzionale: cartella backup su disco esterno / OneDrive
 #   $env:FITCENTER_BACKUP_DIR = "D:\Backup\FitCenter"
+#
+# Consigliato: imposta FITCENTER_BACKUP_DIR in apps/api/.env (vale per pnpm run backup:data e --list):
+#   FITCENTER_BACKUP_DIR=\\ls2\condivisione\FitCenterBackup
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
