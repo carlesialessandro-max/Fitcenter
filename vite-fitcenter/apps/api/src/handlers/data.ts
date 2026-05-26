@@ -2431,10 +2431,6 @@ export async function getCrmAppuntamenti(req: Request, res: Response) {
 /** Appuntamenti CRM per consulente (operatore): range date, default oggi→+14. */
 export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
   try {
-    if (!gestionaleSql.isGestionaleConfigured()) return res.json([])
-    const operatoreNome = getOperatoreConsulenteNome(req)
-    const nomeOperatore = String(operatoreNome ?? (req.query.consulente as string) ?? "").trim()
-    if (!nomeOperatore) return res.status(400).json({ message: "consulente/nomeOperatore obbligatorio" })
     const from = String(req.query.from ?? "").trim()
     const to = String(req.query.to ?? "").trim()
     const today = new Date()
@@ -2442,11 +2438,28 @@ export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
     const defTo = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : defFrom
     const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : defTo
+
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      return res.json({ from: fromIso, to: toIso, rows: [] })
+    }
+
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const nomeOperatore = String(operatoreNome ?? (req.query.consulente as string) ?? "").trim()
+    if (!nomeOperatore) return res.status(400).json({ message: "consulente/nomeOperatore obbligatorio" })
+
     const soloTelefonate =
       String(req.query.soloTelefonate ?? "").toLowerCase() === "1" ||
       String(req.query.soloTelefonate ?? "").toLowerCase() === "true"
+    const includeCompletate =
+      String(req.query.includeCompletate ?? "").toLowerCase() === "1" ||
+      String(req.query.includeCompletate ?? "").toLowerCase() === "true"
     const rows = soloTelefonate
-      ? await gestionaleSql.queryCrmTelefonateOperatore({ nomeOperatore, from: fromIso, to: toIso })
+      ? await gestionaleSql.queryCrmTelefonateOperatore({
+          nomeOperatore,
+          from: fromIso,
+          to: toIso,
+          soloDaFare: !includeCompletate,
+        })
       : await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
     res.json({ from: fromIso, to: toIso, rows })
   } catch (e) {

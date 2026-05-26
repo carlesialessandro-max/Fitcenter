@@ -1618,6 +1618,8 @@ export interface CrmAppuntamentoRow {
   esitoDescrizione: string
   crmDescrizione: string
   attivitaDescrizione?: string
+  dataEvasione?: string
+  crmId?: string
   nome?: string
   cognome?: string
   telefono?: string
@@ -2209,17 +2211,27 @@ export async function queryCassaMovimentiUtenti(args: {
   }
 }
 
+async function crmPickFirstCol(view: string, candidates: string[]): Promise<string | null> {
+  for (const c of candidates) {
+    if (await crmHasCol(view, c)) return c
+  }
+  return null
+}
+
 async function crmSelectExtraFragments(view: string): Promise<{ select: string; map: (row: Record<string, unknown>) => Partial<CrmAppuntamentoRow> }> {
   const hasNome = await crmHasCol(view, "Nome")
   const hasCognome = await crmHasCol(view, "Cognome")
   const hasTel = await crmHasCol(view, "Telefono")
   const hasCell = await crmHasCol(view, "Cellulare")
   const hasSms = await crmHasCol(view, "SMS")
-  const attivitaCol = (await crmHasCol(view, "AttivitaDescrizione"))
-    ? "AttivitaDescrizione"
-    : (await crmHasCol(view, "Attivita"))
-      ? "Attivita"
-      : null
+  const attivitaCol = await crmPickFirstCol(view, [
+    "AttivitaDescrizione",
+    "Attivita",
+    "DescrizioneAttivita",
+    "AttivitaDesc",
+  ])
+  const evasoCol = await crmPickFirstCol(view, ["DataEvasione", "DataEvaso", "EvasoIl", "DataEvasioneStorico"])
+  const idCol = await crmPickFirstCol(view, ["IDCRM", "IdCRM", "IDStorico", "IdStorico", "ID"])
   const selectParts: string[] = []
   if (hasNome) selectParts.push("Nome")
   if (hasCognome) selectParts.push("Cognome")
@@ -2227,6 +2239,8 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   if (hasCell) selectParts.push("Cellulare")
   if (hasSms) selectParts.push("SMS")
   if (attivitaCol) selectParts.push(attivitaCol)
+  if (evasoCol) selectParts.push(`${evasoCol} AS DataEvasione`)
+  if (idCol) selectParts.push(`${idCol} AS CrmRowId`)
   const select = selectParts.length ? ", " + selectParts.join(", ") : ""
   const map = (row: Record<string, unknown>) => ({
     nome: row.Nome != null ? String(row.Nome) : undefined,
@@ -2234,24 +2248,34 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
     telefono: (row.SMS ?? row.Telefono ?? row.Cellulare) != null ? String(row.SMS ?? row.Telefono ?? row.Cellulare) : undefined,
     attivitaDescrizione:
       attivitaCol && row[attivitaCol] != null ? String(row[attivitaCol]) : undefined,
+    dataEvasione: row.DataEvasione != null ? String(row.DataEvasione) : undefined,
+    crmId: row.CrmRowId != null ? String(row.CrmRowId) : undefined,
   })
   return { select, map }
 }
 
+async function crmOperatoreMatchSql(): Promise<string> {
+  return `LOWER(LTRIM(RTRIM(COALESCE(DestinatarioNomeOperatore, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nomeOperatore, N''))))`
+}
+
 async function crmTelefonateWhereSql(view: string): Promise<string> {
-  const attivitaCol = (await crmHasCol(view, "AttivitaDescrizione"))
-    ? "AttivitaDescrizione"
-    : (await crmHasCol(view, "Attivita"))
-      ? "Attivita"
-      : null
+  const attivitaCol = await crmPickFirstCol(view, [
+    "AttivitaDescrizione",
+    "Attivita",
+    "DescrizioneAttivita",
+    "AttivitaDesc",
+  ])
   const commerciale = `LOWER(LTRIM(RTRIM(COALESCE(TipoDescrizione, N'')))) LIKE N'%commerciale%'`
   const telefonica = attivitaCol
     ? `LOWER(LTRIM(RTRIM(COALESCE(${attivitaCol}, N'')))) LIKE N'%telefonica%'`
-    : `(
-         LOWER(LTRIM(RTRIM(COALESCE(EsitoDescrizione, N'')))) LIKE N'%telefonica%'
-         OR LOWER(LTRIM(RTRIM(COALESCE(CRMDescrizione, N'')))) LIKE N'%telefon%'
-       )`
+    : "1=1"
   return `${commerciale} AND ${telefonica}`
+}
+
+async function crmSoloDaFareWhereSql(view: string): Promise<string> {
+  const evasoCol = await crmPickFirstCol(view, ["DataEvasione", "DataEvaso", "EvasoIl", "DataEvasioneStorico"])
+  if (!evasoCol) return "1=1"
+  return `${evasoCol} IS NULL`
 }
 
 export type CassaMovimentoLite = {
@@ -2434,7 +2458,7 @@ export async function queryCrmAppuntamentiOperatore(params: {
     const r = await req.query(
       `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
        FROM ${view}
-       WHERE DestinatarioNomeOperatore = @nomeOperatore
+       WHERE ${await crmOperatoreMatchSql()}
          AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
          AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
        ORDER BY DataAppuntamento ASC`
@@ -2457,6 +2481,8 @@ export async function queryCrmTelefonateOperatore(params: {
   nomeOperatore: string
   from: string
   to: string
+  /** Default true: solo righe non ancora evase. */
+  soloDaFare?: boolean
 }): Promise<CrmAppuntamentoRow[]> {
   const p = await getPool()
   if (!p) return []
@@ -2464,6 +2490,8 @@ export async function queryCrmTelefonateOperatore(params: {
   try {
     const extra = await crmSelectExtraFragments(view)
     const telefonateWhere = await crmTelefonateWhereSql(view)
+    const operatoreWhere = await crmOperatoreMatchSql()
+    const daFareWhere = params.soloDaFare !== false ? await crmSoloDaFareWhereSql(view) : "1=1"
     const req = p
       .request()
       .input("nomeOperatore", sql.NVarChar, params.nomeOperatore?.trim() ?? "")
@@ -2472,10 +2500,11 @@ export async function queryCrmTelefonateOperatore(params: {
     const r = await req.query(
       `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
        FROM ${view}
-       WHERE DestinatarioNomeOperatore = @nomeOperatore
+       WHERE ${operatoreWhere}
          AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
          AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
          AND ${telefonateWhere}
+         AND ${daFareWhere}
        ORDER BY DataAppuntamento ASC`
     )
     const rows = (r.recordset ?? []) as Record<string, unknown>[]

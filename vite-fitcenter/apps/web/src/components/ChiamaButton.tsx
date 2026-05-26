@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useConsulente } from "@/contexts/AuthContext"
 import { chiamateApi, type TipoContatto } from "@/api/chiamate"
 import { useAuth } from "@/contexts/AuthContext"
-import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE } from "@/lib/telefonate-crm"
+import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE, ESITO_TELEFONATA_DEFAULT } from "@/lib/telefonate-crm"
 
 function normalizeTel(tel: string): string {
   const n = tel.replace(/\s/g, "").replace(/^\+?39/, "")
@@ -30,6 +30,7 @@ type Props = {
   storico?: string
   attivita?: string
   azione?: string
+  esitoCrm?: string
 }
 
 export function ChiamaButton({
@@ -44,6 +45,7 @@ export function ChiamaButton({
   storico,
   attivita = TELEFONATA_ATTIVITA,
   azione = TELEFONATA_AZIONE,
+  esitoCrm = ESITO_TELEFONATA_DEFAULT,
 }: Props) {
   const queryClient = useQueryClient()
   const { consulenteNome } = useConsulente()
@@ -62,10 +64,13 @@ export function ChiamaButton({
         note: storico?.trim() || undefined,
         attivita,
         azione,
+        esitoCrm,
+        evasoAt: new Date().toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chiamate"] })
       queryClient.invalidateQueries({ queryKey: ["chiamate-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["data", "crm-telefonate-operatore"] })
     },
   })
 

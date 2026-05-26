@@ -54,6 +54,8 @@ export async function createChiamata(req: Request, res: Response) {
       attivita: body.attivita?.trim() || TELEFONATA_ATTIVITA_DEFAULT,
       azione: body.azione?.trim() || TELEFONATA_AZIONE_DEFAULT,
       note: body.note?.trim() || undefined,
+      esitoCrm: body.esitoCrm?.trim() || undefined,
+      evasoAt: body.evasoAt?.trim() || new Date().toISOString(),
     })
     await bumpMetaVersion("chiamate")
     res.status(201).json(created)

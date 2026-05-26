@@ -1,8 +1,14 @@
 import { useState, type FormEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/contexts/AuthContext"
-import { chiamateApi, type EsitoChiamata } from "@/api/chiamate"
-import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE } from "@/lib/telefonate-crm"
+import { chiamateApi } from "@/api/chiamate"
+import {
+  ESITI_TELEFONATA_CRM,
+  ESITO_TELEFONATA_DEFAULT,
+  TELEFONATA_ATTIVITA,
+  TELEFONATA_AZIONE,
+  type EsitoTelefonataCrm,
+} from "@/lib/telefonate-crm"
 
 function normalizeTel(tel: string): string {
   const n = tel.replace(/\s/g, "").replace(/^\+?39/, "")
@@ -21,7 +27,7 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
   const [nomeContatto, setNomeContatto] = useState("")
   const [telefono, setTelefono] = useState("")
   const [storico, setStorico] = useState("")
-  const [esito, setEsito] = useState<EsitoChiamata>("altro")
+  const [esitoCrm, setEsitoCrm] = useState<EsitoTelefonataCrm>(ESITO_TELEFONATA_DEFAULT)
   const [feedback, setFeedback] = useState<string | null>(null)
 
   const createM = useMutation({
@@ -32,18 +38,20 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
         tipo: "cliente",
         nomeContatto: nomeContatto.trim(),
         telefono: normalizeTel(telefono),
-        esito,
+        esitoCrm,
         note: storico.trim() || undefined,
         attivita: TELEFONATA_ATTIVITA,
         azione: TELEFONATA_AZIONE,
+        evasoAt: new Date().toISOString(),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chiamate"] })
       queryClient.invalidateQueries({ queryKey: ["chiamate-stats"] })
+      queryClient.invalidateQueries({ queryKey: ["data", "crm-telefonate-operatore"] })
       setNomeContatto("")
       setTelefono("")
       setStorico("")
-      setFeedback("Telefonata registrata.")
+      setFeedback("Telefonata registrata come evasa.")
     },
     onError: (e) => setFeedback((e as Error).message ?? "Errore salvataggio"),
   })
@@ -71,7 +79,7 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
         <div>
           <h2 className="text-sm font-semibold text-zinc-100">Inserisci telefonata</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Attività telefonica e azione commerciale; lo storico viene salvato nel registro chiamate.
+            Salva la chiamata come evasa con esito (come «Evaso il» nel gestionale).
           </p>
         </div>
         {role === "admin" && !effectiveConsulente ? (
@@ -108,16 +116,17 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
           />
         </label>
         <label className="block text-xs text-zinc-400">
-          Esito chiamata
+          Esito
           <select
-            value={esito}
-            onChange={(e) => setEsito(e.target.value as EsitoChiamata)}
+            value={esitoCrm}
+            onChange={(e) => setEsitoCrm(e.target.value as EsitoTelefonataCrm)}
             className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
           >
-            <option value="risposto">Risposto</option>
-            <option value="non_risposto">Non risposto</option>
-            <option value="occupato">Occupato</option>
-            <option value="altro">Altro</option>
+            {ESITI_TELEFONATA_CRM.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
           </select>
         </label>
         <label className="block text-xs text-zinc-400 sm:col-span-2 lg:col-span-4">
@@ -138,7 +147,7 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
           disabled={createM.isPending}
           className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-50"
         >
-          {createM.isPending ? "Salvataggio…" : "Salva telefonata"}
+          {createM.isPending ? "Salvataggio…" : "Salva telefonata evasa"}
         </button>
         {feedback ? (
           <span className={`text-sm ${feedback.includes("registrata") ? "text-emerald-400" : "text-red-300"}`}>

@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { InserisciTelefonataForm } from "@/components/InserisciTelefonataForm"
-import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE } from "@/lib/telefonate-crm"
+import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE, ESITI_TELEFONATA_CRM, ESITO_TELEFONATA_DEFAULT, type EsitoTelefonataCrm } from "@/lib/telefonate-crm"
 
 function isoToday(): string {
   const d = new Date()
@@ -34,6 +34,9 @@ export function Telefonate() {
   const [da, setDa] = useState(() => isoAddDays(isoToday(), -7))
   const [a, setA] = useState(() => isoToday())
   const [crmTo, setCrmTo] = useState(() => isoAddDays(isoToday(), 14))
+  const [esitiCrm, setEsitiCrm] = useState<Record<string, EsitoTelefonataCrm>>({})
+
+  const crmReady = Boolean(effectiveConsulente.trim())
 
   const { data: chiamate = [], isLoading: loadingChiamate, error: errChiamate } = useQuery({
     queryKey: ["chiamate", "telefonate", role, effectiveConsulente, da, a],
@@ -44,14 +47,15 @@ export function Telefonate() {
   })
 
   const { data: crm, isLoading: loadingCrm, error: errCrm } = useQuery({
-    queryKey: ["data", "crm-telefonate-operatore", role, effectiveConsulente, a, crmTo],
+    queryKey: ["data", "crm-telefonate-operatore", role, effectiveConsulente, da, crmTo],
     queryFn: () =>
       dataApi.getCrmAppuntamentiOperatore({
-        consulente: role === "admin" ? (effectiveConsulente || undefined) : undefined,
-        from: a,
+        consulente: effectiveConsulente,
+        from: da,
         to: crmTo,
         soloTelefonate: true,
       }),
+    enabled: crmReady,
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -62,6 +66,31 @@ export function Telefonate() {
 
   const fmtDateShort = (iso: string) =>
     iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"
+
+  function telDigits(tel: string): string {
+    return tel.replace(/\D/g, "").slice(-9)
+  }
+
+  function sameCalendarDay(a: string, b: string): boolean {
+    const da = new Date(a)
+    const db = new Date(b)
+    if (Number.isNaN(da.getTime()) || Number.isNaN(db.getTime())) return false
+    return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate()
+  }
+
+  const crmRows = useMemo(() => {
+    const rows = crm?.rows ?? []
+    return rows.filter((r) => {
+      const tel = telDigits(r.telefono ?? "")
+      if (!tel) return true
+      const doneLocally = chiamate.some((c) => {
+        if (telDigits(c.telefono) !== tel) return false
+        const when = c.evasoAt ?? c.dataOra
+        return sameCalendarDay(when, r.dataAppuntamento)
+      })
+      return !doneLocally
+    })
+  }, [crm?.rows, chiamate])
 
   const stickyActionsHead =
     "sticky right-0 z-10 bg-zinc-900/95 px-2 py-2 text-right font-medium text-zinc-400 shadow-[-8px_0_12px_rgba(0,0,0,0.35)]"
@@ -104,8 +133,8 @@ export function Telefonate() {
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Da chiamare (CRM)</p>
-          <p className="mt-1 text-2xl font-semibold text-amber-400">{crm?.rows?.length ?? 0}</p>
-          <p className="mt-1 text-xs text-zinc-500">Attività telefonica · Azione commerciale · Da {a} a {crmTo}</p>
+          <p className="mt-1 text-2xl font-semibold text-amber-400">{crmRows.length}</p>
+          <p className="mt-1 text-xs text-zinc-500">Attività telefonica · Azione commerciale · Da {da} a {crmTo}</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Filtri</p>
@@ -129,12 +158,14 @@ export function Telefonate() {
       <div className="mt-6 flex flex-col gap-6">
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">Telefonate da effettuare (storico CRM)</h2>
-          {loadingCrm ? (
+          {!crmReady ? (
+            <p className="mt-2 text-sm text-amber-300">Seleziona una consulente nel filtro per caricare le telefonate CRM.</p>
+          ) : loadingCrm ? (
             <p className="mt-2 text-sm text-zinc-500">Caricamento...</p>
           ) : errCrm ? (
             <p className="mt-2 text-sm text-red-400">{(errCrm as Error).message}</p>
-          ) : (crm?.rows?.length ?? 0) === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Nessuna telefonata commerciale nel range.</p>
+          ) : crmRows.length === 0 ? (
+            <p className="mt-2 text-sm text-zinc-500">Nessuna telefonata commerciale da fare nel range.</p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
               <table className="w-full min-w-[760px] table-fixed text-left text-sm">
@@ -159,7 +190,9 @@ export function Telefonate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(crm?.rows ?? []).map((r, i) => {
+                  {crmRows.map((r, i) => {
+                    const rowKey = r.crmId ?? `${i}-${r.dataAppuntamento}-${r.telefono ?? ""}`
+                    const esitoRow = esitiCrm[rowKey] ?? ESITO_TELEFONATA_DEFAULT
                     const nome = (r.nome ?? "").trim()
                     const cognome = (r.cognome ?? "").trim()
                     const cliente = [nome, cognome].filter(Boolean).join(" ") || "—"
@@ -186,6 +219,23 @@ export function Telefonate() {
                         <td className={stickyActionsCell}>
                           {r.telefono ? (
                             <div className="flex flex-col items-end gap-1">
+                              <select
+                                value={esitoRow}
+                                onChange={(e) =>
+                                  setEsitiCrm((prev) => ({
+                                    ...prev,
+                                    [rowKey]: e.target.value as EsitoTelefonataCrm,
+                                  }))
+                                }
+                                className="w-full max-w-[9rem] rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-[11px] text-zinc-200"
+                                title="Esito da registrare"
+                              >
+                                {ESITI_TELEFONATA_CRM.map((e) => (
+                                  <option key={e} value={e}>
+                                    {e}
+                                  </option>
+                                ))}
+                              </select>
                               <ChiamaButton
                                 telefono={r.telefono}
                                 nomeContatto={contatto}
@@ -194,6 +244,7 @@ export function Telefonate() {
                                 storico={r.crmDescrizione}
                                 attivita={attivita}
                                 azione={azione}
+                                esitoCrm={esitoRow}
                               />
                               <RegistraTelefonataButton
                                 telefono={r.telefono}
@@ -203,6 +254,7 @@ export function Telefonate() {
                                 storico={r.crmDescrizione}
                                 attivita={attivita}
                                 azione={azione}
+                                esitoCrm={esitoRow}
                               />
                             </div>
                           ) : (
@@ -238,7 +290,8 @@ export function Telefonate() {
                   <col />
                   <col className="w-[7.5rem]" />
                   <col className="w-[8.5rem]" />
-                  <col className="w-[5rem]" />
+                  <col className="w-[7rem]" />
+                  <col className="w-[6.5rem]" />
                   <col className="w-[11.5rem]" />
                 </colgroup>
                 <thead>
@@ -250,6 +303,7 @@ export function Telefonate() {
                     <th className="px-2 py-2 font-medium text-zinc-400">Attività</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Azione</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Esito</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Evaso il</th>
                     <th className={stickyActionsHead}>Azioni</th>
                   </tr>
                 </thead>
@@ -266,7 +320,10 @@ export function Telefonate() {
                       </td>
                       <td className="truncate px-2 py-2 text-zinc-300">{c.attivita || TELEFONATA_ATTIVITA}</td>
                       <td className="truncate px-2 py-2 text-zinc-300">{c.azione || TELEFONATA_AZIONE}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300">{c.esito || "—"}</td>
+                      <td className="truncate px-2 py-2 text-zinc-300">{c.esitoCrm || c.esito || "—"}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">
+                        {c.evasoAt ? fmtDateShort(c.evasoAt) : fmtDateShort(c.dataOra)}
+                      </td>
                       <td className={stickyActionsCell}>
                         <div className="flex flex-col items-end gap-1">
                           <ChiamaButton

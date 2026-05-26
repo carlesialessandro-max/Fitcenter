@@ -441,6 +441,8 @@ export interface CrmAppuntamento {
   esitoDescrizione: string
   crmDescrizione: string
   attivitaDescrizione?: string
+  dataEvasione?: string
+  crmId?: string
   nome?: string
   cognome?: string
   telefono?: string
