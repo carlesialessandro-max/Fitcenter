@@ -23,6 +23,8 @@ export interface Chiamata {
   note?: string
   attivita?: string
   azione?: string
+  crmId?: string
+  origine?: "crm" | "app"
 }
 
 export interface ChiamataCreate {

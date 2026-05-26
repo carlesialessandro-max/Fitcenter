@@ -22,6 +22,10 @@ export interface Chiamata {
   note?: string
   attivita?: string
   azione?: string
+  /** ID riga gestionale (RVW_CRMUtenti). */
+  crmId?: string
+  /** Origine record: gestionale o registrazione app. */
+  origine?: "crm" | "app"
 }
 
 export interface ChiamataCreate {

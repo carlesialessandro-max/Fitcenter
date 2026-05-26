@@ -9,6 +9,7 @@ import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
 import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
+import { syncCrmTelefonateToStore } from "../services/sync-crm-chiamate.js"
 import {
   bumpMetaVersion,
   cacheGet,
@@ -2461,6 +2462,15 @@ export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
           soloDaFare: !includeCompletate,
         })
       : await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
+
+    if (soloTelefonate && includeCompletate) {
+      const synced = syncCrmTelefonateToStore(
+        rows.filter((r) => Boolean(r.dataEvasione?.trim())),
+        nomeOperatore
+      )
+      if (synced > 0) await bumpMetaVersion("chiamate")
+    }
+
     res.json({ from: fromIso, to: toIso, rows })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -3107,7 +3117,20 @@ export async function getReportConsulenti(req: Request, res: Response) {
         }
       }
 
-      // Telefonate: persistite localmente.
+      // Telefonate: sync da gestionale + registro locale.
+      if (gestionaleSql.isGestionaleConfigured()) {
+        try {
+          const crmTel = await gestionaleSql.queryCrmTelefonateOperatore({
+            nomeOperatore: consulenteNome,
+            from: fromIso,
+            to: toIso,
+            soloDaFare: false,
+          })
+          syncCrmTelefonateToStore(crmTel, consulenteNome)
+        } catch {
+          /* sync best-effort */
+        }
+      }
       const chiamate = chiamateStore.list({
         consulenteId: consulenteNome,
         da: fromIso,

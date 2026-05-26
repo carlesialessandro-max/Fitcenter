@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { chiamateApi, type Chiamata } from "@/api/chiamate"
+import { chiamateApi } from "@/api/chiamate"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 import { ChiamaButton } from "@/components/ChiamaButton"
@@ -20,6 +20,14 @@ function fmtIsoIt(iso: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ""
   const [y, m, d] = iso.split("-")
   return `${d}/${m}/${y}`
+}
+
+/** Testo breve in tabella (descrizione CRM su una riga). */
+function descBreve(testo: string, max = 52): string {
+  const t = testo.trim()
+  if (!t || t === "—") return "—"
+  if (t.length <= max) return t
+  return `${t.slice(0, max - 1).trim()}…`
 }
 
 const dateInputClass =
@@ -66,15 +74,7 @@ export function Telefonate() {
 
   const crmReady = Boolean(effectiveConsulente.trim())
 
-  const { data: chiamate = [], isLoading: loadingChiamate, error: errChiamate } = useQuery({
-    queryKey: ["chiamate", "telefonate", role, effectiveConsulente, dal, al],
-    queryFn: () => chiamateApi.list({ da: dal, a: al, consulenteId: role === "admin" ? (effectiveConsulente || undefined) : undefined }),
-    staleTime: 30_000,
-    retry: false,
-    refetchOnWindowFocus: false,
-  })
-
-  const { data: crm, isLoading: loadingCrm, error: errCrm } = useQuery({
+  const { data: crm, isLoading: loadingCrm, isFetched: crmFetched, error: errCrm } = useQuery({
     queryKey: ["data", "crm-telefonate-operatore", role, effectiveConsulente, dal, al],
     queryFn: () =>
       dataApi.getCrmAppuntamentiOperatore({
@@ -85,6 +85,16 @@ export function Telefonate() {
         includeCompletate: true,
       }),
     enabled: crmReady,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  })
+
+  const { data: chiamate = [], isLoading: loadingChiamate, error: errChiamate } = useQuery({
+    queryKey: ["chiamate", "telefonate", role, effectiveConsulente, dal, al],
+    queryFn: () =>
+      chiamateApi.list({ da: dal, a: al, consulenteId: role === "admin" ? (effectiveConsulente || undefined) : undefined }),
+    enabled: crmReady && crmFetched,
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -119,57 +129,28 @@ export function Telefonate() {
     })
   }, [crm?.rows, chiamate])
 
-  const crmCompletate = useMemo(() => {
-    return (crm?.rows ?? []).filter((r) => Boolean(r.dataEvasione?.trim()))
-  }, [crm?.rows])
-
   const chiamateEffettuate = useMemo(() => {
-    type Row = {
-      key: string
-      sortAt: string
-      dataLabel: string
-      evasoLabel: string
-      nomeContatto: string
-      telefono: string
-      descrizione: string
-      consulente: string
-      esito: string
-      chiamata?: Chiamata
-    }
-    const out: Row[] = []
-
-    for (const r of crmCompletate) {
-      const nome = [r.nome, r.cognome].filter(Boolean).join(" ").trim()
-      out.push({
-        key: `crm-${r.crmId ?? r.dataEvasione}-${r.telefono ?? nome}`,
-        sortAt: r.dataEvasione || r.dataAppuntamento,
-        dataLabel: fmtDateShort(r.dataAppuntamento),
-        evasoLabel: fmtDateShort(r.dataEvasione || r.dataAppuntamento),
-        nomeContatto: nome || r.crmDescrizione || "CRM",
-        telefono: r.telefono || "—",
-        descrizione: r.crmDescrizione || "—",
-        consulente: r.consulenteNome || effectiveConsulente || "—",
-        esito: r.esitoDescrizione || "—",
+    return chiamate
+      .map((c) => {
+        const when = c.evasoAt ?? c.dataOra
+        const descrizionePiena = c.note || "—"
+        const fonte: "CRM" | "App" = c.origine === "crm" || c.crmId ? "CRM" : "App"
+        return {
+          key: c.id,
+          sortAt: when,
+          dataLabel: fmtDateShort(c.dataOra),
+          evasoLabel: c.evasoAt ? fmtDateShort(c.evasoAt) : fmtDateShort(c.dataOra),
+          nomeContatto: c.nomeContatto,
+          telefono: c.telefono,
+          descrizione: descBreve(descrizionePiena),
+          descrizionePiena,
+          consulente: c.consulenteNome || effectiveConsulente || "—",
+          esito: c.esitoCrm || c.esito || "—",
+          fonte,
+        }
       })
-    }
-
-    for (const c of chiamate) {
-      out.push({
-        key: `local-${c.id}`,
-        sortAt: c.evasoAt ?? c.dataOra,
-        dataLabel: fmtDateShort(c.dataOra),
-        evasoLabel: c.evasoAt ? fmtDateShort(c.evasoAt) : fmtDateShort(c.dataOra),
-        nomeContatto: c.nomeContatto,
-        telefono: c.telefono,
-        descrizione: c.note || "—",
-        consulente: c.consulenteNome || effectiveConsulente || "—",
-        esito: c.esitoCrm || c.esito || "—",
-        chiamata: c,
-      })
-    }
-
-    return out.sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime())
-  }, [chiamate, crmCompletate, effectiveConsulente])
+      .sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime())
+  }, [chiamate, effectiveConsulente])
 
   const stickyActionsHead =
     "sticky right-0 z-10 bg-zinc-900/95 px-2 py-2 text-right font-medium text-zinc-400 shadow-[-8px_0_12px_rgba(0,0,0,0.35)]"
@@ -236,9 +217,7 @@ export function Telefonate() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Chiamate (range)</p>
           <p className="mt-1 text-2xl font-semibold text-cyan-400">{chiamateEffettuate.length}</p>
-          <p className="mt-1 text-xs text-zinc-500">
-            CRM evase: {crmCompletate.length} · Registro app: {chiamate.length}
-          </p>
+          <p className="mt-1 text-xs text-zinc-500">Registro server (gestionale + app) · {fmtIsoIt(dal)} – {fmtIsoIt(al)}</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Da chiamare (CRM)</p>
@@ -299,8 +278,8 @@ export function Telefonate() {
                           {cliente}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{r.telefono || "—"}</td>
-                        <td className="truncate px-2 py-2 text-zinc-300" title={descrizione !== "—" ? descrizione : undefined}>
-                          {descrizione}
+                        <td className="max-w-[11rem] truncate px-2 py-2 text-zinc-300" title={descrizione !== "—" ? (r.crmDescrizione || undefined) : undefined}>
+                          {descBreve(descrizione)}
                         </td>
                         <td className="truncate px-2 py-2 text-zinc-300" title={consulente}>
                           {consulente}
@@ -361,6 +340,10 @@ export function Telefonate() {
 
         <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">Chiamate effettuate</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            Sincronizzate automaticamente dal gestionale nel registro server. Contano tutte nello{" "}
+            <strong className="font-medium text-zinc-400">Stampa report</strong>.
+          </p>
           {loadingChiamate ? (
             <p className="mt-2 text-sm text-zinc-500">Caricamento...</p>
           ) : errChiamate ? (
@@ -371,16 +354,16 @@ export function Telefonate() {
             </p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
-              <table className="w-full min-w-[900px] table-fixed text-left text-sm">
+              <table className="w-full min-w-[820px] table-fixed text-left text-sm">
                 <colgroup>
                   <col className="w-[6.5rem]" />
                   <col className="w-[8rem]" />
                   <col className="w-[7rem]" />
-                  <col />
+                  <col className="w-[11rem]" />
                   <col className="w-[8rem]" />
                   <col className="w-[7.5rem]" />
                   <col className="w-[7rem]" />
-                  <col className="w-[11.5rem]" />
+                  <col className="w-[3.5rem]" />
                 </colgroup>
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/60">
@@ -391,58 +374,28 @@ export function Telefonate() {
                     <th className="px-2 py-2 font-medium text-zinc-400">Consulente</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Esito</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Evaso il</th>
-                    <th className={stickyActionsHead}>Azioni</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Orig.</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {chiamateEffettuate.map((row) => {
-                    const c = row.chiamata
-                    return (
+                  {chiamateEffettuate.map((row) => (
                     <tr key={row.key} className="group border-b border-zinc-900 last:border-0">
                       <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{row.dataLabel}</td>
                       <td className="truncate px-2 py-2 text-zinc-300" title={row.nomeContatto || undefined}>
                         {row.nomeContatto}
                       </td>
                       <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{row.telefono}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300" title={row.descrizione !== "—" ? row.descrizione : undefined}>
+                      <td className="max-w-[11rem] truncate px-2 py-2 text-zinc-300" title={row.descrizionePiena !== "—" ? row.descrizionePiena : undefined}>
                         {row.descrizione}
                       </td>
                       <td className="truncate px-2 py-2 text-zinc-300">{row.consulente}</td>
                       <td className="truncate px-2 py-2 text-zinc-300">{row.esito}</td>
                       <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{row.evasoLabel}</td>
-                      <td className={stickyActionsCell}>
-                        {c && row.telefono !== "—" ? (
-                        <div className="flex flex-col items-end gap-1">
-                          <ChiamaButton
-                            telefono={c.telefono}
-                            nomeContatto={c.nomeContatto}
-                            tipo={c.tipo}
-                            leadId={c.leadId}
-                            clienteId={c.clienteId}
-                            registraAlClick={false}
-                            storico={c.note}
-                            attivita={c.attivita}
-                            azione={c.azione}
-                          />
-                          <RegistraTelefonataButton
-                            telefono={c.telefono}
-                            nomeContatto={c.nomeContatto}
-                            tipo={c.tipo}
-                            leadId={c.leadId}
-                            clienteId={c.clienteId}
-                            consulenteNomeOverride={effectiveConsulente || c.consulenteNome}
-                            storico={c.note}
-                            attivita={c.attivita}
-                            azione={c.azione}
-                          />
-                        </div>
-                        ) : (
-                          <span className="text-xs text-zinc-500">CRM</span>
-                        )}
+                      <td className="whitespace-nowrap px-2 py-2 text-xs text-zinc-500" title={row.fonte === "CRM" ? "Importata dal gestionale" : "Registrata in app"}>
+                        {row.fonte}
                       </td>
                     </tr>
-                    )
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>
