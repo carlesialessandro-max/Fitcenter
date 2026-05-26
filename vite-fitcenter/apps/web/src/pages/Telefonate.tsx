@@ -16,13 +16,41 @@ function isoToday(): string {
   return `${y}-${m}-${day}`
 }
 
-function isoAddDays(baseIso: string, days: number): string {
-  const d = new Date(`${baseIso}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
+function fmtIsoIt(iso: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return ""
+  const [y, m, d] = iso.split("-")
+  return `${d}/${m}/${y}`
+}
+
+const dateInputClass =
+  "mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1.5 text-sm text-zinc-100 [color-scheme:dark]"
+
+function DateField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <label className="block text-sm text-zinc-300">
+      <span className="font-medium">{label}</span>
+      {hint ? <span className="mt-0.5 block text-xs font-normal text-zinc-500">{hint}</span> : null}
+      <input
+        type="date"
+        lang="it-IT"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        title="Formato: gg/mm/aaaa"
+        className={dateInputClass}
+      />
+      {value ? <span className="mt-1 block text-xs text-amber-400/90">{fmtIsoIt(value)}</span> : null}
+    </label>
+  )
 }
 
 export function Telefonate() {
@@ -31,28 +59,28 @@ export function Telefonate() {
   const effectiveConsulente =
     role === "admin" ? (adminConsulente.trim() ? adminConsulente.trim() : "") : (consulenteFilter ?? consulenteNome ?? "")
 
-  const [da, setDa] = useState(() => isoAddDays(isoToday(), -7))
-  const [a, setA] = useState(() => isoToday())
-  const [crmTo, setCrmTo] = useState(() => isoAddDays(isoToday(), 14))
+  const oggi = isoToday()
+  const [dal, setDal] = useState(oggi)
+  const [al, setAl] = useState(oggi)
   const [esitiCrm, setEsitiCrm] = useState<Record<string, EsitoTelefonataCrm>>({})
 
   const crmReady = Boolean(effectiveConsulente.trim())
 
   const { data: chiamate = [], isLoading: loadingChiamate, error: errChiamate } = useQuery({
-    queryKey: ["chiamate", "telefonate", role, effectiveConsulente, da, a],
-    queryFn: () => chiamateApi.list({ da, a, consulenteId: role === "admin" ? (effectiveConsulente || undefined) : undefined }),
+    queryKey: ["chiamate", "telefonate", role, effectiveConsulente, dal, al],
+    queryFn: () => chiamateApi.list({ da: dal, a: al, consulenteId: role === "admin" ? (effectiveConsulente || undefined) : undefined }),
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
   })
 
   const { data: crm, isLoading: loadingCrm, error: errCrm } = useQuery({
-    queryKey: ["data", "crm-telefonate-operatore", role, effectiveConsulente, da, crmTo],
+    queryKey: ["data", "crm-telefonate-operatore", role, effectiveConsulente, dal, al],
     queryFn: () =>
       dataApi.getCrmAppuntamentiOperatore({
         consulente: effectiveConsulente,
-        from: da,
-        to: crmTo,
+        from: dal,
+        to: al,
         soloTelefonate: true,
         includeCompletate: true,
       }),
@@ -170,13 +198,41 @@ export function Telefonate() {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <p className="text-xs text-zinc-500">Se vuoto: per le chiamate mostra tutte; per lo storico CRM mostra quelle assegnate all’operatore selezionato.</p>
+          <p className="text-xs text-zinc-500">Storico CRM filtrato per destinatario = consulente selezionata (come nel gestionale).</p>
         </div>
       )}
 
+      <div className="mt-4 rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
+        <h2 className="text-sm font-medium text-zinc-200">Periodo</h2>
+        <p className="mt-1 text-xs text-zinc-500">
+          Come nel CRM gestionale: per le evase usa la <strong className="font-medium text-zinc-400">data evasione</strong>; per quelle da fare la data appuntamento.
+          Default: oggi ({fmtIsoIt(oggi)}).
+        </p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <DateField
+            label="Dal"
+            hint="Inizio periodo (gg/mm/aaaa)"
+            value={dal}
+            onChange={(v) => {
+              setDal(v)
+              if (v > al) setAl(v)
+            }}
+          />
+          <DateField
+            label="Al"
+            hint="Fine periodo (gg/mm/aaaa)"
+            value={al}
+            onChange={(v) => {
+              setAl(v)
+              if (v < dal) setDal(v)
+            }}
+          />
+        </div>
+      </div>
+
       <InserisciTelefonataForm consulenteNomeOverride={effectiveConsulente || undefined} />
 
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Chiamate (range)</p>
           <p className="mt-1 text-2xl font-semibold text-cyan-400">{chiamateEffettuate.length}</p>
@@ -187,24 +243,9 @@ export function Telefonate() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Da chiamare (CRM)</p>
           <p className="mt-1 text-2xl font-semibold text-amber-400">{crmRows.length}</p>
-          <p className="mt-1 text-xs text-zinc-500">{TELEFONATA_ATTIVITA} · Consulente = autore CRM · Da {da} a {crmTo}</p>
-        </div>
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-          <p className="text-sm text-zinc-400">Filtri</p>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <label className="text-xs text-zinc-500">
-              Da
-              <input value={da} onChange={(e) => setDa(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100" />
-            </label>
-            <label className="text-xs text-zinc-500">
-              A
-              <input value={a} onChange={(e) => setA(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100" />
-            </label>
-            <label className="col-span-2 text-xs text-zinc-500">
-              Storico CRM fino a
-              <input value={crmTo} onChange={(e) => setCrmTo(e.target.value)} className="mt-1 w-full rounded border border-zinc-700 bg-zinc-800 px-2 py-1 text-sm text-zinc-100" />
-            </label>
-          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            {TELEFONATA_ATTIVITA} · Destinatario {effectiveConsulente || "—"} · {fmtIsoIt(dal)} – {fmtIsoIt(al)}
+          </p>
         </div>
       </div>
 
