@@ -2,13 +2,13 @@
 export const TELEFONATA_ATTIVITA = "3. Telefonica"
 export const TELEFONATA_AZIONE = "14. Commerciale"
 
-/** Esiti come nel gestionale (campo Esito). */
+/** Esiti come nel gestionale (EsitoDescrizione). */
 export const ESITI_TELEFONATA_CRM = [
   "07. Appuntamento",
-  "Positivo",
-  "Negativo",
-  "Non risposto",
-  "Richiamare",
+  "08. Positivo",
+  "09. Negativo",
+  "10. Impegnato",
+  "11. Non risponde",
   "Altro",
 ] as const
 

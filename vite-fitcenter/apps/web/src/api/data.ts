@@ -227,12 +227,19 @@ export const dataApi = {
     q.set("nomeOperatore", params.nomeOperatore)
     return api.get<CrmAppuntamento[]>(`/data/crm-appuntamenti?${q}`)
   },
-  getCrmAppuntamentiOperatore: (params?: { consulente?: string; from?: string; to?: string; soloTelefonate?: boolean }) => {
+  getCrmAppuntamentiOperatore: (params?: {
+    consulente?: string
+    from?: string
+    to?: string
+    soloTelefonate?: boolean
+    includeCompletate?: boolean
+  }) => {
     const q = new URLSearchParams()
     if (params?.consulente) q.set("consulente", params.consulente)
     if (params?.from) q.set("from", params.from)
     if (params?.to) q.set("to", params.to)
     if (params?.soloTelefonate) q.set("soloTelefonate", "1")
+    if (params?.includeCompletate) q.set("includeCompletate", "1")
     const query = q.toString()
     return api.get<{ from: string; to: string; rows: CrmAppuntamento[] }>(`/data/crm-appuntamenti-operatore${query ? `?${query}` : ""}`)
   },
@@ -441,6 +448,7 @@ export interface CrmAppuntamento {
   esitoDescrizione: string
   crmDescrizione: string
   attivitaDescrizione?: string
+  consulenteNome?: string
   dataEvasione?: string
   crmId?: string
   nome?: string

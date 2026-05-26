@@ -1609,15 +1609,18 @@ function getCrmUtentiViewName(): string {
 }
 
 /**
- * Appuntamenti CRM dal gestionale (RVW_CRMUtenti): DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione.
- * Filtri: NomeVenditore, Cognome/Nome cliente, DestinatarioNomeOperatore. Solo mese in corso.
+ * Appuntamenti CRM dal gestionale (RVW_CRMUtenti):
+ * AppuntamentiCategoriaDescrizione, EsitoDescrizione, CRMDescrizione, AutoreNomeOperatore.
  */
 export interface CrmAppuntamentoRow {
   dataAppuntamento: string
   tipoDescrizione: string
   esitoDescrizione: string
   crmDescrizione: string
+  /** AppuntamentiCategoriaDescrizione (es. 3. Telefonica). */
   attivitaDescrizione?: string
+  /** AutoreNomeOperatore nel gestionale. */
+  consulenteNome?: string
   dataEvasione?: string
   crmId?: string
   nome?: string
@@ -2225,11 +2228,14 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   const hasCell = await crmHasCol(view, "Cellulare")
   const hasSms = await crmHasCol(view, "SMS")
   const attivitaCol = await crmPickFirstCol(view, [
+    "AppuntamentiCategoriaDescrizione",
+    "AppuntamentiCategorieDescrizione",
     "AttivitaDescrizione",
     "Attivita",
     "DescrizioneAttivita",
     "AttivitaDesc",
   ])
+  const autoreCol = await crmPickFirstCol(view, ["AutoreNomeOperatore", "AutoreNome"])
   const evasoCol = await crmPickFirstCol(view, ["DataEvasione", "DataEvaso", "EvasoIl", "DataEvasioneStorico"])
   const idCol = await crmPickFirstCol(view, ["IDCRM", "IdCRM", "IDStorico", "IdStorico", "ID"])
   const selectParts: string[] = []
@@ -2239,6 +2245,7 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   if (hasCell) selectParts.push("Cellulare")
   if (hasSms) selectParts.push("SMS")
   if (attivitaCol) selectParts.push(attivitaCol)
+  if (autoreCol) selectParts.push(`${autoreCol} AS ConsulenteNome`)
   if (evasoCol) selectParts.push(`${evasoCol} AS DataEvasione`)
   if (idCol) selectParts.push(`${idCol} AS CrmRowId`)
   const select = selectParts.length ? ", " + selectParts.join(", ") : ""
@@ -2248,28 +2255,32 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
     telefono: (row.SMS ?? row.Telefono ?? row.Cellulare) != null ? String(row.SMS ?? row.Telefono ?? row.Cellulare) : undefined,
     attivitaDescrizione:
       attivitaCol && row[attivitaCol] != null ? String(row[attivitaCol]) : undefined,
+    consulenteNome: row.ConsulenteNome != null ? String(row.ConsulenteNome) : undefined,
     dataEvasione: row.DataEvasione != null ? String(row.DataEvasione) : undefined,
     crmId: row.CrmRowId != null ? String(row.CrmRowId) : undefined,
   })
   return { select, map }
 }
 
-async function crmOperatoreMatchSql(): Promise<string> {
-  return `LOWER(LTRIM(RTRIM(COALESCE(DestinatarioNomeOperatore, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nomeOperatore, N''))))`
+async function crmOperatoreMatchSql(view: string): Promise<string> {
+  const col =
+    (await crmPickFirstCol(view, ["AutoreNomeOperatore", "AutoreNome", "DestinatarioNomeOperatore"])) ??
+    "AutoreNomeOperatore"
+  return `LOWER(LTRIM(RTRIM(COALESCE(${col}, N'')))) = LOWER(LTRIM(RTRIM(COALESCE(@nomeOperatore, N''))))`
 }
 
+/** RVW_CRMUtenti: AppuntamentiCategoriaDescrizione = 3. Telefonica */
 async function crmTelefonateWhereSql(view: string): Promise<string> {
-  const attivitaCol = await crmPickFirstCol(view, [
+  const catCol = await crmPickFirstCol(view, [
+    "AppuntamentiCategoriaDescrizione",
+    "AppuntamentiCategorieDescrizione",
     "AttivitaDescrizione",
     "Attivita",
     "DescrizioneAttivita",
     "AttivitaDesc",
   ])
-  const commerciale = `LOWER(LTRIM(RTRIM(COALESCE(TipoDescrizione, N'')))) LIKE N'%commerciale%'`
-  const telefonica = attivitaCol
-    ? `LOWER(LTRIM(RTRIM(COALESCE(${attivitaCol}, N'')))) LIKE N'%telefonica%'`
-    : "1=1"
-  return `${commerciale} AND ${telefonica}`
+  if (!catCol) return "1=1"
+  return `LOWER(LTRIM(RTRIM(COALESCE(${catCol}, N'')))) LIKE N'%telefonica%'`
 }
 
 async function crmSoloDaFareWhereSql(view: string): Promise<string> {
@@ -2458,7 +2469,7 @@ export async function queryCrmAppuntamentiOperatore(params: {
     const r = await req.query(
       `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
        FROM ${view}
-       WHERE ${await crmOperatoreMatchSql()}
+       WHERE ${await crmOperatoreMatchSql(view)}
          AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
          AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
        ORDER BY DataAppuntamento ASC`
@@ -2476,7 +2487,7 @@ export async function queryCrmAppuntamentiOperatore(params: {
   }
 }
 
-/** Storico CRM telefonate commerciali per operatore (attività telefonica + azione commerciale). */
+/** Storico CRM telefonate (AppuntamentiCategoriaDescrizione = 3. Telefonica, AutoreNomeOperatore = consulente). */
 export async function queryCrmTelefonateOperatore(params: {
   nomeOperatore: string
   from: string
@@ -2490,7 +2501,7 @@ export async function queryCrmTelefonateOperatore(params: {
   try {
     const extra = await crmSelectExtraFragments(view)
     const telefonateWhere = await crmTelefonateWhereSql(view)
-    const operatoreWhere = await crmOperatoreMatchSql()
+    const operatoreWhere = await crmOperatoreMatchSql(view)
     const daFareWhere = params.soloDaFare !== false ? await crmSoloDaFareWhereSql(view) : "1=1"
     const req = p
       .request()

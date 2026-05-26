@@ -54,15 +54,13 @@ export function Telefonate() {
         from: da,
         to: crmTo,
         soloTelefonate: true,
+        includeCompletate: true,
       }),
     enabled: crmReady,
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
   })
-
-  const chiamateCliente = useMemo(() => chiamate.filter((c) => c.tipo === "cliente"), [chiamate])
-  const chiamateLead = useMemo(() => chiamate.filter((c) => c.tipo === "lead"), [chiamate])
 
   const fmtDateShort = (iso: string) =>
     iso ? new Date(iso).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"
@@ -81,6 +79,7 @@ export function Telefonate() {
   const crmRows = useMemo(() => {
     const rows = crm?.rows ?? []
     return rows.filter((r) => {
+      if (r.dataEvasione) return false
       const tel = telDigits(r.telefono ?? "")
       if (!tel) return true
       const doneLocally = chiamate.some((c) => {
@@ -91,6 +90,58 @@ export function Telefonate() {
       return !doneLocally
     })
   }, [crm?.rows, chiamate])
+
+  const crmCompletate = useMemo(() => {
+    return (crm?.rows ?? []).filter((r) => Boolean(r.dataEvasione?.trim()))
+  }, [crm?.rows])
+
+  const chiamateEffettuate = useMemo(() => {
+    type Row = {
+      key: string
+      sortAt: string
+      dataLabel: string
+      evasoLabel: string
+      nomeContatto: string
+      telefono: string
+      descrizione: string
+      consulente: string
+      esito: string
+      chiamata?: Chiamata
+    }
+    const out: Row[] = []
+
+    for (const r of crmCompletate) {
+      const nome = [r.nome, r.cognome].filter(Boolean).join(" ").trim()
+      out.push({
+        key: `crm-${r.crmId ?? r.dataEvasione}-${r.telefono ?? nome}`,
+        sortAt: r.dataEvasione || r.dataAppuntamento,
+        dataLabel: fmtDateShort(r.dataAppuntamento),
+        evasoLabel: fmtDateShort(r.dataEvasione || r.dataAppuntamento),
+        nomeContatto: nome || r.crmDescrizione || "CRM",
+        telefono: r.telefono || "—",
+        descrizione: r.crmDescrizione || "—",
+        consulente: r.consulenteNome || effectiveConsulente || "—",
+        esito: r.esitoDescrizione || "—",
+      })
+    }
+
+    for (const c of chiamate) {
+      out.push({
+        key: `local-${c.id}`,
+        sortAt: c.evasoAt ?? c.dataOra,
+        dataLabel: fmtDateShort(c.dataOra),
+        evasoLabel: c.evasoAt ? fmtDateShort(c.evasoAt) : fmtDateShort(c.dataOra),
+        nomeContatto: c.nomeContatto,
+        telefono: c.telefono,
+        descrizione: c.note || "—",
+        consulente: c.consulenteNome || effectiveConsulente || "—",
+        esito: c.esitoCrm || c.esito || "—",
+        chiamata: c,
+      })
+    }
+
+    return out.sort((a, b) => new Date(b.sortAt).getTime() - new Date(a.sortAt).getTime())
+  }, [chiamate, crmCompletate, effectiveConsulente])
 
   const stickyActionsHead =
     "sticky right-0 z-10 bg-zinc-900/95 px-2 py-2 text-right font-medium text-zinc-400 shadow-[-8px_0_12px_rgba(0,0,0,0.35)]"
@@ -128,13 +179,15 @@ export function Telefonate() {
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Chiamate (range)</p>
-          <p className="mt-1 text-2xl font-semibold text-cyan-400">{chiamate.length}</p>
-          <p className="mt-1 text-xs text-zinc-500">Clienti: {chiamateCliente.length} · Lead: {chiamateLead.length}</p>
+          <p className="mt-1 text-2xl font-semibold text-cyan-400">{chiamateEffettuate.length}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            CRM evase: {crmCompletate.length} · Registro app: {chiamate.length}
+          </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Da chiamare (CRM)</p>
           <p className="mt-1 text-2xl font-semibold text-amber-400">{crmRows.length}</p>
-          <p className="mt-1 text-xs text-zinc-500">Attività telefonica · Azione commerciale · Da {da} a {crmTo}</p>
+          <p className="mt-1 text-xs text-zinc-500">{TELEFONATA_ATTIVITA} · Consulente = autore CRM · Da {da} a {crmTo}</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <p className="text-sm text-zinc-400">Filtri</p>
@@ -165,7 +218,7 @@ export function Telefonate() {
           ) : errCrm ? (
             <p className="mt-2 text-sm text-red-400">{(errCrm as Error).message}</p>
           ) : crmRows.length === 0 ? (
-            <p className="mt-2 text-sm text-zinc-500">Nessuna telefonata commerciale da fare nel range.</p>
+            <p className="mt-2 text-sm text-zinc-500">Nessuna telefonata ({TELEFONATA_ATTIVITA}) da fare nel range.</p>
           ) : (
             <div className="mt-3 overflow-x-auto rounded-md border border-zinc-800">
               <table className="w-full min-w-[760px] table-fixed text-left text-sm">
@@ -174,8 +227,7 @@ export function Telefonate() {
                   <col className="w-[8rem]" />
                   <col className="w-[7rem]" />
                   <col />
-                  <col className="w-[7.5rem]" />
-                  <col className="w-[8.5rem]" />
+                  <col className="w-[8rem]" />
                   <col className="w-[11.5rem]" />
                 </colgroup>
                 <thead>
@@ -183,9 +235,8 @@ export function Telefonate() {
                     <th className="px-2 py-2 font-medium text-zinc-400">Data</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Nome</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Tel</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Storico</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Attività</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Azione</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Descrizione</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Consulente</th>
                     <th className={stickyActionsHead}>Azioni</th>
                   </tr>
                 </thead>
@@ -197,9 +248,9 @@ export function Telefonate() {
                     const cognome = (r.cognome ?? "").trim()
                     const cliente = [nome, cognome].filter(Boolean).join(" ") || "—"
                     const contatto = cliente !== "—" ? cliente : r.crmDescrizione || "CRM"
-                    const storico = r.crmDescrizione || "—"
+                    const descrizione = r.crmDescrizione || "—"
+                    const consulente = r.consulenteNome || effectiveConsulente || "—"
                     const attivita = r.attivitaDescrizione || TELEFONATA_ATTIVITA
-                    const azione = r.tipoDescrizione || TELEFONATA_AZIONE
                     return (
                       <tr key={i} className="group border-b border-zinc-900 last:border-0">
                         <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{fmtDateShort(r.dataAppuntamento)}</td>
@@ -207,14 +258,11 @@ export function Telefonate() {
                           {cliente}
                         </td>
                         <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{r.telefono || "—"}</td>
-                        <td className="truncate px-2 py-2 text-zinc-300" title={storico !== "—" ? storico : undefined}>
-                          {storico}
+                        <td className="truncate px-2 py-2 text-zinc-300" title={descrizione !== "—" ? descrizione : undefined}>
+                          {descrizione}
                         </td>
-                        <td className="truncate px-2 py-2 text-zinc-300" title={attivita}>
-                          {attivita}
-                        </td>
-                        <td className="truncate px-2 py-2 text-zinc-300" title={azione}>
-                          {azione}
+                        <td className="truncate px-2 py-2 text-zinc-300" title={consulente}>
+                          {consulente}
                         </td>
                         <td className={stickyActionsCell}>
                           {r.telefono ? (
@@ -243,7 +291,7 @@ export function Telefonate() {
                                 registraAlClick
                                 storico={r.crmDescrizione}
                                 attivita={attivita}
-                                azione={azione}
+                                azione={TELEFONATA_AZIONE}
                                 esitoCrm={esitoRow}
                               />
                               <RegistraTelefonataButton
@@ -253,7 +301,7 @@ export function Telefonate() {
                                 consulenteNomeOverride={effectiveConsulente || undefined}
                                 storico={r.crmDescrizione}
                                 attivita={attivita}
-                                azione={azione}
+                                azione={TELEFONATA_AZIONE}
                                 esitoCrm={esitoRow}
                               />
                             </div>
@@ -276,7 +324,7 @@ export function Telefonate() {
             <p className="mt-2 text-sm text-zinc-500">Caricamento...</p>
           ) : errChiamate ? (
             <p className="mt-2 text-sm text-red-400">{(errChiamate as Error).message}</p>
-          ) : chiamate.length === 0 ? (
+          ) : chiamateEffettuate.length === 0 ? (
             <p className="mt-2 text-sm text-zinc-500">
               Nessuna chiamata nel range. Usa il modulo <strong className="font-medium text-zinc-400">Inserisci telefonata</strong> sopra.
             </p>
@@ -288,10 +336,9 @@ export function Telefonate() {
                   <col className="w-[8rem]" />
                   <col className="w-[7rem]" />
                   <col />
+                  <col className="w-[8rem]" />
                   <col className="w-[7.5rem]" />
-                  <col className="w-[8.5rem]" />
                   <col className="w-[7rem]" />
-                  <col className="w-[6.5rem]" />
                   <col className="w-[11.5rem]" />
                 </colgroup>
                 <thead>
@@ -299,32 +346,31 @@ export function Telefonate() {
                     <th className="px-2 py-2 font-medium text-zinc-400">Data</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Nome</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Tel</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Storico</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Attività</th>
-                    <th className="px-2 py-2 font-medium text-zinc-400">Azione</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Descrizione</th>
+                    <th className="px-2 py-2 font-medium text-zinc-400">Consulente</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Esito</th>
                     <th className="px-2 py-2 font-medium text-zinc-400">Evaso il</th>
                     <th className={stickyActionsHead}>Azioni</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {chiamate.map((c: Chiamata) => (
-                    <tr key={c.id} className="group border-b border-zinc-900 last:border-0">
-                      <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{fmtDateShort(c.dataOra)}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300" title={c.nomeContatto || undefined}>
-                        {c.nomeContatto}
+                  {chiamateEffettuate.map((row) => {
+                    const c = row.chiamata
+                    return (
+                    <tr key={row.key} className="group border-b border-zinc-900 last:border-0">
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-200">{row.dataLabel}</td>
+                      <td className="truncate px-2 py-2 text-zinc-300" title={row.nomeContatto || undefined}>
+                        {row.nomeContatto}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{c.telefono}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300" title={c.note || undefined}>
-                        {c.note || "—"}
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{row.telefono}</td>
+                      <td className="truncate px-2 py-2 text-zinc-300" title={row.descrizione !== "—" ? row.descrizione : undefined}>
+                        {row.descrizione}
                       </td>
-                      <td className="truncate px-2 py-2 text-zinc-300">{c.attivita || TELEFONATA_ATTIVITA}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300">{c.azione || TELEFONATA_AZIONE}</td>
-                      <td className="truncate px-2 py-2 text-zinc-300">{c.esitoCrm || c.esito || "—"}</td>
-                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">
-                        {c.evasoAt ? fmtDateShort(c.evasoAt) : fmtDateShort(c.dataOra)}
-                      </td>
+                      <td className="truncate px-2 py-2 text-zinc-300">{row.consulente}</td>
+                      <td className="truncate px-2 py-2 text-zinc-300">{row.esito}</td>
+                      <td className="whitespace-nowrap px-2 py-2 text-zinc-300">{row.evasoLabel}</td>
                       <td className={stickyActionsCell}>
+                        {c && row.telefono !== "—" ? (
                         <div className="flex flex-col items-end gap-1">
                           <ChiamaButton
                             telefono={c.telefono}
@@ -349,9 +395,13 @@ export function Telefonate() {
                             azione={c.azione}
                           />
                         </div>
+                        ) : (
+                          <span className="text-xs text-zinc-500">CRM</span>
+                        )}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
