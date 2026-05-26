@@ -1617,6 +1617,7 @@ export interface CrmAppuntamentoRow {
   tipoDescrizione: string
   esitoDescrizione: string
   crmDescrizione: string
+  attivitaDescrizione?: string
   nome?: string
   cognome?: string
   telefono?: string
@@ -2214,19 +2215,43 @@ async function crmSelectExtraFragments(view: string): Promise<{ select: string; 
   const hasTel = await crmHasCol(view, "Telefono")
   const hasCell = await crmHasCol(view, "Cellulare")
   const hasSms = await crmHasCol(view, "SMS")
+  const attivitaCol = (await crmHasCol(view, "AttivitaDescrizione"))
+    ? "AttivitaDescrizione"
+    : (await crmHasCol(view, "Attivita"))
+      ? "Attivita"
+      : null
   const selectParts: string[] = []
   if (hasNome) selectParts.push("Nome")
   if (hasCognome) selectParts.push("Cognome")
   if (hasTel) selectParts.push("Telefono")
   if (hasCell) selectParts.push("Cellulare")
   if (hasSms) selectParts.push("SMS")
+  if (attivitaCol) selectParts.push(attivitaCol)
   const select = selectParts.length ? ", " + selectParts.join(", ") : ""
   const map = (row: Record<string, unknown>) => ({
     nome: row.Nome != null ? String(row.Nome) : undefined,
     cognome: row.Cognome != null ? String(row.Cognome) : undefined,
     telefono: (row.SMS ?? row.Telefono ?? row.Cellulare) != null ? String(row.SMS ?? row.Telefono ?? row.Cellulare) : undefined,
+    attivitaDescrizione:
+      attivitaCol && row[attivitaCol] != null ? String(row[attivitaCol]) : undefined,
   })
   return { select, map }
+}
+
+async function crmTelefonateWhereSql(view: string): Promise<string> {
+  const attivitaCol = (await crmHasCol(view, "AttivitaDescrizione"))
+    ? "AttivitaDescrizione"
+    : (await crmHasCol(view, "Attivita"))
+      ? "Attivita"
+      : null
+  const commerciale = `LOWER(LTRIM(RTRIM(COALESCE(TipoDescrizione, N'')))) LIKE N'%commerciale%'`
+  const telefonica = attivitaCol
+    ? `LOWER(LTRIM(RTRIM(COALESCE(${attivitaCol}, N'')))) LIKE N'%telefonica%'`
+    : `(
+         LOWER(LTRIM(RTRIM(COALESCE(EsitoDescrizione, N'')))) LIKE N'%telefonica%'
+         OR LOWER(LTRIM(RTRIM(COALESCE(CRMDescrizione, N'')))) LIKE N'%telefon%'
+       )`
+  return `${commerciale} AND ${telefonica}`
 }
 
 export type CassaMovimentoLite = {
@@ -2412,6 +2437,45 @@ export async function queryCrmAppuntamentiOperatore(params: {
        WHERE DestinatarioNomeOperatore = @nomeOperatore
          AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
          AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
+       ORDER BY DataAppuntamento ASC`
+    )
+    const rows = (r.recordset ?? []) as Record<string, unknown>[]
+    return rows.map((row) => ({
+      dataAppuntamento: row.DataAppuntamento != null ? String(row.DataAppuntamento) : "",
+      tipoDescrizione: row.TipoDescrizione != null ? String(row.TipoDescrizione) : "",
+      esitoDescrizione: row.EsitoDescrizione != null ? String(row.EsitoDescrizione) : "",
+      crmDescrizione: row.CRMDescrizione != null ? String(row.CRMDescrizione) : "",
+      ...extra.map(row),
+    }))
+  } catch {
+    return []
+  }
+}
+
+/** Storico CRM telefonate commerciali per operatore (attività telefonica + azione commerciale). */
+export async function queryCrmTelefonateOperatore(params: {
+  nomeOperatore: string
+  from: string
+  to: string
+}): Promise<CrmAppuntamentoRow[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getCrmUtentiViewName()
+  try {
+    const extra = await crmSelectExtraFragments(view)
+    const telefonateWhere = await crmTelefonateWhereSql(view)
+    const req = p
+      .request()
+      .input("nomeOperatore", sql.NVarChar, params.nomeOperatore?.trim() ?? "")
+      .input("from", sql.VarChar(10), params.from)
+      .input("to", sql.VarChar(10), params.to)
+    const r = await req.query(
+      `SELECT DataAppuntamento, TipoDescrizione, EsitoDescrizione, CRMDescrizione${extra.select}
+       FROM ${view}
+       WHERE DestinatarioNomeOperatore = @nomeOperatore
+         AND CAST(DataAppuntamento AS DATE) >= CAST(@from AS DATE)
+         AND CAST(DataAppuntamento AS DATE) <= CAST(@to AS DATE)
+         AND ${telefonateWhere}
        ORDER BY DataAppuntamento ASC`
     )
     const rows = (r.recordset ?? []) as Record<string, unknown>[]

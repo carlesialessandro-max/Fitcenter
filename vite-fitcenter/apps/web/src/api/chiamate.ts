@@ -15,7 +15,10 @@ export interface Chiamata {
   dataOra: string
   durataSecondi?: number
   esito?: EsitoChiamata
+  /** Testo storico CRM. */
   note?: string
+  attivita?: string
+  azione?: string
 }
 
 export interface ChiamataCreate {
@@ -29,6 +32,8 @@ export interface ChiamataCreate {
   durataSecondi?: number
   esito?: EsitoChiamata
   note?: string
+  attivita?: string
+  azione?: string
 }
 
 export interface ChiamateStats {

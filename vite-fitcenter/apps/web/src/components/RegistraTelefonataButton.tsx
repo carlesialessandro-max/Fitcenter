@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/contexts/AuthContext"
 import { chiamateApi, type TipoContatto } from "@/api/chiamate"
+import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE } from "@/lib/telefonate-crm"
 
 function normalizeTel(tel: string): string {
   const n = tel.replace(/\s/g, "").replace(/^\+?39/, "")
@@ -15,6 +16,9 @@ type Props = {
   clienteId?: string
   /** Admin: consulente dal filtro pagina. */
   consulenteNomeOverride?: string
+  storico?: string
+  attivita?: string
+  azione?: string
   className?: string
 }
 
@@ -25,6 +29,9 @@ export function RegistraTelefonataButton({
   leadId,
   clienteId,
   consulenteNomeOverride,
+  storico,
+  attivita = TELEFONATA_ATTIVITA,
+  azione = TELEFONATA_AZIONE,
   className = "",
 }: Props) {
   const queryClient = useQueryClient()
@@ -42,6 +49,9 @@ export function RegistraTelefonataButton({
         nomeContatto,
         telefono: normalizeTel(telefono),
         esito: "altro",
+        note: storico?.trim() || undefined,
+        attivita,
+        azione,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chiamate"] })

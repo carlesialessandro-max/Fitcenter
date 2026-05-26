@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/contexts/AuthContext"
-import { chiamateApi, type EsitoChiamata, type TipoContatto } from "@/api/chiamate"
+import { chiamateApi, type EsitoChiamata } from "@/api/chiamate"
+import { TELEFONATA_ATTIVITA, TELEFONATA_AZIONE } from "@/lib/telefonate-crm"
 
 function normalizeTel(tel: string): string {
   const n = tel.replace(/\s/g, "").replace(/^\+?39/, "")
@@ -19,9 +20,8 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
 
   const [nomeContatto, setNomeContatto] = useState("")
   const [telefono, setTelefono] = useState("")
-  const [tipo, setTipo] = useState<TipoContatto>("cliente")
+  const [storico, setStorico] = useState("")
   const [esito, setEsito] = useState<EsitoChiamata>("altro")
-  const [note, setNote] = useState("")
   const [feedback, setFeedback] = useState<string | null>(null)
 
   const createM = useMutation({
@@ -29,18 +29,20 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
       chiamateApi.create({
         consulenteId: effectiveConsulente,
         consulenteNome: effectiveConsulente,
-        tipo,
+        tipo: "cliente",
         nomeContatto: nomeContatto.trim(),
         telefono: normalizeTel(telefono),
         esito,
-        note: note.trim() || undefined,
+        note: storico.trim() || undefined,
+        attivita: TELEFONATA_ATTIVITA,
+        azione: TELEFONATA_AZIONE,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chiamate"] })
       queryClient.invalidateQueries({ queryKey: ["chiamate-stats"] })
       setNomeContatto("")
       setTelefono("")
-      setNote("")
+      setStorico("")
       setFeedback("Telefonata registrata.")
     },
     onError: (e) => setFeedback((e as Error).message ?? "Errore salvataggio"),
@@ -69,7 +71,7 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
         <div>
           <h2 className="text-sm font-semibold text-zinc-100">Inserisci telefonata</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Registra una chiamata effettuata (anche senza WhatsApp). Compare nello storico e nel report.
+            Attività telefonica e azione commerciale; lo storico viene salvato nel registro chiamate.
           </p>
         </div>
         {role === "admin" && !effectiveConsulente ? (
@@ -77,7 +79,16 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
         ) : null}
       </div>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mt-3 flex flex-wrap gap-2 text-xs">
+        <span className="rounded border border-zinc-700 bg-zinc-900/60 px-2 py-1 text-zinc-300">
+          Attività: <strong className="font-medium text-zinc-100">{TELEFONATA_ATTIVITA}</strong>
+        </span>
+        <span className="rounded border border-zinc-700 bg-zinc-900/60 px-2 py-1 text-zinc-300">
+          Azione: <strong className="font-medium text-zinc-100">{TELEFONATA_AZIONE}</strong>
+        </span>
+      </div>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block text-xs text-zinc-400">
           Nome contatto
           <input
@@ -97,18 +108,7 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
           />
         </label>
         <label className="block text-xs text-zinc-400">
-          Tipo
-          <select
-            value={tipo}
-            onChange={(e) => setTipo(e.target.value as TipoContatto)}
-            className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
-          >
-            <option value="cliente">Cliente</option>
-            <option value="lead">Lead</option>
-          </select>
-        </label>
-        <label className="block text-xs text-zinc-400">
-          Esito
+          Esito chiamata
           <select
             value={esito}
             onChange={(e) => setEsito(e.target.value as EsitoChiamata)}
@@ -120,11 +120,13 @@ export function InserisciTelefonataForm({ consulenteNomeOverride }: Props) {
             <option value="altro">Altro</option>
           </select>
         </label>
-        <label className="block text-xs text-zinc-400 sm:col-span-2 lg:col-span-1">
-          Note (opz.)
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+        <label className="block text-xs text-zinc-400 sm:col-span-2 lg:col-span-4">
+          Storico
+          <textarea
+            value={storico}
+            onChange={(e) => setStorico(e.target.value)}
+            rows={3}
+            placeholder="Note della telefonata (come nel CRM gestionale)"
             className="mt-1 w-full rounded border border-zinc-700 bg-zinc-900 px-2 py-2 text-sm text-zinc-100"
           />
         </label>

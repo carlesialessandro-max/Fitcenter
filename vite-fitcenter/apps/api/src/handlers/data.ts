@@ -2442,7 +2442,12 @@ export async function getCrmAppuntamentiOperatore(req: Request, res: Response) {
     const defTo = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
     const fromIso = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : defFrom
     const toIso = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : defTo
-    const rows = await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
+    const soloTelefonate =
+      String(req.query.soloTelefonate ?? "").toLowerCase() === "1" ||
+      String(req.query.soloTelefonate ?? "").toLowerCase() === "true"
+    const rows = soloTelefonate
+      ? await gestionaleSql.queryCrmTelefonateOperatore({ nomeOperatore, from: fromIso, to: toIso })
+      : await gestionaleSql.queryCrmAppuntamentiOperatore({ nomeOperatore, from: fromIso, to: toIso })
     res.json({ from: fromIso, to: toIso, rows })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

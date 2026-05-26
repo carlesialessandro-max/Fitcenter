@@ -1,6 +1,7 @@
 import { Request, Response } from "express"
 import { store } from "../store/chiamate.js"
 import type { ChiamataCreate } from "../types/chiamata.js"
+import { TELEFONATA_ATTIVITA_DEFAULT, TELEFONATA_AZIONE_DEFAULT } from "../types/chiamata.js"
 import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
 import { bumpMetaVersion } from "../services/persistent-cache.js"
 
@@ -50,6 +51,9 @@ export async function createChiamata(req: Request, res: Response) {
       ...body,
       consulenteNome,
       consulenteId: consulenteNome,
+      attivita: body.attivita?.trim() || TELEFONATA_ATTIVITA_DEFAULT,
+      azione: body.azione?.trim() || TELEFONATA_AZIONE_DEFAULT,
+      note: body.note?.trim() || undefined,
     })
     await bumpMetaVersion("chiamate")
     res.status(201).json(created)

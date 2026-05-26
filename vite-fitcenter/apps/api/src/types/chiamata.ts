@@ -14,7 +14,10 @@ export interface Chiamata {
   dataOra: string
   durataSecondi?: number
   esito?: EsitoChiamata
+  /** Testo storico CRM. */
   note?: string
+  attivita?: string
+  azione?: string
 }
 
 export interface ChiamataCreate {
@@ -28,7 +31,12 @@ export interface ChiamataCreate {
   durataSecondi?: number
   esito?: EsitoChiamata
   note?: string
+  attivita?: string
+  azione?: string
 }
+
+export const TELEFONATA_ATTIVITA_DEFAULT = "3. Telefonica"
+export const TELEFONATA_AZIONE_DEFAULT = "14. Commerciale"
 
 export interface ChiamateStats {
   oggi: number
