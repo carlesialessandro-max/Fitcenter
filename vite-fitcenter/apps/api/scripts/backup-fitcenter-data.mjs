@@ -9,7 +9,7 @@
  *
  * Variabili ambiente (o riga in apps/api/.env):
  *   FITCENTER_BACKUP_DIR   cartella destinazione backup (default: ../backups accanto a data/)
- *   FITCENTER_BACKUP_KEEP  quanti backup tenere (default: 14)
+ *   FITCENTER_BACKUP_KEEP  quanti backup tenere (default: 2)
  *   FITCENTER_BACKUP_INCLUDE_ENV=1  copia anche apps/api/.env nel backup (consigliato, fuori da git)
  */
 import fs from "fs"
@@ -95,7 +95,7 @@ function copyDirFiles(srcDir, destDir) {
 function runBackup() {
   const dataDir = resolveDataDir()
   const backupRoot = resolveBackupRoot(dataDir)
-  const keep = Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 14) || 14)
+  const keep = Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 2) || 2)
   const dest = path.join(backupRoot, `fitcenter-data-${timestampLabel()}`)
 
   if (!fs.existsSync(dataDir)) {
@@ -206,9 +206,27 @@ function runList() {
   }
 }
 
+function runPruneOnly() {
+  const dataDir = resolveDataDir()
+  const backupRoot = resolveBackupRoot(dataDir)
+  const keep = Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 2) || 2)
+  const before = listBackupDirs(backupRoot).length
+  pruneOldBackups(backupRoot, keep)
+  const after = listBackupDirs(backupRoot).length
+  console.log(`Pulizia backup in: ${backupRoot}`)
+  console.log(`  Conservati: ${after} (max ${keep})`)
+  if (before > after) console.log(`  Rimossi:     ${before - after}`)
+  else console.log("  Nessun backup da rimuovere.")
+}
+
 const args = process.argv.slice(2)
 if (args.includes("--list")) {
   runList()
+  process.exit(0)
+}
+
+if (args.includes("--prune")) {
+  runPruneOnly()
   process.exit(0)
 }
 

@@ -14,6 +14,7 @@
     "import:scuola-nuoto": "node scripts/import-calendario-comparto.mjs scuola_nuoto",
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
+    "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",
     "backup:data:restore": "node scripts/backup-fitcenter-data.mjs --restore"
   },
   "dependencies": {
