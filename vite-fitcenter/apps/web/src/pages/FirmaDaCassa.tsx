@@ -204,6 +204,12 @@ export function FirmaDaCassa() {
           <h1 className="text-2xl font-semibold text-zinc-100">Firma contratto</h1>
           <p className="mt-1 text-sm text-zinc-500">
             Movimenti con importo &gt; 0 da <span className="text-zinc-300">RVW_CassaMovimentiUtenti</span>, raggruppati per cliente.
+            {windowMode === "60" ? (
+              <span className="mt-1 block text-amber-200/80">
+                Ultimi 60 minuti: in lista compaiono i clienti con almeno un incasso recente; nel dettaglio vedi tutti gli abbonamenti/corsi
+                dello stesso cliente nello stesso giorno (es. più righe in cassa nello stesso momento).
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

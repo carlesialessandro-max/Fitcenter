@@ -2025,21 +2025,29 @@ export async function queryCassaMovimentiUtenti(args: {
       "Id",
     ]) ?? null
 
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
   const now = new Date()
-  const baseDay =
+  const parts =
     args.asOfIso && /^\d{4}-\d{2}-\d{2}$/.test(args.asOfIso)
-      ? new Date(`${args.asOfIso}T12:00:00.000Z`)
-      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 12, 0, 0))
-  const parts = {
-    year: baseDay.getUTCFullYear(),
-    month: baseDay.getUTCMonth(),
-    day: baseDay.getUTCDate(),
-  }
-  const start = new Date(Date.UTC(parts.year, parts.month, parts.day, 0, 0, 0))
-  const end = new Date(Date.UTC(parts.year, parts.month, parts.day + 1, 0, 0, 0))
+      ? (() => {
+          const [y, m, d] = args.asOfIso.split("-").map(Number)
+          return { year: y, month: m - 1, day: d }
+        })()
+      : useLocal
+        ? { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() }
+        : { year: now.getUTCFullYear(), month: now.getUTCMonth(), day: now.getUTCDate() }
+  const start = useLocal
+    ? new Date(parts.year, parts.month, parts.day, 0, 0, 0, 0)
+    : new Date(Date.UTC(parts.year, parts.month, parts.day, 0, 0, 0))
+  const end = useLocal
+    ? new Date(parts.year, parts.month, parts.day + 1, 0, 0, 0, 0)
+    : new Date(Date.UTC(parts.year, parts.month, parts.day + 1, 0, 0, 0))
   const windowMinutes = args.windowMinutes != null ? Math.max(1, Math.min(24 * 60, Math.floor(args.windowMinutes))) : null
-  const from = windowMinutes ? new Date(Date.now() - windowMinutes * 60 * 1000) : start
-  const to = windowMinutes ? new Date(Date.now()) : end
+  // Finestra rolling: filtra quali clienti compaiono in lista, non quali righe SQL (stessa cassa = stesso giorno).
+  const windowFrom = windowMinutes ? new Date(Date.now() - windowMinutes * 60 * 1000) : null
+  const windowTo = windowMinutes ? new Date() : null
+  const from = start
+  const to = end
 
   const whereParts: string[] = []
   if (importoCol) {
@@ -2196,20 +2204,43 @@ export async function queryCassaMovimentiUtenti(args: {
     }
   }
 
-  const groups = Array.from(groupsMap.values())
+  const rowTimeMs = (iso: string | null | undefined): number | null => {
+    if (!iso) return null
+    const t = new Date(iso).getTime()
+    return Number.isNaN(t) ? null : t
+  }
+  const rowInWindow = (row: CassaMovimentoUtenteRow, wf: Date, wt: Date): boolean => {
+    const t = rowTimeMs(row.dataOperazioneIso)
+    return t != null && t >= wf.getTime() && t <= wt.getTime()
+  }
+
+  let groups = Array.from(groupsMap.values())
     .map((g) => ({
       ...g,
       rows: g.rows.slice().sort((a, b) => String(b.dataOperazioneIso ?? "").localeCompare(String(a.dataOperazioneIso ?? ""))),
     }))
     .sort((a, b) => (b.totalImporto || 0) - (a.totalImporto || 0))
 
+  if (windowMinutes && windowFrom && windowTo) {
+    groups = groups
+      .filter((g) => g.rows.some((r) => rowInWindow(r, windowFrom, windowTo)))
+      .map((g) => {
+        const rows = g.rows
+        return {
+          ...g,
+          rows,
+          totalImporto: rows.reduce((acc, r) => acc + Number(r.importo ?? 0), 0),
+        }
+      })
+  }
+
   return {
     view,
     dateCol,
     importoCol,
     causaleCol,
-    fromIso: from.toISOString(),
-    toIso: to.toISOString(),
+    fromIso: (windowFrom ?? from).toISOString(),
+    toIso: (windowTo ?? to).toISOString(),
     groups,
   }
 }
