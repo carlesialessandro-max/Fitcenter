@@ -2022,7 +2022,6 @@ export async function queryCassaMovimentiUtenti(args: {
       "IdMovimento",
       "IDMovimento",
       "MovimentoId",
-      "Id",
     ]) ?? null
 
   const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
@@ -2069,7 +2068,10 @@ export async function queryCassaMovimentiUtenti(args: {
   req.input("from", sql.DateTime, from)
   req.input("to", sql.DateTime, to)
 
-  const r = await req.query(`SELECT TOP (${top}) * FROM ${vq} ${where};`)
+  const orderBy = dateCol
+    ? `ORDER BY TRY_CONVERT(datetime, ${bracketCol(dateCol)}) DESC`
+    : ""
+  const r = await req.query(`SELECT TOP (${top}) * FROM ${vq} ${where} ${orderBy};`)
   const recordset = (r.recordset ?? []) as Record<string, unknown>[]
 
   const rowsRaw: CassaMovimentoUtenteRow[] = recordset.map((row) => {
@@ -2163,11 +2165,18 @@ export async function queryCassaMovimentiUtenti(args: {
     return s
   }
 
+  const cassaMovimentoDedupKey = (it: CassaMovimentoUtenteRow): string => {
+    const mid = (it.movimentoId ?? "").trim()
+    const cid = (it.clienteId ?? "").trim()
+    const tail = `${Number(it.importo ?? 0).toFixed(2)}|${(it.causale ?? "").trim()}|${it.dataOperazioneIso ?? ""}`
+    // RVW a volte espone IdUtente come "Id": non usarlo da solo o collassa più righe cassa.
+    if (mid && mid !== cid) return `m:${mid}|${tail}`
+    return `${cid}|${tail}`
+  }
+
   const bestByKey = new Map<string, CassaMovimentoUtenteRow>()
   for (const it of rowsRaw) {
-    const k =
-      (it.movimentoId && it.movimentoId.trim()) ||
-      `${it.clienteId ?? ""}|${it.nome ?? ""}|${it.cognome ?? ""}|${it.importo}|${it.causale ?? ""}|${it.dataOperazioneIso ?? ""}`
+    const k = cassaMovimentoDedupKey(it)
     const prev = bestByKey.get(k)
     if (!prev || score(it) > score(prev)) bestByKey.set(k, it)
   }
@@ -2209,10 +2218,6 @@ export async function queryCassaMovimentiUtenti(args: {
     const t = new Date(iso).getTime()
     return Number.isNaN(t) ? null : t
   }
-  const rowInWindow = (row: CassaMovimentoUtenteRow, wf: Date, wt: Date): boolean => {
-    const t = rowTimeMs(row.dataOperazioneIso)
-    return t != null && t >= wf.getTime() && t <= wt.getTime()
-  }
 
   let groups = Array.from(groupsMap.values())
     .map((g) => ({
@@ -2223,7 +2228,12 @@ export async function queryCassaMovimentiUtenti(args: {
 
   if (windowMinutes && windowFrom && windowTo) {
     groups = groups
-      .filter((g) => g.rows.some((r) => rowInWindow(r, windowFrom, windowTo)))
+      .filter((g) => {
+        const times = g.rows.map((r) => rowTimeMs(r.dataOperazioneIso)).filter((t): t is number => t != null)
+        if (!times.length) return false
+        const newest = Math.max(...times)
+        return newest >= windowFrom.getTime() && newest <= windowTo.getTime()
+      })
       .map((g) => {
         const rows = g.rows
         return {
