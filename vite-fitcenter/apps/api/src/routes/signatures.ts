@@ -16,6 +16,7 @@ import {
   listSignatureRequests,
   listSignatureTemplates,
   requestSignatureOtp,
+  assistSignatureOtp,
   updateSignatureTemplateSlots,
   verifySignatureOtp,
   replaceSignatureTemplateLastPagePrivacy,
@@ -50,6 +51,7 @@ signaturesRouter.post("/public/:token/sign", confirmSignature)
 // Admin area
 signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
 signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
+signaturesRouter.post("/admin/by-token/:token/assist-otp", requireAuth, assistSignatureOtp)
 signaturesRouter.delete("/admin/:id", requireAuth, deleteSignatureRequest)
 signaturesRouter.get("/admin/export-audit", requireAuth, requireAdmin, exportSignatureAudit)
 signaturesRouter.get("/admin/export-audit.csv", requireAuth, requireAdmin, exportSignatureAuditCsv)

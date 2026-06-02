@@ -35,6 +35,8 @@ export interface SignaturePublicInfo {
   nextStepId?: string | null
   nextStepLabel?: string | null
   deliveryMode?: "email" | "onsite"
+  otpChannel?: "email" | "sms"
+  customerSmsMasked?: string
 }
 
 export interface SignatureSlot {

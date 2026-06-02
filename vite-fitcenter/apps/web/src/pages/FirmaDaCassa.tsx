@@ -53,7 +53,6 @@ function todayIt(): string {
 export function FirmaDaCassa() {
   const { role } = useAuth()
   const canUse = role === "admin" || role === "operatore" || role === "firme"
-  const [deliveryMode, setDeliveryMode] = useState<"email" | "onsite">("onsite")
   const [windowMode, setWindowMode] = useState<"60" | "day">("day")
   const [asOf, setAsOf] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [q, setQ] = useState<string>("")
@@ -64,6 +63,9 @@ export function FirmaDaCassa() {
   const [ok, setOk] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
   const [createdKeys, setCreatedKeys] = useState<Record<string, true>>({})
+  const [pendingFirma, setPendingFirma] = useState<{ token: string; email: string; customerLabel: string; sms?: string } | null>(null)
+  const [assistOtp, setAssistOtp] = useState<string | null>(null)
+  const [assistBusy, setAssistBusy] = useState(false)
 
   const movQ = useQuery({
     queryKey: ["cassa-movimenti-utenti", windowMode, windowMode === "day" ? asOf : ""],
@@ -106,9 +108,10 @@ export function FirmaDaCassa() {
   }, [selected, windowMode, asOf])
 
   useEffect(() => {
-    // Quando cambio cliente/template, pulisco i messaggi per evitare confusione.
     setOk(null)
     setErr(null)
+    setPendingFirma(null)
+    setAssistOtp(null)
   }, [selectedKey, templateId])
 
   const templates = tplQ.data ?? []
@@ -174,22 +177,37 @@ export function FirmaDaCassa() {
         customerEmail: email,
         customerName,
         customerGestionaleId: selected.clienteId ?? undefined,
+        customerSms: selected.sms ?? undefined,
         prefill,
-        deliveryMode,
       })
-      const link = `${window.location.origin}/firma/${out.token}`
-      if (deliveryMode === "onsite") {
-        setOk("Pagina firma aperta sul monitor. Il cliente genera il codice a video (senza email).")
-        window.open(link, "_blank", "noopener,noreferrer")
-      } else {
-        setOk(`Link e OTP inviati a ${email}. Il cliente firma dal proprio dispositivo: non aprire la pagina qui in reception.`)
-      }
+      const customerLabel = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || email
+      const smsNote = selected.sms?.trim() ? " OTP via SMS sul cellulare." : " OTP via email."
+      setPendingFirma({ token: out.token, email, customerLabel, sms: selected.sms ?? undefined })
+      setAssistOtp(null)
+      setOk(
+        `Link inviato a ${email}${selected.sms?.trim() ? " e SMS al cellulare" : ""}. Il cliente firma dal telefono.${smsNote} Non aprire la pagina firma su questo PC.`
+      )
       setCreatedKeys((prev) => ({ ...prev, [selected.key]: true }))
       setTemplateId("")
     } catch (e) {
       setErr((e as Error).message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function onAssistOtp() {
+    if (!pendingFirma) return
+    setAssistBusy(true)
+    setErr(null)
+    try {
+      const out = await signaturesApi.assistOtp(pendingFirma.token)
+      setAssistOtp(out.assistOtp)
+      setOk(`Codice inviato al cliente${out.smsSent ? " via SMS" : out.mailSent ? " via email" : ""}. Comunica il codice al cliente se non lo riceve.`)
+    } catch (e) {
+      setErr((e as Error).message)
+    } finally {
+      setAssistBusy(false)
     }
   }
 
@@ -385,29 +403,43 @@ export function FirmaDaCassa() {
               </div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
-                <label className="text-xs text-zinc-400">Come firmare</label>
-                <select
-                  value={deliveryMode}
-                  onChange={(e) => setDeliveryMode(e.target.value as "email" | "onsite")}
-                  className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
-                >
-                  <option value="onsite">A video in reception (consigliato)</option>
-                  <option value="email">Link via email al cliente</option>
-                </select>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={onCreateFirma}
                   className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
                 >
-                  {busy ? "Creo…" : "Procedi con firma"}
+                  {busy ? "Invio…" : "Invia link firma al cliente"}
                 </button>
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                {deliveryMode === "onsite"
-                  ? "Apre la pagina firma sul PC/monitor: il codice OTP compare a schermo, senza uscire dall'app."
-                  : "Invia solo email al cliente (link + OTP). Non apre la pagina firma qui in reception."}
+                Invia link via email (e SMS se c&apos;è il cellulare in anagrafica). Il cliente firma dal telefono; OTP preferibilmente via SMS.
               </p>
+
+              {pendingFirma && selectedKey ? (
+                <div className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                  <div className="text-xs font-semibold text-amber-100">In attesa firma — {pendingFirma.customerLabel}</div>
+                  <p className="mt-1 text-xs text-amber-100/80">
+                    Email: {pendingFirma.email}
+                    {pendingFirma.sms?.trim() ? ` · SMS: ${pendingFirma.sms}` : ""}. Se non riceve l&apos;OTP, usa il pulsante sotto.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={assistBusy}
+                    onClick={onAssistOtp}
+                    className="mt-2 rounded border border-amber-500/50 bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-500/30 disabled:opacity-60"
+                  >
+                    {assistBusy ? "Genero codice…" : "Mostra codice OTP (assistenza)"}
+                  </button>
+                  {assistOtp ? (
+                    <div className="mt-3 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-center">
+                      <div className="text-[10px] uppercase tracking-wide text-emerald-200/80">Codice per il cliente</div>
+                      <div className="mt-1 font-mono text-2xl font-bold tracking-[0.25em] text-emerald-100">{assistOtp}</div>
+                      <div className="mt-1 text-[10px] text-emerald-200/70">Valido 10 min · inviato anche al cliente</div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {ok && <p className="mt-3 text-sm text-emerald-400">{ok}</p>}
               {err && <p className="mt-3 text-sm text-red-400">{err}</p>}

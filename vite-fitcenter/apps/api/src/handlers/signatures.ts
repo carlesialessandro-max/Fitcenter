@@ -4,6 +4,7 @@ import crypto from "crypto"
 import type { Request, Response } from "express"
 import { signatureStore } from "../store/esign.js"
 import { sendMail } from "../services/mailer.js"
+import { isSmsConfigured, maskPhone, normalizeItPhone, sendSms } from "../services/sms.js"
 import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
 import { defaultSignatureSlots, ensureSignatureSlots } from "../signature/defaultSlots.js"
 import { ensureSignatureFields } from "../signature/defaultFields.js"
@@ -487,6 +488,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const customerEmail = String(req.body.customerEmail ?? "").trim().toLowerCase()
     const customerName = String(req.body.customerName ?? "").trim()
     const customerGestionaleId = String(req.body.customerGestionaleId ?? "").trim() || undefined
+    const customerSmsRaw = String(req.body.customerSms ?? "").trim()
     const prefillRaw = String(req.body.prefill ?? "").trim()
     let prefill: Record<string, string> | undefined
     if (prefillRaw) {
@@ -506,11 +508,18 @@ export async function createSignatureRequest(req: Request, res: Response) {
     if (!isAdmin && f) return res.status(403).json({ message: "Operatore: upload PDF non consentito" })
     if (!customerEmail || !customerEmail.includes("@")) return res.status(400).json({ message: "Email cliente non valida" })
     const rawDelivery = String(req.body.deliveryMode ?? "").trim().toLowerCase()
-    const deliveryMode: "email" | "onsite" = rawDelivery === "onsite" ? "onsite" : "email"
+    // Da cassa: sempre email al cliente (firma da cellulare). Onsite solo da admin se esplicito.
+    const deliveryMode: "email" | "onsite" =
+      isAdmin && rawDelivery === "onsite" ? "onsite" : "email"
     if (f) {
       const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
       if (!isPdf) return res.status(400).json({ message: "Caricare un file PDF" })
     }
+
+    const customerSms =
+      normalizeItPhone(customerSmsRaw) ??
+      normalizeItPhone(String(prefill?.cellulare ?? "").trim()) ??
+      undefined
 
     const id = crypto.randomUUID()
     const publicToken = randomToken(24)
@@ -556,6 +565,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       source: isAdmin ? "admin" : "cassa",
       deliveryMode,
       customerEmail,
+      customerSms,
       customerName: customerName || undefined,
       templateId: templateId || undefined,
       templateName,
@@ -572,12 +582,21 @@ export async function createSignatureRequest(req: Request, res: Response) {
 
     const link = `${getBaseUrl(req)}/firma/${encodeURIComponent(publicToken)}`
     if (deliveryMode === "email") {
+      if (customerSms && isSmsConfigured()) {
+        await sendSms({
+          to: customerSms,
+          text: `FitCenter: apri dal cellulare per firmare ${link}`,
+        })
+      }
       await sendMail({
         to: customerEmail,
         subject: "Documento da firmare - FitCenter",
         text:
           `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
-          `ti invitiamo a firmare il documento al seguente link:\n${link}\n\n` +
+          `apri questo link dal tuo cellulare per firmare il documento:\n${link}\n\n` +
+          `Sul telefono: richiedi il codice OTP (${
+            customerSms && isSmsConfigured() ? "ti arriva via SMS" : "ti arriva via email"
+          }), accetta i termini e firma.\n\n` +
           `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
       })
     }
@@ -677,6 +696,11 @@ export async function deleteSignatureRequest(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
+function resolveOtpChannel(row: SignatureRequest): "email" | "sms" {
+  if (row.customerSms && isSmsConfigured()) return "sms"
+  return "email"
+}
+
 export async function getPublicSignatureInfo(req: Request, res: Response) {
   const token = String(req.params.token ?? "").trim()
   const row = signatureStore.getByToken(token)
@@ -711,6 +735,9 @@ export async function getPublicSignatureInfo(req: Request, res: Response) {
     signedSteps: steps.filter((s) => !!s.signedAt).length,
     nextStepId: next?.id ?? null,
     nextStepLabel: next?.label ?? null,
+    deliveryMode: row.deliveryMode ?? "email",
+    otpChannel: resolveOtpChannel(row),
+    customerSmsMasked: row.customerSms ? maskPhone(row.customerSms) : undefined,
   })
 }
 
@@ -875,16 +902,20 @@ export async function exportSignatureAuditCsv(_req: Request, res: Response) {
   res.send(`\uFEFF${out}`)
 }
 
-export async function requestSignatureOtp(req: Request, res: Response) {
-  const token = String(req.params.token ?? "").trim()
-  const row = signatureStore.getByToken(token)
-  if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
-  const err = ensurePending(row)
-  if (err) return res.status(400).json({ message: err })
-
+async function issueSignatureOtp(
+  row: SignatureRequest,
+  req: Request,
+  opts?: { assistReception?: boolean; requestedMessage?: string; sentMessage?: string }
+): Promise<{ otp: string; isOnsite: boolean; mailSent: boolean; smsSent: boolean; otpChannel: "email" | "sms" | "onsite" } | null> {
   const otp = randomOtp()
-  const isOnsite = row.deliveryMode === "onsite"
-  const otpChannel: "email" | "onsite" = isOnsite ? "onsite" : "email"
+  const isOnsite = row.deliveryMode === "onsite" && !opts?.assistReception
+  const preferSms = !isOnsite && !!row.customerSms && isSmsConfigured()
+  const otpChannel: "email" | "sms" | "onsite" = isOnsite ? "onsite" : preferSms ? "sms" : "email"
+  const destination = isOnsite
+    ? "onsite_display"
+    : preferSms
+      ? maskPhone(row.customerSms!)
+      : row.customerEmail
   const updated = signatureStore.updateById(row.id, (r) => ({
     ...r,
     otpCodeHash: sha(otp),
@@ -895,7 +926,7 @@ export async function requestSignatureOtp(req: Request, res: Response) {
       ip: req.ip,
       userAgent: req.headers["user-agent"]?.toString(),
       channel: otpChannel,
-      destination: isOnsite ? "onsite_display" : r.customerEmail,
+      destination,
       ok: true,
       link: {
         requestId: r.id,
@@ -904,10 +935,10 @@ export async function requestSignatureOtp(req: Request, res: Response) {
         customerEmail: r.customerEmail,
         otpCodeHash: sha(otp),
       },
-      message: isOnsite ? "OTP richiesta (a video)" : "OTP richiesta",
+      message: opts?.requestedMessage ?? (isOnsite ? "OTP richiesta (a video)" : preferSms ? "OTP richiesta (SMS)" : "OTP richiesta"),
     }),
   }))
-  if (!updated) return res.status(500).json({ message: "Errore interno" })
+  if (!updated) return null
 
   if (isOnsite) {
     signatureStore.updateById(row.id, (r) => ({
@@ -923,31 +954,106 @@ export async function requestSignatureOtp(req: Request, res: Response) {
         message: "OTP mostrato a video",
       }),
     }))
-    return res.json({ ok: true, onsiteOtp: otp, expiresInMinutes: 10 })
+    return { otp, isOnsite: true, mailSent: false, smsSent: false, otpChannel: "onsite" }
   }
 
-  const mailRes = await sendMail({
-    to: row.customerEmail,
-    subject: "Codice OTP firma documento - FitCenter",
-    text: `Il tuo codice OTP è: ${otp}\nScade tra 10 minuti.`,
-  })
-  signatureStore.updateById(row.id, (r) => ({
-    ...r,
-    audit: appendAudit(r, {
-      type: "otp_sent",
-      ip: req.ip,
-      userAgent: req.headers["user-agent"]?.toString(),
-      channel: "email",
-      destination: r.customerEmail,
-      ok: !!mailRes.sent,
-      link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
-      message: mailRes.sent ? "OTP inviata" : "Invio OTP fallito",
-    }),
-  }))
+  const otpText = `FitCenter - Codice firma: ${otp}. Valido 10 minuti. Inseriscilo nella pagina aperta sul cellulare.`
+  let smsSent = false
+  let mailSent = false
+
+  if (preferSms) {
+    const smsRes = await sendSms({ to: row.customerSms!, text: otpText })
+    smsSent = smsRes.sent
+    signatureStore.updateById(row.id, (r) => ({
+      ...r,
+      audit: appendAudit(r, {
+        type: "otp_sent",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"]?.toString(),
+        channel: "sms",
+        destination: maskPhone(row.customerSms!),
+        ok: smsSent,
+        link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
+        message: opts?.sentMessage ?? (smsSent ? "OTP inviata via SMS" : "Invio SMS fallito"),
+      }),
+    }))
+  }
+
+  if (!smsSent) {
+    const mailRes = await sendMail({
+      to: row.customerEmail,
+      subject: "Codice OTP firma documento - FitCenter",
+      text: `Il tuo codice OTP è: ${otp}\nScade tra 10 minuti.\n\nInseriscilo nella pagina firma sul tuo cellulare.`,
+    })
+    mailSent = mailRes.sent
+    signatureStore.updateById(row.id, (r) => ({
+      ...r,
+      audit: appendAudit(r, {
+        type: "otp_sent",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"]?.toString(),
+        channel: "email",
+        destination: r.customerEmail,
+        ok: mailSent,
+        link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
+        message: opts?.sentMessage ?? (mailSent ? "OTP inviata via email" : "Invio OTP fallito"),
+      }),
+    }))
+  }
+
+  return {
+    otp,
+    isOnsite: false,
+    mailSent,
+    smsSent,
+    otpChannel: smsSent ? "sms" : "email",
+  }
+}
+
+export async function requestSignatureOtp(req: Request, res: Response) {
+  const token = String(req.params.token ?? "").trim()
+  const row = signatureStore.getByToken(token)
+  if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
+  const err = ensurePending(row)
+  if (err) return res.status(400).json({ message: err })
+
+  const out = await issueSignatureOtp(row, req)
+  if (!out) return res.status(500).json({ message: "Errore interno" })
+
+  if (out.isOnsite) {
+    return res.json({ ok: true, onsiteOtp: out.otp, expiresInMinutes: 10 })
+  }
   res.json({
     ok: true,
-    // Utile in sviluppo locale quando SMTP non è configurato.
-    debugOtp: process.env.NODE_ENV === "production" ? undefined : otp,
+    debugOtp: process.env.NODE_ENV === "production" ? undefined : out.otp,
+    otpChannel: out.otpChannel,
+  })
+}
+
+/** Reception: rigenera OTP, lo invia al cliente e lo mostra all'operatore se il cliente non riesce. */
+export async function assistSignatureOtp(req: Request, res: Response) {
+  const token = String(req.params.token ?? "").trim()
+  const row = signatureStore.getByToken(token)
+  if (!row) return res.status(404).json({ message: "Richiesta non trovata" })
+  const err = ensurePending(row)
+  if (err) return res.status(400).json({ message: err })
+
+  const out = await issueSignatureOtp(row, req, {
+    assistReception: true,
+    requestedMessage: "OTP assistenza reception",
+    sentMessage: "OTP assistenza reception (inviata al cliente)",
+  })
+  if (!out) return res.status(500).json({ message: "Errore interno" })
+
+  res.json({
+    ok: true,
+    assistOtp: out.otp,
+    mailSent: out.mailSent,
+    smsSent: out.smsSent,
+    otpChannel: out.otpChannel,
+    expiresInMinutes: 10,
+    customerEmail: row.customerEmail,
+    customerSmsMasked: row.customerSms ? maskPhone(row.customerSms) : undefined,
   })
 }
 

@@ -170,6 +170,7 @@ export const signaturesApi = {
     customerGestionaleId?: string
     prefill?: Record<string, string>
     deliveryMode?: "email" | "onsite"
+    customerSms?: string
   }) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const fd = new FormData()
@@ -177,6 +178,7 @@ export const signaturesApi = {
     fd.append("customerEmail", body.customerEmail)
     if (body.customerName?.trim()) fd.append("customerName", body.customerName.trim())
     if (body.customerGestionaleId?.trim()) fd.append("customerGestionaleId", body.customerGestionaleId.trim())
+    if (body.customerSms?.trim()) fd.append("customerSms", body.customerSms.trim())
     if (body.prefill && Object.keys(body.prefill).length) fd.append("prefill", JSON.stringify(body.prefill))
     if (body.deliveryMode) fd.append("deliveryMode", body.deliveryMode)
     const res = await fetch(`${API_BASE}/signatures/admin`, {
@@ -210,6 +212,12 @@ export const signaturesApi = {
       return r.json() as Promise<SignaturePublicInfo>
     }),
 
+  assistOtp: (token: string) =>
+    api.post<{ ok: boolean; assistOtp: string; mailSent: boolean; smsSent: boolean; otpChannel: string; expiresInMinutes: number; customerEmail: string; customerSmsMasked?: string }>(
+      `/signatures/admin/by-token/${encodeURIComponent(token)}/assist-otp`,
+      {}
+    ),
+
   requestOtp: (token: string) =>
     fetch(`${API_BASE}/signatures/public/${encodeURIComponent(token)}/request-otp`, {
       method: "POST",
@@ -218,7 +226,7 @@ export const signaturesApi = {
     }).then(async (r) => {
       const json = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error((json as { message?: string }).message ?? "Errore OTP")
-      return json as { ok: boolean; debugOtp?: string; onsiteOtp?: string; expiresInMinutes?: number }
+      return json as { ok: boolean; debugOtp?: string; onsiteOtp?: string; expiresInMinutes?: number; otpChannel?: "email" | "sms" }
     }),
 
   verifyOtp: (token: string, otp: string, acceptedTerms: boolean) =>

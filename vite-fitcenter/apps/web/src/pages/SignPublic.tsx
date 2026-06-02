@@ -380,6 +380,12 @@ export function SignPublicPage() {
         return
       }
       setDebugOtp(out.debugOtp)
+      if (out.otpChannel === "sms") {
+        setOk(
+          `OTP inviato via SMS${info?.customerSmsMasked ? ` a ${info.customerSmsMasked}` : ""}. Resta in questa pagina e inserisci il codice.`
+        )
+        return
+      }
       setOk(`OTP inviato a ${info?.customerEmailMasked ?? "email"}. Controlla la posta (anche spam).`)
     } catch (e) {
       setErr((e as Error).message)
@@ -490,9 +496,13 @@ export function SignPublicPage() {
               <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
                 Firma in reception: genera il codice qui sotto e inseriscilo nello stesso schermo. Non serve aprire la mail.
               </p>
+            ) : info.otpChannel === "sms" ? (
+              <p className="mt-3 rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-400">
+                Richiedi OTP: il codice arriva via <strong>SMS</strong> sul cellulare. Resta in questa pagina del browser.
+              </p>
             ) : (
               <p className="mt-3 rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-400">
-                Il codice OTP arriva via email. Apri la mail sul tuo dispositivo, poi torna qui per inserirlo.
+                Richiedi OTP: il codice arriva via email. Apri la mail sul telefono, poi torna qui.
               </p>
             )}
 
@@ -534,7 +544,7 @@ export function SignPublicPage() {
               />
               <div className="flex gap-2 sm:col-span-2">
                 <button type="button" onClick={onRequestOtp} className="rounded bg-zinc-700 px-3 py-2 text-sm">
-                  {isOnsite ? "Genera codice" : "Invia OTP via email"}
+                  {isOnsite ? "Genera codice" : info.otpChannel === "sms" ? "Invia OTP via SMS" : "Invia OTP via email"}
                 </button>
                 <button type="button" onClick={onVerifyOtp} className="rounded bg-amber-500 px-3 py-2 text-sm text-zinc-900">
                   Verifica
