@@ -53,6 +53,7 @@ function todayIt(): string {
 export function FirmaDaCassa() {
   const { role } = useAuth()
   const canUse = role === "admin" || role === "operatore" || role === "firme"
+  const [deliveryMode, setDeliveryMode] = useState<"email" | "onsite">("onsite")
   const [windowMode, setWindowMode] = useState<"60" | "day">("day")
   const [asOf, setAsOf] = useState<string>(() => new Date().toISOString().slice(0, 10))
   const [q, setQ] = useState<string>("")
@@ -174,10 +175,15 @@ export function FirmaDaCassa() {
         customerName,
         customerGestionaleId: selected.clienteId ?? undefined,
         prefill,
+        deliveryMode,
       })
       const link = `${window.location.origin}/firma/${out.token}`
-      setOk("Richiesta creata. Ho aperto la pagina firma in una nuova scheda.")
-      window.open(link, "_blank", "noopener,noreferrer")
+      if (deliveryMode === "onsite") {
+        setOk("Pagina firma aperta sul monitor. Il cliente genera il codice a video (senza email).")
+        window.open(link, "_blank", "noopener,noreferrer")
+      } else {
+        setOk(`Link e OTP inviati a ${email}. Il cliente firma dal proprio dispositivo: non aprire la pagina qui in reception.`)
+      }
       setCreatedKeys((prev) => ({ ...prev, [selected.key]: true }))
       setTemplateId("")
     } catch (e) {
@@ -378,7 +384,16 @@ export function FirmaDaCassa() {
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <label className="text-xs text-zinc-400">Come firmare</label>
+                <select
+                  value={deliveryMode}
+                  onChange={(e) => setDeliveryMode(e.target.value as "email" | "onsite")}
+                  className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100"
+                >
+                  <option value="onsite">A video in reception (consigliato)</option>
+                  <option value="email">Link via email al cliente</option>
+                </select>
                 <button
                   type="button"
                   disabled={busy}
@@ -387,10 +402,12 @@ export function FirmaDaCassa() {
                 >
                   {busy ? "Creo…" : "Procedi con firma"}
                 </button>
-                <span className="text-xs text-zinc-500">
-                  Crea richiesta da template e apre la pagina pubblica (OTP su email).
-                </span>
               </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                {deliveryMode === "onsite"
+                  ? "Apre la pagina firma sul PC/monitor: il codice OTP compare a schermo, senza uscire dall'app."
+                  : "Invia solo email al cliente (link + OTP). Non apre la pagina firma qui in reception."}
+              </p>
 
               {ok && <p className="mt-3 text-sm text-emerald-400">{ok}</p>}
               {err && <p className="mt-3 text-sm text-red-400">{err}</p>}

@@ -11,6 +11,7 @@ export function SignPublicPage() {
   const [loading, setLoading] = useState(true)
   const [otp, setOtp] = useState("")
   const [debugOtp, setDebugOtp] = useState<string | undefined>()
+  const [onsiteOtp, setOnsiteOtp] = useState<string | null>(null)
   const [signerToken, setSignerToken] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem(signerStorageKey)
@@ -370,9 +371,16 @@ export function SignPublicPage() {
     try {
       setErr(null)
       setOk(null)
+      setOnsiteOtp(null)
       const out = await signaturesApi.requestOtp(token)
+      if (out.onsiteOtp) {
+        setOnsiteOtp(out.onsiteOtp)
+        setOtp(out.onsiteOtp)
+        setOk("Codice generato: inseriscilo qui sotto e premi Verifica.")
+        return
+      }
       setDebugOtp(out.debugOtp)
-      setOk("OTP inviato via email.")
+      setOk(`OTP inviato a ${info?.customerEmailMasked ?? "email"}. Controlla la posta (anche spam).`)
     } catch (e) {
       setErr((e as Error).message)
     }
@@ -443,6 +451,8 @@ export function SignPublicPage() {
       </div>
     )
 
+  const isOnsite = info.deliveryMode === "onsite"
+
   return (
     <div className="min-h-svh bg-zinc-950 p-6 text-zinc-100">
       <div className="mx-auto mb-6 flex max-w-3xl justify-center sm:justify-start">
@@ -476,6 +486,16 @@ export function SignPublicPage() {
 
         {info.status === "pending" && (
           <>
+            {isOnsite ? (
+              <p className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                Firma in reception: genera il codice qui sotto e inseriscilo nello stesso schermo. Non serve aprire la mail.
+              </p>
+            ) : (
+              <p className="mt-3 rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-400">
+                Il codice OTP arriva via email. Apri la mail sul tuo dispositivo, poi torna qui per inserirlo.
+              </p>
+            )}
+
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <label className="flex flex-col gap-1 text-sm text-zinc-400">
                 Nome e cognome
@@ -514,7 +534,7 @@ export function SignPublicPage() {
               />
               <div className="flex gap-2 sm:col-span-2">
                 <button type="button" onClick={onRequestOtp} className="rounded bg-zinc-700 px-3 py-2 text-sm">
-                  Richiedi OTP
+                  {isOnsite ? "Genera codice" : "Invia OTP via email"}
                 </button>
                 <button type="button" onClick={onVerifyOtp} className="rounded bg-amber-500 px-3 py-2 text-sm text-zinc-900">
                   Verifica
@@ -524,7 +544,14 @@ export function SignPublicPage() {
                 ) : null}
               </div>
             </div>
-            {debugOtp && <p className="mt-2 text-xs text-zinc-500">Debug OTP (dev): {debugOtp}</p>}
+            {onsiteOtp ? (
+              <div className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center">
+                <div className="text-xs uppercase tracking-wide text-emerald-200/80">Codice per il cliente</div>
+                <div className="mt-1 font-mono text-3xl font-bold tracking-[0.3em] text-emerald-100">{onsiteOtp}</div>
+                <div className="mt-1 text-xs text-emerald-200/70">Valido 10 minuti · già copiato nel campo sopra</div>
+              </div>
+            ) : null}
+            {!isOnsite && debugOtp ? <p className="mt-2 text-xs text-zinc-500">Debug OTP (dev): {debugOtp}</p> : null}
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button

@@ -17,7 +17,7 @@ export interface SignatureAuditEvent {
   userAgent?: string
   message?: string
   /** Canale OTP (oggi: email). */
-  channel?: "email" | "sms"
+  channel?: "email" | "sms" | "onsite"
   /** Destinazione (es. email o numero mascherato). */
   destination?: string
   /** Esito invio/verifica, se applicabile. */
@@ -87,6 +87,8 @@ export interface SignatureRequest {
   createdByUsername: string
   /** Origine richiesta: "cassa" (firma da cassa) oppure "admin" (manuale/admin). */
   source?: "cassa" | "admin"
+  /** email = link+OTP via mail; onsite = firma a reception, OTP mostrato a video. */
+  deliveryMode?: "email" | "onsite"
   customerEmail: string
   customerName?: string
   templateId?: string

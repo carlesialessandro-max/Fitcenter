@@ -169,6 +169,7 @@ export const signaturesApi = {
     customerName?: string
     customerGestionaleId?: string
     prefill?: Record<string, string>
+    deliveryMode?: "email" | "onsite"
   }) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const fd = new FormData()
@@ -177,6 +178,7 @@ export const signaturesApi = {
     if (body.customerName?.trim()) fd.append("customerName", body.customerName.trim())
     if (body.customerGestionaleId?.trim()) fd.append("customerGestionaleId", body.customerGestionaleId.trim())
     if (body.prefill && Object.keys(body.prefill).length) fd.append("prefill", JSON.stringify(body.prefill))
+    if (body.deliveryMode) fd.append("deliveryMode", body.deliveryMode)
     const res = await fetch(`${API_BASE}/signatures/admin`, {
       method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -195,6 +197,7 @@ export const signaturesApi = {
       createdAt: string
       expiresAt: string
       signingUrl: string
+      deliveryMode?: "email" | "onsite"
     }>
   },
 
@@ -215,7 +218,7 @@ export const signaturesApi = {
     }).then(async (r) => {
       const json = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error((json as { message?: string }).message ?? "Errore OTP")
-      return json as { ok: boolean; debugOtp?: string }
+      return json as { ok: boolean; debugOtp?: string; onsiteOtp?: string; expiresInMinutes?: number }
     }),
 
   verifyOtp: (token: string, otp: string, acceptedTerms: boolean) =>

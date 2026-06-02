@@ -34,6 +34,7 @@ export interface SignaturePublicInfo {
   signedSteps?: number
   nextStepId?: string | null
   nextStepLabel?: string | null
+  deliveryMode?: "email" | "onsite"
 }
 
 export interface SignatureSlot {

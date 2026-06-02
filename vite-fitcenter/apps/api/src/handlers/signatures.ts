@@ -505,6 +505,8 @@ export async function createSignatureRequest(req: Request, res: Response) {
     if (!isAdmin && !templateId) return res.status(403).json({ message: "Operatore: selezionare un template esistente" })
     if (!isAdmin && f) return res.status(403).json({ message: "Operatore: upload PDF non consentito" })
     if (!customerEmail || !customerEmail.includes("@")) return res.status(400).json({ message: "Email cliente non valida" })
+    const rawDelivery = String(req.body.deliveryMode ?? "").trim().toLowerCase()
+    const deliveryMode: "email" | "onsite" = rawDelivery === "onsite" ? "onsite" : "email"
     if (f) {
       const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
       if (!isPdf) return res.status(400).json({ message: "Caricare un file PDF" })
@@ -552,6 +554,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       expiresAt: new Date(Date.now() + REQUEST_TTL_MS).toISOString(),
       createdByUsername: req.user?.username ?? "admin",
       source: isAdmin ? "admin" : "cassa",
+      deliveryMode,
       customerEmail,
       customerName: customerName || undefined,
       templateId: templateId || undefined,
@@ -568,19 +571,22 @@ export async function createSignatureRequest(req: Request, res: Response) {
     signatureStore.create(row)
 
     const link = `${getBaseUrl(req)}/firma/${encodeURIComponent(publicToken)}`
-    await sendMail({
-      to: customerEmail,
-      subject: "Documento da firmare - FitCenter",
-      text:
-        `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
-        `ti invitiamo a firmare il documento al seguente link:\n${link}\n\n` +
-        `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
-    })
+    if (deliveryMode === "email") {
+      await sendMail({
+        to: customerEmail,
+        subject: "Documento da firmare - FitCenter",
+        text:
+          `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
+          `ti invitiamo a firmare il documento al seguente link:\n${link}\n\n` +
+          `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
+      })
+    }
 
     res.json({
       id: row.id,
       token: row.publicToken,
       status: row.status,
+      deliveryMode: row.deliveryMode ?? "email",
       customerEmail: row.customerEmail,
       customerName: row.customerName,
       createdAt: row.createdAt,
@@ -877,6 +883,8 @@ export async function requestSignatureOtp(req: Request, res: Response) {
   if (err) return res.status(400).json({ message: err })
 
   const otp = randomOtp()
+  const isOnsite = row.deliveryMode === "onsite"
+  const otpChannel: "email" | "onsite" = isOnsite ? "onsite" : "email"
   const updated = signatureStore.updateById(row.id, (r) => ({
     ...r,
     otpCodeHash: sha(otp),
@@ -886,8 +894,8 @@ export async function requestSignatureOtp(req: Request, res: Response) {
       type: "otp_requested",
       ip: req.ip,
       userAgent: req.headers["user-agent"]?.toString(),
-      channel: "email",
-      destination: r.customerEmail,
+      channel: otpChannel,
+      destination: isOnsite ? "onsite_display" : r.customerEmail,
       ok: true,
       link: {
         requestId: r.id,
@@ -896,10 +904,27 @@ export async function requestSignatureOtp(req: Request, res: Response) {
         customerEmail: r.customerEmail,
         otpCodeHash: sha(otp),
       },
-      message: "OTP richiesta",
+      message: isOnsite ? "OTP richiesta (a video)" : "OTP richiesta",
     }),
   }))
   if (!updated) return res.status(500).json({ message: "Errore interno" })
+
+  if (isOnsite) {
+    signatureStore.updateById(row.id, (r) => ({
+      ...r,
+      audit: appendAudit(r, {
+        type: "otp_sent",
+        ip: req.ip,
+        userAgent: req.headers["user-agent"]?.toString(),
+        channel: "onsite",
+        destination: "onsite_display",
+        ok: true,
+        link: { requestId: r.id, token: r.publicToken, documentFileName: r.documentFileName, customerEmail: r.customerEmail, otpCodeHash: r.otpCodeHash },
+        message: "OTP mostrato a video",
+      }),
+    }))
+    return res.json({ ok: true, onsiteOtp: otp, expiresInMinutes: 10 })
+  }
 
   const mailRes = await sendMail({
     to: row.customerEmail,
