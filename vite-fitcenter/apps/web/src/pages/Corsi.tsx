@@ -261,7 +261,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
         idPrenotazione: idPrenotazione ?? undefined,
         webVisibile: webVisibile ?? undefined,
         isBloccato: isBloccato || undefined,
-        partecipanti: [r],
+        partecipanti: lessonOnly ? [] : [r],
       }
       map.set(key, created)
       const baseKey = `${servizio}__${giorno}__${corsoId ?? ""}`
@@ -269,7 +269,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
       const sd = `${servizio}__${giorno}`
       byServiceDay.set(sd, [...(byServiceDay.get(sd) ?? []), created])
     } else {
-      g.partecipanti.push(r)
+      if (!lessonOnly) g.partecipanti.push(r)
       if (g.idLezione == null && idLezione != null) g.idLezione = idLezione
       if (g.idPrenotazione == null && idPrenotazione != null) g.idPrenotazione = idPrenotazione
       if (g.webVisibile == null && webVisibile != null) g.webVisibile = webVisibile
