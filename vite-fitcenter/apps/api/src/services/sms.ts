@@ -27,8 +27,21 @@ export function maskPhone(e164: string | null | undefined): string {
   return `${s.slice(0, 4)}***${s.slice(-2)}`
 }
 
+function smshostingCredentials(): { user: string; pass: string } | null {
+  const user = env("SMSHOSTING_AUTH_KEY") ?? env("SMSHOSTING_USER")
+  const pass = env("SMSHOSTING_AUTH_SECRET") ?? env("SMSHOSTING_PASSWORD")
+  if (user && pass) return { user, pass }
+  return null
+}
+
+/** E.164 (+39...) → msisdn per Smshosting (3934...). */
+function toSmshostingMsisdn(e164: string): string {
+  return e164.replace(/^\+/, "").replace(/\D/g, "")
+}
+
 export function isSmsConfigured(): boolean {
   const provider = (env("SMS_PROVIDER") ?? "").toLowerCase()
+  if (provider === "smshosting") return !!smshostingCredentials()
   if (provider === "twilio") {
     return !!(env("TWILIO_ACCOUNT_SID") && env("TWILIO_AUTH_TOKEN") && env("TWILIO_FROM"))
   }
@@ -49,6 +62,44 @@ export async function sendSms(input: { to: string; text: string }): Promise<{ se
   }
 
   try {
+    if (provider === "smshosting") {
+      const creds = smshostingCredentials()
+      if (!creds) return { sent: false }
+      const body = new URLSearchParams({
+        to: toSmshostingMsisdn(to),
+        text: input.text,
+      })
+      const from = env("SMSHOSTING_FROM")
+      if (from) body.set("from", from)
+      if (env("SMSHOSTING_SANDBOX") === "true") body.set("sandbox", "true")
+
+      const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
+      const res = await fetch("https://api.smshosting.it/rest/api/sms/send", {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body,
+      })
+      const errText = await res.text().catch(() => "")
+      if (!res.ok) {
+        console.log("[SMS][SMSHOSTING-ERROR]", res.status, errText.slice(0, 300))
+        return { sent: false }
+      }
+      try {
+        const data = JSON.parse(errText) as { smsInserted?: number; sms?: { status?: string }[] }
+        const inserted = Number(data?.smsInserted ?? 0)
+        const okStatus = (data?.sms ?? []).some((s) => String(s?.status ?? "").toUpperCase() === "INSERTED")
+        if (inserted > 0 || okStatus) return { sent: true }
+        console.log("[SMS][SMSHOSTING-NOT-INSERTED]", errText.slice(0, 300))
+        return { sent: false }
+      } catch {
+        return { sent: true }
+      }
+    }
+
     if (provider === "twilio") {
       const sid = env("TWILIO_ACCOUNT_SID")!
       const token = env("TWILIO_AUTH_TOKEN")!
