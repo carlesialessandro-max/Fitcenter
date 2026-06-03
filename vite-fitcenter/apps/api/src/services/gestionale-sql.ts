@@ -4800,6 +4800,189 @@ function toIsoDateTime(val: unknown): string | undefined {
   return undefined
 }
 
+type SqlColIndex = { lower: Set<string>; exact: Map<string, string> }
+const sqlColsCache = new Map<string, SqlColIndex>()
+
+async function sqlObjectCols(objName: string): Promise<SqlColIndex> {
+  const clean = qualifySqlObject(objName).objectId
+  const cached = sqlColsCache.get(clean)
+  if (cached) return cached
+  const pool = await getPool()
+  const empty: SqlColIndex = { lower: new Set(), exact: new Map() }
+  if (!pool) return empty
+  try {
+    const r = await pool.request().input("obj", sql.NVarChar, clean).query(
+      `SELECT c.name AS name
+       FROM sys.columns c
+       WHERE c.object_id = OBJECT_ID(@obj);`
+    )
+    const exact = new Map<string, string>()
+    const lower = new Set<string>()
+    for (const row of (r.recordset ?? []) as { name?: string }[]) {
+      const name = String(row?.name ?? "").trim()
+      if (!name) continue
+      lower.add(name.toLowerCase())
+      exact.set(name.toLowerCase(), name)
+    }
+    const out = { lower, exact }
+    sqlColsCache.set(clean, out)
+    return out
+  } catch {
+    return empty
+  }
+}
+
+function pickSqlCol(idx: SqlColIndex, candidates: string[]): string | null {
+  for (const c of candidates) {
+    const ex = idx.exact.get(c.toLowerCase())
+    if (ex) return ex
+  }
+  return null
+}
+
+function lessonIdFromPrenRow(r: PrenotazioneCorsoRow): number | null {
+  const raw = (r.raw ?? {}) as Record<string, unknown>
+  const v =
+    firstNonEmpty(raw, ["IDPrenotazioneLezione", "IdPrenotazioneLezione", "IDLezione", "LezioneId"]) ?? undefined
+  const n = v != null ? Number(v) : NaN
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+function buildPrenotazioniWeekdaySql(prenIdx: SqlColIndex, giornoParam: string): string | null {
+  const parts: string[] = []
+  const dayFlags: { col: string; dow: number }[] = [
+    { col: "Lunedi", dow: 1 },
+    { col: "Martedi", dow: 2 },
+    { col: "Mercoledi", dow: 3 },
+    { col: "Giovedi", dow: 4 },
+    { col: "Venerdi", dow: 5 },
+    { col: "Sabato", dow: 6 },
+    { col: "Domenica", dow: 7 },
+  ]
+  for (const d of dayFlags) {
+    const col = pickSqlCol(prenIdx, [d.col])
+    if (!col) continue
+    parts.push(
+      `(DATEPART(weekday, CAST(${giornoParam} AS date)) = ${d.dow} AND TRY_CAST([${col}] AS int) NOT IN (0) AND [${col}] IS NOT NULL)`
+    )
+  }
+  const gs = pickSqlCol(prenIdx, ["GiornoSettimana", "GGWeek", "Weekday", "WeekDay"])
+  if (gs) {
+    parts.push(`TRY_CAST([${gs}] AS int) = DATEPART(weekday, CAST(${giornoParam} AS date))`)
+  }
+  if (parts.length === 0) return null
+  return `(${parts.join(" OR ")})`
+}
+
+function buildPrenotazioniDateRangeSql(prenIdx: SqlColIndex, giornoParam: string): string | null {
+  const di = pickSqlCol(prenIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"])
+  const df = pickSqlCol(prenIdx, ["DataFine", "Datafine", "DataA", "FineValidita"])
+  if (di && df) {
+    return `(CAST([${di}] AS date) <= CAST(${giornoParam} AS date) AND ([${df}] IS NULL OR CAST([${df}] AS date) >= CAST(${giornoParam} AS date)))`
+  }
+  if (di) return `(CAST([${di}] AS date) <= CAST(${giornoParam} AS date))`
+  return null
+}
+
+/**
+ * Lezioni programmate (PrenotazioniLezioni + Prenotazioni) senza iscritti nel giorno.
+ * Serve per mostrare in pagina Corsi i corsi a zero prenotazioni e poterli bloccare.
+ */
+async function queryLezioniCorsiSenzaIscritti(
+  giorno: string,
+  base: PrenotazioneCorsoRow[],
+  enrich: (raw: Record<string, unknown>) => PrenotazioneCorsoRow
+): Promise<PrenotazioneCorsoRow[]> {
+  if (process.env.GESTIONALE_CORSI_INCLUDE_LEZIONI_VUOTE === "false") return []
+  const pool = await getPool()
+  if (!pool) return []
+
+  const seenLez = new Set<number>()
+  for (const r of base) {
+    const id = lessonIdFromPrenRow(r)
+    if (id) seenLez.add(id)
+  }
+
+  const rawPl = (process.env.GESTIONALE_TABLE_PRENOTAZIONI_LEZIONI ?? "dbo.PrenotazioniLezioni").trim()
+  const rawPren = (process.env.GESTIONALE_TABLE_PRENOTAZIONI ?? "dbo.Prenotazioni").trim()
+  if (!isSafeSqlIdentifierLoose(rawPl) || !isSafeSqlIdentifierLoose(rawPren)) return []
+
+  const plQ = qualifySqlObject(rawPl).query
+  const prenQ = qualifySqlObject(rawPren).query
+  const plIdx = await sqlObjectCols(rawPl)
+  const prenIdx = await sqlObjectCols(rawPren)
+
+  const colPlId = pickSqlCol(plIdx, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+  const colPlPren = pickSqlCol(plIdx, ["IDPrenotazione", "IdPrenotazione"])
+  const colPlOi = pickSqlCol(plIdx, ["OraInizio", "OraIn"])
+  const colPlOf = pickSqlCol(plIdx, ["OraFine", "OraFin"])
+  const colPlVis = pickSqlCol(plIdx, ["WebVisibile", "TotemVisibile"])
+  const colPrenId = pickSqlCol(prenIdx, ["IDPrenotazione", "IdPrenotazione"])
+  const colPrenDesc = pickSqlCol(prenIdx, [
+    "Descrizione",
+    "PrenotazioneDescrizione",
+    "Titolo",
+    "Nome",
+    "Note",
+    "ServizioDescrizione",
+  ])
+
+  if (!colPlId || !colPlPren || !colPrenId) return []
+
+  const weekdaySql = buildPrenotazioniWeekdaySql(prenIdx, "@giorno")
+  const dateRangeSql = buildPrenotazioniDateRangeSql(prenIdx, "@giorno")
+  // Giorno settimana obbligatorio (evita di elencare tutte le lezioni ricorrenti ogni giorno).
+  if (!weekdaySql) return []
+
+  const whereParts: string[] = [weekdaySql]
+  if (dateRangeSql) whereParts.push(dateRangeSql)
+  const colPrenVis = pickSqlCol(prenIdx, ["WebVisibile", "TotemVisibile", "Attivo"])
+  if (colPrenVis) {
+    whereParts.push(`([${colPrenVis}] IS NULL OR TRY_CAST([${colPrenVis}] AS int) NOT IN (0))`)
+  }
+
+  const selectDesc = colPrenDesc ? `p.[${colPrenDesc}] AS PrenotazioneDescrizione` : "NULL AS PrenotazioneDescrizione"
+  const selectOi = colPlOi ? `pl.[${colPlOi}] AS OraInizio` : "NULL AS OraInizio"
+  const selectOf = colPlOf ? `pl.[${colPlOf}] AS OraFine` : "NULL AS OraFine"
+  const selectVis = colPlVis ? `pl.[${colPlVis}] AS WebVisibile` : "NULL AS WebVisibile"
+
+  const q = `
+    SET DATEFIRST 1;
+    SELECT
+      pl.[${colPlId}] AS IDPrenotazioneLezione,
+      pl.[${colPlPren}] AS IDPrenotazione,
+      ${selectOi},
+      ${selectOf},
+      ${selectVis},
+      ${selectDesc}
+    FROM ${plQ} pl
+    INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
+    WHERE ${whereParts.join(" AND ")}
+    ORDER BY ${colPlOi ? `pl.[${colPlOi}]` : `pl.[${colPlId}]`} ASC;
+  `
+
+  try {
+    const r = await pool.request().input("giorno", sql.VarChar(10), giorno).query(q)
+    const out: PrenotazioneCorsoRow[] = []
+    for (const raw0 of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const idLez = Number(raw0.IDPrenotazioneLezione)
+      if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez)) continue
+      seenLez.add(idLez)
+      const raw: Record<string, unknown> = {
+        ...raw0,
+        __lezioniSenzaIscritti: true,
+        DataInizioPrenotazioneIscrizione: `${giorno}T00:00:00`,
+      }
+      const row = enrich(raw)
+      row.giorno = giorno
+      out.push(row)
+    }
+    return out
+  } catch {
+    return []
+  }
+}
+
 /**
  * Prenotazioni corsi (SRVW_PrenotazioniUtenti o vista configurata).
  * - Filtro opzionale per giorno: YYYY-MM-DD
@@ -5035,7 +5218,11 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const order = dateCol ? ` ORDER BY ${bracketCol(dateCol)} ASC` : ""
     const r = await req.query(`SELECT * FROM ${vq}${where}${order}`)
     const rows = (r.recordset ?? []) as Record<string, unknown>[]
-    const base = rows.map((raw) => enrich(raw))
+    let base = rows.map((raw) => enrich(raw))
+    if (giornoOk && giorno) {
+      const vuote = await queryLezioniCorsiSenzaIscritti(giorno, base, enrich)
+      if (vuote.length) base = [...base, ...vuote]
+    }
 
     // Lista d'attesa (se esiste): RVW_PrenotazioniListaAttesaUtenti
     try {

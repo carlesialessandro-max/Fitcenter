@@ -62,6 +62,8 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         dateCol: dbg.dateCol,
         cols: dbg.cols,
         count: rows.length,
+        lezioniSenzaIscrittiCount: rows.filter((x) => !!(x.raw as Record<string, unknown>)?.__lezioniSenzaIscritti)
+          .length,
         inAttesaCount: rows.filter((x) => (x as any)?.inAttesa).length,
         waitlistView: waitDbg.view,
         waitlistDateCol: waitDbg.dateCol,

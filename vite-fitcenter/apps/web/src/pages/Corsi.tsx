@@ -127,6 +127,7 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
     const servizio = getCorsoTitolo(r)
     const giorno = (r.giorno ?? "").trim() || "—"
     const raw = (r.raw ?? {}) as any
+    const lessonOnly = !!raw?.__lezioniSenzaIscritti
     const idLezione = lessonIdFromRaw(raw)
     const idPrenotazione = prenotazioneIdFromRaw(raw)
     const webVisibile = webVisibileFromRaw(raw)
@@ -1545,7 +1546,7 @@ export function Corsi() {
           <p className="text-sm text-red-400">Errore: {(error as Error).message}</p>
         ) : gruppi.length === 0 ? (
           <div className="space-y-2">
-            <p className="text-sm text-zinc-500">Nessuna prenotazione per il giorno selezionato.</p>
+            <p className="text-sm text-zinc-500">Nessun corso per il giorno selezionato.</p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -1785,6 +1786,12 @@ export function Corsi() {
 
                         <div className="block sm:hidden">
                           <div className="divide-y divide-zinc-800/60">
+                            {g.partecipanti.length === 0 ? (
+                              <div className="px-4 py-6 text-sm text-zinc-500">
+                                Nessun iscritto. Puoi bloccare il corso con il pulsante sopra, qualche ora prima
+                                dell&apos;inizio.
+                              </div>
+                            ) : null}
                             {g.partecipanti.map((p, idx) => {
                         const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                         const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
@@ -1896,6 +1903,14 @@ export function Corsi() {
                               </tr>
                             </thead>
                             <tbody>
+                              {g.partecipanti.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="px-5 py-6 text-sm text-zinc-500">
+                                    Nessun iscritto. Puoi bloccare il corso con il pulsante sopra, qualche ora prima
+                                    dell&apos;inizio.
+                                  </td>
+                                </tr>
+                              ) : null}
                               {g.partecipanti.map((p, idx) => {
                           const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
                           const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
