@@ -169,8 +169,8 @@ async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResul
   }
 
   const body = new URLSearchParams({ to: msisdn, text })
-  const from = env("SMSHOSTING_FROM")
-  if (from) body.set("from", from)
+  const from = env("SMSHOSTING_FROM") ?? "H2SPORT"
+  body.set("from", from)
 
   const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
   const res = await fetch("https://api.smshosting.it/rest/api/sms/send", {
