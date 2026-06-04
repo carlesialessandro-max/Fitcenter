@@ -670,7 +670,8 @@ export async function getSmsAdminStatus(_req: Request, res: Response) {
 export async function postSmsAdminTest(req: Request, res: Response) {
   if (req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
   const toRaw = String((req.body as { to?: string })?.to ?? "").trim()
-  const text = String((req.body as { text?: string })?.text ?? "FitCenter: test SMS firma").trim()
+  const defaultText = `FitCenter test SMS ${new Date().toISOString().slice(0, 19).replace("T", " ")}`
+  const text = String((req.body as { text?: string })?.text ?? defaultText).trim()
   const to = normalizeItPhone(toRaw)
   if (!to) return res.status(400).json({ message: "Numero non valido (es. 3357155744)" })
   const result = await sendSms({ to, text })

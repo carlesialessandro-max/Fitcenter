@@ -232,9 +232,12 @@ export function FirmaDaCassa() {
       } else if (out.linkSmsSent) {
         smsHint =
           " OTP via SMS quando apri la pagina firma e richiedi il codice (il primo SMS contiene solo il link)."
+      } else if (out.linkSmsDetail === "DUPLICATESMS") {
+        smsHint =
+          " OTP via email (Smshosting: stesso SMS già inviato nelle ultime 24h a questo numero; il link in email resta valido)."
       } else {
         const det = out.linkSmsDetail ? ` (${out.linkSmsDetail})` : ""
-        smsHint = ` OTP via email (SMS link non inviato${det}; controlla credito Smshosting o log API).`
+        smsHint = ` OTP via email (SMS link non inviato${det}; controlla pannello Ricerca SMS su Smshosting).`
       }
       const linkSmsPart = out.smsSandbox
         ? ""
