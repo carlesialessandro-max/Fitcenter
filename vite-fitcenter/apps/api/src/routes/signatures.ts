@@ -5,6 +5,7 @@ import {
   confirmSignature,
   createSignatureRequest,
   getSmsAdminStatus,
+  getSmsAdminSearch,
   postSmsAdminTest,
   createSignatureTemplate,
   deleteSignatureRequest,
@@ -53,6 +54,7 @@ signaturesRouter.post("/public/:token/sign", confirmSignature)
 // Admin area
 signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
 signaturesRouter.get("/admin/sms-status", requireAuth, getSmsAdminStatus)
+signaturesRouter.get("/admin/sms-search", requireAuth, getSmsAdminSearch)
 signaturesRouter.post("/admin/sms-test", requireAuth, postSmsAdminTest)
 signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
 signaturesRouter.post("/admin/by-token/:token/assist-otp", requireAuth, assistSignatureOtp)

@@ -91,20 +91,69 @@ export type SendSmsResult = {
   transactionId?: string
 }
 
-/** Verifica credenziali Smshosting (GET /user). Solo diagnostica admin. */
-export async function probeSmshostingApi(): Promise<{ ok: boolean; status?: number; detail?: string }> {
+async function smshostingApiFetch(
+  path: string,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; body: string }> {
   const creds = smshostingCredentials()
-  if (!creds) return { ok: false, detail: "credenziali_assenti_o_placeholder" }
+  if (!creds) return { ok: false, status: 0, body: "" }
+  const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
+  const res = await fetch(`https://api.smshosting.it/rest/api${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      Accept: "application/json",
+      ...(init?.headers ?? {}),
+    },
+  })
+  const body = await res.text().catch(() => "")
+  return { ok: res.ok, status: res.status, body }
+}
+
+/** Verifica credenziali Smshosting (GET /user). Solo diagnostica admin. */
+export async function probeSmshostingApi(): Promise<{
+  ok: boolean
+  status?: number
+  detail?: string
+  credit?: unknown
+}> {
+  if (!smshostingCredentials()) return { ok: false, detail: "credenziali_assenti_o_placeholder" }
   try {
-    const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
-    const res = await fetch("https://api.smshosting.it/rest/api/user", {
-      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
-    })
-    const text = await res.text().catch(() => "")
-    if (!res.ok) return { ok: false, status: res.status, detail: text.slice(0, 200) }
-    return { ok: true, status: res.status }
+    const r = await smshostingApiFetch("/user")
+    if (!r.ok) return { ok: false, status: r.status, detail: r.body.slice(0, 300) }
+    try {
+      const data = JSON.parse(r.body) as Record<string, unknown>
+      const credit = data.credit ?? data.Credit ?? data.smsCredit ?? data.SmsCredit ?? data.balance ?? null
+      return { ok: true, status: r.status, credit }
+    } catch {
+      return { ok: true, status: r.status }
+    }
   } catch (e) {
     return { ok: false, detail: (e as Error)?.message ?? String(e) }
+  }
+}
+
+/** Stato messaggio su Smshosting (non compare in «Campagne», solo invii singoli API). */
+export async function searchSmshostingSms(params: {
+  transactionId?: string
+  msisdn?: string
+}): Promise<{ ok: boolean; rows: unknown[]; raw?: string }> {
+  const q = new URLSearchParams()
+  if (params.transactionId) q.set("transactionId", params.transactionId)
+  if (params.msisdn) q.set("msisdn", params.msisdn.replace(/^\+/, ""))
+  q.set("limit", "10")
+  try {
+    const r = await smshostingApiFetch(`/sms/search?${q}`)
+    if (!r.ok) return { ok: false, rows: [], raw: r.body.slice(0, 400) }
+    try {
+      const data = JSON.parse(r.body) as { sms?: unknown[]; data?: unknown[] }
+      const rows = Array.isArray(data.sms) ? data.sms : Array.isArray(data.data) ? data.data : []
+      return { ok: true, rows }
+    } catch {
+      return { ok: false, rows: [], raw: r.body.slice(0, 400) }
+    }
+  } catch (e) {
+    return { ok: false, rows: [], raw: (e as Error)?.message ?? String(e) }
   }
 }
 
@@ -155,7 +204,7 @@ async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResul
     }
     const inserted = Number(data.smsInserted ?? 0)
     if (inserted > 0 || st === "INSERTED") {
-      console.log("[SMS][SMSHOSTING-OK]", to, "gateway", msisdn, data.transactionId ?? "")
+      console.log("[SMS][SMSHOSTING-OK]", to, "gateway", msisdn, data.transactionId ?? "", raw.slice(0, 200))
       return { sent: true, e164: to, msisdn, transactionId: data.transactionId }
     }
     console.log("[SMS][SMSHOSTING-NOT-INSERTED]", raw.slice(0, 300))

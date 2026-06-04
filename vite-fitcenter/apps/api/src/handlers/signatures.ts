@@ -11,6 +11,7 @@ import {
   maskPhone,
   normalizeItPhone,
   probeSmshostingApi,
+  searchSmshostingSms,
   sendSms,
 } from "../services/sms.js"
 import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
@@ -656,7 +657,10 @@ export async function getSmsAdminStatus(_req: Request, res: Response) {
     smshostingApiOk: probe?.ok ?? null,
     smshostingStatus: probe?.status ?? null,
     smshostingDetail: probe?.detail ?? null,
+    smshostingCredit: probe?.credit ?? null,
     envFileHint: "apps/api/.env (SMS_PROVIDER, SMSHOSTING_USER, SMSHOSTING_PASSWORD) + riavvio servizio API",
+    panelHint:
+      "Gli SMS singoli via API NON compaiono in «Campagne». Usa Ricerca SMS / storico messaggi nel pannello Smshosting.",
     note: sandbox
       ? "SMSHOSTING_SANDBOX=true: l'API accetta la richiesta ma NON invia SMS reali. Rimuovi la riga per produzione."
       : null,
@@ -670,13 +674,34 @@ export async function postSmsAdminTest(req: Request, res: Response) {
   const to = normalizeItPhone(toRaw)
   if (!to) return res.status(400).json({ message: "Numero non valido (es. 3357155744)" })
   const result = await sendSms({ to, text })
+  let delivery: { ok: boolean; rows: unknown[]; raw?: string } | null = null
+  if (result.transactionId) {
+    await new Promise((r) => setTimeout(r, 1200))
+    delivery = await searchSmshostingSms({ transactionId: result.transactionId, msisdn: result.msisdn })
+  }
   res.json({
     ok: result.sent,
     ...result,
     e164: to,
     masked: maskPhone(to),
+    delivery,
     note: "e164 usa +39; msisdn è il formato inviato a Smshosting (senza +).",
+    panelHint: "In Smshosting non guardare «Campagne» (0 API): cerca in Ricerca SMS con transactionId.",
   })
+}
+
+export async function getSmsAdminSearch(req: Request, res: Response) {
+  if (req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
+  const transactionId = String(req.query.transactionId ?? "").trim()
+  const msisdn = String(req.query.msisdn ?? "").trim()
+  if (!transactionId && !msisdn) {
+    return res.status(400).json({ message: "transactionId o msisdn obbligatorio" })
+  }
+  const out = await searchSmshostingSms({
+    transactionId: transactionId || undefined,
+    msisdn: msisdn ? (normalizeItPhone(msisdn) ?? msisdn) : undefined,
+  })
+  res.json(out)
 }
 
 export async function listSignatureRequests(_req: Request, res: Response) {
