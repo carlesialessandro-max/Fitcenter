@@ -202,6 +202,7 @@ export const signaturesApi = {
       deliveryMode?: "email" | "onsite"
       smsConfigured?: boolean
       customerSmsPresent?: boolean
+      customerSmsE164?: string
       customerSmsMasked?: string
       linkSmsSent?: boolean
       linkSmsDetail?: string

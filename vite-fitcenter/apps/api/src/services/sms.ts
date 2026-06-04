@@ -83,6 +83,9 @@ export function isSmsConfigured(): boolean {
 
 export type SendSmsResult = {
   sent: boolean
+  /** Formato interno E.164 con + (es. +393357155744). */
+  e164?: string
+  /** Formato inviato al gateway Smshosting senza + (es. 393357155744). */
   msisdn?: string
   detail?: string
   transactionId?: string
@@ -106,13 +109,14 @@ export async function probeSmshostingApi(): Promise<{ ok: boolean; status?: numb
 }
 
 async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResult> {
+  // FitCenter memorizza +39…; Smshosting API richiede msisdn senza "+" (es. 39335…).
   const msisdn = toSmshostingMsisdn(to)
   const creds = smshostingCredentials()
-  if (!creds) return { sent: false, msisdn, detail: "credenziali_mancanti" }
+  if (!creds) return { sent: false, e164: to, msisdn, detail: "credenziali_mancanti" }
 
   if (isSmsSandboxMode()) {
     console.log("[SMS][SANDBOX] SMSHOSTING_SANDBOX=true: nessun SMS reale inviato a", maskPhone(to), `(${msisdn})`)
-    return { sent: false, msisdn, detail: "sandbox" }
+    return { sent: false, e164: to, msisdn, detail: "sandbox" }
   }
 
   const body = new URLSearchParams({ to: msisdn, text })
@@ -132,7 +136,7 @@ async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResul
   const raw = await res.text().catch(() => "")
   if (!res.ok) {
     console.log("[SMS][SMSHOSTING-ERROR]", res.status, raw.slice(0, 400))
-    return { sent: false, msisdn, detail: `http_${res.status}` }
+    return { sent: false, e164: to, msisdn, detail: `http_${res.status}` }
   }
 
   try {
@@ -147,18 +151,18 @@ async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResul
     if (st === "NOT_INSERTED") {
       const det = String(row?.statusDetail ?? "NOT_INSERTED")
       console.log("[SMS][SMSHOSTING-NOT-INSERTED]", det, raw.slice(0, 300))
-      return { sent: false, msisdn, detail: det, transactionId: data.transactionId }
+      return { sent: false, e164: to, msisdn, detail: det, transactionId: data.transactionId }
     }
     const inserted = Number(data.smsInserted ?? 0)
     if (inserted > 0 || st === "INSERTED") {
-      console.log("[SMS][SMSHOSTING-OK]", maskPhone(to), msisdn, data.transactionId ?? "")
-      return { sent: true, msisdn, transactionId: data.transactionId }
+      console.log("[SMS][SMSHOSTING-OK]", to, "gateway", msisdn, data.transactionId ?? "")
+      return { sent: true, e164: to, msisdn, transactionId: data.transactionId }
     }
     console.log("[SMS][SMSHOSTING-NOT-INSERTED]", raw.slice(0, 300))
-    return { sent: false, msisdn, detail: "not_inserted", transactionId: data.transactionId }
+    return { sent: false, e164: to, msisdn, detail: "not_inserted", transactionId: data.transactionId }
   } catch {
     console.log("[SMS][SMSHOSTING-PARSE-ERROR]", raw.slice(0, 300))
-    return { sent: false, msisdn, detail: "risposta_non_json" }
+    return { sent: false, e164: to, msisdn, detail: "risposta_non_json" }
   }
 }
 
@@ -171,7 +175,7 @@ export async function sendSms(input: { to: string; text: string }): Promise<Send
   const provider = getSmsProvider()
   if (!isSmsConfigured()) {
     console.log("[SMS][DRYRUN]", { to: maskPhone(to), text: input.text.slice(0, 80) })
-    return { sent: false, msisdn: toSmshostingMsisdn(to), detail: "non_configurato" }
+    return { sent: false, e164: to, msisdn: toSmshostingMsisdn(to), detail: "non_configurato" }
   }
 
   try {

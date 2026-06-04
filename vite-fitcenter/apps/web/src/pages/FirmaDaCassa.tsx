@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { dataApi, type CassaMovimentiUtentiGroup } from "@/api/data"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
+import { displayItPhone } from "@/lib/phone"
 
 function fmtEuro(n: number) {
   try {
@@ -237,8 +238,8 @@ export function FirmaDaCassa() {
       }
       const linkSmsPart = out.smsSandbox
         ? ""
-        : out.linkSmsSent && out.customerSmsMasked
-          ? ` e SMS link a ${out.customerSmsMasked}`
+        : out.linkSmsSent && (out.customerSmsE164 || out.customerSmsMasked)
+          ? ` e SMS link a ${out.customerSmsE164 ?? out.customerSmsMasked}`
           : out.customerSmsPresent && out.smsConfigured
             ? " (SMS link non inviato)"
             : ""
@@ -434,7 +435,7 @@ export function FirmaDaCassa() {
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
                     <span>Email: {g.email ?? "—"}</span>
-                    <span>SMS: {g.sms ?? "—"}</span>
+                    <span>SMS: {displayItPhone(g.sms)}</span>
                     <span>Movimenti: {g.rows.length}</span>
                   </div>
                 </button>

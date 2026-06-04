@@ -632,6 +632,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
       signingUrl: link,
       smsConfigured,
       customerSmsPresent: !!customerSms,
+      customerSmsE164: customerSms,
       customerSmsMasked: customerSms ? maskPhone(customerSms) : undefined,
       linkSmsSent,
       linkSmsDetail,
@@ -669,7 +670,13 @@ export async function postSmsAdminTest(req: Request, res: Response) {
   const to = normalizeItPhone(toRaw)
   if (!to) return res.status(400).json({ message: "Numero non valido (es. 3357155744)" })
   const result = await sendSms({ to, text })
-  res.json({ ok: result.sent, ...result, masked: maskPhone(to) })
+  res.json({
+    ok: result.sent,
+    ...result,
+    e164: to,
+    masked: maskPhone(to),
+    note: "e164 usa +39; msisdn è il formato inviato a Smshosting (senza +).",
+  })
 }
 
 export async function listSignatureRequests(_req: Request, res: Response) {
