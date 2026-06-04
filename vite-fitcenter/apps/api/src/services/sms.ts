@@ -3,20 +3,28 @@ function env(k: string): string | undefined {
   return v && v.trim() ? v.trim() : undefined
 }
 
-/** Normalizza cellulare italiano in E.164 (+39...). */
+/**
+ * Normalizza cellulare italiano in E.164 (+39...).
+ * L'anagrafica può avere solo cifre locali: 3471234567, 0347..., 39347... → sempre +39347...
+ */
 export function normalizeItPhone(raw: string | null | undefined): string | null {
   const s = String(raw ?? "").trim()
   if (!s) return null
-  let digits = s.replace(/[^\d+]/g, "")
-  if (digits.startsWith("00")) digits = `+${digits.slice(2)}`
-  if (digits.startsWith("+")) {
-    const d = digits.slice(1).replace(/\D/g, "")
-    return d.length >= 8 && d.length <= 15 ? `+${d}` : null
+
+  if (s.startsWith("+")) {
+    const d = s.replace(/[^\d]/g, "")
+    if (d.startsWith("39") && /^39\d{9,10}$/.test(d)) return `+${d}`
+    if (d.length >= 8 && d.length <= 15) return `+${d}`
+    return null
   }
-  digits = digits.replace(/\D/g, "")
-  if (digits.startsWith("39") && digits.length >= 11) return `+${digits}`
+
+  let digits = s.replace(/\D/g, "")
+  if (!digits) return null
+  if (digits.startsWith("00")) digits = digits.slice(2)
+  if (digits.startsWith("39") && digits.length >= 11 && digits.length <= 12) return `+${digits}`
   if (digits.startsWith("0")) digits = digits.slice(1)
-  if (digits.length >= 9 && digits.length <= 10) return `+39${digits}`
+  // Cellulare IT: 3xx + 7 cifre (9–10 cifre senza prefisso internazionale)
+  if (/^3\d{8,9}$/.test(digits)) return `+39${digits}`
   return null
 }
 
