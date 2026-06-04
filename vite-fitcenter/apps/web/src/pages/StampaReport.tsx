@@ -62,30 +62,14 @@ async function loadReferralByConsulente(
   fromIso: string,
   toIso: string,
 ): Promise<ReferralConsulenteBlock[]> {
-  const months = monthsInRange(fromIso, toIso)
-  if (months.length === 0) {
-    return consulenti.map((consulenteNome) => ({
-      consulenteNome,
-      items: [],
-      totaleEuro: 0,
-      count: 0,
-    }))
-  }
-  const byCons = new Map<string, ReferralPresentatiItem[]>()
-  for (const c of consulenti) byCons.set(c, [])
-  await Promise.all(
-    consulenti.flatMap((consulenteNome) =>
-      months.map(async ({ year, month }) => {
-        const res = await dataApi.getReferralPresentati({ year, month, consulente: consulenteNome })
-        byCons.get(consulenteNome)!.push(...(res.items ?? []))
-      }),
-    ),
+  return Promise.all(
+    consulenti.map(async (consulenteNome) => {
+      const res = await dataApi.getReferralPresentati({ from: fromIso, to: toIso, consulente: consulenteNome })
+      const items = res.items ?? []
+      const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100
+      return { consulenteNome, items, totaleEuro, count: items.length }
+    }),
   )
-  return consulenti.map((consulenteNome) => {
-    const items = byCons.get(consulenteNome) ?? []
-    const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100
-    return { consulenteNome, items, totaleEuro, count: items.length }
-  })
 }
 
 const PDF_MARGIN_X = 10
