@@ -4,6 +4,7 @@ import { requireAdmin, requireAuth } from "../middleware/auth.js"
 import {
   confirmSignature,
   createSignatureRequest,
+  getSmsAdminStatus,
   createSignatureTemplate,
   deleteSignatureRequest,
   deleteSignatureTemplate,
@@ -50,6 +51,7 @@ signaturesRouter.post("/public/:token/sign", confirmSignature)
 
 // Admin area
 signaturesRouter.get("/admin", requireAuth, listSignatureRequests)
+signaturesRouter.get("/admin/sms-status", requireAuth, getSmsAdminStatus)
 signaturesRouter.post("/admin", requireAuth, upload.single("document"), createSignatureRequest)
 signaturesRouter.post("/admin/by-token/:token/assist-otp", requireAuth, assistSignatureOtp)
 signaturesRouter.delete("/admin/:id", requireAuth, deleteSignatureRequest)

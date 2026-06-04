@@ -200,6 +200,10 @@ export const signaturesApi = {
       expiresAt: string
       signingUrl: string
       deliveryMode?: "email" | "onsite"
+      smsConfigured?: boolean
+      customerSmsPresent?: boolean
+      customerSmsMasked?: string
+      linkSmsSent?: boolean
     }>
   },
 

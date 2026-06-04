@@ -1,6 +1,11 @@
 function env(k: string): string | undefined {
   const v = process.env[k]
-  return v && v.trim() ? v.trim() : undefined
+  if (!v) return undefined
+  let t = v.trim()
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
+    t = t.slice(1, -1).trim()
+  }
+  return t || undefined
 }
 
 /**
@@ -35,11 +40,22 @@ export function maskPhone(e164: string | null | undefined): string {
   return `${s.slice(0, 4)}***${s.slice(-2)}`
 }
 
+function looksLikePlaceholderCredential(v: string): boolean {
+  return /la_tua|your_|esempio|example|placeholder|xxx+|AUTH_KEY|AUTH_SECRET|inserisci|changeme/i.test(v)
+}
+
 function smshostingCredentials(): { user: string; pass: string } | null {
   const user = env("SMSHOSTING_AUTH_KEY") ?? env("SMSHOSTING_USER")
   const pass = env("SMSHOSTING_AUTH_SECRET") ?? env("SMSHOSTING_PASSWORD")
-  if (user && pass) return { user, pass }
-  return null
+  if (!user || !pass) return null
+  if (looksLikePlaceholderCredential(user) || looksLikePlaceholderCredential(pass)) {
+    console.log(
+      "[SMS][CONFIG] Smshosting: USER/PASSWORD sembrano i testi di esempio del .env.example. " +
+        "Copia AUTH_KEY e AUTH_SECRET reali da cloud.smshosting.it → Sviluppatori → API."
+    )
+    return null
+  }
+  return { user, pass }
 }
 
 /** E.164 (+39...) → msisdn per Smshosting (3934...). */
@@ -57,10 +73,27 @@ export function isSmsConfigured(): boolean {
   return false
 }
 
+/** Verifica credenziali Smshosting (GET /user). Solo diagnostica admin. */
+export async function probeSmshostingApi(): Promise<{ ok: boolean; status?: number; detail?: string }> {
+  const creds = smshostingCredentials()
+  if (!creds) return { ok: false, detail: "credenziali_assenti_o_placeholder" }
+  try {
+    const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
+    const res = await fetch("https://api.smshosting.it/rest/api/user", {
+      headers: { Authorization: `Basic ${auth}`, Accept: "application/json" },
+    })
+    const text = await res.text().catch(() => "")
+    if (!res.ok) return { ok: false, status: res.status, detail: text.slice(0, 200) }
+    return { ok: true, status: res.status }
+  } catch (e) {
+    return { ok: false, detail: (e as Error)?.message ?? String(e) }
+  }
+}
+
 export async function sendSms(input: { to: string; text: string }): Promise<{ sent: boolean }> {
   const to = normalizeItPhone(input.to)
   if (!to) {
-    console.log("[SMS][SKIP] numero non valido", input.to)
+    console.log("[SMS][SKIP] numero non valido (serve cellulare 3xx, es. 3471234567):", String(input.to ?? "").slice(0, 24))
     return { sent: false }
   }
   const provider = (env("SMS_PROVIDER") ?? "").toLowerCase()

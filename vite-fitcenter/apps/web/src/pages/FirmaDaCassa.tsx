@@ -219,11 +219,28 @@ export function FirmaDaCassa() {
         prefill,
       })
       const customerLabel = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || email
-      const smsNote = selected.sms?.trim() ? " OTP via SMS sul cellulare." : " OTP via email."
+      let smsHint = " OTP via email."
+      if (!out.customerSmsPresent) {
+        smsHint = " OTP via email (cellulare assente o non valido in anagrafica)."
+      } else if (!out.smsConfigured) {
+        smsHint =
+          " OTP via email (SMS non attivo sul server: in .env servono AUTH_KEY e AUTH_SECRET reali da Smshosting, non i testi di esempio)."
+      } else if (out.linkSmsSent) {
+        smsHint = " OTP via SMS sul cellulare."
+      } else {
+        smsHint =
+          " OTP via email (invio SMS fallito: controlla credenziali Smshosting e credito; vedi log API [SMS][SMSHOSTING-ERROR])."
+      }
+      const linkSmsPart =
+        out.linkSmsSent && out.customerSmsMasked
+          ? ` e SMS a ${out.customerSmsMasked}`
+          : out.customerSmsPresent && out.smsConfigured
+            ? " (SMS link non inviato)"
+            : ""
       setPendingFirma({ token: out.token, email, customerLabel, clientKey: selected.key, sms: selected.sms ?? undefined })
       setAssistOtp(null)
       setOk(
-        `Link inviato a ${email}${selected.sms?.trim() ? " e SMS al cellulare" : ""}. Il cliente firma dal telefono.${smsNote} Usa il riquadro giallo sotto per mostrare l'OTP in reception.`
+        `Link inviato a ${email}${linkSmsPart}. Il cliente firma dal telefono.${smsHint} Usa il riquadro giallo sotto per mostrare l'OTP in reception.`
       )
       setCreatedKeys((prev) => ({ ...prev, [selected.key]: true }))
     } catch (e) {

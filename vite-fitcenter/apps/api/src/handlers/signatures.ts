@@ -4,7 +4,14 @@ import crypto from "crypto"
 import type { Request, Response } from "express"
 import { signatureStore } from "../store/esign.js"
 import { sendMail } from "../services/mailer.js"
-import { isSmsConfigured, maskPhone, normalizeItPhone, sendSms } from "../services/sms.js"
+import {
+  getSmsProvider,
+  isSmsConfigured,
+  maskPhone,
+  normalizeItPhone,
+  probeSmshostingApi,
+  sendSms,
+} from "../services/sms.js"
 import type { SignatureField, SignatureRequest, SignatureSlot, SignatureStep } from "../types/esign.js"
 import { defaultSignatureSlots, ensureSignatureSlots } from "../signature/defaultSlots.js"
 import { ensureSignatureFields } from "../signature/defaultFields.js"
@@ -520,6 +527,12 @@ export async function createSignatureRequest(req: Request, res: Response) {
       normalizeItPhone(customerSmsRaw) ??
       normalizeItPhone(String(prefill?.cellulare ?? "").trim()) ??
       undefined
+    if ((customerSmsRaw || prefill?.cellulare) && !customerSms) {
+      console.log(
+        "[SMS][SKIP] cellulare anagrafica non normalizzato:",
+        String(customerSmsRaw || prefill?.cellulare).slice(0, 20)
+      )
+    }
 
     const id = crypto.randomUUID()
     const publicToken = randomToken(24)
@@ -581,12 +594,15 @@ export async function createSignatureRequest(req: Request, res: Response) {
     signatureStore.create(row)
 
     const link = `${getBaseUrl(req)}/firma/${encodeURIComponent(publicToken)}`
+    const smsConfigured = isSmsConfigured()
+    let linkSmsSent = false
     if (deliveryMode === "email") {
-      if (customerSms && isSmsConfigured()) {
-        await sendSms({
+      if (customerSms && smsConfigured) {
+        const linkSms = await sendSms({
           to: customerSms,
           text: `FitCenter: apri dal cellulare per firmare ${link}`,
         })
+        linkSmsSent = linkSms.sent
       }
       await sendMail({
         to: customerEmail,
@@ -595,7 +611,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
           `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
           `apri questo link dal tuo cellulare per firmare il documento:\n${link}\n\n` +
           `Sul telefono: richiedi il codice OTP (${
-            customerSms && isSmsConfigured() ? "ti arriva via SMS" : "ti arriva via email"
+            customerSms && smsConfigured ? "ti arriva via SMS" : "ti arriva via email"
           }), accetta i termini e firma.\n\n` +
           `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
       })
@@ -611,10 +627,29 @@ export async function createSignatureRequest(req: Request, res: Response) {
       createdAt: row.createdAt,
       expiresAt: row.expiresAt,
       signingUrl: link,
+      smsConfigured,
+      customerSmsPresent: !!customerSms,
+      customerSmsMasked: customerSms ? maskPhone(customerSms) : undefined,
+      linkSmsSent,
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
+}
+
+export async function getSmsAdminStatus(_req: Request, res: Response) {
+  if (_req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
+  const provider = getSmsProvider()
+  const configured = isSmsConfigured()
+  const probe = provider === "smshosting" && configured ? await probeSmshostingApi() : null
+  res.json({
+    provider: provider || null,
+    configured,
+    smshostingApiOk: probe?.ok ?? null,
+    smshostingStatus: probe?.status ?? null,
+    smshostingDetail: probe?.detail ?? null,
+    envFileHint: "apps/api/.env (SMS_PROVIDER, SMSHOSTING_USER, SMSHOSTING_PASSWORD) + riavvio servizio API",
+  })
 }
 
 export async function listSignatureRequests(_req: Request, res: Response) {
