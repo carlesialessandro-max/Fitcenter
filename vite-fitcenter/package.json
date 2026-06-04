@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "turbo build",
+    "build:apps": "pnpm --filter api run build && pnpm --filter web run build",
     "dev": "turbo dev",
     "precompute:dashboard-cache": "pnpm --filter api run precompute:dashboard-cache",
     "start": "node apps/api/dist/index.js",
