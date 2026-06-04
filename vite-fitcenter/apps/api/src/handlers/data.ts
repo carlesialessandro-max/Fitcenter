@@ -1384,7 +1384,7 @@ export async function getReferralPresentati(req: Request, res: Response) {
       u.role === "admin" &&
       (req.query.tutti === "1" || req.query.tutti === "true" || String(req.query.tutti ?? "").toLowerCase() === "yes")
 
-    const rangeEarly = monthRangeFromQuery(req)
+    const rangeEarly = referralRangeFromQuery(req)
 
     if (!gestionaleSql.isGestionaleConfigured()) {
       return res.json({
@@ -1409,7 +1409,12 @@ export async function getReferralPresentati(req: Request, res: Response) {
             venditoreIdsResolved: [],
             tuttiIVenditori: false,
             hint: "Seleziona «Tutti i venditori» oppure una consulente nel menu.",
-            range: { year: rangeEarly.year, month: rangeEarly.month, from: rangeEarly.fromIso, to: rangeEarly.toIso },
+            range: {
+              year: rangeEarly.year,
+              month: rangeEarly.month,
+              from: rangeEarly.fromIso,
+              to: rangeEarly.rangeToInclusive,
+            },
           })
         }
         const idStr = await resolveConsultantId(consulenteQ)
@@ -1420,15 +1425,20 @@ export async function getReferralPresentati(req: Request, res: Response) {
             totaleClienti: 0,
             venditoreIdsResolved: [],
             tuttiIVenditori: false,
-            range: { year: rangeEarly.year, month: rangeEarly.month, from: rangeEarly.fromIso, to: rangeEarly.toIso },
+            range: {
+              year: rangeEarly.year,
+              month: rangeEarly.month,
+              from: rangeEarly.fromIso,
+              to: rangeEarly.rangeToInclusive,
+            },
           })
         }
         venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
       }
     }
 
-    const { fromIso, toIso, year, month } = rangeEarly
-    const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIso)
+    const { fromIso, toIsoExclusive, year, month, rangeToInclusive } = rangeEarly
+    const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIsoExclusive)
     const items = rows.map((row) => {
       const pc = String(row.SocioPresentatoreCognome ?? "").trim()
       const pn = String(row.SocioPresentatoreNome ?? "").trim()
