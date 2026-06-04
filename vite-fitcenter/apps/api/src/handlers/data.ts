@@ -1328,6 +1328,13 @@ function sqlScalarDateToIso(v: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
 }
 
+function addCalendarDaysIso(iso: string, days: number): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) return iso
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + days, 12, 0, 0))
+  return d.toISOString().slice(0, 10)
+}
+
 function monthRangeFromQuery(req: Request): { fromIso: string; toIso: string; year: number; month: number } {
   const now = new Date()
   const yRaw = typeof req.query.year === "string" ? Number(req.query.year) : NaN
@@ -1338,6 +1345,35 @@ function monthRangeFromQuery(req: Request): { fromIso: string; toIso: string; ye
   const nextMonth = month === 12 ? { y: year + 1, m: 1 } : { y: year, m: month + 1 }
   const toIso = `${nextMonth.y}-${String(nextMonth.m).padStart(2, "0")}-01`
   return { fromIso, toIso, year, month }
+}
+
+/** Mese intero (year/month) oppure intervallo Dal/Al inclusivo (from/to) come Stampa report. */
+function referralRangeFromQuery(req: Request): {
+  fromIso: string
+  toIsoExclusive: string
+  year: number
+  month: number
+  rangeToInclusive: string
+} {
+  const fromRaw = String(req.query.from ?? "").trim()
+  const toRaw = String(req.query.to ?? "").trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fromRaw) && /^\d{4}-\d{2}-\d{2}$/.test(toRaw) && fromRaw <= toRaw) {
+    return {
+      fromIso: fromRaw,
+      toIsoExclusive: addCalendarDaysIso(toRaw, 1),
+      year: Number(fromRaw.slice(0, 4)),
+      month: Number(fromRaw.slice(5, 7)),
+      rangeToInclusive: toRaw,
+    }
+  }
+  const mr = monthRangeFromQuery(req)
+  return {
+    fromIso: mr.fromIso,
+    toIsoExclusive: mr.toIso,
+    year: mr.year,
+    month: mr.month,
+    rangeToInclusive: addCalendarDaysIso(mr.toIso, -1),
+  }
 }
 
 export async function getReferralPresentati(req: Request, res: Response) {
@@ -1427,7 +1463,7 @@ export async function getReferralPresentati(req: Request, res: Response) {
       totaleClienti,
       venditoreIdsResolved,
       tuttiIVenditori: u.role === "admin" ? tuttiIVenditori : false,
-      range: { year, month, from: fromIso, to: toIso },
+      range: { year, month, from: fromIso, to: rangeToInclusive },
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

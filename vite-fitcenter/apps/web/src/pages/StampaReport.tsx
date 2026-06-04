@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { Navigate } from "react-router-dom"
 import jsPDF from "jspdf"
 import autoTable, { type CellHookData, type UserOptions } from "jspdf-autotable"
@@ -49,26 +48,6 @@ function monthStartIso(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (!m) return iso
   return `${m[1]}-${m[2]}-01`
-}
-
-function monthsInRange(fromIso: string, toIso: string): { year: number; month: number }[] {
-  const fm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromIso)
-  const tm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(toIso)
-  if (!fm || !tm) return []
-  const out: { year: number; month: number }[] = []
-  let y = Number(fm[1])
-  let m = Number(fm[2])
-  const endY = Number(tm[1])
-  const endM = Number(tm[2])
-  while (y < endY || (y === endY && m <= endM)) {
-    out.push({ year: y, month: m })
-    m += 1
-    if (m > 12) {
-      m = 1
-      y += 1
-    }
-  }
-  return out
 }
 
 type ReferralConsulenteBlock = {
@@ -632,6 +611,7 @@ export function StampaReport() {
   const [from, setFrom] = useState(() => monthStartIso(todayIso))
   const [to, setTo] = useState(() => todayIso)
   const [printMode, setPrintMode] = useState<PrintMode>("dettaglio")
+  const [printing, setPrinting] = useState(false)
 
   const allConsulenti = useMemo(() => {
     if (isOperatore && consulenteNome.trim()) return [consulenteNome.trim()]
@@ -645,25 +625,20 @@ export function StampaReport() {
       ? consulentiSel
       : allConsulenti
 
-  const reportQuery = useQuery({
-    queryKey: ["report-consulenti", from, to, consulentiEffective.join("|")],
-    queryFn: () => dataApi.getReportConsulenti({ from, to, consulenti: consulentiEffective }),
-    enabled: false,
-    retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    staleTime: 0,
-  })
-
   async function stampaReportPdf(mode: PrintMode) {
     if (!from || !to) return
     if (from > to) return
     if (consulentiEffective.length === 0) return
-    const out = await reportQuery.refetch()
-    const reportData = out.data
-    if (!reportData) return
-    const referralBlocks = await loadReferralByConsulente(consulentiEffective, from, to)
-    buildPdf(reportData, consulentiEffective, from, to, mode, referralBlocks)
+    setPrinting(true)
+    try {
+      const [reportData, referralBlocks] = await Promise.all([
+        dataApi.getReportConsulenti({ from, to, consulenti: consulentiEffective }),
+        loadReferralByConsulente(consulentiEffective, from, to),
+      ])
+      buildPdf(reportData, consulentiEffective, from, to, mode, referralBlocks)
+    } finally {
+      setPrinting(false)
+    }
   }
 
   return (
@@ -734,10 +709,10 @@ export function StampaReport() {
         <button
           type="button"
           onClick={() => void stampaReportPdf(printMode)}
-          disabled={reportQuery.isFetching || !from || !to || from > to || consulentiEffective.length === 0}
+          disabled={printing || !from || !to || from > to || consulentiEffective.length === 0}
           className="mt-3 rounded-md border border-zinc-600 bg-zinc-900/40 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
         >
-          {reportQuery.isFetching ? "Preparazione..." : "Stampa Report"}
+          {printing ? "Preparazione..." : "Stampa Report"}
         </button>
       </div>
 

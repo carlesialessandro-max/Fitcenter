@@ -82,13 +82,19 @@ export const dataApi = {
   getReferralPresentati: (opts?: {
     year?: number
     month?: number
+    /** Intervallo inclusivo (es. Stampa report Dal/Al). Ha priorità su year/month. */
+    from?: string
+    to?: string
     /** Admin: nome consulente (budget). Ignorato se tutti è true. */
     consulente?: string
     /** Admin: nessun filtro ID venditore. */
     tutti?: boolean
   }) => {
     const params = new URLSearchParams()
-    if (opts?.year != null && opts?.month != null) {
+    if (opts?.from && opts?.to) {
+      params.set("from", opts.from)
+      params.set("to", opts.to)
+    } else if (opts?.year != null && opts?.month != null) {
       params.set("year", String(opts.year))
       params.set("month", String(opts.month))
     }
