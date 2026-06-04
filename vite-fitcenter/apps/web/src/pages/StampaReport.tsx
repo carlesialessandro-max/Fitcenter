@@ -4,7 +4,12 @@ import { Navigate } from "react-router-dom"
 import jsPDF from "jspdf"
 import autoTable, { type CellHookData, type UserOptions } from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
-import { dataApi, type ReportConsulenteRow, type ReportConsulentiResponse } from "@/api/data"
+import {
+  dataApi,
+  type ReferralPresentatiItem,
+  type ReportConsulenteRow,
+  type ReportConsulentiResponse,
+} from "@/api/data"
 
 const DEFAULT_CONSULENTI = ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
@@ -44,6 +49,64 @@ function monthStartIso(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (!m) return iso
   return `${m[1]}-${m[2]}-01`
+}
+
+function monthsInRange(fromIso: string, toIso: string): { year: number; month: number }[] {
+  const fm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(fromIso)
+  const tm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(toIso)
+  if (!fm || !tm) return []
+  const out: { year: number; month: number }[] = []
+  let y = Number(fm[1])
+  let m = Number(fm[2])
+  const endY = Number(tm[1])
+  const endM = Number(tm[2])
+  while (y < endY || (y === endY && m <= endM)) {
+    out.push({ year: y, month: m })
+    m += 1
+    if (m > 12) {
+      m = 1
+      y += 1
+    }
+  }
+  return out
+}
+
+type ReferralConsulenteBlock = {
+  consulenteNome: string
+  items: ReferralPresentatiItem[]
+  totaleEuro: number
+  count: number
+}
+
+async function loadReferralByConsulente(
+  consulenti: string[],
+  fromIso: string,
+  toIso: string,
+): Promise<ReferralConsulenteBlock[]> {
+  const months = monthsInRange(fromIso, toIso)
+  if (months.length === 0) {
+    return consulenti.map((consulenteNome) => ({
+      consulenteNome,
+      items: [],
+      totaleEuro: 0,
+      count: 0,
+    }))
+  }
+  const byCons = new Map<string, ReferralPresentatiItem[]>()
+  for (const c of consulenti) byCons.set(c, [])
+  await Promise.all(
+    consulenti.flatMap((consulenteNome) =>
+      months.map(async ({ year, month }) => {
+        const res = await dataApi.getReferralPresentati({ year, month, consulente: consulenteNome })
+        byCons.get(consulenteNome)!.push(...(res.items ?? []))
+      }),
+    ),
+  )
+  return consulenti.map((consulenteNome) => {
+    const items = byCons.get(consulenteNome) ?? []
+    const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100
+    return { consulenteNome, items, totaleEuro, count: items.length }
+  })
 }
 
 const PDF_MARGIN_X = 10
@@ -274,6 +337,83 @@ function appendCrossSection(doc: JsPdfWithAutoTable, y: number, rows: ReportCons
   return appendSummaryTable(doc, y, ["Consulente", "Cross", "Totale €"], summaryBody, summary3ColStyles(tw))
 }
 
+function appendReferralSection(
+  doc: JsPdfWithAutoTable,
+  y: number,
+  blocks: ReferralConsulenteBlock[],
+  mode: PrintMode,
+) {
+  const tw = tableWidth(doc)
+  y = sectionTitle(doc, y, "REFERRAL (PORTA UN AMICO)")
+
+  if (mode === "dettaglio") {
+    const body: string[][] = []
+    for (const b of blocks) {
+      for (const it of b.items) {
+        const cliente = `${it.cognome} ${it.nome}`.trim() || "—"
+        const presentato =
+          it.presentatoDaNome != null
+            ? `${it.presentatoDaNome}${it.presentatoDaId ? ` (ID ${it.presentatoDaId})` : ""}`
+            : "—"
+        const periodo = `${fmtDateIt(it.dataInizioAbb ?? "")} → ${fmtDateIt(it.dataFineAbb ?? "")}`
+        body.push([
+          b.consulenteNome,
+          `${cliente} (ID ${it.clienteId})`,
+          it.dataPresentazione ? fmtDateIt(it.dataPresentazione) : "—",
+          presentato,
+          it.abbonamento ? `${it.abbonamento}${it.idIscrizione ? ` · iscr. ${it.idIscrizione}` : ""}` : "—",
+          periodo,
+          fmtEuro(it.totaleMese),
+          fmtEuro(it.importoPagato),
+        ])
+      }
+    }
+    if (body.length === 0) {
+      body.push(["—", "—", "Nessun referral nel periodo", "—", "—", "—", "—", "—"])
+    }
+    autoTable(doc, {
+      ...pdfTableBase,
+      tableWidth: tw,
+      startY: y + 2,
+      head: [
+        [
+          "Consulente",
+          "Cliente",
+          "Data pres.",
+          "Presentato da",
+          "Abbonamento",
+          "Inizio / fine",
+          "Tot. mese €",
+          "Pagato €",
+        ],
+      ],
+      body,
+      columnStyles: {
+        0: { cellWidth: 32 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 36 },
+        4: { cellWidth: 44 },
+        5: { cellWidth: 28 },
+        6: { cellWidth: 22, halign: "right" },
+        7: { cellWidth: 20, halign: "right" },
+      },
+      showFoot: "never",
+    })
+    y = autoTableNextY(doc, y + 16, 4)
+  }
+
+  const summaryBody = blocks.map((b) => [b.consulenteNome, String(b.count), fmtEuro(b.totaleEuro)])
+  summaryBody.push([
+    "TOTALE",
+    String(blocks.reduce((s, b) => s + b.count, 0)),
+    fmtEuro(blocks.reduce((s, b) => s + b.totaleEuro, 0)),
+  ])
+
+  y = ensurePdfSpace(doc, y, 32)
+  return appendSummaryTable(doc, y, ["Consulente", "Clienti referral", "Totale €"], summaryBody, summary3ColStyles(tw))
+}
+
 function appendOreConvalidazioniSection(
   doc: JsPdfWithAutoTable,
   y: number,
@@ -364,6 +504,7 @@ function buildPdf(
   from: string,
   to: string,
   mode: PrintMode,
+  referralBlocks: ReferralConsulenteBlock[],
 ) {
   const { rows, totals } = reportData
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }) as JsPdfWithAutoTable
@@ -463,6 +604,7 @@ function buildPdf(
     countOnly: true,
   })
   y = appendCrossSection(doc, y, rows, mode)
+  y = appendReferralSection(doc, y, referralBlocks, mode)
 
   y = ensurePdfSpace(doc, y, 30)
   y = sectionTitle(doc, y, "CONTATTI TELEFONICI")
@@ -520,7 +662,8 @@ export function StampaReport() {
     const out = await reportQuery.refetch()
     const reportData = out.data
     if (!reportData) return
-    buildPdf(reportData, consulentiEffective, from, to, mode)
+    const referralBlocks = await loadReferralByConsulente(consulentiEffective, from, to)
+    buildPdf(reportData, consulentiEffective, from, to, mode, referralBlocks)
   }
 
   return (
@@ -529,7 +672,7 @@ export function StampaReport() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Stampa report</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Pagina 1: budget, produzione e ore/convalidazioni. Pagina 2: categorie con riepilogo per consulente.
+            Pagina 1: budget, produzione e ore/convalidazioni. Pagina 2: clienti nuovi, rinnovi, inviti, cross, referral e telefonate.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

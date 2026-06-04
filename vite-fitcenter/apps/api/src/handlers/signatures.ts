@@ -24,6 +24,8 @@ const OTP_TTL_MS = 10 * 60 * 1000
 const SESSION_TTL_MS = 20 * 60 * 1000
 const REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_OTP_ATTEMPTS = 5
+/** Nome mostrato a clienti in SMS/email firma (non il nome prodotto FitCenter). */
+const FIRMA_BRAND = "H2SPORT"
 
 function sha(v: string): string {
   return crypto.createHash("sha256").update(v).digest("hex")
@@ -603,14 +605,14 @@ export async function createSignatureRequest(req: Request, res: Response) {
       if (customerSms && smsConfigured) {
         const linkSms = await sendSms({
           to: customerSms,
-          text: `FitCenter firma: ${link}`,
+          text: `${FIRMA_BRAND} firma: ${link}`,
         })
         linkSmsSent = linkSms.sent
         linkSmsDetail = linkSms.detail
       }
       await sendMail({
         to: customerEmail,
-        subject: "Documento da firmare - FitCenter",
+        subject: `Documento da firmare - ${FIRMA_BRAND}`,
         text:
           `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
           `apri questo link dal tuo cellulare per firmare il documento:\n${link}\n\n` +
@@ -670,7 +672,7 @@ export async function getSmsAdminStatus(_req: Request, res: Response) {
 export async function postSmsAdminTest(req: Request, res: Response) {
   if (req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
   const toRaw = String((req.body as { to?: string })?.to ?? "").trim()
-  const defaultText = `FitCenter test SMS ${new Date().toISOString().slice(0, 19).replace("T", " ")}`
+  const defaultText = `${FIRMA_BRAND} test SMS ${new Date().toISOString().slice(0, 19).replace("T", " ")}`
   const text = String((req.body as { text?: string })?.text ?? defaultText).trim()
   const to = normalizeItPhone(toRaw)
   if (!to) return res.status(400).json({ message: "Numero non valido (es. 3357155744)" })
@@ -1045,7 +1047,7 @@ async function issueSignatureOtp(
     return { otp, isOnsite: true, mailSent: false, smsSent: false, otpChannel: "onsite" }
   }
 
-  const otpText = `FitCenter - Codice firma: ${otp}. Valido 10 minuti. Inseriscilo nella pagina aperta sul cellulare.`
+  const otpText = `${FIRMA_BRAND} - Codice firma: ${otp}. Valido 10 minuti. Inseriscilo nella pagina aperta sul cellulare.`
   let smsSent = false
   let mailSent = false
 
@@ -1070,7 +1072,7 @@ async function issueSignatureOtp(
   if (!smsSent) {
     const mailRes = await sendMail({
       to: row.customerEmail,
-      subject: "Codice OTP firma documento - FitCenter",
+      subject: `Codice OTP firma documento - ${FIRMA_BRAND}`,
       text: `Il tuo codice OTP è: ${otp}\nScade tra 10 minuti.\n\nInseriscilo nella pagina firma sul tuo cellulare.`,
     })
     mailSent = mailRes.sent
@@ -1840,7 +1842,7 @@ export async function confirmSignature(req: Request, res: Response) {
     }
     await sendMail({
       to: row.customerEmail,
-      subject: "Documento firmato - FitCenter",
+      subject: `Documento firmato - ${FIRMA_BRAND}`,
       text: `La firma del documento "${row.documentOriginalName}" è stata completata il ${new Date(signed.signedAt ?? nowIso()).toLocaleString("it-IT")}.`,
       attachments: [
         {
