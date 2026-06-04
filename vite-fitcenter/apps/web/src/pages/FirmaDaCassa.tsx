@@ -220,20 +220,25 @@ export function FirmaDaCassa() {
       })
       const customerLabel = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || email
       let smsHint = " OTP via email."
-      if (!out.customerSmsPresent) {
+      if (out.smsSandbox) {
+        smsHint =
+          " OTP via email (SMSHOSTING_SANDBOX=true nel .env: nessun SMS reale; rimuovi sandbox e riavvia API)."
+      } else if (!out.customerSmsPresent) {
         smsHint = " OTP via email (cellulare assente o non valido in anagrafica)."
       } else if (!out.smsConfigured) {
         smsHint =
-          " OTP via email (SMS non attivo sul server: in .env servono AUTH_KEY e AUTH_SECRET reali da Smshosting, non i testi di esempio)."
+          " OTP via email (SMS non attivo sul server: verifica .env Smshosting e riavvio API)."
       } else if (out.linkSmsSent) {
-        smsHint = " OTP via SMS sul cellulare."
-      } else {
         smsHint =
-          " OTP via email (invio SMS fallito: controlla credenziali Smshosting e credito; vedi log API [SMS][SMSHOSTING-ERROR])."
+          " OTP via SMS quando apri la pagina firma e richiedi il codice (il primo SMS contiene solo il link)."
+      } else {
+        const det = out.linkSmsDetail ? ` (${out.linkSmsDetail})` : ""
+        smsHint = ` OTP via email (SMS link non inviato${det}; controlla credito Smshosting o log API).`
       }
-      const linkSmsPart =
-        out.linkSmsSent && out.customerSmsMasked
-          ? ` e SMS a ${out.customerSmsMasked}`
+      const linkSmsPart = out.smsSandbox
+        ? ""
+        : out.linkSmsSent && out.customerSmsMasked
+          ? ` e SMS link a ${out.customerSmsMasked}`
           : out.customerSmsPresent && out.smsConfigured
             ? " (SMS link non inviato)"
             : ""

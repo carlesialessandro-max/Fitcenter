@@ -204,6 +204,8 @@ export const signaturesApi = {
       customerSmsPresent?: boolean
       customerSmsMasked?: string
       linkSmsSent?: boolean
+      linkSmsDetail?: string
+      smsSandbox?: boolean
     }>
   },
 

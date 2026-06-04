@@ -40,6 +40,10 @@ export function maskPhone(e164: string | null | undefined): string {
   return `${s.slice(0, 4)}***${s.slice(-2)}`
 }
 
+export function isSmsSandboxMode(): boolean {
+  return env("SMSHOSTING_SANDBOX") === "true"
+}
+
 function looksLikePlaceholderCredential(v: string): boolean {
   return /la_tua|your_|esempio|example|placeholder|xxx+|AUTH_KEY|AUTH_SECRET|inserisci|changeme/i.test(v)
 }
@@ -77,6 +81,13 @@ export function isSmsConfigured(): boolean {
   return false
 }
 
+export type SendSmsResult = {
+  sent: boolean
+  msisdn?: string
+  detail?: string
+  transactionId?: string
+}
+
 /** Verifica credenziali Smshosting (GET /user). Solo diagnostica admin. */
 export async function probeSmshostingApi(): Promise<{ ok: boolean; status?: number; detail?: string }> {
   const creds = smshostingCredentials()
@@ -94,56 +105,77 @@ export async function probeSmshostingApi(): Promise<{ ok: boolean; status?: numb
   }
 }
 
-export async function sendSms(input: { to: string; text: string }): Promise<{ sent: boolean }> {
-  const to = normalizeItPhone(input.to)
-  if (!to) {
-    console.log("[SMS][SKIP] numero non valido (serve cellulare 3xx, es. 3471234567):", String(input.to ?? "").slice(0, 24))
-    return { sent: false }
+async function sendSmshostingSms(to: string, text: string): Promise<SendSmsResult> {
+  const msisdn = toSmshostingMsisdn(to)
+  const creds = smshostingCredentials()
+  if (!creds) return { sent: false, msisdn, detail: "credenziali_mancanti" }
+
+  if (isSmsSandboxMode()) {
+    console.log("[SMS][SANDBOX] SMSHOSTING_SANDBOX=true: nessun SMS reale inviato a", maskPhone(to), `(${msisdn})`)
+    return { sent: false, msisdn, detail: "sandbox" }
   }
-  const provider = (env("SMS_PROVIDER") ?? "").toLowerCase()
-  if (!isSmsConfigured()) {
-    console.log("[SMS][DRYRUN]", { to: maskPhone(to), text: input.text })
-    return { sent: false }
+
+  const body = new URLSearchParams({ to: msisdn, text })
+  const from = env("SMSHOSTING_FROM")
+  if (from) body.set("from", from)
+
+  const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
+  const res = await fetch("https://api.smshosting.it/rest/api/sms/send", {
+    method: "POST",
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body,
+  })
+  const raw = await res.text().catch(() => "")
+  if (!res.ok) {
+    console.log("[SMS][SMSHOSTING-ERROR]", res.status, raw.slice(0, 400))
+    return { sent: false, msisdn, detail: `http_${res.status}` }
   }
 
   try {
-    if (provider === "smshosting") {
-      const creds = smshostingCredentials()
-      if (!creds) return { sent: false }
-      const body = new URLSearchParams({
-        to: toSmshostingMsisdn(to),
-        text: input.text,
-      })
-      const from = env("SMSHOSTING_FROM")
-      if (from) body.set("from", from)
-      if (env("SMSHOSTING_SANDBOX") === "true") body.set("sandbox", "true")
-
-      const auth = Buffer.from(`${creds.user}:${creds.pass}`).toString("base64")
-      const res = await fetch("https://api.smshosting.it/rest/api/sms/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-          Accept: "application/json",
-        },
-        body,
-      })
-      const errText = await res.text().catch(() => "")
-      if (!res.ok) {
-        console.log("[SMS][SMSHOSTING-ERROR]", res.status, errText.slice(0, 300))
-        return { sent: false }
-      }
-      try {
-        const data = JSON.parse(errText) as { smsInserted?: number; sms?: { status?: string }[] }
-        const inserted = Number(data?.smsInserted ?? 0)
-        const okStatus = (data?.sms ?? []).some((s) => String(s?.status ?? "").toUpperCase() === "INSERTED")
-        if (inserted > 0 || okStatus) return { sent: true }
-        console.log("[SMS][SMSHOSTING-NOT-INSERTED]", errText.slice(0, 300))
-        return { sent: false }
-      } catch {
-        return { sent: true }
-      }
+    const data = JSON.parse(raw) as {
+      smsInserted?: number
+      smsNotInserted?: number
+      transactionId?: string
+      sms?: { status?: string; statusDetail?: string; to?: string }[]
     }
+    const row = data.sms?.[0]
+    const st = String(row?.status ?? "").toUpperCase()
+    if (st === "NOT_INSERTED") {
+      const det = String(row?.statusDetail ?? "NOT_INSERTED")
+      console.log("[SMS][SMSHOSTING-NOT-INSERTED]", det, raw.slice(0, 300))
+      return { sent: false, msisdn, detail: det, transactionId: data.transactionId }
+    }
+    const inserted = Number(data.smsInserted ?? 0)
+    if (inserted > 0 || st === "INSERTED") {
+      console.log("[SMS][SMSHOSTING-OK]", maskPhone(to), msisdn, data.transactionId ?? "")
+      return { sent: true, msisdn, transactionId: data.transactionId }
+    }
+    console.log("[SMS][SMSHOSTING-NOT-INSERTED]", raw.slice(0, 300))
+    return { sent: false, msisdn, detail: "not_inserted", transactionId: data.transactionId }
+  } catch {
+    console.log("[SMS][SMSHOSTING-PARSE-ERROR]", raw.slice(0, 300))
+    return { sent: false, msisdn, detail: "risposta_non_json" }
+  }
+}
+
+export async function sendSms(input: { to: string; text: string }): Promise<SendSmsResult> {
+  const to = normalizeItPhone(input.to)
+  if (!to) {
+    console.log("[SMS][SKIP] numero non valido (serve cellulare 3xx, es. 3471234567):", String(input.to ?? "").slice(0, 24))
+    return { sent: false, detail: "numero_non_valido" }
+  }
+  const provider = getSmsProvider()
+  if (!isSmsConfigured()) {
+    console.log("[SMS][DRYRUN]", { to: maskPhone(to), text: input.text.slice(0, 80) })
+    return { sent: false, msisdn: toSmshostingMsisdn(to), detail: "non_configurato" }
+  }
+
+  try {
+    if (provider === "smshosting") return await sendSmshostingSms(to, input.text)
 
     if (provider === "twilio") {
       const sid = env("TWILIO_ACCOUNT_SID")!
@@ -162,9 +194,9 @@ export async function sendSms(input: { to: string; text: string }): Promise<{ se
       if (!res.ok) {
         const errText = await res.text().catch(() => "")
         console.log("[SMS][TWILIO-ERROR]", res.status, errText.slice(0, 300))
-        return { sent: false }
+        return { sent: false, detail: `http_${res.status}` }
       }
-      return { sent: true }
+      return { sent: true, msisdn: to.replace(/^\+/, "") }
     }
 
     if (provider === "http") {
@@ -181,14 +213,14 @@ export async function sendSms(input: { to: string; text: string }): Promise<{ se
       if (!res.ok) {
         const errText = await res.text().catch(() => "")
         console.log("[SMS][HTTP-ERROR]", res.status, errText.slice(0, 300))
-        return { sent: false }
+        return { sent: false, detail: `http_${res.status}` }
       }
-      return { sent: true }
+      return { sent: true, msisdn: to.replace(/^\+/, "") }
     }
 
-    return { sent: false }
+    return { sent: false, detail: "provider_sconosciuto" }
   } catch (e) {
     console.log("[SMS][ERROR]", (e as Error)?.message ?? String(e))
-    return { sent: false }
+    return { sent: false, detail: "errore_rete" }
   }
 }

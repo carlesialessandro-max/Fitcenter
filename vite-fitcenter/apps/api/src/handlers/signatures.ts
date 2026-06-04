@@ -7,6 +7,7 @@ import { sendMail } from "../services/mailer.js"
 import {
   getSmsProvider,
   isSmsConfigured,
+  isSmsSandboxMode,
   maskPhone,
   normalizeItPhone,
   probeSmshostingApi,
@@ -596,13 +597,15 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const link = `${getBaseUrl(req)}/firma/${encodeURIComponent(publicToken)}`
     const smsConfigured = isSmsConfigured()
     let linkSmsSent = false
+    let linkSmsDetail: string | undefined
     if (deliveryMode === "email") {
       if (customerSms && smsConfigured) {
         const linkSms = await sendSms({
           to: customerSms,
-          text: `FitCenter: apri dal cellulare per firmare ${link}`,
+          text: `FitCenter firma: ${link}`,
         })
         linkSmsSent = linkSms.sent
+        linkSmsDetail = linkSms.detail
       }
       await sendMail({
         to: customerEmail,
@@ -631,6 +634,8 @@ export async function createSignatureRequest(req: Request, res: Response) {
       customerSmsPresent: !!customerSms,
       customerSmsMasked: customerSms ? maskPhone(customerSms) : undefined,
       linkSmsSent,
+      linkSmsDetail,
+      smsSandbox: isSmsSandboxMode(),
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -641,15 +646,30 @@ export async function getSmsAdminStatus(_req: Request, res: Response) {
   if (_req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
   const provider = getSmsProvider()
   const configured = isSmsConfigured()
+  const sandbox = isSmsSandboxMode()
   const probe = provider === "smshosting" && configured ? await probeSmshostingApi() : null
   res.json({
     provider: provider || null,
     configured,
+    sandbox,
     smshostingApiOk: probe?.ok ?? null,
     smshostingStatus: probe?.status ?? null,
     smshostingDetail: probe?.detail ?? null,
     envFileHint: "apps/api/.env (SMS_PROVIDER, SMSHOSTING_USER, SMSHOSTING_PASSWORD) + riavvio servizio API",
+    note: sandbox
+      ? "SMSHOSTING_SANDBOX=true: l'API accetta la richiesta ma NON invia SMS reali. Rimuovi la riga per produzione."
+      : null,
   })
+}
+
+export async function postSmsAdminTest(req: Request, res: Response) {
+  if (req.user?.role !== "admin") return res.status(403).json({ message: "Solo admin" })
+  const toRaw = String((req.body as { to?: string })?.to ?? "").trim()
+  const text = String((req.body as { text?: string })?.text ?? "FitCenter: test SMS firma").trim()
+  const to = normalizeItPhone(toRaw)
+  if (!to) return res.status(400).json({ message: "Numero non valido (es. 3357155744)" })
+  const result = await sendSms({ to, text })
+  res.json({ ok: result.sent, ...result, masked: maskPhone(to) })
 }
 
 export async function listSignatureRequests(_req: Request, res: Response) {
