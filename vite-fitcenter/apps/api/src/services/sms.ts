@@ -63,8 +63,12 @@ function toSmshostingMsisdn(e164: string): string {
   return e164.replace(/^\+/, "").replace(/\D/g, "")
 }
 
+export function getSmsProvider(): string {
+  return (env("SMS_PROVIDER") ?? "").toLowerCase()
+}
+
 export function isSmsConfigured(): boolean {
-  const provider = (env("SMS_PROVIDER") ?? "").toLowerCase()
+  const provider = getSmsProvider()
   if (provider === "smshosting") return !!smshostingCredentials()
   if (provider === "twilio") {
     return !!(env("TWILIO_ACCOUNT_SID") && env("TWILIO_AUTH_TOKEN") && env("TWILIO_FROM"))
