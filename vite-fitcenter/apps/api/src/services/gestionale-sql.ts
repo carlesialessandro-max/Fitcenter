@@ -671,7 +671,7 @@ function referralPresenterColumn(): string {
   return col || "IDPresentatore"
 }
 
-/** Data presentazione referral sul cliente (tabella Utenti). Se la colonna esiste, il mese del report filtra su questa data, non su DataInizio abbonamento. */
+/** Data presentazione referral sul cliente (tabella Utenti). Solo informativa in elenco; il periodo filtra sulla data vendita abbonamento. */
 function referralPresentationDateColumnLogical(): string {
   const raw = process.env.GESTIONALE_UTENTI_COL_DATA_PRESENTAZIONE?.trim()
   const col = (raw || "DataPresentazione").replace(/[^\p{L}\p{N}_]/gu, "")
@@ -816,6 +816,16 @@ function sqlReferralAbbDescrSelectDynamic(alias: string, cols: Set<string>): str
  * Referral “porta un amico”: presentatore valorizzato, abbonamento utile nel mese, importo pagato > 0.
  * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore (come queryAbbonamenti).
  */
+function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
+  const parts: string[] = []
+  for (const logical of ["DataOperazione", "DataRegistrazione", "DataInizio"] as const) {
+    const ac = pickAbbColumnActual(cols, logical)
+    if (ac) parts.push(`CAST(${bracketSqlAliasColumn(alias, ac)} AS DATE)`)
+  }
+  if (parts.length === 0) return `CAST(NULL AS DATE)`
+  return parts.length === 1 ? parts[0]! : `COALESCE(${parts.join(", ")})`
+}
+
 export async function queryReferralPresentati(
   venditoreUtenteIds: number[],
   fromIso: string,
@@ -833,16 +843,11 @@ export async function queryReferralPresentati(
   const abbCols = await fetchSqlColumnSetForObject(p, tblA)
   const utentiCols = await fetchSqlColumnSetForObject(p, tblU)
   const presDateActual = pickAbbColumnActual(utentiCols, referralPresentationDateColumnLogical())
-  const usePresentationMonth = presDateActual != null
   const pag = (alias: string) => sqlReferralPagatoExprDynamic(alias, abbCols)
   const excludeFullDyn = sqlReferralExcludeFullDynamic("x", abbCols)
   const excludeMinDyn = sqlReferralExcludeMinDynamic("x", abbCols)
   const abbDescrSel = sqlReferralAbbDescrSelectDynamic("x", abbCols)
   const presDateSql = presDateActual ? bracketSqlAliasColumn("u", presDateActual) : null
-  const presDateWhere =
-    presDateSql != null
-      ? `AND CAST(${presDateSql} AS DATE) >= CAST(@from AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE)`
-      : ""
   const refDataPresSelect =
     presDateSql != null ? `CAST(${presDateSql} AS DATE) AS ReferralDataPresentazione` : `CAST(NULL AS DATE) AS ReferralDataPresentazione`
 
@@ -864,15 +869,14 @@ export async function queryReferralPresentati(
     const x = alias
     const vendLine =
       vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
-    // Importante: anche quando il mese lista clienti è su DataPresentazione,
-    // i totali e l'abbonamento mostrato devono riferirsi AL MESE selezionato.
-    // Usiamo DataInizio come proxy "riga nel mese" (come prima).
-    const abbInCalendarMonth = `CAST(${x}.[DataInizio] AS DATE) >= CAST(@from AS DATE)
-    AND CAST(${x}.[DataInizio] AS DATE) < CAST(@to AS DATE)
+    const saleDate = sqlReferralAbbSaleDateExpr(x, abbCols)
+    // Periodo = data vendita/registrazione (DataOperazione), non DataInizio abbonamento.
+    const abbInPeriod = `${saleDate} >= CAST(@from AS DATE)
+    AND ${saleDate} < CAST(@to AS DATE)
     AND `
     return `
     ${x}.[IDUtente] = u.[IDUtente]
-    AND ${vendLine}${abbInCalendarMonth}(${pag(x)}) > 0
+    AND ${vendLine}${abbInPeriod}(${pag(x)}) > 0
     AND ${excludeSql}`
   }
 
@@ -910,10 +914,9 @@ CROSS APPLY (
     (${abbDescrSel}) AS AbbDescrCombined
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
-  ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
+  ORDER BY ${pag("x")} DESC, ${sqlReferralAbbSaleDateExpr("x", abbCols)} DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
-  ${presDateWhere}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const sqlMinimal = (vendCol: string | null, excludeSql: string) => `
@@ -950,10 +953,9 @@ CROSS APPLY (
     (${abbDescrSel}) AS AbbDescrCombined
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
-  ORDER BY ${pag("x")} DESC, x.[DataInizio] DESC
+  ORDER BY ${pag("x")} DESC, ${sqlReferralAbbSaleDateExpr("x", abbCols)} DESC
 ) a
 WHERE u.[${colPres}] IS NOT NULL
-  ${presDateWhere}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [

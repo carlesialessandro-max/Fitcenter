@@ -72,9 +72,9 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Clienti con socio presentatore: se nel gestionale esiste{" "}
-          <span className="text-zinc-400">DataPresentazione</span>, il mese selezionato filtra su quella data; altrimenti sul mese di{" "}
-          <span className="text-zinc-400">inizio abbonamento</span>. Esclusi tesseramenti/attivazioni, solo importo pagato positivo.
+          Clienti con socio presentatore: il periodo filtra sulla{" "}
+          <span className="text-zinc-400">data registrazione vendita</span> dell&apos;abbonamento (es. 04/06 anche se inizio
+          abbonamento 01/07), non sulla data presentazione. Esclusi tesseramenti/attivazioni, solo importo pagato positivo.
           {role === "admin" ? (
             <> Admin: scegli «Tutti i venditori» o una consulente per filtrare le vendite attribuite.</>
           ) : (
