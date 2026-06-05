@@ -17,7 +17,7 @@ function fmtDateIt(iso: string | null | undefined): string {
 }
 
 export function Referral() {
-  const { role, consulenti } = useAuth()
+  const { role, consulenti, consulenteNome } = useAuth()
   const [adminConsulente, setAdminConsulente] = useState(ADMIN_TUTTI)
   const [ym, setYm] = useState(() => {
     const d = new Date()
@@ -37,7 +37,7 @@ export function Referral() {
     role === "admin" && budgetData?.consulenti?.length ? budgetData.consulenti : (consulenti ?? [])
 
   const query = useQuery({
-    queryKey: ["referral-presentati", ym, role, adminTutti ? "tutti" : adminConsulente],
+    queryKey: ["referral-presentati", ym, role, adminTutti ? "tutti" : adminConsulente, consulenteNome],
     queryFn: () =>
       role === "admin"
         ? dataApi.getReferralPresentati({
@@ -46,7 +46,7 @@ export function Referral() {
             tutti: adminTutti ? true : undefined,
             consulente: adminTutti ? undefined : adminConsulente,
           })
-        : dataApi.getReferralPresentati({ year, month }),
+        : dataApi.getReferralPresentati({ year, month, consulente: consulenteNome || undefined }),
     staleTime: 30_000,
     retry: false,
     refetchOnWindowFocus: false,
@@ -78,7 +78,7 @@ export function Referral() {
           {role === "admin" ? (
             <> Admin: scegli «Tutti i venditori» o una consulente per filtrare le vendite attribuite.</>
           ) : (
-            <> Nessun filtro venditore per operatore.</>
+            <> Operatore: solo referral con vendita attribuita a {consulenteNome || "te"}.</>
           )}
         </p>
       </div>

@@ -1435,6 +1435,41 @@ export async function getReferralPresentati(req: Request, res: Response) {
         }
         venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
       }
+    } else if (u.role === "operatore") {
+      const opNome = getOperatoreConsulenteNome(req)?.trim() || ""
+      if (!opNome) {
+        return res.json({
+          items: [],
+          totaleEuro: 0,
+          totaleClienti: 0,
+          venditoreIdsResolved: [],
+          tuttiIVenditori: false,
+          hint: "Profilo operatore senza consulente associata.",
+          range: {
+            year: rangeEarly.year,
+            month: rangeEarly.month,
+            from: rangeEarly.fromIso,
+            to: rangeEarly.rangeToInclusive,
+          },
+        })
+      }
+      const idStr = await resolveConsultantId(opNome)
+      if (!idStr?.trim()) {
+        return res.json({
+          items: [],
+          totaleEuro: 0,
+          totaleClienti: 0,
+          venditoreIdsResolved: [],
+          tuttiIVenditori: false,
+          range: {
+            year: rangeEarly.year,
+            month: rangeEarly.month,
+            from: rangeEarly.fromIso,
+            to: rangeEarly.rangeToInclusive,
+          },
+        })
+      }
+      venditoreIdsResolved = gestionaleSql.parseConsultantIds(idStr)
     }
 
     const { fromIso, toIsoExclusive, year, month, rangeToInclusive } = rangeEarly
