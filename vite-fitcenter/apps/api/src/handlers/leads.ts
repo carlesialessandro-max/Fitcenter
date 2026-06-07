@@ -5,6 +5,15 @@ import { importFromSqlServer } from "../services/sql-import.js"
 import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types/lead.js"
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 
+/** Lead bambini → Irene. Solo segnali espliciti; esclusi nomi campagna (es. Festa della Mamma = adulti). */
+function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
+  const blob = parts
+    .filter((p) => p != null && String(p).trim() !== "")
+    .join(" ")
+  if (!blob.trim()) return false
+  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(blob)
+}
+
 export async function listLeads(req: Request, res: Response) {
   try {
     const { fonte, stato, consulenteId, search } = req.query
@@ -212,7 +221,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   if (!interesseRaw.trim()) {
     for (const fv of Object.values(flat)) {
       const v = fv.trim()
-      if (/scuola\s*nuoto|nuoto\s*bambin|bambin|campus|festa\s+della\s+mamma/i.test(v)) {
+      if (/scuola\s*nuoto|nuoto\s*bambin|bambin|campus/i.test(v)) {
         interesseRaw = v
         break
       }
@@ -249,16 +258,9 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const noteOut = note.trim() ? note.trim() : undefined
 
   const categoriaRaw = (pick(["categoria", "Categoria", "canale", "Canale"]) || "").toLowerCase()
-  const flatBlob = Object.entries(flat)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n")
-    .toLowerCase()
-  const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw} ${oggetto} ${messaggio} ${noteOut ?? ""} ${flatBlob}`.toLowerCase()
+  const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw} ${oggetto} ${messaggio} ${noteOut ?? ""}`.toLowerCase()
   const categoria =
-    categoriaRaw === "bambini" ||
-    /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquatic|festa\s+della\s+mamma)\b/i.test(blobCat)
-      ? ("bambini" as const)
-      : undefined
+    categoriaRaw === "bambini" || isLeadBambiniText(blobCat) ? ("bambini" as const) : undefined
   return {
     nome: nome || "—",
     cognome: cognome || "—",
@@ -324,10 +326,8 @@ export async function webhookZapier(req: Request, res: Response) {
       const leadPayload = normalizeZapierBody(payload)
       const lead = store.create(leadPayload)
       const isBambini =
-        (leadPayload.categoria ?? "generale") === "bambini" ||
-        /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(
-          `${leadPayload.interesseDettaglio ?? ""} ${leadPayload.note ?? ""} ${leadPayload.categoria ?? ""}`
-        )
+        leadPayload.categoria === "bambini" ||
+        isLeadBambiniText(leadPayload.interesseDettaglio, leadPayload.note, leadPayload.categoria)
       if (isBambini) {
         const patched = store.update(lead.id, {
           consulenteNome: "Irene",
