@@ -734,6 +734,95 @@ function buildDashboardFromData(
   }
 }
 
+type FasciaRossiVerdi = "rossi" | "verdi" | "altro"
+type FasciaRossiVerdiAgg = FasciaRossiVerdi | "misto"
+
+type FasciaCounts = { rossi: number; verdi: number; altro: number }
+
+function normalizeAttiviBlob(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** Rossi / Verdi da testi gestionale (categoria, piano, abbonamento). */
+function inferFasciaRossiVerdi(a: Abbonamento): FasciaRossiVerdi {
+  const blob = normalizeAttiviBlob(
+    `${a.categoriaAbbonamentoDescrizione ?? ""} ${a.abbonamentoDescrizione ?? ""} ${a.pianoNome ?? ""} ${a.macroCategoriaDescrizione ?? ""}`
+  )
+  if (/\bVERDI\b/.test(blob) || blob.includes("ORARIO RIDOTTO")) return "verdi"
+  if (/\bROSSI\b/.test(blob) || blob.includes("ORARIO LIBERO")) return "rossi"
+  if (/\bOPEN\b/.test(blob) && !/\bVERDI\b/.test(blob)) return "rossi"
+  return "altro"
+}
+
+function fasciaFromCounts(c: FasciaCounts): FasciaRossiVerdiAgg {
+  const parts = [c.rossi > 0, c.verdi > 0, c.altro > 0].filter(Boolean).length
+  if (parts > 1) return "misto"
+  if (c.rossi > 0) return "rossi"
+  if (c.verdi > 0) return "verdi"
+  return "altro"
+}
+
+function sottocategoriaLabelAttivi(a: Abbonamento, categoria: string): string {
+  const catN = normalizeAttiviBlob(categoria)
+  const abb = (a.abbonamentoDescrizione ?? "").trim()
+  const piano = (a.pianoNome ?? "").trim()
+  if (abb && normalizeAttiviBlob(abb) !== catN) return abb
+  if (piano && normalizeAttiviBlob(piano) !== catN && normalizeAttiviBlob(piano) !== normalizeAttiviBlob(abb)) return piano
+  if (abb) return abb
+  if (piano) return piano
+  return "Piano non specificato"
+}
+
+function byFasciaRossiVerdi(rows: Abbonamento[]): FasciaCounts {
+  const c: FasciaCounts = { rossi: 0, verdi: 0, altro: 0 }
+  for (const a of rows) c[inferFasciaRossiVerdi(a)]++
+  return c
+}
+
+function byCategoriaDettaglio(rows: Abbonamento[], categoriaLabelFn: (a: Abbonamento) => string) {
+  type CatAcc = { totale: number; byFascia: FasciaCounts; subs: Map<string, FasciaCounts & { totale: number }> }
+  const m = new Map<string, CatAcc>()
+  for (const a of rows) {
+    const cat = categoriaLabelFn(a)
+    let acc = m.get(cat)
+    if (!acc) {
+      acc = { totale: 0, byFascia: { rossi: 0, verdi: 0, altro: 0 }, subs: new Map() }
+      m.set(cat, acc)
+    }
+    acc.totale++
+    const fascia = inferFasciaRossiVerdi(a)
+    acc.byFascia[fascia]++
+    const sub = sottocategoriaLabelAttivi(a, cat)
+    const subPrev = acc.subs.get(sub)
+    if (!subPrev) acc.subs.set(sub, { totale: 1, rossi: fascia === "rossi" ? 1 : 0, verdi: fascia === "verdi" ? 1 : 0, altro: fascia === "altro" ? 1 : 0 })
+    else {
+      subPrev.totale++
+      subPrev[fascia]++
+    }
+  }
+  return Array.from(m.entries())
+    .map(([categoria, acc]) => ({
+      categoria,
+      totale: acc.totale,
+      fascia: fasciaFromCounts(acc.byFascia),
+      byFascia: acc.byFascia,
+      sottocategorie: Array.from(acc.subs.entries())
+        .map(([sottocategoria, sub]) => ({
+          sottocategoria,
+          totale: sub.totale,
+          fascia: fasciaFromCounts(sub),
+          byFascia: { rossi: sub.rossi, verdi: sub.verdi, altro: sub.altro },
+        }))
+        .sort((a, b) => b.totale - a.totale || a.sottocategoria.localeCompare(b.sottocategoria, "it")),
+    }))
+    .sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria, "it"))
+}
+
 /** Admin: attivi per KPI, ripartiti per durata (fascia) e stima adulti / bambini. */
 export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
   try {
@@ -846,8 +935,22 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
       attiviConEta: conEta,
       totaleAttivi: totaleAttiviSegmentati,
       totaleDurataMesi,
-      adulti: { totale: adulti.length, totaleDurataMesi: adultiTotDurataMesi, byDurata: byDurata(adulti), byCategoria: byCategoria(adulti) },
-      bambini: { totale: bambini.length, totaleDurataMesi: bambiniTotDurataMesi, byDurata: byDurata(bambini), byCategoria: byCategoria(bambini) },
+      adulti: {
+        totale: adulti.length,
+        totaleDurataMesi: adultiTotDurataMesi,
+        byDurata: byDurata(adulti),
+        byCategoria: byCategoria(adulti),
+        byCategoriaDettaglio: byCategoriaDettaglio(adulti, categoriaLabel),
+        byFasciaRossiVerdi: byFasciaRossiVerdi(adulti),
+      },
+      bambini: {
+        totale: bambini.length,
+        totaleDurataMesi: bambiniTotDurataMesi,
+        byDurata: byDurata(bambini),
+        byCategoria: byCategoria(bambini),
+        byCategoriaDettaglio: byCategoriaDettaglio(bambini, categoriaLabel),
+        byFasciaRossiVerdi: byFasciaRossiVerdi(bambini),
+      },
       notaClassificazione,
     })
   } catch (e) {

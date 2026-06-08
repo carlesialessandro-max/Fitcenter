@@ -57,12 +57,38 @@ export interface AbbAttiviCategoriaBucket {
   totale: number
 }
 
+export type AbbAttiviFasciaRossiVerdi = "rossi" | "verdi" | "altro"
+export type AbbAttiviFasciaRossiVerdiAgg = AbbAttiviFasciaRossiVerdi | "misto"
+
+export interface AbbAttiviFasciaSummary {
+  rossi: number
+  verdi: number
+  altro: number
+}
+
+export interface AbbAttiviSottocategoriaBucket {
+  sottocategoria: string
+  totale: number
+  fascia: AbbAttiviFasciaRossiVerdiAgg
+  byFascia: AbbAttiviFasciaSummary
+}
+
+export interface AbbAttiviCategoriaDettaglioBucket {
+  categoria: string
+  totale: number
+  fascia: AbbAttiviFasciaRossiVerdiAgg
+  byFascia: AbbAttiviFasciaSummary
+  sottocategorie: AbbAttiviSottocategoriaBucket[]
+}
+
 export interface AbbAttiviSegmentoAnalisi {
   totale: number
   /** Somma durate inferite (mesi) sul segmento (dopo dedupe bambini). */
   totaleDurataMesi: number
   byDurata: AbbAttiviDurataBucket[]
   byCategoria: AbbAttiviCategoriaBucket[]
+  byCategoriaDettaglio: AbbAttiviCategoriaDettaglioBucket[]
+  byFasciaRossiVerdi: AbbAttiviFasciaSummary
 }
 
 /** Risposta GET /data/abbonamenti-attivi-analisi (admin) */

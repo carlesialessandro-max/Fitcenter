@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { useSearchParams, Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -16,6 +16,12 @@ import {
 } from "recharts"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
+import type {
+  AbbAttiviCategoriaDettaglioBucket,
+  AbbAttiviFasciaRossiVerdiAgg,
+  AbbAttiviFasciaSummary,
+  AbbAttiviSegmentoAnalisi,
+} from "@/types/gestionale"
 
 function localIsoDate(d = new Date()): string {
   const y = d.getFullYear()
@@ -28,6 +34,134 @@ const COL_BAR = "#34d399"
 const COL_BAR_BAMBINI = "#a78bfa"
 const COL_PIE = ["#34d399", "#a78bfa", "#64748b"]
 const COL_CAT = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308", "#06b6d4", "#ef4444"]
+
+function fasciaBadgeClass(fascia: AbbAttiviFasciaRossiVerdiAgg): string {
+  if (fascia === "rossi") return "bg-red-950/50 text-red-300 ring-1 ring-red-900/60"
+  if (fascia === "verdi") return "bg-emerald-950/50 text-emerald-300 ring-1 ring-emerald-900/60"
+  if (fascia === "misto") return "bg-amber-950/50 text-amber-300 ring-1 ring-amber-900/60"
+  return "bg-zinc-800 text-zinc-400 ring-1 ring-zinc-700"
+}
+
+function fasciaLabel(fascia: AbbAttiviFasciaRossiVerdiAgg): string {
+  if (fascia === "rossi") return "Rossi"
+  if (fascia === "verdi") return "Verdi"
+  if (fascia === "misto") return "Misto"
+  return "Altro"
+}
+
+function FasciaBadge({ fascia }: { fascia: AbbAttiviFasciaRossiVerdiAgg }) {
+  return (
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${fasciaBadgeClass(fascia)}`}>
+      {fasciaLabel(fascia)}
+    </span>
+  )
+}
+
+function FasciaSummaryChips({ summary }: { summary: AbbAttiviFasciaSummary }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+      <span className="rounded bg-red-950/40 px-2 py-1 tabular-nums text-red-300">Rossi: {summary.rossi}</span>
+      <span className="rounded bg-emerald-950/40 px-2 py-1 tabular-nums text-emerald-300">Verdi: {summary.verdi}</span>
+      <span className="rounded bg-zinc-800 px-2 py-1 tabular-nums text-zinc-400">Altro: {summary.altro}</span>
+    </div>
+  )
+}
+
+function CategoriaDettaglioTable({
+  rows,
+  totaleFooter,
+  totaleFooterLabel,
+  totaleFooterClass,
+}: {
+  rows: AbbAttiviCategoriaDettaglioBucket[]
+  totaleFooter: number
+  totaleFooterLabel: string
+  totaleFooterClass: string
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+
+  const toggle = (categoria: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(categoria)) next.delete(categoria)
+      else next.add(categoria)
+      return next
+    })
+  }
+
+  return (
+    <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
+      <table className="w-full min-w-[420px] text-sm">
+        <thead>
+          <tr className="border-b border-zinc-800 text-zinc-500">
+            <th className="px-3 py-2 text-left font-medium">Categoria</th>
+            <th className="px-3 py-2 text-left font-medium">Fascia</th>
+            <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">R</th>
+            <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">V</th>
+            <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">A</th>
+            <th className="px-3 py-2 text-right font-medium">Totale</th>
+          </tr>
+        </thead>
+        <tbody className="text-zinc-200">
+          {rows.map((r) => {
+            const open = expanded.has(r.categoria)
+            const canExpand = r.sottocategorie.length > 0
+            return (
+              <Fragment key={r.categoria}>
+                <tr
+                  className={`border-b border-zinc-800/70 ${canExpand ? "cursor-pointer hover:bg-zinc-800/40" : ""}`}
+                  onClick={canExpand ? () => toggle(r.categoria) : undefined}
+                >
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      {canExpand ? (
+                        <span className="inline-block w-4 shrink-0 text-zinc-500" aria-hidden>
+                          {open ? "▾" : "▸"}
+                        </span>
+                      ) : (
+                        <span className="inline-block w-4 shrink-0" />
+                      )}
+                      <span>{r.categoria}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <FasciaBadge fascia={r.fascia} />
+                  </td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-red-300/90 sm:table-cell">{r.byFascia.rossi || "—"}</td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-emerald-300/90 sm:table-cell">{r.byFascia.verdi || "—"}</td>
+                  <td className="hidden px-3 py-2 text-right tabular-nums text-zinc-500 sm:table-cell">{r.byFascia.altro || "—"}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">{r.totale}</td>
+                </tr>
+                {open &&
+                  r.sottocategorie.map((sub) => (
+                    <tr key={`${r.categoria}-${sub.sottocategoria}`} className="border-b border-zinc-800/50 bg-zinc-900/50">
+                      <td className="px-3 py-1.5 pl-9 text-xs text-zinc-400">{sub.sottocategoria}</td>
+                      <td className="px-3 py-1.5">
+                        <FasciaBadge fascia={sub.fascia} />
+                      </td>
+                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-red-300/80 sm:table-cell">{sub.byFascia.rossi || "—"}</td>
+                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-emerald-300/80 sm:table-cell">{sub.byFascia.verdi || "—"}</td>
+                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500 sm:table-cell">{sub.byFascia.altro || "—"}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-300">{sub.totale}</td>
+                    </tr>
+                  ))}
+              </Fragment>
+            )
+          })}
+          <tr className="bg-zinc-900/60">
+            <td className="px-3 py-2 font-medium text-zinc-300">{totaleFooterLabel}</td>
+            <td colSpan={4} />
+            <td className={`px-3 py-2 text-right font-semibold tabular-nums ${totaleFooterClass}`}>{totaleFooter}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function filterCategoriaDettaglio(segment: AbbAttiviSegmentoAnalisi): AbbAttiviCategoriaDettaglioBucket[] {
+  return (segment.byCategoriaDettaglio ?? []).filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
+}
 
 export function AttiviAnalisi() {
   const { role } = useAuth()
@@ -76,14 +210,10 @@ export function AttiviAnalisi() {
     return Math.abs(p - Math.round(p)) < 0.05 ? String(Math.round(p)) : p.toFixed(1)
   }
   const adultiTotByCategoria = data
-    ? data.adulti.byCategoria
-        .filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
-        .reduce((s, r) => s + r.totale, 0)
+    ? filterCategoriaDettaglio(data.adulti).reduce((s, r) => s + r.totale, 0)
     : 0
   const bambiniTotByCategoria = data
-    ? data.bambini.byCategoria
-        .filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
-        .reduce((s, r) => s + r.totale, 0)
+    ? filterCategoriaDettaglio(data.bambini).reduce((s, r) => s + r.totale, 0)
     : 0
   const categoriaRows = useMemo(() => {
     if (!data) return []
@@ -347,56 +477,30 @@ export function AttiviAnalisi() {
           <div className="mt-8 grid gap-8 lg:grid-cols-2">
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Adulti — categorie</h2>
-              <p className="mt-1 text-xs text-zinc-500">Totale abbonamenti per categoria</p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
-                <table className="w-full min-w-[280px] text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-800 text-zinc-500">
-                      <th className="px-3 py-2 text-left font-medium">Categoria</th>
-                      <th className="px-3 py-2 text-right font-medium">Totale</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-zinc-200">
-                    {data.adulti.byCategoria.filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA")).map((r) => (
-                      <tr key={`ad-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
-                        <td className="px-3 py-2">{r.categoria}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>
-                      </tr>
-                    ))}
-                    <tr className="bg-zinc-900/60">
-                      <td className="px-3 py-2 font-medium text-zinc-300">Totale adulti</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-emerald-400">{adultiTotByCategoria}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Clicca una riga per le sottocategorie (piano/abbonamento). Rossi / Verdi: da nome categoria o, se generica (es. GYM), dal piano nel gestionale. R = rossi, V = verdi, A = altro.
+              </p>
+              {data.adulti.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.adulti.byFasciaRossiVerdi} />}
+              <CategoriaDettaglioTable
+                rows={filterCategoriaDettaglio(data.adulti)}
+                totaleFooter={adultiTotByCategoria}
+                totaleFooterLabel="Totale adulti"
+                totaleFooterClass="text-emerald-400"
+              />
             </section>
 
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Bambini — categorie</h2>
-              <p className="mt-1 text-xs text-zinc-500">Totale abbonamenti per categoria</p>
-              <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
-                <table className="w-full min-w-[280px] text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-800 text-zinc-500">
-                      <th className="px-3 py-2 text-left font-medium">Categoria</th>
-                      <th className="px-3 py-2 text-right font-medium">Totale</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-zinc-200">
-                    {data.bambini.byCategoria.filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA")).map((r) => (
-                      <tr key={`ba-${r.categoria}`} className="border-b border-zinc-800/70 last:border-b-0">
-                        <td className="px-3 py-2">{r.categoria}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{r.totale}</td>
-                      </tr>
-                    ))}
-                    <tr className="bg-zinc-900/60">
-                      <td className="px-3 py-2 font-medium text-zinc-300">Totale bambini</td>
-                      <td className="px-3 py-2 text-right font-semibold tabular-nums text-violet-400">{bambiniTotByCategoria}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              <p className="mt-1 text-xs text-zinc-500">
+                Stessa logica: espandi per sottocategoria e fascia oraria Rossi / Verdi.
+              </p>
+              {data.bambini.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.bambini.byFasciaRossiVerdi} />}
+              <CategoriaDettaglioTable
+                rows={filterCategoriaDettaglio(data.bambini)}
+                totaleFooter={bambiniTotByCategoria}
+                totaleFooterLabel="Totale bambini"
+                totaleFooterClass="text-violet-400"
+              />
             </section>
           </div>
         </>
