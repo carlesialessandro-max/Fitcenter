@@ -478,7 +478,7 @@ export function AttiviAnalisi() {
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Adulti — categorie</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Clicca una riga per le sottocategorie (piano/abbonamento). Rossi / Verdi: da nome categoria o, se generica (es. GYM), dal piano nel gestionale. R = rossi, V = verdi, A = altro.
+                Clicca una riga per le sottocategorie (piano raggruppato: GYM, SMILE H2O, SMILE FIT). Rossi / Verdi = fascia oraria dell&apos;abbonamento, non l&apos;età. Bambini = età sotto soglia ({data.sogliaEtaAdulti} anni). R / V / A = rossi, verdi, altro.
               </p>
               {data.adulti.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.adulti.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable
@@ -492,7 +492,7 @@ export function AttiviAnalisi() {
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Bambini — categorie</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Stessa logica: espandi per sottocategoria e fascia oraria Rossi / Verdi.
+                Stessa logica: espandi per sottocategoria. Rossi / Verdi qui indica il tipo di abbonamento (orario libero / ridotto), non che il bambino abbia un&apos;età diversa da chi è in SCUOLA NUOTO o AGONISMO.
               </p>
               {data.bambini.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.bambini.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable

@@ -778,6 +778,19 @@ function sottocategoriaLabelAttivi(a: Abbonamento, categoria: string): string {
   return "Piano non specificato"
 }
 
+/** Raggruppa varianti gestionale (GYM (Palestra), SMILE H2O …) in un’unica voce per drill-down. */
+function gruppoSottocategoriaAttivi(raw: string, categoria: string): string {
+  const blob = normalizeAttiviBlob(raw)
+  const catN = normalizeAttiviBlob(categoria)
+  const compact = blob.replace(/[\s-]/g, "")
+
+  if (compact.includes("SMILEH2O") || blob.includes("SMILE H2O")) return "SMILE H2O"
+  if (compact.includes("SMILEFIT") || blob.includes("SMILE FIT")) return "SMILE FIT"
+  if (catN === "GYM" || /\bGYM\b/.test(blob) || blob.startsWith("GYM ")) return "GYM"
+
+  return raw.trim() || "Piano non specificato"
+}
+
 function byFasciaRossiVerdi(rows: Abbonamento[]): FasciaCounts {
   const c: FasciaCounts = { rossi: 0, verdi: 0, altro: 0 }
   for (const a of rows) c[inferFasciaRossiVerdi(a)]++
@@ -797,7 +810,7 @@ function byCategoriaDettaglio(rows: Abbonamento[], categoriaLabelFn: (a: Abbonam
     acc.totale++
     const fascia = inferFasciaRossiVerdi(a)
     acc.byFascia[fascia]++
-    const sub = sottocategoriaLabelAttivi(a, cat)
+    const sub = gruppoSottocategoriaAttivi(sottocategoriaLabelAttivi(a, cat), cat)
     const subPrev = acc.subs.get(sub)
     if (!subPrev) acc.subs.set(sub, { totale: 1, rossi: fascia === "rossi" ? 1 : 0, verdi: fascia === "verdi" ? 1 : 0, altro: fascia === "altro" ? 1 : 0 })
     else {
