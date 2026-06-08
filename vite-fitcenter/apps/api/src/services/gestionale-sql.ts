@@ -1670,6 +1670,13 @@ async function prenHasCol(view: string, col: string): Promise<boolean> {
   }
 }
 
+async function pickFirstPrenCol(view: string, candidates: string[]): Promise<string | null> {
+  for (const c of candidates) {
+    if (await prenHasCol(view, c)) return c
+  }
+  return null
+}
+
 async function prenGetCols(view: string): Promise<string[]> {
   const clean = qualifySqlObject(view).objectId
   if (prenColsCache?.view === clean) return Array.from(prenColsCache.cols.values())
@@ -4734,6 +4741,8 @@ export type PrenotazioneCorsoRow = {
   dataUltimoAcesso?: string
   /** true se proviene dalla lista d'attesa (RVW_PrenotazioniListaAttesaUtenti) */
   inAttesa?: boolean
+  /** Posizione in coda (lista attesa), se la vista la espone */
+  ordineListaAttesa?: number
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
 }
@@ -5117,9 +5126,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = extra?.inAttesa
       ? firstNonEmpty(raw, [
-          // Lista d'attesa: la "data giusta" operativa è la DataInizio (quella vista nel gestionale).
-          "PrenotazioniListaAttesaDataInizio",
-          // Se manca, ripiega su timestamp inserimento/operazione.
+          // Ordine coda: timestamp iscrizione/operazione (non la data/ora lezione).
           "PrenotazioniListaAttesaDataOperazione",
           "PrenotazioniListaAttesaDataInserimento",
           "PrenotazioniListaAttesaDataCreazione",
@@ -5130,11 +5137,12 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
           "DataCreazioneListaAttesa",
           "DataRichiesta",
           "RichiestoIl",
-          // Fallback "ragionevoli"
           "DataOperazione",
           "DataModifica",
           "CreatoIl",
           "CreatedAt",
+          // Fallback: spesso coincide con lo slot lezione (stesso valore per tutti)
+          "PrenotazioniListaAttesaDataInizio",
         ])
       : firstNonEmpty(raw, [
           // Prenotazione: colonna corretta vista da te
@@ -5190,6 +5198,22 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "LastLogin",
     ])
     const dataUltimoAcesso = toIsoDateTime(dataUltimoAcessoRaw) ?? dataUltimoAcessoRaw
+    const ordineListaAttesaRaw = extra?.inAttesa
+      ? firstNonEmpty(raw, [
+          "PrenotazioniListaAttesaProgressivo",
+          "ProgressivoListaAttesa",
+          "NrListaAttesa",
+          "NumeroListaAttesa",
+          "PosizioneListaAttesa",
+          "Nr",
+          "Numero",
+          "Posizione",
+          "Progressivo",
+          "progressivo",
+        ])
+      : undefined
+    const ordineListaAttesaNum = ordineListaAttesaRaw != null ? Number(ordineListaAttesaRaw) : NaN
+    const ordineListaAttesa = Number.isFinite(ordineListaAttesaNum) ? ordineListaAttesaNum : undefined
     return {
       idUtente,
       giorno: day,
@@ -5205,6 +5229,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       sms,
       dataUltimoAcesso,
       inAttesa: extra?.inAttesa,
+      ordineListaAttesa,
       raw,
     }
   }
@@ -5242,7 +5267,30 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         giornoOk && wDateCol
           ? ` WHERE (${sqlDateEqualsFastExpr(wDateCol, "@giorno")} OR ${sqlDateEqualsExpr(wDateCol, "@giorno")})`
           : ""
-      const wOrder = wDateCol ? ` ORDER BY ${bracketCol(wDateCol)} ASC` : ""
+      const wOrderCol = await pickFirstPrenCol(waitView, [
+        "PrenotazioniListaAttesaProgressivo",
+        "ProgressivoListaAttesa",
+        "Nr",
+        "Numero",
+        "Posizione",
+        "Progressivo",
+      ])
+      const wBookedCol = await pickFirstPrenCol(waitView, [
+        "PrenotazioniListaAttesaDataOperazione",
+        "PrenotazioniListaAttesaDataInserimento",
+        "PrenotazioniListaAttesaDataCreazione",
+        "DataOperazioneListaAttesa",
+        "DataInserimentoListaAttesa",
+        "DataOperazione",
+        "CreatoIl",
+      ])
+      const wOrder = wOrderCol
+        ? ` ORDER BY ${bracketCol(wOrderCol)} ASC`
+        : wBookedCol
+          ? ` ORDER BY ${bracketCol(wBookedCol)} ASC`
+          : wDateCol
+            ? ` ORDER BY ${bracketCol(wDateCol)} ASC`
+            : ""
       const wr = await req.query(`SELECT * FROM ${wq}${wWhere}${wOrder}`)
       const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
       const wait = wRows.map((raw) => {

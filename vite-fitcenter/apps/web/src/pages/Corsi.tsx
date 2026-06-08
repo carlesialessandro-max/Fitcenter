@@ -292,25 +292,74 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   })
   for (const g of list) {
     g.partecipanti.sort((x, y) => {
-      const px = Number((x.raw as any)?.Progressivo ?? (x.raw as any)?.progressivo)
-      const py = Number((y.raw as any)?.Progressivo ?? (y.raw as any)?.progressivo)
-      if (Number.isFinite(px) && Number.isFinite(py) && px !== py) return px - py
-      // Metti in attesa dopo i prenotati, a parità di progressivo.
       const wx = x.inAttesa ? 1 : 0
       const wy = y.inAttesa ? 1 : 0
       if (wx !== wy) return wx - wy
-      // In lista d'attesa, ordina per data prenotazione (non alfabetico).
+
       if (x.inAttesa && y.inAttesa) {
-        const dx = x.prenotatoIl ? new Date(x.prenotatoIl).getTime() : Number.POSITIVE_INFINITY
-        const dy = y.prenotatoIl ? new Date(y.prenotatoIl).getTime() : Number.POSITIVE_INFINITY
-        if (Number.isFinite(dx) && Number.isFinite(dy) && dx !== dy) return dx - dy
+        const ox = ordineListaAttesaFromRow(x)
+        const oy = ordineListaAttesaFromRow(y)
+        if (ox != null && oy != null && ox !== oy) return ox - oy
+        const dx = prenotatoIlSortMs(x)
+        const dy = prenotatoIlSortMs(y)
+        if (dx !== dy) return dx - dy
+        return 0
       }
-      const cx = (x.cognome ?? "").localeCompare(y.cognome ?? "")
+
+      const px = progressivoPrenotatoFromRow(x)
+      const py = progressivoPrenotatoFromRow(y)
+      if (px != null && py != null && px !== py) return px - py
+      const dx = prenotatoIlSortMs(x)
+      const dy = prenotatoIlSortMs(y)
+      if (dx !== dy) return dx - dy
+      const cx = (x.cognome ?? "").localeCompare(y.cognome ?? "", "it")
       if (cx) return cx
-      return (x.nome ?? "").localeCompare(y.nome ?? "")
+      return (x.nome ?? "").localeCompare(y.nome ?? "", "it")
     })
   }
   return list
+}
+
+function prenotatoIlSortMs(p: PrenotazioneCorsoRow): number {
+  const s = (p.prenotatoIl ?? "").trim()
+  if (!s) return Number.POSITIVE_INFINITY
+  const t = new Date(s).getTime()
+  return Number.isFinite(t) ? t : Number.POSITIVE_INFINITY
+}
+
+function ordineListaAttesaFromRow(p: PrenotazioneCorsoRow): number | null {
+  const raw = (p.raw ?? {}) as Record<string, unknown>
+  const candidates = [
+    p.ordineListaAttesa,
+    raw.PrenotazioniListaAttesaProgressivo,
+    raw.ProgressivoListaAttesa,
+    raw.Nr,
+    raw.Numero,
+    raw.Posizione,
+    raw.Progressivo,
+    raw.progressivo,
+  ]
+  for (const c of candidates) {
+    if (c == null || c === "") continue
+    const n = Number(c)
+    if (Number.isFinite(n)) return n
+  }
+  return null
+}
+
+function progressivoPrenotatoFromRow(p: PrenotazioneCorsoRow): number | null {
+  const raw = (p.raw ?? {}) as Record<string, unknown>
+  const n = Number(raw.Progressivo ?? raw.progressivo)
+  return Number.isFinite(n) ? n : null
+}
+
+function participantListIndexLabel(p: PrenotazioneCorsoRow, idx: number, attesaRank: number): string {
+  if (p.inAttesa) {
+    const ord = ordineListaAttesaFromRow(p)
+    return String(ord ?? attesaRank)
+  }
+  const prog = progressivoPrenotatoFromRow(p)
+  return String(prog ?? idx + 1)
 }
 
 function uniqueValidEmails(part: PrenotazioneCorsoRow[]): string[] {
@@ -749,16 +798,13 @@ function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, gior
 
   const lastIn = new Date(lastInMs)
 
-  const hasOutAfterLastIn = outsTimes.some((o) => {
-    if (o < lastInMs + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL) return false
-    if (o < startMs) return true
-    if (o >= startMs && o <= endMs) return true
-    return false
-  })
+  const leftBeforeLesson = outsTimes.some(
+    (o) => o >= lastInMs + MIN_MS_AFTER_IN_FOR_OUT_TO_CANCEL && o < startMs
+  )
+  if (leftBeforeLesson) return { present: false, entry: null, exit: null }
 
-  const present = !hasOutAfterLastIn
-
-  return { present, entry: lastIn, exit: null }
+  // Uscita durante la lezione (uscita anticipata): restano presenti — sono entrati e sono usciti prima.
+  return { present: true, entry: lastIn, exit: null }
 }
 
 /** Se l’ultimo passaggio è prima dell’orario di fine lezione, può essere un’uscita anticipata (euristica). */
@@ -1792,8 +1838,11 @@ export function Corsi() {
                                 dell&apos;inizio.
                               </div>
                             ) : null}
-                            {g.partecipanti.map((p, idx) => {
-                        const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
+                            {(() => {
+                              let attesaDisplayRank = 0
+                              return g.partecipanti.map((p, idx) => {
+                        if (p.inAttesa) attesaDisplayRank++
+                        const prog = participantListIndexLabel(p, idx, attesaDisplayRank)
                         const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                         const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
                         const pren = p.prenotatoIl
@@ -1886,7 +1935,8 @@ export function Corsi() {
                             ) : null}
                           </div>
                               )
-                            })}
+                            })
+                            })()}
                           </div>
                         </div>
 
@@ -1911,8 +1961,11 @@ export function Corsi() {
                                   </td>
                                 </tr>
                               ) : null}
-                              {g.partecipanti.map((p, idx) => {
-                          const prog = (p.raw as any)?.Progressivo ?? (p.raw as any)?.progressivo ?? (idx + 1)
+                              {(() => {
+                                let attesaDisplayRank = 0
+                                return g.partecipanti.map((p, idx) => {
+                          if (p.inAttesa) attesaDisplayRank++
+                          const prog = participantListIndexLabel(p, idx, attesaDisplayRank)
                           const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                           const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
                           const pren = p.prenotatoIl
@@ -1992,7 +2045,8 @@ export function Corsi() {
                               <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
                             </tr>
                                 )
-                              })}
+                              })
+                              })()}
                             </tbody>
                           </table>
                         </div>

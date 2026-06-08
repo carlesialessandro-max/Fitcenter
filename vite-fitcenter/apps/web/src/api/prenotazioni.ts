@@ -15,6 +15,7 @@ export type PrenotazioneCorsoRow = {
   sms?: string
   dataUltimoAcesso?: string
   inAttesa?: boolean
+  ordineListaAttesa?: number
   raw: Record<string, unknown>
 }
 
