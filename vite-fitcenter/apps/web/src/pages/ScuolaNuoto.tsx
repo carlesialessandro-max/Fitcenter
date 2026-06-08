@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { scuolaNuotoApi, type ScuolaNuotoCorso } from "@/api/scuolaNuoto"
 import { prenotazioniApi, type AccessoUtenteRow } from "@/api/prenotazioni"
 import { useAuth } from "@/contexts/AuthContext"
+import { telHrefIt, waHrefIt } from "@/lib/phone"
 
 type WeekdayKey = "lun" | "mar" | "mer" | "gio" | "ven" | "sab" | "dom"
 
@@ -42,18 +43,6 @@ function digitsPhone(s: unknown): string {
     .replace(/[^\d+]/g, "")
     .replace(/^00/, "+")
     .trim()
-}
-
-function telHref(num: unknown): string | null {
-  const d = digitsPhone(num)
-  if (!d) return null
-  return `tel:${d}`
-}
-
-function waHref(num: unknown): string | null {
-  const d = digitsPhone(num).replace(/^\+/, "")
-  if (!d) return null
-  return `https://wa.me/${d}`
 }
 
 function normalizeText(s: string): string {
@@ -848,17 +837,17 @@ export function ScuolaNuoto() {
               </div>
               {activeChild ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {telHref(activeChild.cellulare) ? (
+                  {telHrefIt(activeChild.cellulare) ? (
                     <a
-                      href={telHref(activeChild.cellulare)!}
+                      href={telHrefIt(activeChild.cellulare)!}
                       className="rounded border border-emerald-600/60 bg-emerald-600/15 px-2 py-1 text-xs font-semibold text-emerald-200 hover:bg-emerald-600/25"
                     >
                       Chiama
                     </a>
                   ) : null}
-                  {waHref(activeChild.cellulare) ? (
+                  {waHrefIt(activeChild.cellulare) ? (
                     <a
-                      href={waHref(activeChild.cellulare)!}
+                      href={waHrefIt(activeChild.cellulare)!}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded border border-green-600/60 bg-green-600/15 px-2 py-1 text-xs font-semibold text-green-200 hover:bg-green-600/25"
