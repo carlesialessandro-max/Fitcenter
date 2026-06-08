@@ -362,6 +362,31 @@ function participantListIndexLabel(p: PrenotazioneCorsoRow, idx: number, attesaR
   return String(prog ?? idx + 1)
 }
 
+function formatPrenotatoIlIt(raw: string): string {
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw
+  return d.toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+/** Lista attesa: posizione in coda (come gestionale). La data operazione può essere di mesi fa. */
+function formatPrenotatoIlCell(p: PrenotazioneCorsoRow): { label: string; title?: string } {
+  if (p.inAttesa) {
+    const ord = ordineListaAttesaFromRow(p)
+    const label = ord != null ? `Pos. ${ord} in coda` : "In attesa"
+    const raw = (p.prenotatoIl ?? "").trim()
+    const title = raw ? `Prima iscrizione in coda registrata: ${formatPrenotatoIlIt(raw)}` : undefined
+    return { label, title }
+  }
+  const raw = (p.prenotatoIl ?? "").trim()
+  return { label: raw ? formatPrenotatoIlIt(raw) : "—" }
+}
+
 function uniqueValidEmails(part: PrenotazioneCorsoRow[]): string[] {
   const s = new Set<string>()
   const out: string[] = []
@@ -1845,15 +1870,7 @@ export function Corsi() {
                         const prog = participantListIndexLabel(p, idx, attesaDisplayRank)
                         const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                         const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
-                        const pren = p.prenotatoIl
-                          ? new Date(p.prenotatoIl).toLocaleString("it-IT", {
-                              day: "2-digit",
-                              month: "2-digit",
-                              year: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""
+                        const prenCell = formatPrenotatoIlCell(p)
                         const note = (p.note ?? "").trim()
                         const pWithTimes = participantForLessonAccess(g, p, giorno)
                         const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
@@ -1883,7 +1900,10 @@ export function Corsi() {
                                   ) : null}
                                 </div>
                                 <div className="mt-0.5 text-xs text-zinc-400">
-                                  Prenotato: <span className="text-zinc-300">{pren || "—"}</span>
+                                  Prenotato:{" "}
+                                  <span className="text-zinc-300" title={prenCell.title}>
+                                    {prenCell.label}
+                                  </span>
                                 </div>
                                 {debugCorsi ? (
                                   <div className="mt-1 text-[10px] text-zinc-600" title={debugPresence(pWithTimes)}>
@@ -1968,15 +1988,7 @@ export function Corsi() {
                           const prog = participantListIndexLabel(p, idx, attesaDisplayRank)
                           const nome = `${p.cognome ?? ""} ${p.nome ?? ""}`.trim() || "—"
                           const blocked = blockedByEmail.has((p.email ?? "").trim().toLowerCase())
-                          const pren = p.prenotatoIl
-                            ? new Date(p.prenotatoIl).toLocaleString("it-IT", {
-                                day: "2-digit",
-                                month: "2-digit",
-                                year: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : ""
+                          const prenCell = formatPrenotatoIlCell(p)
                           const pWithTimes = participantForLessonAccess(g, p, giorno)
                           const access = isPresentByAccess(accessIdxDay, pWithTimes, giorno)
                           const okAccesso = access.present
@@ -2041,7 +2053,9 @@ export function Corsi() {
                                   </span>
                                 ) : null}
                               </td>
-                              <td className="px-5 py-3 text-zinc-300">{pren || "—"}</td>
+                              <td className="px-5 py-3 text-zinc-300" title={prenCell.title}>
+                                {prenCell.label}
+                              </td>
                               <td className="px-5 py-3 text-zinc-300">{p.note ?? ""}</td>
                             </tr>
                                 )
