@@ -2062,8 +2062,8 @@ export async function queryCassaMovimentiUtenti(args: {
     whereParts.push(`TRY_CONVERT(float, ${bracketCol(importoCol)}) > 0`)
   }
   if (tipoServizioCol) {
-    // Solo Abbonamenti o Corsi (case-insensitive)
-    whereParts.push(`LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi')`)
+    // Abbonamenti, corsi e campus (campus spesso sotto tipo «Abbonamenti» ma a volte «Campus»)
+    whereParts.push(`LOWER(LTRIM(RTRIM(CAST(${bracketCol(tipoServizioCol)} AS NVARCHAR(128))))) IN ('abbonamenti','corsi','campus')`)
   }
   if (dateCol) {
     // best-effort: supporta date/datetime e stringhe comuni (vedi helper usato per prenotazioni)

@@ -4,6 +4,7 @@ import { dataApi, type CassaMovimentiUtentiGroup } from "@/api/data"
 import { signaturesApi } from "@/api/signatures"
 import { useAuth } from "@/contexts/AuthContext"
 import { displayItPhone } from "@/lib/phone"
+import { augmentMovimentiCampusAsiGratuito, isSoloCampusAcquisto } from "@/lib/firmaCassaMovimenti"
 
 function fmtEuro(n: number) {
   try {
@@ -137,6 +138,12 @@ export function FirmaDaCassa() {
     return selected.rows.filter((r) => (r.dataOperazioneIso ?? "").slice(0, 10) === day)
   }, [selected, windowMode, asOf])
 
+  const firmaMovimentiRows = useMemo(
+    () => augmentMovimentiCampusAsiGratuito(selectedRowsForDay),
+    [selectedRowsForDay]
+  )
+  const soloCampusAcquisto = useMemo(() => isSoloCampusAcquisto(selectedRowsForDay), [selectedRowsForDay])
+
   useEffect(() => {
     setOk(null)
     setErr(null)
@@ -169,13 +176,13 @@ export function FirmaDaCassa() {
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
       const indirizzo = [selected.anagrafica.indirizzoVia, selected.anagrafica.indirizzoNumero].filter(Boolean).join(" ").trim()
-      const sumTotale = selectedRowsForDay.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
-      const sumVersato = selectedRowsForDay.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
-      const asiFromRows = selectedRowsForDay.map((r) => (r as any).asiTesseraCustom2).find((x) => String(x ?? "").trim()) as
+      const sumTotale = firmaMovimentiRows.reduce((acc, r) => acc + Number(r.iscrizioneTotale ?? 0), 0)
+      const sumVersato = firmaMovimentiRows.reduce((acc, r) => acc + Number(r.importo ?? 0), 0)
+      const asiFromRows = firmaMovimentiRows.map((r) => (r as any).asiTesseraCustom2).find((x) => String(x ?? "").trim()) as
         | string
         | null
         | undefined
-      const movimentiLines = selectedRowsForDay
+      const movimentiLines = firmaMovimentiRows
         .map((r) => {
           const d = r.dataOperazioneIso ? fmtDt(r.dataOperazioneIso) : ""
           const servizio = (r.tipoServizioDescrizione ?? "—").trim() || "—"
@@ -495,8 +502,13 @@ export function FirmaDaCassa() {
 
               <div className="mt-3 rounded border border-zinc-800 bg-zinc-950/30 p-3">
                 <div className="text-xs font-semibold text-zinc-200">Movimenti</div>
+                {soloCampusAcquisto ? (
+                  <p className="mt-1 text-xs text-emerald-300/90">
+                    Acquisto campus: tesseramento ASI incluso nel contratto a 0 € (gratuito).
+                  </p>
+                ) : null}
                 <div className="mt-2 grid gap-2">
-                  {selected.rows.map((r, idx) => (
+                  {firmaMovimentiRows.map((r, idx) => (
                     <div key={idx} className="flex items-start justify-between gap-3 rounded border border-zinc-800 px-3 py-2 text-xs">
                       <div className="min-w-0">
                         <div className="truncate text-zinc-200">{r.causale ?? "—"}</div>
