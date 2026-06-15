@@ -4890,6 +4890,31 @@ function buildWeekdaySqlForAlias(idx: SqlColIndex, giornoParam: string, alias: s
   return parts
 }
 
+function buildIsoWeekdayExpr(giornoParam: string): string {
+  return `((DATEPART(WEEKDAY, CAST(${giornoParam} AS date)) + @@DATEFIRST - 2) % 7) + 1`
+}
+
+function buildLezionePlDateRangeSql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
+  const di = pickSqlCol(plIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"])
+  const df = pickSqlCol(plIdx, ["DataFine", "Datafine", "DataA", "FineValidita"])
+  if (di && df) {
+    return `(CAST(${giornoParam} AS date) BETWEEN CAST(${alias}.[${di}] AS date) AND CAST(${alias}.[${df}] AS date))`
+  }
+  if (di) return `(CAST(${alias}.[${di}] AS date) <= CAST(${giornoParam} AS date))`
+  return null
+}
+
+function buildGgWeekMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
+  const gg = pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
+  if (!gg) return null
+  return `TRY_CAST(${alias}.[${gg}] AS int) = ${buildIsoWeekdayExpr(giornoParam)}`
+}
+
+function buildHardcodedPlScheduleSql(giornoParam: string): string {
+  const iso = buildIsoWeekdayExpr(giornoParam)
+  return `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND TRY_CAST(pl.[GGWeek] AS int) = ${iso})`
+}
+
 function buildHardcodedWeekdaySql(giornoParam: string, alias: string): string {
   const days = [
     { col: "Lunedi", dow: 1 },
@@ -4982,18 +5007,18 @@ async function queryLezioniCorsiSenzaIscritti(
     return []
   }
 
-  let weekdaySql = buildPrenotazioniWeekdaySql(prenIdx, plIdx, "@giorno")
-  if (!weekdaySql) {
-    const pPart = buildHardcodedWeekdaySql("@giorno", "p").slice(1, -1)
-    const plPart = buildHardcodedWeekdaySql("@giorno", "pl").slice(1, -1)
-    weekdaySql = `(${pPart} OR ${plPart})`
-  }
-
-  const dateRangeSql = buildPrenotazioniDateRangeSql(prenIdx, "@giorno", "p")
+  const ggWeekSql = buildGgWeekMatchSql(plIdx, "@giorno", "pl")
+  const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, "@giorno", "pl")
   const colPrenVis = pickSqlCol(prenIdx, ["WebVisibile", "TotemVisibile", "Attivo"])
 
-  const whereParts: string[] = [weekdaySql]
-  if (dateRangeSql) whereParts.push(dateRangeSql)
+  const whereParts: string[] = []
+  // Schema FitCenter: validità su PrenotazioniLezioni (DataInizio/DataFine + GGWeek), non su Prenotazioni.
+  if (plDateRangeSql && ggWeekSql) {
+    whereParts.push(plDateRangeSql)
+    whereParts.push(ggWeekSql)
+  } else {
+    whereParts.push(buildHardcodedPlScheduleSql("@giorno"))
+  }
   if (colPrenVis) {
     whereParts.push(`(p.[${colPrenVis}] IS NULL OR TRY_CAST(p.[${colPrenVis}] AS int) NOT IN (0))`)
   }
@@ -5011,16 +5036,32 @@ async function queryLezioniCorsiSenzaIscritti(
         "DataInizioPrenotazioneIscrizione",
         "InizioPrenotazioneIscrizione",
       ])
+      const colPiDf = pickSqlCol(piIdx, ["DataFine", "Datafine", "DataFinePrenotazioneIscrizione"])
       const colPiUt = pickSqlCol(piIdx, ["IDUtente", "IdUtente", "PrenotazioniIscrizioneIDUtente"])
       if (colPiLez && colPiDi) {
         const utFilter = colPiUt
           ? `(pi.[${colPiUt}] IS NOT NULL AND TRY_CAST(pi.[${colPiUt}] AS int) NOT IN (0))`
           : "1=1"
+        const diMatch = `(${sqlDateEqualsFastExpr(colPiDi, "@giorno")} OR ${sqlDateEqualsExpr(colPiDi, "@giorno")})`
+        const dfMatch = colPiDf
+          ? ` OR (${sqlDateEqualsFastExpr(colPiDf, "@giorno")} OR ${sqlDateEqualsExpr(colPiDf, "@giorno")})`
+          : ""
         notExistsSql = `AND NOT EXISTS (
           SELECT 1 FROM ${piQ} pi
           WHERE pi.[${colPiLez}] = pl.[${colPlId}]
-            AND (${sqlDateEqualsFastExpr(colPiDi, "@giorno")} OR ${sqlDateEqualsExpr(colPiDi, "@giorno")})
+            AND (${diMatch}${dfMatch})
             AND ${utFilter}
+        )`
+      } else {
+        notExistsSql = `AND NOT EXISTS (
+          SELECT 1 FROM ${qualifySqlObject(rawPi).query} pi
+          WHERE pi.[IDPrenotazioneLezione] = pl.[${colPlId}]
+            AND (
+              CAST(pi.[DataInizio] AS date) = CAST(@giorno AS date)
+              OR CAST(pi.[DataFine] AS date) = CAST(@giorno AS date)
+            )
+            AND pi.[IDUtente] IS NOT NULL
+            AND TRY_CAST(pi.[IDUtente] AS int) NOT IN (0)
         )`
       }
     } catch {
@@ -5033,7 +5074,7 @@ async function queryLezioniCorsiSenzaIscritti(
   const selectOf = colPlOf ? `pl.[${colPlOf}] AS OraFine` : "NULL AS OraFine"
   const selectVis = colPlVis ? `pl.[${colPlVis}] AS WebVisibile` : "NULL AS WebVisibile"
 
-  const q = `
+  const buildQuery = (where: string[]) => `
     SET DATEFIRST 1;
     SELECT
       pl.[${colPlId}] AS IDPrenotazioneLezione,
@@ -5044,15 +5085,14 @@ async function queryLezioniCorsiSenzaIscritti(
       ${selectDesc}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
-    WHERE ${whereParts.join(" AND ")}
+    WHERE ${where.join(" AND ")}
     ${notExistsSql}
     ORDER BY ${colPlOi ? `pl.[${colPlOi}]` : `pl.[${colPlId}]`} ASC;
   `
 
-  try {
-    const r = await pool.request().input("giorno", sql.VarChar(10), giorno).query(q)
+  const mapRows = (recordset: Record<string, unknown>[] | undefined): PrenotazioneCorsoRow[] => {
     const out: PrenotazioneCorsoRow[] = []
-    for (const raw0 of (r.recordset ?? []) as Record<string, unknown>[]) {
+    for (const raw0 of recordset ?? []) {
       const idLez = Number(raw0.IDPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez)) continue
       seenLez.add(idLez)
@@ -5065,6 +5105,24 @@ async function queryLezioniCorsiSenzaIscritti(
       row.giorno = giorno
       out.push(row)
     }
+    return out
+  }
+
+  try {
+    const req = pool.request().input("giorno", sql.VarChar(10), giorno)
+    let recordset: Record<string, unknown>[] | undefined
+    try {
+      recordset = ((await req.query(buildQuery(whereParts))).recordset ?? []) as Record<string, unknown>[]
+    } catch (e1) {
+      if (!(plDateRangeSql && ggWeekSql)) throw e1
+      const whereFallback = [buildHardcodedPlScheduleSql("@giorno")]
+      if (colPrenVis) {
+        whereFallback.push(`(p.[${colPrenVis}] IS NULL OR TRY_CAST(p.[${colPrenVis}] AS int) NOT IN (0))`)
+      }
+      recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereFallback)))
+        .recordset ?? []) as Record<string, unknown>[]
+    }
+    const out = mapRows(recordset)
     lastLezioniVuoteCount = out.length
     return out
   } catch (e) {
