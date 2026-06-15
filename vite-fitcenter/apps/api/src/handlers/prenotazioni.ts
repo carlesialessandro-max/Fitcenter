@@ -51,6 +51,7 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
     const prenErr = gestionaleSql.getLastPrenotazioniQueryError()
     const waitErr = gestionaleSql.getLastPrenotazioniWaitlistError()
     const waitDbg = gestionaleSql.getLastPrenotazioniWaitlistDebug()
+    const lezVuoteDbg = gestionaleSql.getLastLezioniVuoteDebug()
     const lastErr = gestionaleSql.getLastConnectionError()
     res.json({
       rows,
@@ -64,6 +65,8 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         count: rows.length,
         lezioniSenzaIscrittiCount: rows.filter((x) => !!(x.raw as Record<string, unknown>)?.__lezioniSenzaIscritti)
           .length,
+        lezioniVuoteError: lezVuoteDbg.error,
+        lezioniVuoteLoaded: lezVuoteDbg.count,
         inAttesaCount: rows.filter((x) => (x as any)?.inAttesa).length,
         waitlistView: waitDbg.view,
         waitlistDateCol: waitDbg.dateCol,
