@@ -3453,28 +3453,29 @@ async function queryVenditeSum(
 ): Promise<number> {
   const tbl = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
-  // Allineamento gestionale stampe: RVW_AbbonamentiUtenti.Totale × Temp_Stampe (movimenti nel periodo).
-  // Se vuoi la somma dei movimenti (Importo) abilita: GESTIONALE_VENDITE_BY_MOVIMENTO=true
+  // Default: stessa logica «Andamento vendite» (Temp_Stampe + Totale view, esclusi danza adulti ecc.).
+  // Per SUM(M.Importo) senza filtri view: GESTIONALE_VENDITE_BY_MOVIMENTO=true
   const byMovimento = process.env.GESTIONALE_VENDITE_BY_MOVIMENTO === "true"
-  const byIscrizione = !byMovimento
 
-  if (idConsultant && byIscrizione) {
-    const ids = parseConsultantIds(idConsultant)
-    if (ids.length === 0) return 0
+  const ultimoGiorno = new Date(anno, mese, 0).getDate()
+  let fromStr: string
+  let toStr: string
+  if (giorno != null) {
+    fromStr = toStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
+  } else {
+    fromStr = `${anno}-${String(mese).padStart(2, "0")}-01`
+    toStr =
+      progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
+        ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
+        : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
+  }
+
+  if (!byMovimento) {
+    if (idConsultant) {
+      const ids = parseConsultantIds(idConsultant)
+      if (ids.length === 0) return 0
+    }
     try {
-      const ultimoGiorno = new Date(anno, mese, 0).getDate()
-      let fromStr: string
-      let toStr: string
-      if (giorno != null) {
-        fromStr = toStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-      } else {
-        fromStr = `${anno}-${String(mese).padStart(2, "0")}-01`
-        toStr =
-          progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
-            ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
-            : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
-      }
-
       return await queryVenditeTotaleComeAndamento(p, fromStr, toStr, idConsultant)
     } catch {
       return 0
@@ -3492,18 +3493,6 @@ async function queryVenditeSum(
       const idWhereR = ids.length === 1 ? `R.[${colId}] = @id0` : `R.[${colId}] IN (${idParams})`
       const matchCons = sqlMovimentoAttribuitoConsulente(view, colJoin, idWhereR, idParams)
       const tipoWhere = sqlWhereTipoOperazioneMovimentoVendita("M")
-      const ultimoGiorno = new Date(anno, mese, 0).getDate()
-      let fromStr: string
-      let toStr: string
-      if (giorno != null) {
-        fromStr = toStr = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-      } else {
-        fromStr = `${anno}-${String(mese).padStart(2, "0")}-01`
-        toStr =
-          progressivoGiorno != null && progressivoGiorno >= 1 && progressivoGiorno <= ultimoGiorno
-            ? `${anno}-${String(mese).padStart(2, "0")}-${String(progressivoGiorno).padStart(2, "0")}`
-            : `${anno}-${String(mese).padStart(2, "0")}-${String(ultimoGiorno).padStart(2, "0")}`
-      }
       let req = p.request().input("from", sql.VarChar(10), fromStr).input("to", sql.VarChar(10), toStr)
       ids.forEach((id, i) => {
         req = req.input(`id${i}`, sql.Int, id)
@@ -3549,6 +3538,7 @@ async function queryVenditeSum(
     return Number(row?.Totale ?? row?.totale) || 0
   }
 
+  // byMovimento senza consulente: somma grezza movimenti (legacy).
   if (!idConsultant) return runQuery(null)
 
   const envCol = process.env.GESTIONALE_MOVIMENTI_COL_VENDITORE?.trim()
@@ -3649,7 +3639,6 @@ export async function getVenditePerMeseAnno(
 ): Promise<{ mese: number; totale: number }[]> {
   const p = await getPool()
   if (!p) return []
-  if (!idConsultant) return []
   try {
     const mesi = await Promise.all(
       Array.from({ length: 12 }, async (_, i) => {
