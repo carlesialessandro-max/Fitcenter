@@ -3746,11 +3746,13 @@ export async function getVenditeMovimentiCategoriaDurata(
   idConsultant?: string
 ): Promise<{
   totalCount: number
+  totalEuro: number
+  crossEuro: number
   rows: { categoria: string; durataMesi: number | null; count: number; totalEuro: number }[]
   byAbbonamento: { abbonamento: string; count: number; totalEuro: number }[]
 }> {
   const p = await getPool()
-  if (!p) return { totalCount: 0, rows: [], byAbbonamento: [] }
+  if (!p) return { totalCount: 0, totalEuro: 0, crossEuro: 0, rows: [], byAbbonamento: [] }
 
   const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
@@ -3915,11 +3917,19 @@ export async function getVenditeMovimentiCategoriaDurata(
       totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
     }))
 
-    return { totalCount, rows, byAbbonamento }
+    const baseEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
+    let crossEuro = 0
+    try {
+      crossEuro = await queryVenditeCrossEuroRange(p, from, to, idConsultant)
+    } catch {
+      /* cross opzionale */
+    }
+
+    return { totalCount, totalEuro: baseEuro + crossEuro, crossEuro, rows, byAbbonamento }
   } catch (e) {
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.
-    return { totalCount: 0, rows: [], byAbbonamento: [] }
+    return { totalCount: 0, totalEuro: 0, crossEuro: 0, rows: [], byAbbonamento: [] }
   }
 }
 

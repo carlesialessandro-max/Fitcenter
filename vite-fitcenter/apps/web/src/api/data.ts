@@ -176,6 +176,8 @@ export const dataApi = {
       from: string
       to: string
       totalCount: number
+      totalEuro: number
+      crossEuro?: number
       rows: { categoria: string; durataMesi: number | null; count: number; totalEuro?: number }[]
     }>(
       `/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`

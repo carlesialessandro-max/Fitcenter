@@ -103,7 +103,11 @@ export function AndamentoAbbonamenti() {
     const rows = venditeMovimentiAndamento?.rows ?? []
     const totalDistinct = venditeMovimentiAndamento?.totalCount ?? 0
     const totalForPct = rows.reduce((s, r) => s + (r.count ?? 0), 0)
-    if (totalForPct <= 0) return null
+    const crossEuro = venditeMovimentiAndamento?.crossEuro ?? 0
+    const totalEuro =
+      venditeMovimentiAndamento?.totalEuro ??
+      rows.reduce((s, r) => s + Number(r.totalEuro ?? 0), 0) + crossEuro
+    if (totalForPct <= 0 && totalEuro <= 0) return null
 
     const byCategoriaMap: Record<string, { count: number; euro: number }> = {}
     const byDurataMap: Record<string, { count: number; euro: number }> = {}
@@ -147,8 +151,7 @@ export function AndamentoAbbonamenti() {
         return a.name.localeCompare(b.name)
       })
 
-    const totalEuro = rows.reduce((s, r) => s + Number(r.totalEuro ?? 0), 0)
-    return { rows, totalDistinct, byCategoria, byDurata, totalEuro }
+    return { rows, totalDistinct, byCategoria, byDurata, totalEuro, crossEuro }
   }, [venditeMovimentiAndamento])
 
   const paletteCat = ["#3b82f6", "#22c55e", "#f97316", "#a855f7", "#eab308"]
@@ -199,6 +202,11 @@ export function AndamentoAbbonamenti() {
                   <p className="text-2xl font-semibold text-amber-400">
                     €{computed.totalEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })}
                   </p>
+                  {computed.crossEuro > 0 ? (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      di cui €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} cross
+                    </p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -234,6 +242,11 @@ export function AndamentoAbbonamenti() {
                 <p className="text-xl font-semibold text-amber-400">
                   €{computed.totalEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })}
                 </p>
+                {computed.crossEuro > 0 ? (
+                  <p className="mt-1 text-xs text-zinc-500">
+                    incl. €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} cross
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 p-3">
                 <p className="text-xs text-zinc-500">Totale movimenti</p>
