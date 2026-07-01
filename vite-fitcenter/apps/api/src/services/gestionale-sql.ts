@@ -3616,7 +3616,7 @@ export async function getVenditeProgressivoMese(
   return base + cross
 }
 
-/** Totale vendite del giorno (calcolo in SQL). */
+/** Totale vendite del giorno (calcolo in SQL). Allineato a getVenditeProgressivoMese per lo stesso giorno (base + cross). */
 export async function getVenditeTotaleGiorno(
   anno: number,
   mese: number,
@@ -3625,11 +3625,20 @@ export async function getVenditeTotaleGiorno(
 ): Promise<number> {
   const p = await getPool()
   if (!p) return 0
+  const dayIso = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
+  let base = 0
+  let cross = 0
   try {
-    return await queryVenditeSum(p, anno, mese, giorno, idConsultant)
+    base = await queryVenditeSum(p, anno, mese, giorno, idConsultant)
   } catch {
-    return 0
+    /* andamento */
   }
+  try {
+    cross = await queryVenditeCrossEuroRange(p, dayIso, dayIso, idConsultant)
+  } catch {
+    /* cross opzionale */
+  }
+  return base + cross
 }
 
 /** Totali per mese per un anno (per storico), calcolo in SQL. */

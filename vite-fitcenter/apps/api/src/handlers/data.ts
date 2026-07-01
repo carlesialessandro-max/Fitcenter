@@ -2178,6 +2178,20 @@ function buildDettaglioBloccoFromTotale(
   }
 }
 
+function applyConsuntivoToBlocco(blocco: DettaglioBlocco, consuntivo: number): DettaglioBlocco {
+  const scostamento = consuntivo - blocco.budgetProgressivo
+  const trend =
+    blocco.budgetProgressivo > 0
+      ? Math.round(((consuntivo - blocco.budgetProgressivo) / blocco.budgetProgressivo) * 10000) / 100
+      : 0
+  return {
+    ...blocco,
+    consuntivo,
+    scostamento: Math.round(scostamento * 100) / 100,
+    trend,
+  }
+}
+
 /** Dettaglio con una riga per consulente (admin: tutte e 3). */
 function buildDettaglioBloccoFromPerConsulente(rows: DettaglioConsulente[]): DettaglioBlocco {
   const budget = rows.reduce((s, r) => s + r.budget, 0)
@@ -2363,6 +2377,8 @@ export async function getDettaglioMese(req: Request, res: Response) {
           (async () => {
             const labels = budgetPerConsulente.getConsulentiLabels()
             if (!idUtente && labels.length > 0) {
+              const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
+              const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
               const perConsulenteGiorno: DettaglioConsulente[] = []
               const perConsulenteMese: DettaglioConsulente[] = []
               for (const label of labels) {
@@ -2400,10 +2416,18 @@ export async function getDettaglioMese(req: Request, res: Response) {
                   trend: trendM,
                 })
               }
-              return {
-                bloccoGiorno: buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno),
-                bloccoMese: buildDettaglioBloccoFromPerConsulente(perConsulenteMese),
+              let bloccoGiorno = buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno)
+              let bloccoMese = buildDettaglioBloccoFromPerConsulente(perConsulenteMese)
+              // Riepilogo = stesso totale della card «Entrate mese» (query merged, non somma righe).
+              if (mergedIds) {
+                const [totGiorno, totMese] = await Promise.all([
+                  gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, mergedIds),
+                  gestionaleSql.getVenditeProgressivoMese(anno, mese, giorno, mergedIds),
+                ])
+                bloccoGiorno = applyConsuntivoToBlocco(bloccoGiorno, totGiorno)
+                bloccoMese = applyConsuntivoToBlocco(bloccoMese, totMese)
               }
+              return { bloccoGiorno, bloccoMese }
             }
             const [totaleGiornoSql, totaleMeseSql] = await Promise.all([
               gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, idUtente),
