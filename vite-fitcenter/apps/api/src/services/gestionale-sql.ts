@@ -92,8 +92,8 @@ function ensureSqlTimeouts(cs: string): string {
   let out = cs
   if (connectTimeout == null) out += ";Connect Timeout=15"
   // Per tedious, Request Timeout in connection string viene interpretato in millisecondi.
-  // Se mettiamo 45 otteniamo 45ms (come visto dai test), quindi usiamo 45000.
-  if (requestTimeout == null) out += ";Request Timeout=45000"
+  // Default 120s: query cross/dettaglio possono superare 45s su mesi pieni.
+  if (requestTimeout == null) out += ";Request Timeout=120000"
   return out
 }
 
@@ -2914,6 +2914,223 @@ function crossCorrezioneMaxMinuti(): number {
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 45
 }
 
+type CrossSqlBuild = {
+  crossCte: string
+  attribFilter: string
+  ratePagateExpr: string
+  rateFutureExpr: string
+  tblM: string
+  corrMin: number
+  tipoServWhereU: string
+  pvq: string
+  idExpr: string
+  importoExpr: string
+}
+
+async function buildCrossSqlParts(
+  fromParam: "@from" | "@dataInizio",
+  toParam: "@to" | "@dataFine",
+  idConsultant?: string
+): Promise<CrossSqlBuild | null> {
+  const pagParts = await getPagamentiCrossSqlParts()
+  if (!pagParts) return null
+  const viewCfg = getViewVenditeGestionale()
+  const av = qualifySqlObject(viewCfg.view).query
+  const lq = qualifySqlObject(getLogUtentiViewName()).query
+  const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const { pvq, idExpr, importoExpr, paidDateExpr } = pagParts
+  const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
+  const idParams = ids.length > 0 ? ids.map((_, i) => `@id${i}`).join(", ") : ""
+  const idWhereR =
+    ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : ids.length > 0 ? `R.[${viewCfg.colId}] IN (${idParams})` : "1=1"
+  const attribFilter = ids.length
+    ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})`
+    : `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione ${exView})`
+  const tblM = defaultTables.movimentiVenduto
+  const tipoServ = movimentoTipoServizioVendita()
+  const tipoServWhereU = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
+  const ratePagateExpr = `COALESCE(SUM(CASE
+    WHEN ${paidDateExpr} IS NOT NULL
+      AND CAST(${paidDateExpr} AS DATE) >= CAST(${fromParam} AS DATE)
+      AND CAST(${paidDateExpr} AS DATE) <= CAST(${toParam} AS DATE)
+    THEN ${importoExpr} ELSE 0 END), 0)`
+  const rateFutureExpr = `COALESCE(SUM(CASE WHEN ${paidDateExpr} IS NULL THEN ${importoExpr} ELSE 0 END), 0)`
+  return {
+    crossCte: sqlCteCrossLogsAndIscrizioni({
+      abbView: viewCfg.view,
+      logViewQuery: lq,
+      legacyAppLogUnion: legacyUnion,
+      fromParam,
+      toParam,
+    }),
+    attribFilter,
+    ratePagateExpr,
+    rateFutureExpr,
+    tblM,
+    corrMin: crossCorrezioneMaxMinuti(),
+    tipoServWhereU,
+    pvq,
+    idExpr,
+    importoExpr,
+  }
+}
+
+function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
+  const { tblM, corrMin, tipoServWhereU, ratePagateExpr, rateFutureExpr, pvq, idExpr, importoExpr } = parts
+  return `
+    CrossFiltrati AS (
+      SELECT CI.IDIscrizione, CI.LogData
+      FROM CrossIscrizioni CI
+      WHERE 1=1 ${parts.attribFilter}
+    ),
+    PagamentiPerCross AS (
+      SELECT
+        CF.IDIscrizione,
+        CF.LogData,
+        ${ratePagateExpr} AS RatePagateMese,
+        ${rateFutureExpr} AS RateFuture
+      FROM CrossFiltrati CF
+      INNER JOIN ${pvq} P ON ${idExpr} = CF.IDIscrizione
+      WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
+      GROUP BY CF.IDIscrizione, CF.LogData
+    ),
+    CrossClassificati AS (
+      SELECT
+        PC.IDIscrizione,
+        PC.LogData,
+        PC.RatePagateMese,
+        PC.RateFuture,
+        COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) AS MovimentoU,
+        CASE
+          WHEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) <> 0
+          THEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)
+          ELSE PC.RatePagateMese + PC.RateFuture
+        END AS Totale,
+        CASE
+          WHEN PC.RateFuture > 0 THEN 0
+          WHEN ABS(COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)) >= 0.01 THEN 0
+          WHEN PC.RatePagateMese > COALESCE(I.ImportoIPrimaLog, 0) + 0.01 THEN 0
+          WHEN COALESCE(I.ImportoIPrimaLog, 0) > 0
+            AND ABS(PC.RatePagateMese - I.ImportoIPrimaLog) < 0.01
+            AND I.PrimaIData IS NOT NULL
+            AND DATEDIFF(minute, I.PrimaIData, PC.LogData) BETWEEN 0 AND ${corrMin}
+          THEN 1
+          ELSE 0
+        END AS IsCorrezione
+      FROM PagamentiPerCross PC
+      OUTER APPLY (
+        SELECT
+          MAX(CASE WHEN M.[${COL_IMPORTO}] > 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Pos,
+          MIN(CASE WHEN M.[${COL_IMPORTO}] < 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Neg
+        FROM [${tblM}] M
+        WHERE M.[${COL_ISCRIZIONE}] = PC.IDIscrizione
+          AND M.[TipoOperazione] = 'U'
+          AND CAST(M.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, PC.LogData)
+          AND CAST(M.[${COL_DATA}] AS DATETIME) <= DATEADD(minute, 5, PC.LogData)
+          ${tipoServWhereU}
+      ) U
+      OUTER APPLY (
+        SELECT
+          COALESCE(SUM(TRY_CONVERT(float, M.[${COL_IMPORTO}])), 0) AS ImportoIPrimaLog,
+          MIN(M.[${COL_DATA}]) AS PrimaIData
+        FROM [${tblM}] M
+        WHERE M.[${COL_ISCRIZIONE}] = PC.IDIscrizione
+          AND M.[TipoOperazione] = 'I'
+          AND M.[${COL_IMPORTO}] <> 0
+          AND CAST(M.[${COL_DATA}] AS DATE) = CAST(PC.LogData AS DATE)
+          AND M.[${COL_DATA}] <= PC.LogData
+      ) I
+    )`
+}
+
+const crossNettoCache = new Map<string, { exp: number; v: { crossEuro: number; overlapEuro: number } }>()
+const CROSS_RESULT_CACHE_MS = Number(process.env.GESTIONALE_VENDITE_CROSS_CACHE_MS ?? 120_000)
+
+function crossCacheKey(from: string, to: string, idConsultant?: string): string {
+  return `${from}|${to}|${idConsultant ?? ""}`
+}
+
+/** Totale cross netto (senza elenco righe): una sola query aggregata per dashboard. */
+async function queryVenditeCrossNettoAggregato(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ crossEuro: number; overlapEuro: number }> {
+  const parts = await buildCrossSqlParts("@from", "@to", idConsultant)
+  if (!parts) return { crossEuro: 0, overlapEuro: 0 }
+
+  const viewCfg = getViewVenditeGestionale()
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+  const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+  const consultantFilter =
+    ids.length > 0 ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})` : ""
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+  const tblM = defaultTables.movimentiVenduto
+
+  const q = `
+    ;WITH ${parts.crossCte},
+    ${sqlCrossClassificatiCte(parts)},
+    Reali AS (
+      SELECT IDIscrizione, Totale
+      FROM CrossClassificati
+      WHERE IsCorrezione = 0 AND Totale <> 0
+    ),
+    OverlapPerIscrizione AS (
+      SELECT R.IDIscrizione, MAX(TRY_CONVERT(float, V.[${colTotale}])) AS TotaleEuro
+      FROM Reali R
+      INNER JOIN [${tblM}] M ON M.[${COL_ISCRIZIONE}] = R.IDIscrizione
+        AND M.[${COL_IMPORTO}] <> 0
+        AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+        AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+        ${sqlWhereTipoOperazioneMovimentoVendita("M")}
+      INNER JOIN [${viewCfg.view}] V ON V.[${viewCfg.colJoin}] = R.IDIscrizione
+      WHERE UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+        ${whereExcludeAbbonamentoDurataTesseramentoGare("V")}
+        ${whereExcludeAbbonamentiSpecificiIds("V")}
+        ${consultantFilter}
+      GROUP BY R.IDIscrizione
+    )
+    SELECT
+      COALESCE((SELECT SUM(Totale) FROM Reali), 0) AS CrossEuro,
+      COALESCE((SELECT SUM(TotaleEuro) FROM OverlapPerIscrizione), 0) AS OverlapEuro
+  `
+
+  let req = poolRequestWithTimeout(p, getVenditeCrossRequestTimeoutMs())
+    .input("from", sql.VarChar(10), from)
+    .input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req = req.input(`id${i}`, sql.Int, id)
+  })
+  const r = await req.query(q)
+  const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+  return {
+    crossEuro: Number(row?.CrossEuro ?? row?.crossEuro) || 0,
+    overlapEuro: Number(row?.OverlapEuro ?? row?.overlapEuro) || 0,
+  }
+}
+
+async function queryVenditeCrossNettoAggregatoCached(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ crossEuro: number; overlapEuro: number }> {
+  const key = crossCacheKey(from, to, idConsultant)
+  const hit = crossNettoCache.get(key)
+  if (hit && hit.exp > Date.now()) return hit.v
+  const v = await queryVenditeCrossNettoAggregato(p, from, to, idConsultant)
+  crossNettoCache.set(key, { exp: Date.now() + CROSS_RESULT_CACHE_MS, v })
+  return v
+}
+
 /** Somma Totale view per iscrizioni già conteggiate in base (evita doppio conteggio cross+base). */
 async function queryVenditeTotaleViewPerIscrizioni(
   p: sql.ConnectionPool,
@@ -2992,11 +3209,8 @@ async function getVenditeTotaleConCrossNetto(
   }
   if (!idConsultant) return base
   try {
-    const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-    const cross = rows.reduce((s, r) => s + r.totale, 0)
-    const ids = [...new Set(rows.map((r) => r.idIscrizione).filter((id) => id > 0))]
-    const overlap = ids.length ? await queryVenditeTotaleViewPerIscrizioni(p, from, to, ids, idConsultant) : 0
-    return Math.max(0, base + cross - overlap)
+    const { crossEuro, overlapEuro } = await queryVenditeCrossNettoAggregatoCached(p, from, to, idConsultant)
+    return Math.max(0, base + crossEuro - overlapEuro)
   } catch {
     return base
   }
@@ -3420,6 +3634,8 @@ export type VenditeCrossRow = {
   totale: number
 }
 
+const crossElencoCache = new Map<string, { exp: number; v: { rows: VenditeCrossRow[]; totale: number } }>()
+
 /**
  * Elenco cross: log (Cross selling / cambio tipo) → IDIscrizione → SUM(AbbonamentiPagamentiImporto).
  */
@@ -3429,124 +3645,23 @@ export async function getVenditeCrossElenco(
   idConsultant?: string,
   poolIn?: sql.ConnectionPool
 ): Promise<{ rows: VenditeCrossRow[]; totale: number }> {
+  const cacheKey = crossCacheKey(from, to, idConsultant)
+  const hit = crossElencoCache.get(cacheKey)
+  if (hit && hit.exp > Date.now()) return hit.v
+
   const p = poolIn ?? (await getPool())
   if (!p) return { rows: [], totale: 0 }
 
-  const pagParts = await getPagamentiCrossSqlParts()
-  if (!pagParts) return { rows: [], totale: 0 }
+  const parts = await buildCrossSqlParts("@from", "@to", idConsultant)
+  if (!parts) return { rows: [], totale: 0 }
 
   const viewCfg = getViewVenditeGestionale()
-  const abbView = viewCfg.view
-  const av = qualifySqlObject(abbView).query
-  const lq = qualifySqlObject(getLogUtentiViewName()).query
-  const legacyUnion = sqlUnionLegacyAppLogCross("@from", "@to")
+  const av = qualifySqlObject(viewCfg.view).query
   const ids = idConsultant ? parseConsultantIds(idConsultant) : []
-  const { pvq, idExpr, importoExpr, paidDateExpr, rataDateExpr } = pagParts
-
-  const exView = whereEsclusioniVenditeView("R") + whereExcludeUispTesseramenti("R")
-  const idParams = ids.length > 0 ? ids.map((_, i) => `@id${i}`).join(", ") : ""
-  const idWhereR =
-    ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : ids.length > 0 ? `R.[${viewCfg.colId}] IN (${idParams})` : "1=1"
-  const attribFilter = ids.length
-    ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})`
-    : `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione ${exView})`
-
-  const crossCte = sqlCteCrossLogsAndIscrizioni({
-    abbView,
-    logViewQuery: lq,
-    legacyAppLogUnion: legacyUnion,
-    fromParam: "@from",
-    toParam: "@to",
-  })
-
-  const tblM = defaultTables.movimentiVenduto
-  const corrMin = crossCorrezioneMaxMinuti()
-  const tipoServ = movimentoTipoServizioVendita()
-  const tipoServWhereU = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
-
-  const ratePagateExpr = `
-    COALESCE(SUM(CASE
-      WHEN ${paidDateExpr} IS NOT NULL
-        AND CAST(${paidDateExpr} AS DATE) >= CAST(@from AS DATE)
-        AND CAST(${paidDateExpr} AS DATE) <= CAST(@to AS DATE)
-      THEN ${importoExpr} ELSE 0 END), 0)`
-  const rateFutureExpr = `COALESCE(SUM(CASE WHEN ${paidDateExpr} IS NULL THEN ${importoExpr} ELSE 0 END), 0)`
 
   const q = `
-    ;WITH ${crossCte},
-    CrossFiltrati AS (
-      SELECT CI.IDIscrizione, CI.LogData
-      FROM CrossIscrizioni CI
-      WHERE 1=1 ${attribFilter}
-    ),
-    PagamentiPerCross AS (
-      SELECT
-        CF.IDIscrizione,
-        CF.LogData,
-        ${ratePagateExpr} AS RatePagateMese,
-        ${rateFutureExpr} AS RateFuture
-      FROM CrossFiltrati CF
-      INNER JOIN ${pvq} P ON ${idExpr} = CF.IDIscrizione
-      WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
-      GROUP BY CF.IDIscrizione, CF.LogData
-    ),
-    MovUCross AS (
-      SELECT
-        CF.IDIscrizione,
-        CF.LogData,
-        MAX(CASE WHEN M.[${COL_IMPORTO}] > 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Pos,
-        MIN(CASE WHEN M.[${COL_IMPORTO}] < 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Neg
-      FROM CrossFiltrati CF
-      LEFT JOIN [${tblM}] M
-        ON M.[${COL_ISCRIZIONE}] = CF.IDIscrizione
-       AND M.[TipoOperazione] = 'U'
-       AND CAST(M.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, CF.LogData)
-       AND CAST(M.[${COL_DATA}] AS DATETIME) <= DATEADD(minute, 5, CF.LogData)
-       ${tipoServWhereU}
-      GROUP BY CF.IDIscrizione, CF.LogData
-    ),
-    ImportoICross AS (
-      SELECT
-        CF.IDIscrizione,
-        CF.LogData,
-        COALESCE(SUM(TRY_CONVERT(float, M.[${COL_IMPORTO}])), 0) AS ImportoIPrimaLog,
-        MIN(M.[${COL_DATA}]) AS PrimaIData
-      FROM CrossFiltrati CF
-      LEFT JOIN [${tblM}] M
-        ON M.[${COL_ISCRIZIONE}] = CF.IDIscrizione
-       AND M.[TipoOperazione] = 'I'
-       AND M.[${COL_IMPORTO}] <> 0
-       AND CAST(M.[${COL_DATA}] AS DATE) = CAST(CF.LogData AS DATE)
-       AND M.[${COL_DATA}] <= CF.LogData
-      GROUP BY CF.IDIscrizione, CF.LogData
-    ),
-    CrossClassificati AS (
-      SELECT
-        PC.IDIscrizione,
-        PC.LogData,
-        PC.RatePagateMese,
-        PC.RateFuture,
-        COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) AS MovimentoU,
-        CASE
-          WHEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) <> 0
-          THEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)
-          ELSE PC.RatePagateMese + PC.RateFuture
-        END AS Totale,
-        CASE
-          WHEN PC.RateFuture > 0 THEN 0
-          WHEN ABS(COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)) >= 0.01 THEN 0
-          WHEN PC.RatePagateMese > COALESCE(I.ImportoIPrimaLog, 0) + 0.01 THEN 0
-          WHEN COALESCE(I.ImportoIPrimaLog, 0) > 0
-            AND ABS(PC.RatePagateMese - I.ImportoIPrimaLog) < 0.01
-            AND I.PrimaIData IS NOT NULL
-            AND DATEDIFF(minute, I.PrimaIData, PC.LogData) BETWEEN 0 AND ${corrMin}
-          THEN 1
-          ELSE 0
-        END AS IsCorrezione
-      FROM PagamentiPerCross PC
-      LEFT JOIN MovUCross U ON U.IDIscrizione = PC.IDIscrizione AND U.LogData = PC.LogData
-      LEFT JOIN ImportoICross I ON I.IDIscrizione = PC.IDIscrizione AND I.LogData = PC.LogData
-    ),
+    ;WITH ${parts.crossCte},
+    ${sqlCrossClassificatiCte(parts)},
     AbbOne AS (
       SELECT
         R.[${viewCfg.colJoin}] AS IDIscrizione,
@@ -3554,6 +3669,8 @@ export async function getVenditeCrossElenco(
         MAX(LTRIM(RTRIM(ISNULL(R.[Nome], N'')))) AS Nome,
         MAX(LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N'')))) AS Abbonamento
       FROM ${av} R
+      INNER JOIN (SELECT DISTINCT IDIscrizione FROM CrossClassificati WHERE IsCorrezione = 0 AND Totale <> 0) X
+        ON X.IDIscrizione = R.[${viewCfg.colJoin}]
       GROUP BY R.[${viewCfg.colJoin}]
     )
     SELECT
@@ -3598,7 +3715,9 @@ export async function getVenditeCrossElenco(
     }
   })
   const totale = rows.reduce((s, x) => s + x.totale, 0)
-  return { rows, totale }
+  const result = { rows, totale }
+  crossElencoCache.set(cacheKey, { exp: Date.now() + CROSS_RESULT_CACHE_MS, v: result })
+  return result
 }
 
 /**

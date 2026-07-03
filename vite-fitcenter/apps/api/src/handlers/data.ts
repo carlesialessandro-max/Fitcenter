@@ -411,7 +411,7 @@ function getFrozenDepSig(asOfKey: string, depSig: string): string {
 }
 
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
-const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 45_000)
+const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 120_000)
 function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
@@ -2286,7 +2286,7 @@ function buildDettaglioBlocco(
 }
 
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
-const DETTAGLIO_SQL_TIMEOUT_MS = Number(process.env.DETTAGLIO_SQL_TIMEOUT_MS ?? 45_000)
+const DETTAGLIO_SQL_TIMEOUT_MS = Number(process.env.DETTAGLIO_SQL_TIMEOUT_MS ?? 120_000)
 function withDettaglioSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
@@ -2393,43 +2393,47 @@ export async function getDettaglioMese(req: Request, res: Response) {
             if (!idUtente && labels.length > 0) {
               const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
               const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-              const perConsulenteGiorno: DettaglioConsulente[] = []
-              const perConsulenteMese: DettaglioConsulente[] = []
-              for (const label of labels) {
-                const id = await resolveConsultantId(label)
-                const budgetCons = budgetConsulenteSalvato(anno, mese, label)
-                const budgetGiornoCons = budgetCons / giorniNelMese
-                const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
-                const [venditeGiorno, venditeMese] = await Promise.all([
-                  gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
-                  gestionaleSql.getVenditeProgressivoMese(anno, mese, giorno, id),
-                ])
-                const scostG = venditeGiorno - budgetGiornoCons
-                const scostM = venditeMese - budgetProgressivoMeseCons
-                const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
-                const trendM =
-                  budgetProgressivoMeseCons > 0 ? Math.round((venditeMese / budgetProgressivoMeseCons) * 10000) / 100 : 0
-                perConsulenteGiorno.push({
-                  consulente: label,
-                  budget: Math.round(budgetGiornoCons * 100) / 100,
-                  budgetProgressivo: Math.round(budgetGiornoCons * 100) / 100,
-                  consuntivo: venditeGiorno,
-                  scostamento: Math.round(scostG * 100) / 100,
-                  assenze: 0,
-                  improduttivi: 0,
-                  trend: trendG,
+              const consulentiRows = await Promise.all(
+                labels.map(async (label, i) => {
+                  const id = idParts[i]
+                  const budgetCons = budgetConsulenteSalvato(anno, mese, label)
+                  const budgetGiornoCons = budgetCons / giorniNelMese
+                  const budgetProgressivoMeseCons = (budgetCons * giorno) / giorniNelMese
+                  const [venditeGiorno, venditeMese] = await Promise.all([
+                    gestionaleSql.getVenditeTotaleGiorno(anno, mese, giorno, id),
+                    gestionaleSql.getVenditeProgressivoMese(anno, mese, giorno, id),
+                  ])
+                  const scostG = venditeGiorno - budgetGiornoCons
+                  const scostM = venditeMese - budgetProgressivoMeseCons
+                  const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
+                  const trendM =
+                    budgetProgressivoMeseCons > 0 ? Math.round((venditeMese / budgetProgressivoMeseCons) * 10000) / 100 : 0
+                  return {
+                    giorno: {
+                      consulente: label,
+                      budget: Math.round(budgetGiornoCons * 100) / 100,
+                      budgetProgressivo: Math.round(budgetGiornoCons * 100) / 100,
+                      consuntivo: venditeGiorno,
+                      scostamento: Math.round(scostG * 100) / 100,
+                      assenze: 0,
+                      improduttivi: 0,
+                      trend: trendG,
+                    } satisfies DettaglioConsulente,
+                    mese: {
+                      consulente: label,
+                      budget: Math.round(budgetCons * 100) / 100,
+                      budgetProgressivo: Math.round(budgetProgressivoMeseCons * 100) / 100,
+                      consuntivo: venditeMese,
+                      scostamento: Math.round(scostM * 100) / 100,
+                      assenze: 0,
+                      improduttivi: 0,
+                      trend: trendM,
+                    } satisfies DettaglioConsulente,
+                  }
                 })
-                perConsulenteMese.push({
-                  consulente: label,
-                  budget: Math.round(budgetCons * 100) / 100,
-                  budgetProgressivo: Math.round(budgetProgressivoMeseCons * 100) / 100,
-                  consuntivo: venditeMese,
-                  scostamento: Math.round(scostM * 100) / 100,
-                  assenze: 0,
-                  improduttivi: 0,
-                  trend: trendM,
-                })
-              }
+              )
+              const perConsulenteGiorno = consulentiRows.map((r) => r.giorno)
+              const perConsulenteMese = consulentiRows.map((r) => r.mese)
               let bloccoGiorno = buildDettaglioBloccoFromPerConsulente(perConsulenteGiorno)
               let bloccoMese = buildDettaglioBloccoFromPerConsulente(perConsulenteMese)
               // Riepilogo = stesso totale della card «Entrate mese» (query merged, non somma righe).
