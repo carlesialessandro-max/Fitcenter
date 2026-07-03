@@ -2901,6 +2901,79 @@ type PagamentiCrossSqlParts = {
   rataDateExpr: string
 }
 
+/** Cross effettivo solo se restano rate da pagare; correzione tipologia stesso importo resta in vendite base. */
+function crossRequiresFutureRates(): boolean {
+  return (process.env.GESTIONALE_VENDITE_CROSS_REQUIRE_FUTURE_RATES ?? "true").toLowerCase() !== "false"
+}
+
+/** Dopo CrossIscrizioni: solo iscrizioni con rate future > 0 (vero upsell / piano rate). */
+function sqlCteCrossIscrizioniEffettive(args: {
+  abbView: string
+  logViewQuery: string
+  legacyAppLogUnion: string
+  fromParam: string
+  toParam: string
+  pagParts: PagamentiCrossSqlParts
+}): string {
+  const base = sqlCteCrossLogsAndIscrizioni({
+    abbView: args.abbView,
+    logViewQuery: args.logViewQuery,
+    legacyAppLogUnion: args.legacyAppLogUnion,
+    fromParam: args.fromParam,
+    toParam: args.toParam,
+  })
+  if (!crossRequiresFutureRates()) return base
+
+  const { pvq, idExpr, importoExpr, paidDateExpr } = args.pagParts
+  const rateFutureExpr = `COALESCE(SUM(CASE WHEN ${paidDateExpr} IS NULL THEN ${importoExpr} ELSE 0 END), 0)`
+  return `${base},
+  CrossRatePerIscrizione AS (
+    SELECT
+      CI.IDIscrizione,
+      MAX(CI.LogData) AS LogData,
+      ${rateFutureExpr} AS RateFuture
+    FROM CrossIscrizioni CI
+    INNER JOIN ${pvq} P ON ${idExpr} = CI.IDIscrizione
+    WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
+    GROUP BY CI.IDIscrizione
+  ),
+  CrossIscrizioniEffettive AS (
+    SELECT IDIscrizione, LogData
+    FROM CrossRatePerIscrizione
+    WHERE RateFuture > 0
+  )`
+}
+
+function sqlCrossIscrizioniSourceCte(): string {
+  return crossRequiresFutureRates() ? "CrossIscrizioniEffettive" : "CrossIscrizioni"
+}
+
+async function buildSqlCrossExcludeFromVendite(
+  fromParam: "@from" | "@dataInizio",
+  toParam: "@to" | "@dataFine"
+): Promise<{ ctePrefix: string; filterOnIscrizioneId: string }> {
+  const pagParts = await getPagamentiCrossSqlParts()
+  if (!pagParts || !crossRequiresFutureRates()) {
+    return { ctePrefix: "", filterOnIscrizioneId: "" }
+  }
+  const viewCfg = getViewVenditeGestionale()
+  const lq = qualifySqlObject(getLogUtentiViewName()).query
+  const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
+  const cte = sqlCteCrossIscrizioniEffettive({
+    abbView: viewCfg.view,
+    logViewQuery: lq,
+    legacyAppLogUnion: legacyUnion,
+    fromParam,
+    toParam,
+    pagParts,
+  })
+  const src = sqlCrossIscrizioniSourceCte()
+  return {
+    ctePrefix: `${cte},`,
+    filterOnIscrizioneId: `AND NOT EXISTS (SELECT 1 FROM ${src} CE WHERE CE.IDIscrizione = T.ID)`,
+  }
+}
+
 async function getPagamentiCrossSqlParts(): Promise<PagamentiCrossSqlParts | null> {
   const pagView = getAbbonamentiPagamentiViewName()
   const { query: pvq } = qualifySqlObject(pagView)
@@ -3065,8 +3138,11 @@ async function queryVenditeTotaleComeAndamento(
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
 
+  const { ctePrefix: crossCtePrefix, filterOnIscrizioneId: crossExcludeFilter } =
+    await buildSqlCrossExcludeFromVendite("@from", "@to")
+
   const r = await req.query(
-    `;WITH Temp_Stampe AS (
+    `;WITH ${crossCtePrefix}Temp_Stampe AS (
        SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
        FROM [${tblM}] M
        ${whereBase}
@@ -3082,6 +3158,7 @@ async function queryVenditeTotaleComeAndamento(
        WHERE 1=1
          ${consultantFilter}
         ${whereAndamentoEsclusioniView}
+        ${crossExcludeFilter}
      ),
      PerIscrizione AS (
        SELECT
@@ -3350,13 +3427,24 @@ export async function getVenditeCrossElenco(
     ? `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione AND ${idWhereR} ${exView})`
     : `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione ${exView})`
 
-  const crossCte = sqlCteCrossLogsAndIscrizioni({
-    abbView,
-    logViewQuery: lq,
-    legacyAppLogUnion: legacyUnion,
-    fromParam: "@from",
-    toParam: "@to",
-  })
+  const pagPartsForCte = pagParts
+  const crossCte = pagPartsForCte
+    ? sqlCteCrossIscrizioniEffettive({
+        abbView,
+        logViewQuery: lq,
+        legacyAppLogUnion: legacyUnion,
+        fromParam: "@from",
+        toParam: "@to",
+        pagParts: pagPartsForCte,
+      })
+    : sqlCteCrossLogsAndIscrizioni({
+        abbView,
+        logViewQuery: lq,
+        legacyAppLogUnion: legacyUnion,
+        fromParam: "@from",
+        toParam: "@to",
+      })
+  const crossSource = pagPartsForCte ? sqlCrossIscrizioniSourceCte() : "CrossIscrizioni"
 
   const ratePagateExpr = `
     COALESCE(SUM(CASE
@@ -3370,7 +3458,7 @@ export async function getVenditeCrossElenco(
     ;WITH ${crossCte},
     CrossFiltrati AS (
       SELECT CI.IDIscrizione, CI.LogData
-      FROM CrossIscrizioni CI
+      FROM ${crossSource} CI
       WHERE 1=1 ${attribFilter}
     ),
     PagamentiPerCross AS (
@@ -3404,7 +3492,7 @@ export async function getVenditeCrossElenco(
       PC.RatePagateMese + PC.RateFuture AS Totale
     FROM PagamentiPerCross PC
     LEFT JOIN AbbOne A ON A.IDIscrizione = PC.IDIscrizione
-    WHERE PC.RatePagateMese + PC.RateFuture <> 0
+    WHERE ${crossRequiresFutureRates() ? "PC.RateFuture > 0 AND " : ""}PC.RatePagateMese + PC.RateFuture <> 0
       ${whereExcludeAsiTesseramentoDescrizione("COALESCE(A.Abbonamento, N'')")}
     ORDER BY PC.LogData DESC, PC.IDIscrizione DESC
   `
@@ -3800,8 +3888,11 @@ export async function getVenditeMovimentiCategoriaDurata(
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
         : ""
 
+    const { ctePrefix: crossCtePrefix, filterOnIscrizioneId: crossExcludeFilter } =
+      await buildSqlCrossExcludeFromVendite("@from", "@to")
+
     const rTotal = await req.query(
-      `;WITH Temp_Stampe AS (
+      `;WITH ${crossCtePrefix}Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3817,6 +3908,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereExcludeAbbonamentiSpecificiIds("R")}
+          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
@@ -3833,7 +3925,7 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const r = await req.query(
-      `;WITH Temp_Stampe AS (
+      `;WITH ${crossCtePrefix}Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3849,6 +3941,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereAndamentoEsclusioniView}
+          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
@@ -3872,7 +3965,7 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const rAbb = await req.query(
-      `;WITH Temp_Stampe AS (
+      `;WITH ${crossCtePrefix}Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3887,6 +3980,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereAndamentoEsclusioniView}
+          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
