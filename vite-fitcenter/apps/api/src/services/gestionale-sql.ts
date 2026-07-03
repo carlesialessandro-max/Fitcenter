@@ -2902,22 +2902,103 @@ type PagamentiCrossSqlParts = {
 }
 
 async function buildSqlCrossExcludeFromVendite(
-  fromParam: "@from" | "@dataInizio",
-  toParam: "@to" | "@dataFine"
+  _fromParam: "@from" | "@dataInizio",
+  _toParam: "@to" | "@dataFine"
 ): Promise<{ ctePrefix: string; filterOnIscrizioneId: string }> {
+  // Non usare più la CTE log sul venduto base (timeout dashboard): il netto cross si calcola con overlap.
+  return { ctePrefix: "", filterOnIscrizioneId: "" }
+}
+
+function crossCorrezioneMaxMinuti(): number {
+  const n = Number(process.env.GESTIONALE_VENDITE_CROSS_CORREZIONE_MINUTES ?? "45")
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 45
+}
+
+/** Somma Totale view per iscrizioni già conteggiate in base (evita doppio conteggio cross+base). */
+async function queryVenditeTotaleViewPerIscrizioni(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idIscrizioni: number[],
+  idConsultant?: string
+): Promise<number> {
+  if (!idIscrizioni.length) return 0
+  const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
-  const lq = qualifySqlObject(getLogUtentiViewName()).query
-  const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
-  const cte = sqlCteCrossLogsAndIscrizioni({
-    abbView: viewCfg.view,
-    logViewQuery: lq,
-    legacyAppLogUnion: legacyUnion,
-    fromParam,
-    toParam,
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+  const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+  const consultantFilter =
+    ids.length > 0 ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})` : ""
+  const idList = idIscrizioni.map((_, i) => `@xid${i}`).join(", ")
+  let req = p
+    .request()
+    .input("from", sql.VarChar(10), from)
+    .input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req = req.input(`id${i}`, sql.Int, id)
   })
-  return {
-    ctePrefix: `${cte},`,
-    filterOnIscrizioneId: `AND NOT EXISTS (SELECT 1 FROM CrossIscrizioni CE WHERE CE.IDIscrizione = T.ID)`,
+  idIscrizioni.forEach((id, i) => {
+    req = req.input(`xid${i}`, sql.Int, id)
+  })
+  const r = await req.query(
+    `;WITH Temp_Stampe AS (
+       SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
+       FROM [${tblM}] M
+       WHERE M.[${COL_IMPORTO}] <> 0
+         AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+         AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+         AND M.[${COL_ISCRIZIONE}] IN (${idList})
+         ${sqlWhereTipoOperazioneMovimentoVendita("M")}
+     ),
+     PerIscrizione AS (
+       SELECT T.ID, MAX(TRY_CONVERT(float, R.[${colTotale}])) AS TotaleEuro
+       FROM Temp_Stampe T
+       INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = T.ID
+       WHERE UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+         ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+         ${whereExcludeAbbonamentiSpecificiIds("R")}
+         ${consultantFilter}
+       GROUP BY T.ID
+     )
+     SELECT COALESCE(SUM(TotaleEuro), 0) AS Totale FROM PerIscrizione`
+  )
+  const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
+  return Number(row?.Totale ?? row?.totale) || 0
+}
+
+/** base + cross reali − overlap (Totale view iscrizioni cross già in base). */
+async function getVenditeTotaleConCrossNetto(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant: string | undefined,
+  baseLoader: () => Promise<number>
+): Promise<number> {
+  let base = 0
+  try {
+    base = await baseLoader()
+  } catch {
+    /* base opzionale */
+  }
+  if ((process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() === "false") {
+    return base
+  }
+  if (!idConsultant) return base
+  try {
+    const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
+    const cross = rows.reduce((s, r) => s + r.totale, 0)
+    const ids = [...new Set(rows.map((r) => r.idIscrizione).filter((id) => id > 0))]
+    const overlap = ids.length ? await queryVenditeTotaleViewPerIscrizioni(p, from, to, ids, idConsultant) : 0
+    return Math.max(0, base + cross - overlap)
+  } catch {
+    return base
   }
 }
 
@@ -3085,11 +3166,8 @@ async function queryVenditeTotaleComeAndamento(
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
 
-  const { ctePrefix: crossCtePrefix, filterOnIscrizioneId: crossExcludeFilter } =
-    await buildSqlCrossExcludeFromVendite("@from", "@to")
-
   const r = await req.query(
-    `;WITH ${crossCtePrefix}Temp_Stampe AS (
+    `;WITH Temp_Stampe AS (
        SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
        FROM [${tblM}] M
        ${whereBase}
@@ -3105,7 +3183,6 @@ async function queryVenditeTotaleComeAndamento(
        WHERE 1=1
          ${consultantFilter}
         ${whereAndamentoEsclusioniView}
-        ${crossExcludeFilter}
      ),
      PerIscrizione AS (
        SELECT
@@ -3382,6 +3459,11 @@ export async function getVenditeCrossElenco(
     toParam: "@to",
   })
 
+  const tblM = defaultTables.movimentiVenduto
+  const corrMin = crossCorrezioneMaxMinuti()
+  const tipoServ = movimentoTipoServizioVendita()
+  const tipoServWhereU = tipoServ ? ` AND M.[TipoServizio] = '${tipoServ.replace(/'/g, "''")}'` : ""
+
   const ratePagateExpr = `
     COALESCE(SUM(CASE
       WHEN ${paidDateExpr} IS NOT NULL
@@ -3400,13 +3482,70 @@ export async function getVenditeCrossElenco(
     PagamentiPerCross AS (
       SELECT
         CF.IDIscrizione,
-        MAX(CF.LogData) AS LogData,
+        CF.LogData,
         ${ratePagateExpr} AS RatePagateMese,
         ${rateFutureExpr} AS RateFuture
       FROM CrossFiltrati CF
       INNER JOIN ${pvq} P ON ${idExpr} = CF.IDIscrizione
       WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
-      GROUP BY CF.IDIscrizione
+      GROUP BY CF.IDIscrizione, CF.LogData
+    ),
+    MovUCross AS (
+      SELECT
+        CF.IDIscrizione,
+        CF.LogData,
+        MAX(CASE WHEN M.[${COL_IMPORTO}] > 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Pos,
+        MIN(CASE WHEN M.[${COL_IMPORTO}] < 0 THEN TRY_CONVERT(float, M.[${COL_IMPORTO}]) END) AS Neg
+      FROM CrossFiltrati CF
+      LEFT JOIN [${tblM}] M
+        ON M.[${COL_ISCRIZIONE}] = CF.IDIscrizione
+       AND M.[TipoOperazione] = 'U'
+       AND CAST(M.[${COL_DATA}] AS DATETIME) >= DATEADD(minute, -5, CF.LogData)
+       AND CAST(M.[${COL_DATA}] AS DATETIME) <= DATEADD(minute, 5, CF.LogData)
+       ${tipoServWhereU}
+      GROUP BY CF.IDIscrizione, CF.LogData
+    ),
+    ImportoICross AS (
+      SELECT
+        CF.IDIscrizione,
+        CF.LogData,
+        COALESCE(SUM(TRY_CONVERT(float, M.[${COL_IMPORTO}])), 0) AS ImportoIPrimaLog,
+        MIN(M.[${COL_DATA}]) AS PrimaIData
+      FROM CrossFiltrati CF
+      LEFT JOIN [${tblM}] M
+        ON M.[${COL_ISCRIZIONE}] = CF.IDIscrizione
+       AND M.[TipoOperazione] = 'I'
+       AND M.[${COL_IMPORTO}] <> 0
+       AND CAST(M.[${COL_DATA}] AS DATE) = CAST(CF.LogData AS DATE)
+       AND M.[${COL_DATA}] <= CF.LogData
+      GROUP BY CF.IDIscrizione, CF.LogData
+    ),
+    CrossClassificati AS (
+      SELECT
+        PC.IDIscrizione,
+        PC.LogData,
+        PC.RatePagateMese,
+        PC.RateFuture,
+        COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) AS MovimentoU,
+        CASE
+          WHEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0) <> 0
+          THEN COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)
+          ELSE PC.RatePagateMese + PC.RateFuture
+        END AS Totale,
+        CASE
+          WHEN PC.RateFuture > 0 THEN 0
+          WHEN ABS(COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)) >= 0.01 THEN 0
+          WHEN PC.RatePagateMese > COALESCE(I.ImportoIPrimaLog, 0) + 0.01 THEN 0
+          WHEN COALESCE(I.ImportoIPrimaLog, 0) > 0
+            AND ABS(PC.RatePagateMese - I.ImportoIPrimaLog) < 0.01
+            AND I.PrimaIData IS NOT NULL
+            AND DATEDIFF(minute, I.PrimaIData, PC.LogData) BETWEEN 0 AND ${corrMin}
+          THEN 1
+          ELSE 0
+        END AS IsCorrezione
+      FROM PagamentiPerCross PC
+      LEFT JOIN MovUCross U ON U.IDIscrizione = PC.IDIscrizione AND U.LogData = PC.LogData
+      LEFT JOIN ImportoICross I ON I.IDIscrizione = PC.IDIscrizione AND I.LogData = PC.LogData
     ),
     AbbOne AS (
       SELECT
@@ -3418,19 +3557,20 @@ export async function getVenditeCrossElenco(
       GROUP BY R.[${viewCfg.colJoin}]
     )
     SELECT
-      PC.IDIscrizione,
-      CONVERT(varchar(10), CAST(PC.LogData AS DATE), 23) AS DataCross,
+      C.IDIscrizione,
+      CONVERT(varchar(10), CAST(C.LogData AS DATE), 23) AS DataCross,
       LTRIM(RTRIM(COALESCE(A.Cognome, N'') + N' ' + COALESCE(A.Nome, N''))) AS Cliente,
       COALESCE(A.Abbonamento, N'') AS Abbonamento,
-      PC.RatePagateMese,
-      PC.RateFuture,
-      CAST(0 AS float) AS MovimentoU,
-      PC.RatePagateMese + PC.RateFuture AS Totale
-    FROM PagamentiPerCross PC
-    LEFT JOIN AbbOne A ON A.IDIscrizione = PC.IDIscrizione
-    WHERE PC.RatePagateMese + PC.RateFuture <> 0
+      C.RatePagateMese,
+      C.RateFuture,
+      C.MovimentoU,
+      C.Totale
+    FROM CrossClassificati C
+    LEFT JOIN AbbOne A ON A.IDIscrizione = C.IDIscrizione
+    WHERE C.IsCorrezione = 0
+      AND C.Totale <> 0
       ${whereExcludeAsiTesseramentoDescrizione("COALESCE(A.Abbonamento, N'')")}
-    ORDER BY PC.LogData DESC, PC.IDIscrizione DESC
+    ORDER BY C.LogData DESC, C.IDIscrizione DESC
   `
 
   let req = poolRequestWithTimeout(p, getVenditeCrossRequestTimeoutMs())
@@ -3625,19 +3765,9 @@ export async function getVenditeProgressivoMese(
   const g = Math.min(Math.max(1, giorno), ultimoGiorno)
   const from = `${anno}-${String(mese).padStart(2, "0")}-01`
   const to = `${anno}-${String(mese).padStart(2, "0")}-${String(g).padStart(2, "0")}`
-  let base = 0
-  let cross = 0
-  try {
-    base = await queryVenditeSum(p, anno, mese, undefined, idConsultant, g)
-  } catch {
-    /* andamento */
-  }
-  try {
-    cross = await queryVenditeCrossEuroRange(p, from, to, idConsultant)
-  } catch {
-    /* cross opzionale */
-  }
-  return base + cross
+  return getVenditeTotaleConCrossNetto(p, from, to, idConsultant, () =>
+    queryVenditeSum(p, anno, mese, undefined, idConsultant, g)
+  )
 }
 
 /** Totale vendite del giorno (calcolo in SQL). Allineato a getVenditeProgressivoMese per lo stesso giorno (base + cross). */
@@ -3650,19 +3780,9 @@ export async function getVenditeTotaleGiorno(
   const p = await getPool()
   if (!p) return 0
   const dayIso = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-  let base = 0
-  let cross = 0
-  try {
-    base = await queryVenditeSum(p, anno, mese, giorno, idConsultant)
-  } catch {
-    /* andamento */
-  }
-  try {
-    cross = await queryVenditeCrossEuroRange(p, dayIso, dayIso, idConsultant)
-  } catch {
-    /* cross opzionale */
-  }
-  return base + cross
+  return getVenditeTotaleConCrossNetto(p, dayIso, dayIso, idConsultant, () =>
+    queryVenditeSum(p, anno, mese, giorno, idConsultant)
+  )
 }
 
 /** Totali per mese per un anno (per storico), calcolo in SQL. */
@@ -3679,11 +3799,10 @@ export async function getVenditePerMeseAnno(
         const ultimo = new Date(anno, mese, 0).getDate()
         const from = `${anno}-${String(mese).padStart(2, "0")}-01`
         const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
-        const [base, cross] = await Promise.all([
-          queryVenditeTotaleComeAndamento(p, from, to, idConsultant),
-          queryVenditeCrossEuroRange(p, from, to, idConsultant),
-        ])
-        return { mese, totale: base + cross }
+        const totale = await getVenditeTotaleConCrossNetto(p, from, to, idConsultant, () =>
+          queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
+        )
+        return { mese, totale }
       })
     )
     return mesi
@@ -3824,11 +3943,8 @@ export async function getVenditeMovimentiCategoriaDurata(
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
         : ""
 
-    const { ctePrefix: crossCtePrefix, filterOnIscrizioneId: crossExcludeFilter } =
-      await buildSqlCrossExcludeFromVendite("@from", "@to")
-
     const rTotal = await req.query(
-      `;WITH ${crossCtePrefix}Temp_Stampe AS (
+      `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3844,7 +3960,6 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereExcludeAbbonamentiSpecificiIds("R")}
-          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
@@ -3861,7 +3976,7 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const r = await req.query(
-      `;WITH ${crossCtePrefix}Temp_Stampe AS (
+      `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3877,7 +3992,6 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereAndamentoEsclusioniView}
-          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
@@ -3901,7 +4015,7 @@ export async function getVenditeMovimentiCategoriaDurata(
     )
 
     const rAbb = await req.query(
-      `;WITH ${crossCtePrefix}Temp_Stampe AS (
+      `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
          FROM [${tblM}] M
          ${whereBase}
@@ -3916,7 +4030,6 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereAndamentoEsclusioniView}
-          ${crossExcludeFilter}
        ),
        PerIscrizione AS (
          SELECT
@@ -3958,13 +4071,18 @@ export async function getVenditeMovimentiCategoriaDurata(
 
     const baseEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
     let crossEuro = 0
+    let totalEuro = baseEuro
     try {
-      crossEuro = await queryVenditeCrossEuroRange(p, from, to, idConsultant)
+      if (idConsultant) {
+        const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
+        crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
+      }
+      totalEuro = await getVenditeTotaleConCrossNetto(p, from, to, idConsultant, async () => baseEuro)
     } catch {
       /* cross opzionale */
     }
 
-    return { totalCount, totalEuro: baseEuro + crossEuro, crossEuro, rows, byAbbonamento }
+    return { totalCount, totalEuro, crossEuro, rows, byAbbonamento }
   } catch (e) {
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.

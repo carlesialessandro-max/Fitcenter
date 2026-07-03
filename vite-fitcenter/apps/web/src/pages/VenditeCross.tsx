@@ -61,8 +61,8 @@ export function VenditeCross() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Solo cambi tipo abbonamento nel log (esclusi tesseramento e ASI+iscrizione).
-          Totale = rate pagate nel mese + rate future; sommato alle entrate in dashboard (vendite base escluse).
+          Solo cross reali (importo cambiato, movimento U o rate future). Escluse correzioni tipologia
+          (scontrino e cambio tipo entro 45 min, stesso importo). Sommati alle entrate in dashboard senza doppio conteggio.
         </p>
       </div>
 

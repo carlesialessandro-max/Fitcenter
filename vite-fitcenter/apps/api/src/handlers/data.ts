@@ -2184,11 +2184,25 @@ function applyConsuntivoToBlocco(blocco: DettaglioBlocco, consuntivo: number): D
     blocco.budgetProgressivo > 0
       ? Math.round(((consuntivo - blocco.budgetProgressivo) / blocco.budgetProgressivo) * 10000) / 100
       : 0
+  const perConsulente = (blocco.perConsulente ?? []).map((r) => ({ ...r }))
+  if (perConsulente.length === 1 && perConsulente[0]?.consulente === "Totale") {
+    perConsulente[0] = {
+      ...perConsulente[0]!,
+      consuntivo,
+      scostamento: Math.round((consuntivo - perConsulente[0]!.budgetProgressivo) * 100) / 100,
+      trend:
+        perConsulente[0]!.budgetProgressivo > 0
+          ? Math.round(((consuntivo - perConsulente[0]!.budgetProgressivo) / perConsulente[0]!.budgetProgressivo) * 10000) /
+            100
+          : 0,
+    }
+  }
   return {
     ...blocco,
     consuntivo,
     scostamento: Math.round(scostamento * 100) / 100,
     trend,
+    perConsulente,
   }
 }
 
