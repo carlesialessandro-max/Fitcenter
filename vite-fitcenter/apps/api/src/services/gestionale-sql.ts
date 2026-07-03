@@ -2901,13 +2901,16 @@ type PagamentiCrossSqlParts = {
   rataDateExpr: string
 }
 
-/** Cross effettivo solo se restano rate da pagare; correzione tipologia stesso importo resta in vendite base. */
-function crossRequiresFutureRates(): boolean {
-  return (process.env.GESTIONALE_VENDITE_CROSS_REQUIRE_FUTURE_RATES ?? "true").toLowerCase() !== "false"
+/** Esclude dal cross le correzioni tipologia (pagamento già fatto prima del log, nessuna rata futura). */
+function crossExcludeCorrezioniTipologia(): boolean {
+  return (process.env.GESTIONALE_VENDITE_CROSS_EXCLUDE_CORREZIONI ?? "true").toLowerCase() !== "false"
 }
 
-/** Dopo CrossIscrizioni: solo iscrizioni con rate future > 0 (vero upsell / piano rate). */
-function sqlCteCrossIscrizioniEffettive(args: {
+/**
+ * Dopo CrossIscrizioni: classifica correzioni (solo cambio tipo, stesso importo già pagato)
+ * vs cross vendita (pagamento al/dopo il log o rate future).
+ */
+function sqlCteCrossEscludiCorrezioniTipologia(args: {
   abbView: string
   logViewQuery: string
   legacyAppLogUnion: string
@@ -2922,30 +2925,52 @@ function sqlCteCrossIscrizioniEffettive(args: {
     fromParam: args.fromParam,
     toParam: args.toParam,
   })
-  if (!crossRequiresFutureRates()) return base
+  if (!crossExcludeCorrezioniTipologia()) return base
 
   const { pvq, idExpr, importoExpr, paidDateExpr } = args.pagParts
   const rateFutureExpr = `COALESCE(SUM(CASE WHEN ${paidDateExpr} IS NULL THEN ${importoExpr} ELSE 0 END), 0)`
+  const pagatoPrimaLogExpr = `COALESCE(SUM(CASE
+    WHEN ${paidDateExpr} IS NOT NULL
+      AND ${paidDateExpr} < CI.LogData
+      AND CAST(${paidDateExpr} AS DATE) = CAST(CI.LogData AS DATE)
+    THEN ${importoExpr} ELSE 0 END), 0)`
+  const pagatoDopoLogMeseExpr = `COALESCE(SUM(CASE
+    WHEN ${paidDateExpr} IS NOT NULL
+      AND ${paidDateExpr} >= CI.LogData
+      AND CAST(${paidDateExpr} AS DATE) >= CAST(${args.fromParam} AS DATE)
+      AND CAST(${paidDateExpr} AS DATE) <= CAST(${args.toParam} AS DATE)
+    THEN ${importoExpr} ELSE 0 END), 0)`
   return `${base},
-  CrossRatePerIscrizione AS (
+  CrossPagamentiStats AS (
     SELECT
       CI.IDIscrizione,
-      MAX(CI.LogData) AS LogData,
-      ${rateFutureExpr} AS RateFuture
+      CI.LogData,
+      ${rateFutureExpr} AS RateFuture,
+      ${pagatoPrimaLogExpr} AS PagatoPrimaLog,
+      ${pagatoDopoLogMeseExpr} AS PagatoDopoLogNelMese
     FROM CrossIscrizioni CI
     INNER JOIN ${pvq} P ON ${idExpr} = CI.IDIscrizione
     WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
-    GROUP BY CI.IDIscrizione
+    GROUP BY CI.IDIscrizione, CI.LogData
   ),
-  CrossIscrizioniEffettive AS (
-    SELECT IDIscrizione, LogData
-    FROM CrossRatePerIscrizione
-    WHERE RateFuture > 0
+  CrossCorrezioniTipologia AS (
+    SELECT IDIscrizione
+    FROM CrossPagamentiStats
+    WHERE RateFuture = 0
+      AND PagatoDopoLogNelMese = 0
+      AND PagatoPrimaLog > 0
+  ),
+  CrossIscrizioniVendita AS (
+    SELECT CI.IDIscrizione, CI.LogData
+    FROM CrossIscrizioni CI
+    WHERE NOT EXISTS (
+      SELECT 1 FROM CrossCorrezioniTipologia CT WHERE CT.IDIscrizione = CI.IDIscrizione
+    )
   )`
 }
 
 function sqlCrossIscrizioniSourceCte(): string {
-  return crossRequiresFutureRates() ? "CrossIscrizioniEffettive" : "CrossIscrizioni"
+  return crossExcludeCorrezioniTipologia() ? "CrossIscrizioniVendita" : "CrossIscrizioni"
 }
 
 async function buildSqlCrossExcludeFromVendite(
@@ -2953,13 +2978,13 @@ async function buildSqlCrossExcludeFromVendite(
   toParam: "@to" | "@dataFine"
 ): Promise<{ ctePrefix: string; filterOnIscrizioneId: string }> {
   const pagParts = await getPagamentiCrossSqlParts()
-  if (!pagParts || !crossRequiresFutureRates()) {
+  if (!pagParts || !crossExcludeCorrezioniTipologia()) {
     return { ctePrefix: "", filterOnIscrizioneId: "" }
   }
   const viewCfg = getViewVenditeGestionale()
   const lq = qualifySqlObject(getLogUtentiViewName()).query
   const legacyUnion = sqlUnionLegacyAppLogCross(fromParam, toParam)
-  const cte = sqlCteCrossIscrizioniEffettive({
+  const cte = sqlCteCrossEscludiCorrezioniTipologia({
     abbView: viewCfg.view,
     logViewQuery: lq,
     legacyAppLogUnion: legacyUnion,
@@ -3428,8 +3453,7 @@ export async function getVenditeCrossElenco(
     : `AND EXISTS (SELECT 1 FROM ${av} R WHERE R.[${viewCfg.colJoin}] = CI.IDIscrizione ${exView})`
 
   const pagPartsForCte = pagParts
-  const crossCte = pagPartsForCte
-    ? sqlCteCrossIscrizioniEffettive({
+  const crossCte = sqlCteCrossEscludiCorrezioniTipologia({
         abbView,
         logViewQuery: lq,
         legacyAppLogUnion: legacyUnion,
@@ -3437,14 +3461,8 @@ export async function getVenditeCrossElenco(
         toParam: "@to",
         pagParts: pagPartsForCte,
       })
-    : sqlCteCrossLogsAndIscrizioni({
-        abbView,
-        logViewQuery: lq,
-        legacyAppLogUnion: legacyUnion,
-        fromParam: "@from",
-        toParam: "@to",
-      })
-  const crossSource = pagPartsForCte ? sqlCrossIscrizioniSourceCte() : "CrossIscrizioni"
+
+  const crossSource = sqlCrossIscrizioniSourceCte()
 
   const ratePagateExpr = `
     COALESCE(SUM(CASE
@@ -3492,7 +3510,7 @@ export async function getVenditeCrossElenco(
       PC.RatePagateMese + PC.RateFuture AS Totale
     FROM PagamentiPerCross PC
     LEFT JOIN AbbOne A ON A.IDIscrizione = PC.IDIscrizione
-    WHERE ${crossRequiresFutureRates() ? "PC.RateFuture > 0 AND " : ""}PC.RatePagateMese + PC.RateFuture <> 0
+    WHERE PC.RatePagateMese + PC.RateFuture <> 0
       ${whereExcludeAsiTesseramentoDescrizione("COALESCE(A.Abbonamento, N'')")}
     ORDER BY PC.LogData DESC, PC.IDIscrizione DESC
   `
