@@ -3248,7 +3248,17 @@ async function getVenditeTotaleConCrossNetto(
     const { crossEuro, overlapEuro } = await queryVenditeCrossNettoAggregatoCached(p, from, to, idConsultant)
     return Math.max(0, base + crossEuro - overlapEuro)
   } catch {
-    return base
+    try {
+      const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
+      const crossEuro = rows.reduce((s, r) => s + r.totale, 0)
+      const ids = [...new Set(rows.map((r) => r.idIscrizione).filter((id) => id > 0))]
+      const overlapEuro = ids.length
+        ? await queryVenditeTotaleViewPerIscrizioni(p, from, to, ids, idConsultant)
+        : 0
+      return Math.max(0, base + crossEuro - overlapEuro)
+    } catch {
+      return base
+    }
   }
 }
 
@@ -3907,6 +3917,19 @@ async function queryVenditeCrossEuroRange(
   }
 }
 
+/** Totale € periodo [from,to]: base «Andamento vendite» + cross netti (stessa formula ovunque). */
+export async function getVenditeTotaleEuroPeriodo(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<number> {
+  const p = await getPool()
+  if (!p) return 0
+  return getVenditeTotaleConCrossNetto(p, from, to, idConsultant, () =>
+    queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
+  )
+}
+
 /** Consuntivo progressivo: vendite da inizio mese fino a giorno (incluso). Usare per "entrate mese" alla data di oggi. */
 export async function getVenditeProgressivoMese(
   anno: number,
@@ -3914,15 +3937,11 @@ export async function getVenditeProgressivoMese(
   giorno: number,
   idConsultant?: string
 ): Promise<number> {
-  const p = await getPool()
-  if (!p) return 0
   const ultimoGiorno = new Date(anno, mese, 0).getDate()
   const g = Math.min(Math.max(1, giorno), ultimoGiorno)
   const from = `${anno}-${String(mese).padStart(2, "0")}-01`
   const to = `${anno}-${String(mese).padStart(2, "0")}-${String(g).padStart(2, "0")}`
-  return getVenditeTotaleConCrossNetto(p, from, to, idConsultant, () =>
-    queryVenditeSum(p, anno, mese, undefined, idConsultant, g)
-  )
+  return getVenditeTotaleEuroPeriodo(from, to, idConsultant)
 }
 
 /** Totale vendite del giorno (calcolo in SQL). Allineato a getVenditeProgressivoMese per lo stesso giorno (base + cross). */
@@ -3932,12 +3951,8 @@ export async function getVenditeTotaleGiorno(
   giorno: number,
   idConsultant?: string
 ): Promise<number> {
-  const p = await getPool()
-  if (!p) return 0
   const dayIso = `${anno}-${String(mese).padStart(2, "0")}-${String(giorno).padStart(2, "0")}`
-  return getVenditeTotaleConCrossNetto(p, dayIso, dayIso, idConsultant, () =>
-    queryVenditeSum(p, anno, mese, giorno, idConsultant)
-  )
+  return getVenditeTotaleEuroPeriodo(dayIso, dayIso, idConsultant)
 }
 
 /** Totali per mese per un anno (per storico), calcolo in SQL. */
@@ -3945,21 +3960,17 @@ export async function getVenditePerMeseAnno(
   anno: number,
   idConsultant?: string
 ): Promise<{ mese: number; totale: number }[]> {
-  const p = await getPool()
-  if (!p) return []
+  if (!(await getPool())) return []
   try {
-    const mesi = await Promise.all(
-      Array.from({ length: 12 }, async (_, i) => {
-        const mese = i + 1
-        const ultimo = new Date(anno, mese, 0).getDate()
-        const from = `${anno}-${String(mese).padStart(2, "0")}-01`
-        const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
-        const totale = await getVenditeTotaleConCrossNetto(p, from, to, idConsultant, () =>
-          queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
-        )
-        return { mese, totale }
-      })
-    )
+    const mesi: { mese: number; totale: number }[] = []
+    for (let i = 0; i < 12; i++) {
+      const mese = i + 1
+      const ultimo = new Date(anno, mese, 0).getDate()
+      const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+      const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
+      const totale = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
+      mesi.push({ mese, totale })
+    }
     return mesi
   } catch {
     return []
@@ -4232,7 +4243,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
         crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
       }
-      totalEuro = await getVenditeTotaleConCrossNetto(p, from, to, idConsultant, async () => baseEuro)
+      totalEuro = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
     } catch {
       /* cross opzionale */
     }

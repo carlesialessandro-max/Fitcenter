@@ -458,15 +458,13 @@ export async function getDashboard(req: Request, res: Response) {
                 ? await gestionaleSql.queryAbbonamenti(undefined)
                 : []
               if (mergedIds) {
-                const [prog, perMeseRaw] = await Promise.all([
-                  gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds),
-                  gestionaleSql.getVenditePerMeseAnno(anno, mergedIds),
-                ])
-                venditeMeseSql = prog
+                venditeMeseSql = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds)
+                const perMeseRaw = await gestionaleSql.getVenditePerMeseAnno(anno, mergedIds)
                 const mapMese = new Map<number, number>()
                 for (const row of perMeseRaw) {
                   mapMese.set(row.mese, row.totale)
                 }
+                mapMese.set(mese, venditeMeseSql)
                 venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                   mese: m,
                   totale: mapMese.get(m) ?? 0,
@@ -475,10 +473,8 @@ export async function getDashboard(req: Request, res: Response) {
                 const venditeResults = await Promise.all(
                   labels.map(async (label) => {
                     const id = await resolveConsultantId(label)
-                    const [prog, perMese] = await Promise.all([
-                      gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
-                      gestionaleSql.getVenditePerMeseAnno(anno, id),
-                    ])
+                    const prog = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id)
+                    const perMese = await gestionaleSql.getVenditePerMeseAnno(anno, id)
                     return { prog, perMese }
                   })
                 )
@@ -489,6 +485,7 @@ export async function getDashboard(req: Request, res: Response) {
                     mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
                   }
                 }
+                mapMese.set(mese, venditeMeseSql)
                 venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
                   mese: m,
                   totale: mapMese.get(m) ?? 0,
@@ -516,13 +513,14 @@ export async function getDashboard(req: Request, res: Response) {
                 asOf.date
               )
             }
-            const [abbonamentiRows, venditeMeseSqlSingle, venditePerMeseSqlSingle] = await Promise.all([
-              isAsOfToday(asOf.key) ? gestionaleSql.queryAbbonamenti(idUtente) : Promise.resolve([]),
-              gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
-              gestionaleSql.getVenditePerMeseAnno(anno, idUtente),
-            ])
-            venditeMeseSql = venditeMeseSqlSingle
-            venditePerMeseSql = venditePerMeseSqlSingle
+            venditeMeseSql = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente)
+            const venditePerMeseSqlSingle = await gestionaleSql.getVenditePerMeseAnno(anno, idUtente)
+            venditePerMeseSql = venditePerMeseSqlSingle.map((row) =>
+              row.mese === mese ? { ...row, totale: venditeMeseSql } : row
+            )
+            const abbonamentiRows = isAsOfToday(asOf.key)
+              ? await gestionaleSql.queryAbbonamenti(idUtente)
+              : []
             const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
             markRinnovato(abbonamenti)
             const leads = leadsStore.list({})
