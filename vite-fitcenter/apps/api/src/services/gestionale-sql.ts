@@ -2901,14 +2901,19 @@ type PagamentiCrossSqlParts = {
   rataDateExpr: string
 }
 
-/** Esclude dal cross le correzioni tipologia (pagamento già fatto prima del log, nessuna rata futura). */
+/** Esclude dal cross le correzioni tipologia (scontrino + cambio tipo entro pochi minuti, stesso importo). */
 function crossExcludeCorrezioniTipologia(): boolean {
   return (process.env.GESTIONALE_VENDITE_CROSS_EXCLUDE_CORREZIONI ?? "true").toLowerCase() !== "false"
 }
 
+function crossCorrezioneMaxMinuti(): number {
+  const n = Number(process.env.GESTIONALE_VENDITE_CROSS_CORREZIONE_MINUTES ?? "120")
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 120
+}
+
 /**
- * Dopo CrossIscrizioni: classifica correzioni (solo cambio tipo, stesso importo già pagato)
- * vs cross vendita (pagamento al/dopo il log o rate future).
+ * Dopo CrossIscrizioni: correzione = movimento I stesso giorno entro N minuti dal log,
+ * stesso importo delle rate pagate nel mese, senza rate future.
  */
 function sqlCteCrossEscludiCorrezioniTipologia(args: {
   abbView: string
@@ -2927,36 +2932,14 @@ function sqlCteCrossEscludiCorrezioniTipologia(args: {
   })
   if (!crossExcludeCorrezioniTipologia()) return base
 
+  const tblM = defaultTables.movimentiVenduto
+  const corrMin = crossCorrezioneMaxMinuti()
   const { pvq, idExpr, importoExpr, paidDateExpr } = args.pagParts
-  const paidHasTime = `(DATEPART(hour, ${paidDateExpr}) + DATEPART(minute, ${paidDateExpr}) + DATEPART(second, ${paidDateExpr}) > 0)`
   const rateFutureExpr = `COALESCE(SUM(CASE WHEN ${paidDateExpr} IS NULL THEN ${importoExpr} ELSE 0 END), 0)`
   const ratePagateMeseExpr = `COALESCE(SUM(CASE
     WHEN ${paidDateExpr} IS NOT NULL
       AND CAST(${paidDateExpr} AS DATE) >= CAST(${args.fromParam} AS DATE)
       AND CAST(${paidDateExpr} AS DATE) <= CAST(${args.toParam} AS DATE)
-    THEN ${importoExpr} ELSE 0 END), 0)`
-  /** Pagamento al/dopo il cambio: stesso giorno senza ora = dopo il log; evita falsi positivi su date-only. */
-  const pagatoDopoLogMeseExpr = `COALESCE(SUM(CASE
-    WHEN ${paidDateExpr} IS NOT NULL
-      AND CAST(${paidDateExpr} AS DATE) >= CAST(${args.fromParam} AS DATE)
-      AND CAST(${paidDateExpr} AS DATE) <= CAST(${args.toParam} AS DATE)
-      AND (
-        CAST(${paidDateExpr} AS DATE) > CAST(CI.LogData AS DATE)
-        OR (
-          CAST(${paidDateExpr} AS DATE) = CAST(CI.LogData AS DATE)
-          AND (
-            ${paidDateExpr} >= CI.LogData
-            OR NOT ${paidHasTime}
-          )
-        )
-      )
-    THEN ${importoExpr} ELSE 0 END), 0)`
-  /** Correzione: stesso giorno, pagamento con ora registrata prima del log. */
-  const pagatoPrimaLogCorrezioneExpr = `COALESCE(SUM(CASE
-    WHEN ${paidDateExpr} IS NOT NULL
-      AND CAST(${paidDateExpr} AS DATE) = CAST(CI.LogData AS DATE)
-      AND ${paidHasTime}
-      AND ${paidDateExpr} < CI.LogData
     THEN ${importoExpr} ELSE 0 END), 0)`
   return `${base},
   CrossPagamentiStats AS (
@@ -2964,21 +2947,24 @@ function sqlCteCrossEscludiCorrezioniTipologia(args: {
       CI.IDIscrizione,
       CI.LogData,
       ${rateFutureExpr} AS RateFuture,
-      ${ratePagateMeseExpr} AS RatePagateMese,
-      ${pagatoPrimaLogCorrezioneExpr} AS PagatoPrimaLogCorrezione,
-      ${pagatoDopoLogMeseExpr} AS PagatoDopoLogNelMese
+      ${ratePagateMeseExpr} AS RatePagateMese
     FROM CrossIscrizioni CI
     INNER JOIN ${pvq} P ON ${idExpr} = CI.IDIscrizione
     WHERE ${importoExpr} IS NOT NULL AND ${importoExpr} <> 0
     GROUP BY CI.IDIscrizione, CI.LogData
   ),
   CrossCorrezioniTipologia AS (
-    SELECT IDIscrizione
-    FROM CrossPagamentiStats
-    WHERE RateFuture = 0
-      AND PagatoDopoLogNelMese = 0
-      AND PagatoPrimaLogCorrezione > 0
-      AND ABS(RatePagateMese - PagatoPrimaLogCorrezione) < 0.01
+    SELECT DISTINCT CPS.IDIscrizione
+    FROM CrossPagamentiStats CPS
+    INNER JOIN [${tblM}] M ON M.[${COL_ISCRIZIONE}] = CPS.IDIscrizione
+      AND M.[TipoOperazione] = 'I'
+      AND M.[${COL_IMPORTO}] <> 0
+      AND CAST(M.[${COL_DATA}] AS DATE) = CAST(CPS.LogData AS DATE)
+      AND M.[${COL_DATA}] <= CPS.LogData
+      AND DATEDIFF(minute, M.[${COL_DATA}], CPS.LogData) BETWEEN 0 AND ${corrMin}
+      AND ABS(TRY_CONVERT(float, M.[${COL_IMPORTO}]) - CPS.RatePagateMese) < 0.01
+    WHERE CPS.RateFuture = 0
+      AND CPS.RatePagateMese > 0
   ),
   CrossIscrizioniVendita AS (
     SELECT CI.IDIscrizione, CI.LogData

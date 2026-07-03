@@ -62,7 +62,7 @@ export function VenditeCross() {
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Solo cambi tipo abbonamento nel log (esclusi tesseramento e ASI+iscrizione).
-          Escluse le correzioni di tipologia senza nuovo pagamento (scontrino già emesso prima del cambio).
+          Escluse le correzioni: scontrino movimento I e cambio tipo entro pochi minuti, stesso importo.
           Totale = rate pagate nel mese + rate future; sommato alle entrate in dashboard.
         </p>
       </div>
