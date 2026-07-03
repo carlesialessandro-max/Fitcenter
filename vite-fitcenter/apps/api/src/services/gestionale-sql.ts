@@ -2909,6 +2909,7 @@ async function buildSqlCrossExcludeFromVendite(
   return { ctePrefix: "", filterOnIscrizioneId: "" }
 }
 
+/** Minuti max per regole legacy (non più usati in SQL cross). */
 function crossCorrezioneMaxMinuti(): number {
   const n = Number(process.env.GESTIONALE_VENDITE_CROSS_CORREZIONE_MINUTES ?? "45")
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 45
@@ -2920,11 +2921,13 @@ type CrossSqlBuild = {
   ratePagateExpr: string
   rateFutureExpr: string
   tblM: string
-  corrMin: number
   tipoServWhereU: string
   pvq: string
   idExpr: string
   importoExpr: string
+  paidDateExpr: string
+  fromParam: "@from" | "@dataInizio"
+  toParam: "@to" | "@dataFine"
 }
 
 async function buildCrossSqlParts(
@@ -2968,16 +2971,29 @@ async function buildCrossSqlParts(
     ratePagateExpr,
     rateFutureExpr,
     tblM,
-    corrMin: crossCorrezioneMaxMinuti(),
     tipoServWhereU,
     pvq,
     idExpr,
     importoExpr,
+    paidDateExpr,
+    fromParam,
+    toParam,
   }
 }
 
 function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
-  const { tblM, corrMin, tipoServWhereU, ratePagateExpr, rateFutureExpr, pvq, idExpr, importoExpr } = parts
+  const {
+    tblM,
+    tipoServWhereU,
+    ratePagateExpr,
+    rateFutureExpr,
+    pvq,
+    idExpr,
+    importoExpr,
+    paidDateExpr,
+    fromParam,
+    toParam,
+  } = parts
   return `
     CrossFiltrati AS (
       SELECT CI.IDIscrizione, CI.LogData
@@ -3010,11 +3026,11 @@ function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
         CASE
           WHEN PC.RateFuture > 0 THEN 0
           WHEN ABS(COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)) >= 0.01 THEN 0
+          WHEN COALESCE(Pay.ImportoAlODopoLog, 0) >= 0.01 THEN 0
           WHEN PC.RatePagateMese > COALESCE(I.ImportoIPrimaLog, 0) + 0.01 THEN 0
-          WHEN COALESCE(I.ImportoIPrimaLog, 0) > 0
-            AND ABS(PC.RatePagateMese - I.ImportoIPrimaLog) < 0.01
-            AND I.PrimaIData IS NOT NULL
-            AND DATEDIFF(minute, I.PrimaIData, PC.LogData) BETWEEN 0 AND ${corrMin}
+          WHEN COALESCE(Pay.ImportoPrimaLog, 0) > 0
+            AND ABS(PC.RatePagateMese - Pay.ImportoPrimaLog) < 0.01
+            AND PC.RatePagateMese > 0
           THEN 1
           ELSE 0
         END AS IsCorrezione
@@ -3032,8 +3048,7 @@ function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
       ) U
       OUTER APPLY (
         SELECT
-          COALESCE(SUM(TRY_CONVERT(float, M.[${COL_IMPORTO}])), 0) AS ImportoIPrimaLog,
-          MIN(M.[${COL_DATA}]) AS PrimaIData
+          COALESCE(SUM(TRY_CONVERT(float, M.[${COL_IMPORTO}])), 0) AS ImportoIPrimaLog
         FROM [${tblM}] M
         WHERE M.[${COL_ISCRIZIONE}] = PC.IDIscrizione
           AND M.[TipoOperazione] = 'I'
@@ -3041,6 +3056,24 @@ function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
           AND CAST(M.[${COL_DATA}] AS DATE) = CAST(PC.LogData AS DATE)
           AND M.[${COL_DATA}] <= PC.LogData
       ) I
+      OUTER APPLY (
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN ${paidDateExpr} IS NOT NULL
+              AND CAST(${paidDateExpr} AS DATE) = CAST(PC.LogData AS DATE)
+              AND ${paidDateExpr} < PC.LogData
+            THEN ${importoExpr} ELSE 0 END), 0) AS ImportoPrimaLog,
+          COALESCE(SUM(CASE
+            WHEN ${paidDateExpr} IS NOT NULL
+              AND ${paidDateExpr} >= PC.LogData
+              AND CAST(${paidDateExpr} AS DATE) >= CAST(${fromParam} AS DATE)
+              AND CAST(${paidDateExpr} AS DATE) <= CAST(${toParam} AS DATE)
+            THEN ${importoExpr} ELSE 0 END), 0) AS ImportoAlODopoLog
+        FROM ${pvq} P
+        WHERE ${idExpr} = PC.IDIscrizione
+          AND ${importoExpr} IS NOT NULL
+          AND ${importoExpr} <> 0
+      ) Pay
     )`
 }
 

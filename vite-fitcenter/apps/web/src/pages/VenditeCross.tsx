@@ -61,8 +61,9 @@ export function VenditeCross() {
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
-          Solo cross reali (importo cambiato, movimento U o rate future). Escluse correzioni tipologia
-          (scontrino e cambio tipo entro 45 min, stesso importo). Sommati alle entrate in dashboard senza doppio conteggio.
+          Solo cross reali (importo aumentato, movimento U, rate future o pagamento al/dopo il cambio tipo).
+          Escluse correzioni tipologia (pagamento stesso giorno prima del log, stesso importo, senza U).
+          Sommati alle entrate in dashboard senza doppio conteggio.
         </p>
       </div>
 
