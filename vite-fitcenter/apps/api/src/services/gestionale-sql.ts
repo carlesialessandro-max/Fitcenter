@@ -3026,10 +3026,10 @@ function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
         CASE
           WHEN PC.RateFuture > 0 THEN 0
           WHEN ABS(COALESCE(U.Pos, 0) + COALESCE(U.Neg, 0)) >= 0.01 THEN 0
-          WHEN COALESCE(Pay.ImportoAlODopoLog, 0) >= 0.01 THEN 0
+          WHEN COALESCE(PayAfter.ImportoAlODopoLog, 0) >= 0.01 THEN 0
           WHEN PC.RatePagateMese > COALESCE(I.ImportoIPrimaLog, 0) + 0.01 THEN 0
-          WHEN COALESCE(Pay.ImportoPrimaLog, 0) > 0
-            AND ABS(PC.RatePagateMese - Pay.ImportoPrimaLog) < 0.01
+          WHEN COALESCE(PayBefore.ImportoPrimaLog, 0) > 0
+            AND ABS(PC.RatePagateMese - PayBefore.ImportoPrimaLog) < 0.01
             AND PC.RatePagateMese > 0
           THEN 1
           ELSE 0
@@ -3057,23 +3057,26 @@ function sqlCrossClassificatiCte(parts: CrossSqlBuild): string {
           AND M.[${COL_DATA}] <= PC.LogData
       ) I
       OUTER APPLY (
-        SELECT
-          COALESCE(SUM(CASE
-            WHEN ${paidDateExpr} IS NOT NULL
-              AND CAST(${paidDateExpr} AS DATE) = CAST(PC.LogData AS DATE)
-              AND ${paidDateExpr} < PC.LogData
-            THEN ${importoExpr} ELSE 0 END), 0) AS ImportoPrimaLog,
-          COALESCE(SUM(CASE
-            WHEN ${paidDateExpr} IS NOT NULL
-              AND ${paidDateExpr} >= PC.LogData
-              AND CAST(${paidDateExpr} AS DATE) >= CAST(${fromParam} AS DATE)
-              AND CAST(${paidDateExpr} AS DATE) <= CAST(${toParam} AS DATE)
-            THEN ${importoExpr} ELSE 0 END), 0) AS ImportoAlODopoLog
+        SELECT COALESCE(SUM(${importoExpr}), 0) AS ImportoPrimaLog
         FROM ${pvq} P
         WHERE ${idExpr} = PC.IDIscrizione
           AND ${importoExpr} IS NOT NULL
           AND ${importoExpr} <> 0
-      ) Pay
+          AND ${paidDateExpr} IS NOT NULL
+          AND CAST(${paidDateExpr} AS DATE) = CAST(PC.LogData AS DATE)
+          AND ${paidDateExpr} < PC.LogData
+      ) PayBefore
+      OUTER APPLY (
+        SELECT COALESCE(SUM(${importoExpr}), 0) AS ImportoAlODopoLog
+        FROM ${pvq} P
+        WHERE ${idExpr} = PC.IDIscrizione
+          AND ${importoExpr} IS NOT NULL
+          AND ${importoExpr} <> 0
+          AND ${paidDateExpr} IS NOT NULL
+          AND ${paidDateExpr} >= PC.LogData
+          AND CAST(${paidDateExpr} AS DATE) >= CAST(${fromParam} AS DATE)
+          AND CAST(${paidDateExpr} AS DATE) <= CAST(${toParam} AS DATE)
+      ) PayAfter
     )`
 }
 
