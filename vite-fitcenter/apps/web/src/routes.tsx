@@ -16,6 +16,7 @@ import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
 import { FirmaDaCassa } from "@/pages/FirmaDaCassa"
+import { Scontrini } from "@/pages/Scontrini"
 import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi, CorsiNoShow } from "@/pages/Corsi"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
@@ -103,6 +104,7 @@ export const router = createBrowserRouter([
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },
       { path: "firma-cassa", element: <FirmaDaCassa /> },
+      { path: "scontrini", element: <Scontrini /> },
       { path: "stampa-report", element: <StampaReport /> },
       { path: "admin", element: <AdminCalendario /> },
       { path: "calendario", element: <CalendarioHub /> },

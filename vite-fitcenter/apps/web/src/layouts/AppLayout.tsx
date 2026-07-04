@@ -10,6 +10,7 @@ const navOperatore: NavItem[] = [
   { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
   { to: "/firme", label: "Firme" },
   { to: "/firma-cassa", label: "Firma Cassa" },
+  { to: "/scontrini", label: "Scontrini" },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/crm", label: "CRM Vendita" },
   { to: "/telefonate", label: "Telefonate" },
@@ -61,7 +62,14 @@ const navCampus: NavItem[] = [
 ] as const
 // Reception: firma da cassa, calendario e mappa piscina.
 const navFirme: NavItem[] = [
-  { to: "/firma-cassa", label: "Firma Cassa", children: [{ to: "/campus", label: "Campus" }] },
+  {
+    to: "/firma-cassa",
+    label: "Firma Cassa",
+    children: [
+      { to: "/scontrini", label: "Scontrini" },
+      { to: "/campus", label: "Campus" },
+    ],
+  },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/piscina", label: "Mappa Piscina" },
 ] as const
@@ -146,6 +154,7 @@ const navAdmin: NavItem[] = [
       { to: "/incassi", label: "Incassi" },
       { to: "/firme", label: "Firme" },
       { to: "/firma-cassa", label: "Firma cassa" },
+      { to: "/scontrini", label: "Scontrini" },
       { to: "/piscina", label: "Mappa piscina" },
       {
         to: "/scuola-nuoto",

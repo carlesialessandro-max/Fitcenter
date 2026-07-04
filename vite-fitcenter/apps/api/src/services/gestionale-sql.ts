@@ -249,6 +249,13 @@ function getCassaMovimentiViewName(): string {
   return raw
 }
 
+function getRicevuteUtentiViewName(): string {
+  const raw = (process.env.GESTIONALE_VIEW_RICEVUTE_UTENTI ?? "RVW_RicevuteUtenti").trim()
+  if (!raw) return "RVW_RicevuteUtenti"
+  if (!isSafeSqlIdentifierLoose(raw)) return "RVW_RicevuteUtenti"
+  return raw
+}
+
 /** Vista log applicativo (es. RVW_LogUtenti): DataOperazione, AppLogDescrizione, IDUtente, Cognome, Nome. */
 function getLogUtentiViewName(): string {
   const raw = (process.env.GESTIONALE_VIEW_LOG_UTENTI ?? "RVW_LogUtenti").trim()
@@ -392,6 +399,56 @@ export async function getPrenotazioniViewNameResolved(): Promise<string> {
 
 export async function getCassaMovimentiViewNameResolved(): Promise<string> {
   return resolveCassaMovimentiViewName()
+}
+
+async function resolveRicevuteUtentiViewName(): Promise<string> {
+  const preferred = getRicevuteUtentiViewName()
+  const candidates = [preferred, "RVW_RicevuteUtenti", "RVW_RicevuteUtent"]
+    .map((s) => s.trim())
+    .filter((s) => s && isSafeSqlIdentifierLoose(s))
+
+  const p = await getPool()
+  if (!p) return preferred
+  const pool = p
+
+  async function resolveAnySchemaIfNeeded(name: string): Promise<string> {
+    const cleaned = name.replace(/[\[\]]/g, "").trim()
+    if (!cleaned || cleaned.includes(".")) return name
+    try {
+      const r = await pool
+        .request()
+        .input("n", sql.NVarChar, cleaned)
+        .query(
+          `SELECT TOP (1)
+             QUOTENAME(s.name) + '.' + QUOTENAME(o.name) AS fullName
+           FROM sys.objects o
+           JOIN sys.schemas s ON s.schema_id = o.schema_id
+           WHERE o.type = 'V' AND o.name = @n
+           ORDER BY s.name ASC;`
+        )
+      const fullName = String(r.recordset?.[0]?.fullName ?? "").trim()
+      return fullName || name
+    } catch {
+      return name
+    }
+  }
+
+  for (const name of candidates) {
+    try {
+      const resolved = await resolveAnySchemaIfNeeded(name)
+      const q = qualifySqlObject(resolved)
+      const r = await p.request().input("obj", sql.NVarChar, q.objectId).query("SELECT OBJECT_ID(@obj) AS oid")
+      const oid = r.recordset?.[0]?.oid
+      if (oid != null) return resolved
+    } catch {
+      // ignore
+    }
+  }
+  return preferred
+}
+
+export async function getRicevuteUtentiViewNameResolved(): Promise<string> {
+  return resolveRicevuteUtentiViewName()
 }
 
 export async function debugPrenotazioniViewInfo(): Promise<{ view: string; dateCol: string | null; cols: string[] }> {
@@ -1930,6 +1987,48 @@ export type CassaMovimentiUtentiGroup = {
   anagrafica: Omit<CassaMovimentoUtenteRow, "causale" | "importo" | "dataOperazioneIso">
 }
 
+export type RicevutaUtenteRiga = {
+  rigaId: string | null
+  descrizione: string | null
+  qta: number
+  prezzoUnitario: number
+  iva: number | null
+  totaleRiga: number
+  tipoRiga: string | null
+}
+
+export type RicevutaUtenteGroup = {
+  ricevutaId: string
+  numeroRicevuta: string | null
+  dataRicevutaIso: string | null
+  cliente: string | null
+  cognome: string | null
+  nome: string | null
+  email: string | null
+  sms: string | null
+  idUtente: string | null
+  idCassaMovimento: string | null
+  categoriaDescrizione: string | null
+  senzaNominativo: boolean
+  tipoPagamento: string | null
+  tipoRicevuta: string | null
+  annullata: boolean
+  noteGenerali: string | null
+  operatore: string | null
+  azienda: {
+    nome: string | null
+    indirizzoVia: string | null
+    indirizzoCap: string | null
+    indirizzoCitta: string | null
+    indirizzoPv: string | null
+    telefono: string | null
+    email: string | null
+    piva: string | null
+  }
+  righe: RicevutaUtenteRiga[]
+  totale: number
+}
+
 function safeStr(v: unknown): string | null {
   const s = v == null ? "" : String(v)
   const t = s.trim()
@@ -2268,6 +2367,225 @@ export async function queryCassaMovimentiUtenti(args: {
     toIso: (windowTo ?? to).toISOString(),
     groups,
   }
+}
+
+function isRicevutaAnnullata(v: unknown): boolean {
+  if (v == null) return false
+  const s = String(v).trim().toUpperCase()
+  if (!s) return false
+  if (s === "0" || s === "N" || s === "NO" || s === "FALSE") return false
+  if (s === "1" || s === "S" || s === "SI" || s === "YES" || s === "TRUE") return true
+  const n = Number(v)
+  return Number.isFinite(n) && n !== 0
+}
+
+function ricevutaRowKey(row: Record<string, unknown>): string | null {
+  const idRicevuta = safeStr(rowGet(row, ["IDRicevuta", "IdRicevuta", "idRicevuta"]))
+  if (idRicevuta) return idRicevuta
+  const idMov = safeStr(rowGet(row, ["IDCassaMovimento", "IdCassaMovimento", "idCassaMovimento"]))
+  const numero = safeStr(rowGet(row, ["NumeroRicevuta", "numeroRicevuta"]))
+  const data = toIsoMaybe(rowGet(row, ["DataRicevuta", "dataRicevuta", "Data", "DataOperazione"])) ?? ""
+  const riga = safeStr(rowGet(row, ["IDRicevuteRiga", "IdRicevuteRiga", "idRicevuteRiga"]))
+  if (idMov) return `mov:${idMov}`
+  if (numero) return `num:${numero}|${data.slice(0, 10)}`
+  if (riga) return `riga:${riga}`
+  return null
+}
+
+function isRicevutaSenzaNominativo(parts: {
+  cliente: string | null
+  cognome: string | null
+  nome: string | null
+  idUtente: string | null
+}): boolean {
+  if (parts.idUtente) return false
+  return !(parts.cliente ?? "").trim() && !(parts.cognome ?? "").trim() && !(parts.nome ?? "").trim()
+}
+
+function mapRicevuteUtentiRecordset(recordset: Record<string, unknown>[]): RicevutaUtenteGroup[] {
+  const byId = new Map<string, RicevutaUtenteGroup>()
+  for (const row of recordset) {
+    if (isRicevutaAnnullata(rowGet(row, ["Annullata", "annullata"]))) continue
+    const ricevutaId = ricevutaRowKey(row)
+    if (!ricevutaId) continue
+    const qta = safeNum(rowGet(row, ["Qta", "qta", "Quantita"])) || 1
+    const prezzoUnitario = safeNum(rowGet(row, ["PrezzoUnitario", "prezzoUnitario"])) || 0
+    const totaleCalc = qta * prezzoUnitario
+    const totaleRiga =
+      safeNum(rowGet(row, ["TotaleRiga", "totaleRiga"])) ||
+      totaleCalc ||
+      prezzoUnitario
+    const riga: RicevutaUtenteRiga = {
+      rigaId: safeStr(rowGet(row, ["IDRicevuteRiga", "IdRicevuteRiga", "idRicevuteRiga"])),
+      descrizione: safeStr(rowGet(row, ["Descrizione", "descrizione"])),
+      qta,
+      prezzoUnitario,
+      iva: safeNum(rowGet(row, ["IVA", "Iva", "iva"])),
+      totaleRiga,
+      tipoRiga: safeStr(rowGet(row, ["RicevuteRigaTipo", "TipoRiga", "tipoRiga"])),
+    }
+    let g = byId.get(ricevutaId)
+    if (!g) {
+      const cliente = safeStr(rowGet(row, ["Cliente", "cliente"]))
+      const cognome = safeStr(rowGet(row, ["Cognome", "cognome"]))
+      const nome = safeStr(rowGet(row, ["Nome", "nome"]))
+      const idUtente = safeStr(rowGet(row, ["IDUtente", "IdUtente", "idUtente"]))
+      g = {
+        ricevutaId,
+        numeroRicevuta: safeStr(rowGet(row, ["NumeroRicevuta", "numeroRicevuta"])),
+        dataRicevutaIso: toIsoMaybe(rowGet(row, ["DataRicevuta", "dataRicevuta", "Data", "DataOperazione"])),
+        cliente,
+        cognome,
+        nome,
+        email: safeStr(rowGet(row, ["Email", "email", "E_mail", "Mail"])),
+        sms: safeStr(rowGet(row, ["SMS", "sms", "Cellulare", "cellulare", "Telefono_1", "Telefono1"])),
+        idUtente,
+        idCassaMovimento: safeStr(rowGet(row, ["IDCassaMovimento", "IdCassaMovimento", "idCassaMovimento"])),
+        categoriaDescrizione: safeStr(
+          rowGet(row, ["CategoriaDescrizione", "categoriaDescrizione", "CentriRicavoCategorieDescrizione"])
+        ),
+        senzaNominativo: isRicevutaSenzaNominativo({ cliente, cognome, nome, idUtente }),
+        tipoPagamento: safeStr(rowGet(row, ["TipoPagamento", "tipoPagamento"])),
+        tipoRicevuta: safeStr(rowGet(row, ["TipoRicevuta", "tipoRicevuta"])),
+        annullata: false,
+        noteGenerali: safeStr(rowGet(row, ["NoteGenerali", "noteGenerali", "RicevuteNoteGenerali"])),
+        operatore: safeStr(rowGet(row, ["NomeOperatore", "nomeOperatore", "Operatore"])),
+        azienda: {
+          nome: safeStr(rowGet(row, ["RicevuteAziendeNome", "AziendaNome"])),
+          indirizzoVia: safeStr(
+            rowGet(row, ["RicevuteAziendeIndirizzo_Via", "RicevuteAziendeIndirizzoVia", "Indirizzo_Via"])
+          ),
+          indirizzoCap: safeStr(rowGet(row, ["RicevuteAziendeIndirizzo_Cap", "RicevuteAziendeIndirizzoCap"])),
+          indirizzoCitta: safeStr(rowGet(row, ["RicevuteAziendeIndirizzo_Citta", "RicevuteAziendeIndirizzoCitta"])),
+          indirizzoPv: safeStr(rowGet(row, ["RicevuteAziendeIndirizzo_Pv", "RicevuteAziendeIndirizzoPv"])),
+          telefono: safeStr(rowGet(row, ["RicevuteAziendeTelefono", "Telefono"])),
+          email: safeStr(rowGet(row, ["RicevuteAziendeEmail", "AziendaEmail"])),
+          piva: safeStr(rowGet(row, ["RicevuteAziendePartitaIVA", "RicevuteTestataPIva", "PartitaIVA"])),
+        },
+        righe: [],
+        totale: 0,
+      }
+      byId.set(ricevutaId, g)
+    }
+    if (!g.email) g.email = safeStr(rowGet(row, ["Email", "email"]))
+    if (!g.sms) g.sms = safeStr(rowGet(row, ["SMS", "sms", "Telefono_1"]))
+    g.righe.push(riga)
+  }
+  return Array.from(byId.values())
+    .map((g) => ({
+      ...g,
+      totale: g.righe.reduce((s, r) => s + Number(r.totaleRiga ?? 0), 0),
+    }))
+    .sort((a, b) => String(b.dataRicevutaIso ?? "").localeCompare(String(a.dataRicevutaIso ?? "")))
+}
+
+export async function queryRicevuteUtenti(args: {
+  asOfIso?: string
+  windowMinutes?: number
+  limit?: number
+}): Promise<{
+  view: string | null
+  dateCol: string | null
+  fromIso: string
+  toIso: string
+  ricevute: RicevutaUtenteGroup[]
+}> {
+  const empty = {
+    view: null as string | null,
+    dateCol: null as string | null,
+    fromIso: new Date().toISOString(),
+    toIso: new Date().toISOString(),
+    ricevute: [] as RicevutaUtenteGroup[],
+  }
+  const p = await getPool()
+  if (!p) return empty
+
+  const view = await resolveRicevuteUtentiViewName()
+  const vq = qualifySqlObject(view).query
+  const colsLower = await prenGetCols(view)
+  const dateCol =
+    pickBestDateCol(colsLower, ["DataRicevuta", "DataRicevutaOperazione", "DataOperazione", "Data"]) ?? null
+
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const now = new Date()
+  const parts =
+    args.asOfIso && /^\d{4}-\d{2}-\d{2}$/.test(args.asOfIso)
+      ? (() => {
+          const [y, m, d] = args.asOfIso.split("-").map(Number)
+          return { year: y, month: m - 1, day: d }
+        })()
+      : useLocal
+        ? { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() }
+        : { year: now.getUTCFullYear(), month: now.getUTCMonth(), day: now.getUTCDate() }
+  const start = useLocal
+    ? new Date(parts.year, parts.month, parts.day, 0, 0, 0, 0)
+    : new Date(Date.UTC(parts.year, parts.month, parts.day, 0, 0, 0))
+  const end = useLocal
+    ? new Date(parts.year, parts.month, parts.day + 1, 0, 0, 0, 0)
+    : new Date(Date.UTC(parts.year, parts.month, parts.day + 1, 0, 0, 0))
+  const windowMinutes = args.windowMinutes != null ? Math.max(1, Math.min(24 * 60, Math.floor(args.windowMinutes))) : null
+  const windowFrom = windowMinutes ? new Date(Date.now() - windowMinutes * 60 * 1000) : null
+  const windowTo = windowMinutes ? new Date() : null
+  const top = Math.max(50, Math.min(3000, Math.floor(args.limit ?? 1200)))
+
+  const whereParts: string[] = []
+  if (dateCol) {
+    whereParts.push(
+      `(${sqlDateEqualsExpr(dateCol, "@giorno")} OR (TRY_CONVERT(datetime, ${bracketCol(dateCol)}) >= @from AND TRY_CONVERT(datetime, ${bracketCol(dateCol)}) < @to))`
+    )
+  }
+  const where = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : ""
+  const orderBy = dateCol ? `ORDER BY TRY_CONVERT(datetime, ${bracketCol(dateCol)}) DESC` : ""
+
+  const req = p.request()
+  req.input("giorno", sql.VarChar(10), `${parts.year}-${String(parts.month + 1).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`)
+  req.input("from", sql.DateTime, start)
+  req.input("to", sql.DateTime, end)
+  const r = await req.query(`SELECT TOP (${top}) * FROM ${vq} ${where} ${orderBy};`)
+  let ricevute = mapRicevuteUtentiRecordset((r.recordset ?? []) as Record<string, unknown>[])
+
+  if (windowMinutes && windowFrom && windowTo) {
+    ricevute = ricevute.filter((rec) => {
+      const t = rec.dataRicevutaIso ? new Date(rec.dataRicevutaIso).getTime() : NaN
+      return Number.isFinite(t) && t >= windowFrom.getTime() && t <= windowTo.getTime()
+    })
+  }
+
+  return {
+    view,
+    dateCol,
+    fromIso: (windowFrom ?? start).toISOString(),
+    toIso: (windowTo ?? end).toISOString(),
+    ricevute,
+  }
+}
+
+export async function queryRicevutaUtenteById(ricevutaId: string): Promise<RicevutaUtenteGroup | null> {
+  const id = String(ricevutaId ?? "").trim()
+  if (!id) return null
+  const p = await getPool()
+  if (!p) return null
+  const view = await resolveRicevuteUtentiViewName()
+  const vq = qualifySqlObject(view).query
+
+  if (/^\d+$/.test(id)) {
+    const r = await p.request().input("id", sql.Int, Number(id)).query(
+      `SELECT * FROM ${vq} WHERE TRY_CONVERT(int, [IDRicevuta]) = @id OR TRY_CONVERT(int, [IdRicevuta]) = @id ORDER BY TRY_CONVERT(int, [IDRicevuteRiga]) ASC;`
+    )
+    const groups = mapRicevuteUtentiRecordset((r.recordset ?? []) as Record<string, unknown>[])
+    return groups.find((g) => g.ricevutaId === id) ?? groups[0] ?? null
+  }
+
+  if (id.startsWith("mov:")) {
+    const movId = id.slice(4)
+    const r = await p.request().input("mov", sql.Int, Number(movId)).query(
+      `SELECT * FROM ${vq} WHERE TRY_CONVERT(int, [IDCassaMovimento]) = @mov OR TRY_CONVERT(int, [IdCassaMovimento]) = @mov ORDER BY TRY_CONVERT(int, [IDRicevuteRiga]) ASC;`
+    )
+    const groups = mapRicevuteUtentiRecordset((r.recordset ?? []) as Record<string, unknown>[])
+    return groups.find((g) => g.ricevutaId === id) ?? groups[0] ?? null
+  }
+
+  return null
 }
 
 async function crmPickFirstCol(view: string, candidates: string[]): Promise<string | null> {

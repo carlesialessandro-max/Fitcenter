@@ -303,6 +303,19 @@ export const dataApi = {
     const query = q.toString()
     return api.get<CassaMovimentiUtentiResponse>(`/data/cassa-movimenti-utenti${query ? `?${query}` : ""}`)
   },
+  getRicevuteUtenti: (params?: { asOf?: string; windowMinutes?: number; limit?: number }) => {
+    const q = new URLSearchParams()
+    if (params?.asOf) q.set("asOf", params.asOf)
+    if (params?.windowMinutes != null) q.set("windowMinutes", String(params.windowMinutes))
+    if (params?.limit != null) q.set("limit", String(params.limit))
+    const query = q.toString()
+    return api.get<RicevuteUtentiResponse>(`/data/ricevute-utenti${query ? `?${query}` : ""}`)
+  },
+  inviaScontrino: (body: { ricevutaId: string; channel: "email" | "sms"; email?: string; phone?: string }) =>
+    api.post<{ ok: boolean; channel: string; sent: boolean; to?: string; toMasked?: string }>(
+      "/data/ricevute-utenti/invia",
+      body
+    ),
 }
 
 export interface CassaMovimentoUtenteRow {
@@ -356,6 +369,56 @@ export interface CassaMovimentiUtentiResponse {
   fromIso: string
   toIso: string
   groups: CassaMovimentiUtentiGroup[]
+}
+
+export interface RicevutaUtenteRiga {
+  rigaId: string | null
+  descrizione: string | null
+  qta: number
+  prezzoUnitario: number
+  iva: number | null
+  totaleRiga: number
+  tipoRiga: string | null
+}
+
+export interface RicevutaUtenteGroup {
+  ricevutaId: string
+  numeroRicevuta: string | null
+  dataRicevutaIso: string | null
+  cliente: string | null
+  cognome: string | null
+  nome: string | null
+  email: string | null
+  sms: string | null
+  idUtente: string | null
+  idCassaMovimento: string | null
+  categoriaDescrizione: string | null
+  senzaNominativo: boolean
+  tipoPagamento: string | null
+  tipoRicevuta: string | null
+  annullata: boolean
+  noteGenerali: string | null
+  operatore: string | null
+  azienda: {
+    nome: string | null
+    indirizzoVia: string | null
+    indirizzoCap: string | null
+    indirizzoCitta: string | null
+    indirizzoPv: string | null
+    telefono: string | null
+    email: string | null
+    piva: string | null
+  }
+  righe: RicevutaUtenteRiga[]
+  totale: number
+}
+
+export interface RicevuteUtentiResponse {
+  view: string | null
+  dateCol: string | null
+  fromIso: string
+  toIso: string
+  ricevute: RicevutaUtenteGroup[]
 }
 
 export interface OraLavorata {

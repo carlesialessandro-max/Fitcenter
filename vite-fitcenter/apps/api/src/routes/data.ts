@@ -1,4 +1,5 @@
 import { Router } from "express"
+import { getRicevuteUtenti, postInviaScontrino } from "../handlers/scontrini.js"
 import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
@@ -64,6 +65,8 @@ dataRouter.post("/ore-lavorate", postOraLavorata)
 dataRouter.delete("/ore-lavorate/:id", deleteOraLavorata)
 dataRouter.get("/report-consulenti", requireAuth, getReportConsulenti)
 dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
+dataRouter.get("/ricevute-utenti", getRicevuteUtenti)
+dataRouter.post("/ricevute-utenti/invia", postInviaScontrino)
 dataRouter.get("/incassi", requireAdmin, getIncassi)
 dataRouter.get("/campus", getCampus)
 dataRouter.patch("/campus/:clienteId", patchCampusCliente)
