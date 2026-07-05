@@ -4,6 +4,22 @@ function fmtEuro(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(n || 0)
 }
 
+/** Importo ASCII per SMS (GSM-7): niente € né spazi speciali. */
+function fmtEuroSms(n: number): string {
+  const v = Math.abs(n || 0)
+  return `${v.toFixed(2).replace(".", ",")} EUR`
+}
+
+/** Data gg/mm/aaaa senza locale (evita caratteri non GSM). */
+function fmtDateSms(iso: string | null | undefined): string {
+  if (!iso) return "-"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
+  const dd = String(d.getDate()).padStart(2, "0")
+  const mm = String(d.getMonth() + 1).padStart(2, "0")
+  return `${dd}/${mm}/${d.getFullYear()}`
+}
+
 function fmtDate(iso: string | null | undefined): string {
   if (!iso) return "—"
   const d = new Date(iso)
@@ -72,7 +88,7 @@ export function formatScontrinoSms(g: RicevutaUtenteGroup): string {
   const nome = g.azienda.nome?.trim() || "FitCenter"
   const primaRiga = g.righe[0]?.descrizione?.trim()
   const extra = g.righe.length > 1 ? ` (+${g.righe.length - 1} righe)` : ""
-  let text = `${nome}: scontrino n.${g.numeroRicevuta ?? g.ricevutaId} del ${fmtDate(g.dataRicevutaIso)} — ${fmtEuro(g.totale)}`
+  let text = `${nome}: scontrino n.${g.numeroRicevuta ?? g.ricevutaId} del ${fmtDateSms(g.dataRicevutaIso)} - ${fmtEuroSms(g.totale)}`
   if (primaRiga) text += `. ${primaRiga.slice(0, 60)}${extra}`
   if (text.length > 480) text = text.slice(0, 477) + "..."
   return text
