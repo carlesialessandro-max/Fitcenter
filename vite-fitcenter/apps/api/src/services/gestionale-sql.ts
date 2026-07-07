@@ -29,6 +29,8 @@ let lastPrenotazioniQueryError: string | null = null
 let lastPrenotazioniWaitlistError: string | null = null
 let lastPrenotazioniWaitlistView: string | null = null
 let lastPrenotazioniWaitlistDateCol: string | null = null
+let lastPrenotazioniWaitlistOrderCol: string | null = null
+let lastPrenotazioniWaitlistBookedCol: string | null = null
 let lastLezioniVuoteError: string | null = null
 let lastLezioniVuoteCount = 0
 
@@ -213,8 +215,18 @@ export function getLastPrenotazioniWaitlistError(): string | null {
   return lastPrenotazioniWaitlistError
 }
 
-export function getLastPrenotazioniWaitlistDebug(): { view: string | null; dateCol: string | null } {
-  return { view: lastPrenotazioniWaitlistView, dateCol: lastPrenotazioniWaitlistDateCol }
+export function getLastPrenotazioniWaitlistDebug(): {
+  view: string | null
+  dateCol: string | null
+  orderCol: string | null
+  bookedCol: string | null
+} {
+  return {
+    view: lastPrenotazioniWaitlistView,
+    dateCol: lastPrenotazioniWaitlistDateCol,
+    orderCol: lastPrenotazioniWaitlistOrderCol,
+    bookedCol: lastPrenotazioniWaitlistBookedCol,
+  }
 }
 
 export function getLastLezioniVuoteDebug(): { error: string | null; count: number } {
@@ -5389,18 +5401,80 @@ export type PrenotazioneCorsoRow = {
   inAttesa?: boolean
   /** Posizione in coda (lista attesa), se la vista la espone */
   ordineListaAttesa?: number
+  /** Ordine righe lista attesa dalla query SQL (fallback se manca Nr/progressivo) */
+  waitlistSeq?: number
   // lasciamo anche le colonne originali, perché la vista può variare per DB
   raw: Record<string, unknown>
 }
 
+function rawValIgnoreCase(raw: Record<string, unknown>, key: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(raw, key) && raw[key] != null) return raw[key]
+  const lk = key.toLowerCase()
+  for (const rk of Object.keys(raw)) {
+    if (rk.toLowerCase() === lk && raw[rk] != null) return raw[rk]
+  }
+  return undefined
+}
+
 function firstNonEmpty(raw: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
-    const v = raw[k]
+    const v = rawValIgnoreCase(raw, k)
     if (v == null) continue
     const s = String(v).trim()
     if (s) return s
   }
   return undefined
+}
+
+/** Nr / progressivo coda lista attesa (colonna «Nr» del gestionale). */
+function scanWaitlistOrderFromRaw(raw: Record<string, unknown>): number | undefined {
+  const keys = [
+    "Nr",
+    "PrenotazioniListaAttesaNr",
+    "PrenotazioniListaAttesaProgressivo",
+    "ProgressivoListaAttesa",
+    "NrListaAttesa",
+    "NumeroListaAttesa",
+    "PosizioneListaAttesa",
+    "Posizione",
+    "Progressivo",
+    "Numero",
+  ]
+  for (const k of keys) {
+    const v = rawValIgnoreCase(raw, k)
+    if (v == null || v === "") continue
+    const n = Number(v)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  for (const k of Object.keys(raw)) {
+    if (!/listaattesa.*(?:nr|progressivo|numero|posizione)/i.test(k)) continue
+    if (/inizio|fine|data|utente|id/i.test(k)) continue
+    const n = Number(raw[k])
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return undefined
+}
+
+function scoreWaitlistOrderCol(name: string): number {
+  const l = name.toLowerCase()
+  if (l === "nr") return 1000
+  if (/listaattesa.*nr/.test(l)) return 950
+  if (/listaattesa.*progressivo/.test(l)) return 900
+  if (/progressivolistaattesa|nrlistaattesa|numerolistaattesa|posizionelistaattesa/.test(l)) return 850
+  if (l === "posizione") return 400
+  if (l === "progressivo") return 200
+  if (l === "numero") return 100
+  return 0
+}
+
+async function pickWaitlistOrderCol(view: string): Promise<string | null> {
+  const idx = await sqlObjectCols(view)
+  let best: { col: string; score: number } | null = null
+  for (const col of idx.exact.values()) {
+    const score = scoreWaitlistOrderCol(col)
+    if (score > 0 && (!best || score > best.score)) best = { col, score }
+  }
+  return best?.col ?? null
 }
 
 function toIsoTimeHHmm(val: unknown): string | undefined {
@@ -5846,7 +5920,13 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const enrich = (
     raw: Record<string, unknown>,
     partecipanti?: number,
-    extra?: { inAttesa?: boolean; dateColOverride?: string }
+    extra?: {
+      inAttesa?: boolean
+      dateColOverride?: string
+      waitlistSeq?: number
+      orderColOverride?: string
+      bookedColOverride?: string
+    }
   ): PrenotazioneCorsoRow => {
     const servizio = firstNonEmpty(raw, [
       // Tipico titolo in stampa: "FITNESS - PILATES", "CORSI A PAGAMENTO - Pole Dance", ecc.
@@ -5902,18 +5982,22 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     const cognome = firstNonEmpty(raw, ["Cognome", "CognomeUtente", "CognomeCliente", "ClienteCognome"])
     const nome = firstNonEmpty(raw, ["Nome", "NomeUtente", "NomeCliente", "ClienteNome"])
     const prenotatoIlRaw = extra?.inAttesa
-      ? firstNonEmpty(raw, [
+      ? (extra.bookedColOverride ? rawValIgnoreCase(raw, extra.bookedColOverride) : undefined) ??
+        firstNonEmpty(raw, [
           // Ordine coda: timestamp iscrizione/operazione (non la data/ora lezione).
           "PrenotazioniListaAttesaDataOperazione",
+          "PrenotazioniListaAttesaDataPrenotazione",
           "PrenotazioniListaAttesaDataInserimento",
           "PrenotazioniListaAttesaDataCreazione",
-          "PrenotazioniListaAttesaCreatoIl",
-          "PrenotazioniListaAttesaCreatedAt",
+          "DataPrenotazioneListaAttesa",
           "DataOperazioneListaAttesa",
           "DataInserimentoListaAttesa",
           "DataCreazioneListaAttesa",
+          "PrenotazioniListaAttesaCreatoIl",
+          "PrenotazioniListaAttesaCreatedAt",
           "DataRichiesta",
           "RichiestoIl",
+          "DataPrenotazione",
           "DataOperazione",
           "DataModifica",
           "CreatoIl",
@@ -5938,7 +6022,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
           "CreatoIl",
           "CreatedAt",
         ])
-    const prenotatoIl = toIsoDateTime(prenotatoIlRaw) ?? prenotatoIlRaw
+    const prenotatoIl =
+      toIsoDateTime(prenotatoIlRaw) ??
+      (typeof prenotatoIlRaw === "string" ? prenotatoIlRaw : undefined)
     const note = firstNonEmpty(raw, ["Note", "Nota", "PrenotazioneNote"])
     const email = firstNonEmpty(raw, ["Email", "EMail", "E_mail", "Mail", "IndirizzoEmail"])
     const sms = firstNonEmpty(raw, ["SMS", "Sms", "Cellulare", "Telefono", "Cell", "Mobile", "TelefonoCellulare"])
@@ -5975,22 +6061,17 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       "LastLogin",
     ])
     const dataUltimoAcesso = toIsoDateTime(dataUltimoAcessoRaw) ?? dataUltimoAcessoRaw
-    const ordineListaAttesaRaw = extra?.inAttesa
-      ? firstNonEmpty(raw, [
-          "PrenotazioniListaAttesaProgressivo",
-          "ProgressivoListaAttesa",
-          "NrListaAttesa",
-          "NumeroListaAttesa",
-          "PosizioneListaAttesa",
-          "Nr",
-          "Numero",
-          "Posizione",
-          "Progressivo",
-          "progressivo",
-        ])
-      : undefined
-    const ordineListaAttesaNum = ordineListaAttesaRaw != null ? Number(ordineListaAttesaRaw) : NaN
-    const ordineListaAttesa = Number.isFinite(ordineListaAttesaNum) ? ordineListaAttesaNum : undefined
+    const ordineListaAttesa =
+      extra?.inAttesa
+        ? (() => {
+            if (extra.orderColOverride) {
+              const v = rawValIgnoreCase(raw, extra.orderColOverride)
+              const n = v != null ? Number(v) : NaN
+              if (Number.isFinite(n) && n > 0) return n
+            }
+            return scanWaitlistOrderFromRaw(raw)
+          })()
+        : undefined
     return {
       idUtente,
       giorno: day,
@@ -6007,6 +6088,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       dataUltimoAcesso,
       inAttesa: extra?.inAttesa,
       ordineListaAttesa,
+      waitlistSeq: extra?.waitlistSeq,
       raw,
     }
   }
@@ -6016,6 +6098,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     lastPrenotazioniWaitlistError = null
     lastPrenotazioniWaitlistView = null
     lastPrenotazioniWaitlistDateCol = null
+    lastPrenotazioniWaitlistOrderCol = null
+    lastPrenotazioniWaitlistBookedCol = null
     // Ritorna sempre righe prenotazione (1 riga = 1 partecipante).
     // Niente window function (può fallire se la view ha colonne non partizionabili).
     let base: PrenotazioneCorsoRow[] = []
@@ -6044,39 +6128,45 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const wDateCol = preferredWaitDateCol ?? (await pickBestDateColForView(waitView, dateCandidates))
       lastPrenotazioniWaitlistView = waitView
       lastPrenotazioniWaitlistDateCol = wDateCol
+      const wOrderCol = await pickWaitlistOrderCol(waitView)
+      const wBookedCol = await pickFirstPrenCol(waitView, [
+        "PrenotazioniListaAttesaDataOperazione",
+        "PrenotazioniListaAttesaDataPrenotazione",
+        "PrenotazioniListaAttesaDataInserimento",
+        "PrenotazioniListaAttesaDataCreazione",
+        "DataPrenotazioneListaAttesa",
+        "DataOperazioneListaAttesa",
+        "DataInserimentoListaAttesa",
+        "DataOperazione",
+        "DataPrenotazione",
+        "CreatoIl",
+      ])
+      lastPrenotazioniWaitlistOrderCol = wOrderCol
+      lastPrenotazioniWaitlistBookedCol = wBookedCol
       if (giornoOk && !wDateCol) return base
       const wWhere =
         giornoOk && wDateCol
           ? ` WHERE (${sqlDateEqualsFastExpr(wDateCol, "@giorno")} OR ${sqlDateEqualsExpr(wDateCol, "@giorno")})`
           : ""
-      const wOrderCol = await pickFirstPrenCol(waitView, [
-        "PrenotazioniListaAttesaProgressivo",
-        "ProgressivoListaAttesa",
-        "Nr",
-        "Numero",
-        "Posizione",
-        "Progressivo",
-      ])
-      const wBookedCol = await pickFirstPrenCol(waitView, [
-        "PrenotazioniListaAttesaDataOperazione",
-        "PrenotazioniListaAttesaDataInserimento",
-        "PrenotazioniListaAttesaDataCreazione",
-        "DataOperazioneListaAttesa",
-        "DataInserimentoListaAttesa",
-        "DataOperazione",
-        "CreatoIl",
-      ])
-      const wOrder = wOrderCol
-        ? ` ORDER BY ${bracketCol(wOrderCol)} ASC`
-        : wBookedCol
-          ? ` ORDER BY ${bracketCol(wBookedCol)} ASC`
+      const wOrderColResolved = wOrderCol
+      const wBookedColResolved = wBookedCol
+      const wOrder = wOrderColResolved
+        ? ` ORDER BY ${bracketCol(wOrderColResolved)} ASC`
+        : wBookedColResolved
+          ? ` ORDER BY ${bracketCol(wBookedColResolved)} ASC`
           : wDateCol
             ? ` ORDER BY ${bracketCol(wDateCol)} ASC`
             : ""
       const wr = await req.query(`SELECT * FROM ${wq}${wWhere}${wOrder}`)
       const wRows = (wr.recordset ?? []) as Record<string, unknown>[]
-      const wait = wRows.map((raw) => {
-        const row = enrich(raw, undefined, { inAttesa: true, dateColOverride: wDateCol ?? undefined })
+      const wait = wRows.map((raw, i) => {
+        const row = enrich(raw, undefined, {
+          inAttesa: true,
+          dateColOverride: wDateCol ?? undefined,
+          waitlistSeq: i + 1,
+          orderColOverride: wOrderColResolved ?? undefined,
+          bookedColOverride: wBookedColResolved ?? undefined,
+        })
         // La view lista attesa spesso espone solo una datetime (es. PrenotazioniListaAttesaDataInizio):
         // usiamola anche per l'orario così il grouping combacia col corso.
         if (!row.oraInizio && wDateCol) {

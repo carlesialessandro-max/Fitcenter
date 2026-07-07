@@ -16,6 +16,7 @@ export type PrenotazioneCorsoRow = {
   dataUltimoAcesso?: string
   inAttesa?: boolean
   ordineListaAttesa?: number
+  waitlistSeq?: number
   raw: Record<string, unknown>
 }
 

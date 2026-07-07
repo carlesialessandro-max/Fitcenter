@@ -70,6 +70,8 @@ export async function getPrenotazioniCorsi(req: Request, res: Response) {
         inAttesaCount: rows.filter((x) => (x as any)?.inAttesa).length,
         waitlistView: waitDbg.view,
         waitlistDateCol: waitDbg.dateCol,
+        waitlistOrderCol: waitDbg.orderCol,
+        waitlistBookedCol: waitDbg.bookedCol,
         dayCount,
         dayCountExpr,
         ...(prenErr ? { queryError: prenErr } : {}),

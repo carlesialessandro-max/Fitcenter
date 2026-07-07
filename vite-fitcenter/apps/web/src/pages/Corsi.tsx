@@ -303,6 +303,9 @@ function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
         const dx = prenotatoIlSortMs(x)
         const dy = prenotatoIlSortMs(y)
         if (dx !== dy) return dx - dy
+        const sx = x.waitlistSeq ?? null
+        const sy = y.waitlistSeq ?? null
+        if (sx != null && sy != null && sx !== sy) return sx - sy
         return 0
       }
 
@@ -331,10 +334,15 @@ function ordineListaAttesaFromRow(p: PrenotazioneCorsoRow): number | null {
   const raw = (p.raw ?? {}) as Record<string, unknown>
   const candidates = [
     p.ordineListaAttesa,
+    p.waitlistSeq,
+    raw.Nr,
+    raw.nr,
+    raw.PrenotazioniListaAttesaNr,
     raw.PrenotazioniListaAttesaProgressivo,
     raw.ProgressivoListaAttesa,
-    raw.Nr,
-    raw.Numero,
+    raw.NrListaAttesa,
+    raw.NumeroListaAttesa,
+    raw.PosizioneListaAttesa,
     raw.Posizione,
     raw.Progressivo,
     raw.progressivo,
@@ -342,7 +350,7 @@ function ordineListaAttesaFromRow(p: PrenotazioneCorsoRow): number | null {
   for (const c of candidates) {
     if (c == null || c === "") continue
     const n = Number(c)
-    if (Number.isFinite(n)) return n
+    if (Number.isFinite(n) && n > 0) return n
   }
   return null
 }
