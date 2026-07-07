@@ -5665,6 +5665,56 @@ function buildPrenotazioniDateRangeSql(prenIdx: SqlColIndex, giornoParam: string
   return null
 }
 
+/** Flag attivo/visibile: ogni colonna presente deve essere NULL o diverso da 0 (H2 usa spesso -1 = true). */
+function buildRecordEnabledSql(
+  idx: SqlColIndex,
+  alias: string,
+  enabledCandidates: string[],
+  disabledCandidates: string[] = ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]
+): string[] {
+  const parts: string[] = []
+  for (const logical of enabledCandidates) {
+    const col = pickSqlCol(idx, [logical])
+    if (col) parts.push(`(${alias}.[${col}] IS NULL OR TRY_CAST(${alias}.[${col}] AS int) NOT IN (0))`)
+  }
+  for (const logical of disabledCandidates) {
+    const col = pickSqlCol(idx, [logical])
+    if (col) parts.push(`(${alias}.[${col}] IS NULL OR TRY_CAST(${alias}.[${col}] AS int) IN (0))`)
+  }
+  return parts
+}
+
+function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): boolean {
+  const raw = row.raw ?? {}
+  for (const key of ["Attivo"]) {
+    const v = rawValIgnoreCase(raw, key)
+    if (v == null || v === "") continue
+    const n = Number(v)
+    if (Number.isFinite(n) && n === 0) return false
+  }
+  for (const key of ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]) {
+    const v = rawValIgnoreCase(raw, key)
+    if (v == null || v === "") continue
+    const n = Number(v)
+    if (Number.isFinite(n) && n !== 0) return false
+  }
+  if (giorno && /^\d{4}-\d{2}-\d{2}$/.test(giorno)) {
+    const di = toIsoDay(
+      rawValIgnoreCase(raw, "DataInizio") ??
+        rawValIgnoreCase(raw, "PrenotazioneDataInizio") ??
+        rawValIgnoreCase(raw, "InizioValidita")
+    )
+    const df = toIsoDay(
+      rawValIgnoreCase(raw, "DataFine") ??
+        rawValIgnoreCase(raw, "PrenotazioneDataFine") ??
+        rawValIgnoreCase(raw, "FineValidita")
+    )
+    if (di && giorno < di) return false
+    if (df && giorno > df) return false
+  }
+  return true
+}
+
 /**
  * Lezioni programmate (PrenotazioniLezioni + Prenotazioni) senza iscritti nel giorno.
  * Serve per mostrare in pagina Corsi i corsi a zero prenotazioni e poterli bloccare.
@@ -5723,7 +5773,7 @@ async function queryLezioniCorsiSenzaIscritti(
 
   const ggWeekSql = buildGgWeekMatchSql(plIdx, "@giorno", "pl")
   const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, "@giorno", "pl")
-  const colPrenVis = pickSqlCol(prenIdx, ["WebVisibile", "TotemVisibile", "Attivo"])
+  const prenDateRangeSql = buildPrenotazioniDateRangeSql(prenIdx, "@giorno", "p")
 
   const whereParts: string[] = []
   // Schema FitCenter: validità su PrenotazioniLezioni (DataInizio/DataFine + GGWeek), non su Prenotazioni.
@@ -5733,9 +5783,10 @@ async function queryLezioniCorsiSenzaIscritti(
   } else {
     whereParts.push(buildHardcodedPlScheduleSql("@giorno"))
   }
-  if (colPrenVis) {
-    whereParts.push(`(p.[${colPrenVis}] IS NULL OR TRY_CAST(p.[${colPrenVis}] AS int) NOT IN (0))`)
-  }
+  if (prenDateRangeSql) whereParts.push(prenDateRangeSql)
+  // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
+  whereParts.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+  whereParts.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
 
   let notExistsSql = ""
   const rawPi = (process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione").trim()
@@ -5787,6 +5838,14 @@ async function queryLezioniCorsiSenzaIscritti(
   const selectOi = colPlOi ? `pl.[${colPlOi}] AS OraInizio` : "NULL AS OraInizio"
   const selectOf = colPlOf ? `pl.[${colPlOf}] AS OraFine` : "NULL AS OraFine"
   const selectVis = colPlVis ? `pl.[${colPlVis}] AS WebVisibile` : "NULL AS WebVisibile"
+  const extraPrenSelects: string[] = []
+  const colPrenAttivo = pickSqlCol(prenIdx, ["Attivo"])
+  if (colPrenAttivo) extraPrenSelects.push(`p.[${colPrenAttivo}] AS Attivo`)
+  const colPrenDi = pickSqlCol(prenIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"])
+  if (colPrenDi) extraPrenSelects.push(`p.[${colPrenDi}] AS DataInizio`)
+  const colPrenDf = pickSqlCol(prenIdx, ["DataFine", "Datafine", "DataA", "FineValidita"])
+  if (colPrenDf) extraPrenSelects.push(`p.[${colPrenDf}] AS DataFine`)
+  const extraPrenSql = extraPrenSelects.length ? `,\n      ${extraPrenSelects.join(",\n      ")}` : ""
 
   const buildQuery = (where: string[]) => `
     SET DATEFIRST 1;
@@ -5796,7 +5855,7 @@ async function queryLezioniCorsiSenzaIscritti(
       ${selectOi},
       ${selectOf},
       ${selectVis},
-      ${selectDesc}
+      ${selectDesc}${extraPrenSql}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
     WHERE ${where.join(" AND ")}
@@ -5830,9 +5889,9 @@ async function queryLezioniCorsiSenzaIscritti(
     } catch (e1) {
       if (!(plDateRangeSql && ggWeekSql)) throw e1
       const whereFallback = [buildHardcodedPlScheduleSql("@giorno")]
-      if (colPrenVis) {
-        whereFallback.push(`(p.[${colPrenVis}] IS NULL OR TRY_CAST(p.[${colPrenVis}] AS int) NOT IN (0))`)
-      }
+      if (prenDateRangeSql) whereFallback.push(prenDateRangeSql)
+      whereFallback.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      whereFallback.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
       recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereFallback)))
         .recordset ?? []) as Record<string, unknown>[]
     }
@@ -5916,6 +5975,11 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
   const req = p.request()
   if (giornoOk) req.input("giorno", sql.VarChar(32), giorno)
+
+  const filterCorsiAttivi = (rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] => {
+    if (!giornoOk || !giorno) return rows
+    return rows.filter((r) => isCorsoPrenotazioneAttivo(r, giorno))
+  }
 
   const enrich = (
     raw: Record<string, unknown>,
@@ -6143,7 +6207,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       ])
       lastPrenotazioniWaitlistOrderCol = wOrderCol
       lastPrenotazioniWaitlistBookedCol = wBookedCol
-      if (giornoOk && !wDateCol) return base
+      if (giornoOk && !wDateCol) return filterCorsiAttivi(base)
       const wWhere =
         giornoOk && wDateCol
           ? ` WHERE (${sqlDateEqualsFastExpr(wDateCol, "@giorno")} OR ${sqlDateEqualsExpr(wDateCol, "@giorno")})`
@@ -6174,10 +6238,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         }
         return row
       })
-      return [...base, ...wait]
+      return filterCorsiAttivi([...base, ...wait])
     } catch (e) {
       lastPrenotazioniWaitlistError = (e as Error)?.message ?? String(e)
-      return base
+      return filterCorsiAttivi(base)
     }
   } catch (e) {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").
