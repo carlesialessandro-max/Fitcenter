@@ -69,10 +69,11 @@ export function Dashboard() {
   const [oraLavorataInizio, setOraLavorataInizio] = useState("09:00")
   const [oraLavorataFine, setOraLavorataFine] = useState("18:00")
 
-  const { data, isLoading, isFetching, error } = useQuery({
+  const { data, isLoading, isFetching, error, refetch: refetchDashboard } = useQuery({
     queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
-    retry: false,
+    retry: 1,
+    retryDelay: 3000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : todayStaleMs,
@@ -130,10 +131,17 @@ export function Dashboard() {
   const giorniNelMeseSel = new Date(annoOggi, meseOggi, 0).getDate()
   const giornoOggi = role === "admin" ? oggiDate.getDate() : Math.min(giornoConsulente, giorniNelMeseSel)
 
-  const { data: dettaglioGiornoMese } = useQuery({
+  const {
+    data: dettaglioGiornoMese,
+    isLoading: dettaglioLoading,
+    isFetching: dettaglioFetching,
+    isError: dettaglioError,
+    refetch: refetchDettaglio,
+  } = useQuery({
     queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDettaglioMese(annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : undefined),
-    retry: false,
+    retry: 1,
+    retryDelay: 3000,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
@@ -179,11 +187,32 @@ export function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ore-lavorate"] }),
   })
 
-  if (error && !data && !dettaglioGiornoMese) {
+  const dettaglioPending = dettaglioLoading || dettaglioFetching
+  const fatalApiError =
+    !dettaglioPending &&
+    !(isLoading || isFetching) &&
+    error &&
+    !data &&
+    dettaglioError &&
+    !dettaglioGiornoMese
+
+  if (fatalApiError) {
     const errMsg = (error as Error)?.message?.trim()
     return (
-      <div className="p-6 text-red-400">
-        Errore: {errMsg || "connessione all’API non disponibile (timeout o server spento)"}. Verifica che l’API backend sia avviata.
+      <div className="p-6">
+        <p className="text-red-400">
+          Errore: {errMsg || "connessione all’API non disponibile (timeout o server spento)"}. Verifica che l’API backend sia avviata.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            void refetchDashboard()
+            void refetchDettaglio()
+          }}
+          className="mt-4 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400"
+        >
+          Riprova
+        </button>
       </div>
     )
   }

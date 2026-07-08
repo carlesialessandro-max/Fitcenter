@@ -427,6 +427,42 @@ function dashboardCacheAsOf(asOfKey: string): string {
   return cacheAsOfKeyForTotals(asOfKey)
 }
 
+/** Chiavi cache da provare in ordine (ora corrente → ora precedente → giorno). */
+function dashboardCacheLookupKeys(asOfKey: string): string[] {
+  if (!isAsOfToday(asOfKey)) return [cacheAsOfKeyForTotals(asOfKey)]
+  const keys: string[] = [todayHourCacheKey(asOfKey)]
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const d = new Date()
+  const h = (useLocal ? d.getHours() : d.getUTCHours()) - 1
+  if (h >= 0) keys.push(`${baseAsOfDateKey(asOfKey)}T${pad2(h)}`)
+  keys.push(cacheAsOfKeyForTotals(asOfKey))
+  keys.push(baseAsOfDateKey(asOfKey))
+  return [...new Set(keys)]
+}
+
+async function readDashboardCache(
+  scope: string,
+  cacheKeyParams: { consulente: string | null },
+  asOfKey: string,
+  depSig: string,
+  allowExpired: boolean
+): Promise<{ stats: DashboardStats; cacheAsOf: string } | null> {
+  for (const cacheAsOf of dashboardCacheLookupKeys(asOfKey)) {
+    const args = {
+      name: "data.dashboard" as const,
+      scope,
+      params: cacheKeyParams,
+      asOf: cacheAsOf,
+      depSig,
+    }
+    const hit = allowExpired
+      ? await cacheGetAllowExpired<DashboardStats>({ ...args, depSig })
+      : await cacheGet<DashboardStats>({ ...args, depSig })
+    if (hit) return { stats: hit, cacheAsOf }
+  }
+  return null
+}
+
 function mapVenditePerMeseWithProgressivo(
   perMeseRaw: { mese: number; totale: number }[],
   mese: number,
@@ -603,45 +639,55 @@ export async function getDashboard(req: Request, res: Response) {
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = { consulente: consulente ?? null }
-    const cacheArgs = {
-      name: "data.dashboard" as const,
-      scope,
-      params: cacheKeyParams,
-      asOf: cacheAsOf,
-      depSig,
-    }
-    const cached = await cacheGet<DashboardStats>(cacheArgs)
-    if (cached) return res.json(cached)
+    const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
+    if (cachedHit) return res.json(cachedHit.stats)
 
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
       if (isAsOfToday(asOf.key)) {
-        const stale = await cacheGetAllowExpired<DashboardStats>(cacheArgs)
-        if (stale) {
-          res.json(stale)
-          void refreshDashboardCache({ scope, cacheKeyParams, cacheAsOf, depSig, consulente, asOf })
+        const staleHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+        if (staleHit) {
+          res.json(staleHit.stats)
+          void refreshDashboardCache({
+            scope,
+            cacheKeyParams,
+            cacheAsOf: dashboardCacheAsOf(asOf.key),
+            depSig,
+            consulente,
+            asOf,
+          })
           return
         }
       }
       try {
         const stats = await withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
         await cacheSet({
-          ...cacheArgs,
-          ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
+          name: "data.dashboard",
+          scope,
+          params: cacheKeyParams,
+          asOf: dashboardCacheAsOf(asOf.key),
+          depSig,
+          ttlMs: getCacheTtlMsForAsOf(dashboardCacheAsOf(asOf.key), 0),
           value: stats,
         })
         return res.json(stats)
       } catch (e) {
         if ((e as Error).message !== "__FITCENTER_DASHBOARD_SQL_TIMEOUT__") throw e
-        const stale = isAsOfToday(asOf.key) ? await cacheGetAllowExpired<DashboardStats>(cacheArgs) : null
-        if (stale) return res.json(stale)
+        const staleHit = isAsOfToday(asOf.key)
+          ? await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+          : null
+        if (staleHit) return res.json(staleHit.stats)
         const leads = leadsStore.list({})
         const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
         const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
         const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
         if (isAsOfToday(asOf.key)) {
           await cacheSet({
-            ...cacheArgs,
+            name: "data.dashboard",
+            scope,
+            params: cacheKeyParams,
+            asOf: dashboardCacheAsOf(asOf.key),
+            depSig,
             ttlMs: 10_000,
             value: stats,
           })
@@ -654,8 +700,12 @@ export async function getDashboard(req: Request, res: Response) {
     const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
     const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
     await cacheSet({
-      ...cacheArgs,
-      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
+      name: "data.dashboard",
+      scope,
+      params: cacheKeyParams,
+      asOf: dashboardCacheAsOf(asOf.key),
+      depSig,
+      ttlMs: getCacheTtlMsForAsOf(dashboardCacheAsOf(asOf.key), 0),
       value: stats,
     })
     res.json(stats)
