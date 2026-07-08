@@ -70,14 +70,13 @@ export function Dashboard() {
   const [oraLavorataFine, setOraLavorataFine] = useState("18:00")
 
   const { data, isLoading, isFetching, error } = useQuery({
-    queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null],
+    queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
     retry: false,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    // Per date storiche (asOf != oggi) i dati sono "fissi": evitiamo refetch inutili.
-    staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : 30_000,
-    gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 5 * 60 * 1000,
+    staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : todayStaleMs,
+    gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
     placeholderData: (prev) => prev,
   })
 
@@ -180,14 +179,7 @@ export function Dashboard() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ore-lavorate"] }),
   })
 
-  if (isLoading && !data) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center text-zinc-400">
-        Caricamento...
-      </div>
-    )
-  }
-  if (error && !data) {
+  if (error && !data && !dettaglioGiornoMese) {
     const errMsg = (error as Error)?.message?.trim()
     return (
       <div className="p-6 text-red-400">
@@ -195,15 +187,9 @@ export function Dashboard() {
       </div>
     )
   }
-  if (!data) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center text-zinc-400">
-        Dati non disponibili.
-      </div>
-    )
-  }
 
   const safeNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)
+  const kpiLoading = !data && (isLoading || isFetching)
 
   const oggi = role === "admin"
     ? fmtDateIt(asOf)
@@ -215,7 +201,10 @@ export function Dashboard() {
 
   return (
     <div className="p-6">
-      {isFetching && !isAdminToday && (
+      {(isFetching || kpiLoading) && isAdminToday && (
+        <p className="mb-3 text-sm text-amber-400/90">Aggiornamento totali in corso…</p>
+      )}
+      {(isFetching || kpiLoading) && !isAdminToday && (
         <p className="mb-3 text-sm text-amber-400/90">Caricamento totali per {fmtDateIt(asOf)}…</p>
       )}
       {error && (
@@ -362,15 +351,19 @@ export function Dashboard() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Lead totali</p>
-          <p className="mt-1 text-2xl font-semibold text-zinc-100">{data.leadTotali}</p>
+          <p className="mt-1 text-2xl font-semibold text-zinc-100">{kpiLoading ? "…" : (data?.leadTotali ?? "—")}</p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {data.leadVinti} vinti — {data.leadPersi} persi
+            {kpiLoading ? "…" : `${data?.leadVinti ?? 0} vinti — ${data?.leadPersi ?? 0} persi`}
           </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Abbonamenti attivi</p>
-          <p className="mt-1 text-2xl font-semibold text-emerald-400">{data.abbonamentiAttivi}</p>
-          <p className="mt-0.5 text-xs text-zinc-500">esclusi tesseramenti — {data.abbonamentiInScadenza} (30 gg) / {data.abbonamentiInScadenza60 ?? 0} (60 gg) in scadenza</p>
+          <p className="mt-1 text-2xl font-semibold text-emerald-400">{kpiLoading ? "…" : (data?.abbonamentiAttivi ?? "—")}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {kpiLoading
+              ? "…"
+              : `esclusi tesseramenti — ${data?.abbonamentiInScadenza ?? 0} (30 gg) / ${data?.abbonamentiInScadenza60 ?? 0} (60 gg) in scadenza`}
+          </p>
           {role === "admin" && (
             <Link
               to={`/attivi-analisi?asOf=${encodeURIComponent(asOf)}`}
@@ -384,24 +377,26 @@ export function Dashboard() {
           <p className="text-sm text-zinc-400">Entrate mese (consuntivo a oggi)</p>
           <p
             className={`mt-1 text-2xl font-semibold ${
-              safeNum(data.entrateMese) < 0 ? "text-red-400" : "text-amber-400"
+              kpiLoading ? "text-zinc-500" : safeNum(data?.entrateMese) < 0 ? "text-red-400" : "text-amber-400"
             }`}
           >
-            €{safeNum(data.entrateMese).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+            {kpiLoading ? "…" : `€${safeNum(data?.entrateMese).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500">{data.percentualeBudget}% del budget mese</p>
+          <p className="mt-0.5 text-xs text-zinc-500">{kpiLoading ? "…" : `${data?.percentualeBudget ?? 0}% del budget mese`}</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Budget mese / anno</p>
           <p className="mt-1 text-2xl font-semibold text-zinc-100">
-            €{Math.round(data.budgetMese ?? 0).toLocaleString("it-IT")}
+            {kpiLoading ? "…" : `€${Math.round(data?.budgetMese ?? 0).toLocaleString("it-IT")}`}
           </p>
-          <p className="mt-0.5 text-xs text-zinc-500">anno: €{Math.round(data.budgetAnno ?? 0).toLocaleString("it-IT")} (somma Carmen + Serena + Ombretta)</p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {kpiLoading ? "…" : `anno: €${Math.round(data?.budgetAnno ?? 0).toLocaleString("it-IT")} (somma Carmen + Serena + Ombretta)`}
+          </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Tasso conversione</p>
-          <p className="mt-1 text-2xl font-semibold text-violet-400">{data.tassoConversione}%</p>
-          <p className="mt-0.5 text-xs text-zinc-500">{data.clientiAttivi} clienti attivi</p>
+          <p className="mt-1 text-2xl font-semibold text-violet-400">{kpiLoading ? "…" : `${data?.tassoConversione ?? 0}%`}</p>
+          <p className="mt-0.5 text-xs text-zinc-500">{kpiLoading ? "…" : `${data?.clientiAttivi ?? 0} clienti attivi`}</p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Chiamate</p>
@@ -487,7 +482,7 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Grafici */}
+      {data && (
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">Vendite vs budget mensile</h2>
@@ -538,7 +533,9 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+      )}
 
+      {data && (
       <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
           <h2 className="text-sm font-medium text-zinc-400">In scadenza (30 giorni)</h2>
@@ -551,6 +548,7 @@ export function Dashboard() {
           <p className="mt-0.5 text-xs text-zinc-500">totale</p>
         </div>
       </div>
+      )}
 
       {budgetModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">

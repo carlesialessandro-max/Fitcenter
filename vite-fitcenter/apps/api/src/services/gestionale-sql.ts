@@ -4288,20 +4288,25 @@ export async function getVenditeTotaleGiorno(
 /** Totali per mese per un anno (per storico), calcolo in SQL. */
 export async function getVenditePerMeseAnno(
   anno: number,
-  idConsultant?: string
+  idConsultant?: string,
+  opts?: { throughMonth?: number }
 ): Promise<{ mese: number; totale: number }[]> {
   if (!(await getPool())) return []
   try {
-    const mesi: { mese: number; totale: number }[] = []
-    for (let i = 0; i < 12; i++) {
-      const mese = i + 1
-      const ultimo = new Date(anno, mese, 0).getDate()
-      const from = `${anno}-${String(mese).padStart(2, "0")}-01`
-      const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
-      const totale = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
-      mesi.push({ mese, totale })
-    }
-    return mesi
+    const through = Math.min(12, Math.max(1, opts?.throughMonth ?? 12))
+    const monthNums = Array.from({ length: through }, (_, i) => i + 1)
+    const fetched = await Promise.all(
+      monthNums.map(async (mese) => {
+        const ultimo = new Date(anno, mese, 0).getDate()
+        const from = `${anno}-${String(mese).padStart(2, "0")}-01`
+        const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
+        const totale = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
+        return { mese, totale }
+      })
+    )
+    const out = [...fetched]
+    for (let m = through + 1; m <= 12; m++) out.push({ mese: m, totale: 0 })
+    return out.sort((a, b) => a.mese - b.mese)
   } catch {
     return []
   }

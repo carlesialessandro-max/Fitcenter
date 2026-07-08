@@ -13,6 +13,7 @@ import { syncCrmTelefonateToStore } from "../services/sync-crm-chiamate.js"
 import {
   bumpMetaVersion,
   cacheGet,
+  cacheGetAllowExpired,
   cacheSet,
   getBudgetDepSig,
   baseAsOfDateKey,
@@ -421,153 +422,226 @@ function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
   ])
 }
 
+function dashboardCacheAsOf(asOfKey: string): string {
+  if (isAsOfToday(asOfKey)) return todayHourCacheKey(asOfKey)
+  return cacheAsOfKeyForTotals(asOfKey)
+}
+
+function mapVenditePerMeseWithProgressivo(
+  perMeseRaw: { mese: number; totale: number }[],
+  mese: number,
+  venditeMeseSql: number
+): { mese: number; totale: number }[] {
+  const mapMese = new Map<number, number>()
+  for (const row of perMeseRaw) mapMese.set(row.mese, row.totale)
+  mapMese.set(mese, venditeMeseSql)
+  return Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+    mese: m,
+    totale: mapMese.get(m) ?? 0,
+  }))
+}
+
+async function computeDashboardSqlStats(
+  consulente: string | undefined,
+  asOf: { key: string; date: Date }
+): Promise<DashboardStats> {
+  const idUtente = await resolveConsultantId(consulente)
+  const oggi = toDateParts(asOf.date)
+  const anno = oggi.year
+  const mese = oggi.month
+  const venditeOpts = { throughMonth: mese }
+  let venditeMeseSql: number
+  let venditePerMeseSql: { mese: number; totale: number }[]
+
+  if (consulente == null || consulente === "") {
+    const labels = budgetPerConsulente.getConsulentiLabels()
+    const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
+    const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
+    const abbonamentiPromise = isAsOfToday(asOf.key)
+      ? gestionaleSql.queryAbbonamenti(undefined)
+      : Promise.resolve([] as Record<string, unknown>[])
+
+    if (mergedIds) {
+      const [abbonamentiRows, prog, perMeseRaw] = await Promise.all([
+        abbonamentiPromise,
+        gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds),
+        gestionaleSql.getVenditePerMeseAnno(anno, mergedIds, venditeOpts),
+      ])
+      venditeMeseSql = prog
+      venditePerMeseSql = mapVenditePerMeseWithProgressivo(perMeseRaw, mese, venditeMeseSql)
+      const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+      markRinnovato(abbonamenti)
+      const leads = leadsStore.list({})
+      const leadTotali = leads.length
+      const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+      const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+      const budgetList = getBudgetListForYear(anno)
+      const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+      return buildDashboardFromData(
+        [],
+        abbonamenti,
+        budgetList,
+        leadTotali,
+        leadVinti,
+        leadPersi,
+        leadRowsForFonte,
+        undefined,
+        venditeMeseSql,
+        venditePerMeseSql,
+        asOf.date
+      )
+    }
+
+    const [abbonamentiRows, venditeResults] = await Promise.all([
+      abbonamentiPromise,
+      Promise.all(
+        labels.map(async (label) => {
+          const id = await resolveConsultantId(label)
+          const [prog, perMese] = await Promise.all([
+            gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id),
+            gestionaleSql.getVenditePerMeseAnno(anno, id, venditeOpts),
+          ])
+          return { prog, perMese }
+        })
+      ),
+    ])
+    venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
+    const mapMese = new Map<number, number>()
+    for (const r of venditeResults) {
+      for (const row of r.perMese) mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
+    }
+    mapMese.set(mese, venditeMeseSql)
+    venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
+      mese: m,
+      totale: mapMese.get(m) ?? 0,
+    }))
+    const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+    markRinnovato(abbonamenti)
+    const leads = leadsStore.list({})
+    const leadTotali = leads.length
+    const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+    const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+    const budgetList = getBudgetListForYear(anno)
+    const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+    return buildDashboardFromData(
+      [],
+      abbonamenti,
+      budgetList,
+      leadTotali,
+      leadVinti,
+      leadPersi,
+      leadRowsForFonte,
+      undefined,
+      venditeMeseSql,
+      venditePerMeseSql,
+      asOf.date
+    )
+  }
+
+  const [abbonamentiRows, prog, perMeseSingle] = await Promise.all([
+    isAsOfToday(asOf.key) ? gestionaleSql.queryAbbonamenti(idUtente) : Promise.resolve([] as Record<string, unknown>[]),
+    gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
+    gestionaleSql.getVenditePerMeseAnno(anno, idUtente, venditeOpts),
+  ])
+  venditeMeseSql = prog
+  venditePerMeseSql = perMeseSingle.map((row) =>
+    row.mese === mese ? { ...row, totale: venditeMeseSql } : row
+  )
+  const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+  markRinnovato(abbonamenti)
+  const leads = leadsStore.list({})
+  const leadTotali = leads.length
+  const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
+  const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
+  const budgetList = getBudgetListForYear(anno)
+  const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
+  return buildDashboardFromData(
+    [],
+    abbonamenti,
+    budgetList,
+    leadTotali,
+    leadVinti,
+    leadPersi,
+    leadRowsForFonte,
+    undefined,
+    venditeMeseSql,
+    venditePerMeseSql,
+    asOf.date
+  )
+}
+
+async function refreshDashboardCache(args: {
+  scope: string
+  cacheKeyParams: { consulente: string | null }
+  cacheAsOf: string
+  depSig: string
+  consulente: string | undefined
+  asOf: { key: string; date: Date }
+}): Promise<void> {
+  try {
+    const stats = await withDashboardSqlTimeout(computeDashboardSqlStats(args.consulente, args.asOf))
+    await cacheSet({
+      name: "data.dashboard",
+      scope: args.scope,
+      params: args.cacheKeyParams,
+      asOf: args.cacheAsOf,
+      depSig: args.depSig,
+      ttlMs: getCacheTtlMsForAsOf(args.cacheAsOf, 0),
+      value: stats,
+    })
+  } catch {
+    // best-effort refresh in background
+  }
+}
+
 export async function getDashboard(req: Request, res: Response) {
   try {
     const operatoreNome = getOperatoreConsulenteNome(req)
     const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
     const scope = cacheScope(req)
     const asOf = parseAsOf(req)
-    const cacheAsOf = cacheAsOfKeyForTotals(asOf.key)
+    const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = { consulente: consulente ?? null }
-    const cached = await cacheGet<DashboardStats>({
-      name: "data.dashboard",
+    const cacheArgs = {
+      name: "data.dashboard" as const,
       scope,
       params: cacheKeyParams,
       asOf: cacheAsOf,
       depSig,
-    })
+    }
+    const cached = await cacheGet<DashboardStats>(cacheArgs)
     if (cached) return res.json(cached)
+
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
+      if (isAsOfToday(asOf.key)) {
+        const stale = await cacheGetAllowExpired<DashboardStats>(cacheArgs)
+        if (stale) {
+          res.json(stale)
+          void refreshDashboardCache({ scope, cacheKeyParams, cacheAsOf, depSig, consulente, asOf })
+          return
+        }
+      }
       try {
-        const stats = await withDashboardSqlTimeout(
-          (async (): Promise<DashboardStats> => {
-            const idUtente = await resolveConsultantId(consulente)
-            const oggi = toDateParts(asOf.date)
-            const anno = oggi.year
-            const mese = oggi.month
-            let venditeMeseSql: number
-            let venditePerMeseSql: { mese: number; totale: number }[]
-            if (consulente == null || consulente === "") {
-              const labels = budgetPerConsulente.getConsulentiLabels()
-              const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
-              const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-              // Storico: solo totali vendite (immutabili); evita queryAbbonamenti pesante su cache miss.
-              const abbonamentiRows = isAsOfToday(asOf.key)
-                ? await gestionaleSql.queryAbbonamenti(undefined)
-                : []
-              if (mergedIds) {
-                venditeMeseSql = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, mergedIds)
-                const perMeseRaw = await gestionaleSql.getVenditePerMeseAnno(anno, mergedIds)
-                const mapMese = new Map<number, number>()
-                for (const row of perMeseRaw) {
-                  mapMese.set(row.mese, row.totale)
-                }
-                mapMese.set(mese, venditeMeseSql)
-                venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
-                  mese: m,
-                  totale: mapMese.get(m) ?? 0,
-                }))
-              } else {
-                const venditeResults = await Promise.all(
-                  labels.map(async (label) => {
-                    const id = await resolveConsultantId(label)
-                    const prog = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, id)
-                    const perMese = await gestionaleSql.getVenditePerMeseAnno(anno, id)
-                    return { prog, perMese }
-                  })
-                )
-                venditeMeseSql = venditeResults.reduce((s, r) => s + r.prog, 0)
-                const mapMese = new Map<number, number>()
-                for (const r of venditeResults) {
-                  for (const row of r.perMese) {
-                    mapMese.set(row.mese, (mapMese.get(row.mese) ?? 0) + row.totale)
-                  }
-                }
-                mapMese.set(mese, venditeMeseSql)
-                venditePerMeseSql = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
-                  mese: m,
-                  totale: mapMese.get(m) ?? 0,
-                }))
-              }
-              const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
-              markRinnovato(abbonamenti)
-              const leads = leadsStore.list({})
-              const leadTotali = leads.length
-              const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
-              const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-              const budgetList = getBudgetListForYear(anno)
-              const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-              return buildDashboardFromData(
-                [],
-                abbonamenti,
-                budgetList,
-                leadTotali,
-                leadVinti,
-                leadPersi,
-                leadRowsForFonte,
-                undefined,
-                venditeMeseSql,
-                venditePerMeseSql,
-                asOf.date
-              )
-            }
-            venditeMeseSql = await gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente)
-            const venditePerMeseSqlSingle = await gestionaleSql.getVenditePerMeseAnno(anno, idUtente)
-            venditePerMeseSql = venditePerMeseSqlSingle.map((row) =>
-              row.mese === mese ? { ...row, totale: venditeMeseSql } : row
-            )
-            const abbonamentiRows = isAsOfToday(asOf.key)
-              ? await gestionaleSql.queryAbbonamenti(idUtente)
-              : []
-            const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
-            markRinnovato(abbonamenti)
-            const leads = leadsStore.list({})
-            const leadTotali = leads.length
-            const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
-            const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-            const budgetList = getBudgetListForYear(anno)
-            const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-            return buildDashboardFromData(
-              [],
-              abbonamenti,
-              budgetList,
-              leadTotali,
-              leadVinti,
-              leadPersi,
-              leadRowsForFonte,
-              undefined,
-              venditeMeseSql,
-              venditePerMeseSql,
-              asOf.date
-            )
-          })()
-        )
+        const stats = await withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
         await cacheSet({
-          name: "data.dashboard",
-          scope,
-          params: cacheKeyParams,
-          asOf: cacheAsOf,
-          depSig,
+          ...cacheArgs,
           ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
           value: stats,
         })
         return res.json(stats)
       } catch (e) {
         if ((e as Error).message !== "__FITCENTER_DASHBOARD_SQL_TIMEOUT__") throw e
+        const stale = isAsOfToday(asOf.key) ? await cacheGetAllowExpired<DashboardStats>(cacheArgs) : null
+        if (stale) return res.json(stale)
         const leads = leadsStore.list({})
         const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
         const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
         const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
         if (isAsOfToday(asOf.key)) {
-          // Solo "oggi": ha senso cacheare rapidamente un mock temporaneo.
           await cacheSet({
-            name: "data.dashboard",
-            scope,
-            params: cacheKeyParams,
-            asOf: cacheAsOf,
-            depSig,
+            ...cacheArgs,
             ttlMs: 10_000,
             value: stats,
           })
@@ -580,11 +654,7 @@ export async function getDashboard(req: Request, res: Response) {
     const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
     const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
     await cacheSet({
-      name: "data.dashboard",
-      scope,
-      params: cacheKeyParams,
-      asOf: cacheAsOf,
-      depSig,
+      ...cacheArgs,
       ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: stats,
     })

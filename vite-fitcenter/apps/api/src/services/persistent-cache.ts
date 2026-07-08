@@ -295,6 +295,40 @@ export async function cacheGet<T>(args: {
   return null
 }
 
+/** Come cacheGet ma accetta entry scadute (stale-while-revalidate per «oggi»). */
+export async function cacheGetAllowExpired<T>(args: {
+  name: string
+  scope: string
+  params: unknown
+  asOf: string
+  depSig: string
+}): Promise<T | null> {
+  const db = await getDb()
+  const paramsHash = sha1(stableJson(args.params))
+  const now = Date.now()
+  const todayKey = getTodayCacheKey()
+  const treatAsNoExpiry = isHistoricalCacheEntry(args.name, args.asOf, todayKey)
+
+  const tryReadExpired = (asOf: string, depSig: string | null): T | null =>
+    readCacheRow<T>(db, args.name, args.scope, paramsHash, asOf, depSig, true, now)
+
+  const accept = (hit: T | null): T | null => {
+    if (hit == null) return null
+    if (isLikelyPoisonedZeroCache(args.name, args.asOf, hit)) return null
+    return hit
+  }
+
+  let hit = accept(tryReadExpired(args.asOf, args.depSig))
+  if (hit) return hit
+  if (treatAsNoExpiry) {
+    hit = accept(tryReadExpired(args.asOf, frozenDepSigForAsOf(args.asOf)))
+    if (hit) return hit
+    hit = accept(tryReadExpired(args.asOf, null))
+    if (hit) return hit
+  }
+  return null
+}
+
 export async function cacheSet(args: {
   name: string
   scope: string
