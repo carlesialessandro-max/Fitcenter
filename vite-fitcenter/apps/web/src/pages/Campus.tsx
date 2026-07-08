@@ -30,6 +30,68 @@ function mailHref(email: unknown, subject: string, body: string): string | null 
   return `mailto:${encodeURIComponent(e)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 
+function csvEscape(v: unknown): string {
+  const s = String(v ?? "")
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`
+  return s
+}
+
+function formatPhoneIt(phone: unknown): string {
+  const raw = digitsPhone(phone)
+  const d = raw.replace(/^\+/, "")
+  if (!d) return ""
+  if (d.startsWith("39") && d.length >= 11) return `+${d}`
+  const local = d.replace(/^0/, "")
+  if (local.length >= 9 && local.length <= 10) return `+39${local}`
+  return raw.startsWith("+") ? raw : `+${d}`
+}
+
+function slugFilePart(s: string): string {
+  return s
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 48)
+}
+
+function downloadTextFile(filename: string, content: string, mime: string) {
+  const blob = new Blob(["\uFEFF" + content], { type: mime })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportCampusRubricaCsv(
+  rows: { b: { cognomeNome?: string; genitore?: string; cellulare?: string } }[],
+  opts: { weekLabel: string; groupName: string }
+) {
+  const header = "Name,Given Name,Family Name,Phone 1 - Type,Phone 1 - Value,Notes"
+  const lines = [header]
+  for (const x of rows) {
+    const b = x.b
+    const phone = formatPhoneIt(b.cellulare)
+    if (!phone) continue
+    const child = String(b.cognomeNome ?? "").trim()
+    const genitore = String(b.genitore ?? "").trim()
+    const displayName = genitore ? `${genitore} (${child})` : child || phone
+    const parts = child.split(/\s+/).filter(Boolean)
+    const familyName = parts[0] ?? ""
+    const givenName = parts.slice(1).join(" ") || genitore || familyName
+    const notes = `Campus ${opts.weekLabel} · Gruppo ${opts.groupName}`
+    lines.push([displayName, givenName, familyName, "Mobile", phone, notes].map(csvEscape).join(","))
+  }
+  if (lines.length <= 1) {
+    alert("Nessun cellulare valido da esportare.")
+    return
+  }
+  const fname = `campus-rubrica-${slugFilePart(opts.weekLabel)}-${slugFilePart(opts.groupName)}.csv`
+  downloadTextFile(fname, lines.join("\r\n"), "text/csv;charset=utf-8")
+}
+
 function CampusWeeksGrouped(props: {
   weekKey: string
   weeks: { key: string; label: string }[]
@@ -99,6 +161,7 @@ function CampusWeeksGrouped(props: {
               .filter((x) => Boolean(x.b.consensoWhatsapp))
               .map((x) => x.b.cellulare)
               .filter((p) => Boolean(waHref(p)))
+            const groupPhonesExport = rows.filter((x) => Boolean(formatPhoneIt(x.b.cellulare)))
             return (
               <div key={groupName} className="rounded border border-zinc-800 bg-zinc-950/20 p-3">
                 <div className="mb-2 text-sm font-semibold text-amber-300">
@@ -151,6 +214,15 @@ function CampusWeeksGrouped(props: {
                     className="rounded border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs font-semibold text-zinc-200"
                   >
                     Copia tutti i numeri
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportCampusRubricaCsv(rows, { weekLabel, groupName })}
+                    disabled={groupPhonesExport.length === 0}
+                    className="rounded border border-sky-700/50 bg-sky-950/20 px-3 py-1.5 text-xs font-semibold text-sky-200 disabled:opacity-40"
+                    title="CSV per import in Google Contacts / rubrica (WhatsApp Business Desktop)"
+                  >
+                    Esporta CSV rubrica · {groupPhonesExport.length}
                   </button>
                 </div>
                 <div className="space-y-3">
