@@ -150,7 +150,7 @@ function CampusWeeksGrouped(props: {
                     }}
                     className="rounded border border-zinc-700 bg-zinc-900/40 px-3 py-1.5 text-xs font-semibold text-zinc-200"
                   >
-                    Copia numeri
+                    Copia tutti i numeri
                   </button>
                 </div>
                 <div className="space-y-3">
@@ -160,10 +160,14 @@ function CampusWeeksGrouped(props: {
                         Livello {liv} · {items.length} bambini
                       </div>
                       <div className="overflow-x-auto">
-                        <table className="w-full min-w-[900px] text-left text-sm">
+                        <table className="w-full min-w-[1100px] text-left text-sm">
                           <thead>
                             <tr className="border-b border-zinc-800 text-zinc-500">
                               <th className="py-2 pr-3 font-medium">Cognome e nome</th>
+                              <th className="py-2 pr-3 font-medium">Genitore</th>
+                              <th className="py-2 pr-3 font-medium text-center whitespace-nowrap">OK WhatsApp</th>
+                              <th className="py-2 pr-3 font-medium whitespace-nowrap">Cellulare</th>
+                              <th className="py-2 pr-3 font-medium whitespace-nowrap">Azioni</th>
                               <th className="py-2 pr-3 font-medium">LIV</th>
                               <th className="py-2 pr-3 font-medium">Allergie</th>
                               <th className="py-2 pr-3 font-medium">Note</th>
@@ -174,9 +178,57 @@ function CampusWeeksGrouped(props: {
                             {items.map((x) => {
                               const b = x.b
                               const weekNoteVal = b.weekNotes?.[weekKey]?.note ?? ""
+                              const msg = `Ciao ${b.genitore ?? ""}, ti scrivo per il Campus Sportivi.`
+                              const tHref = telHref(b.cellulare)
+                              const wHref = waHref(b.cellulare, msg)
                               return (
                                 <tr key={b.clienteId} className="border-b border-zinc-900/60 hover:bg-zinc-800/20">
                                   <td className="py-2 pr-3 font-medium">{b.cognomeNome}</td>
+                                  <td className="py-2 pr-3">
+                                    <input
+                                      type="text"
+                                      defaultValue={b.genitore ?? ""}
+                                      onBlur={(e) => {
+                                        const v = e.target.value
+                                        if (v !== (b.genitore ?? "")) patchCliente({ clienteId: b.clienteId, genitore: v })
+                                      }}
+                                      className="w-40 rounded border border-zinc-700 bg-zinc-800/40 px-2 py-1 text-xs text-zinc-100 focus:border-amber-500/50 focus:outline-none"
+                                    />
+                                  </td>
+                                  <td className="py-2 pr-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={Boolean(b.consensoWhatsapp)}
+                                      onChange={(e) =>
+                                        patchCliente({ clienteId: b.clienteId, consensoWhatsapp: e.target.checked })
+                                      }
+                                    />
+                                  </td>
+                                  <td className="py-2 pr-3 text-zinc-300 whitespace-nowrap">{b.cellulare ?? "—"}</td>
+                                  <td className="py-2 pr-3 whitespace-nowrap">
+                                    <div className="flex flex-wrap items-center gap-1">
+                                      {tHref ? (
+                                        <a
+                                          href={tHref}
+                                          className="rounded border border-emerald-600/60 bg-emerald-600/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-200"
+                                        >
+                                          Chiama
+                                        </a>
+                                      ) : null}
+                                      {wHref && b.consensoWhatsapp ? (
+                                        <a
+                                          href={wHref}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="rounded border border-green-600/60 bg-green-600/10 px-2 py-0.5 text-[11px] font-semibold text-green-200"
+                                        >
+                                          WA
+                                        </a>
+                                      ) : (
+                                        <span className="text-[10px] text-zinc-600">WA no</span>
+                                      )}
+                                    </div>
+                                  </td>
                                   <td className="py-2 pr-3">
                                     <input
                                       type="text"
