@@ -470,7 +470,7 @@ export async function getCampus(req: Request, res: Response) {
           note: saved?.note ?? "",
           gruppo: saved?.gruppo ?? "",
           genitore: saved?.genitore ?? c.genitoreSql ?? "",
-          consensoWhatsapp: saved?.consensoWhatsapp ?? null,
+          consensoWhatsapp: saved?.consensoWhatsapp ?? true,
           liv: saved?.liv ?? "",
           weekNotes: saved?.weeks ?? {},
         }

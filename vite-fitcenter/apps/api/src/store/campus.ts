@@ -80,6 +80,7 @@ export const campusStore = {
       clienteId: id,
       gruppo: curr?.gruppo ?? "",
       genitore: curr?.genitore ?? "",
+      consensoWhatsapp: curr?.consensoWhatsapp,
       liv: curr?.liv ?? "",
       allergie: curr?.allergie ?? "",
       note: curr?.note ?? "",
