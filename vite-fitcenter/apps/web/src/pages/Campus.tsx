@@ -66,26 +66,35 @@ function downloadTextFile(filename: string, content: string, mime: string) {
 }
 
 function exportCampusRubricaCsv(
-  rows: { b: { cognomeNome?: string; genitore?: string; cellulare?: string } }[],
+  rows: { b: { cognomeNome?: string; genitore?: string; cellulare?: string; email?: string } }[],
   opts: { weekLabel: string; groupName: string }
 ) {
-  const header = "Name,Given Name,Family Name,Phone 1 - Type,Phone 1 - Value,Notes"
+  const header =
+    "Name,Given Name,Family Name,Phone 1 - Type,Phone 1 - Value,E-mail 1 - Type,E-mail 1 - Value,Notes"
   const lines = [header]
   for (const x of rows) {
     const b = x.b
     const phone = formatPhoneIt(b.cellulare)
-    if (!phone) continue
+    const email = String(b.email ?? "")
+      .trim()
+      .toLowerCase()
+    const emailOk = email.includes("@") ? email : ""
+    if (!phone && !emailOk) continue
     const child = String(b.cognomeNome ?? "").trim()
     const genitore = String(b.genitore ?? "").trim()
-    const displayName = genitore ? `${genitore} (${child})` : child || phone
+    const displayName = genitore ? `${genitore} (${child})` : child || phone || emailOk
     const parts = child.split(/\s+/).filter(Boolean)
     const familyName = parts[0] ?? ""
     const givenName = parts.slice(1).join(" ") || genitore || familyName
     const notes = `Campus ${opts.weekLabel} · Gruppo ${opts.groupName}`
-    lines.push([displayName, givenName, familyName, "Mobile", phone, notes].map(csvEscape).join(","))
+    lines.push(
+      [displayName, givenName, familyName, phone ? "Mobile" : "", phone, emailOk ? "Home" : "", emailOk, notes]
+        .map(csvEscape)
+        .join(",")
+    )
   }
   if (lines.length <= 1) {
-    alert("Nessun cellulare valido da esportare.")
+    alert("Nessun cellulare o email valida da esportare.")
     return
   }
   const fname = `campus-rubrica-${slugFilePart(opts.weekLabel)}-${slugFilePart(opts.groupName)}.csv`
@@ -161,7 +170,9 @@ function CampusWeeksGrouped(props: {
               .filter((x) => Boolean(x.b.consensoWhatsapp))
               .map((x) => x.b.cellulare)
               .filter((p) => Boolean(waHref(p)))
-            const groupPhonesExport = rows.filter((x) => Boolean(formatPhoneIt(x.b.cellulare)))
+            const groupPhonesExport = rows.filter(
+              (x) => Boolean(formatPhoneIt(x.b.cellulare)) || String(x.b.email ?? "").trim().includes("@")
+            )
             return (
               <div key={groupName} className="rounded border border-zinc-800 bg-zinc-950/20 p-3">
                 <div className="mb-2 text-sm font-semibold text-amber-300">
