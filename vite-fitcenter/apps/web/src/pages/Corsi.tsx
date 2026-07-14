@@ -1635,8 +1635,21 @@ export function Corsi() {
               </div>
               <div className="text-xs text-zinc-500">
                 Corsi: <span className="font-medium text-zinc-300">{gruppiFiltrati.length}</span>
+                {(role === "admin" || role === "corsi") && data?.meta ? (
+                  <span className="ml-2 text-[10px] text-zinc-600">
+                    · senza prenotazioni: {String((data.meta as any).lezioniSenzaIscrittiCount ?? "0")}
+                  </span>
+                ) : null}
                 {search.trim() ? (
                   <span className="text-zinc-600"> (filtrati)</span>
+                ) : null}
+                {debugCorsi && data?.meta ? (
+                  <span className="ml-2 block text-[10px] text-zinc-600 sm:inline">
+                    · vuote SQL: {String((data.meta as any).lezioniVuoteLoaded ?? "?")}
+                    {(data.meta as any).lezioniVuoteError ? (
+                      <span className="text-red-400"> · err: {String((data.meta as any).lezioniVuoteError)}</span>
+                    ) : null}
+                  </span>
                 ) : null}
               </div>
             </div>

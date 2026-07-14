@@ -5626,7 +5626,8 @@ function buildLezionePlDateRangeSql(plIdx: SqlColIndex, giornoParam: string, ali
 function buildGgWeekMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
   const gg = pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
   if (!gg) return null
-  return `TRY_CAST(${alias}.[${gg}] AS int) = ${buildIsoWeekdayExpr(giornoParam)}`
+  const iso = buildIsoWeekdayExpr(giornoParam)
+  return `(TRY_CAST(${alias}.[${gg}] AS int) = ${iso} OR TRY_CAST(${alias}.[${gg}] AS int) = DATEPART(weekday, CAST(${giornoParam} AS date)))`
 }
 
 /** Giorno settimana: GGWeek ISO oppure flag Lun/Mar/… (schema FitCenter). */
@@ -5635,24 +5636,47 @@ function buildLezioneGiornoMatchSql(plIdx: SqlColIndex, giornoParam: string, ali
   const ggIso = buildGgWeekMatchSql(plIdx, giornoParam, alias)
   if (ggIso) parts.push(ggIso)
   parts.push(...buildWeekdaySqlForAlias(plIdx, giornoParam, alias))
+  parts.push(buildHardcodedWeekdaySql(giornoParam, alias))
   if (parts.length === 0) return null
   return `(${parts.join(" OR ")})`
 }
 
-function buildLezioneScheduleWhereParts(plIdx: SqlColIndex, giornoParam: string): string[] {
+function buildLezionePlExactDaySql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
   const parts: string[] = []
+  for (const logical of ["DataInizio", "Datainizio", "DataLezione", "GiornoLezione", "Giorno"]) {
+    const col = pickSqlCol(plIdx, [logical])
+    if (!col) continue
+    parts.push(`(TRY_CONVERT(date, ${alias}.[${col}]) = CAST(${giornoParam} AS date))`)
+  }
+  if (parts.length === 0) {
+    parts.push(`(TRY_CONVERT(date, ${alias}.[DataInizio]) = CAST(${giornoParam} AS date))`)
+  }
+  return parts.length ? `(${parts.join(" OR ")})` : null
+}
+
+/** Strategie OR: ricorrenza settimanale (FitCenter) oppure data esatta su PrenotazioniLezioni. */
+function buildLezioneScheduleWhereSql(plIdx: SqlColIndex, giornoParam: string): string {
+  const strategies: string[] = []
   const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, giornoParam, "pl")
-  if (plDateRangeSql) parts.push(plDateRangeSql)
-  else parts.push(`(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`)
+  const dateRange =
+    plDateRangeSql ??
+    `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
   const dayMatch = buildLezioneGiornoMatchSql(plIdx, giornoParam, "pl")
-  if (dayMatch) parts.push(dayMatch)
-  else parts.push(`TRY_CAST(pl.[GGWeek] AS int) = ${buildIsoWeekdayExpr(giornoParam)}`)
-  return parts
+  if (dayMatch) strategies.push(`(${dateRange} AND ${dayMatch})`)
+  strategies.push(buildHardcodedPlScheduleSql(giornoParam))
+  strategies.push(`(${dateRange} AND ${buildHardcodedWeekdaySql(giornoParam, "pl")})`)
+  const exactDay = buildLezionePlExactDaySql(plIdx, giornoParam, "pl")
+  if (exactDay) strategies.push(exactDay)
+  return strategies.length ? `(${strategies.join(" OR ")})` : "1=1"
 }
 
 function buildHardcodedPlScheduleSql(giornoParam: string): string {
   const iso = buildIsoWeekdayExpr(giornoParam)
-  return `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND TRY_CAST(pl.[GGWeek] AS int) = ${iso})`
+  const dow = `DATEPART(weekday, CAST(${giornoParam} AS date))`
+  return `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND (TRY_CAST(pl.[GGWeek] AS int) = ${iso} OR TRY_CAST(pl.[GGWeek] AS int) = ${dow} OR ${buildHardcodedWeekdaySql(
+    giornoParam,
+    "pl"
+  )}))`
 }
 
 function buildHardcodedWeekdaySql(giornoParam: string, alias: string): string {
@@ -5777,13 +5801,13 @@ async function queryLezioniCorsiSenzaIscritti(
   const plIdx = await sqlObjectCols(rawPl)
   const prenIdx = await sqlObjectCols(rawPren)
 
-  const colPlId = pickSqlCol(plIdx, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
-  const colPlPren = pickSqlCol(plIdx, ["IDPrenotazione", "IdPrenotazione"])
-  const colPlOi = pickSqlCol(plIdx, ["OraInizio", "OraIn"])
-  const colPlOf = pickSqlCol(plIdx, ["OraFine", "OraFin"])
-  const colPlVis = pickSqlCol(plIdx, ["WebVisibile", "TotemVisibile"])
-  const colPrenId = pickSqlCol(prenIdx, ["IDPrenotazione", "IdPrenotazione"])
-  const colPrenDesc = pickSqlCol(prenIdx, [
+  const colPlIdRaw = pickSqlCol(plIdx, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
+  const colPlPrenRaw = pickSqlCol(plIdx, ["IDPrenotazione", "IdPrenotazione"])
+  const colPlOiRaw = pickSqlCol(plIdx, ["OraInizio", "OraIn"])
+  const colPlOfRaw = pickSqlCol(plIdx, ["OraFine", "OraFin"])
+  const colPlVisRaw = pickSqlCol(plIdx, ["WebVisibile", "TotemVisibile"])
+  const colPrenIdRaw = pickSqlCol(prenIdx, ["IDPrenotazione", "IdPrenotazione"])
+  const colPrenDescRaw = pickSqlCol(prenIdx, [
     "Descrizione",
     "PrenotazioneDescrizione",
     "Titolo",
@@ -5792,103 +5816,88 @@ async function queryLezioniCorsiSenzaIscritti(
     "ServizioDescrizione",
   ])
 
-  if (!colPlId || !colPlPren || !colPrenId) {
-    lastLezioniVuoteError = "colonne ID mancanti su PrenotazioniLezioni/Prenotazioni"
-    return []
+  // Se sys.columns non è leggibile (permessi READ), usa schema FitCenter standard.
+  const colPlId = colPlIdRaw ?? "IDPrenotazioneLezione"
+  const colPlPren = colPlPrenRaw ?? "IDPrenotazione"
+  const colPlOi = colPlOiRaw ?? "OraInizio"
+  const colPlOf = colPlOfRaw ?? "OraFine"
+  const colPlVis = colPlVisRaw ?? "WebVisibile"
+  const colPrenId = colPrenIdRaw ?? "IDPrenotazione"
+  const colPrenDesc = colPrenDescRaw ?? "Descrizione"
+
+  if (!colPlIdRaw && !colPlPrenRaw && !colPrenIdRaw) {
+    /* sys.columns non disponibile: usiamo nomi colonna standard FitCenter */
+  }
+
+  const lezOccupati = new Set<number>()
+  for (const r of base) {
+    const id = lessonIdFromPrenRow(r)
+    if (id) lezOccupati.add(id)
   }
 
   const prenDateRangeSql = buildPrenotazioniDateRangeSql(prenIdx, "@giorno", "p")
 
-  const appendPrenFilters = (where: string[]) => {
-    if (prenDateRangeSql) where.push(prenDateRangeSql)
-    // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
-    where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
-    where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
+  const scheduleSql = buildLezioneScheduleWhereSql(plIdx, "@giorno")
+
+  const appendPrenFilters = (
+    where: string[],
+    opts?: { skipPrenDate?: boolean; skipAttivo?: boolean }
+  ) => {
+    if (!opts?.skipPrenDate && prenDateRangeSql) where.push(prenDateRangeSql)
+    if (!opts?.skipAttivo) {
+      // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
+      where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
+    }
     return where
   }
 
-  const whereParts = appendPrenFilters(buildLezioneScheduleWhereParts(plIdx, "@giorno"))
+  const attemptWheres: string[][] = [
+    appendPrenFilters([scheduleSql]),
+    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")]),
+    appendPrenFilters([scheduleSql], { skipPrenDate: true }),
+    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")], { skipPrenDate: true }),
+    appendPrenFilters([scheduleSql], { skipAttivo: true, skipPrenDate: true }),
+    [
+      `(CAST(@giorno AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND ${buildHardcodedWeekdaySql(
+        "@giorno",
+        "pl"
+      )})`,
+    ],
+    [scheduleSql],
+    [buildHardcodedPlScheduleSql("@giorno")],
+  ]
 
-  let notExistsSql = ""
-  const rawPi = (process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione").trim()
-  if (isSafeSqlIdentifierLoose(rawPi)) {
-    try {
-      const piIdx = await sqlObjectCols(rawPi)
-      const piQ = qualifySqlObject(rawPi).query
-      const colPiLez = pickSqlCol(piIdx, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
-      const colPiDi = pickSqlCol(piIdx, [
-        "DataInizio",
-        "Datainizio",
-        "DataInizioPrenotazioneIscrizione",
-        "InizioPrenotazioneIscrizione",
-      ])
-      const colPiDf = pickSqlCol(piIdx, ["DataFine", "Datafine", "DataFinePrenotazioneIscrizione"])
-      const colPiUt = pickSqlCol(piIdx, ["IDUtente", "IdUtente", "PrenotazioniIscrizioneIDUtente"])
-      if (colPiLez && colPiDi) {
-        const utFilter = colPiUt
-          ? `(pi.[${colPiUt}] IS NOT NULL AND TRY_CAST(pi.[${colPiUt}] AS int) NOT IN (0))`
-          : "1=1"
-        const diMatch = `(${sqlDateEqualsFastExpr(colPiDi, "@giorno")} OR ${sqlDateEqualsExpr(colPiDi, "@giorno")})`
-        const dfMatch = colPiDf
-          ? ` OR (${sqlDateEqualsFastExpr(colPiDf, "@giorno")} OR ${sqlDateEqualsExpr(colPiDf, "@giorno")})`
-          : ""
-        notExistsSql = `AND NOT EXISTS (
-          SELECT 1 FROM ${piQ} pi
-          WHERE pi.[${colPiLez}] = pl.[${colPlId}]
-            AND (${diMatch}${dfMatch})
-            AND ${utFilter}
-        )`
-      } else {
-        notExistsSql = `AND NOT EXISTS (
-          SELECT 1 FROM ${qualifySqlObject(rawPi).query} pi
-          WHERE pi.[IDPrenotazioneLezione] = pl.[${colPlId}]
-            AND (
-              CAST(pi.[DataInizio] AS date) = CAST(@giorno AS date)
-              OR CAST(pi.[DataFine] AS date) = CAST(@giorno AS date)
-            )
-            AND pi.[IDUtente] IS NOT NULL
-            AND TRY_CAST(pi.[IDUtente] AS int) NOT IN (0)
-        )`
-      }
-    } catch {
-      /* filtro opzionale */
-    }
-  }
-
-  const selectDesc = colPrenDesc ? `p.[${colPrenDesc}] AS PrenotazioneDescrizione` : "NULL AS PrenotazioneDescrizione"
-  const selectOi = colPlOi ? `pl.[${colPlOi}] AS OraInizio` : "NULL AS OraInizio"
-  const selectOf = colPlOf ? `pl.[${colPlOf}] AS OraFine` : "NULL AS OraFine"
-  const selectVis = colPlVis ? `pl.[${colPlVis}] AS WebVisibile` : "NULL AS WebVisibile"
+  const selectDesc = `p.[${colPrenDesc}] AS PrenotazioneDescrizione`
   const extraPrenSelects: string[] = []
-  const colPrenAttivo = pickSqlCol(prenIdx, ["Attivo"])
-  if (colPrenAttivo) extraPrenSelects.push(`p.[${colPrenAttivo}] AS Attivo`)
-  const colPrenDi = pickSqlCol(prenIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"])
-  if (colPrenDi) extraPrenSelects.push(`p.[${colPrenDi}] AS DataInizio`)
-  const colPrenDf = pickSqlCol(prenIdx, ["DataFine", "Datafine", "DataA", "FineValidita"])
-  if (colPrenDf) extraPrenSelects.push(`p.[${colPrenDf}] AS DataFine`)
-  const extraPrenSql = extraPrenSelects.length ? `,\n      ${extraPrenSelects.join(",\n      ")}` : ""
+  const colPrenAttivo = pickSqlCol(prenIdx, ["Attivo"]) ?? "Attivo"
+  extraPrenSelects.push(`p.[${colPrenAttivo}] AS Attivo`)
+  const colPrenDi = pickSqlCol(prenIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"]) ?? "DataInizio"
+  extraPrenSelects.push(`p.[${colPrenDi}] AS DataInizio`)
+  const colPrenDf = pickSqlCol(prenIdx, ["DataFine", "Datafine", "DataA", "FineValidita"]) ?? "DataFine"
+  extraPrenSelects.push(`p.[${colPrenDf}] AS DataFine`)
+  const extraPrenSql = `,\n      ${extraPrenSelects.join(",\n      ")}`
 
   const buildQuery = (where: string[]) => `
     SET DATEFIRST 1;
     SELECT
       pl.[${colPlId}] AS IDPrenotazioneLezione,
       pl.[${colPlPren}] AS IDPrenotazione,
-      ${selectOi},
-      ${selectOf},
-      ${selectVis},
+      pl.[${colPlOi}] AS OraInizio,
+      pl.[${colPlOf}] AS OraFine,
+      pl.[${colPlVis}] AS WebVisibile,
       ${selectDesc}${extraPrenSql}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
     WHERE ${where.join(" AND ")}
-    ${notExistsSql}
-    ORDER BY ${colPlOi ? `pl.[${colPlOi}]` : `pl.[${colPlId}]`} ASC;
+    ORDER BY pl.[${colPlOi}] ASC;
   `
 
   const mapRows = (recordset: Record<string, unknown>[] | undefined): PrenotazioneCorsoRow[] => {
     const out: PrenotazioneCorsoRow[] = []
     for (const raw0 of recordset ?? []) {
       const idLez = Number(raw0.IDPrenotazioneLezione)
-      if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez)) continue
+      if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez) || lezOccupati.has(idLez)) continue
       seenLez.add(idLez)
       const raw: Record<string, unknown> = {
         ...raw0,
@@ -5903,29 +5912,23 @@ async function queryLezioniCorsiSenzaIscritti(
   }
 
   try {
-    const req = pool.request().input("giorno", sql.VarChar(10), giorno)
-    let recordset = ((await req.query(buildQuery(whereParts))).recordset ?? []) as Record<string, unknown>[]
-    let out = mapRows(recordset)
-    if (out.length === 0) {
-      const whereHard = appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")])
-      recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereHard)))
-        .recordset ?? []) as Record<string, unknown>[]
-      out = mapRows(recordset)
+    let out: PrenotazioneCorsoRow[] = []
+    const errors: string[] = []
+    for (const whereParts of attemptWheres) {
+      try {
+        const recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereParts)))
+          .recordset ?? []) as Record<string, unknown>[]
+        out = [...out, ...mapRows(recordset)]
+      } catch (e) {
+        errors.push((e as Error)?.message ?? String(e))
+      }
     }
+    if (out.length === 0 && errors.length) lastLezioniVuoteError = errors[errors.length - 1] ?? null
     lastLezioniVuoteCount = out.length
     return out
   } catch (e) {
-    try {
-      const whereHard = appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")])
-      const recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereHard)))
-        .recordset ?? []) as Record<string, unknown>[]
-      const out = mapRows(recordset)
-      lastLezioniVuoteCount = out.length
-      return out
-    } catch (e2) {
-      lastLezioniVuoteError = (e2 as Error)?.message ?? String(e2)
-      return []
-    }
+    lastLezioniVuoteError = (e as Error)?.message ?? String(e)
+    return []
   }
 }
 
