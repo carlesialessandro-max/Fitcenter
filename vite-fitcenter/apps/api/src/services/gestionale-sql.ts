@@ -5629,6 +5629,27 @@ function buildGgWeekMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "p
   return `TRY_CAST(${alias}.[${gg}] AS int) = ${buildIsoWeekdayExpr(giornoParam)}`
 }
 
+/** Giorno settimana: GGWeek ISO oppure flag Lun/Mar/… (schema FitCenter). */
+function buildLezioneGiornoMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
+  const parts: string[] = []
+  const ggIso = buildGgWeekMatchSql(plIdx, giornoParam, alias)
+  if (ggIso) parts.push(ggIso)
+  parts.push(...buildWeekdaySqlForAlias(plIdx, giornoParam, alias))
+  if (parts.length === 0) return null
+  return `(${parts.join(" OR ")})`
+}
+
+function buildLezioneScheduleWhereParts(plIdx: SqlColIndex, giornoParam: string): string[] {
+  const parts: string[] = []
+  const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, giornoParam, "pl")
+  if (plDateRangeSql) parts.push(plDateRangeSql)
+  else parts.push(`(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`)
+  const dayMatch = buildLezioneGiornoMatchSql(plIdx, giornoParam, "pl")
+  if (dayMatch) parts.push(dayMatch)
+  else parts.push(`TRY_CAST(pl.[GGWeek] AS int) = ${buildIsoWeekdayExpr(giornoParam)}`)
+  return parts
+}
+
 function buildHardcodedPlScheduleSql(giornoParam: string): string {
   const iso = buildIsoWeekdayExpr(giornoParam)
   return `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND TRY_CAST(pl.[GGWeek] AS int) = ${iso})`
@@ -5776,22 +5797,17 @@ async function queryLezioniCorsiSenzaIscritti(
     return []
   }
 
-  const ggWeekSql = buildGgWeekMatchSql(plIdx, "@giorno", "pl")
-  const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, "@giorno", "pl")
   const prenDateRangeSql = buildPrenotazioniDateRangeSql(prenIdx, "@giorno", "p")
 
-  const whereParts: string[] = []
-  // Schema FitCenter: validità su PrenotazioniLezioni (DataInizio/DataFine + GGWeek), non su Prenotazioni.
-  if (plDateRangeSql && ggWeekSql) {
-    whereParts.push(plDateRangeSql)
-    whereParts.push(ggWeekSql)
-  } else {
-    whereParts.push(buildHardcodedPlScheduleSql("@giorno"))
+  const appendPrenFilters = (where: string[]) => {
+    if (prenDateRangeSql) where.push(prenDateRangeSql)
+    // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
+    where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+    where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
+    return where
   }
-  if (prenDateRangeSql) whereParts.push(prenDateRangeSql)
-  // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
-  whereParts.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
-  whereParts.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
+
+  const whereParts = appendPrenFilters(buildLezioneScheduleWhereParts(plIdx, "@giorno"))
 
   let notExistsSql = ""
   const rawPi = (process.env.GESTIONALE_TABLE_PRENOTAZIONI_ISCRIZIONE ?? "dbo.PrenotazioniIscrizione").trim()
@@ -5888,24 +5904,28 @@ async function queryLezioniCorsiSenzaIscritti(
 
   try {
     const req = pool.request().input("giorno", sql.VarChar(10), giorno)
-    let recordset: Record<string, unknown>[] | undefined
-    try {
-      recordset = ((await req.query(buildQuery(whereParts))).recordset ?? []) as Record<string, unknown>[]
-    } catch (e1) {
-      if (!(plDateRangeSql && ggWeekSql)) throw e1
-      const whereFallback = [buildHardcodedPlScheduleSql("@giorno")]
-      if (prenDateRangeSql) whereFallback.push(prenDateRangeSql)
-      whereFallback.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
-      whereFallback.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
-      recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereFallback)))
+    let recordset = ((await req.query(buildQuery(whereParts))).recordset ?? []) as Record<string, unknown>[]
+    let out = mapRows(recordset)
+    if (out.length === 0) {
+      const whereHard = appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")])
+      recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereHard)))
         .recordset ?? []) as Record<string, unknown>[]
+      out = mapRows(recordset)
     }
-    const out = mapRows(recordset)
     lastLezioniVuoteCount = out.length
     return out
   } catch (e) {
-    lastLezioniVuoteError = (e as Error)?.message ?? String(e)
-    return []
+    try {
+      const whereHard = appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")])
+      const recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereHard)))
+        .recordset ?? []) as Record<string, unknown>[]
+      const out = mapRows(recordset)
+      lastLezioniVuoteCount = out.length
+      return out
+    } catch (e2) {
+      lastLezioniVuoteError = (e2 as Error)?.message ?? String(e2)
+      return []
+    }
   }
 }
 
@@ -5983,7 +6003,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
 
   const filterCorsiAttivi = (rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] => {
     if (!giornoOk || !giorno) return rows
-    return rows.filter((r) => isCorsoPrenotazioneAttivo(r, giorno))
+    return rows.filter((r) => {
+      if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) return true
+      return isCorsoPrenotazioneAttivo(r, giorno)
+    })
   }
 
   const enrich = (

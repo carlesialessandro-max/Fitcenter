@@ -1561,7 +1561,7 @@ export function Corsi() {
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
-          <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno con partecipanti.</p>
+          <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno, inclusi quelli senza prenotazioni (per bloccarli).</p>
           <p className="mt-2">
             <Link
               to="/calendario/corsi"
@@ -1679,7 +1679,14 @@ export function Corsi() {
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           {!isWait ? (
-                            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-200">
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
+                                pren === 0
+                                  ? "border-zinc-600 bg-zinc-800/40 text-zinc-400"
+                                  : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                              }`}
+                              title={pren === 0 ? "Nessuna prenotazione" : undefined}
+                            >
                               {pren}
                             </span>
                           ) : null}
