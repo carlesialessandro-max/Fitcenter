@@ -5782,6 +5782,93 @@ function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): 
   return true
 }
 
+/** Testo unificato macro/categoria/descrizione prenotazione (pagina Corsi vs Scuola nuoto). */
+function prenotazioneScopeText(raw: Record<string, unknown>): string {
+  const keys = [
+    "PrenotazioneDescrizione",
+    "Descrizione",
+    "MacroCategoriaDescrizione",
+    "MacroCategoria",
+    "CategoriaDescrizione",
+    "Categoria",
+    "CategoriaAbbonamentoDescrizione",
+    "ServizioDescrizione",
+    "Servizio",
+    "TipoServizio",
+    "TipoServizioDescrizione",
+    "Note",
+  ]
+  const parts: string[] = []
+  for (const k of keys) {
+    const v = rawValIgnoreCase(raw, k)
+    if (v != null && String(v).trim()) parts.push(String(v).trim())
+  }
+  return parts
+    .join(" ")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** Pagina Corsi = fitness/palestra/acqua fitness; esclude scuola nuoto (RVW_CorsiUtenti). */
+function isPrenotazionePaginaCorsi(raw: Record<string, unknown>): boolean {
+  const t = prenotazioneScopeText(raw)
+  if (!t) return false
+  if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return false
+  if (/\bBAMBINI\b/.test(t)) return false
+  if (t.includes("PERFEZIONAMENTO") && t.includes("NUOTO")) return false
+  if (/\bLIV\.?\s*(PRINCIPI|START|INTERM|BASE|ELEMENT|PREAGON|AVANZ)/.test(t) && t.includes("NUOTO")) return false
+  if (t.includes("AGONISMO") && !t.includes("MASTER") && !t.includes("ADULT")) return false
+  if (
+    t.includes("FITNESS") ||
+    t.includes("ACQUA") ||
+    t.includes("AQUA") ||
+    t.includes("NUOTO ADULT") ||
+    t.includes("CORSI A PAGAMENTO") ||
+    t.includes("PALESTRA") ||
+    t.includes("PILATES") ||
+    t.includes("SPINNING") ||
+    t.includes("BODY ") ||
+    t.includes("TRX") ||
+    t.includes("PUMP") ||
+    t.includes("WALKING") ||
+    t.includes("POLE DANCE") ||
+    t.includes("YOGA") ||
+    t.includes("ZUMBA") ||
+    t.includes("TABATA") ||
+    t.includes("CROSS") ||
+    t.includes("CIRCUIT") ||
+    t.includes("BIKE") ||
+    t.includes("GYM")
+  ) {
+    return true
+  }
+  if (!t.includes("NUOTO") && !t.includes("AGONISMO") && !t.includes("SCUOLA")) return true
+  return false
+}
+
+function buildPrenotazioniPaginaCorsiSql(prenIdx: SqlColIndex, alias = "p"): string[] {
+  const parts: string[] = []
+  const macroCol = pickSqlCol(prenIdx, [
+    "MacroCategoriaDescrizione",
+    "MacroCategoria",
+    "PrenotazioneMacroCategoria",
+  ])
+  const catCol = pickSqlCol(prenIdx, ["CategoriaDescrizione", "Categoria", "PrenotazioneCategoria"])
+  const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"])
+  const norm = (col: string) =>
+    `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${col}] AS NVARCHAR(512)), ''))))`
+  for (const col of [macroCol, catCol, descCol].filter(Boolean) as string[]) {
+    const n = norm(col)
+    parts.push(`${n} NOT LIKE '%SCUOLA NUOTO%'`)
+    parts.push(`${n} NOT LIKE '%SCUOLANUOTO%'`)
+    parts.push(`${n} NOT LIKE '%BAMBINI%'`)
+  }
+  return parts
+}
+
 /**
  * Lezioni programmate (PrenotazioniLezioni + Prenotazioni) senza iscritti nel giorno.
  * Serve per mostrare in pagina Corsi i corsi a zero prenotazioni e poterli bloccare.
@@ -5866,6 +5953,11 @@ async function queryLezioniCorsiSenzaIscritti(
       where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
       where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
     }
+    where.push(...buildPrenotazioniPaginaCorsiSql(prenIdx, "p"))
+    if (!pickSqlCol(prenIdx, ["MacroCategoriaDescrizione", "MacroCategoria", "Descrizione", "PrenotazioneDescrizione"])) {
+      where.push(`UPPER(COALESCE(CAST(p.[Descrizione] AS NVARCHAR(512)), '')) NOT LIKE '%SCUOLA NUOTO%'`)
+      where.push(`UPPER(COALESCE(CAST(p.[Descrizione] AS NVARCHAR(512)), '')) NOT LIKE '%BAMBINI%'`)
+    }
     return where
   }
 
@@ -5892,6 +5984,14 @@ async function queryLezioniCorsiSenzaIscritti(
   extraPrenSelects.push(`p.[${colPrenDi}] AS DataInizio`)
   const colPrenDf = pickSqlCol(prenIdx, ["DataFine", "Datafine", "DataA", "FineValidita"]) ?? "DataFine"
   extraPrenSelects.push(`p.[${colPrenDf}] AS DataFine`)
+  const colPrenMacro = pickSqlCol(prenIdx, [
+    "MacroCategoriaDescrizione",
+    "MacroCategoria",
+    "PrenotazioneMacroCategoria",
+  ])
+  if (colPrenMacro) extraPrenSelects.push(`p.[${colPrenMacro}] AS MacroCategoriaDescrizione`)
+  const colPrenCat = pickSqlCol(prenIdx, ["CategoriaDescrizione", "Categoria", "PrenotazioneCategoria"])
+  if (colPrenCat) extraPrenSelects.push(`p.[${colPrenCat}] AS CategoriaDescrizione`)
   const extraPrenSql = `,\n      ${extraPrenSelects.join(",\n      ")}`
 
   const buildQuery = (where: string[]) => `
@@ -5914,6 +6014,7 @@ async function queryLezioniCorsiSenzaIscritti(
     for (const raw0 of recordset ?? []) {
       const idLez = Number(raw0.IDPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez) || lezOccupati.has(idLez)) continue
+      if (!isPrenotazionePaginaCorsi(raw0)) continue
       seenLez.add(idLez)
       const raw: Record<string, unknown> = {
         ...raw0,
@@ -6023,7 +6124,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const filterCorsiAttivi = (rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] => {
     if (!giornoOk || !giorno) return rows
     return rows.filter((r) => {
-      if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) return true
+      if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) {
+        return isPrenotazionePaginaCorsi((r.raw ?? {}) as Record<string, unknown>)
+      }
       return isCorsoPrenotazioneAttivo(r, giorno)
     })
   }
