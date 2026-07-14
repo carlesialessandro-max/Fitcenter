@@ -5630,13 +5630,45 @@ function buildGgWeekMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "p
   return `(TRY_CAST(${alias}.[${gg}] AS int) = ${iso} OR TRY_CAST(${alias}.[${gg}] AS int) = DATEPART(weekday, CAST(${giornoParam} AS date)))`
 }
 
+/** Flag giorno settimana su PrenotazioniLezioni: solo colonne presenti nello schema (no Domenica se assente). */
+function buildWeekdayFlagsSql(plIdx: SqlColIndex | undefined, giornoParam: string, alias: string): string | null {
+  const flagDefs = [
+    { cols: ["Lunedi", "Lunedì", "LUN", "FlagLunedi", "Lun", "GG_Lunedi"], dow: 1 },
+    { cols: ["Martedi", "Martedì", "MAR", "FlagMartedi", "Mar", "GG_Martedi"], dow: 2 },
+    { cols: ["Mercoledi", "Mercoledì", "MER", "FlagMercoledi", "Mer", "GG_Mercoledi"], dow: 3 },
+    { cols: ["Giovedi", "Giovedì", "GIO", "FlagGiovedi", "Gio", "GG_Giovedi"], dow: 4 },
+    { cols: ["Venerdi", "Venerdì", "VEN", "FlagVenerdi", "Ven", "GG_Venerdi"], dow: 5 },
+    { cols: ["Sabato", "SAB", "FlagSabato", "Sab", "GG_Sabato"], dow: 6 },
+    { cols: ["Domenica", "DOM", "FlagDomenica", "Dom", "GG_Domenica"], dow: 7 },
+  ]
+  const hasIdx = Boolean(plIdx && plIdx.lower.size > 0)
+  const parts: string[] = []
+  for (const d of flagDefs) {
+    let col: string | null = null
+    if (hasIdx && plIdx) {
+      col = pickSqlCol(plIdx, d.cols)
+      if (!col) continue
+    } else {
+      // Fallback senza sys.columns: FitCenter usa Lun–Ven (no Sabato/Domenica).
+      if (d.dow >= 6) continue
+      col = d.cols[0]!
+    }
+    parts.push(
+      `(DATEPART(weekday, CAST(${giornoParam} AS date)) = ${d.dow} AND TRY_CAST(${alias}.[${col}] AS int) NOT IN (0))`
+    )
+  }
+  if (parts.length === 0) return null
+  return `(${parts.join(" OR ")})`
+}
+
 /** Giorno settimana: GGWeek ISO oppure flag Lun/Mar/… (schema FitCenter). */
 function buildLezioneGiornoMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "pl"): string | null {
   const parts: string[] = []
   const ggIso = buildGgWeekMatchSql(plIdx, giornoParam, alias)
   if (ggIso) parts.push(ggIso)
   parts.push(...buildWeekdaySqlForAlias(plIdx, giornoParam, alias))
-  parts.push(buildHardcodedWeekdaySql(giornoParam, alias))
+  const flags = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, alias)
+  if (flags) parts.push(flags)
   if (parts.length === 0) return null
   return `(${parts.join(" OR ")})`
 }
@@ -5663,37 +5695,22 @@ function buildLezioneScheduleWhereSql(plIdx: SqlColIndex, giornoParam: string): 
     `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
   const dayMatch = buildLezioneGiornoMatchSql(plIdx, giornoParam, "pl")
   if (dayMatch) strategies.push(`(${dateRange} AND ${dayMatch})`)
-  strategies.push(buildHardcodedPlScheduleSql(giornoParam))
-  strategies.push(`(${dateRange} AND ${buildHardcodedWeekdaySql(giornoParam, "pl")})`)
+  strategies.push(buildHardcodedPlScheduleSql(giornoParam, plIdx))
+  const weekdayFlags = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, "pl")
+  if (weekdayFlags) strategies.push(`(${dateRange} AND ${weekdayFlags})`)
   const exactDay = buildLezionePlExactDaySql(plIdx, giornoParam, "pl")
   if (exactDay) strategies.push(exactDay)
   return strategies.length ? `(${strategies.join(" OR ")})` : "1=1"
 }
 
-function buildHardcodedPlScheduleSql(giornoParam: string): string {
+function buildHardcodedPlScheduleSql(giornoParam: string, plIdx?: SqlColIndex): string {
   const iso = buildIsoWeekdayExpr(giornoParam)
   const dow = `DATEPART(weekday, CAST(${giornoParam} AS date))`
-  return `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND (TRY_CAST(pl.[GGWeek] AS int) = ${iso} OR TRY_CAST(pl.[GGWeek] AS int) = ${dow} OR ${buildHardcodedWeekdaySql(
-    giornoParam,
-    "pl"
-  )}))`
-}
-
-function buildHardcodedWeekdaySql(giornoParam: string, alias: string): string {
-  const days = [
-    { col: "Lunedi", dow: 1 },
-    { col: "Martedi", dow: 2 },
-    { col: "Mercoledi", dow: 3 },
-    { col: "Giovedi", dow: 4 },
-    { col: "Venerdi", dow: 5 },
-    { col: "Sabato", dow: 6 },
-    { col: "Domenica", dow: 7 },
-  ]
-  const parts = days.map(
-    (d) =>
-      `(DATEPART(weekday, CAST(${giornoParam} AS date)) = ${d.dow} AND TRY_CAST(${alias}.[${d.col}] AS int) NOT IN (0))`
-  )
-  return `(${parts.join(" OR ")})`
+  const datePart = `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
+  const ggPart = `(TRY_CAST(pl.[GGWeek] AS int) = ${iso} OR TRY_CAST(pl.[GGWeek] AS int) = ${dow})`
+  const weekdayFlags = buildWeekdayFlagsSql(plIdx && plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, "pl")
+  if (weekdayFlags) return `(${datePart} AND (${ggPart} OR ${weekdayFlags}))`
+  return `(${datePart} AND ${ggPart})`
 }
 
 function buildPrenotazioniWeekdaySql(prenIdx: SqlColIndex, plIdx: SqlColIndex, giornoParam: string): string | null {
@@ -5854,18 +5871,17 @@ async function queryLezioniCorsiSenzaIscritti(
 
   const attemptWheres: string[][] = [
     appendPrenFilters([scheduleSql]),
-    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")]),
+    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno", plIdx)]),
     appendPrenFilters([scheduleSql], { skipPrenDate: true }),
-    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno")], { skipPrenDate: true }),
+    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno", plIdx)], { skipPrenDate: true }),
     appendPrenFilters([scheduleSql], { skipAttivo: true, skipPrenDate: true }),
-    [
-      `(CAST(@giorno AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date) AND ${buildHardcodedWeekdaySql(
-        "@giorno",
-        "pl"
-      )})`,
-    ],
+    (() => {
+      const dr = `(CAST(@giorno AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
+      const wf = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, "@giorno", "pl")
+      return wf ? [`(${dr} AND ${wf})`] : [buildHardcodedPlScheduleSql("@giorno", plIdx)]
+    })(),
     [scheduleSql],
-    [buildHardcodedPlScheduleSql("@giorno")],
+    [buildHardcodedPlScheduleSql("@giorno", plIdx)],
   ]
 
   const selectDesc = `p.[${colPrenDesc}] AS PrenotazioneDescrizione`
