@@ -5812,61 +5812,59 @@ function prenotazioneScopeText(raw: Record<string, unknown>): string {
     .trim()
 }
 
-/** Pagina Corsi = fitness/palestra/acqua fitness; esclude scuola nuoto (RVW_CorsiUtenti). */
-function isPrenotazionePaginaCorsi(raw: Record<string, unknown>): boolean {
+/** Solo lezioni vuote sala fitness (es. BODY TONE). Scuola nuoto / nuoto / livelli → pagina Scuola nuoto. */
+function isLezioneVuotaPaginaCorsi(raw: Record<string, unknown>): boolean {
   const t = prenotazioneScopeText(raw)
   if (!t) return false
   if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return false
+  if (t.includes("NUOTO")) return false
+  if (/\bLIV\.?\b/.test(t)) return false
   if (/\bBAMBINI\b/.test(t)) return false
-  if (t.includes("PERFEZIONAMENTO") && t.includes("NUOTO")) return false
-  if (/\bLIV\.?\s*(PRINCIPI|START|INTERM|BASE|ELEMENT|PREAGON|AVANZ)/.test(t) && t.includes("NUOTO")) return false
-  if (t.includes("AGONISMO") && !t.includes("MASTER") && !t.includes("ADULT")) return false
+  if (t.includes("AGONISMO")) return false
+  if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return false
+  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return false
+  if (t.includes("FITNESS")) return true
+  if (t.includes("CORSI A PAGAMENTO")) return true
+  const gym = [
+    "PILATES",
+    "SPINNING",
+    "BODY TONE",
+    "BODY PUMP",
+    "TRX",
+    "WALKING",
+    "POLE DANCE",
+    "YOGA",
+    "ZUMBA",
+    "TABATA",
+    "ADDOMINALI",
+    "ANIMAL FLOW",
+    "FLEX & TONE",
+    "FLEX",
+    "TONING",
+  ]
+  if (gym.some((k) => t.includes(k))) return true
   if (
-    t.includes("FITNESS") ||
-    t.includes("ACQUA") ||
-    t.includes("AQUA") ||
-    t.includes("NUOTO ADULT") ||
-    t.includes("CORSI A PAGAMENTO") ||
-    t.includes("PALESTRA") ||
-    t.includes("PILATES") ||
-    t.includes("SPINNING") ||
-    t.includes("BODY ") ||
-    t.includes("TRX") ||
-    t.includes("PUMP") ||
-    t.includes("WALKING") ||
-    t.includes("POLE DANCE") ||
-    t.includes("YOGA") ||
-    t.includes("ZUMBA") ||
-    t.includes("TABATA") ||
-    t.includes("CROSS") ||
-    t.includes("CIRCUIT") ||
-    t.includes("BIKE") ||
-    t.includes("GYM")
+    (t.includes("ACQUA") || t.includes("AQUA")) &&
+    (t.includes("GYM") || t.includes("BIKE") || t.includes("TABATA") || t.includes("CROSS") || t.includes("CIRCUIT"))
   ) {
     return true
   }
-  if (!t.includes("NUOTO") && !t.includes("AGONISMO") && !t.includes("SCUOLA")) return true
   return false
 }
 
-function buildPrenotazioniPaginaCorsiSql(prenIdx: SqlColIndex, alias = "p"): string[] {
-  const parts: string[] = []
-  const macroCol = pickSqlCol(prenIdx, [
-    "MacroCategoriaDescrizione",
-    "MacroCategoria",
-    "PrenotazioneMacroCategoria",
-  ])
-  const catCol = pickSqlCol(prenIdx, ["CategoriaDescrizione", "Categoria", "PrenotazioneCategoria"])
-  const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"])
-  const norm = (col: string) =>
-    `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${col}] AS NVARCHAR(512)), ''))))`
-  for (const col of [macroCol, catCol, descCol].filter(Boolean) as string[]) {
-    const n = norm(col)
-    parts.push(`${n} NOT LIKE '%SCUOLA NUOTO%'`)
-    parts.push(`${n} NOT LIKE '%SCUOLANUOTO%'`)
-    parts.push(`${n} NOT LIKE '%BAMBINI%'`)
-  }
-  return parts
+function buildPrenotazioniLezioniVuoteSql(prenIdx: SqlColIndex, alias = "p"): string[] {
+  const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"]) ?? "Descrizione"
+  const n = `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${descCol}] AS NVARCHAR(512)), ''))))`
+  return [
+    `${n} NOT LIKE '%NUOTO%'`,
+    `${n} NOT LIKE '%LIV.%'`,
+    `${n} NOT LIKE '% LIV %'`,
+    `${n} NOT LIKE '%SCUOLA NUOTO%'`,
+    `${n} NOT LIKE '%BAMBINI%'`,
+    `${n} NOT LIKE '%AGONISMO%'`,
+    `${n} NOT LIKE '%BISETTIMANALE%'`,
+    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY TONE%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POLE DANCE%' OR ${n} LIKE '%ACQUA GYM%' OR ${n} LIKE '%ACQUA BIKE%' OR ${n} LIKE '%ACQUA TABATA%' OR ${n} LIKE '%ACQUA CROSS%' OR ${n} LIKE '%ACQUA CIRCUIT%' OR ${n} LIKE '%CORSI A PAGAMENTO%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%ANIMAL FLOW%' OR ${n} LIKE '%FLEX%TONE%')`,
+  ]
 }
 
 /**
@@ -5953,11 +5951,7 @@ async function queryLezioniCorsiSenzaIscritti(
       where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
       where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
     }
-    where.push(...buildPrenotazioniPaginaCorsiSql(prenIdx, "p"))
-    if (!pickSqlCol(prenIdx, ["MacroCategoriaDescrizione", "MacroCategoria", "Descrizione", "PrenotazioneDescrizione"])) {
-      where.push(`UPPER(COALESCE(CAST(p.[Descrizione] AS NVARCHAR(512)), '')) NOT LIKE '%SCUOLA NUOTO%'`)
-      where.push(`UPPER(COALESCE(CAST(p.[Descrizione] AS NVARCHAR(512)), '')) NOT LIKE '%BAMBINI%'`)
-    }
+    where.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
     return where
   }
 
@@ -6014,7 +6008,7 @@ async function queryLezioniCorsiSenzaIscritti(
     for (const raw0 of recordset ?? []) {
       const idLez = Number(raw0.IDPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez) || lezOccupati.has(idLez)) continue
-      if (!isPrenotazionePaginaCorsi(raw0)) continue
+      if (!isLezioneVuotaPaginaCorsi(raw0)) continue
       seenLez.add(idLez)
       const raw: Record<string, unknown> = {
         ...raw0,
@@ -6125,7 +6119,7 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     if (!giornoOk || !giorno) return rows
     return rows.filter((r) => {
       if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) {
-        return isPrenotazionePaginaCorsi((r.raw ?? {}) as Record<string, unknown>)
+        return isLezioneVuotaPaginaCorsi((r.raw ?? {}) as Record<string, unknown>)
       }
       return isCorsoPrenotazioneAttivo(r, giorno)
     })
