@@ -31,6 +31,8 @@ export function SignaturesAdmin() {
   const [templateName, setTemplateName] = useState("")
   const [templateFile, setTemplateFile] = useState<File | null>(null)
   const [templateBusy, setTemplateBusy] = useState(false)
+  const [replaceTemplateFile, setReplaceTemplateFile] = useState<File | null>(null)
+  const [replaceTemplateBusy, setReplaceTemplateBusy] = useState(false)
   const [templateId, setTemplateId] = useState("")
   const [useTemplate, setUseTemplate] = useState(true)
   const [slotsDraft, setSlotsDraft] = useState<SignatureSlot[]>([])
@@ -327,6 +329,7 @@ export function SignaturesAdmin() {
     let cancelled = false
     async function loadBytes() {
       if (!templateId) return setTemplatePdfBytes(null)
+      setReplaceTemplateFile(null)
       const cached = pdfBytesCacheRef.current.get(templateId)
       if (cached) return setTemplatePdfBytes(cached)
       setPreviewErr(null)
@@ -504,6 +507,50 @@ export function SignaturesAdmin() {
       if (templateId === id) setTemplateId("")
     } catch (e2) {
       setErr((e2 as Error).message)
+    }
+  }
+
+  async function reloadTemplatePdfPreview(id: string) {
+    pdfBytesCacheRef.current.delete(id)
+    setPreviewLoading(true)
+    setPreviewErr(null)
+    try {
+      const bytes = await signaturesApi.getTemplateDocument(id)
+      pdfBytesCacheRef.current.set(id, bytes)
+      setTemplatePdfBytes(bytes)
+      setPreviewPage(1)
+    } catch (e2) {
+      setPreviewErr((e2 as Error).message)
+      setTemplatePdfBytes(null)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  async function onReplaceTemplateDocument() {
+    if (!templateId) return setErr("Seleziona un template")
+    if (!replaceTemplateFile) return setErr("Seleziona il nuovo PDF")
+    const selected = (templatesQ.data ?? []).find((t) => t.id === templateId)
+    if (
+      !globalThis.confirm(
+        `Sostituire il PDF del template "${selected?.name ?? templateId}"?\nSlot firme e campi restano invariati: se il layout è cambiato, riposizionali.`
+      )
+    ) {
+      return
+    }
+    setErr(null)
+    setMsg(null)
+    setReplaceTemplateBusy(true)
+    try {
+      const next = await signaturesApi.replaceTemplateDocument(templateId, { document: replaceTemplateFile })
+      setMsg(`PDF aggiornato: ${next.name}`)
+      setReplaceTemplateFile(null)
+      await templatesQ.refetch()
+      await reloadTemplatePdfPreview(templateId)
+    } catch (e2) {
+      setErr((e2 as Error).message)
+    } finally {
+      setReplaceTemplateBusy(false)
     }
   }
 
@@ -986,6 +1033,28 @@ export function SignaturesAdmin() {
           </p>
         ) : (
           <>
+            <div className="mt-3 rounded border border-zinc-700 bg-zinc-950/40 p-3">
+              <p className="mb-2 text-xs font-medium text-zinc-300">Cambia PDF del template</p>
+              <p className="mb-2 text-xs text-zinc-500">
+                Carica un nuovo PDF (es. stagione aggiornata). Le posizioni firme/campi restano: riposizionale solo se il layout è cambiato.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  accept="application/pdf,.pdf"
+                  onChange={(e) => setReplaceTemplateFile(e.target.files?.[0] ?? null)}
+                  className="rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-300"
+                />
+                <button
+                  type="button"
+                  disabled={replaceTemplateBusy || !replaceTemplateFile}
+                  onClick={() => void onReplaceTemplateDocument()}
+                  className="rounded border border-amber-600/60 bg-amber-950/40 px-3 py-2 text-sm text-amber-100 hover:bg-amber-900/40 disabled:opacity-50"
+                >
+                  {replaceTemplateBusy ? "Aggiorno PDF…" : "Sostituisci PDF"}
+                </button>
+              </div>
+            </div>
             <div className="mt-3 rounded border border-zinc-700 bg-zinc-950/40 p-3">
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
                 <span className="text-zinc-400">Modalità:</span>

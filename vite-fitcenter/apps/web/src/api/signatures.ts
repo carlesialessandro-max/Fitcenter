@@ -163,6 +163,23 @@ export const signaturesApi = {
     return res.json() as Promise<SignatureTemplate>
   },
 
+  replaceTemplateDocument: async (id: string, body: { document: File; name?: string }) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    const fd = new FormData()
+    fd.append("document", body.document)
+    if (body.name?.trim()) fd.append("name", body.name.trim())
+    const res = await fetch(`${API_BASE}/signatures/admin/templates/${encodeURIComponent(id)}/document`, {
+      method: "PUT",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      body: fd,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: res.statusText }))
+      throw new Error((err as { message?: string }).message ?? "Errore sostituzione PDF template")
+    }
+    return res.json() as Promise<SignatureTemplate>
+  },
+
   createFromTemplate: async (body: {
     templateId: string
     customerEmail: string

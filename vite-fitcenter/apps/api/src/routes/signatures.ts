@@ -8,6 +8,7 @@ import {
   getSmsAdminSearch,
   postSmsAdminTest,
   createSignatureTemplate,
+  replaceSignatureTemplateDocument,
   deleteSignatureRequest,
   deleteSignatureTemplate,
   deleteSignatureTemplatePage,
@@ -72,6 +73,7 @@ signaturesRouter.put("/admin/privacy-profiles/:id", requireAuth, requireAdmin, u
 signaturesRouter.delete("/admin/privacy-profiles/:id", requireAuth, requireAdmin, deleteSignaturePrivacyProfile)
 signaturesRouter.get("/admin/templates", requireAuth, listSignatureTemplates)
 signaturesRouter.post("/admin/templates", requireAuth, requireAdmin, upload.single("document"), createSignatureTemplate)
+signaturesRouter.put("/admin/templates/:id/document", requireAuth, requireAdmin, upload.single("document"), replaceSignatureTemplateDocument)
 signaturesRouter.put("/admin/templates/:id/slots", requireAuth, requireAdmin, updateSignatureTemplateSlots)
 signaturesRouter.put("/admin/templates/:id/replace-last-page-privacy", requireAuth, requireAdmin, replaceSignatureTemplateLastPagePrivacy)
 signaturesRouter.put("/admin/templates/:id/append-privacy-page", requireAuth, requireAdmin, appendSignatureTemplatePrivacyPage)

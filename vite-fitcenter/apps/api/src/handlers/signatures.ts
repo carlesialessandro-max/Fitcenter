@@ -1245,6 +1245,37 @@ export async function createSignatureTemplate(req: Request, res: Response) {
   }
 }
 
+/** Sostituisce il PDF di un template esistente, mantenendo slot/campi/privacy. */
+export async function replaceSignatureTemplateDocument(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id template mancante" })
+    const tpl = signatureStore.getTemplateById(id)
+    if (!tpl) return res.status(404).json({ message: "Template non trovato" })
+
+    const f = req.file
+    if (!f) return res.status(400).json({ message: "PDF template obbligatorio" })
+    const isPdf = f.mimetype === "application/pdf" || f.originalname.toLowerCase().endsWith(".pdf")
+    if (!isPdf) return res.status(400).json({ message: "Caricare un PDF" })
+
+    const nameRaw = String(req.body.name ?? "").trim()
+    const dir = signatureStore.resolveSignatureDir()
+    const fp = path.join(dir, tpl.fileName)
+    fs.writeFileSync(fp, f.buffer)
+
+    const next = signatureStore.updateTemplateById(id, (r) => ({
+      ...r,
+      ...(nameRaw ? { name: nameRaw } : {}),
+      originalName: f.originalname || r.originalName || "template.pdf",
+      mimeType: "application/pdf",
+    }))
+    if (!next) return res.status(500).json({ message: "Errore aggiornamento template" })
+    res.json(next)
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 export async function updateSignatureTemplateSlots(req: Request, res: Response) {
   const id = String(req.params.id ?? "").trim()
   if (!id) return res.status(400).json({ message: "Id template mancante" })
