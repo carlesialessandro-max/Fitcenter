@@ -188,6 +188,8 @@ export const signaturesApi = {
     prefill?: Record<string, string>
     deliveryMode?: "email" | "onsite"
     customerSms?: string
+    /** Se true, invia anche SMS (link + OTP). Default: solo email. */
+    sendSms?: boolean
   }) => {
     const token = localStorage.getItem(TOKEN_KEY)
     const fd = new FormData()
@@ -196,6 +198,7 @@ export const signaturesApi = {
     if (body.customerName?.trim()) fd.append("customerName", body.customerName.trim())
     if (body.customerGestionaleId?.trim()) fd.append("customerGestionaleId", body.customerGestionaleId.trim())
     if (body.customerSms?.trim()) fd.append("customerSms", body.customerSms.trim())
+    if (body.sendSms) fd.append("sendSms", "true")
     if (body.prefill && Object.keys(body.prefill).length) fd.append("prefill", JSON.stringify(body.prefill))
     if (body.deliveryMode) fd.append("deliveryMode", body.deliveryMode)
     const res = await fetch(`${API_BASE}/signatures/admin`, {

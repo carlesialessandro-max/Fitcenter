@@ -500,6 +500,10 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const customerName = String(req.body.customerName ?? "").trim()
     const customerGestionaleId = String(req.body.customerGestionaleId ?? "").trim() || undefined
     const customerSmsRaw = String(req.body.customerSms ?? "").trim()
+    // SMS a pagamento: solo se esplicitamente richiesto (checkbox cassa / flag sendSms).
+    const sendSmsRequested = ["1", "true", "yes", "on"].includes(
+      String(req.body.sendSms ?? "").trim().toLowerCase()
+    )
     const prefillRaw = String(req.body.prefill ?? "").trim()
     let prefill: Record<string, string> | undefined
     if (prefillRaw) {
@@ -527,11 +531,12 @@ export async function createSignatureRequest(req: Request, res: Response) {
       if (!isPdf) return res.status(400).json({ message: "Caricare un file PDF" })
     }
 
-    const customerSms =
-      normalizeItPhone(customerSmsRaw) ??
-      normalizeItPhone(String(prefill?.cellulare ?? "").trim()) ??
-      undefined
-    if ((customerSmsRaw || prefill?.cellulare) && !customerSms) {
+    const customerSms = sendSmsRequested
+      ? normalizeItPhone(customerSmsRaw) ??
+        normalizeItPhone(String(prefill?.cellulare ?? "").trim()) ??
+        undefined
+      : undefined
+    if (sendSmsRequested && (customerSmsRaw || prefill?.cellulare) && !customerSms) {
       console.log(
         "[SMS][SKIP] cellulare anagrafica non normalizzato:",
         String(customerSmsRaw || prefill?.cellulare).slice(0, 20)
@@ -602,7 +607,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
     let linkSmsSent = false
     let linkSmsDetail: string | undefined
     if (deliveryMode === "email") {
-      if (customerSms && smsConfigured) {
+      if (sendSmsRequested && customerSms && smsConfigured) {
         const linkSms = await sendSms({
           to: customerSms,
           text: `${FIRMA_BRAND} firma: ${link}`,
@@ -617,7 +622,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
           `Ciao${customerName ? ` ${customerName}` : ""},\n\n` +
           `apri questo link dal tuo cellulare per firmare il documento:\n${link}\n\n` +
           `Sul telefono: richiedi il codice OTP (${
-            customerSms && smsConfigured ? "ti arriva via SMS" : "ti arriva via email"
+            sendSmsRequested && customerSms && smsConfigured ? "ti arriva via SMS" : "ti arriva via email"
           }), accetta i termini e firma.\n\n` +
           `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
       })

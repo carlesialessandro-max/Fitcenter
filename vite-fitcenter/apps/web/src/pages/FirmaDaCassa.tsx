@@ -88,6 +88,8 @@ export function FirmaDaCassa() {
   const [err, setErr] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
   const [showDebug, setShowDebug] = useState(false)
+  /** SMS a pagamento: default solo email; attiva per inviare anche link/OTP via SMS. */
+  const [sendSmsAlso, setSendSmsAlso] = useState(false)
   const [createdKeys, setCreatedKeys] = useState<Record<string, true>>({})
   const [pendingFirma, setPendingFirmaState] = useState<PendingFirma | null>(() => loadPendingFirma())
   const [assistOtp, setAssistOtp] = useState<string | null>(null)
@@ -148,6 +150,7 @@ export function FirmaDaCassa() {
     setOk(null)
     setErr(null)
     setAssistOtp(null)
+    setSendSmsAlso(false)
     if (!selectedKey) return
     setPendingFirmaState((prev) => {
       if (!prev || prev.clientKey === selectedKey) return prev
@@ -172,6 +175,9 @@ export function FirmaDaCassa() {
       return setErr("Email mancante o non valida in RVW_CassaMovimentiUtenti. Serve Email per inviare OTP/link firma.")
     }
     if (!effectiveTemplateId) return setErr("Obbligatorio selezionare template di firma.")
+    if (sendSmsAlso && !(selected.sms ?? "").trim()) {
+      return setErr("Per inviare SMS serve un cellulare in anagrafica, oppure deseleziona «Invia anche SMS».")
+    }
     setBusy(true)
     try {
       const customerName = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || undefined
@@ -223,12 +229,15 @@ export function FirmaDaCassa() {
         customerEmail: email,
         customerName,
         customerGestionaleId: selected.clienteId ?? undefined,
-        customerSms: selected.sms ?? undefined,
+        customerSms: sendSmsAlso ? selected.sms ?? undefined : undefined,
+        sendSms: sendSmsAlso,
         prefill,
       })
       const customerLabel = `${selected.cognome ?? ""} ${selected.nome ?? ""}`.trim() || email
       let smsHint = " OTP via email."
-      if (out.smsSandbox) {
+      if (!sendSmsAlso) {
+        smsHint = " OTP via email (SMS non selezionato)."
+      } else if (out.smsSandbox) {
         smsHint =
           " OTP via email (SMSHOSTING_SANDBOX=true nel .env: nessun SMS reale; rimuovi sandbox e riavvia API)."
       } else if (!out.customerSmsPresent) {
@@ -246,14 +255,21 @@ export function FirmaDaCassa() {
         const det = out.linkSmsDetail ? ` (${out.linkSmsDetail})` : ""
         smsHint = ` OTP via email (SMS link non inviato${det}; controlla pannello Ricerca SMS su Smshosting).`
       }
-      const linkSmsPart = out.smsSandbox
-        ? ""
-        : out.linkSmsSent && (out.customerSmsE164 || out.customerSmsMasked)
-          ? ` e SMS link a ${out.customerSmsE164 ?? out.customerSmsMasked}`
-          : out.customerSmsPresent && out.smsConfigured
-            ? " (SMS link non inviato)"
-            : ""
-      setPendingFirma({ token: out.token, email, customerLabel, clientKey: selected.key, sms: selected.sms ?? undefined })
+      const linkSmsPart =
+        sendSmsAlso && !out.smsSandbox
+          ? out.linkSmsSent && (out.customerSmsE164 || out.customerSmsMasked)
+            ? ` e SMS link a ${out.customerSmsE164 ?? out.customerSmsMasked}`
+            : out.customerSmsPresent && out.smsConfigured
+              ? " (SMS link non inviato)"
+              : ""
+          : ""
+      setPendingFirma({
+        token: out.token,
+        email,
+        customerLabel,
+        clientKey: selected.key,
+        sms: sendSmsAlso ? selected.sms ?? undefined : undefined,
+      })
       setAssistOtp(null)
       setOk(
         `Link inviato a ${email}${linkSmsPart}. Il cliente firma dal telefono.${smsHint} Usa il riquadro giallo sotto per mostrare l'OTP in reception.`
@@ -520,18 +536,32 @@ export function FirmaDaCassa() {
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="mt-4 flex cursor-pointer items-start gap-2 text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={sendSmsAlso}
+                  onChange={(e) => setSendSmsAlso(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Invia anche SMS
+                  <span className="mt-0.5 block text-xs text-zinc-500">
+                    A pagamento. Se attivo: link + OTP via SMS (serve cellulare). Altrimenti solo email.
+                  </span>
+                </span>
+              </label>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
                   disabled={busy}
                   onClick={onCreateFirma}
                   className="rounded bg-emerald-500 px-4 py-2 text-sm font-semibold text-zinc-950 disabled:opacity-60"
                 >
-                  {busy ? "Invio…" : "Invia link firma al cliente"}
+                  {busy ? "Invio…" : sendSmsAlso ? "Invia link via email + SMS" : "Invia link firma via email"}
                 </button>
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                Invia link via email (e SMS se c&apos;è il cellulare). Dopo l&apos;invio compare il riquadro giallo in alto per mostrare l&apos;OTP alla reception.
+                Di default il link arriva solo via email. Dopo l&apos;invio compare il riquadro giallo in alto per mostrare l&apos;OTP alla reception.
               </p>
             </div>
           )}

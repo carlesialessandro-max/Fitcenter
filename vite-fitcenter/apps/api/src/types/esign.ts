@@ -90,7 +90,7 @@ export interface SignatureRequest {
   /** email = link+OTP via mail; onsite = firma a reception, OTP mostrato a video. */
   deliveryMode?: "email" | "onsite"
   customerEmail: string
-  /** Cellulare cliente (E.164 o locale) per OTP/link SMS. */
+  /** Cellulare cliente (E.164 o locale) per OTP/link SMS. Presente solo se l'invio SMS è stato richiesto. */
   customerSms?: string
   customerName?: string
   templateId?: string
