@@ -1,0 +1,98 @@
+/**
+ * Client WhatsApp Cloud API (Meta Graph).
+ * Invio messaggi; webhook gestito in handlers/whatsapp.ts
+ */
+
+const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
+
+export function whatsappConfig() {
+  const token = (process.env.WHATSAPP_ACCESS_TOKEN ?? "").trim()
+  const phoneNumberId = (process.env.WHATSAPP_PHONE_NUMBER_ID ?? "").trim()
+  const verifyToken = (process.env.WHATSAPP_VERIFY_TOKEN ?? "").trim()
+  const appSecret = (process.env.WHATSAPP_APP_SECRET ?? "").trim()
+  const wabaId = (process.env.WHATSAPP_WABA_ID ?? "").trim()
+  return { token, phoneNumberId, verifyToken, appSecret, wabaId, graphVersion: GRAPH_VERSION }
+}
+
+export function isWhatsappSendConfigured(): boolean {
+  const c = whatsappConfig()
+  return Boolean(c.token && c.phoneNumberId)
+}
+
+/** Solo cifre, con prefisso paese (es. 393391234567). */
+export function normalizeWaTo(raw: string): string | null {
+  const digits = String(raw ?? "").replace(/\D/g, "")
+  if (!digits) return null
+  if (digits.startsWith("39") && digits.length >= 11) return digits
+  if (digits.startsWith("0") && digits.length >= 9) return `39${digits.slice(1)}`
+  if (digits.length === 10 && digits.startsWith("3")) return `39${digits}`
+  if (digits.length >= 10) return digits
+  return null
+}
+
+async function graphPost(pathSuffix: string, body: Record<string, unknown>): Promise<unknown> {
+  const { token, phoneNumberId, graphVersion } = whatsappConfig()
+  if (!token || !phoneNumberId) {
+    throw new Error("WhatsApp non configurato: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID")
+  }
+  const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/${pathSuffix}`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (!res.ok) {
+    const err = json.error as { message?: string } | undefined
+    throw new Error(err?.message ?? `WhatsApp API HTTP ${res.status}`)
+  }
+  return json
+}
+
+export async function sendWhatsappText(toRaw: string, text: string): Promise<unknown> {
+  const to = normalizeWaTo(toRaw)
+  if (!to) throw new Error("Numero destinatario non valido")
+  const body = text.trim()
+  if (!body) throw new Error("Testo messaggio vuoto")
+  return graphPost("messages", {
+    messaging_product: "whatsapp",
+    to,
+    type: "text",
+    text: { preview_url: false, body },
+  })
+}
+
+export async function sendWhatsappTemplate(params: {
+  toRaw: string
+  templateName: string
+  languageCode?: string
+  bodyParams?: string[]
+}): Promise<unknown> {
+  const to = normalizeWaTo(params.toRaw)
+  if (!to) throw new Error("Numero destinatario non valido")
+  const name = params.templateName.trim()
+  if (!name) throw new Error("Nome template obbligatorio")
+  const language = { code: (params.languageCode ?? "it").trim() || "it" }
+  const components =
+    params.bodyParams && params.bodyParams.length > 0
+      ? [
+          {
+            type: "body",
+            parameters: params.bodyParams.map((text) => ({ type: "text", text })),
+          },
+        ]
+      : undefined
+  return graphPost("messages", {
+    messaging_product: "whatsapp",
+    to,
+    type: "template",
+    template: {
+      name,
+      language,
+      ...(components ? { components } : {}),
+    },
+  })
+}

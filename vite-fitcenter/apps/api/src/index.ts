@@ -23,6 +23,8 @@ import { signaturesRouter } from "./routes/signatures.js"
 import { prenotazioniRouter } from "./routes/prenotazioni.js"
 import { scuolaNuotoRouter } from "./routes/scuolaNuoto.js"
 import { piscinaRouter } from "./routes/piscina.js"
+import { whatsappRouter } from "./routes/whatsapp.js"
+import { whatsappWebhookReceive, whatsappWebhookVerify } from "./handlers/whatsapp.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT ?? 3001
@@ -81,6 +83,12 @@ app.use(
 )
 const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false })
 const zapierLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false })
+const whatsappWebhookLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 300,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+})
 
 // Firma: inviamo immagini base64 (dataURL) -> aumenta limite JSON.
 const JSON_LIMIT = process.env.API_JSON_LIMIT?.trim() || "15mb"
@@ -108,6 +116,9 @@ app.post("/api/auth/login", authLimiter)
 app.post("/api/auth/login/otp", authLimiter)
 app.get("/api/webhook/zapier", zapierLimiter, webhookZapier)
 app.post("/api/webhook/zapier", zapierLimiter, webhookZapier)
+app.get("/api/webhook/whatsapp", whatsappWebhookLimiter, whatsappWebhookVerify)
+app.post("/api/webhook/whatsapp", whatsappWebhookLimiter, whatsappWebhookReceive)
+app.use("/api", whatsappRouter)
 app.use("/api", leadsRouter)
 app.use("/api", chiamateRouter)
 app.use("/api/prenotazioni", prenotazioniRouter)
