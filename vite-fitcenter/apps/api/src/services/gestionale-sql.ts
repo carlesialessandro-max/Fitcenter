@@ -5812,58 +5812,39 @@ function prenotazioneScopeText(raw: Record<string, unknown>): string {
     .trim()
 }
 
-/** Solo lezioni vuote sala fitness (es. BODY TONE). Scuola nuoto / nuoto / livelli → pagina Scuola nuoto. */
+/**
+ * Lezioni vuote da mostrare in pagina Corsi (per bloccarle).
+ * Esclude scuola nuoto / livelli / agonismo (vanno in Scuola nuoto).
+ * Non usa allowlist di nomi: altrimenti GAG, SPARTAN, FUNZIONALE ecc. a 0 iscritti spariscono.
+ */
 function isLezioneVuotaPaginaCorsi(raw: Record<string, unknown>): boolean {
   const t = prenotazioneScopeText(raw)
   if (!t) return false
   if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return false
-  if (t.includes("NUOTO")) return false
+  // "NUOTO" ma non corsi acqua fitness (ACQUA GYM / AQUA …)
+  if (t.includes("NUOTO") && !(t.includes("ACQUA") || t.includes("AQUA"))) return false
   if (/\bLIV\.?\b/.test(t)) return false
   if (/\bBAMBINI\b/.test(t)) return false
   if (t.includes("AGONISMO")) return false
   if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return false
+  // Tipico titolo scuola nuoto: "LUN. 1", "MAR 2", ecc.
   if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return false
-  if (t.includes("FITNESS")) return true
-  if (t.includes("CORSI A PAGAMENTO")) return true
-  const gym = [
-    "PILATES",
-    "SPINNING",
-    "BODY TONE",
-    "BODY PUMP",
-    "TRX",
-    "WALKING",
-    "POLE DANCE",
-    "YOGA",
-    "ZUMBA",
-    "TABATA",
-    "ADDOMINALI",
-    "ANIMAL FLOW",
-    "FLEX & TONE",
-    "FLEX",
-    "TONING",
-  ]
-  if (gym.some((k) => t.includes(k))) return true
-  if (
-    (t.includes("ACQUA") || t.includes("AQUA")) &&
-    (t.includes("GYM") || t.includes("BIKE") || t.includes("TABATA") || t.includes("CROSS") || t.includes("CIRCUIT"))
-  ) {
-    return true
-  }
-  return false
+  return true
 }
 
 function buildPrenotazioniLezioniVuoteSql(prenIdx: SqlColIndex, alias = "p"): string[] {
   const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"]) ?? "Descrizione"
   const n = `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${descCol}] AS NVARCHAR(512)), ''))))`
+  // Solo esclusioni: l'allowlist precedente escludeva corsi fitness con nome non in lista.
   return [
-    `${n} NOT LIKE '%NUOTO%'`,
+    `(${n} NOT LIKE '%NUOTO%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%')`,
     `${n} NOT LIKE '%LIV.%'`,
     `${n} NOT LIKE '% LIV %'`,
     `${n} NOT LIKE '%SCUOLA NUOTO%'`,
     `${n} NOT LIKE '%BAMBINI%'`,
     `${n} NOT LIKE '%AGONISMO%'`,
     `${n} NOT LIKE '%BISETTIMANALE%'`,
-    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY TONE%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POLE DANCE%' OR ${n} LIKE '%ACQUA GYM%' OR ${n} LIKE '%ACQUA BIKE%' OR ${n} LIKE '%ACQUA TABATA%' OR ${n} LIKE '%ACQUA CROSS%' OR ${n} LIKE '%ACQUA CIRCUIT%' OR ${n} LIKE '%CORSI A PAGAMENTO%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%ANIMAL FLOW%' OR ${n} LIKE '%FLEX%TONE%')`,
+    `${n} NOT LIKE '%TRISETTIMANALE%'`,
   ]
 }
 
@@ -5980,11 +5961,19 @@ async function queryLezioniCorsiSenzaIscritti(
   extraPrenSelects.push(`p.[${colPrenDf}] AS DataFine`)
   const colPrenMacro = pickSqlCol(prenIdx, [
     "MacroCategoriaDescrizione",
+    "MacroCategorieDescrizione",
     "MacroCategoria",
+    "MacroCategorie",
     "PrenotazioneMacroCategoria",
   ])
   if (colPrenMacro) extraPrenSelects.push(`p.[${colPrenMacro}] AS MacroCategoriaDescrizione`)
-  const colPrenCat = pickSqlCol(prenIdx, ["CategoriaDescrizione", "Categoria", "PrenotazioneCategoria"])
+  const colPrenCat = pickSqlCol(prenIdx, [
+    "CategoriaDescrizione",
+    "CategorieDescrizione",
+    "Categoria",
+    "PrenotazioneCategoria",
+    "PrenotazioniCategorieDescrizione",
+  ])
   if (colPrenCat) extraPrenSelects.push(`p.[${colPrenCat}] AS CategoriaDescrizione`)
   const extraPrenSql = `,\n      ${extraPrenSelects.join(",\n      ")}`
 
