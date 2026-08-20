@@ -600,8 +600,7 @@ export function listCalendarioInstructors(req: Request, res: Response) {
     u.role === "danza" ||
     u.role === "campus" ||
     u.role === "operatore" ||
-    u.role === "firme" ||
-    u.role === "bagnini"
+    u.role === "firme"
   if (!allow) return res.status(403).json({ message: "Permessi insufficienti" })
   const db = readCalendarioDb()
   res.json({ rows: db.instructors })
