@@ -31,6 +31,7 @@ export function LoginRedirect({ children }: { children: React.ReactNode }) {
   }
   if (isAuthenticated) {
     if (role === "admin") return <Navigate to="/calendario" replace />
+    if (role === "crm") return <Navigate to="/crm" replace />
     return <Navigate to="/" replace />
   }
   return <>{children}</>

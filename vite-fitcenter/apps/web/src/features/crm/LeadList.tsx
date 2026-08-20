@@ -102,9 +102,11 @@ export function LeadList() {
           <h1 className="text-2xl font-semibold text-zinc-100">CRM Vendita</h1>
           <p className="text-sm text-zinc-400">Gestione lead e pipeline di vendita</p>
         </div>
-        <Link to="/crm/nuovo">
-          <Button>+ Aggiungi lead (tour spontanei)</Button>
-        </Link>
+        {role !== "crm" && (
+          <Link to="/crm/nuovo">
+            <Button>+ Aggiungi lead (tour spontanei)</Button>
+          </Link>
+        )}
       </div>
 
       {/* Pipeline cards */}
@@ -212,7 +214,7 @@ export function LeadList() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      {role !== "admin" && !lead.consulenteNome && (
+                      {role === "operatore" && !lead.consulenteNome && (
                         <button
                           type="button"
                           onClick={() => assignToMe.mutate(lead.id)}

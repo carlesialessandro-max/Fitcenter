@@ -2044,12 +2044,12 @@ export async function getTotaliAnni(req: Request, res: Response) {
   }
 }
 
-/** Lead CRM: store locale. Admin vede tutto. Operatore: vede il pool della sua fascia (bambini vs generale)
+/** Lead CRM: store locale. Admin e ruolo crm (review Meta) vedono tutto. Operatore: vede il pool della sua fascia (bambini vs generale)
  *  e **sempre** i lead assegnati a lei (nome o username), anche se `categoria` non coincide (errori Zapier / riassegnazione). */
 export async function getLeadsFromGestionale(req: Request, res: Response) {
   try {
     const u = getScopedUser(req)
-    if (u.role === "admin") {
+    if (u.role === "admin" || u.role === "crm") {
       res.json(leadsStore.list({}))
       return
     }

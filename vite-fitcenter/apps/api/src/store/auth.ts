@@ -32,7 +32,21 @@ type UserRecord = User & { password: string; email?: string }
  *   scuola_nuoto → H2Fc.ScuolaNuoto.9!v
  *   bagnini   → H2Fc.Bagnini.9!w
  *   danza     → H2Fc.Danza.9!y
+ *   meta_review → H2Fc.MetaRev.26!k  (solo CRM vendita, per review Meta)
  */
+const VALID_ROLES: Role[] = [
+  "admin",
+  "operatore",
+  "firme",
+  "corsi",
+  "istruttore",
+  "campus",
+  "scuola_nuoto",
+  "bagnini",
+  "danza",
+  "crm",
+]
+
 const DEFAULT_USERS: UserRecord[] = [
   {
     username: "admin",
@@ -111,6 +125,12 @@ const DEFAULT_USERS: UserRecord[] = [
     nome: "Danza",
     role: "danza",
   },
+  {
+    username: "meta_review",
+    password: "$2b$12$2SmhAxrJBieuzEnLrnezXOVXNIuf0eEJuAwLqaxIeSJviWsAREKDO",
+    nome: "Meta App Review",
+    role: "crm",
+  },
 ]
 
 function loadUsersFromEnv(): UserRecord[] | null {
@@ -130,7 +150,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
       if (
         !username ||
         !password ||
-        !["admin", "operatore", "firme", "corsi", "istruttore", "campus", "scuola_nuoto", "bagnini", "danza"].includes(role)
+        !VALID_ROLES.includes(role)
       ) {
         continue
       }

@@ -113,6 +113,7 @@ const navDanza: NavItem[] = [
   },
   { to: "/danza", label: "Danza" },
 ] as const
+const navCrm: NavItem[] = [{ to: "/crm", label: "CRM Vendita" }]
 
 const navAdmin: NavItem[] = [
   {
@@ -183,9 +184,13 @@ export function AppLayout() {
     location.pathname !== "/calendario/piscina" &&
     location.pathname !== "/calendario/personale" &&
     location.pathname !== "/calendario/istruttori"
+  const mustRedirectCrm =
+    role === "crm" &&
+    location.pathname !== "/crm" &&
+    !location.pathname.startsWith("/crm/lead/")
   const nav: NavItem[] =
-    leadFilter === "bambini"
-      ? [{ to: "/crm" as const, label: "CRM Vendita" }]
+    leadFilter === "bambini" || role === "crm"
+      ? navCrm
       : role === "admin"
         ? navAdmin
         : role === "corsi"
@@ -234,6 +239,8 @@ export function AppLayout() {
               ? "Bagnini"
               : role === "danza"
                 ? "Danza"
+                : role === "crm"
+                  ? "CRM Vendita"
                     : "Operatore"}
         </p>
         <button
@@ -355,6 +362,7 @@ export function AppLayout() {
 
   // Importante: redirect dopo gli hooks (evita crash React #310 in prod).
   if (mustRedirectBagnini) return <Navigate to="/piscina" replace />
+  if (mustRedirectCrm) return <Navigate to="/crm" replace />
 
   return (
     <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">

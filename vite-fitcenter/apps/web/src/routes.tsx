@@ -35,7 +35,7 @@ import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
 
 function DashboardOrRedirect() {
   const { leadFilter, role } = useAuth()
-  if (leadFilter === "bambini") return <Navigate to="/crm" replace />
+  if (leadFilter === "bambini" || role === "crm") return <Navigate to="/crm" replace />
   if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
   if (role === "campus") return <Navigate to="/campus" replace />
   if (role === "firme") return <Navigate to="/firma-cassa" replace />
