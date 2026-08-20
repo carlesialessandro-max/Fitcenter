@@ -1622,7 +1622,14 @@ export function Corsi() {
         {isLoading ? (
           <p className="text-sm text-zinc-500">Caricamento...</p>
         ) : error ? (
-          <p className="text-sm text-red-400">Errore: {(error as Error).message}</p>
+          <p className="text-sm text-red-400">
+            Errore:{" "}
+            {String(
+              (error as Error)?.message ||
+                (typeof error === "string" ? error : "") ||
+                "richiesta fallita (controlla rete/API)"
+            )}
+          </p>
         ) : gruppi.length === 0 ? (
           <div className="space-y-2">
             <p className="text-sm text-zinc-500">Nessun corso per il giorno selezionato.</p>

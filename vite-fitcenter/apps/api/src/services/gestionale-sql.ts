@@ -5939,16 +5939,29 @@ async function queryLezioniCorsiSenzaIscritti(
   const attemptWheres: string[][] = [
     appendPrenFilters([scheduleSql]),
     appendPrenFilters([buildHardcodedPlScheduleSql("@giorno", plIdx)]),
-    appendPrenFilters([scheduleSql], { skipPrenDate: true }),
-    appendPrenFilters([buildHardcodedPlScheduleSql("@giorno", plIdx)], { skipPrenDate: true }),
-    appendPrenFilters([scheduleSql], { skipAttivo: true, skipPrenDate: true }),
+    // Fallback: se sys.columns non ha DataInizio/DataFine, forza range standard FitCenter.
     (() => {
-      const dr = `(CAST(@giorno AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
-      const wf = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, "@giorno", "pl")
-      return wf ? [`(${dr} AND ${wf})`] : [buildHardcodedPlScheduleSql("@giorno", plIdx)]
+      const base = [scheduleSql]
+      if (!prenDateRangeSql) {
+        base.push(
+          `(CAST(p.[DataInizio] AS date) <= CAST(@giorno AS date) AND (p.[DataFine] IS NULL OR CAST(p.[DataFine] AS date) >= CAST(@giorno AS date)))`
+        )
+      }
+      base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
+      return base
     })(),
-    [scheduleSql],
-    [buildHardcodedPlScheduleSql("@giorno", plIdx)],
+    (() => {
+      const base = [buildHardcodedPlScheduleSql("@giorno", plIdx)]
+      if (!prenDateRangeSql) {
+        base.push(
+          `(CAST(p.[DataInizio] AS date) <= CAST(@giorno AS date) AND (p.[DataFine] IS NULL OR CAST(p.[DataFine] AS date) >= CAST(@giorno AS date)))`
+        )
+      }
+      base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
+      return base
+    })(),
   ]
 
   const selectDesc = `p.[${colPrenDesc}] AS PrenotazioneDescrizione`
@@ -5998,7 +6011,6 @@ async function queryLezioniCorsiSenzaIscritti(
       const idLez = Number(raw0.IDPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez) || lezOccupati.has(idLez)) continue
       if (!isLezioneVuotaPaginaCorsi(raw0)) continue
-      seenLez.add(idLez)
       const raw: Record<string, unknown> = {
         ...raw0,
         __lezioniSenzaIscritti: true,
@@ -6006,6 +6018,9 @@ async function queryLezioniCorsiSenzaIscritti(
       }
       const row = enrich(raw)
       row.giorno = giorno
+      // Esclude corsi scaduti / disattivati (es. DataFine 2019 ancora in calendario settimanale).
+      if (!isCorsoPrenotazioneAttivo(row, giorno)) continue
+      seenLez.add(idLez)
       out.push(row)
     }
     return out
@@ -6018,7 +6033,10 @@ async function queryLezioniCorsiSenzaIscritti(
       try {
         const recordset = ((await pool.request().input("giorno", sql.VarChar(10), giorno).query(buildQuery(whereParts)))
           .recordset ?? []) as Record<string, unknown>[]
-        out = [...out, ...mapRows(recordset)]
+        const mapped = mapRows(recordset)
+        out = [...out, ...mapped]
+        // Prima query utile: non continuare con fallback senza filtri (lenti e rumore).
+        if (mapped.length > 0) break
       } catch (e) {
         errors.push((e as Error)?.message ?? String(e))
       }
@@ -6108,7 +6126,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
     if (!giornoOk || !giorno) return rows
     return rows.filter((r) => {
       if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) {
-        return isLezioneVuotaPaginaCorsi((r.raw ?? {}) as Record<string, unknown>)
+        return (
+          isLezioneVuotaPaginaCorsi((r.raw ?? {}) as Record<string, unknown>) &&
+          isCorsoPrenotazioneAttivo(r, giorno)
+        )
       }
       return isCorsoPrenotazioneAttivo(r, giorno)
     })
