@@ -519,10 +519,15 @@ export async function cancelConsulenzaAppuntamento(params: {
         WHERE IDA2Appuntamento = @idApp;
       `)
 
+    // Libera lo slot senza DELETE (fitcenter_api_write spesso non ha DELETE su A2Occupazioni):
+    // collassa DataFine = DataInizio così non si sovrappone più a nuovi appuntamenti.
     await new sql.Request(tx)
       .input("idApp", sql.Int, params.idAppuntamento)
       .query(`
-        DELETE FROM dbo.A2Occupazioni WHERE IDA2Appuntamento = @idApp;
+        UPDATE dbo.A2Occupazioni
+        SET DataFine = DataInizio
+        WHERE IDA2Appuntamento = @idApp
+          AND DataFine > DataInizio;
       `)
 
     await tx.commit()
