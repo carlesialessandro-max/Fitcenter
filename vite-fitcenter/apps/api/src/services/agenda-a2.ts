@@ -152,7 +152,33 @@ export async function createConsulenzaAppuntamento(params: {
   }
 }
 
-/** Cerca IDUtente da cellulare (SMS / Telefono_1 / Telefono_2). */
+/** Anagrafica placeholder gestionale: Cognome=nuovo Nome=cliente. */
+export const ID_UTENTE_NUOVO_CLIENTE_DEFAULT = 66218
+
+/** ID anagrafica "nuovo cliente" (env o lookup Cognome/Nome, default 66218). */
+export async function findIdUtenteNuovoCliente(): Promise<number> {
+  const fromEnv = Number(process.env.WHATSAPP_BOOKING_FALLBACK_ID_UTENTE ?? "")
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv
+
+  const p = await getPool()
+  if (!p) return ID_UTENTE_NUOVO_CLIENTE_DEFAULT
+  try {
+    const r = await p.request().query(`
+      SELECT TOP 1 IDUtente
+      FROM dbo.Utenti
+      WHERE LOWER(LTRIM(RTRIM(ISNULL(Cognome, N'')))) = N'nuovo'
+        AND LOWER(LTRIM(RTRIM(ISNULL(Nome, N'')))) = N'cliente'
+      ORDER BY IDUtente DESC
+    `)
+    const id = Number((r.recordset?.[0] as { IDUtente?: number } | undefined)?.IDUtente)
+    return Number.isFinite(id) && id > 0 ? id : ID_UTENTE_NUOVO_CLIENTE_DEFAULT
+  } catch (e) {
+    console.warn("[agenda-a2] findIdUtenteNuovoCliente:", (e as Error)?.message ?? e)
+    return ID_UTENTE_NUOVO_CLIENTE_DEFAULT
+  }
+}
+
+/** Cerca IDUtente da cellulare (SMS / Telefono_1 / Telefono_2). Esclude placeholder nuovo/cliente. */
 export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | null> {
   const p = await getPool()
   if (!p) return null
@@ -161,6 +187,7 @@ export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | nu
   if (digits.startsWith("0")) digits = digits.slice(1)
   if (digits.length < 8) return null
   const tail = digits.slice(-9)
+  const skipId = await findIdUtenteNuovoCliente()
 
   const norm = (col: string) =>
     `REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(${col},''),' ',''),'+',''),'-',''),'/',''),'.','')`
@@ -169,12 +196,16 @@ export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | nu
     const r = await p
       .request()
       .input("tail", sql.VarChar(16), tail)
+      .input("skipId", sql.Int, skipId)
       .query(`
         SELECT TOP 5 IDUtente
         FROM dbo.Utenti
-        WHERE ${norm("SMS")} LIKE '%' + @tail
-           OR ${norm("Telefono_1")} LIKE '%' + @tail
-           OR ${norm("Telefono_2")} LIKE '%' + @tail
+        WHERE IDUtente <> @skipId
+          AND (
+            ${norm("SMS")} LIKE '%' + @tail
+            OR ${norm("Telefono_1")} LIKE '%' + @tail
+            OR ${norm("Telefono_2")} LIKE '%' + @tail
+          )
         ORDER BY IDUtente DESC
       `)
     const id = Number((r.recordset?.[0] as { IDUtente?: number } | undefined)?.IDUtente)

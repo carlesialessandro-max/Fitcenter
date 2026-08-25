@@ -6,6 +6,7 @@ import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import {
   createConsulenzaAppuntamento,
   findIdUtenteByPhone,
+  findIdUtenteNuovoCliente,
   phonesMatch,
   pickFreeConsulente,
   slotEnd,
@@ -193,25 +194,18 @@ export async function handleWhatsappInboundBooking(params: {
   const fine = slotEnd(inizio)
   const lead = findLeadByPhone(from)
 
-  const idUtente =
-    (await findIdUtenteByPhone(from)) ??
-    (Number(process.env.WHATSAPP_BOOKING_FALLBACK_ID_UTENTE ?? "") || null)
+  const idUtenteReale = await findIdUtenteByPhone(from)
+  const usatoNuovoCliente = !idUtenteReale
+  const idUtente = idUtenteReale ?? (await findIdUtenteNuovoCliente())
 
-  if (!idUtente) {
-    const msg =
-      `Grazie! Abbiamo registrato la tua preferenza per ${fmtIt(inizio)}. ` +
-      `Una consulente ti ricontatterà a breve per confermare l'appuntamento in sede.`
-    await sendWhatsappText(from, msg)
-    if (lead) {
-      leadsStore.update(lead.id, {
-        note: [lead.note, `WA richiesta: ${text} → ${fmtIt(inizio)} (anagrafica gestionale non trovata)`]
-          .filter(Boolean)
-          .join("\n"),
-        stato: "contattato",
-      })
-    }
-    return { handled: true, detail: "senza IDUtente, preferenza salvata" }
-  }
+  const displayName = [lead?.nome, lead?.cognome].filter(Boolean).join(" ").trim() || "lead WA"
+  const phoneDisplay = from.replace(/^39/, "")
+  // Note agenda: nome/tel reali (anagrafica può essere placeholder "nuovo cliente")
+  const noteAgenda = (
+    usatoNuovoCliente
+      ? `NUOVO: ${displayName} | tel ${phoneDisplay} | ${text}`
+      : `${displayName} | tel ${phoneDisplay} | WA: ${text}`
+  ).slice(0, 200)
 
   const consulente = await pickFreeConsulente(inizio, fine)
   if (!consulente) {
@@ -233,7 +227,7 @@ export async function handleWhatsappInboundBooking(params: {
       idUtente,
       inizio,
       consulente,
-      note: `FitCenter WA${lead ? ` lead ${lead.id}` : ""}: ${text}`.slice(0, 200),
+      note: noteAgenda,
     })
     const msg =
       `Perfetto! Ti confermiamo l'appuntamento in H2Sport:\n` +
@@ -248,13 +242,17 @@ export async function handleWhatsappInboundBooking(params: {
         consulenteNome: consulente.nome,
         note: [
           lead.note,
-          `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}`,
+          `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}` +
+            (usatoNuovoCliente ? ` (anagrafica nuovo cliente ${idUtente})` : ""),
         ]
           .filter(Boolean)
           .join("\n"),
       })
     }
-    return { handled: true, detail: `prenotato #${created.idAppuntamento} ${consulente.nome}` }
+    return {
+      handled: true,
+      detail: `prenotato #${created.idAppuntamento} ${consulente.nome}${usatoNuovoCliente ? " (nuovo cliente)" : ""}`,
+    }
   } catch (e) {
     const err = (e as Error)?.message ?? String(e)
     console.error("[whatsapp-booking]", err)
