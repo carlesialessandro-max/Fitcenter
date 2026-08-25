@@ -100,7 +100,7 @@ export async function sendWhatsappTemplate(params: {
 /** Template benvenuto lead (da creare in Meta Manager, lingua it). */
 export function leadWelcomeTemplateConfig() {
   const enabled = (process.env.WHATSAPP_AUTO_LEAD ?? "true").trim().toLowerCase() !== "false"
-  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto_h2").trim() || "lead_benvenuto_h2"
+  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto").trim() || "lead_benvenuto"
   const languageCode = (process.env.WHATSAPP_LEAD_TEMPLATE_LANG ?? "it").trim() || "it"
   return { enabled, templateName, languageCode }
 }
