@@ -169,6 +169,7 @@ export function whatsappStatus(_req: Request, res: Response) {
   res.json({
     verifyTokenConfigured: Boolean(c.verifyToken),
     sendConfigured: isWhatsappSendConfigured(),
+    sqlWriteConfigured: Boolean(String(process.env.SQL_CONNECTION_STRING_WRITE ?? "").trim()),
     phoneNumberId: c.phoneNumberId ? `${c.phoneNumberId.slice(0, 4)}…` : null,
     wabaId: c.wabaId || null,
     appSecretConfigured: Boolean(c.appSecret),

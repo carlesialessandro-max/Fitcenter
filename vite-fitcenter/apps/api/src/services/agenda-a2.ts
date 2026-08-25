@@ -22,8 +22,9 @@ export const CONSULENTI_AGENDA: ConsulenteAgenda[] = [
   { nome: "Ombretta Zenoni", idRisorsa: 76, idOperatore: 352 },
 ]
 
+/** Solo pool WRITE (stesso di blocco prenotazioni). Mai fallback su lettura. */
 async function poolRw(): Promise<sql.ConnectionPool | null> {
-  return (await getPoolWrite()) ?? (await getPool())
+  return await getPoolWrite()
 }
 
 function phoneDigits(raw: string): string {
@@ -102,7 +103,7 @@ export async function createConsulenzaAppuntamento(params: {
   const p = await poolRw()
   if (!p) {
     throw new Error(
-      "SQL gestionale non disponibile (write). Verifica SQL_CONNECTION_STRING / SQL_CONNECTION_STRING_WRITE sul server."
+      "SQL write non configurato: imposta SQL_CONNECTION_STRING_WRITE (stessa usata per blocco prenotazioni) e GRANT INSERT su A2Appuntamenti/A2Occupazioni/A2Iscrizioni."
     )
   }
 
