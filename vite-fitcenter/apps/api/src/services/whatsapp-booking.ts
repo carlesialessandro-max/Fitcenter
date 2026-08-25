@@ -1,0 +1,232 @@
+/**
+ * Orchestratore: messaggio WhatsApp in ingresso → parse giorno/ora → prenota A2 → conferma.
+ */
+import { store as leadsStore } from "../store/leads.js"
+import {
+  createConsulenzaAppuntamento,
+  findIdUtenteByPhone,
+  phonesMatch,
+  pickFreeConsulente,
+  slotEnd,
+} from "./agenda-a2.js"
+import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText } from "./whatsapp.js"
+
+const processedWaIds = new Set<string>()
+const MAX_PROCESSED = 2000
+
+const WEEKDAY: Record<string, number> = {
+  domenica: 0,
+  dom: 0,
+  lunedi: 1,
+  lunedì: 1,
+  lun: 1,
+  martedi: 2,
+  martedì: 2,
+  mar: 2,
+  mercoledi: 3,
+  mercoledì: 3,
+  mer: 3,
+  giovedi: 4,
+  giovedì: 4,
+  gio: 4,
+  venerdi: 5,
+  venerdì: 5,
+  ven: 5,
+  sabato: 6,
+  sab: 6,
+}
+
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/\p{M}/gu, "")
+}
+
+export type ParsedSlotRequest = {
+  weekday: number
+  hour: number
+  minute: number
+  raw: string
+}
+
+/** Es. "Mercoledì ore 17:30", "lunedi 18.30", "sabato mattina". */
+export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
+  const raw = String(text ?? "").trim()
+  if (!raw) return null
+  const t = stripAccents(raw.toLowerCase()).replace(/\s+/g, " ")
+
+  let weekday: number | null = null
+  for (const [k, v] of Object.entries(WEEKDAY)) {
+    const key = stripAccents(k)
+    if (new RegExp(`\\b${key}\\b`, "i").test(t)) {
+      weekday = v
+      break
+    }
+  }
+  if (weekday == null) return null
+
+  let hour = 10
+  let minute = 0
+  const hm = t.match(/\b([01]?\d|2[0-3])[:\.]([0-5]\d)\b/)
+  if (hm) {
+    hour = Number(hm[1])
+    minute = Number(hm[2])
+  } else if (/\bmattina\b/.test(t)) {
+    hour = 10
+    minute = 0
+  } else if (/\bpomeriggio\b/.test(t)) {
+    hour = 16
+    minute = 0
+  } else if (/\bsera\b/.test(t)) {
+    hour = 18
+    minute = 30
+  } else {
+    const hOnly = t.match(/\b(?:ore|alle)?\s*([01]?\d|2[0-3])\b/)
+    if (hOnly) hour = Number(hOnly[1])
+    else return null // giorno senza orario → non prenotare alla cieca
+  }
+
+  return { weekday, hour, minute, raw }
+}
+
+/** Prossima occorrenza del giorno settimanale all'orario indicato (locale). */
+export function nextOccurrence(weekday: number, hour: number, minute: number, from = new Date()): Date {
+  const d = new Date(from.getTime())
+  d.setSeconds(0, 0)
+  const delta = (weekday - d.getDay() + 7) % 7
+  d.setDate(d.getDate() + delta)
+  d.setHours(hour, minute, 0, 0)
+  if (d.getTime() <= from.getTime() + 60_000) {
+    d.setDate(d.getDate() + 7)
+  }
+  return d
+}
+
+function fmtIt(d: Date): string {
+  return d.toLocaleString("it-IT", {
+    weekday: "long",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
+function findLeadByPhone(phone: string) {
+  const all = leadsStore.list({})
+  return all.find((l) => phonesMatch(l.telefono, phone)) ?? null
+}
+
+/**
+ * Gestisce un messaggio inbound. Idempotente su waMessageId.
+ * Ritorna true se ha tentato una prenotazione (ok o ko con reply).
+ */
+export async function handleWhatsappInboundBooking(params: {
+  from?: string
+  text?: string
+  waMessageId?: string
+}): Promise<{ handled: boolean; detail?: string }> {
+  const waId = String(params.waMessageId ?? "").trim()
+  if (waId) {
+    if (processedWaIds.has(waId)) return { handled: false, detail: "già processato" }
+    processedWaIds.add(waId)
+    if (processedWaIds.size > MAX_PROCESSED) {
+      const first = processedWaIds.values().next().value
+      if (first) processedWaIds.delete(first)
+    }
+  }
+
+  const from = normalizeWaTo(params.from ?? "") ?? String(params.from ?? "").replace(/\D/g, "")
+  const text = String(params.text ?? "").trim()
+  if (!from || !text || text.startsWith("[")) return { handled: false, detail: "no text" }
+
+  const parsed = parseSlotRequestIt(text)
+  if (!parsed) {
+    // Non è una richiesta slot: ignora (reception gestirà in Business Suite)
+    return { handled: false, detail: "non è richiesta slot" }
+  }
+
+  if (!isWhatsappSendConfigured()) {
+    return { handled: false, detail: "whatsapp non configurato" }
+  }
+
+  const inizio = nextOccurrence(parsed.weekday, parsed.hour, parsed.minute)
+  const fine = slotEnd(inizio)
+  const lead = findLeadByPhone(from)
+
+  const idUtente =
+    (await findIdUtenteByPhone(from)) ??
+    (Number(process.env.WHATSAPP_BOOKING_FALLBACK_ID_UTENTE ?? "") || null)
+
+  if (!idUtente) {
+    const msg =
+      `Grazie! Abbiamo registrato la tua preferenza per ${fmtIt(inizio)}. ` +
+      `Una consulente ti ricontatterà a breve per confermare l'appuntamento in sede.`
+    await sendWhatsappText(from, msg)
+    if (lead) {
+      leadsStore.update(lead.id, {
+        note: [lead.note, `WA richiesta: ${text} → ${fmtIt(inizio)} (anagrafica gestionale non trovata)`]
+          .filter(Boolean)
+          .join("\n"),
+        stato: "contattato",
+      })
+    }
+    return { handled: true, detail: "senza IDUtente, preferenza salvata" }
+  }
+
+  const consulente = await pickFreeConsulente(inizio, fine)
+  if (!consulente) {
+    await sendWhatsappText(
+      from,
+      `Grazie per la richiesta (${fmtIt(inizio)}). In quell'orario non risultano disponibilità. ` +
+        `Prova un altro giorno/orario rispondendo a questo messaggio, oppure ti richiamiamo noi.`
+    )
+    if (lead) {
+      leadsStore.update(lead.id, {
+        note: [lead.note, `WA richiesta NON disponibile: ${text}`].filter(Boolean).join("\n"),
+      })
+    }
+    return { handled: true, detail: "slot non libero" }
+  }
+
+  try {
+    const created = await createConsulenzaAppuntamento({
+      idUtente,
+      inizio,
+      consulente,
+      note: `FitCenter WA${lead ? ` lead ${lead.id}` : ""}: ${text}`.slice(0, 200),
+    })
+    const msg =
+      `Perfetto! Ti confermiamo l'appuntamento in H2Sport:\n` +
+      `📅 ${fmtIt(inizio)}\n` +
+      `👤 Consulente: ${consulente.nome}\n` +
+      `Durata circa 30 minuti.\n` +
+      `Ti aspettiamo in sede! 💙`
+    await sendWhatsappText(from, msg)
+    if (lead) {
+      leadsStore.update(lead.id, {
+        stato: "appuntamento",
+        consulenteNome: consulente.nome,
+        note: [
+          lead.note,
+          `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      })
+    }
+    return { handled: true, detail: `prenotato #${created.idAppuntamento} ${consulente.nome}` }
+  } catch (e) {
+    const err = (e as Error)?.message ?? String(e)
+    console.error("[whatsapp-booking]", err)
+    try {
+      await sendWhatsappText(
+        from,
+        `Abbiamo ricevuto la tua richiesta per ${fmtIt(inizio)}, ma al momento non siamo riusciti a confermare in automatico. ` +
+          `Ti richiamiamo a breve per fissare l'appuntamento.`
+      )
+    } catch {
+      /* ignore */
+    }
+    return { handled: true, detail: `errore: ${err}` }
+  }
+}

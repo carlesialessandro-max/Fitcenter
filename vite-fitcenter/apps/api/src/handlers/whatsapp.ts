@@ -3,6 +3,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import type { Request, Response } from "express"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
+import { handleWhatsappInboundBooking } from "../services/whatsapp-booking.js"
 import {
   isWhatsappSendConfigured,
   leadWelcomeTemplateConfig,
@@ -90,6 +91,14 @@ function ingestChangeValue(value: WaChangeValue, rawChange: unknown) {
       raw: msg,
     })
     stored++
+    // Booking async: non blocca l'ack a Meta
+    void handleWhatsappInboundBooking({
+      from: msg.from,
+      text,
+      waMessageId: msg.id,
+    }).then((r) => {
+      if (r.handled) console.log("[whatsapp-booking]", r.detail)
+    }).catch((e) => console.error("[whatsapp-booking]", (e as Error)?.message ?? e))
   }
 
   for (const st of value.statuses ?? []) {
