@@ -399,4 +399,141 @@ export function slotEnd(inizio: Date): Date {
   return new Date(inizio.getTime() + SLOT_MINUTES * 60 * 1000)
 }
 
+function phoneTail(phoneRaw: string): string {
+  let digits = phoneDigits(phoneRaw)
+  if (digits.startsWith("39") && digits.length >= 11) digits = digits.slice(2)
+  if (digits.startsWith("0")) digits = digits.slice(1)
+  return digits.slice(-9)
+}
+
+export type UpcomingConsulenza = {
+  idAppuntamento: number
+  idIscrizione: number
+  idUtente: number
+  inizio: Date
+  note: string
+  idRisorsa: number | null
+}
+
+/** Prossimo appuntamento consulenza (adulti/bambini) collegato al cellulare. */
+export async function findUpcomingConsulenzaByPhone(phoneRaw: string): Promise<UpcomingConsulenza | null> {
+  const p = await getPool()
+  if (!p) return null
+  const tail = phoneTail(phoneRaw)
+  if (tail.length < 8) return null
+
+  const utenti = await findUtentiByPhone(phoneRaw)
+  const nuovoId = await findIdUtenteNuovoCliente()
+  const idList = [...new Set([...utenti.map((u) => u.idUtente), nuovoId])].filter((n) => n > 0)
+  const risorse = [...CONSULENTI_AGENDA_ADULTI, ...CONSULENTI_AGENDA_BAMBINI].map((c) => c.idRisorsa)
+
+  try {
+    const req = p.request().input("tail", sql.VarChar(16), tail).input("now", sql.DateTime, new Date())
+    idList.forEach((id, i) => req.input(`u${i}`, sql.Int, id))
+    risorse.forEach((id, i) => req.input(`r${i}`, sql.Int, id))
+    const inU = idList.map((_, i) => `@u${i}`).join(",")
+    const inR = risorse.map((_, i) => `@r${i}`).join(",")
+
+    const r = await req.query(`
+      SELECT TOP 1
+        a.IDA2Appuntamento AS idApp,
+        i.IDA2Iscrizione AS idIsc,
+        i.IDUtente AS idUtente,
+        a.DataOraInizio AS inizio,
+        COALESCE(a.Note, i.Note, N'') AS note,
+        o.IDA2Risorsa AS idRisorsa
+      FROM dbo.A2Iscrizioni i
+      INNER JOIN dbo.A2Appuntamenti a ON a.IDA2Appuntamento = i.IDA2Appuntamento
+      LEFT JOIN dbo.A2Occupazioni o ON o.IDA2Appuntamento = a.IDA2Appuntamento
+      WHERE ISNULL(i.Annullato, 0) = 0
+        AND a.DataOraInizio >= @now
+        AND (
+          i.IDUtente IN (${inU})
+          OR REPLACE(REPLACE(REPLACE(ISNULL(a.Note,N''),' ',''),'+',''),'-','') LIKE '%' + @tail + '%'
+          OR REPLACE(REPLACE(REPLACE(ISNULL(i.Note,N''),' ',''),'+',''),'-','') LIKE '%' + @tail + '%'
+        )
+        AND (o.IDA2Risorsa IS NULL OR o.IDA2Risorsa IN (${inR}))
+      ORDER BY a.DataOraInizio ASC
+    `)
+    const row = r.recordset?.[0] as
+      | {
+          idApp?: number
+          idIsc?: number
+          idUtente?: number
+          inizio?: Date
+          note?: string
+          idRisorsa?: number | null
+        }
+      | undefined
+    if (!row?.idApp || !row.idIsc || !row.inizio) return null
+    return {
+      idAppuntamento: Number(row.idApp),
+      idIscrizione: Number(row.idIsc),
+      idUtente: Number(row.idUtente),
+      inizio: new Date(row.inizio),
+      note: String(row.note ?? ""),
+      idRisorsa: row.idRisorsa != null ? Number(row.idRisorsa) : null,
+    }
+  } catch (e) {
+    console.warn("[agenda-a2] findUpcomingConsulenzaByPhone:", (e as Error)?.message ?? e)
+    return null
+  }
+}
+
+/** Annulla iscrizione (Annullato=-1) e libera lo slot (DELETE occupazione). */
+export async function cancelConsulenzaAppuntamento(params: {
+  idAppuntamento: number
+  idIscrizione: number
+  reasonNote?: string
+}): Promise<void> {
+  const p = await poolRw()
+  if (!p) {
+    throw new Error("SQL write non configurato per annullamento A2")
+  }
+  const noteExtra = (params.reasonNote ?? "Annullato via WhatsApp FitCenter").slice(0, 180)
+  const tx = new sql.Transaction(p)
+  await tx.begin()
+  try {
+    await new sql.Request(tx)
+      .input("idIsc", sql.Int, params.idIscrizione)
+      .input("note", sql.NVarChar(200), noteExtra)
+      .query(`
+        UPDATE dbo.A2Iscrizioni
+        SET Annullato = -1,
+            Note = LEFT(CASE
+              WHEN Note IS NULL OR LTRIM(RTRIM(Note)) = N'' THEN @note
+              ELSE Note + N' | ' + @note
+            END, 200)
+        WHERE IDA2Iscrizione = @idIsc AND ISNULL(Annullato, 0) = 0;
+      `)
+
+    await new sql.Request(tx)
+      .input("idApp", sql.Int, params.idAppuntamento)
+      .input("note", sql.NVarChar(200), noteExtra)
+      .query(`
+        UPDATE dbo.A2Appuntamenti
+        SET Note = LEFT(CASE
+          WHEN Note IS NULL OR LTRIM(RTRIM(Note)) = N'' THEN @note
+          ELSE Note + N' | ' + @note
+        END, 200)
+        WHERE IDA2Appuntamento = @idApp;
+      `)
+
+    await new sql.Request(tx)
+      .input("idApp", sql.Int, params.idAppuntamento)
+      .query(`
+        DELETE FROM dbo.A2Occupazioni WHERE IDA2Appuntamento = @idApp;
+      `)
+
+    await tx.commit()
+  } catch (e) {
+    try {
+      await tx.rollback()
+    } catch {
+      /* ignore */
+    }
+    throw new Error(sqlErrDetail(e))
+  }
+}
+
 export { SLOT_MINUTES }

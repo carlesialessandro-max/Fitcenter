@@ -10,6 +10,8 @@ import {
   pickFreeConsulente,
   resolveIdUtenteForWaBooking,
   findIdUtenteNuovoCliente,
+  findUpcomingConsulenzaByPhone,
+  cancelConsulenzaAppuntamento,
   slotEnd,
   IDA2_SERVIZIO_BAMBINI,
   IDA2_SERVIZIO_CONSULENTI_ADULTI,
@@ -86,6 +88,26 @@ export function parseCallbackRequestIt(text: string): boolean {
   }
   // Frasi corte tipiche
   if (/^(richiamate|richiamami|chiamatemi|piu\s*tardi|più\s*tardi)$/.test(t)) return true
+  return false
+}
+
+/** Annullamento appuntamento già fissato. */
+export function parseCancelRequestIt(text: string): boolean {
+  const t = normText(text)
+  if (!t || t.length > 220) return false
+  if (
+    /\b(annulla|annullare|annullamento|annullate|annullami|cancellare|cancella|disdici|disdire|disdetta)\b/.test(
+      t
+    ) ||
+    /\b(non\s+posso\s+(venire|passare|presentarmi)|non\s+riesco\s+a\s+venire)\b/.test(t) ||
+    /\b(devo|vorrei|voglio)\s+annullare\b/.test(t)
+  ) {
+    return true
+  }
+  if (/^(annulla|annullare|cancella|disdici|non\s+posso\s+venire)$/.test(t)) return true
+  if (/\b(annull|cancell|disdic)\w*\b/.test(t) && /\b(appuntamento|impegno|prenotazione|consulenza)\b/.test(t)) {
+    return true
+  }
   return false
 }
 
@@ -281,6 +303,79 @@ export async function handleWhatsappInboundBooking(params: {
 
   const lead = findLeadByPhone(from)
   const t = normText(text)
+
+  // 0) Annullamento appuntamento esistente
+  if (parseCancelRequestIt(text)) {
+    try {
+      const upcoming = await findUpcomingConsulenzaByPhone(from)
+      if (!upcoming) {
+        await sendWhatsappText(
+          from,
+          `Non ho trovato un appuntamento futuro collegato a questo numero.\n` +
+            `Se pensavi di averne uno, scrivi «richiamatemi» e una consulente ti aiuta.\n` +
+            `Per fissarne uno nuovo, rispondi con giorno e orario (es. Giovedì 17:00).`
+        )
+        if (lead) {
+          appendLeadNote(lead.id, `WA annullamento senza appuntamento trovato («${text}»)`)
+        }
+        whatsappEventsStore.append({
+          kind: "booking",
+          from,
+          text: `cancel_miss: ${text}`,
+          status: "none",
+          raw: { text },
+        })
+        return { handled: true, detail: "annullamento: nessun appuntamento" }
+      }
+
+      await cancelConsulenzaAppuntamento({
+        idAppuntamento: upcoming.idAppuntamento,
+        idIscrizione: upcoming.idIscrizione,
+        reasonNote: `Annullato WA: ${text}`.slice(0, 180),
+      })
+
+      await sendWhatsappText(
+        from,
+        `Ok, ho annullato il tuo appuntamento del ${fmtIt(upcoming.inizio)}.\n\n` +
+          `Se vuoi riprenotare, rispondi con un nuovo giorno e orario (es. Venerdì 18:00).\n` +
+          `Oppure scrivi «richiamatemi» per parlare con una consulente.`
+      )
+      if (lead) {
+        appendLeadNote(
+          lead.id,
+          `WA annullato #${upcoming.idAppuntamento} ${fmtIt(upcoming.inizio)} («${text}»)`,
+          { stato: lead.stato === "appuntamento" ? "contattato" : lead.stato }
+        )
+      }
+      whatsappEventsStore.append({
+        kind: "booking",
+        from,
+        text: `annullato #${upcoming.idAppuntamento} ${fmtIt(upcoming.inizio)}`,
+        status: "cancelled",
+        raw: { upcoming, text },
+      })
+      return { handled: true, detail: `annullato #${upcoming.idAppuntamento}` }
+    } catch (e) {
+      const err = (e as Error)?.message ?? String(e)
+      console.error("[whatsapp-booking] cancel:", err)
+      whatsappEventsStore.append({
+        kind: "booking",
+        from,
+        text: `cancel_error: ${err} | ${text}`,
+        status: "error",
+        raw: { err, text },
+      })
+      await sendWhatsappText(
+        from,
+        `Ho ricevuto la richiesta di annullamento, ma non sono riuscito a chiudere l'appuntamento in automatico.\n` +
+          `Una consulente ti ricontatterà a breve per confermare.`
+      )
+      if (lead) {
+        appendLeadNote(lead.id, `WA annullamento ERRORE: ${err} («${text}»)`)
+      }
+      return { handled: true, detail: `errore annullamento: ${err}` }
+    }
+  }
 
   // 1) Preferisce ricontatto da consulente
   if (parseCallbackRequestIt(text)) {
