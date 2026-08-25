@@ -11,6 +11,9 @@ import {
   resolveIdUtenteForWaBooking,
   findIdUtenteNuovoCliente,
   slotEnd,
+  IDA2_SERVIZIO_BAMBINI,
+  IDA2_SERVIZIO_CONSULENTI_ADULTI,
+  type AgendaSegmento,
 } from "./agenda-a2.js"
 import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText } from "./whatsapp.js"
 
@@ -233,6 +236,13 @@ function findLeadByPhone(phone: string) {
   return matches[0] ?? null
 }
 
+function isLeadBambini(lead: { categoria?: string | null; interesseDettaglio?: string | null; note?: string | null } | null): boolean {
+  if (!lead) return false
+  if (lead.categoria === "bambini") return true
+  const blob = `${lead.interesseDettaglio ?? ""} ${lead.note ?? ""}`
+  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(blob)
+}
+
 function appendLeadNote(leadId: string, line: string, patch: Record<string, unknown> = {}) {
   const lead = leadsStore.get(leadId)
   if (!lead) return
@@ -318,6 +328,9 @@ export async function handleWhatsappInboundBooking(params: {
   // 3) Slot completo → prenota o slot pieno
   const inizio = nextOccurrence(parsed.weekday, parsed.hour, parsed.minute)
   const fine = slotEnd(inizio)
+  const segmento: AgendaSegmento = isLeadBambini(lead) ? "bambini" : "adulti"
+  const ida2Servizio =
+    segmento === "bambini" ? IDA2_SERVIZIO_BAMBINI : IDA2_SERVIZIO_CONSULENTI_ADULTI
 
   const resolved = await resolveIdUtenteForWaBooking({
     phone: from,
@@ -338,20 +351,21 @@ export async function handleWhatsappInboundBooking(params: {
       : `${displayName} | tel ${phoneDisplay} | WA: ${text}`
   ).slice(0, 200)
 
-  const consulente = await pickFreeConsulente(inizio, fine)
+  const consulente = await pickFreeConsulente(inizio, fine, segmento)
   if (!consulente) {
+    const chi = segmento === "bambini" ? "Irene o Elisa" : "una consulente"
     await sendWhatsappText(
       from,
       `Grazie per la richiesta (${fmtIt(inizio)}). In quell'orario non risultano disponibilità.\n\n` +
         `Puoi proporre un altro giorno/orario rispondendo a questo messaggio, oppure scrivere «richiamatemi» ` +
-        `se preferisci essere ricontattato da una consulente.`
+        `se preferisci essere ricontattato da ${chi}.`
     )
     if (lead) {
-      appendLeadNote(lead.id, `WA richiesta NON disponibile: ${text} → ${fmtIt(inizio)}`, {
+      appendLeadNote(lead.id, `WA richiesta NON disponibile (${segmento}): ${text} → ${fmtIt(inizio)}`, {
         stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
       })
     }
-    return { handled: true, detail: "slot non libero" }
+    return { handled: true, detail: `slot non libero (${segmento})` }
   }
 
   try {
@@ -360,6 +374,7 @@ export async function handleWhatsappInboundBooking(params: {
       inizio,
       consulente,
       note: noteAgenda,
+      ida2Servizio,
     })
     const msg =
       `Perfetto! Ti confermiamo l'appuntamento in H2Sport:\n` +
@@ -372,16 +387,18 @@ export async function handleWhatsappInboundBooking(params: {
       appendLeadNote(
         lead.id,
         `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}` +
+          (segmento === "bambini" ? " (agenda bambini)" : "") +
           (usatoNuovoCliente ? ` (anagrafica nuovo cliente ${idUtente})` : ""),
         {
           stato: "appuntamento",
           consulenteNome: consulente.nome,
+          ...(segmento === "bambini" ? { categoria: "bambini" } : {}),
         }
       )
     }
     return {
       handled: true,
-      detail: `prenotato #${created.idAppuntamento} ${consulente.nome}${usatoNuovoCliente ? " (nuovo cliente)" : ""}`,
+      detail: `prenotato #${created.idAppuntamento} ${consulente.nome} [${segmento}]${usatoNuovoCliente ? " (nuovo cliente)" : ""}`,
     }
   } catch (e) {
     const err = (e as Error)?.message ?? String(e)

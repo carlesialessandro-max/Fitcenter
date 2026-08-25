@@ -16,11 +16,25 @@ export type ConsulenteAgenda = {
 }
 
 /** Risorse agenda APPUNTAMENTI CONSULENTI (adulti). */
-export const CONSULENTI_AGENDA: ConsulenteAgenda[] = [
+export const CONSULENTI_AGENDA_ADULTI: ConsulenteAgenda[] = [
   { nome: "Carmen Severino", idRisorsa: 28, idOperatore: 336 },
   { nome: "Serena Del Prete", idRisorsa: 57, idOperatore: 348 },
   { nome: "Ombretta Zenoni", idRisorsa: 76, idOperatore: 352 },
 ]
+
+/** Agenda BAMBINI: Irene + Elisa (no Danza). */
+export const CONSULENTI_AGENDA_BAMBINI: ConsulenteAgenda[] = [
+  { nome: "Irene", idRisorsa: 32, idOperatore: 8 },
+  { nome: "Elisa", idRisorsa: 34, idOperatore: 7 },
+]
+
+/** @deprecated alias adulti */
+export const CONSULENTI_AGENDA = CONSULENTI_AGENDA_ADULTI
+
+export const IDA2_SERVIZIO_CONSULENTI_ADULTI = 6
+export const IDA2_SERVIZIO_BAMBINI = 7
+
+export type AgendaSegmento = "adulti" | "bambini"
 
 /** Solo pool WRITE (stesso di blocco prenotazioni). Mai fallback su lettura. */
 async function poolRw(): Promise<sql.ConnectionPool | null> {
@@ -99,6 +113,8 @@ export async function createConsulenzaAppuntamento(params: {
   inizio: Date
   consulente: ConsulenteAgenda
   note?: string
+  /** Default adulti (6). Bambini = 7. */
+  ida2Servizio?: number
 }): Promise<{ idAppuntamento: number; idOccupazione?: number }> {
   const p = await poolRw()
   if (!p) {
@@ -111,7 +127,7 @@ export async function createConsulenzaAppuntamento(params: {
   const pi = romeDateParts(params.inizio)
   const pf = romeDateParts(fine)
   const note = (params.note ?? "FitCenter WhatsApp").slice(0, 200)
-  const IDA2_SERVIZIO = 6 // APPUNTAMENTI CONSULENTI
+  const IDA2_SERVIZIO = params.ida2Servizio ?? IDA2_SERVIZIO_CONSULENTI_ADULTI
   const hasServizio = await a2IscrizioniHasServizioCol(p)
 
   const tx = new sql.Transaction(p)
@@ -364,8 +380,16 @@ export async function isRisorsaSlotFree(idRisorsa: number, inizio: Date, fine: D
   }
 }
 
-export async function pickFreeConsulente(inizio: Date, fine: Date): Promise<ConsulenteAgenda | null> {
-  for (const c of CONSULENTI_AGENDA) {
+export function consulentiForSegmento(segmento: AgendaSegmento): ConsulenteAgenda[] {
+  return segmento === "bambini" ? CONSULENTI_AGENDA_BAMBINI : CONSULENTI_AGENDA_ADULTI
+}
+
+export async function pickFreeConsulente(
+  inizio: Date,
+  fine: Date,
+  segmento: AgendaSegmento = "adulti"
+): Promise<ConsulenteAgenda | null> {
+  for (const c of consulentiForSegmento(segmento)) {
     if (await isRisorsaSlotFree(c.idRisorsa, inizio, fine)) return c
   }
   return null
