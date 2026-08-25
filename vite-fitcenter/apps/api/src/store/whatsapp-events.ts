@@ -71,6 +71,11 @@ export const whatsappEventsStore = {
     }
     if (kind && kind !== "all") {
       rows = rows.filter((e) => e.kind === kind)
+    } else {
+      // Default log conversazione: niente ricevute Meta (delivered/read) né "other"
+      rows = rows.filter(
+        (e) => e.kind === "message_in" || e.kind === "message_out" || e.kind === "booking"
+      )
     }
     if (q) {
       rows = rows.filter((e) => {

@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { whatsappApi, type WhatsappLogEvent } from "@/api/whatsapp"
 
+/** Solo conversazione utile: richiesta / risposta / appuntamento. */
+const CONV_KINDS = new Set(["message_in", "message_out", "booking"])
+
 function fmtAt(iso: string): string {
   try {
     return new Date(iso).toLocaleString("it-IT", {
@@ -11,7 +14,6 @@ function fmtAt(iso: string): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
-      second: "2-digit",
     })
   } catch {
     return iso
@@ -21,30 +23,51 @@ function fmtAt(iso: string): string {
 function kindLabel(kind: string): string {
   switch (kind) {
     case "message_in":
-      return "Cliente → Bot"
+      return "Richiesta"
     case "message_out":
-      return "Bot → Cliente"
+      return "Risposta"
     case "booking":
-      return "Prenotazione"
-    case "status":
-      return "Stato consegna"
+      return "Appuntamento"
     default:
       return kind
   }
 }
 
 function kindClass(kind: string, status?: string): string {
-  if (status === "error" || (kind === "other" && (status === "error" || String(status ?? "").includes("error")))) {
+  if (status === "error" || status === "cancelled") {
     return "border-red-800/60 bg-red-950/30 text-red-200"
   }
-  if (kind === "message_in") return "border-sky-800/50 bg-sky-950/20 text-sky-100"
-  if (kind === "message_out") return "border-emerald-800/50 bg-emerald-950/20 text-emerald-100"
-  if (kind === "booking") return "border-amber-800/50 bg-amber-950/20 text-amber-100"
+  if (kind === "message_in") return "border-sky-800/50 bg-sky-950/25 text-sky-100"
+  if (kind === "message_out") return "border-emerald-800/50 bg-emerald-950/25 text-emerald-100"
+  if (kind === "booking") return "border-amber-800/50 bg-amber-950/25 text-amber-100"
   return "border-zinc-700 bg-zinc-900/40 text-zinc-200"
+}
+
+function displayText(e: WhatsappLogEvent): string {
+  const t = String(e.text ?? "").trim()
+  if (!t) return "—"
+  // Template Meta: template:lead_benvenuto [Nome]
+  const m = t.match(/^template:([^\s\[]+)\s*(?:\[(.*)\])?$/i)
+  if (m) {
+    const name = m[2]?.trim()
+    return name ? `Messaggio di benvenuto (template) · ${name}` : `Messaggio di benvenuto (${m[1]})`
+  }
+  if (e.kind === "booking") {
+    if (e.status === "cancelled" || /^annullat/i.test(t)) return t.replace(/^annullato/i, "Annullato")
+    if (e.status === "ok" || /^prenotato/i.test(t)) return t.replace(/^prenotato/i, "Prenotato")
+  }
+  return t
 }
 
 function phoneOf(e: WhatsappLogEvent): string {
   return (e.from || e.to || "—").replace(/^39/, "")
+}
+
+function statusSuffix(e: WhatsappLogEvent): string {
+  if (e.status === "error") return " · errore"
+  if (e.status === "cancelled") return " · annullato"
+  if (e.status === "none") return " · non trovato"
+  return ""
 }
 
 export function WhatsappLog() {
@@ -52,25 +75,26 @@ export function WhatsappLog() {
   const [kind, setKind] = useState("all")
   const [q, setQ] = useState("")
   const [applied, setApplied] = useState({ phone: "", kind: "all", q: "" })
-  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["whatsapp", "events", applied],
+    queryKey: ["whatsapp", "events", applied.phone, applied.q],
     queryFn: () =>
       whatsappApi.listEvents({
-        limit: 400,
+        limit: 500,
         phone: applied.phone || undefined,
-        kind: applied.kind !== "all" ? applied.kind : undefined,
         q: applied.q || undefined,
       }),
     refetchInterval: 15_000,
   })
 
-  const events = data?.events ?? []
-  const selected = useMemo(
-    () => events.find((e) => e.id === selectedId) ?? null,
-    [events, selectedId]
-  )
+  const events = useMemo(() => {
+    const raw = data?.events ?? []
+    let rows = raw.filter((e) => CONV_KINDS.has(e.kind))
+    if (applied.kind !== "all") {
+      rows = rows.filter((e) => e.kind === applied.kind)
+    }
+    return rows
+  }, [data?.events, applied.kind])
 
   const byPhone = useMemo(() => {
     const map = new Map<string, WhatsappLogEvent[]>()
@@ -88,12 +112,12 @@ export function WhatsappLog() {
   }, [events])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6">
+    <div className="mx-auto max-w-3xl px-4 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Log WhatsApp</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Conversazioni bot ↔ clienti (ingressi, risposte automatiche, prenotazioni ed errori).
+            Solo richiesta, risposta del bot e esito appuntamento.
           </p>
         </div>
         <div className="flex gap-2">
@@ -114,7 +138,7 @@ export function WhatsappLog() {
       </div>
 
       <form
-        className="mt-5 grid gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 sm:grid-cols-4"
+        className="mt-5 grid gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 sm:grid-cols-3"
         onSubmit={(e) => {
           e.preventDefault()
           setApplied({ phone: phone.trim(), kind, q: q.trim() })
@@ -137,23 +161,21 @@ export function WhatsappLog() {
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
           >
             <option value="all">Tutti</option>
-            <option value="message_in">Cliente → Bot</option>
-            <option value="message_out">Bot → Cliente</option>
-            <option value="booking">Prenotazione</option>
-            <option value="status">Stato consegna</option>
-            <option value="other">Altro / errori</option>
+            <option value="message_in">Richiesta</option>
+            <option value="message_out">Risposta</option>
+            <option value="booking">Appuntamento</option>
           </select>
         </label>
-        <label className="block text-sm text-zinc-400 sm:col-span-2">
-          Cerca nel testo
+        <label className="block text-sm text-zinc-400">
+          Cerca
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="booking_error, mercoledì, richiamatemi…"
+            placeholder="mercoledì, Irene…"
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
           />
         </label>
-        <div className="sm:col-span-4">
+        <div className="sm:col-span-3">
           <button
             type="submit"
             className="rounded-md bg-amber-600/90 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-500"
@@ -161,7 +183,7 @@ export function WhatsappLog() {
             Filtra
           </button>
           <span className="ml-3 text-xs text-zinc-500">
-            {data ? `${events.length} mostrati / ${data.total} filtrati` : null}
+            {events.length} messaggi
           </span>
         </div>
       </form>
@@ -173,72 +195,33 @@ export function WhatsappLog() {
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_320px]">
-        <div className="space-y-4">
-          {byPhone.length === 0 && !isLoading ? (
-            <div className="rounded-md border border-zinc-800 px-4 py-6 text-sm text-zinc-500">
-              Nessun evento. Dopo deploy, i messaggi in/out del bot compariranno qui.
-            </div>
-          ) : null}
-          {byPhone.map(([phoneKey, rows]) => (
-            <section key={phoneKey} className="rounded-lg border border-zinc-800 bg-zinc-900/30">
-              <header className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
-                <h2 className="text-sm font-medium text-zinc-200">+39 {phoneKey}</h2>
-                <span className="text-xs text-zinc-500">{rows.length} eventi</span>
-              </header>
-              <ul className="divide-y divide-zinc-800/80">
-                {rows.map((e) => (
-                  <li key={e.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(e.id)}
-                      className={`flex w-full flex-col gap-1 px-3 py-2.5 text-left hover:bg-zinc-800/40 ${
-                        selectedId === e.id ? "bg-zinc-800/50" : ""
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs text-zinc-500">{fmtAt(e.at)}</span>
-                        <span
-                          className={`rounded border px-1.5 py-0.5 text-[11px] ${kindClass(e.kind, e.status)}`}
-                        >
-                          {kindLabel(e.kind)}
-                          {e.status === "error" ? " · ERRORE" : e.status && e.status !== "sent" && e.status !== "ok" ? ` · ${e.status}` : ""}
-                        </span>
-                      </div>
-                      <p className="whitespace-pre-wrap text-sm text-zinc-200">{e.text || "—"}</p>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </div>
-
-        <aside className="h-fit rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 lg:sticky lg:top-4">
-          <h3 className="text-sm font-medium text-zinc-300">Dettaglio</h3>
-          {!selected ? (
-            <p className="mt-2 text-xs text-zinc-500">Seleziona un evento per vedere il payload grezzo.</p>
-          ) : (
-            <div className="mt-2 space-y-2 text-xs text-zinc-400">
-              <div>
-                <span className="text-zinc-500">ID</span>
-                <div className="break-all text-zinc-300">{selected.id}</div>
-              </div>
-              {selected.waMessageId ? (
-                <div>
-                  <span className="text-zinc-500">WA message id</span>
-                  <div className="break-all text-zinc-300">{selected.waMessageId}</div>
-                </div>
-              ) : null}
-              <div>
-                <span className="text-zinc-500">Raw</span>
-                <pre className="mt-1 max-h-80 overflow-auto rounded border border-zinc-800 bg-zinc-950 p-2 text-[11px] text-zinc-300">
-                  {JSON.stringify(selected.raw ?? {}, null, 2)}
-                </pre>
-              </div>
-            </div>
-          )}
-        </aside>
+      <div className="mt-6 space-y-4">
+        {byPhone.length === 0 && !isLoading ? (
+          <div className="rounded-md border border-zinc-800 px-4 py-6 text-sm text-zinc-500">
+            Nessuna conversazione da mostrare.
+          </div>
+        ) : null}
+        {byPhone.map(([phoneKey, rows]) => (
+          <section key={phoneKey} className="rounded-lg border border-zinc-800 bg-zinc-900/30">
+            <header className="border-b border-zinc-800 px-3 py-2">
+              <h2 className="text-sm font-medium text-zinc-200">+39 {phoneKey}</h2>
+            </header>
+            <ul className="divide-y divide-zinc-800/80">
+              {[...rows].reverse().map((e) => (
+                <li key={e.id} className="px-3 py-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-zinc-500">{fmtAt(e.at)}</span>
+                    <span className={`rounded border px-1.5 py-0.5 text-[11px] ${kindClass(e.kind, e.status)}`}>
+                      {kindLabel(e.kind)}
+                      {statusSuffix(e)}
+                    </span>
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-100">{displayText(e)}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
       </div>
     </div>
   )
