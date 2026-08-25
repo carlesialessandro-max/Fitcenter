@@ -232,6 +232,7 @@ export async function whatsappSendLead(req: Request, res: Response) {
       nome?: string
       templateName?: string
       languageCode?: string
+      bodyParams?: string[]
     }
     let to = String(body.to ?? "").trim()
     let nome = String(body.nome ?? "").trim()
@@ -247,11 +248,15 @@ export async function whatsappSendLead(req: Request, res: Response) {
     const cfg = leadWelcomeTemplateConfig()
     const templateName = (body.templateName ?? cfg.templateName).trim()
     const languageCode = (body.languageCode ?? cfg.languageCode).trim()
+    const hasNameParam =
+      body.bodyParams != null
+        ? Array.isArray(body.bodyParams) && body.bodyParams.length > 0
+        : (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
     const result = await sendWhatsappTemplate({
       toRaw: to,
       templateName,
       languageCode,
-      bodyParams: [nome || "Ciao"],
+      ...(hasNameParam ? { bodyParams: body.bodyParams ?? [nome || "Ciao"] } : {}),
     })
     return res.json({ ok: true, templateName, languageCode, result })
   } catch (e) {

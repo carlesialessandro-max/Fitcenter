@@ -108,6 +108,8 @@ export function leadWelcomeTemplateConfig() {
 /**
  * Primo contatto WhatsApp dopo lead (Zapier / CRM).
  * Non lanciare errori verso il caller: logga e ritorna esito.
+ * Se il template Meta non ha variabili, non inviare bodyParams
+ * (WHATSAPP_LEAD_TEMPLATE_HAS_NAME=true solo se c’è {{1}} nel modello).
  */
 export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
@@ -119,12 +121,13 @@ export async function notifyLeadWelcomeWhatsapp(params: {
   const phone = String(params.telefono ?? "").trim()
   if (!phone || phone === "—") return { sent: false, skipped: "telefono mancante" }
   const nome = String(params.nome ?? "").trim() || "Ciao"
+  const hasNameParam = (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
   try {
     const result = await sendWhatsappTemplate({
       toRaw: phone,
       templateName,
       languageCode,
-      bodyParams: [nome],
+      ...(hasNameParam ? { bodyParams: [nome] } : {}),
     })
     return { sent: true, result }
   } catch (e) {
