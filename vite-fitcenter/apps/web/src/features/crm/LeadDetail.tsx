@@ -1,8 +1,9 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { leadsApi } from "@/api/leads"
+import { whatsappApi } from "@/api/whatsapp"
 import { useAuth } from "@/contexts/AuthContext"
 import type { LeadStatus, LeadUpdate } from "@/types/lead"
 import { LEAD_STATUS_LABELS, INTERESSE_LABELS } from "@/types/lead"
@@ -20,6 +21,7 @@ export function LeadDetail() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { role } = useAuth()
+  const [waMsg, setWaMsg] = useState<string | null>(null)
 
   const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -68,6 +70,14 @@ export function LeadDetail() {
       navigate("/crm")
     },
   })
+
+  const waMutation = useMutation({
+    mutationFn: () => whatsappApi.sendLead({ leadId: id! }),
+    onSuccess: () => setWaMsg("WhatsApp inviato (template benvenuto)."),
+    onError: (e) => setWaMsg((e as Error).message || "Invio WhatsApp fallito"),
+  })
+
+  const canSendWa = role === "admin" || role === "operatore" || role === "crm"
 
   if (!id) {
     return (
@@ -152,9 +162,25 @@ export function LeadDetail() {
                       tipo="lead"
                       leadId={lead.id}
                     />
+                    {canSendWa ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={waMutation.isPending}
+                        onClick={() => {
+                          setWaMsg(null)
+                          if (!confirm(`Inviare WhatsApp di benvenuto a ${lead.nome}?`)) return
+                          waMutation.mutate()
+                        }}
+                      >
+                        {waMutation.isPending ? "Invio WA…" : "WhatsApp"}
+                      </Button>
+                    ) : null}
                   </>
                 )}
               </dd>
+              {waMsg ? <p className="mt-1 text-xs text-zinc-400">{waMsg}</p> : null}
             </div>
             {lead.fonteDettaglio && (
               <div>

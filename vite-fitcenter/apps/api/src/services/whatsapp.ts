@@ -96,3 +96,40 @@ export async function sendWhatsappTemplate(params: {
     },
   })
 }
+
+/** Template benvenuto lead (da creare in Meta Manager, lingua it). */
+export function leadWelcomeTemplateConfig() {
+  const enabled = (process.env.WHATSAPP_AUTO_LEAD ?? "true").trim().toLowerCase() !== "false"
+  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto_h2").trim() || "lead_benvenuto_h2"
+  const languageCode = (process.env.WHATSAPP_LEAD_TEMPLATE_LANG ?? "it").trim() || "it"
+  return { enabled, templateName, languageCode }
+}
+
+/**
+ * Primo contatto WhatsApp dopo lead (Zapier / CRM).
+ * Non lanciare errori verso il caller: logga e ritorna esito.
+ */
+export async function notifyLeadWelcomeWhatsapp(params: {
+  telefono?: string | null
+  nome?: string | null
+}): Promise<{ sent: boolean; skipped?: string; error?: string; result?: unknown }> {
+  const { enabled, templateName, languageCode } = leadWelcomeTemplateConfig()
+  if (!enabled) return { sent: false, skipped: "WHATSAPP_AUTO_LEAD=false" }
+  if (!isWhatsappSendConfigured()) return { sent: false, skipped: "whatsapp non configurato" }
+  const phone = String(params.telefono ?? "").trim()
+  if (!phone || phone === "—") return { sent: false, skipped: "telefono mancante" }
+  const nome = String(params.nome ?? "").trim() || "Ciao"
+  try {
+    const result = await sendWhatsappTemplate({
+      toRaw: phone,
+      templateName,
+      languageCode,
+      bodyParams: [nome],
+    })
+    return { sent: true, result }
+  } catch (e) {
+    const error = (e as Error)?.message ?? String(e)
+    console.error("[whatsapp] notify lead:", error)
+    return { sent: false, error }
+  }
+}

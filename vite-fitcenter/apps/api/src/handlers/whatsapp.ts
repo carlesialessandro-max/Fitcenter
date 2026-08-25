@@ -5,10 +5,12 @@ import type { Request, Response } from "express"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import {
   isWhatsappSendConfigured,
+  leadWelcomeTemplateConfig,
   sendWhatsappTemplate,
   sendWhatsappText,
   whatsappConfig,
 } from "../services/whatsapp.js"
+import { store as leadsStore } from "../store/leads.js"
 
 function resolveWhatsappDataDirHint(): string {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -211,6 +213,47 @@ export async function whatsappSendTest(req: Request, res: Response) {
     }
     const result = await sendWhatsappText(to, text)
     return res.json({ ok: true, result })
+  } catch (e) {
+    return res.status(502).json({ message: (e as Error)?.message ?? String(e) })
+  }
+}
+
+/** Invia template benvenuto (o custom) al telefono di un lead CRM. */
+export async function whatsappSendLead(req: Request, res: Response) {
+  try {
+    if (!isWhatsappSendConfigured()) {
+      return res.status(400).json({
+        message: "Imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID in apps/api/.env",
+      })
+    }
+    const body = (req.body ?? {}) as {
+      leadId?: string
+      to?: string
+      nome?: string
+      templateName?: string
+      languageCode?: string
+    }
+    let to = String(body.to ?? "").trim()
+    let nome = String(body.nome ?? "").trim()
+    const leadId = String(body.leadId ?? "").trim()
+    if (leadId) {
+      const lead = leadsStore.get(leadId)
+      if (!lead) return res.status(404).json({ message: "Lead non trovato" })
+      to = to || lead.telefono
+      nome = nome || lead.nome
+    }
+    if (!to) return res.status(400).json({ message: "Telefono o leadId obbligatorio" })
+
+    const cfg = leadWelcomeTemplateConfig()
+    const templateName = (body.templateName ?? cfg.templateName).trim()
+    const languageCode = (body.languageCode ?? cfg.languageCode).trim()
+    const result = await sendWhatsappTemplate({
+      toRaw: to,
+      templateName,
+      languageCode,
+      bodyParams: [nome || "Ciao"],
+    })
+    return res.json({ ok: true, templateName, languageCode, result })
   } catch (e) {
     return res.status(502).json({ message: (e as Error)?.message ?? String(e) })
   }

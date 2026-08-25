@@ -4,6 +4,7 @@ import { store } from "../store/leads.js"
 import { importFromSqlServer } from "../services/sql-import.js"
 import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types/lead.js"
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
+import { notifyLeadWelcomeWhatsapp } from "../services/whatsapp.js"
 
 /** Lead bambini → Irene. Solo segnali espliciti; esclusi nomi campagna (es. Festa della Mamma = adulti). */
 function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
@@ -321,6 +322,7 @@ export async function webhookZapier(req: Request, res: Response) {
       return res.status(400).json({ message: "Nessun lead da creare", created: 0 })
     }
     const created: unknown[] = []
+    const whatsapp: { leadId: string; sent: boolean; skipped?: string; error?: string }[] = []
     for (const item of items) {
       const payload = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {}
       const leadPayload = normalizeZapierBody(payload)
@@ -328,18 +330,21 @@ export async function webhookZapier(req: Request, res: Response) {
       const isBambini =
         leadPayload.categoria === "bambini" ||
         isLeadBambiniText(leadPayload.interesseDettaglio, leadPayload.note, leadPayload.categoria)
+      let saved = lead
       if (isBambini) {
         const patched = store.update(lead.id, {
           consulenteNome: "Irene",
           consulenteId: "irene",
           categoria: "bambini",
         })
-        created.push(patched ?? lead)
-      } else {
-        created.push(lead)
+        saved = patched ?? lead
       }
+      created.push(saved)
+      // Primo contatto WA (template Meta). Non blocca la creazione lead se fallisce.
+      const wa = await notifyLeadWelcomeWhatsapp({ telefono: saved.telefono, nome: saved.nome })
+      whatsapp.push({ leadId: saved.id, sent: wa.sent, skipped: wa.skipped, error: wa.error })
     }
-    res.status(201).json({ created: created.length, leads: created })
+    res.status(201).json({ created: created.length, leads: created, whatsapp })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message, created: 0 })
   }
