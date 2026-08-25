@@ -264,14 +264,30 @@ function findLeadsByPhone(phone: string) {
   return matches
 }
 
-/** Dopo annullamento: tutti i lead aperti con quel tel tornano a contattato (non restano «Appuntamento»). */
-function markLeadsContattatoAfterCancel(phone: string, noteLine: string) {
+/** Dopo annullamento: aggiorna solo i lead dello stesso segmento (adulti vs bambini). */
+function markLeadsContattatoAfterCancel(phone: string, noteLine: string, segmento: AgendaSegmento) {
   for (const lead of findLeadsByPhone(phone)) {
     if (LEAD_STATO_CLOSED.has(lead.stato)) continue
+    const leadBambini = isLeadBambini(lead)
+    if (segmento === "bambini" && !leadBambini) continue
+    if (segmento === "adulti" && leadBambini) continue
     appendLeadNote(lead.id, noteLine, {
-      stato: lead.stato === "appuntamento" || lead.stato === "tour" || lead.stato === "proposta" ? "contattato" : lead.stato,
+      stato:
+        lead.stato === "appuntamento" || lead.stato === "tour" || lead.stato === "proposta"
+          ? "contattato"
+          : lead.stato,
     })
   }
+}
+
+/** Lead più recente in stato appuntamento (per capire se annullare adulti o bambini). */
+function pickLeadForCancel(phone: string) {
+  const all = findLeadsByPhone(phone)
+  const withApp = all.filter((l) => l.stato === "appuntamento")
+  if (withApp.length > 0) {
+    return [...withApp].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0] ?? null
+  }
+  return all[0] ?? null
 }
 
 function isLeadBambini(lead: { categoria?: string | null; interesseDettaglio?: string | null; note?: string | null } | null): boolean {
@@ -320,36 +336,99 @@ export async function handleWhatsappInboundBooking(params: {
   const lead = findLeadByPhone(from)
   const t = normText(text)
 
-  // 0) Annullamento appuntamento esistente (tutti i futuri su quel numero)
+  // 0) Annullamento: solo il segmento del lead (adulti vs bambini), non entrambi
   if (parseCancelRequestIt(text)) {
     try {
-      const upcomingList = await findAllUpcomingConsulenzeByPhone(from)
+      const leadCancel = pickLeadForCancel(from) ?? lead
+      const segmento: AgendaSegmento = isLeadBambini(leadCancel) ? "bambini" : "adulti"
+      let upcomingList = await findAllUpcomingConsulenzeByPhone(from, segmento)
+      // Se sul segmento del lead non c'è nulla, non toccare l'altro segmento: chiedi chiarimento
       if (upcomingList.length === 0) {
+        const otherSeg: AgendaSegmento = segmento === "bambini" ? "adulti" : "bambini"
+        const other = await findAllUpcomingConsulenzeByPhone(from, otherSeg)
+        if (other.length > 0) {
+          const whenTxt = other.map((c) => fmtIt(c.inizio)).join(", ")
+          await sendWhatsappText(
+            from,
+            `Ho trovato appuntament${other.length > 1 ? "i" : "o"} in agenda ${otherSeg} (${whenTxt}), ` +
+              `ma la richiesta sembra relativa a ${segmento}.\n\n` +
+              `Scrivi «annulla adulti» oppure «annulla bambini» per scegliere quale cancellare.`
+          )
+          if (leadCancel) {
+            appendLeadNote(
+              leadCancel.id,
+              `WA annullamento ambiguo: lead ${segmento}, slot su ${otherSeg} («${text}»)`
+            )
+          }
+          return { handled: true, detail: "annullamento ambiguo adulti/bambini" }
+        }
         await sendWhatsappText(
           from,
           `Non ho trovato un appuntamento futuro collegato a questo numero.\n` +
             `Se pensavi di averne uno, scrivi «richiamatemi» e una consulente ti aiuta.\n` +
             `Per fissarne uno nuovo, rispondi con giorno e orario (es. Giovedì 17:00).`
         )
-        if (lead) {
-          appendLeadNote(lead.id, `WA annullamento senza appuntamento trovato («${text}»)`)
+        if (leadCancel) {
+          appendLeadNote(leadCancel.id, `WA annullamento senza appuntamento trovato («${text}»)`)
         }
         whatsappEventsStore.append({
           kind: "booking",
           from,
           text: `cancel_miss: ${text}`,
           status: "none",
-          raw: { text },
+          raw: { text, segmento },
         })
         return { handled: true, detail: "annullamento: nessun appuntamento" }
       }
 
-      const cancelled: typeof upcomingList = []
+      // Preferenza esplicita nel testo
+      const wantAdulti = /\bannull\w*\s+adulti\b/.test(t)
+      const wantBambini = /\bannull\w*\s+bambin/.test(t)
+      if (wantAdulti || wantBambini) {
+        const forced: AgendaSegmento = wantBambini ? "bambini" : "adulti"
+        upcomingList = await findAllUpcomingConsulenzeByPhone(from, forced)
+        if (upcomingList.length === 0) {
+          await sendWhatsappText(
+            from,
+            `Non ho trovato appuntamenti futuri in agenda ${forced} per questo numero.`
+          )
+          return { handled: true, detail: `annullamento: nessuno su ${forced}` }
+        }
+        const cancelled = []
+        for (const upcoming of upcomingList) {
+          await cancelConsulenzaAppuntamento({
+            idAppuntamento: upcoming.idAppuntamento,
+            idIscrizione: upcoming.idIscrizione,
+            reasonNote: `Annullato WA (${forced}): ${text}`.slice(0, 180),
+          })
+          cancelled.push(upcoming)
+        }
+        const whenTxt = cancelled.map((c) => fmtIt(c.inizio)).join(", ")
+        await sendWhatsappText(
+          from,
+          `Ok, ho annullato ${cancelled.length === 1 ? "l'appuntamento" : `${cancelled.length} appuntamenti`} ${forced}: ${whenTxt}.`
+        )
+        markLeadsContattatoAfterCancel(
+          from,
+          `WA annullati (${forced}): ${cancelled.map((c) => `#${c.idAppuntamento} ${fmtIt(c.inizio)}`).join("; ")} («${text}»)`,
+          forced
+        )
+        whatsappEventsStore.append({
+          kind: "booking",
+          from,
+          text: `annullati ${forced} ${cancelled.map((c) => `#${c.idAppuntamento}`).join(", ")}`,
+          status: "cancelled",
+          raw: { cancelled, text, segmento: forced },
+        })
+        return { handled: true, detail: `annullati ${cancelled.length} ${forced}` }
+      }
+
+      const cancelled = []
       for (const upcoming of upcomingList) {
         await cancelConsulenzaAppuntamento({
           idAppuntamento: upcoming.idAppuntamento,
           idIscrizione: upcoming.idIscrizione,
-          reasonNote: `Annullato WA: ${text}`.slice(0, 180),
+          reasonNote: `Annullato WA (${segmento}): ${text}`.slice(0, 180),
         })
         cancelled.push(upcoming)
       }
@@ -358,25 +437,26 @@ export async function handleWhatsappInboundBooking(params: {
       await sendWhatsappText(
         from,
         cancelled.length === 1
-          ? `Ok, ho annullato il tuo appuntamento del ${whenTxt}.\n\n` +
+          ? `Ok, ho annullato il tuo appuntamento ${segmento} del ${whenTxt}.\n\n` +
               `Se vuoi riprenotare, rispondi con un nuovo giorno e orario (es. Venerdì 18:00).\n` +
               `Oppure scrivi «richiamatemi» per parlare con una consulente.`
-          : `Ok, ho annullato ${cancelled.length} appuntamenti (${whenTxt}).\n\n` +
-              `Se vuoi riprenotare, rispondi con un nuovo giorno e orario (es. Venerdì 18:00).\n` +
-              `Oppure scrivi «richiamatemi» per parlare con una consulente.`
+          : `Ok, ho annullato ${cancelled.length} appuntamenti ${segmento} (${whenTxt}).\n\n` +
+              `Se vuoi riprenotare, rispondi con un nuovo giorno e orario.\n` +
+              `Oppure scrivi «richiamatemi».`
       )
       markLeadsContattatoAfterCancel(
         from,
-        `WA annullati: ${cancelled.map((c) => `#${c.idAppuntamento} ${fmtIt(c.inizio)}`).join("; ")} («${text}»)`
+        `WA annullati (${segmento}): ${cancelled.map((c) => `#${c.idAppuntamento} ${fmtIt(c.inizio)}`).join("; ")} («${text}»)`,
+        segmento
       )
       whatsappEventsStore.append({
         kind: "booking",
         from,
-        text: `annullati ${cancelled.map((c) => `#${c.idAppuntamento}`).join(", ")}`,
+        text: `annullati ${segmento} ${cancelled.map((c) => `#${c.idAppuntamento}`).join(", ")}`,
         status: "cancelled",
-        raw: { cancelled, text },
+        raw: { cancelled, text, segmento },
       })
-      return { handled: true, detail: `annullati ${cancelled.length}` }
+      return { handled: true, detail: `annullati ${cancelled.length} ${segmento}` }
     } catch (e) {
       const err = (e as Error)?.message ?? String(e)
       console.error("[whatsapp-booking] cancel:", err)

@@ -384,6 +384,13 @@ export function consulentiForSegmento(segmento: AgendaSegmento): ConsulenteAgend
   return segmento === "bambini" ? CONSULENTI_AGENDA_BAMBINI : CONSULENTI_AGENDA_ADULTI
 }
 
+export function segmentoFromRisorsa(idRisorsa: number | null | undefined): AgendaSegmento | null {
+  if (idRisorsa == null) return null
+  if (CONSULENTI_AGENDA_BAMBINI.some((c) => c.idRisorsa === idRisorsa)) return "bambini"
+  if (CONSULENTI_AGENDA_ADULTI.some((c) => c.idRisorsa === idRisorsa)) return "adulti"
+  return null
+}
+
 export async function pickFreeConsulente(
   inizio: Date,
   fine: Date,
@@ -421,8 +428,11 @@ export async function findUpcomingConsulenzaByPhone(phoneRaw: string): Promise<U
   return all[0] ?? null
 }
 
-/** Tutti gli appuntamenti futuri non annullati per quel cellulare. */
-export async function findAllUpcomingConsulenzeByPhone(phoneRaw: string): Promise<UpcomingConsulenza[]> {
+/** Tutti gli appuntamenti futuri non annullati per quel cellulare (opz. solo adulti o bambini). */
+export async function findAllUpcomingConsulenzeByPhone(
+  phoneRaw: string,
+  segmento?: AgendaSegmento
+): Promise<UpcomingConsulenza[]> {
   const p = await getPool()
   if (!p) return []
   const tail = phoneTail(phoneRaw)
@@ -431,7 +441,9 @@ export async function findAllUpcomingConsulenzeByPhone(phoneRaw: string): Promis
   const utenti = await findUtentiByPhone(phoneRaw)
   const nuovoId = await findIdUtenteNuovoCliente()
   const idList = [...new Set([...utenti.map((u) => u.idUtente), nuovoId])].filter((n) => n > 0)
-  const risorse = [...CONSULENTI_AGENDA_ADULTI, ...CONSULENTI_AGENDA_BAMBINI].map((c) => c.idRisorsa)
+  const risorse = (
+    segmento ? consulentiForSegmento(segmento) : [...CONSULENTI_AGENDA_ADULTI, ...CONSULENTI_AGENDA_BAMBINI]
+  ).map((c) => c.idRisorsa)
   if (idList.length === 0 || risorse.length === 0) return []
 
   try {
