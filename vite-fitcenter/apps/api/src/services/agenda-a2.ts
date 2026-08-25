@@ -234,14 +234,28 @@ export async function findIdUtenteNuovoCliente(): Promise<number> {
   }
 }
 
-/** Cerca IDUtente da cellulare (SMS / Telefono_1 / Telefono_2). Esclude placeholder nuovo/cliente. */
-export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | null> {
+export type UtentePhoneMatch = {
+  idUtente: number
+  nome: string
+  cognome: string
+}
+
+function normPerson(s: string): string {
+  return String(s ?? "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+}
+
+/** Tutti gli IDUtente con quel cellulare (escluso nuovo/cliente). */
+export async function findUtentiByPhone(phoneRaw: string): Promise<UtentePhoneMatch[]> {
   const p = await getPool()
-  if (!p) return null
+  if (!p) return []
   let digits = phoneDigits(phoneRaw)
   if (digits.startsWith("39") && digits.length >= 11) digits = digits.slice(2)
   if (digits.startsWith("0")) digits = digits.slice(1)
-  if (digits.length < 8) return null
+  if (digits.length < 8) return []
   const tail = digits.slice(-9)
   const skipId = await findIdUtenteNuovoCliente()
 
@@ -254,7 +268,7 @@ export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | nu
       .input("tail", sql.VarChar(16), tail)
       .input("skipId", sql.Int, skipId)
       .query(`
-        SELECT TOP 5 IDUtente
+        SELECT TOP 20 IDUtente, Nome, Cognome
         FROM dbo.Utenti
         WHERE IDUtente <> @skipId
           AND (
@@ -264,12 +278,64 @@ export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | nu
           )
         ORDER BY IDUtente DESC
       `)
-    const id = Number((r.recordset?.[0] as { IDUtente?: number } | undefined)?.IDUtente)
-    return Number.isFinite(id) && id > 0 ? id : null
+    return (r.recordset ?? [])
+      .map((row) => {
+        const idUtente = Number((row as { IDUtente?: number }).IDUtente)
+        return {
+          idUtente,
+          nome: String((row as { Nome?: string }).Nome ?? "").trim(),
+          cognome: String((row as { Cognome?: string }).Cognome ?? "").trim(),
+        }
+      })
+      .filter((u) => Number.isFinite(u.idUtente) && u.idUtente > 0)
   } catch (e) {
-    console.warn("[agenda-a2] findIdUtenteByPhone:", (e as Error)?.message ?? e)
-    return null
+    console.warn("[agenda-a2] findUtentiByPhone:", (e as Error)?.message ?? e)
+    return []
   }
+}
+
+/**
+ * Risolve anagrafica per prenotazione WA.
+ * - 1 solo match sul tel → ok
+ * - più match (es. padre/figlia stesso cell) → solo se nome/cognome lead coincidono
+ * - altrimenti null → usare "nuovo cliente" + note
+ */
+export async function resolveIdUtenteForWaBooking(params: {
+  phone: string
+  nome?: string | null
+  cognome?: string | null
+}): Promise<{ idUtente: number | null; reason: string }> {
+  const matches = await findUtentiByPhone(params.phone)
+  if (matches.length === 0) return { idUtente: null, reason: "nessun match tel" }
+  if (matches.length === 1) return { idUtente: matches[0]!.idUtente, reason: "match tel unico" }
+
+  const wantNome = normPerson(params.nome ?? "")
+  const wantCognome = normPerson(params.cognome ?? "")
+  if (wantNome || wantCognome) {
+    const full = matches.filter((m) => {
+      const n = normPerson(m.nome)
+      const c = normPerson(m.cognome)
+      if (wantNome && wantCognome) return n === wantNome && c === wantCognome
+      if (wantNome && wantCognome === "") return n === wantNome
+      if (wantCognome && wantNome === "") return c === wantCognome
+      return false
+    })
+    if (full.length === 1) {
+      return { idUtente: full[0]!.idUtente, reason: "match tel+nome (numero condiviso)" }
+    }
+  }
+
+  return {
+    idUtente: null,
+    reason: `tel ambiguo (${matches.map((m) => `${m.cognome} ${m.nome}`).join(", ")}) → nuovo cliente`,
+  }
+}
+
+/** Cerca IDUtente da cellulare. Se più anagrafiche condividono il numero, ritorna null. */
+export async function findIdUtenteByPhone(phoneRaw: string): Promise<number | null> {
+  const matches = await findUtentiByPhone(phoneRaw)
+  if (matches.length === 1) return matches[0]!.idUtente
+  return null
 }
 
 /** Slot libero se nessuna occupazione (appuntamento o blocco) si sovrappone. */

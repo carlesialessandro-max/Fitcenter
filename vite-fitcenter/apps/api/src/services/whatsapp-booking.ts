@@ -5,10 +5,10 @@ import { store as leadsStore } from "../store/leads.js"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import {
   createConsulenzaAppuntamento,
-  findIdUtenteByPhone,
-  findIdUtenteNuovoCliente,
   phonesMatch,
   pickFreeConsulente,
+  resolveIdUtenteForWaBooking,
+  findIdUtenteNuovoCliente,
   slotEnd,
 } from "./agenda-a2.js"
 import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText } from "./whatsapp.js"
@@ -194,9 +194,16 @@ export async function handleWhatsappInboundBooking(params: {
   const fine = slotEnd(inizio)
   const lead = findLeadByPhone(from)
 
-  const idUtenteReale = await findIdUtenteByPhone(from)
-  const usatoNuovoCliente = !idUtenteReale
-  const idUtente = idUtenteReale ?? (await findIdUtenteNuovoCliente())
+  const resolved = await resolveIdUtenteForWaBooking({
+    phone: from,
+    nome: lead?.nome,
+    cognome: lead?.cognome,
+  })
+  const usatoNuovoCliente = resolved.idUtente == null
+  const idUtente = resolved.idUtente ?? (await findIdUtenteNuovoCliente())
+  if (usatoNuovoCliente) {
+    console.log("[whatsapp-booking] anagrafica:", resolved.reason)
+  }
 
   const displayName = [lead?.nome, lead?.cognome].filter(Boolean).join(" ").trim() || "lead WA"
   const phoneDisplay = from.replace(/^39/, "")
