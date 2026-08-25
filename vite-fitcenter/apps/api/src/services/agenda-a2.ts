@@ -70,6 +70,29 @@ async function a2IscrizioniHasServizioCol(p: sql.ConnectionPool): Promise<boolea
   }
 }
 
+function romeDateParts(d: Date): { y: number; m: number; day: number; h: number; min: number; s: number } {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Rome",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(d)
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0")
+  return { y: get("year"), m: get("month"), day: get("day"), h: get("hour"), min: get("minute"), s: get("second") }
+}
+
+function sqlErrDetail(e: unknown): string {
+  const any = e as { message?: string; number?: number; code?: string; originalError?: { info?: { message?: string; number?: number } } }
+  const info = any?.originalError?.info
+  const msg = info?.message ?? any?.message ?? String(e)
+  const num = info?.number ?? any?.number
+  return num != null ? `SQL ${num}: ${msg}` : msg
+}
+
 export async function createConsulenzaAppuntamento(params: {
   idUtente: number
   inizio: Date
@@ -77,11 +100,15 @@ export async function createConsulenzaAppuntamento(params: {
   note?: string
 }): Promise<{ idAppuntamento: number; idOccupazione?: number }> {
   const p = await poolRw()
-  if (!p) throw new Error("SQL gestionale non disponibile (write)")
+  if (!p) {
+    throw new Error(
+      "SQL gestionale non disponibile (write). Verifica SQL_CONNECTION_STRING / SQL_CONNECTION_STRING_WRITE sul server."
+    )
+  }
 
   const fine = new Date(params.inizio.getTime() + SLOT_MINUTES * 60 * 1000)
-  const ini = toSqlDateTimeRome(params.inizio)
-  const fin = toSqlDateTimeRome(fine)
+  const pi = romeDateParts(params.inizio)
+  const pf = romeDateParts(fine)
   const note = (params.note ?? "FitCenter WhatsApp").slice(0, 200)
   const IDA2_SERVIZIO = 6 // APPUNTAMENTI CONSULENTI
   const hasServizio = await a2IscrizioniHasServizioCol(p)
@@ -89,19 +116,29 @@ export async function createConsulenzaAppuntamento(params: {
   const tx = new sql.Transaction(p)
   await tx.begin()
   try {
+    // Stesso percorso validato in SSMS: CONVERT style 120 + SCOPE_IDENTITY (no OUTPUT: fallisce con trigger).
     const req1 = new sql.Request(tx)
     const insApp = await req1
       .input("impegno", sql.Int, IDA2_IMPEGNO_CONSULENZA)
-      .input("inizio", sql.VarChar(19), ini)
+      .input("y", sql.Int, pi.y)
+      .input("m", sql.Int, pi.m)
+      .input("d", sql.Int, pi.day)
+      .input("hh", sql.Int, pi.h)
+      .input("mm", sql.Int, pi.min)
+      .input("ss", sql.Int, pi.s)
       .input("note", sql.NVarChar(200), note)
       .query(`
+        DECLARE @inizio datetime = CONVERT(datetime,
+          RIGHT('0000'+CAST(@y AS varchar(4)),4)+'-'+RIGHT('00'+CAST(@m AS varchar(2)),2)+'-'+RIGHT('00'+CAST(@d AS varchar(2)),2)
+          +' '+RIGHT('00'+CAST(@hh AS varchar(2)),2)+':'+RIGHT('00'+CAST(@mm AS varchar(2)),2)+':'+RIGHT('00'+CAST(@ss AS varchar(2)),2)
+        , 120);
         INSERT INTO dbo.A2Appuntamenti (IDA2Impegno, DataOraInizio, Note)
-        OUTPUT INSERTED.IDA2Appuntamento AS id
-        VALUES (@impegno, CONVERT(datetime, @inizio, 120), @note);
+        VALUES (@impegno, @inizio, @note);
+        SELECT CAST(SCOPE_IDENTITY() AS int) AS id;
       `)
     const idApp = Number((insApp.recordset?.[0] as { id?: number })?.id)
     if (!Number.isFinite(idApp) || idApp <= 0) {
-      throw new Error(`IDENTITY appuntamento non valido (ini=${ini})`)
+      throw new Error(`IDENTITY appuntamento non valido (${pi.y}-${pi.m}-${pi.day} ${pi.h}:${pi.min})`)
     }
 
     const req2 = new sql.Request(tx)
@@ -109,34 +146,52 @@ export async function createConsulenzaAppuntamento(params: {
       .input("idApp", sql.Int, idApp)
       .input("rel", sql.Int, IDA2_RELAZIONE)
       .input("risorsa", sql.Int, params.consulente.idRisorsa)
-      .input("inizio", sql.VarChar(19), ini)
-      .input("fine", sql.VarChar(19), fin)
+      .input("y", sql.Int, pi.y)
+      .input("m", sql.Int, pi.m)
+      .input("d", sql.Int, pi.day)
+      .input("hh", sql.Int, pi.h)
+      .input("mm", sql.Int, pi.min)
+      .input("ss", sql.Int, pi.s)
+      .input("yf", sql.Int, pf.y)
+      .input("mf", sql.Int, pf.m)
+      .input("df", sql.Int, pf.day)
+      .input("hhf", sql.Int, pf.h)
+      .input("mmf", sql.Int, pf.min)
+      .input("ssf", sql.Int, pf.s)
       .query(`
+        DECLARE @inizio datetime = CONVERT(datetime,
+          RIGHT('0000'+CAST(@y AS varchar(4)),4)+'-'+RIGHT('00'+CAST(@m AS varchar(2)),2)+'-'+RIGHT('00'+CAST(@d AS varchar(2)),2)
+          +' '+RIGHT('00'+CAST(@hh AS varchar(2)),2)+':'+RIGHT('00'+CAST(@mm AS varchar(2)),2)+':'+RIGHT('00'+CAST(@ss AS varchar(2)),2)
+        , 120);
+        DECLARE @fine datetime = CONVERT(datetime,
+          RIGHT('0000'+CAST(@yf AS varchar(4)),4)+'-'+RIGHT('00'+CAST(@mf AS varchar(2)),2)+'-'+RIGHT('00'+CAST(@df AS varchar(2)),2)
+          +' '+RIGHT('00'+CAST(@hhf AS varchar(2)),2)+':'+RIGHT('00'+CAST(@mmf AS varchar(2)),2)+':'+RIGHT('00'+CAST(@ssf AS varchar(2)),2)
+        , 120);
         INSERT INTO dbo.A2Occupazioni (IDA2Appuntamento, IDA2Relazione, IDA2Risorsa, DataInizio, DataFine)
-        VALUES (@idApp, @rel, @risorsa, CONVERT(datetime, @inizio, 120), CONVERT(datetime, @fine, 120));
+        VALUES (@idApp, @rel, @risorsa, @inizio, @fine);
       `)
 
+    // Come test SSMS OK: senza IDA2Servizio; se la colonna c'è, UPDATE dopo.
     const req3 = new sql.Request(tx)
+    await req3
+      .input("idUtente", sql.Int, params.idUtente)
+      .input("idApp", sql.Int, idApp)
+      .input("op", sql.Int, params.consulente.idOperatore)
+      .input("note", sql.NVarChar(200), note)
+      .query(`
+        INSERT INTO dbo.A2Iscrizioni (IDUtente, IDA2Appuntamento, IDOperatore, DataOperazione, Annullato, Note)
+        VALUES (@idUtente, @idApp, @op, GETDATE(), 0, @note);
+      `)
+
     if (hasServizio) {
-      await req3
-        .input("idUtente", sql.Int, params.idUtente)
+      const req4 = new sql.Request(tx)
+      await req4
         .input("idApp", sql.Int, idApp)
-        .input("op", sql.Int, params.consulente.idOperatore)
         .input("servizio", sql.Int, IDA2_SERVIZIO)
-        .input("note", sql.NVarChar(200), note)
         .query(`
-          INSERT INTO dbo.A2Iscrizioni (IDUtente, IDA2Appuntamento, IDOperatore, IDA2Servizio, DataOperazione, Annullato, Note)
-          VALUES (@idUtente, @idApp, @op, @servizio, GETDATE(), 0, @note);
-        `)
-    } else {
-      await req3
-        .input("idUtente", sql.Int, params.idUtente)
-        .input("idApp", sql.Int, idApp)
-        .input("op", sql.Int, params.consulente.idOperatore)
-        .input("note", sql.NVarChar(200), note)
-        .query(`
-          INSERT INTO dbo.A2Iscrizioni (IDUtente, IDA2Appuntamento, IDOperatore, DataOperazione, Annullato, Note)
-          VALUES (@idUtente, @idApp, @op, GETDATE(), 0, @note);
+          UPDATE dbo.A2Iscrizioni
+          SET IDA2Servizio = @servizio
+          WHERE IDA2Appuntamento = @idApp AND Annullato = 0;
         `)
     }
 
@@ -148,7 +203,7 @@ export async function createConsulenzaAppuntamento(params: {
     } catch {
       /* ignore */
     }
-    throw e
+    throw new Error(sqlErrDetail(e))
   }
 }
 
