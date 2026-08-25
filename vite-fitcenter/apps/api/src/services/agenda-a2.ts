@@ -417,15 +417,22 @@ export type UpcomingConsulenza = {
 
 /** Prossimo appuntamento consulenza (adulti/bambini) collegato al cellulare. */
 export async function findUpcomingConsulenzaByPhone(phoneRaw: string): Promise<UpcomingConsulenza | null> {
+  const all = await findAllUpcomingConsulenzeByPhone(phoneRaw)
+  return all[0] ?? null
+}
+
+/** Tutti gli appuntamenti futuri non annullati per quel cellulare. */
+export async function findAllUpcomingConsulenzeByPhone(phoneRaw: string): Promise<UpcomingConsulenza[]> {
   const p = await getPool()
-  if (!p) return null
+  if (!p) return []
   const tail = phoneTail(phoneRaw)
-  if (tail.length < 8) return null
+  if (tail.length < 8) return []
 
   const utenti = await findUtentiByPhone(phoneRaw)
   const nuovoId = await findIdUtenteNuovoCliente()
   const idList = [...new Set([...utenti.map((u) => u.idUtente), nuovoId])].filter((n) => n > 0)
   const risorse = [...CONSULENTI_AGENDA_ADULTI, ...CONSULENTI_AGENDA_BAMBINI].map((c) => c.idRisorsa)
+  if (idList.length === 0 || risorse.length === 0) return []
 
   try {
     const req = p.request().input("tail", sql.VarChar(16), tail).input("now", sql.DateTime, new Date())
@@ -435,7 +442,7 @@ export async function findUpcomingConsulenzaByPhone(phoneRaw: string): Promise<U
     const inR = risorse.map((_, i) => `@r${i}`).join(",")
 
     const r = await req.query(`
-      SELECT TOP 1
+      SELECT
         a.IDA2Appuntamento AS idApp,
         i.IDA2Iscrizione AS idIsc,
         i.IDUtente AS idUtente,
@@ -455,28 +462,30 @@ export async function findUpcomingConsulenzaByPhone(phoneRaw: string): Promise<U
         AND (o.IDA2Risorsa IS NULL OR o.IDA2Risorsa IN (${inR}))
       ORDER BY a.DataOraInizio ASC
     `)
-    const row = r.recordset?.[0] as
-      | {
-          idApp?: number
-          idIsc?: number
-          idUtente?: number
-          inizio?: Date
-          note?: string
-          idRisorsa?: number | null
-        }
-      | undefined
-    if (!row?.idApp || !row.idIsc || !row.inizio) return null
-    return {
-      idAppuntamento: Number(row.idApp),
-      idIscrizione: Number(row.idIsc),
-      idUtente: Number(row.idUtente),
-      inizio: new Date(row.inizio),
-      note: String(row.note ?? ""),
-      idRisorsa: row.idRisorsa != null ? Number(row.idRisorsa) : null,
+    const seen = new Set<number>()
+    const out: UpcomingConsulenza[] = []
+    for (const row of r.recordset ?? []) {
+      const idApp = Number((row as { idApp?: number }).idApp)
+      const idIsc = Number((row as { idIsc?: number }).idIsc)
+      const inizio = (row as { inizio?: Date }).inizio
+      if (!idApp || !idIsc || !inizio || seen.has(idApp)) continue
+      seen.add(idApp)
+      out.push({
+        idAppuntamento: idApp,
+        idIscrizione: idIsc,
+        idUtente: Number((row as { idUtente?: number }).idUtente),
+        inizio: new Date(inizio),
+        note: String((row as { note?: string }).note ?? ""),
+        idRisorsa:
+          (row as { idRisorsa?: number | null }).idRisorsa != null
+            ? Number((row as { idRisorsa?: number }).idRisorsa)
+            : null,
+      })
     }
+    return out
   } catch (e) {
-    console.warn("[agenda-a2] findUpcomingConsulenzaByPhone:", (e as Error)?.message ?? e)
-    return null
+    console.warn("[agenda-a2] findAllUpcomingConsulenzeByPhone:", (e as Error)?.message ?? e)
+    return []
   }
 }
 
