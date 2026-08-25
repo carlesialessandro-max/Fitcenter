@@ -273,6 +273,7 @@ export function LeadDetail() {
           <h2 className="text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h2>
           <p className="mt-1 text-xs text-zinc-500">
             Cliente: <span className="text-zinc-300">{cognomeCrm} {nomeCrm}</span>
+            {" · "}Telefonate/appuntamenti del gestionale CRM (non l&apos;agenda consulenti WhatsApp).
           </p>
           {loadingCrm ? (
             <div className="mt-3 text-sm text-zinc-500">Caricamento…</div>

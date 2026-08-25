@@ -152,9 +152,25 @@ function fmtIt(d: Date): string {
   })
 }
 
+const LEAD_STATO_CLOSED = new Set(["chiuso_vinto", "chiuso_perso"])
+
+/** Preferisci lead recenti aperti: con numeri duplicati `.find()` prendeva il primo (spesso vecchio). */
 function findLeadByPhone(phone: string) {
-  const all = leadsStore.list({})
-  return all.find((l) => phonesMatch(l.telefono, phone)) ?? null
+  const matches = leadsStore.list({}).filter((l) => phonesMatch(l.telefono, phone))
+  if (matches.length === 0) return null
+  const rank = (stato: string) => {
+    if (stato === "nuovo" || stato === "contattato") return 0
+    if (stato === "appuntamento" || stato === "tour" || stato === "proposta") return 1
+    if (LEAD_STATO_CLOSED.has(stato)) return 3
+    return 2
+  }
+  matches.sort((a, b) => {
+    const ra = rank(a.stato)
+    const rb = rank(b.stato)
+    if (ra !== rb) return ra - rb
+    return String(b.createdAt).localeCompare(String(a.createdAt))
+  })
+  return matches[0] ?? null
 }
 
 /**
