@@ -2,6 +2,7 @@
  * Orchestratore: messaggio WhatsApp in ingresso → parse giorno/ora → prenota A2 → conferma.
  */
 import { store as leadsStore } from "../store/leads.js"
+import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import {
   createConsulenzaAppuntamento,
   findIdUtenteByPhone,
@@ -87,17 +88,56 @@ export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
   return { weekday, hour, minute, raw }
 }
 
-/** Prossima occorrenza del giorno settimanale all'orario indicato (locale). */
+/** Prossima occorrenza del giorno settimanale all'orario indicato (Europe/Rome). */
 export function nextOccurrence(weekday: number, hour: number, minute: number, from = new Date()): Date {
-  const d = new Date(from.getTime())
-  d.setSeconds(0, 0)
-  const delta = (weekday - d.getDay() + 7) % 7
-  d.setDate(d.getDate() + delta)
-  d.setHours(hour, minute, 0, 0)
-  if (d.getTime() <= from.getTime() + 60_000) {
-    d.setDate(d.getDate() + 7)
+  // Itera i prossimi 8 giorni in fuso Roma
+  for (let add = 0; add <= 7; add++) {
+    const probe = new Date(from.getTime() + add * 24 * 60 * 60 * 1000)
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Europe/Rome",
+      weekday: "short",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(probe)
+    const wdShort = parts.find((p) => p.type === "weekday")?.value ?? ""
+    const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+    const wd = map[wdShort]
+    if (wd !== weekday) continue
+    const y = Number(parts.find((p) => p.type === "year")?.value)
+    const m = Number(parts.find((p) => p.type === "month")?.value)
+    const d = Number(parts.find((p) => p.type === "day")?.value)
+    const asUtcGuess = Date.UTC(y, m - 1, d, hour, minute, 0)
+    let best = new Date(asUtcGuess)
+    for (const offH of [0, -1, -2, 1, 2]) {
+      const cand = new Date(asUtcGuess + offH * 3600_000)
+      const fp = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Europe/Rome",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(cand)
+      const get = (t: string) => fp.find((p) => p.type === t)?.value
+      if (
+        Number(get("year")) === y &&
+        Number(get("month")) === m &&
+        Number(get("day")) === d &&
+        Number(get("hour")) === hour &&
+        Number(get("minute")) === minute
+      ) {
+        best = cand
+        break
+      }
+    }
+    if (best.getTime() > from.getTime() + 60_000) return best
   }
-  return d
+  // fallback: +7 giorni dall'inizio calcolato grezzo
+  const fallback = new Date(from.getTime() + 7 * 86400000)
+  fallback.setHours(hour, minute, 0, 0)
+  return fallback
 }
 
 function fmtIt(d: Date): string {
@@ -218,6 +258,12 @@ export async function handleWhatsappInboundBooking(params: {
   } catch (e) {
     const err = (e as Error)?.message ?? String(e)
     console.error("[whatsapp-booking]", err)
+    whatsappEventsStore.append({
+      kind: "other",
+      from,
+      text: `booking_error: ${err} | req=${text} | slot=${fmtIt(inizio)}`,
+      raw: { err, text, inizio: inizio.toISOString(), idUtente, consulente },
+    })
     try {
       await sendWhatsappText(
         from,
