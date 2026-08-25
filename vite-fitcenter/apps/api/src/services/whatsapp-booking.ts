@@ -1,5 +1,6 @@
 /**
  * Orchestratore: messaggio WhatsApp in ingresso → parse giorno/ora → prenota A2 → conferma.
+ * Gestisce anche: ricontatto consulente, giorno senza orario, slot pieno.
  */
 import { store as leadsStore } from "../store/leads.js"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
@@ -38,8 +39,24 @@ const WEEKDAY: Record<string, number> = {
   sab: 6,
 }
 
+const GUIDE_SLOT_MSG =
+  `Per fissare l'appuntamento in sede rispondi con giorno e orario, ad esempio:\n` +
+  `• Lunedì 18:30\n` +
+  `• Mercoledì ore 16\n` +
+  `• Sabato mattina\n\n` +
+  `Se preferisci essere ricontattato da una consulente, scrivi pure «richiamatemi».`
+
+const CALLBACK_MSG =
+  `Perfetto, abbiamo segnato la tua richiesta.\n` +
+  `Una consulente H2Sport ti richiamerà a breve per fissare l'appuntamento in sede.\n` +
+  `Se nel frattempo vuoi proporre tu un orario, rispondi pure con giorno e ora (es. Martedì 17:00).`
+
 function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/\p{M}/gu, "")
+}
+
+function normText(raw: string): string {
+  return stripAccents(String(raw ?? "").toLowerCase()).replace(/\s+/g, " ").trim()
 }
 
 export type ParsedSlotRequest = {
@@ -49,11 +66,54 @@ export type ParsedSlotRequest = {
   raw: string
 }
 
+/** Preferenza esplicita: richiamata da consulente (niente prenotazione automatica). */
+export function parseCallbackRequestIt(text: string): boolean {
+  const t = normText(text)
+  if (!t || t.length > 200) return false
+  if (
+    /\b(richiamatemi|richiamami|richiamateci|richiamaci|richiamarmi|richiamarlo)\b/.test(t) ||
+    /\b(chiamatemi|chiamami|chiamateci|chiamaci)\b/.test(t) ||
+    /\bricontattat[aeio]\b/.test(t) ||
+    /\b(preferisco|vorrei)\b.{0,40}\b(essere\s+)?(ricontattat|chiamat|richiamat)/.test(t) ||
+    /\b(mi\s+ricontattate|mi\s+richiamate|mi\s+chiamate)\b/.test(t) ||
+    /\b(parlare\s+con|sentire)\s+(una\s+)?consulent/.test(t) ||
+    /\bconsulent[ea]\b.{0,30}\b(chiami|richiami|ricontatt)/.test(t)
+  ) {
+    return true
+  }
+  // Frasi corte tipiche
+  if (/^(richiamate|richiamami|chiamatemi|piu\s*tardi|più\s*tardi)$/.test(t)) return true
+  return false
+}
+
+function hasWeekday(t: string): boolean {
+  for (const k of Object.keys(WEEKDAY)) {
+    if (new RegExp(`\\b${stripAccents(k)}\\b`, "i").test(t)) return true
+  }
+  return false
+}
+
+function hasTimeHint(t: string): boolean {
+  if (/\b([01]?\d|2[0-3])[:\.]([0-5]\d)\b/.test(t)) return true
+  if (/\b(mattina|pomeriggio|sera)\b/.test(t)) return true
+  if (/\b(?:ore|alle)\s*([01]?\d|2[0-3])\b/.test(t)) return true
+  if (/\b([01]?\d|2[0-3])\b/.test(t) && /\b(ore|alle)\b/.test(t)) return true
+  return false
+}
+
+function hasBookingIntent(t: string): boolean {
+  return (
+    /\b(appuntamento|prenot|disponibil|orario|fascia|venire|passare|tour|visita|consulenza)\b/.test(t) ||
+    hasWeekday(t) ||
+    hasTimeHint(t)
+  )
+}
+
 /** Es. "Mercoledì ore 17:30", "lunedi 18.30", "sabato mattina". */
 export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
   const raw = String(text ?? "").trim()
   if (!raw) return null
-  const t = stripAccents(raw.toLowerCase()).replace(/\s+/g, " ")
+  const t = normText(raw)
 
   let weekday: number | null = null
   for (const [k, v] of Object.entries(WEEKDAY)) {
@@ -173,6 +233,15 @@ function findLeadByPhone(phone: string) {
   return matches[0] ?? null
 }
 
+function appendLeadNote(leadId: string, line: string, patch: Record<string, unknown> = {}) {
+  const lead = leadsStore.get(leadId)
+  if (!lead) return
+  leadsStore.update(leadId, {
+    ...patch,
+    note: [lead.note, line].filter(Boolean).join("\n"),
+  })
+}
+
 /**
  * Gestisce un messaggio inbound. Idempotente su waMessageId.
  * Ritorna true se ha tentato una prenotazione (ok o ko con reply).
@@ -196,19 +265,59 @@ export async function handleWhatsappInboundBooking(params: {
   const text = String(params.text ?? "").trim()
   if (!from || !text || text.startsWith("[")) return { handled: false, detail: "no text" }
 
-  const parsed = parseSlotRequestIt(text)
-  if (!parsed) {
-    // Non è una richiesta slot: ignora (reception gestirà in Business Suite)
-    return { handled: false, detail: "non è richiesta slot" }
-  }
-
   if (!isWhatsappSendConfigured()) {
     return { handled: false, detail: "whatsapp non configurato" }
   }
 
+  const lead = findLeadByPhone(from)
+  const t = normText(text)
+
+  // 1) Preferisce ricontatto da consulente
+  if (parseCallbackRequestIt(text)) {
+    await sendWhatsappText(from, CALLBACK_MSG)
+    if (lead) {
+      appendLeadNote(lead.id, `WA: richiede ricontatto consulente («${text}»)`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: "ricontatto consulente" }
+  }
+
+  const parsed = parseSlotRequestIt(text)
+
+  // 2) Risposta incompleta / sbagliata (giorno senza ora, solo «appuntamento», ora senza giorno…)
+  if (!parsed) {
+    const incomplete =
+      (hasWeekday(t) && !hasTimeHint(t)) ||
+      (hasTimeHint(t) && !hasWeekday(t)) ||
+      (hasBookingIntent(t) && !/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t))
+
+    if (!incomplete) {
+      // Messaggio generico (ok/grazie/…): non rispondere in automatico
+      return { handled: false, detail: "non è richiesta slot" }
+    }
+
+    let hint = GUIDE_SLOT_MSG
+    if (hasWeekday(t) && !hasTimeHint(t)) {
+      hint =
+        `Ho capito il giorno, ma mi manca l'orario.\n\n` +
+        GUIDE_SLOT_MSG
+    } else if (hasTimeHint(t) && !hasWeekday(t)) {
+      hint =
+        `Ho capito l'orario, ma mi manca il giorno della settimana.\n\n` +
+        GUIDE_SLOT_MSG
+    }
+
+    await sendWhatsappText(from, hint)
+    if (lead) {
+      appendLeadNote(lead.id, `WA risposta incompleta: «${text}» → inviata guida giorno/ora`)
+    }
+    return { handled: true, detail: "guida giorno/ora" }
+  }
+
+  // 3) Slot completo → prenota o slot pieno
   const inizio = nextOccurrence(parsed.weekday, parsed.hour, parsed.minute)
   const fine = slotEnd(inizio)
-  const lead = findLeadByPhone(from)
 
   const resolved = await resolveIdUtenteForWaBooking({
     phone: from,
@@ -223,7 +332,6 @@ export async function handleWhatsappInboundBooking(params: {
 
   const displayName = [lead?.nome, lead?.cognome].filter(Boolean).join(" ").trim() || "lead WA"
   const phoneDisplay = from.replace(/^39/, "")
-  // Note agenda: nome/tel reali (anagrafica può essere placeholder "nuovo cliente")
   const noteAgenda = (
     usatoNuovoCliente
       ? `NUOVO: ${displayName} | tel ${phoneDisplay} | ${text}`
@@ -234,12 +342,13 @@ export async function handleWhatsappInboundBooking(params: {
   if (!consulente) {
     await sendWhatsappText(
       from,
-      `Grazie per la richiesta (${fmtIt(inizio)}). In quell'orario non risultano disponibilità. ` +
-        `Prova un altro giorno/orario rispondendo a questo messaggio, oppure ti richiamiamo noi.`
+      `Grazie per la richiesta (${fmtIt(inizio)}). In quell'orario non risultano disponibilità.\n\n` +
+        `Puoi proporre un altro giorno/orario rispondendo a questo messaggio, oppure scrivere «richiamatemi» ` +
+        `se preferisci essere ricontattato da una consulente.`
     )
     if (lead) {
-      leadsStore.update(lead.id, {
-        note: [lead.note, `WA richiesta NON disponibile: ${text}`].filter(Boolean).join("\n"),
+      appendLeadNote(lead.id, `WA richiesta NON disponibile: ${text} → ${fmtIt(inizio)}`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
       })
     }
     return { handled: true, detail: "slot non libero" }
@@ -260,17 +369,15 @@ export async function handleWhatsappInboundBooking(params: {
       `Ti aspettiamo in sede! 💙`
     await sendWhatsappText(from, msg)
     if (lead) {
-      leadsStore.update(lead.id, {
-        stato: "appuntamento",
-        consulenteNome: consulente.nome,
-        note: [
-          lead.note,
-          `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}` +
-            (usatoNuovoCliente ? ` (anagrafica nuovo cliente ${idUtente})` : ""),
-        ]
-          .filter(Boolean)
-          .join("\n"),
-      })
+      appendLeadNote(
+        lead.id,
+        `WA appuntamento #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome}` +
+          (usatoNuovoCliente ? ` (anagrafica nuovo cliente ${idUtente})` : ""),
+        {
+          stato: "appuntamento",
+          consulenteNome: consulente.nome,
+        }
+      )
     }
     return {
       handled: true,
@@ -288,8 +395,8 @@ export async function handleWhatsappInboundBooking(params: {
     try {
       await sendWhatsappText(
         from,
-        `Abbiamo ricevuto la tua richiesta per ${fmtIt(inizio)}, ma al momento non siamo riusciti a confermare in automatico. ` +
-          `Ti richiamiamo a breve per fissare l'appuntamento.`
+        `Abbiamo ricevuto la tua richiesta per ${fmtIt(inizio)}, ma al momento non siamo riusciti a confermare in automatico.\n` +
+          `Ti richiamiamo a breve, oppure rispondi «richiamatemi» se preferisci fissarlo con una consulente.`
       )
     } catch {
       /* ignore */
