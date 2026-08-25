@@ -181,9 +181,40 @@ export function whatsappStatus(_req: Request, res: Response) {
       kind: e.kind,
       at: e.at,
       from: e.from,
+      to: e.to,
       text: e.text,
       status: e.status,
       waMessageId: e.waMessageId,
+    })),
+  })
+}
+
+/** Log conversazioni bot ↔ clienti (filtro telefono / tipo / testo). */
+export function whatsappEventsList(req: Request, res: Response) {
+  const q = req.query as Record<string, unknown>
+  const limit = Number(q.limit ?? 300)
+  const phone = typeof q.phone === "string" ? q.phone : ""
+  const kind = typeof q.kind === "string" ? q.kind : ""
+  const search = typeof q.q === "string" ? q.q : typeof q.search === "string" ? q.search : ""
+  const { events, total, limit: lim } = whatsappEventsStore.listFiltered({
+    limit,
+    phone,
+    kind,
+    q: search,
+  })
+  res.json({
+    total,
+    limit: lim,
+    events: events.map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      at: e.at,
+      from: e.from,
+      to: e.to,
+      text: e.text,
+      status: e.status,
+      waMessageId: e.waMessageId,
+      raw: e.raw,
     })),
   })
 }

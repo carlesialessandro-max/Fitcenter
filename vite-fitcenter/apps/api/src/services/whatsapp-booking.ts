@@ -383,6 +383,20 @@ export async function handleWhatsappInboundBooking(params: {
       `Durata circa 30 minuti.\n` +
       `Ti aspettiamo in sede! 💙`
     await sendWhatsappText(from, msg)
+    whatsappEventsStore.append({
+      kind: "booking",
+      from,
+      text: `prenotato #${created.idAppuntamento} ${fmtIt(inizio)} con ${consulente.nome} [${segmento}]`,
+      status: "ok",
+      raw: {
+        idAppuntamento: created.idAppuntamento,
+        inizio: inizio.toISOString(),
+        consulente: consulente.nome,
+        segmento,
+        idUtente,
+        usatoNuovoCliente,
+      },
+    })
     if (lead) {
       appendLeadNote(
         lead.id,
@@ -407,6 +421,7 @@ export async function handleWhatsappInboundBooking(params: {
       kind: "other",
       from,
       text: `booking_error: ${err} | req=${text} | slot=${fmtIt(inizio)}`,
+      status: "error",
       raw: { err, text, inizio: inizio.toISOString(), idUtente, consulente },
     })
     try {

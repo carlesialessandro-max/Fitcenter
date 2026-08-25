@@ -2,6 +2,7 @@
  * Client WhatsApp Cloud API (Meta Graph).
  * Invio messaggi; webhook gestito in handlers/whatsapp.ts
  */
+import { whatsappEventsStore } from "../store/whatsapp-events.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
 
@@ -57,12 +58,35 @@ export async function sendWhatsappText(toRaw: string, text: string): Promise<unk
   if (!to) throw new Error("Numero destinatario non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  return graphPost("messages", {
-    messaging_product: "whatsapp",
-    to,
-    type: "text",
-    text: { preview_url: false, body },
-  })
+  try {
+    const result = await graphPost("messages", {
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: { preview_url: false, body },
+    })
+    const waMessageId = String(
+      (result as { messages?: Array<{ id?: string }> })?.messages?.[0]?.id ?? ""
+    ).trim() || undefined
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: body,
+      waMessageId,
+      status: "sent",
+      raw: result,
+    })
+    return result
+  } catch (e) {
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: body,
+      status: "error",
+      raw: { error: (e as Error)?.message ?? String(e) },
+    })
+    throw e
+  }
 }
 
 export async function sendWhatsappTemplate(params: {
@@ -85,16 +109,42 @@ export async function sendWhatsappTemplate(params: {
           },
         ]
       : undefined
-  return graphPost("messages", {
-    messaging_product: "whatsapp",
-    to,
-    type: "template",
-    template: {
-      name,
-      language,
-      ...(components ? { components } : {}),
-    },
-  })
+  const preview =
+    `template:${name}` +
+    (params.bodyParams?.length ? ` [${params.bodyParams.join(", ")}]` : "")
+  try {
+    const result = await graphPost("messages", {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: {
+        name,
+        language,
+        ...(components ? { components } : {}),
+      },
+    })
+    const waMessageId = String(
+      (result as { messages?: Array<{ id?: string }> })?.messages?.[0]?.id ?? ""
+    ).trim() || undefined
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: preview,
+      waMessageId,
+      status: "sent",
+      raw: result,
+    })
+    return result
+  } catch (e) {
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: preview,
+      status: "error",
+      raw: { error: (e as Error)?.message ?? String(e) },
+    })
+    throw e
+  }
 }
 
 /** Template benvenuto lead (da creare in Meta Manager, lingua it). */

@@ -11,7 +11,7 @@ import { Abbonamenti } from "@/pages/Abbonamenti"
 import { AbbonamentoDettaglio } from "@/pages/AbbonamentoDettaglio"
 import { AndamentoAbbonamenti } from "@/pages/AndamentoAbbonamenti"
 import { VenditeCross } from "@/pages/VenditeCross"
-import { Telefonate } from "@/pages/Telefonate"
+import { WhatsappLog } from "@/pages/WhatsappLog"
 import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
@@ -95,6 +95,8 @@ export const router = createBrowserRouter([
       { path: "crm", element: <LeadList /> },
       { path: "crm/nuovo", element: <NewLead /> },
       { path: "crm/lead/:id", element: <LeadDetail /> },
+      { path: "crm/whatsapp-log", element: <WhatsappLog /> },
+      { path: "whatsapp-log", element: <Navigate to="/crm/whatsapp-log" replace /> },
       { path: "abbonamenti", element: <Abbonamenti /> },
       { path: "andamento-vendite", element: <AndamentoAbbonamenti /> },
       { path: "vendite-cross", element: <VenditeCross /> },

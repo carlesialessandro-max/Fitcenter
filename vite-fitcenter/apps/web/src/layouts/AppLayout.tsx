@@ -13,6 +13,7 @@ const navOperatore: NavItem[] = [
   { to: "/scontrini", label: "Scontrini" },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/crm", label: "CRM Vendita" },
+  { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
   { to: "/telefonate", label: "Telefonate" },
   { to: "/stampa-report", label: "Stampa report" },
   { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
@@ -113,7 +114,10 @@ const navDanza: NavItem[] = [
   },
   { to: "/danza", label: "Danza" },
 ] as const
-const navCrm: NavItem[] = [{ to: "/crm", label: "CRM Vendita" }]
+const navCrm: NavItem[] = [
+  { to: "/crm", label: "CRM Vendita" },
+  { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
+]
 
 const navAdmin: NavItem[] = [
   {
@@ -128,6 +132,7 @@ const navAdmin: NavItem[] = [
       { to: "/convalide-consulenti", label: "Convalide" },
       { to: "/attivi-analisi", label: "Attivi" },
       { to: "/crm", label: "CRM vendita" },
+      { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
       { to: "/telefonate", label: "Telefonate" },
       { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
       { to: "/andamento-vendite", label: "Andamento vendite" },
@@ -187,7 +192,9 @@ export function AppLayout() {
   const mustRedirectCrm =
     role === "crm" &&
     location.pathname !== "/crm" &&
-    !location.pathname.startsWith("/crm/lead/")
+    !location.pathname.startsWith("/crm/lead/") &&
+    location.pathname !== "/crm/whatsapp-log" &&
+    location.pathname !== "/crm/nuovo"
   const nav: NavItem[] =
     leadFilter === "bambini" || role === "crm"
       ? navCrm
