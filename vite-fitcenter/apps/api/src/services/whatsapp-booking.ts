@@ -134,7 +134,10 @@ async function sendBambiniInfoDocsWhatsapp(to: string): Promise<{ sent: string[]
     to,
     `Ti invio i documenti con orari e info stagione 2026-27:\n` +
       docs.map((d) => `• ${d.label}`).join("\n") +
-      `\n\nPer costi o posto in vasca scrivi «richiamatemi» (Irene / Elisa).`
+      `\n\nPer individuare il gruppo e il posto in vasca più adatti, è necessario effettuare una prova in acqua ` +
+      `per verificare il livello di acquaticità del bambino.\n\n` +
+      `📞 Per prenotare la prova puoi contattarci al 0573 572649.\n` +
+      `Successivamente potremo procedere con l'iscrizione in base al livello e alle esigenze del bambino.`
   )
   const sent: string[] = []
   for (const d of docs) {
