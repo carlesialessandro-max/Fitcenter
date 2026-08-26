@@ -152,10 +152,47 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     return { nome, cognome, email, telefono, tipologia, messaggio, oggetto }
   }
 
-  const nomePick = pick(["nome", "Nome", "first_name", "firstName", "FirstName", "name", "Name", "given_name", "givenName"])
-  const cognomePick = pick(["cognome", "Cognome", "last_name", "lastName", "LastName", "surname", "Surname", "family_name", "familyName"])
+  const nomePick = pick([
+    "nome",
+    "Nome",
+    "first_name",
+    "firstName",
+    "FirstName",
+    "name",
+    "Name",
+    "given_name",
+    "givenName",
+    "nome_e_cognome",
+    "Nome e Cognome",
+    "nomeCompleto",
+    "NomeCompleto",
+    "full_name",
+    "fullName",
+  ])
+  const cognomePick = pick([
+    "cognome",
+    "Cognome",
+    "last_name",
+    "lastName",
+    "LastName",
+    "surname",
+    "Surname",
+    "family_name",
+    "familyName",
+  ])
   const emailPick = pick(["email", "Email", "e_mail", "mail", "Mail", "email_address", "emailAddress"])
-  const telefonoPick = pick(["telefono", "Telefono", "phone", "Phone", "cellulare", "Cellulare", "mobile", "Mobile", "phone_number", "phoneNumber"])
+  const telefonoPick = pick([
+    "telefono",
+    "Telefono",
+    "phone",
+    "Phone",
+    "cellulare",
+    "Cellulare",
+    "mobile",
+    "Mobile",
+    "phone_number",
+    "phoneNumber",
+  ])
 
   // Google Ads / form esterni: spesso mandano un'unica stringa tipo "Ilaria,Ciardi,mail,+39..."
   const rawCandidate =
@@ -169,7 +206,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   const splitIfNeeded = () => {
     const n = nome.trim()
     const c = cognome.trim()
-    if (c && c !== "—" && c.toLowerCase() !== n.toLowerCase()) return
+    if (c && c !== "—" && c !== "-" && c.toLowerCase() !== n.toLowerCase()) return
     const parts = n.split(/\s+/).filter(Boolean)
     if (parts.length >= 2) {
       nome = parts[0]!
