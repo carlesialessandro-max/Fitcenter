@@ -1,6 +1,6 @@
 /**
- * Ripara iscrizioni A2 create da FitCenter/WhatsApp senza OrigineTipi
- * (spesso rosse in agenda TeamSystem / errore Null in eliminazione).
+ * Ripara iscrizioni A2 create da FitCenter/WhatsApp incomplete
+ * (rosse in agenda TeamSystem: OrigineTipi / Importo / DataPagato).
  *
  * Uso: npx tsx scripts/repair-a2-origine.ts
  * Dry-run default; passa --apply per scrivere.
@@ -21,11 +21,12 @@ async function main() {
       LEFT(ISNULL(a.Note, N''), 80) AS note,
       i.OrigineTipi,
       i.OrigineID,
+      i.Importo,
+      i.DataPagato,
       i.Annullato
     FROM dbo.A2Iscrizioni i
     JOIN dbo.A2Appuntamenti a ON a.IDA2Appuntamento = i.IDA2Appuntamento
     WHERE a.IDA2Impegno = 51
-      AND (i.OrigineTipi IS NULL OR LTRIM(RTRIM(i.OrigineTipi)) = N'')
       AND (
         ISNULL(a.Note, N'') LIKE N'%FitCenter%'
         OR ISNULL(a.Note, N'') LIKE N'%WhatsApp%'
@@ -34,13 +35,18 @@ async function main() {
         OR ISNULL(i.Note, N'') LIKE N'%WhatsApp%'
         OR ISNULL(i.Note, N'') LIKE N'%WA:%'
       )
+      AND (
+        i.OrigineTipi IS NULL OR LTRIM(RTRIM(i.OrigineTipi)) = N''
+        OR i.Importo IS NULL
+        OR i.DataPagato IS NULL
+      )
     ORDER BY a.DataOraInizio DESC
   `)
   console.log(`Trovate ${list.recordset.length} iscrizioni da riparare`)
   console.table(list.recordset)
 
   if (!apply) {
-    console.log("Dry-run. Rilancia con --apply per impostare OrigineTipi='B', OrigineID=0")
+    console.log("Dry-run. Rilancia con --apply per OrigineTipi='B', OrigineID=0, Importo=0, DataPagato")
     await p.close()
     return
   }
@@ -48,12 +54,13 @@ async function main() {
   const r = await p.request().query(`
     UPDATE i
     SET
-      OrigineTipi = N'B',
-      OrigineID = ISNULL(i.OrigineID, 0)
+      OrigineTipi = COALESCE(NULLIF(LTRIM(RTRIM(i.OrigineTipi)), N''), N'B'),
+      OrigineID = ISNULL(i.OrigineID, 0),
+      Importo = ISNULL(i.Importo, 0),
+      DataPagato = ISNULL(i.DataPagato, ISNULL(i.DataOperazione, GETDATE()))
     FROM dbo.A2Iscrizioni i
     JOIN dbo.A2Appuntamenti a ON a.IDA2Appuntamento = i.IDA2Appuntamento
     WHERE a.IDA2Impegno = 51
-      AND (i.OrigineTipi IS NULL OR LTRIM(RTRIM(i.OrigineTipi)) = N'')
       AND (
         ISNULL(a.Note, N'') LIKE N'%FitCenter%'
         OR ISNULL(a.Note, N'') LIKE N'%WhatsApp%'
@@ -61,6 +68,11 @@ async function main() {
         OR ISNULL(i.Note, N'') LIKE N'%FitCenter%'
         OR ISNULL(i.Note, N'') LIKE N'%WhatsApp%'
         OR ISNULL(i.Note, N'') LIKE N'%WA:%'
+      )
+      AND (
+        i.OrigineTipi IS NULL OR LTRIM(RTRIM(i.OrigineTipi)) = N''
+        OR i.Importo IS NULL
+        OR i.DataPagato IS NULL
       );
     SELECT @@ROWCOUNT AS updated;
   `)
