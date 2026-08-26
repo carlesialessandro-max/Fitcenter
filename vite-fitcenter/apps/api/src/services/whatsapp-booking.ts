@@ -754,7 +754,13 @@ export async function handleWhatsappInboundBooking(params: {
         return { handled: true, detail: "info bambini email docs" }
       }
       const r = await sendBambiniInfoDocsWhatsapp(from)
-      if (lead) appendLeadNote(lead.id, `WA info email fallita (${mail.detail}): docs WA (${r.sent.join(", ")})`)
+      if (lead) {
+        const mailErr =
+          mail && typeof mail === "object" && "detail" in mail && (mail as { detail?: string }).detail
+            ? String((mail as { detail?: string }).detail)
+            : "errore invio"
+        appendLeadNote(lead.id, `WA info email fallita (${mailErr}): docs WA (${r.sent.join(", ")})`)
+      }
       return { handled: true, detail: "info bambini email fail→wa" }
     }
 
