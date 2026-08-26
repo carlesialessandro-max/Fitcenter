@@ -610,6 +610,25 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
       }
     }
     if (targetRowIdx == null) {
+      // «ore 16» → se c'è un solo libero alle 16:xx (es. 16:15), usalo
+      if (hm.minute === 0) {
+        const sameHourFree: { sr: number; label: string }[] = []
+        for (const sr of daySec.slotRows) {
+          const srow = values[sr] ?? []
+          const tm = parseTimeCell(srow[daySec.timeCol])
+          if (!tm || tm.hour !== hm.hour) continue
+          const name = String(srow[daySec.nameCol] ?? "").trim()
+          if (!name) sameHourFree.push({ sr, label: formatOrario(tm.hour, tm.minute) })
+        }
+        if (sameHourFree.length === 1) {
+          targetRowIdx = sameHourFree[0]!.sr
+          targetOrario = sameHourFree[0]!.label
+          taken = false
+        }
+      }
+    }
+
+    if (targetRowIdx == null) {
       return {
         ok: false,
         reason: "slot_not_found",

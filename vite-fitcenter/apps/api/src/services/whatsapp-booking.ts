@@ -44,6 +44,20 @@ type PendingProva = {
 const pendingProvaByPhone = new Map<string, PendingProva>()
 const PENDING_PROVA_TTL_MS = 30 * 60_000
 
+/** Giorno/data già scelti per la prova (es. orario sbagliato → poi solo «ore 16:15»). */
+type PendingProvaDay = {
+  weekday: number
+  relative?: "oggi" | "domani"
+  day?: number
+  month?: number
+  year?: number
+  corso?: BambiniCorso
+  etaLabel?: string
+  etaYears?: number
+  expiresAt: number
+}
+const pendingProvaDayByPhone = new Map<string, PendingProvaDay>()
+
 /** Attesa scelta corso prima di INFO documenti. */
 type PendingInfoCorso = { channel: "wa" | "email"; expiresAt: number }
 const pendingInfoCorsoByPhone = new Map<string, PendingInfoCorso>()
@@ -234,9 +248,10 @@ async function sendBambiniInfoDocsWhatsapp(
   const provaHint = isProveSnbSheetConfigured()
     ? `📅 Per prenotare la prova da WhatsApp rispondi così:\n` +
       (corso === "acquaticita"
-        ? `👉 PRENOTA PROVA martedì 15:15 età 18 mesi\n`
-        : `👉 PRENOTA PROVA lunedì 16:15 età 7\n`) +
-      `(giorno + orario + età)\n\n` +
+        ? `👉 PRENOTA PROVA mercoledì 16/09 ore 16:15 età 12 mesi\n`
+        : `👉 PRENOTA PROVA lunedì 14 settembre ore 17:00 età 7\n`) +
+      `(giorno + data + orario + età)\n` +
+      `Se indichi solo il giorno (es. mercoledì) uso la prossima data disponibile sul foglio.\n\n` +
       `In alternativa puoi chiamare il 0573 572649.`
     : `📞 Per prenotare la prova puoi contattarci al 0573 572649.`
   await sendWhatsappText(
@@ -413,6 +428,30 @@ function hasTimeHint(t: string): boolean {
   return false
 }
 
+/** Solo orario (senza giorno), per completare una prova con giorno già in pending. */
+function parseTimeOnlyIt(text: string): { hour: number; minute: number } | null {
+  const t = normText(text)
+  const hm = t.match(/\b([01]?\d|2[0-3])[:\.]([0-5]\d)\b/)
+  if (hm) return { hour: Number(hm[1]), minute: Number(hm[2]) }
+  if (/\bmattina\b/.test(t)) return { hour: 10, minute: 0 }
+  if (/\bpomeriggio\b/.test(t)) return { hour: 16, minute: 0 }
+  if (/\bsera\b/.test(t)) return { hour: 18, minute: 30 }
+  const hOnly = t.match(/\b(?:ore|alle)\s*([01]?\d|2[0-3])\b/)
+  if (hOnly) return { hour: Number(hOnly[1]), minute: 0 }
+  return null
+}
+
+function takePendingProvaDay(from: string): PendingProvaDay | null {
+  const p = pendingProvaDayByPhone.get(from)
+  if (!p) return null
+  if (p.expiresAt <= Date.now()) {
+    pendingProvaDayByPhone.delete(from)
+    return null
+  }
+  return p
+}
+
+
 function hasBookingIntent(t: string): boolean {
   return (
     /\b(appuntamento|prenot|disponibil|orario|fascia|venire|passare|tour|visita|consulenza)\b/.test(t) ||
@@ -489,11 +528,12 @@ function provaGuideMsg(corso?: BambiniCorso | null): string {
   }
   const ex =
     corso === "acquaticita"
-      ? `👉 PRENOTA PROVA martedì 15:15 età 18 mesi`
-      : `👉 PRENOTA PROVA lunedì 16:15 età 7`
+      ? `👉 PRENOTA PROVA mercoledì 16/09 ore 16:15 età 12 mesi`
+      : `👉 PRENOTA PROVA lunedì 14 settembre ore 17:00 età 7`
   return (
-    `Per la prova in acqua (circa 10 minuti) rispondi con giorno, orario ed età, ad esempio:\n` +
-    `${ex}\n\n` +
+    `Per la prova in acqua (circa 10 minuti) rispondi con giorno, data, orario ed età, ad esempio:\n` +
+    `${ex}\n` +
+    `Se manca la data e scrivi solo «mercoledì», prendo la prossima data disponibile sul foglio (non per forza la settimana dopo).\n\n` +
     (corso
       ? `Foglio: ${corsoLabel(corso)}.\n`
       : `Indica anche ACQUATICITÀ o SCUOLA NUOTO se non l'hai ancora detto.\n`) +
@@ -568,6 +608,7 @@ async function completeProvaBooking(params: {
   pendingProvaByPhone.delete(from)
 
   if (result.ok) {
+    pendingProvaDayByPhone.delete(from)
     const msg =
       `Perfetto! Prova in acqua prenotata:\n` +
       `${result.dayLabel} — ore ${result.orario} — età ${eta.label}\n\n` +
@@ -601,11 +642,26 @@ async function completeProvaBooking(params: {
     return { handled: true, detail: "prova sheet not configured" }
   }
 
+  if (result.reason === "slot_taken" || result.reason === "slot_not_found") {
+    pendingProvaDayByPhone.set(from, {
+      weekday: parsed.weekday,
+      relative: parsed.relative,
+      day: parsed.day,
+      month: parsed.month,
+      year: parsed.year,
+      corso,
+      etaLabel: eta.label,
+      etaYears: eta.years,
+      expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+    })
+  }
+
   if (result.reason === "slot_taken") {
     await sendWhatsappText(
       from,
       `Quell'orario per la prova è già occupato.${fmtProvaAlts(result.alternatives)}\n\n` +
-        `Proponi un altro orario (es. PRENOTA PROVA martedì 16:30 età ${eta.label}) oppure chiama 0573 572649.`
+        `Puoi rispondere solo con un altro orario (es. ore 16:15), tengo il giorno già scelto.\n` +
+        `Oppure chiama 0573 572649.`
     )
     if (lead) appendLeadNote(lead.id, `WA prova slot occupato: «${text}»`)
     return { handled: true, detail: "prova slot taken" }
@@ -618,7 +674,7 @@ async function completeProvaBooking(params: {
     await sendWhatsappText(
       from,
       `Quel giorno non è sul foglio prove.${giorni}\n\n` +
-        `Scegli un giorno in elenco + orario + età, oppure chiama 0573 572649.`
+        `Scegli un giorno in elenco + data + orario + età, oppure chiama 0573 572649.`
     )
     if (lead) {
       appendLeadNote(lead.id, `WA prova giorno non in foglio: «${text}» (${result.detail ?? ""})`)
@@ -630,7 +686,8 @@ async function completeProvaBooking(params: {
     await sendWhatsappText(
       from,
       `Non trovo quell'orario sul foglio prove.${fmtProvaAlts(result.alternatives)}\n\n` +
-        `Riprova con un orario in elenco + età, oppure chiama 0573 572649.`
+        `Rispondi solo con un orario in elenco (es. ore 16:15): tengo già il giorno.\n` +
+        `Oppure chiama 0573 572649.`
     )
     if (lead) {
       appendLeadNote(lead.id, `WA prova giorno/ora non in foglio: «${text}» (${result.detail ?? ""})`)
@@ -1179,12 +1236,35 @@ export async function handleWhatsappInboundBooking(params: {
     if (
       parseProvaIntentIt(text) ||
       // Lead bambini: «prenota lunedì…» → foglio prove (non agenda A2), salvo richiesta sede/consulenza
-      (!!parseSlotRequestIt(text) && /\bprenot/.test(t) && !wantsSedeConsulenza(t))
+      (!!parseSlotRequestIt(text) && /\bprenot/.test(t) && !wantsSedeConsulenza(t)) ||
+      // Solo orario dopo «orario non trovato» (giorno già scelto)
+      (!!takePendingProvaDay(from) && hasTimeHint(t) && !hasWeekday(t) && !wantsSedeConsulenza(t))
     ) {
-      const parsedProva = parseSlotRequestIt(text)
-      const eta = parseChildAgeIt(text)
+      const pendingDay = takePendingProvaDay(from)
+      let parsedProva = parseSlotRequestIt(text)
+      if (!parsedProva && pendingDay) {
+        const tm = parseTimeOnlyIt(text)
+        if (tm) {
+          parsedProva = {
+            weekday: pendingDay.weekday,
+            hour: tm.hour,
+            minute: tm.minute,
+            relative: pendingDay.relative,
+            day: pendingDay.day,
+            month: pendingDay.month,
+            year: pendingDay.year,
+            raw: text,
+          }
+        }
+      }
+      const eta =
+        parseChildAgeIt(text) ||
+        (pendingDay?.etaLabel != null && pendingDay.etaYears != null
+          ? { years: pendingDay.etaYears, label: pendingDay.etaLabel }
+          : null)
       const corso =
         parseCorsoChoiceIt(text) ||
+        pendingDay?.corso ||
         detectBambiniCorso({ lead, text, ageYears: eta?.years ?? null })
       if (!parsedProva) {
         await sendWhatsappText(from, provaGuideMsg(corso))
@@ -1452,7 +1532,7 @@ export async function handleWhatsappInboundBooking(params: {
       from,
       `Per la prova in acqua usa:\n` +
         `PRENOTA PROVA + giorno + orario + età\n` +
-        `es. PRENOTA PROVA lunedì 14 settembre 17:00 età 5\n\n` +
+        `es. PRENOTA PROVA lunedì 14 settembre ore 17:00 età 5\n\n` +
         `Per un appuntamento in sede con consulente scrivi «appuntamento» + giorno/ora.`
     )
     if (lead) appendLeadNote(lead.id, `WA: slot senza «prova» → guida prova («${text}»)`)
