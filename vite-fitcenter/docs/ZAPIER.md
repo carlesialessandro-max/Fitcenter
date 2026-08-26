@@ -75,6 +75,61 @@ Puoi inviare un array:
 
 ---
 
+## Code by Zapier (form sito → FitCenter)
+
+Se tra Catch Hook e Custom Request c’è uno step **Code**, usa qualcosa del genere così nome/email/telefono non si perdono (anche per tipologii tipo acquaticità):
+
+```javascript
+const d = inputData || {};
+const get = (...keys) => {
+  for (const k of keys) {
+    const v = d[k];
+    if (v != null && String(v).trim()) return String(v).trim();
+  }
+  const norm = (s) => String(s).toLowerCase().replace(/[\s_?]+/g, "");
+  const want = keys.map(norm);
+  for (const [k, v] of Object.entries(d)) {
+    if (v == null || !String(v).trim()) continue;
+    if (want.includes(norm(k))) return String(v).trim();
+  }
+  return "";
+};
+
+const full = get("nome", "Nome", "Nome e Cognome", "nome_e_cognome", "name");
+const parts = full.split(/\s+/).filter(Boolean);
+const interesse = get(
+  "tipologiaLabel",
+  "Tipologia Label",
+  "Interesse",
+  "tipologia",
+  "Tipologia",
+  "Quale servizio?",
+  "quale_servizio"
+);
+
+output = [
+  {
+    nome: parts[0] || "—",
+    cognome: parts.slice(1).join(" ") || "—",
+    email: get("email", "Email") || "—",
+    telefono: get("telefono", "Telefono", "phone", "Phone", "Cellulare") || "—",
+    fonte: "website",
+    interesse,
+    note: [
+      get("tipologia", "Tipologia") && `Tipologia: ${get("tipologia", "Tipologia")}`,
+      get("oggetto", "Oggetto") && `Oggetto: ${get("oggetto", "Oggetto")}`,
+      get("messaggio", "Messaggio", "message", "Message"),
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  },
+];
+```
+
+Nello step **Custom Request** mappa `nome`, `cognome`, `email`, `telefono`, `fonte`, `interesse`, `note` dagli output dello Code (non lasciare campi vuoti / “No data”).
+
+**Nota tipologie sito:** scuola nuoto bambini e acquaticità possono condividere lo stesso Catch Hook Zapier; la distinzione resta nel campo `tipologia` / `interesse`.
+
 ## Riassunto
 
 - **Non** cambiare dove il trigger crea il lead (se lo fa su un altro URL): aggiungi **un passo in più**.

@@ -231,6 +231,8 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     pick([
       "tipologia",
       "Tipologia",
+      "tipologiaLabel",
+      "Tipologia Label",
       "tipologiaRichiesta",
       "TipologiaRichiesta",
       "tipologia_di_richiesta",
@@ -241,16 +243,19 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
       "TipoRichiesta",
       "tipo",
       "Tipo",
+      "quale_servizio",
+      "Quale servizio?",
+      "service",
     ]) || ""
 
   let interesseRaw =
-    pick(["interesse", "Interesse", "interest", "Interest"]) ||
+    pick(["interesse", "Interesse", "interest", "Interest", "tipologiaLabel", "Tipologia Label"]) ||
     (body.interesse != null ? unwrap(body.interesse) : "") ||
     labeled.tipologia ||
     tipologiaRaw
   if (!interesseRaw.trim()) {
     for (const [fk, fv] of Object.entries(flat)) {
-      if (/interess|tipolog|scuola|nuoto|campus|bambin/i.test(fk)) {
+      if (/interess|tipolog|scuola|nuoto|campus|bambin|acquatic/i.test(fk)) {
         interesseRaw = fv.trim()
         break
       }
@@ -259,7 +264,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   if (!interesseRaw.trim()) {
     for (const fv of Object.values(flat)) {
       const v = fv.trim()
-      if (/scuola\s*nuoto|nuoto\s*bambin|bambin|campus/i.test(v)) {
+      if (/scuola\s*nuoto|nuoto\s*bambin|bambin|campus|acquaticit/i.test(v)) {
         interesseRaw = v
         break
       }
