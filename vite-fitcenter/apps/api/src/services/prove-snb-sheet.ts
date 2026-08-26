@@ -67,6 +67,10 @@ export type ProveSlotBookRequest = {
   minute: number
   /** Alternativa: istante assoluto (oggi/domani). */
   when?: Date
+  /** Data calendario esplicita dal messaggio (es. 7 settembre). */
+  day?: number
+  month?: number
+  year?: number
   nome: string
   telefono: string
   /** Età da scrivere in cella (numero o «7 mesi»). */
@@ -238,9 +242,16 @@ function colLetter(index0: number): string {
 }
 
 function parseTimeCell(raw: unknown): { hour: number; minute: number } | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    // Serial Google Sheets (frazione di giorno)
+    const totalMin = Math.round(((raw % 1) + (raw < 0 ? 1 : 0)) * 24 * 60)
+    const hour = Math.floor(totalMin / 60) % 24
+    const minute = totalMin % 60
+    return { hour, minute }
+  }
   const s = String(raw ?? "").trim()
   if (!s) return null
-  const m = s.match(/^(\d{1,2})[:\.](\d{2})$/)
+  const m = s.match(/^(\d{1,2})[:\.](\d{2})(?::\d{2})?$/)
   if (!m) return null
   const hour = Number(m[1])
   const minute = Number(m[2])
@@ -427,7 +438,7 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
     const range = `${quoteSheetTitle(title)}!A1:H300`
     const getUrl =
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/` +
-      `${encodeURIComponent(range)}`
+      `${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`
     const getRes = await sheetsFetch(sa, getUrl)
     const getBody = (await getRes.json()) as { values?: unknown[][]; error?: { message?: string } }
     if (!getRes.ok) {
@@ -444,6 +455,13 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
       const ymd = romeYmd(req.when)
       hm = romeHm(req.when)
       daySec = sections.find((s) => s.year === ymd.y && s.month === ymd.m && s.day === ymd.day)
+    } else if (req.day != null && req.month != null) {
+      const y = req.year ?? nowParts.y
+      daySec = sections.find((s) => s.year === y && s.month === req.month && s.day === req.day)
+      // Se l'anno sul foglio è quello successivo (es. a dicembre), riprova
+      if (!daySec && req.year == null) {
+        daySec = sections.find((s) => s.month === req.month && s.day === req.day)
+      }
     } else {
       const wd = req.weekday
       if (wd == null) {

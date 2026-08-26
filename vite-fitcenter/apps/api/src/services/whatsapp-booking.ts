@@ -34,6 +34,9 @@ type PendingProva = {
   hour: number
   minute: number
   relative?: "oggi" | "domani"
+  day?: number
+  month?: number
+  year?: number
   raw: string
   corso?: BambiniCorso
   expiresAt: number
@@ -289,6 +292,10 @@ export type ParsedSlotRequest = {
   raw: string
   /** Giorno relativo esplicito (oggi/domani). */
   relative?: "oggi" | "domani"
+  /** Data calendario esplicita (es. «7 settembre»). */
+  day?: number
+  month?: number
+  year?: number
 }
 
 function weekdayInRome(d: Date): number {
@@ -514,7 +521,7 @@ async function completeProvaBooking(params: {
   const displayName = [lead?.nome, lead?.cognome].filter(Boolean).join(" ").trim() || "WA"
   const phoneDisplay = from.replace(/^39/, "")
 
-  // oggi/domani → data assoluta; altrimenti weekday sul foglio (es. lunedì = 14/09)
+  // oggi/domani → data assoluta; data esplicita (7 settembre); altrimenti weekday sul foglio
   const bookReq = parsed.relative
     ? {
         corso,
@@ -530,6 +537,9 @@ async function completeProvaBooking(params: {
         weekday: parsed.weekday,
         hour: parsed.hour,
         minute: parsed.minute,
+        day: parsed.day,
+        month: parsed.month,
+        year: parsed.year,
         nome: displayName,
         telefono: phoneDisplay,
         eta: eta.label,
@@ -632,11 +642,48 @@ async function completeProvaBooking(params: {
   return { handled: true, detail: `prova api_error: ${result.detail ?? ""}` }
 }
 
-/** Es. "Mercoledì ore 17:30", "oggi 18:00", "domani mattina", "sabato mattina". */
+/** Es. "Mercoledì ore 17:30", "lunedì 7 settembre 17:00", "oggi 18:00". */
 export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
   const raw = String(text ?? "").trim()
   if (!raw) return null
   const t = normText(raw)
+
+  const MONTHS: Record<string, number> = {
+    gennaio: 1,
+    febbraio: 2,
+    marzo: 3,
+    aprile: 4,
+    maggio: 5,
+    giugno: 6,
+    luglio: 7,
+    agosto: 8,
+    settembre: 9,
+    ottobre: 10,
+    novembre: 11,
+    dicembre: 12,
+  }
+
+  let day: number | undefined
+  let month: number | undefined
+  let year: number | undefined
+  const mName = t.match(
+    /\b(\d{1,2})\s+(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)(?:\s+(\d{4}))?\b/
+  )
+  if (mName) {
+    day = Number(mName[1])
+    month = MONTHS[mName[2]]
+    if (mName[3]) year = Number(mName[3])
+  } else {
+    const mSlash = t.match(/\b(\d{1,2})\s*[\/\-.]\s*(\d{1,2})(?:\s*[\/\-.]\s*(\d{2,4}))?\b/)
+    if (mSlash) {
+      day = Number(mSlash[1])
+      month = Number(mSlash[2])
+      if (mSlash[3]) {
+        const y = Number(mSlash[3])
+        year = y < 100 ? 2000 + y : y
+      }
+    }
+  }
 
   let weekday: number | null = null
   let relative: "oggi" | "domani" | undefined
@@ -654,6 +701,13 @@ export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
         break
       }
     }
+  }
+
+  // Se c'è solo «7 settembre» senza lunedì, ricava weekday dalla data
+  if (weekday == null && day != null && month != null) {
+    const y = year ?? romeYmdFromPartsFallback()
+    const wd = weekdayFromYmd(y, month, day)
+    if (wd != null) weekday = wd
   }
   if (weekday == null) return null
 
@@ -673,12 +727,32 @@ export function parseSlotRequestIt(text: string): ParsedSlotRequest | null {
     hour = 18
     minute = 30
   } else {
-    const hOnly = t.match(/\b(?:ore|alle)?\s*([01]?\d|2[0-3])\b/)
+    // Richiede «ore»/«alle» così «7 settembre» non viene letto come ora 7
+    const hOnly = t.match(/\b(?:ore|alle)\s*([01]?\d|2[0-3])\b/)
     if (hOnly) hour = Number(hOnly[1])
-    else return null // giorno senza orario → non prenotare alla cieca
+    else return null
   }
 
-  return { weekday, hour, minute, raw, relative }
+  return { weekday, hour, minute, raw, relative, day, month, year }
+}
+
+function romeYmdFromPartsFallback(): number {
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Rome", year: "numeric" })
+    .formatToParts(new Date())
+    .find((p) => p.type === "year")?.value
+    ? Number(
+        new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Rome", year: "numeric" })
+          .formatToParts(new Date())
+          .find((p) => p.type === "year")?.value
+      )
+    : new Date().getFullYear()
+}
+
+/** Weekday 0=dom…6=sab per Y-M-D in Europe/Rome (mezzogiorno). */
+function weekdayFromYmd(year: number, month: number, day: number): number | null {
+  if (!year || !month || !day) return null
+  const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  return weekdayInRome(probe)
 }
 
 /** Prossima occorrenza del giorno settimanale all'orario indicato (Europe/Rome). */
@@ -1068,6 +1142,9 @@ export async function handleWhatsappInboundBooking(params: {
               hour: pending.hour,
               minute: pending.minute,
               relative: pending.relative,
+              day: pending.day,
+              month: pending.month,
+              year: pending.year,
               raw: pending.raw,
             },
             eta: etaPending,
@@ -1112,6 +1189,9 @@ export async function handleWhatsappInboundBooking(params: {
           hour: parsedProva.hour,
           minute: parsedProva.minute,
           relative: parsedProva.relative,
+          day: parsedProva.day,
+          month: parsedProva.month,
+          year: parsedProva.year,
           raw: parsedProva.raw,
           expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
         })
@@ -1129,14 +1209,20 @@ export async function handleWhatsappInboundBooking(params: {
           hour: parsedProva.hour,
           minute: parsedProva.minute,
           relative: parsedProva.relative,
+          day: parsedProva.day,
+          month: parsedProva.month,
+          year: parsedProva.year,
           raw: parsedProva.raw,
           corso,
           expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
         })
         const dayNames = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"]
-        const dayHint = parsedProva.relative
-          ? parsedProva.relative
-          : dayNames[parsedProva.weekday] ?? "quel giorno"
+        const dayHint =
+          parsedProva.day != null && parsedProva.month != null
+            ? `${parsedProva.day}/${parsedProva.month}`
+            : parsedProva.relative
+              ? parsedProva.relative
+              : dayNames[parsedProva.weekday] ?? "quel giorno"
         const hh = String(parsedProva.hour).padStart(2, "0")
         const mm = String(parsedProva.minute).padStart(2, "0")
         await sendWhatsappText(
