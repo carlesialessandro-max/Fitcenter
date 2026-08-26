@@ -53,6 +53,98 @@ async function graphPost(pathSuffix: string, body: Record<string, unknown>): Pro
   return json
 }
 
+/** Upload file → media id (Cloud API). */
+export async function uploadWhatsappMedia(params: {
+  filePath: string
+  mimeType: string
+  filename?: string
+}): Promise<string> {
+  const { token, phoneNumberId, graphVersion } = whatsappConfig()
+  if (!token || !phoneNumberId) {
+    throw new Error("WhatsApp non configurato: imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID")
+  }
+  const fs = await import("fs")
+  const path = await import("path")
+  if (!fs.existsSync(params.filePath)) {
+    throw new Error(`File WhatsApp non trovato: ${params.filePath}`)
+  }
+  const buf = fs.readFileSync(params.filePath)
+  const filename = params.filename || path.basename(params.filePath)
+  const form = new FormData()
+  form.append("messaging_product", "whatsapp")
+  form.append("type", params.mimeType)
+  form.append("file", new Blob([new Uint8Array(buf)], { type: params.mimeType }), filename)
+
+  const url = `https://graph.facebook.com/${graphVersion}/${phoneNumberId}/media`
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: form,
+  })
+  const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } }
+  if (!res.ok || !json.id) {
+    throw new Error(json.error?.message ?? `Upload media WhatsApp HTTP ${res.status}`)
+  }
+  return json.id
+}
+
+export async function sendWhatsappDocument(params: {
+  toRaw: string
+  filePath: string
+  filename?: string
+  caption?: string
+  mimeType?: string
+}): Promise<unknown> {
+  const to = normalizeWaTo(params.toRaw)
+  if (!to) throw new Error("Numero destinatario non valido")
+  const path = await import("path")
+  const filename = params.filename || path.basename(params.filePath)
+  const mimeType =
+    params.mimeType ||
+    (filename.toLowerCase().endsWith(".pdf")
+      ? "application/pdf"
+      : "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+  const mediaId = await uploadWhatsappMedia({
+    filePath: params.filePath,
+    mimeType,
+    filename,
+  })
+  const caption = (params.caption ?? "").trim()
+  try {
+    const result = await graphPost("messages", {
+      messaging_product: "whatsapp",
+      to,
+      type: "document",
+      document: {
+        id: mediaId,
+        filename,
+        ...(caption ? { caption } : {}),
+      },
+    })
+    const waMessageId = String(
+      (result as { messages?: Array<{ id?: string }> })?.messages?.[0]?.id ?? ""
+    ).trim() || undefined
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: `documento:${filename}${caption ? ` · ${caption}` : ""}`,
+      waMessageId,
+      status: "sent",
+      raw: result,
+    })
+    return result
+  } catch (e) {
+    whatsappEventsStore.append({
+      kind: "message_out",
+      to,
+      text: `documento:${filename}`,
+      status: "error",
+      raw: { error: (e as Error)?.message ?? String(e) },
+    })
+    throw e
+  }
+}
+
 export async function sendWhatsappText(toRaw: string, text: string): Promise<unknown> {
   const to = normalizeWaTo(toRaw)
   if (!to) throw new Error("Numero destinatario non valido")
