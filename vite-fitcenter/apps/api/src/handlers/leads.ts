@@ -341,7 +341,11 @@ export async function webhookZapier(req: Request, res: Response) {
       }
       created.push(saved)
       // Primo contatto WA (template Meta). Non blocca la creazione lead se fallisce.
-      const wa = await notifyLeadWelcomeWhatsapp({ telefono: saved.telefono, nome: saved.nome })
+      const wa = await notifyLeadWelcomeWhatsapp({
+        telefono: saved.telefono,
+        nome: saved.nome,
+        bambini: isBambini,
+      })
       whatsapp.push({ leadId: saved.id, sent: wa.sent, skipped: wa.skipped, error: wa.error })
     }
     res.status(201).json({ created: created.length, leads: created, whatsapp })

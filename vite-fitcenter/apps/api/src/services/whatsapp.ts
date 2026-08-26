@@ -240,11 +240,25 @@ export async function sendWhatsappTemplate(params: {
 }
 
 /** Template benvenuto lead (da creare in Meta Manager, lingua it). */
-export function leadWelcomeTemplateConfig() {
+export function leadWelcomeTemplateConfig(opts?: { bambini?: boolean }) {
   const enabled = (process.env.WHATSAPP_AUTO_LEAD ?? "true").trim().toLowerCase() !== "false"
-  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto").trim() || "lead_benvenuto"
   const languageCode = (process.env.WHATSAPP_LEAD_TEMPLATE_LANG ?? "it").trim() || "it"
-  return { enabled, templateName, languageCode }
+  if (opts?.bambini) {
+    const templateName =
+      (process.env.WHATSAPP_LEAD_TEMPLATE_BAMBINI ?? "").trim() ||
+      (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto").trim() ||
+      "lead_benvenuto"
+    // Template bambini con Ciao {{1}}: default true se WHATSAPP_LEAD_TEMPLATE_BAMBINI è impostato
+    const hasNameDefault = Boolean((process.env.WHATSAPP_LEAD_TEMPLATE_BAMBINI ?? "").trim())
+    const hasNameParam =
+      (process.env.WHATSAPP_LEAD_TEMPLATE_BAMBINI_HAS_NAME ?? "").trim().toLowerCase() === "true" ||
+      ((process.env.WHATSAPP_LEAD_TEMPLATE_BAMBINI_HAS_NAME ?? "").trim() === "" && hasNameDefault) ||
+      (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
+    return { enabled, templateName, languageCode, hasNameParam }
+  }
+  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto").trim() || "lead_benvenuto"
+  const hasNameParam = (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
+  return { enabled, templateName, languageCode, hasNameParam }
 }
 
 /**
@@ -252,18 +266,21 @@ export function leadWelcomeTemplateConfig() {
  * Non lanciare errori verso il caller: logga e ritorna esito.
  * Se il template Meta non ha variabili, non inviare bodyParams
  * (WHATSAPP_LEAD_TEMPLATE_HAS_NAME=true solo se c’è {{1}} nel modello).
+ * Bambini: WHATSAPP_LEAD_TEMPLATE_BAMBINI (testo con Ciao {{1}}…).
  */
 export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
   nome?: string | null
+  bambini?: boolean
 }): Promise<{ sent: boolean; skipped?: string; error?: string; result?: unknown }> {
-  const { enabled, templateName, languageCode } = leadWelcomeTemplateConfig()
+  const { enabled, templateName, languageCode, hasNameParam } = leadWelcomeTemplateConfig({
+    bambini: params.bambini,
+  })
   if (!enabled) return { sent: false, skipped: "WHATSAPP_AUTO_LEAD=false" }
   if (!isWhatsappSendConfigured()) return { sent: false, skipped: "whatsapp non configurato" }
   const phone = String(params.telefono ?? "").trim()
   if (!phone || phone === "—") return { sent: false, skipped: "telefono mancante" }
   const nome = String(params.nome ?? "").trim() || "Ciao"
-  const hasNameParam = (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
   try {
     const result = await sendWhatsappTemplate({
       toRaw: phone,

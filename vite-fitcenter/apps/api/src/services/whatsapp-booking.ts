@@ -149,14 +149,19 @@ async function sendBambiniInfoDocsWhatsapp(to: string): Promise<{ sent: string[]
   return { sent, missing: false }
 }
 
-function bambiniInfoMenuMsg(): string {
+function bambiniGuideMsg(nome?: string | null): string {
+  const chi = String(nome ?? "").trim() || "Ciao"
   return (
-    `Per i corsi bambini di solito partiamo dalle info (orari / acquaticità / scuola nuoto), non subito dall'appuntamento.\n\n` +
-    `Scegli come preferisci riceverle:\n` +
-    `1️⃣ «info whatsapp» → ti mando i documenti qui\n` +
-    `2️⃣ «info email» → te li invio all'email del contatto\n` +
-    `3️⃣ pagina web: ${bambiniInfoUrl()}\n\n` +
-    `Se vuoi un appuntamento in sede, scrivi giorno e ora (es. Domani 17:00) oppure «richiamatemi».`
+    `Ciao ${chi}, grazie per aver richiesto informazioni sui corsi bambini H2Sport! 💙\n` +
+    `Per aiutarti a scegliere il corso più adatto alle esigenze del tuo bambino, ti consigliamo di fissare direttamente un appuntamento in sede con una nostra consulente: potrai ricevere tutte le informazioni, conoscere le nostre attività e valutare insieme la soluzione migliore.\n` +
+    `📅 Per evitare attese, rispondi a questo messaggio indicando il giorno e l'orario in cui preferisci venire, ad esempio:\n` +
+    `👉 Martedì alle 17:30\n` +
+    `👉 Sabato mattina\n` +
+    `Preferisci essere richiamato? Scrivi semplicemente «RICHIAMATEMI» e ti contatteremo.\n` +
+    `Se invece desideri ricevere prima le informazioni:\n` +
+    `📲 «INFO WHATSAPP» → te le inviamo qui\n` +
+    `📧 «INFO EMAIL» → te le inviamo via email\n` +
+    `Ti aspettiamo a H2Sport! 💙`
   )
 }
 
@@ -676,7 +681,7 @@ export async function handleWhatsappInboundBooking(params: {
     return { handled: true, detail: "ricontatto consulente" }
   }
 
-  // 1b) Bambini: priorità info (costi/orari) rispetto all'appuntamento automatico
+  // 1b) Bambini: INFO WHATSAPP / INFO EMAIL, oppure guida (appuntamento + info)
   if (isLeadBambini(lead)) {
     const infoWa = /\binfo\s*whatsapp\b/.test(t)
     const infoMail = /\binfo\s*(email|mail)\b/.test(t)
@@ -699,7 +704,7 @@ export async function handleWhatsappInboundBooking(params: {
         await sendWhatsappText(
           from,
           `Per inviarti le info via email mi serve un indirizzo.\n` +
-            `Scrivilo pure in chat, oppure scegli «info whatsapp» / apri ${bambiniInfoUrl()}`
+            `Scrivilo pure in chat, oppure scegli «INFO WHATSAPP» / apri ${bambiniInfoUrl()}`
         )
         if (lead) appendLeadNote(lead.id, `WA info email: email mancante («${text}»)`)
         return { handled: true, detail: "info bambini email mancante" }
@@ -708,7 +713,7 @@ export async function handleWhatsappInboundBooking(params: {
       if (docs.length === 0) {
         await sendWhatsappText(
           from,
-          `Non trovo i documenti info sul server. Prova «info whatsapp» più tardi oppure scrivi «richiamatemi».`
+          `Non trovo i documenti info sul server. Prova «INFO WHATSAPP» più tardi oppure scrivi «RICHIAMATEMI».`
         )
         return { handled: true, detail: "info bambini email docs missing" }
       }
@@ -739,7 +744,7 @@ export async function handleWhatsappInboundBooking(params: {
           from,
           `Perfetto, ti ho inviato i documenti all'indirizzo ${email}.\n` +
             `Se non li trovi, controlla anche lo spam.\n` +
-            `Per un ricontatto scrivi «richiamatemi».`
+            `Per un ricontatto scrivi «RICHIAMATEMI».`
         )
         if (lead) {
           appendLeadNote(lead.id, `WA info bambini via email a ${email}: ${docs.map((d) => d.label).join(", ")}`, {
@@ -753,38 +758,20 @@ export async function handleWhatsappInboundBooking(params: {
       return { handled: true, detail: "info bambini email fail→wa" }
     }
 
-    // Menu info: richieste tipiche senza slot esplicito di appuntamento
+    // Chiede orari/info senza giorno+ora → guida (appuntamento consigliato + INFO WHATSAPP/EMAIL)
     const parsedEarly = parseSlotRequestIt(text)
-    if (
-      wantsBambiniInfo(t) ||
-      (!parsedEarly && !wantsExplicitAppointment(t) && !hasBookingIntent(t))
-    ) {
-      // Solo se sembra una richiesta (non ok/grazie)
+    if (!parsedEarly && (wantsBambiniInfo(t) || (!wantsExplicitAppointment(t) && !hasBookingIntent(t)))) {
       if (!/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t)) {
-        await sendWhatsappText(from, bambiniInfoMenuMsg())
+        await sendWhatsappText(from, bambiniGuideMsg(lead?.nome))
         if (lead) {
-          appendLeadNote(lead.id, `WA menu info bambini («${text}»)`, {
+          appendLeadNote(lead.id, `WA guida bambini («${text}»)`, {
             stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
           })
         }
-        return { handled: true, detail: "menu info bambini" }
+        return { handled: true, detail: "guida bambini" }
       }
     }
-    // Slot giorno+ora senza dire «appuntamento»: per bambini proponi comunque info, salvo richiesta esplicita
-    if (parsedEarly && !wantsExplicitAppointment(t) && !/\b(appuntament|prenot)\w*\b/.test(t)) {
-      await sendWhatsappText(
-        from,
-        `Ho capito la fascia (${parsedEarly.relative ?? "giorno"}).\n\n` +
-          `Per i corsi bambini di solito partiamo dalle info costi/orari.\n` +
-          bambiniInfoMenuMsg()
-      )
-      if (lead) {
-        appendLeadNote(lead.id, `WA bambini: slot proposto ma inviato menu info («${text}»)`, {
-          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
-        })
-      }
-      return { handled: true, detail: "bambini slot→menu info" }
-    }
+    // Se ha scritto giorno+ora → prosegue sotto con prenotazione agenda bambini
   }
 
   const parsed = parseSlotRequestIt(text)
