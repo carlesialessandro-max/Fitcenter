@@ -188,7 +188,8 @@ export async function createConsulenzaAppuntamento(params: {
         VALUES (@idApp, @rel, @risorsa, @inizio, @fine);
       `)
 
-    // Come test SSMS OK: senza IDA2Servizio; se la colonna c'è, UPDATE dopo.
+    // Come test SSMS OK. OrigineTipi='B' come gli appuntamenti creati dal gestionale
+    // (senza questo l'UI TeamSystem li mostra in rosso e in eliminazione può dare "Invalid use of Null").
     const req3 = new sql.Request(tx)
     await req3
       .input("idUtente", sql.Int, params.idUtente)
@@ -196,8 +197,8 @@ export async function createConsulenzaAppuntamento(params: {
       .input("op", sql.Int, params.consulente.idOperatore)
       .input("note", sql.NVarChar(200), note)
       .query(`
-        INSERT INTO dbo.A2Iscrizioni (IDUtente, IDA2Appuntamento, IDOperatore, DataOperazione, Annullato, Note)
-        VALUES (@idUtente, @idApp, @op, GETDATE(), 0, @note);
+        INSERT INTO dbo.A2Iscrizioni (IDUtente, IDA2Appuntamento, IDOperatore, DataOperazione, Annullato, Note, OrigineTipi, OrigineID)
+        VALUES (@idUtente, @idApp, @op, GETDATE(), 0, @note, N'B', 0);
       `)
 
     if (hasServizio) {
