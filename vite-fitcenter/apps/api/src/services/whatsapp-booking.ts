@@ -75,7 +75,11 @@ function bambiniInfoUrl(): string {
 
 function bambiniDataDir(): string {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
-  return path.resolve(__dirname, "../../data/bambini-info")
+  // Preferisci assets (in repo); fallback data/ locale
+  const assets = path.resolve(__dirname, "../../assets/bambini-info")
+  const data = path.resolve(__dirname, "../../data/bambini-info")
+  if (fs.existsSync(assets)) return assets
+  return data
 }
 
 type BambiniDoc = { key: "acquaticita" | "scuola_nuoto"; label: string; filename: string; filePath: string }
