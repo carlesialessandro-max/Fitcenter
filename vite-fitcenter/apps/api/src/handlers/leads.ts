@@ -12,7 +12,7 @@ function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
     .filter((p) => p != null && String(p).trim() !== "")
     .join(" ")
   if (!blob.trim()) return false
-  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(blob)
+  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(blob)
 }
 
 export async function listLeads(req: Request, res: Response) {

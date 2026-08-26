@@ -20,12 +20,30 @@ import {
 } from "./agenda-a2.js"
 import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument } from "./whatsapp.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
+import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
 const processedWaIds = new Set<string>()
 const MAX_PROCESSED = 2000
+
+/** Attesa età dopo «prenota prova» + giorno/ora (TTL 30 min). */
+type PendingProva = {
+  weekday: number
+  hour: number
+  minute: number
+  relative?: "oggi" | "domani"
+  raw: string
+  corso?: BambiniCorso
+  expiresAt: number
+}
+const pendingProvaByPhone = new Map<string, PendingProva>()
+const PENDING_PROVA_TTL_MS = 30 * 60_000
+
+/** Attesa scelta corso prima di INFO documenti. */
+type PendingInfoCorso = { channel: "wa" | "email"; expiresAt: number }
+const pendingInfoCorsoByPhone = new Map<string, PendingInfoCorso>()
 
 const WEEKDAY: Record<string, number> = {
   domenica: 0,
@@ -82,10 +100,12 @@ function bambiniDataDir(): string {
   return data
 }
 
-type BambiniDoc = { key: "acquaticita" | "scuola_nuoto"; label: string; filename: string; filePath: string }
+type BambiniDoc = { key: BambiniCorso; label: string; filename: string; filePath: string }
+
+const CORSO_TAG = /\[corso:(acquaticita|scuola_nuoto)\]/i
 
 /** Documenti stagione: share UNC (env) oppure copia in apps/api/data/bambini-info. */
-function resolveBambiniDocs(): BambiniDoc[] {
+function resolveBambiniDocs(corso?: BambiniCorso | null): BambiniDoc[] {
   const localDir = bambiniDataDir()
   const acqEnv = (process.env.WHATSAPP_BAMBINI_DOC_ACQUATICITA ?? "").trim()
   const snbEnv = (process.env.WHATSAPP_BAMBINI_DOC_SCUOLA_NUOTO ?? "").trim()
@@ -111,8 +131,9 @@ function resolveBambiniDocs(): BambiniDoc[] {
       ],
     },
   ]
+  const filtered = corso ? candidates.filter((c) => c.key === corso) : candidates
   const out: BambiniDoc[] = []
-  for (const c of candidates) {
+  for (const c of filtered) {
     const filePath = c.paths.find((p) => p && fs.existsSync(p))
     if (!filePath) continue
     out.push({ key: c.key, label: c.label, filename: c.filename, filePath })
@@ -120,23 +141,108 @@ function resolveBambiniDocs(): BambiniDoc[] {
   return out
 }
 
-async function sendBambiniInfoDocsWhatsapp(to: string): Promise<{ sent: string[]; missing: boolean }> {
-  const docs = resolveBambiniDocs()
+function corsoLabel(corso: BambiniCorso): string {
+  return corso === "acquaticita" ? "Acquaticità" : "Scuola Nuoto Bambini"
+}
+
+/** Rileva acquaticità vs scuola nuoto da lead / testo / età. */
+export function detectBambiniCorso(opts: {
+  lead?: {
+    interesseDettaglio?: string | null
+    note?: string | null
+    categoria?: string | null
+  } | null
+  text?: string
+  ageYears?: number | null
+}): BambiniCorso | null {
+  const blob = normText(
+    [opts.text, opts.lead?.interesseDettaglio, opts.lead?.note, opts.lead?.categoria]
+      .filter(Boolean)
+      .join(" ")
+  )
+  const tag = String(opts.lead?.note ?? "").match(CORSO_TAG)
+  if (tag) return tag[1].toLowerCase() === "acquaticita" ? "acquaticita" : "scuola_nuoto"
+
+  if (/\bacquaticit/.test(blob) || /\bliv\.?\s*[123]\b/.test(blob) || /\b(mesi|neonat|lattant)/.test(blob)) {
+    return "acquaticita"
+  }
+  if (/\bscuola\s*nuoto\b/.test(blob) || /\bsnb\b/.test(blob) || /\bnuoto\s*bambin/.test(blob)) {
+    return "scuola_nuoto"
+  }
+  if (opts.ageYears != null && Number.isFinite(opts.ageYears)) {
+    // Acquaticità fino a ~3,5 anni; da 4 anni → scuola nuoto
+    return opts.ageYears < 4 ? "acquaticita" : "scuola_nuoto"
+  }
+  return null
+}
+
+function parseCorsoChoiceIt(text: string): BambiniCorso | null {
+  const t = normText(text)
+  if (!t) return null
+  if (/\bacquaticit/.test(t) || /^acq\b/.test(t)) return "acquaticita"
+  if (/\bscuola\s*nuoto\b/.test(t) || /\bsnb\b/.test(t) || /^scuola\b/.test(t)) return "scuola_nuoto"
+  return null
+}
+
+function askCorsoMsg(): string {
+  return (
+    `Per inviarti il documento giusto, dimmi se ti interessa:\n` +
+    `👉 ACQUATICITÀ (dai 3 mesi ai 3 anni e mezzo)\n` +
+    `👉 SCUOLA NUOTO (dai 4 anni in su)\n\n` +
+    `Puoi anche scrivere età del bambino (es. «18 mesi» oppure «età 7»).`
+  )
+}
+
+function persistCorsoOnLead(
+  lead: { id: string; note?: string | null; stato?: string } | null | undefined,
+  corso: BambiniCorso
+) {
+  if (!lead) return
+  const prev = String(lead.note ?? "").replace(CORSO_TAG, "").trim()
+  appendLeadNote(lead.id, `[corso:${corso}]`, {
+    stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+  })
+  // Se c'erano tag corso vecchi, normalizza note (appendLeadNote ha già aggiunto il nuovo tag)
+  const cur = leadsStore.get(lead.id)
+  if (cur) {
+    const lines = String(cur.note ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+    const without = lines.filter((l) => !CORSO_TAG.test(l))
+    const next = [...without, `[corso:${corso}]`].join("\n")
+    if (next !== cur.note) leadsStore.update(lead.id, { note: next })
+  }
+}
+
+async function sendBambiniInfoDocsWhatsapp(
+  to: string,
+  corso: BambiniCorso
+): Promise<{ sent: string[]; missing: boolean }> {
+  const docs = resolveBambiniDocs(corso)
   if (docs.length === 0) {
     await sendWhatsappText(
       to,
-      `Al momento non trovo i file info bambini sul server.\n` +
+      `Al momento non trovo il file info ${corsoLabel(corso)} sul server.\n` +
         `Una consulente ti ricontatterà a breve, oppure consulta ${bambiniInfoUrl()}`
     )
     return { sent: [], missing: true }
   }
+  const provaHint = isProveSnbSheetConfigured()
+    ? `📅 Per prenotare la prova da WhatsApp rispondi così:\n` +
+      (corso === "acquaticita"
+        ? `👉 PRENOTA PROVA martedì 15:15 età 18 mesi\n`
+        : `👉 PRENOTA PROVA lunedì 16:15 età 7\n`) +
+      `(giorno + orario + età)\n\n` +
+      `In alternativa puoi chiamare il 0573 572649.`
+    : `📞 Per prenotare la prova puoi contattarci al 0573 572649.`
   await sendWhatsappText(
     to,
-    `Ti invio i documenti con orari e info stagione 2026-27:\n` +
+    `Ti invio le info ${corsoLabel(corso)} stagione 2026-27:\n` +
       docs.map((d) => `• ${d.label}`).join("\n") +
       `\n\nPer individuare il gruppo e il posto in vasca più adatti, è necessario effettuare una prova in acqua ` +
       `per verificare il livello di acquaticità del bambino.\n\n` +
-      `📞 Per prenotare la prova puoi contattarci al 0573 572649.\n` +
+      `${provaHint}\n` +
       `Successivamente potremo procedere con l'iscrizione in base al livello e alle esigenze del bambino.`
   )
   const sent: string[] = []
@@ -162,8 +268,8 @@ function bambiniGuideMsg(nome?: string | null): string {
     `👉 Sabato mattina\n` +
     `Preferisci essere richiamato? Scrivi semplicemente «RICHIAMATEMI» e ti contatteremo.\n` +
     `Se invece desideri ricevere prima le informazioni:\n` +
-    `📲 «INFO WHATSAPP» → te le inviamo qui\n` +
-    `📧 «INFO EMAIL» → te le inviamo via email\n` +
+    `📲 «INFO WHATSAPP» → poi indica ACQUATICITÀ o SCUOLA NUOTO\n` +
+    `📧 «INFO EMAIL» → stesso discorso via email\n` +
     `Ti aspettiamo a H2Sport! 💙`
   )
 }
@@ -317,7 +423,213 @@ function wantsBambiniInfo(t: string): boolean {
 }
 
 function wantsExplicitAppointment(t: string): boolean {
-  return /\b(appuntamento|prenot|venire|passare|tour|visita|in\s+sede)\b/.test(t)
+  return /\b(appuntamento|prenot|venire|passare|fix|visita|in\s+sede)\b/.test(t)
+}
+
+/** Intent prova in acqua (foglio SNB), non consulenza in sede. */
+export function parseProvaIntentIt(text: string): boolean {
+  const t = normText(text)
+  if (!t) return false
+  if (/\b(prenota\s+prova|prova\s+in\s+acqua|prova\s+in\s+vasca|prova\s+acqua)\b/.test(t)) return true
+  if (/\bprova\b/.test(t) && /\b(prenot|fissa|vorrei|voglio|bambin|figli|acqua|vasca)\b/.test(t)) {
+    return true
+  }
+  if (/^prova\b/.test(t)) return true
+  return false
+}
+
+/** Età bambino: anni o mesi (acquaticità). */
+export type ChildAgeParsed = { years: number; label: string }
+
+export function parseChildAgeIt(text: string): ChildAgeParsed | null {
+  const t = normText(text)
+  if (!t) return null
+  const mesi = t.match(/\b(?:eta|età)?\s*[:=]?\s*(\d{1,2})\s*mesi\b/) || t.match(/\b(\d{1,2})\s*mesi\b/)
+  if (mesi) {
+    const n = Number(mesi[1])
+    if (n >= 1 && n <= 48) return { years: n / 12, label: `${n} mesi` }
+  }
+  const m1 = t.match(/\b(?:eta|età)\s*[:=]?\s*(\d{1,2})\b/)
+  if (m1) {
+    const n = Number(m1[1])
+    if (n >= 1 && n <= 17) return { years: n, label: String(n) }
+  }
+  const m2 = t.match(/\b(\d{1,2})\s*anni?\b/)
+  if (m2) {
+    const n = Number(m2[1])
+    if (n >= 1 && n <= 17) return { years: n, label: String(n) }
+  }
+  if (/^\d{1,2}$/.test(t)) {
+    const n = Number(t)
+    if (n >= 1 && n <= 17) return { years: n, label: String(n) }
+  }
+  return null
+}
+
+function provaGuideMsg(corso?: BambiniCorso | null): string {
+  if (!isProveSnbSheetConfigured()) {
+    return (
+      `Per la prova in acqua (circa 10 minuti con istruttore) puoi chiamare il 0573 572649.\n` +
+      `Ti aspettiamo a H2Sport! 💙`
+    )
+  }
+  const ex =
+    corso === "acquaticita"
+      ? `👉 PRENOTA PROVA martedì 15:15 età 18 mesi`
+      : `👉 PRENOTA PROVA lunedì 16:15 età 7`
+  return (
+    `Per la prova in acqua (circa 10 minuti) rispondi con giorno, orario ed età, ad esempio:\n` +
+    `${ex}\n\n` +
+    (corso
+      ? `Foglio: ${corsoLabel(corso)}.\n`
+      : `Indica anche ACQUATICITÀ o SCUOLA NUOTO se non l'hai ancora detto.\n`) +
+    `In alternativa: 0573 572649.`
+  )
+}
+
+function fmtProvaAlts(alts?: string[]): string {
+  if (!alts?.length) return ""
+  return `\nOrari liberi in quel giorno: ${alts.join(", ")}.`
+}
+
+async function completeProvaBooking(params: {
+  from: string
+  lead: {
+    id: string
+    nome?: string | null
+    cognome?: string | null
+    stato?: string
+    interesseDettaglio?: string | null
+    note?: string | null
+    categoria?: string | null
+  } | null
+  text: string
+  parsed: ParsedSlotRequest
+  eta: ChildAgeParsed
+  corso: BambiniCorso
+}): Promise<{ handled: true; detail: string }> {
+  const { from, lead, text, parsed, eta, corso } = params
+  persistCorsoOnLead(lead, corso)
+
+  const displayName = [lead?.nome, lead?.cognome].filter(Boolean).join(" ").trim() || "WA"
+  const phoneDisplay = from.replace(/^39/, "")
+
+  // oggi/domani → data assoluta; altrimenti weekday sul foglio (es. lunedì = 14/09)
+  const bookReq = parsed.relative
+    ? {
+        corso,
+        when: slotOnRelativeDay(parsed.relative, parsed.hour, parsed.minute),
+        hour: parsed.hour,
+        minute: parsed.minute,
+        nome: displayName,
+        telefono: phoneDisplay,
+        eta: eta.label,
+      }
+    : {
+        corso,
+        weekday: parsed.weekday,
+        hour: parsed.hour,
+        minute: parsed.minute,
+        nome: displayName,
+        telefono: phoneDisplay,
+        eta: eta.label,
+      }
+
+  if (parsed.relative) {
+    const inizio = bookReq.when!
+    if (inizio.getTime() <= Date.now() + 60_000) {
+      await sendWhatsappText(
+        from,
+        `Per ${parsed.relative} quell'orario è già passato o troppo vicino.\n\n` + provaGuideMsg()
+      )
+      return { handled: true, detail: "prova slot relativo passato" }
+    }
+  }
+
+  const result = await bookProveSnbSlot(bookReq)
+
+  pendingProvaByPhone.delete(from)
+
+  if (result.ok) {
+    const msg =
+      `Perfetto! Prova in acqua prenotata:\n` +
+      `📅 ${result.dayLabel}\n` +
+      `🕐 ore ${result.orario}\n` +
+      `👶 età ${eta.label}\n\n` +
+      `Portate: costume, cuffia, ciabatte, accappatoio e occorrente per lavarsi ` +
+      `(anche ciabatte per il genitore che accompagna).\n` +
+      `Ti aspettiamo a H2Sport! 💙`
+    await sendWhatsappText(from, msg)
+    whatsappEventsStore.append({
+      kind: "booking",
+      from,
+      text: `prova ${corso} ${result.dayLabel} ${result.orario} età ${eta.label}`,
+      status: "ok",
+      raw: { result, text, eta, corso },
+    })
+    if (lead) {
+      appendLeadNote(
+        lead.id,
+        `WA prova in acqua (${corsoLabel(corso)}): ${result.dayLabel} ore ${result.orario} età ${eta.label} (riga ${result.row})`,
+        { stato: lead.stato === "nuovo" ? "contattato" : lead.stato, categoria: "bambini" }
+      )
+    }
+    return { handled: true, detail: `prova ${corso} ${result.dayLabel} ${result.orario}` }
+  }
+
+  if (result.reason === "not_configured") {
+    await sendWhatsappText(
+      from,
+      `Per prenotare la prova in acqua chiama il 0573 572649: ti fissiamo lo slot in sede.`
+    )
+    if (lead) appendLeadNote(lead.id, `WA prova: foglio non configurato («${text}»)`)
+    return { handled: true, detail: "prova sheet not configured" }
+  }
+
+  if (result.reason === "slot_taken") {
+    await sendWhatsappText(
+      from,
+      `Quell'orario per la prova è già occupato.${fmtProvaAlts(result.alternatives)}\n\n` +
+        `Proponi un altro orario (es. PRENOTA PROVA martedì 16:30 età ${eta.label}) oppure chiama 0573 572649.`
+    )
+    if (lead) appendLeadNote(lead.id, `WA prova slot occupato: «${text}»`)
+    return { handled: true, detail: "prova slot taken" }
+  }
+
+  if (result.reason === "day_not_found") {
+    const giorni = result.alternatives?.length
+      ? `\nGiorni sul foglio: ${result.alternatives.join(", ")}.`
+      : ""
+    await sendWhatsappText(
+      from,
+      `Quel giorno non è sul foglio prove.${giorni}\n\n` +
+        `Scegli un giorno in elenco + orario + età, oppure chiama 0573 572649.`
+    )
+    if (lead) {
+      appendLeadNote(lead.id, `WA prova giorno non in foglio: «${text}» (${result.detail ?? ""})`)
+    }
+    return { handled: true, detail: "prova day_not_found" }
+  }
+
+  if (result.reason === "slot_not_found") {
+    await sendWhatsappText(
+      from,
+      `Non trovo quell'orario sul foglio prove.${fmtProvaAlts(result.alternatives)}\n\n` +
+        `Riprova con un orario in elenco + età, oppure chiama 0573 572649.`
+    )
+    if (lead) {
+      appendLeadNote(lead.id, `WA prova giorno/ora non in foglio: «${text}» (${result.detail ?? ""})`)
+    }
+    return { handled: true, detail: `prova ${result.reason}` }
+  }
+
+  await sendWhatsappText(
+    from,
+    `Ho ricevuto la richiesta di prova, ma non sono riuscito a scriverla sul foglio in automatico.\n` +
+      `Chiama pure il 0573 572649: ti fissiamo lo slot.`
+  )
+  if (lead) appendLeadNote(lead.id, `WA prova ERRORE foglio: ${result.detail ?? result.reason} («${text}»)`)
+  return { handled: true, detail: `prova api_error: ${result.detail ?? ""}` }
 }
 
 /** Es. "Mercoledì ore 17:30", "oggi 18:00", "domani mattina", "sabato mattina". */
@@ -488,7 +800,7 @@ function isLeadBambini(lead: { categoria?: string | null; interesseDettaglio?: s
   if (!lead) return false
   if (lead.categoria === "bambini") return true
   const blob = `${lead.interesseDettaglio ?? ""} ${lead.note ?? ""}`
-  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin)\b/i.test(blob)
+  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(blob)
 }
 
 function appendLeadNote(leadId: string, line: string, patch: Record<string, unknown> = {}) {
@@ -684,23 +996,196 @@ export async function handleWhatsappInboundBooking(params: {
     return { handled: true, detail: "ricontatto consulente" }
   }
 
-  // 1b) Bambini: INFO WHATSAPP / INFO EMAIL, oppure guida (appuntamento + info)
+  // 1b) Bambini: INFO / prova foglio (acquaticità vs scuola nuoto), guida
   if (isLeadBambini(lead)) {
+    // Risposta a richiesta corso per INFO
+    const pendingInfo = pendingInfoCorsoByPhone.get(from)
+    if (pendingInfo && pendingInfo.expiresAt > Date.now()) {
+      const ageForCorso = parseChildAgeIt(text)
+      const corsoChoice =
+        parseCorsoChoiceIt(text) ||
+        (ageForCorso ? detectBambiniCorso({ ageYears: ageForCorso.years }) : null)
+      if (corsoChoice) {
+        pendingInfoCorsoByPhone.delete(from)
+        persistCorsoOnLead(lead, corsoChoice)
+        if (pendingInfo.channel === "wa") {
+          const r = await sendBambiniInfoDocsWhatsapp(from, corsoChoice)
+          if (lead) {
+            appendLeadNote(
+              lead.id,
+              r.missing
+                ? `WA info ${corsoLabel(corsoChoice)}: documento non trovato («${text}»)`
+                : `WA info ${corsoLabel(corsoChoice)}: ${r.sent.join(", ")} («${text}»)`,
+              { stato: lead.stato === "nuovo" ? "contattato" : lead.stato }
+            )
+          }
+          return {
+            handled: true,
+            detail: r.missing ? "info docs missing" : `info wa ${corsoChoice}`,
+          }
+        }
+        // channel email: corso salvato → ripeti flusso email sotto se utente riscrive INFO EMAIL
+        await sendWhatsappText(
+          from,
+          `Ok, ${corsoLabel(corsoChoice)}. Scrivi di nuovo «INFO EMAIL» per ricevere il documento.`
+        )
+        return { handled: true, detail: `corso email ${corsoChoice}` }
+      }
+    } else if (pendingInfo) {
+      pendingInfoCorsoByPhone.delete(from)
+    }
+
+    // Completa prova in attesa di età / corso
+    const pending = pendingProvaByPhone.get(from)
+    if (pending) {
+      if (pending.expiresAt <= Date.now()) {
+        pendingProvaByPhone.delete(from)
+      } else {
+        const etaPending = parseChildAgeIt(text)
+        if (etaPending != null) {
+          const corso =
+            pending.corso ||
+            detectBambiniCorso({ lead, text, ageYears: etaPending.years }) ||
+            parseCorsoChoiceIt(text)
+          if (!corso) {
+            await sendWhatsappText(
+              from,
+              `Età ricevuta (${etaPending.label}).\n` +
+                `Ora indica il corso: ACQUATICITÀ oppure SCUOLA NUOTO.`
+            )
+            pendingProvaByPhone.set(from, {
+              ...pending,
+              expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+            })
+            return { handled: true, detail: "prova attesa corso" }
+          }
+          return completeProvaBooking({
+            from,
+            lead,
+            text,
+            parsed: {
+              weekday: pending.weekday,
+              hour: pending.hour,
+              minute: pending.minute,
+              relative: pending.relative,
+              raw: pending.raw,
+            },
+            eta: etaPending,
+            corso,
+          })
+        }
+        const corsoOnly = parseCorsoChoiceIt(text)
+        if (corsoOnly && !pending.corso) {
+          pendingProvaByPhone.set(from, {
+            ...pending,
+            corso: corsoOnly,
+            expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+          })
+          persistCorsoOnLead(lead, corsoOnly)
+          await sendWhatsappText(
+            from,
+            `Ok, ${corsoLabel(corsoOnly)}. Quanti anni/mesi ha il bambino? (es. 7 oppure 18 mesi)`
+          )
+          return { handled: true, detail: "prova corso ok attesa età" }
+        }
+      }
+    }
+
+    if (parseProvaIntentIt(text)) {
+      const parsedProva = parseSlotRequestIt(text)
+      const eta = parseChildAgeIt(text)
+      const corso =
+        parseCorsoChoiceIt(text) ||
+        detectBambiniCorso({ lead, text, ageYears: eta?.years ?? null })
+      if (!parsedProva) {
+        await sendWhatsappText(from, provaGuideMsg(corso))
+        if (lead) {
+          appendLeadNote(lead.id, `WA guida prova in acqua («${text}»)`, {
+            stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+          })
+        }
+        return { handled: true, detail: "guida prova" }
+      }
+      if (!corso) {
+        pendingProvaByPhone.set(from, {
+          weekday: parsedProva.weekday,
+          hour: parsedProva.hour,
+          minute: parsedProva.minute,
+          relative: parsedProva.relative,
+          raw: parsedProva.raw,
+          expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+        })
+        await sendWhatsappText(
+          from,
+          `Ok per lo slot. Prima dimmi il corso:\n` +
+            `👉 ACQUATICITÀ oppure 👉 SCUOLA NUOTO\n` +
+            (eta ? `(età già nota: ${eta.label})\n` : `Poi indica anche l'età.\n`)
+        )
+        return { handled: true, detail: "prova attesa corso" }
+      }
+      if (eta == null) {
+        pendingProvaByPhone.set(from, {
+          weekday: parsedProva.weekday,
+          hour: parsedProva.hour,
+          minute: parsedProva.minute,
+          relative: parsedProva.relative,
+          raw: parsedProva.raw,
+          corso,
+          expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+        })
+        const dayNames = ["domenica", "lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato"]
+        const dayHint = parsedProva.relative
+          ? parsedProva.relative
+          : dayNames[parsedProva.weekday] ?? "quel giorno"
+        const hh = String(parsedProva.hour).padStart(2, "0")
+        const mm = String(parsedProva.minute).padStart(2, "0")
+        await sendWhatsappText(
+          from,
+          `Ok (${corsoLabel(corso)}), segno la prova per ${dayHint} alle ${hh}:${mm}.\n` +
+            `Quanti anni/mesi ha il bambino? (es. 7 oppure 18 mesi)`
+        )
+        if (lead) appendLeadNote(lead.id, `WA prova ${corso}: attesa età («${text}»)`)
+        return { handled: true, detail: "prova attesa età" }
+      }
+      return completeProvaBooking({ from, lead, text, parsed: parsedProva, eta, corso })
+    }
+
     const infoWa = /\binfo\s*whatsapp\b/.test(t)
     const infoMail = /\binfo\s*(email|mail)\b/.test(t)
+
+    const resolveInfoCorso = (): BambiniCorso | null =>
+      parseCorsoChoiceIt(text) ||
+      detectBambiniCorso({
+        lead,
+        text,
+        ageYears: parseChildAgeIt(text)?.years ?? null,
+      })
+
     if (infoWa) {
-      const r = await sendBambiniInfoDocsWhatsapp(from)
+      const corso = resolveInfoCorso()
+      if (!corso) {
+        pendingInfoCorsoByPhone.set(from, {
+          channel: "wa",
+          expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+        })
+        await sendWhatsappText(from, askCorsoMsg())
+        if (lead) appendLeadNote(lead.id, `WA info: attesa corso («${text}»)`)
+        return { handled: true, detail: "info wa attesa corso" }
+      }
+      persistCorsoOnLead(lead, corso)
+      const r = await sendBambiniInfoDocsWhatsapp(from, corso)
       if (lead) {
         appendLeadNote(
           lead.id,
           r.missing
-            ? `WA info bambini: documenti non trovati («${text}»)`
-            : `WA info bambini documenti: ${r.sent.join(", ")} («${text}»)`,
+            ? `WA info ${corsoLabel(corso)}: documento non trovato («${text}»)`
+            : `WA info ${corsoLabel(corso)}: ${r.sent.join(", ")} («${text}»)`,
           { stato: lead.stato === "nuovo" ? "contattato" : lead.stato }
         )
       }
-      return { handled: true, detail: r.missing ? "info bambini docs missing" : "info bambini whatsapp docs" }
+      return { handled: true, detail: r.missing ? "info docs missing" : `info wa ${corso}` }
     }
+
     if (infoMail) {
       const email = String(lead?.email ?? "").trim()
       if (!email || email === "—") {
@@ -712,28 +1197,39 @@ export async function handleWhatsappInboundBooking(params: {
         if (lead) appendLeadNote(lead.id, `WA info email: email mancante («${text}»)`)
         return { handled: true, detail: "info bambini email mancante" }
       }
-      const docs = resolveBambiniDocs()
+      const corso = resolveInfoCorso()
+      if (!corso) {
+        pendingInfoCorsoByPhone.set(from, {
+          channel: "email",
+          expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+        })
+        await sendWhatsappText(from, askCorsoMsg())
+        if (lead) appendLeadNote(lead.id, `WA info email: attesa corso («${text}»)`)
+        return { handled: true, detail: "info email attesa corso" }
+      }
+      persistCorsoOnLead(lead, corso)
+      const docs = resolveBambiniDocs(corso)
       if (docs.length === 0) {
         await sendWhatsappText(
           from,
-          `Non trovo i documenti info sul server. Prova «INFO WHATSAPP» più tardi oppure scrivi «RICHIAMATEMI».`
+          `Non trovo il documento ${corsoLabel(corso)} sul server. Prova «INFO WHATSAPP» più tardi oppure scrivi «RICHIAMATEMI».`
         )
-        return { handled: true, detail: "info bambini email docs missing" }
+        return { handled: true, detail: "info email docs missing" }
       }
       if (!isSmtpConfigured()) {
-        const r = await sendBambiniInfoDocsWhatsapp(from)
+        const r = await sendBambiniInfoDocsWhatsapp(from, corso)
         if (lead) {
-          appendLeadNote(lead.id, `WA info email: SMTP off → documenti WA (${r.sent.join(", ")})`, {
+          appendLeadNote(lead.id, `WA info email: SMTP off → WA (${r.sent.join(", ")})`, {
             stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
           })
         }
-        return { handled: true, detail: "info bambini email→wa fallback" }
+        return { handled: true, detail: "info email→wa fallback" }
       }
       const mail = await sendMail({
         to: email,
-        subject: "H2Sport — info Acquaticità e Scuola Nuoto Bambini 2026-27",
+        subject: `H2Sport — info ${corsoLabel(corso)} 2026-27`,
         text:
-          `Ciao,\n\nin allegato trovi i documenti con orari e info stagione 2026-27:\n` +
+          `Ciao,\n\nin allegato trovi il documento ${corsoLabel(corso)} stagione 2026-27:\n` +
           docs.map((d) => `• ${d.label}`).join("\n") +
           `\n\nPer maggiori info: 0573 572649 — ${bambiniInfoUrl()}\n\nH2Sport`,
         attachments: docs.map((d) => ({
@@ -745,18 +1241,20 @@ export async function handleWhatsappInboundBooking(params: {
       if (mail.sent) {
         await sendWhatsappText(
           from,
-          `Perfetto, ti ho inviato i documenti all'indirizzo ${email}.\n` +
-            `Se non li trovi, controlla anche lo spam.\n` +
+          `Perfetto, ti ho inviato le info ${corsoLabel(corso)} all'indirizzo ${email}.\n` +
+            `Se non le trovi, controlla anche lo spam.\n` +
             `Per un ricontatto scrivi «RICHIAMATEMI».`
         )
         if (lead) {
-          appendLeadNote(lead.id, `WA info bambini via email a ${email}: ${docs.map((d) => d.label).join(", ")}`, {
-            stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
-          })
+          appendLeadNote(
+            lead.id,
+            `WA info ${corsoLabel(corso)} via email a ${email}: ${docs.map((d) => d.label).join(", ")}`,
+            { stato: lead.stato === "nuovo" ? "contattato" : lead.stato }
+          )
         }
-        return { handled: true, detail: "info bambini email docs" }
+        return { handled: true, detail: `info email ${corso}` }
       }
-      const r = await sendBambiniInfoDocsWhatsapp(from)
+      const r = await sendBambiniInfoDocsWhatsapp(from, corso)
       if (lead) {
         const mailErr =
           mail && typeof mail === "object" && "detail" in mail && (mail as { detail?: string }).detail
@@ -764,10 +1262,34 @@ export async function handleWhatsappInboundBooking(params: {
             : "errore invio"
         appendLeadNote(lead.id, `WA info email fallita (${mailErr}): docs WA (${r.sent.join(", ")})`)
       }
-      return { handled: true, detail: "info bambini email fail→wa" }
+      return { handled: true, detail: "info email fail→wa" }
     }
 
-    // Chiede orari/info senza giorno+ora → guida (appuntamento consigliato + INFO WHATSAPP/EMAIL)
+    // Solo corso / età → salva corso e guida al passo successivo
+    {
+      const ageOnly = parseChildAgeIt(text)
+      const corsoMsg = parseCorsoChoiceIt(text)
+      const corso =
+        corsoMsg ||
+        detectBambiniCorso({ lead, text, ageYears: ageOnly?.years ?? null })
+      if (
+        (corsoMsg || ageOnly) &&
+        corso &&
+        !detectBambiniCorso({ lead }) &&
+        !hasBookingIntent(t) &&
+        !wantsBambiniInfo(t)
+      ) {
+        persistCorsoOnLead(lead, corso)
+        await sendWhatsappText(
+          from,
+          `Perfetto, segno ${corsoLabel(corso)}.\n` +
+            `Scrivi «INFO WHATSAPP» per il documento, oppure «PRENOTA PROVA» + giorno/ora + età.`
+        )
+        return { handled: true, detail: `corso salvato ${corso}` }
+      }
+    }
+
+    // Chiede orari/info senza giorno+ora → guida
     const parsedEarly = parseSlotRequestIt(text)
     if (!parsedEarly && (wantsBambiniInfo(t) || (!wantsExplicitAppointment(t) && !hasBookingIntent(t)))) {
       if (!/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t)) {
@@ -780,7 +1302,6 @@ export async function handleWhatsappInboundBooking(params: {
         return { handled: true, detail: "guida bambini" }
       }
     }
-    // Se ha scritto giorno+ora → prosegue sotto con prenotazione agenda bambini
   }
 
   const parsed = parseSlotRequestIt(text)
