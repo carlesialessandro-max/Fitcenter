@@ -6,6 +6,7 @@ const statusColors: Record<LeadStatus, string> = {
   nuovo: "bg-sky-500/20 text-sky-400 border-sky-500/30",
   contattato: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   appuntamento: "bg-violet-500/20 text-violet-400 border-violet-500/30",
+  appuntamento_prova: "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30",
   tour: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   proposta: "bg-orange-500/20 text-orange-400 border-orange-500/30",
   chiuso_vinto: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",

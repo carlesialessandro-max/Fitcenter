@@ -10,6 +10,7 @@ export type LeadStatus =
   | "nuovo"
   | "contattato"
   | "appuntamento"
+  | "appuntamento_prova"
   | "tour"
   | "proposta"
   | "chiuso_vinto"

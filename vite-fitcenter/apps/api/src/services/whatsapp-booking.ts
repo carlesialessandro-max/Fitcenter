@@ -433,6 +433,13 @@ function wantsExplicitAppointment(t: string): boolean {
   return /\b(appuntamento|prenot|venire|passare|fix|visita|in\s+sede)\b/.test(t)
 }
 
+/** Consulenza in sede (agenda A2), non prova sul foglio. */
+function wantsSedeConsulenza(t: string): boolean {
+  return (
+    /\b(appuntamento|consulenza|in\s+sede|con\s+(una\s+)?consulent)\b/.test(t) && !/\bprova\b/.test(t)
+  )
+}
+
 /** Intent prova in acqua (foglio SNB), non consulenza in sede. */
 export function parseProvaIntentIt(text: string): boolean {
   const t = normText(text)
@@ -563,12 +570,10 @@ async function completeProvaBooking(params: {
   if (result.ok) {
     const msg =
       `Perfetto! Prova in acqua prenotata:\n` +
-      `📅 ${result.dayLabel}\n` +
-      `🕐 ore ${result.orario}\n` +
-      `👶 età ${eta.label}\n\n` +
+      `${result.dayLabel} — ore ${result.orario} — età ${eta.label}\n\n` +
       `Portate: costume, cuffia, ciabatte, accappatoio e occorrente per lavarsi ` +
-      `(anche ciabatte per il genitore che accompagna).\n` +
-      `Ti aspettiamo a H2Sport! 💙`
+      `(anche ciabatte per il genitore).\n` +
+      `H2Sport — 0573 572649`
     await sendWhatsappText(from, msg)
     whatsappEventsStore.append({
       kind: "booking",
@@ -581,7 +586,7 @@ async function completeProvaBooking(params: {
       appendLeadNote(
         lead.id,
         `WA prova in acqua (${corsoLabel(corso)}): ${result.dayLabel} ore ${result.orario} età ${eta.label} (riga ${result.row})`,
-        { stato: lead.stato === "nuovo" ? "contattato" : lead.stato, categoria: "bambini" }
+        { stato: "appuntamento_prova", categoria: "bambini" }
       )
     }
     return { handled: true, detail: `prova ${corso} ${result.dayLabel} ${result.orario}` }
@@ -831,7 +836,7 @@ function findLeadsByPhone(phone: string) {
   if (matches.length === 0) return []
   const rank = (stato: string) => {
     if (stato === "nuovo" || stato === "contattato") return 0
-    if (stato === "appuntamento" || stato === "tour" || stato === "proposta") return 1
+    if (stato === "appuntamento" || stato === "appuntamento_prova" || stato === "tour" || stato === "proposta") return 1
     if (LEAD_STATO_CLOSED.has(stato)) return 3
     return 2
   }
@@ -853,7 +858,10 @@ function markLeadsContattatoAfterCancel(phone: string, noteLine: string, segment
     if (segmento === "adulti" && leadBambini) continue
     appendLeadNote(lead.id, noteLine, {
       stato:
-        lead.stato === "appuntamento" || lead.stato === "tour" || lead.stato === "proposta"
+        lead.stato === "appuntamento" ||
+        lead.stato === "appuntamento_prova" ||
+        lead.stato === "tour" ||
+        lead.stato === "proposta"
           ? "contattato"
           : lead.stato,
     })
@@ -863,7 +871,7 @@ function markLeadsContattatoAfterCancel(phone: string, noteLine: string, segment
 /** Lead più recente in stato appuntamento (per capire se annullare adulti o bambini). */
 function pickLeadForCancel(phone: string) {
   const all = findLeadsByPhone(phone)
-  const withApp = all.filter((l) => l.stato === "appuntamento")
+  const withApp = all.filter((l) => l.stato === "appuntamento" || l.stato === "appuntamento_prova")
   if (withApp.length > 0) {
     return [...withApp].sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0] ?? null
   }
@@ -1168,7 +1176,11 @@ export async function handleWhatsappInboundBooking(params: {
       }
     }
 
-    if (parseProvaIntentIt(text)) {
+    if (
+      parseProvaIntentIt(text) ||
+      // Lead bambini: «prenota lunedì…» → foglio prove (non agenda A2), salvo richiesta sede/consulenza
+      (!!parseSlotRequestIt(text) && /\bprenot/.test(t) && !wantsSedeConsulenza(t))
+    ) {
       const parsedProva = parseSlotRequestIt(text)
       const eta = parseChildAgeIt(text)
       const corso =
@@ -1434,6 +1446,19 @@ export async function handleWhatsappInboundBooking(params: {
   }
 
   // 3) Slot completo → prenota o slot pieno
+  // Bambini senza «appuntamento/consulenza in sede»: non creare A2 (usa foglio prove)
+  if (isLeadBambini(lead) && !wantsSedeConsulenza(t)) {
+    await sendWhatsappText(
+      from,
+      `Per la prova in acqua usa:\n` +
+        `PRENOTA PROVA + giorno + orario + età\n` +
+        `es. PRENOTA PROVA lunedì 14 settembre 17:00 età 5\n\n` +
+        `Per un appuntamento in sede con consulente scrivi «appuntamento» + giorno/ora.`
+    )
+    if (lead) appendLeadNote(lead.id, `WA: slot senza «prova» → guida prova («${text}»)`)
+    return { handled: true, detail: "bambini: guida prova non A2" }
+  }
+
   let inizio: Date
   if (parsed.relative) {
     inizio = slotOnRelativeDay(parsed.relative, parsed.hour, parsed.minute)

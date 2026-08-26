@@ -15,7 +15,16 @@ import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
-const STATUSES: LeadStatus[] = ["nuovo", "contattato", "appuntamento", "tour", "proposta", "chiuso_vinto", "chiuso_perso"]
+const STATUSES: LeadStatus[] = [
+  "nuovo",
+  "contattato",
+  "appuntamento",
+  "appuntamento_prova",
+  "tour",
+  "proposta",
+  "chiuso_vinto",
+  "chiuso_perso",
+]
 
 export function LeadDetail() {
   const { id } = useParams<{ id: string }>()

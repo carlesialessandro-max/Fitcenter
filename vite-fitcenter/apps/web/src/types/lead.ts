@@ -11,6 +11,7 @@ export type LeadStatus =
   | "nuovo"
   | "contattato"
   | "appuntamento"
+  | "appuntamento_prova"
   | "tour"
   | "proposta"
   | "chiuso_vinto"
@@ -84,6 +85,7 @@ export const LEAD_STATUS_LABELS: Record<LeadStatus, string> = {
   nuovo: "Nuovo",
   contattato: "Contattato",
   appuntamento: "Appuntamento",
+  appuntamento_prova: "Appuntamento prova",
   tour: "Tour",
   proposta: "Proposta",
   chiuso_vinto: "Chiuso Vinto",

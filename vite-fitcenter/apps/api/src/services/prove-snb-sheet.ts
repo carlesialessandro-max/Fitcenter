@@ -369,6 +369,84 @@ function detectCols(headerRow: unknown[]): {
   return { nameCol, timeCol, ageCol, phoneCol }
 }
 
+/** Se l'intestazione non allinea (es. colonna 1,2,3… a sinistra), trova la colonna orari dalle righe dati. */
+function refineColsFromData(
+  values: unknown[][],
+  headerAt: number,
+  cols: { nameCol: number; timeCol: number; ageCol: number; phoneCol: number }
+): { nameCol: number; timeCol: number; ageCol: number; phoneCol: number } {
+  const sample: unknown[][] = []
+  for (let r = headerAt + 1; r < Math.min(headerAt + 8, values.length); r++) {
+    sample.push(values[r] ?? [])
+  }
+  if (sample.length === 0) return cols
+
+  let bestTime = cols.timeCol
+  let bestScore = 0
+  const maxC = Math.max(...sample.map((r) => r.length), cols.timeCol + 1)
+  for (let c = 0; c < maxC; c++) {
+    let score = 0
+    for (const row of sample) {
+      if (parseTimeCell(row[c])) score++
+    }
+    if (score > bestScore) {
+      bestScore = score
+      bestTime = c
+    }
+  }
+  if (bestScore === 0) {
+    // Anche con timeCol da header: evita colonna «1,2,3» come nome
+    let nameCol = cols.nameCol
+    let idxScore = 0
+    for (const row of sample) {
+      const v = String(row[nameCol] ?? "").trim()
+      if (/^\d{1,2}$/.test(v)) idxScore++
+    }
+    if (idxScore >= Math.ceil(sample.length / 2) && nameCol + 1 < maxC) {
+      nameCol = nameCol + 1
+    }
+    return { ...cols, nameCol }
+  }
+
+  let nameCol = Math.max(0, bestTime - 1)
+  let idxScore = 0
+  for (const row of sample) {
+    const v = String(row[nameCol] ?? "").trim()
+    if (/^\d{1,2}$/.test(v)) idxScore++
+  }
+  if (idxScore >= Math.ceil(sample.length / 2) && nameCol > 0) {
+    nameCol = nameCol - 1
+  }
+  // Se nameCol è ancora indici e bestTime-1 era l'indice, nome è bestTime-1 only if not index...
+  // Caso tipico: [n, nome, orario] → bestTime=2, nameCol parte 1; se nameCol=1 ha nomi, ok.
+  // Caso: header orario su col sbagliata, bestTime corretto.
+  const header = values[headerAt] ?? []
+  let ageCol = bestTime + 1
+  let phoneCol = bestTime + 2
+  for (let c = 0; c < header.length; c++) {
+    const n = normCell(header[c])
+    if (n.includes("cognome") || (n.includes("nome") && !n.includes("cognome"))) {
+      // tieni nameCol già stimato se header non combacia con indici
+      if (!/^\d+$/.test(String(header[c] ?? "").trim())) {
+        const hv = normCell(header[c])
+        if (hv.includes("cognome") || hv.includes("nome")) nameCol = c
+      }
+    }
+    if (n.includes("eta") || n === "età") ageCol = c
+    if (n.includes("telefon") || n.includes("cell")) phoneCol = c
+  }
+  // Header «COGNOME» spesso in col 0 mentre i dati hanno [n°, nome, orario]
+  let nameIdxScore = 0
+  for (const row of sample) {
+    if (/^\d{1,2}$/.test(String(row[nameCol] ?? "").trim())) nameIdxScore++
+  }
+  if (nameIdxScore >= Math.ceil(sample.length / 2) && nameCol + 1 < bestTime) {
+    nameCol = nameCol + 1
+  }
+
+  return { nameCol, timeCol: bestTime, ageCol, phoneCol }
+}
+
 function buildSections(values: unknown[][], defaultYear: number): DaySection[] {
   const sections: DaySection[] = []
   for (let r = 0; r < values.length; r++) {
@@ -387,6 +465,7 @@ function buildSections(values: unknown[][], defaultYear: number): DaySection[] {
         }
       }
       if (!cols || headerAt < 0) continue
+      cols = refineColsFromData(values, headerAt, cols)
       const slotRows: number[] = []
       for (let sr = headerAt + 1; sr < values.length; sr++) {
         const srow = values[sr] ?? []
