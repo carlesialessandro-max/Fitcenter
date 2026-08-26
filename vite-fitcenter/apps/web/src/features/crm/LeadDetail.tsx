@@ -13,6 +13,7 @@ import { LeadStatusBadge } from "./LeadStatusBadge"
 import { ChiamaButton } from "@/components/ChiamaButton"
 import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
+import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
 const STATUSES: LeadStatus[] = ["nuovo", "contattato", "appuntamento", "tour", "proposta", "chiuso_vinto", "chiuso_perso"]
 
@@ -162,19 +163,35 @@ export function LeadDetail() {
                       tipo="lead"
                       leadId={lead.id}
                     />
+                    {(() => {
+                      const waChat = whatsAppMeUrl(lead.telefono, "")
+                      return waChat ? (
+                        <a
+                          href={waChat}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Apri chat WhatsApp"
+                          className="inline-flex h-8 items-center justify-center rounded-md border border-zinc-600 bg-transparent px-3 text-sm font-medium text-zinc-100 hover:bg-zinc-800"
+                        >
+                          WhatsApp
+                        </a>
+                      ) : null
+                    })()}
                     {canSendWa ? (
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
+                        className="text-zinc-400"
                         disabled={waMutation.isPending}
                         onClick={() => {
                           setWaMsg(null)
-                          if (!confirm(`Inviare WhatsApp di benvenuto a ${lead.nome}?`)) return
+                          if (!confirm(`Inviare template WhatsApp di benvenuto a ${lead.nome}?`)) return
                           waMutation.mutate()
                         }}
+                        title="Invia solo il template Meta di benvenuto (non apre la chat)"
                       >
-                        {waMutation.isPending ? "Invio WA…" : "WhatsApp"}
+                        {waMutation.isPending ? "Invio…" : "Invia benvenuto"}
                       </Button>
                     ) : null}
                   </>
