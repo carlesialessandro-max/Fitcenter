@@ -266,7 +266,7 @@ export function leadWelcomeTemplateConfig(opts?: { bambini?: boolean }) {
  * Non lanciare errori verso il caller: logga e ritorna esito.
  * Se il template Meta non ha variabili, non inviare bodyParams
  * (WHATSAPP_LEAD_TEMPLATE_HAS_NAME=true solo se c’è {{1}} nel modello).
- * Bambini: WHATSAPP_LEAD_TEMPLATE_BAMBINI (testo con Ciao {{1}}…).
+ * Bambini: WHATSAPP_LEAD_TEMPLATE_BAMBINI + testo libero con prova in acqua obbligatoria.
  */
 export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
@@ -288,10 +288,40 @@ export async function notifyLeadWelcomeWhatsapp(params: {
       languageCode,
       ...(hasNameParam ? { bodyParams: [nome] } : {}),
     })
+    // Dopo il template Meta (apre la finestra 24h) inviamo il testo operativo bambini.
+    if (params.bambini) {
+      try {
+        await sendWhatsappText(phone, bambiniWelcomeFollowupMsg())
+      } catch (e2) {
+        console.warn(
+          "[whatsapp] follow-up benvenuto bambini:",
+          (e2 as Error)?.message ?? e2
+        )
+      }
+    }
     return { sent: true, result }
   } catch (e) {
     const error = (e as Error)?.message ?? String(e)
     console.error("[whatsapp] notify lead:", error)
     return { sent: false, error }
   }
+}
+
+/** Testo post-template: prova in acqua prima dell’iscrizione (non appuntamento sede). */
+export function bambiniWelcomeFollowupMsg(): string {
+  return (
+    `👋 Benvenuto in H2Sport! 💙\n` +
+    `Grazie per aver richiesto informazioni sui nostri corsi per bambini 🏊‍♂️\n\n` +
+    `Per ricevere le informazioni puoi scegliere:\n` +
+    `📲 INFO WHATSAPP → ti inviamo qui il documento con orari, costi e informazioni del corso richiesto.\n` +
+    `📧 INFO EMAIL → riceverai tutte le informazioni via email.\n` +
+    `☎️ RICHIAMATEMI → una nostra consulente ti contatterà.\n\n` +
+    `⚠️ IMPORTANTE: prima di poter effettuare l'iscrizione è necessario fare una prova in acqua. ` +
+    `La prova ci permette di valutare il livello del bambino e individuare il gruppo e il posto in vasca più adatti.\n\n` +
+    `👉 Dopo aver ricevuto le informazioni, puoi prenotare la prova scrivendo:\n` +
+    `PRENOTA PROVA + giorno + orario + età del bambino\n` +
+    `Esempio:\n` +
+    `PRENOTA PROVA martedì 15:15 età 18 mesi\n\n` +
+    `💙 Ti aspettiamo a H2Sport!`
+  )
 }

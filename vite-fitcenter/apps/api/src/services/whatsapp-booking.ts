@@ -18,7 +18,7 @@ import {
   IDA2_SERVIZIO_CONSULENTI_ADULTI,
   type AgendaSegmento,
 } from "./agenda-a2.js"
-import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument } from "./whatsapp.js"
+import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument, bambiniWelcomeFollowupMsg } from "./whatsapp.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -276,20 +276,9 @@ async function sendBambiniInfoDocsWhatsapp(
   return { sent, missing: false }
 }
 
-function bambiniGuideMsg(nome?: string | null): string {
-  const chi = String(nome ?? "").trim() || "Ciao"
-  return (
-    `Ciao ${chi}, grazie per aver richiesto informazioni sui corsi bambini H2Sport! 💙\n` +
-    `Per aiutarti a scegliere il corso più adatto alle esigenze del tuo bambino, ti consigliamo di fissare direttamente un appuntamento in sede con una nostra consulente: potrai ricevere tutte le informazioni, conoscere le nostre attività e valutare insieme la soluzione migliore.\n` +
-    `📅 Per evitare attese, rispondi a questo messaggio indicando il giorno e l'orario in cui preferisci venire, ad esempio:\n` +
-    `👉 Martedì alle 17:30\n` +
-    `👉 Sabato mattina\n` +
-    `Preferisci essere richiamato? Scrivi semplicemente «RICHIAMATEMI» e ti contatteremo.\n` +
-    `Se invece desideri ricevere prima le informazioni:\n` +
-    `📲 «INFO WHATSAPP» → poi indica ACQUATICITÀ o SCUOLA NUOTO\n` +
-    `📧 «INFO EMAIL» → stesso discorso via email\n` +
-    `Ti aspettiamo a H2Sport! 💙`
-  )
+function bambiniGuideMsg(_nome?: string | null): string {
+  // Stesso contenuto del follow-up benvenuto: niente «fissa appuntamento in sede» senza prova.
+  return bambiniWelcomeFollowupMsg()
 }
 
 function stripAccents(s: string): string {
