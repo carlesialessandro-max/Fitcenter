@@ -91,7 +91,9 @@ In alternativa, header (uno dei due):
 | `Authorization` | `Bearer TOKEN` |
 
 Il token sta in `apps/api/.env` sul server FitCenter (`ZAPIER_WEBHOOK_TOKEN=...`).  
-Se è impostato anche `ZAPIER_WEBHOOK_HMAC_SECRET`, serve in più l’header `X-Zapier-Signature` (HMAC-SHA256 del raw body) — di solito **non** serve.
+Se manca `?token=` (o l’header), il CRM risponde **Unauthorized**.
+
+`ZAPIER_WEBHOOK_HMAC_SECRET` è facoltativo: la firma `X-Zapier-Signature` viene controllata **solo se** lo step la invia. Zapier Custom Request di solito non la manda, e va bene così.
 
 ## Code by Zapier (form sito → FitCenter)
 

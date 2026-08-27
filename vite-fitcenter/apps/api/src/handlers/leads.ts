@@ -326,18 +326,18 @@ export async function webhookZapier(req: Request, res: Response) {
     })
   }
 
-  // Firma HMAC opzionale (consigliata): header X-Zapier-Signature = sha256 hex del raw body.
-  // Serve per mitigare leakage del token o replay semplici.
+  // HMAC solo se arriva X-Zapier-Signature. Zapier Custom Request non lo invia:
+  // se lo rendiamo obbligatorio lo step resta Unauthorized anche con ?token=.
   const hmacSecret = (process.env.ZAPIER_WEBHOOK_HMAC_SECRET ?? "").trim()
-  if (hmacSecret) {
-    const provided = String(req.get("x-zapier-signature") ?? "").trim().toLowerCase()
+  const providedSig = String(req.get("x-zapier-signature") ?? "").trim().toLowerCase()
+  if (hmacSecret && providedSig) {
     const raw = (req as any).rawBody as Buffer | undefined
-    if (!provided || !raw || raw.length === 0) {
+    if (!raw || raw.length === 0) {
       return res.status(401).json({ message: "Unauthorized" })
     }
     const expectedSig = crypto.createHmac("sha256", hmacSecret).update(raw).digest("hex")
     try {
-      const a = Buffer.from(provided, "hex")
+      const a = Buffer.from(providedSig, "hex")
       const b = Buffer.from(expectedSig, "hex")
       if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return res.status(401).json({ message: "Unauthorized" })
