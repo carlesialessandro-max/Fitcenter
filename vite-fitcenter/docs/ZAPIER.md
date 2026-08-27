@@ -75,6 +75,24 @@ Puoi inviare un array:
 
 ---
 
+## Autenticazione (obbligatoria se sul CRM c’è `ZAPIER_WEBHOOK_TOKEN`)
+
+Lo step **Custom Request** verso FitCenter deve autenticarsi, altrimenti ricevi **Unauthorized**.
+
+URL consigliato (sostituisci `TOKEN`):
+
+`https://crm.h2sport.it/api/webhook/zapier?token=TOKEN`
+
+In alternativa, header (uno dei due):
+
+| Header | Valore |
+|--------|--------|
+| `X-Zapier-Token` | lo stesso di `ZAPIER_WEBHOOK_TOKEN` sul server CRM |
+| `Authorization` | `Bearer TOKEN` |
+
+Il token sta in `apps/api/.env` sul server FitCenter (`ZAPIER_WEBHOOK_TOKEN=...`).  
+Se è impostato anche `ZAPIER_WEBHOOK_HMAC_SECRET`, serve in più l’header `X-Zapier-Signature` (HMAC-SHA256 del raw body) — di solito **non** serve.
+
 ## Code by Zapier (form sito → FitCenter)
 
 Se tra Catch Hook e Custom Request c’è uno step **Code**, usa qualcosa del genere così nome/email/telefono non si perdono (anche per tipologii tipo acquaticità):

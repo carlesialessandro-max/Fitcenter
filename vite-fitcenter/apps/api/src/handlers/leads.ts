@@ -354,7 +354,10 @@ export async function webhookZapier(req: Request, res: Response) {
       String(req.get("x-zapier-token") ?? "").trim() ||
       String(req.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim()
     if (!provided || provided !== expected) {
-      return res.status(401).json({ message: "Unauthorized" })
+      return res.status(401).json({
+        message: "Unauthorized",
+        hint: "Aggiungi ?token=... all'URL oppure header X-Zapier-Token / Authorization Bearer (ZAPIER_WEBHOOK_TOKEN sul CRM).",
+      })
     }
   }
   try {
