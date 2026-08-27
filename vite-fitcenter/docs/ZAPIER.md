@@ -117,6 +117,7 @@ const get = (...keys) => {
 
 const full = get("nome", "Nome", "Nome e Cognome", "nome_e_cognome", "name");
 const parts = full.split(/\s+/).filter(Boolean);
+const tipologia = get("tipologia", "Tipologia");
 const interesse = get(
   "tipologiaLabel",
   "Tipologia Label",
@@ -126,6 +127,8 @@ const interesse = get(
   "Quale servizio?",
   "quale_servizio"
 );
+const bambini = /bambin|acquaticit|campus/i.test(`${tipologia} ${interesse}`) &&
+  !/adult/i.test(`${tipologia} ${interesse}`);
 
 output = [
   {
@@ -135,6 +138,7 @@ output = [
     telefono: get("telefono", "Telefono", "phone", "Phone", "Cellulare") || "—",
     fonte: "website",
     interesse,
+    categoria: get("categoria", "Categoria") || (bambini ? "bambini" : "generale"),
     note: [
       get("tipologia", "Tipologia") && `Tipologia: ${get("tipologia", "Tipologia")}`,
       get("oggetto", "Oggetto") && `Oggetto: ${get("oggetto", "Oggetto")}`,
@@ -146,7 +150,7 @@ output = [
 ];
 ```
 
-Nello step **Custom Request** mappa `nome`, `cognome`, `email`, `telefono`, `fonte`, `interesse`, `note` dagli output dello Code (non lasciare campi vuoti / “No data”).
+Nello step **Custom Request** mappa `nome`, `cognome`, `email`, `telefono`, `fonte`, `interesse`, `categoria`, `note` dagli output dello Code (non lasciare campi vuoti / “No data”).
 
 **Nota tipologie sito:** scuola nuoto bambini e acquaticità possono condividere lo stesso Catch Hook Zapier; la distinzione resta nel campo `tipologia` / `interesse`.
 

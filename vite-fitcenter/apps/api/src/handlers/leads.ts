@@ -6,13 +6,24 @@ import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 import { notifyLeadWelcomeWhatsapp } from "../services/whatsapp.js"
 
-/** Lead bambini → Irene. Solo segnali espliciti; esclusi nomi campagna (es. Festa della Mamma = adulti). */
-function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
+/** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. */
+export function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
   const blob = parts
     .filter((p) => p != null && String(p).trim() !== "")
     .join(" ")
+    .toLowerCase()
   if (!blob.trim()) return false
-  return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(blob)
+  const hasBambini =
+    /\b(bambin|bimbi|campus|acquaticit|neonat)\b/i.test(blob) ||
+    /scuola\s*nuoto\s*bambin/i.test(blob) ||
+    /scuola_nuoto_bambini|acquaticita/i.test(blob)
+  const hasAdulti =
+    /\b(adult[oi]|master|palestra|fitness|\bspa\b)\b/i.test(blob) ||
+    /scuola\s*nuoto\s*adult/i.test(blob) ||
+    /scuola_nuoto_adulti/i.test(blob)
+  if (hasBambini) return true
+  if (hasAdulti) return false
+  return /\bscuola\s*nuoto\b/i.test(blob)
 }
 
 export async function listLeads(req: Request, res: Response) {
@@ -276,7 +287,9 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     interesseRaw && VALID_INTERESSE.includes(interesseNorm as InteresseLead)
       ? (interesseNorm as InteresseLead)
       : undefined
-  const interesseDettaglio = interesseRaw && !interesseValido ? interesseRaw : undefined
+  const dettaglioPick = pick(["interesse_dettaglio", "interesseDettaglio", "tipologiaLabel", "Tipologia Label"])
+  const interesseDettaglio =
+    dettaglioPick || (interesseRaw && !interesseValido ? interesseRaw : undefined)
 
   const oggetto =
     pick(["oggetto", "Oggetto", "subject", "Subject", "titolo", "Titolo"]) ||
@@ -302,8 +315,10 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
 
   const categoriaRaw = (pick(["categoria", "Categoria", "canale", "Canale"]) || "").toLowerCase()
   const blobCat = `${categoriaRaw} ${tipologiaRaw} ${interesseRaw} ${oggetto} ${messaggio} ${noteOut ?? ""}`.toLowerCase()
-  const categoria =
-    categoriaRaw === "bambini" || isLeadBambiniText(blobCat) ? ("bambini" as const) : undefined
+  let categoria: "bambini" | undefined
+  if (categoriaRaw === "bambini") categoria = "bambini"
+  else if (categoriaRaw === "generale" || categoriaRaw === "adulti") categoria = undefined
+  else categoria = isLeadBambiniText(blobCat) ? "bambini" : undefined
   return {
     nome: nome || "—",
     cognome: cognome || "—",
