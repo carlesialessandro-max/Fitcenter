@@ -962,6 +962,45 @@ function titleMatchesCalendarioCorso(servizio: string, eventTitle: string): bool
   return false
 }
 
+function hhmmToMinutes(t: string | undefined): number | null {
+  const n = hhmmNormalized(t)
+  if (!n) return null
+  const [h, m] = n.split(":").map((x) => Number(x))
+  return h * 60 + m
+}
+
+function planningEventOnDay(e: CalendarioMergedEventDto, giornoIso: string): boolean {
+  if (e.dateIso) return e.dateIso === giornoIso
+  const dow = dowFromIsoLocal(giornoIso)
+  return dow != null && e.dow === dow
+}
+
+/**
+ * Lezioni a 0 iscritti: se il corso è nel planning settimanale, deve esistere
+ * uno slot quel giorno (stesso titolo, orario ±20 min). Evita «sbarra a terra»
+ * il lunedì quando in planning è solo mar/ven/sab.
+ */
+function emptyLessonAllowedByPlanning(
+  g: CorsoGroup,
+  events: CalendarioMergedEventDto[] | undefined,
+): boolean {
+  const booked = g.partecipanti.filter((p) => !p.inAttesa).length
+  if (booked > 0) return true
+  if (g.key.includes("__WAITLIST")) return true
+  if (!events?.length) return true
+  const known = events.some((e) => titleMatchesCalendarioCorso(g.servizio, e.title))
+  if (!known) return true
+  const startMin = hhmmToMinutes(g.oraInizio)
+  return events.some((e) => {
+    if (!planningEventOnDay(e, g.giorno)) return false
+    if (!titleMatchesCalendarioCorso(g.servizio, e.title)) return false
+    if (startMin == null) return true
+    const em = hhmmToMinutes(e.start)
+    if (em == null) return true
+    return Math.abs(em - startMin) <= 20
+  })
+}
+
 /** Note salvate nel calendario reparto «Corsi» (slot planning), mostrate in lettura sulla pagina Corsi. */
 function planningNotesFromCalendarioCorsi(
   g: CorsoGroup,
@@ -1276,12 +1315,14 @@ export function Corsi() {
       if (nextN > prevN) bySlot.set(slot, g)
       else if (nextN === prevN && g.idLezione && !prev.idLezione) bySlot.set(slot, g)
     }
-    return Array.from(bySlot.values()).sort((a, b) => {
+    return Array.from(bySlot.values())
+      .filter((g) => emptyLessonAllowedByPlanning(g, calendarioCorsiQ.data?.events))
+      .sort((a, b) => {
       const oa = a.oraInizio ?? "99:99"
       const ob = b.oraInizio ?? "99:99"
       return oa.localeCompare(ob) || a.servizio.localeCompare(b.servizio, "it")
     })
-  }, [rawGruppi, blockedByCourse])
+  }, [rawGruppi, blockedByCourse, calendarioCorsiQ.data?.events])
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
