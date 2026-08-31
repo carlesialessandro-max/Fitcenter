@@ -88,7 +88,8 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
         // Pattern Zapier comune: { key/name/label: "...", value: "..." }
         const key = unwrap(o.key ?? o.name ?? o.label ?? "").trim()
         const val = unwrap(o.value ?? o.text ?? o.val ?? "").trim()
-        if (key && val) out[key] = val
+        const fromValues = Array.isArray(o.values) ? unwrap(o.values[0]).trim() : ""
+        if (key && (val || fromValues)) out[key] = val || fromValues
         for (const [k, vv] of Object.entries(o)) {
           visit(vv, path ? `${path}.${k}` : k, depth + 1)
         }
@@ -192,18 +193,34 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     "familyName",
   ])
   const emailPick = pick(["email", "Email", "e_mail", "mail", "Mail", "email_address", "emailAddress"])
-  const telefonoPick = pick([
+  let telefonoPick = pick([
     "telefono",
     "Telefono",
     "phone",
     "Phone",
+    "Phone Number",
+    "phone number",
+    "phone_number",
+    "phoneNumber",
+    "full_phone",
+    "fullPhone",
     "cellulare",
     "Cellulare",
     "mobile",
     "Mobile",
-    "phone_number",
-    "phoneNumber",
+    "mobile_number",
+    "whatsapp",
+    "WhatsApp",
+    "whatsapp_number",
   ])
+  if (!telefonoPick) {
+    for (const [fk, fv] of Object.entries(flat)) {
+      if (/phone|telefon|cellulare|whatsapp|mobile|cell\b/i.test(fk) && /\d{8,}/.test(fv)) {
+        telefonoPick = fv.trim()
+        break
+      }
+    }
+  }
 
   // Google Ads / form esterni: spesso mandano un'unica stringa tipo "Ilaria,Ciardi,mail,+39..."
   const rawCandidate =
@@ -226,7 +243,9 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   }
   splitIfNeeded()
   const email = emailPick || labeled.email || parsed.email || ""
-  const telefono = telefonoPick || labeled.telefono || parsed.telefono || ""
+  const telefonoRaw = telefonoPick || labeled.telefono || parsed.telefono || ""
+  const telefonoDigits = telefonoRaw.replace(/\D/g, "")
+  const telefono = telefonoDigits.length >= 8 ? telefonoDigits : telefonoRaw
   let fonte: LeadSource = "zapier"
   let fonteRaw = pick(["fonte", "Fonte", "source", "Source", "campaign_source", "origin"]).trim().toLowerCase()
   if (fonteRaw === "sito web" || fonteRaw === "sito") fonteRaw = "website"

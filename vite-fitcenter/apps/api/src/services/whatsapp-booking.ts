@@ -972,13 +972,20 @@ export async function handleWhatsappInboundBooking(params: {
   const lead = findLeadByPhone(from)
   const t = normText(text)
 
-  // Eco del follow-up che abbiamo appena inviato (Meta a volte lo rimanda come inbound).
-  if (
+  const isWelcomeEcho =
     /h2sport\.it\/#attivita/i.test(text) ||
     /corsi adulti e programma/i.test(t) ||
-    /nuoto-libero-da-settembre-2026/i.test(text)
-  ) {
+    /nuoto-libero-da-settembre-2026/i.test(text) ||
+    /una consulente h2sport ti richiamera a breve/i.test(t)
+
+  // Eco del follow-up che abbiamo appena inviato (Meta a volte lo rimanda come inbound).
+  if (isWelcomeEcho) {
     return { handled: true, detail: "echo follow-up adulti ignorato" }
+  }
+
+  // Ogni testo del cliente va in note (sito e Facebook Ads), se il telefono combacia.
+  if (lead) {
+    appendLeadNote(lead.id, `WA: «${text}»`)
   }
 
   // 0) Annullamento: solo il segmento del lead (adulti vs bambini), non entrambi
