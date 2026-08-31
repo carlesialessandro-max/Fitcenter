@@ -5874,35 +5874,83 @@ function prenotazioneScopeText(raw: Record<string, unknown>): string {
 }
 
 /**
- * Lezioni vuote da mostrare in pagina Corsi (per bloccarle).
- * Esclude scuola nuoto / livelli / agonismo (vanno in Scuola nuoto).
- * Non usa allowlist di nomi: altrimenti GAG, SPARTAN, FUNZIONALE ecc. a 0 iscritti spariscono.
+ * Pagina Corsi: solo macro FITNESS e H2O (gestionale).
+ * Esclude danza, bimbi, scuola nuoto, ju-jitsu, squadre, prove, ecc.
  */
-function isLezioneVuotaPaginaCorsi(raw: Record<string, unknown>): boolean {
+function isCorsoPaginaCorsiFitnessH2o(raw: Record<string, unknown>): boolean {
   const t = prenotazioneScopeText(raw)
   if (!t) return false
+
+  // Fuori scope (anche se taggati male)
   if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return false
-  // "NUOTO" ma non corsi acqua fitness (ACQUA GYM / AQUA …)
-  if (t.includes("NUOTO") && !(t.includes("ACQUA") || t.includes("AQUA"))) return false
-  if (/\bLIV\.?\b/.test(t)) return false
-  if (/\bBAMBINI\b/.test(t)) return false
   if (t.includes("AGONISMO")) return false
   if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return false
-  // Tipico titolo scuola nuoto: "LUN. 1", "MAR 2", ecc.
   if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return false
-  return true
+  if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return false
+  if (/\b(JU-?JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTO)\b/.test(t)) return false
+  if (/\bPROVA\b/.test(t) && !/\b(FITNESS|H2O|ACQUA)\b/.test(t)) return false
+  // Ramo danza (non FITNESS): es. "Corsi Pagamento DANZA"
+  if (/\bDANZA\b/.test(t) && !/\bFITNESS\b/.test(t)) return false
+
+  // Macro categoria esplicita
+  if (/\bH2O\b/.test(t) || /\bFITNESS\b/.test(t)) return true
+
+  // H2O per titolo (quando manca la macro nella riga)
+  if (/\bACQUA\b|\bAQUA\b/.test(t)) return true
+  if (/NUOTO ADULTI/.test(t)) return true
+  if (/\bGESTANTI\b/.test(t)) return true
+
+  // FITNESS per titolo (albero gestionale)
+  const fitnessTitles = [
+    "ADDOMINALI",
+    "BODY PUMP",
+    "BODY TONE",
+    "FIT BOXE",
+    "FLEX & TONE",
+    "FLEX AND TONE",
+    "FUNZIONALE",
+    "GABBIA",
+    "GAG",
+    "GRAVIDANZA YOGA",
+    "JOLLY",
+    "JUST BARRE",
+    "PILATES",
+    "POSTURALE",
+    "POWER YOGA",
+    "SBARRA A TERRA",
+    "SPARTAN",
+    "SPINNING",
+    "STEP ENERGY",
+    "TONIFICAZIONE",
+    "TOTAL BODY",
+    "TOTALBODY",
+    "TRX",
+    "WALKING",
+    "YOGA GINNASTICA",
+  ]
+  if (fitnessTitles.some((name) => t.includes(name))) return true
+
+  return false
+}
+
+/** @deprecated alias — stessa regola di scope FITNESS/H2O */
+function isLezioneVuotaPaginaCorsi(raw: Record<string, unknown>): boolean {
+  return isCorsoPaginaCorsiFitnessH2o(raw)
 }
 
 function buildPrenotazioniLezioniVuoteSql(prenIdx: SqlColIndex, alias = "p"): string[] {
   const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"]) ?? "Descrizione"
   const n = `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${descCol}] AS NVARCHAR(512)), ''))))`
-  // Solo esclusioni: l'allowlist precedente escludeva corsi fitness con nome non in lista.
+  // Preferisci FITNESS / H2O / ACQUA / titoli tipici; escludi bimbi / danza / scuola nuoto
   return [
-    `(${n} NOT LIKE '%NUOTO%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%')`,
-    `${n} NOT LIKE '%LIV.%'`,
-    `${n} NOT LIKE '% LIV %'`,
+    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%H2O%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%' OR ${n} LIKE '%NUOTO ADULTI%' OR ${n} LIKE '%GESTANTI%' OR ${n} LIKE '%GAG%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%FUNZIONALE%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%YOGA%' OR ${n} LIKE '%SPARTAN%' OR ${n} LIKE '%TONIFICAZIONE%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POSTURALE%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%JUST BARRE%' OR ${n} LIKE '%SBARRA%')`,
     `${n} NOT LIKE '%SCUOLA NUOTO%'`,
     `${n} NOT LIKE '%BAMBINI%'`,
+    `${n} NOT LIKE '%BIMBI%'`,
+    `${n} NOT LIKE '%PROPEDEUTICA%'`,
+    `${n} NOT LIKE '%DANZA%'`,
+    `${n} NOT LIKE '%JU-JITSU%'`,
+    `${n} NOT LIKE '%JUJITSU%'`,
     `${n} NOT LIKE '%AGONISMO%'`,
     `${n} NOT LIKE '%BISETTIMANALE%'`,
     `${n} NOT LIKE '%TRISETTIMANALE%'`,
@@ -6191,12 +6239,9 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
   const filterCorsiAttivi = (rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] => {
     if (!giornoOk || !giorno) return rows
     return rows.filter((r) => {
-      if ((r.raw as Record<string, unknown>)?.__lezioniSenzaIscritti) {
-        return (
-          isLezioneVuotaPaginaCorsi((r.raw ?? {}) as Record<string, unknown>) &&
-          isCorsoPrenotazioneAttivo(r, giorno)
-        )
-      }
+      const raw = (r.raw ?? {}) as Record<string, unknown>
+      // Solo FITNESS + H2O (anche con iscritti: evita bimbi/danza/ju-jitsu in elenco)
+      if (!isCorsoPaginaCorsiFitnessH2o(raw)) return false
       return isCorsoPrenotazioneAttivo(r, giorno)
     })
   }
