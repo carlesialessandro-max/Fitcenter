@@ -5686,7 +5686,7 @@ function buildLezionePlExactDaySql(plIdx: SqlColIndex, giornoParam: string, alia
   return parts.length ? `(${parts.join(" OR ")})` : null
 }
 
-/** Strategie OR: ricorrenza settimanale (FitCenter) oppure data esatta su PrenotazioniLezioni. */
+/** Strategie: ricorrenza settimanale SEMPRE dentro DataInizio–DataFine della serie lezione. */
 function buildLezioneScheduleWhereSql(plIdx: SqlColIndex, giornoParam: string): string {
   const strategies: string[] = []
   const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, giornoParam, "pl")
@@ -5698,9 +5698,10 @@ function buildLezioneScheduleWhereSql(plIdx: SqlColIndex, giornoParam: string): 
   strategies.push(buildHardcodedPlScheduleSql(giornoParam, plIdx))
   const weekdayFlags = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, "pl")
   if (weekdayFlags) strategies.push(`(${dateRange} AND ${weekdayFlags})`)
+  // Giorno singolo: solo se la data scelta cade nel range della serie (niente serie scadute).
   const exactDay = buildLezionePlExactDaySql(plIdx, giornoParam, "pl")
-  if (exactDay) strategies.push(exactDay)
-  return strategies.length ? `(${strategies.join(" OR ")})` : "1=1"
+  if (exactDay) strategies.push(`(${dateRange} AND ${exactDay})`)
+  return strategies.length ? `(${strategies.join(" OR ")})` : dateRange
 }
 
 function buildHardcodedPlScheduleSql(giornoParam: string, plIdx?: SqlColIndex): string {
@@ -5766,13 +5767,18 @@ function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): 
     if (Number.isFinite(n) && n !== 0) return false
   }
   if (giorno && /^\d{4}-\d{2}-\d{2}$/.test(giorno)) {
+    // Preferisci validità della SERIE lezione (PrenotazioniLezioni), non solo della scheda Prenotazioni.
     const di = toIsoDay(
-      rawValIgnoreCase(raw, "DataInizio") ??
+      rawValIgnoreCase(raw, "LezioneDataInizio") ??
+        rawValIgnoreCase(raw, "DataInizioLezione") ??
+        rawValIgnoreCase(raw, "DataInizio") ??
         rawValIgnoreCase(raw, "PrenotazioneDataInizio") ??
         rawValIgnoreCase(raw, "InizioValidita")
     )
     const df = toIsoDay(
-      rawValIgnoreCase(raw, "DataFine") ??
+      rawValIgnoreCase(raw, "LezioneDataFine") ??
+        rawValIgnoreCase(raw, "DataFineLezione") ??
+        rawValIgnoreCase(raw, "DataFine") ??
         rawValIgnoreCase(raw, "PrenotazioneDataFine") ??
         rawValIgnoreCase(raw, "FineValidita")
     )
@@ -5780,6 +5786,61 @@ function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): 
     if (df && giorno > df) return false
   }
   return true
+}
+
+/** Chiave slot: titolo corso + giorno + ora inizio (per togliere lezioni vuote doppie). */
+function corsoSlotKey(row: PrenotazioneCorsoRow): string {
+  const raw = (row.raw ?? {}) as Record<string, unknown>
+  const titolo = String(
+    row.servizio ??
+      rawValIgnoreCase(raw, "PrenotazioneDescrizione") ??
+      rawValIgnoreCase(raw, "Descrizione") ??
+      ""
+  )
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+  const giorno = String(row.giorno ?? "").slice(0, 10)
+  let ora = String(row.oraInizio ?? "").trim()
+  if (!ora || ora === "00:00") {
+    for (const k of ["OraInizio", "PrenotazioniIscrizioneOraInizio", "DataInizioPrenotazioneIscrizione"]) {
+      const v = rawValIgnoreCase(raw, k)
+      if (v == null) continue
+      const iso = toIsoDateTime(v)
+      if (iso && iso.length >= 16) {
+        ora = iso.slice(11, 16)
+        if (ora !== "00:00") break
+      }
+      const s = String(v)
+      const m = s.match(/\b([01]?\d|2[0-3])[:\.]([0-5]\d)/)
+      if (m) {
+        ora = `${m[1]!.padStart(2, "0")}:${m[2]}`
+        break
+      }
+    }
+  }
+  return `${titolo}|${giorno}|${ora}`
+}
+
+/**
+ * Se esiste già una lezione con iscritti nello stesso slot (titolo+ora),
+ * scarta le «lezioni vuote» duplicate (serie parallele nel gestionale).
+ */
+function dropDuplicateEmptyLessons(rows: PrenotazioneCorsoRow[]): PrenotazioneCorsoRow[] {
+  const occupied = new Set<string>()
+  for (const r of rows) {
+    const raw = (r.raw ?? {}) as Record<string, unknown>
+    if (raw.__lezioniSenzaIscritti) continue
+    occupied.add(corsoSlotKey(r))
+  }
+  if (occupied.size === 0) return rows
+  return rows.filter((r) => {
+    const raw = (r.raw ?? {}) as Record<string, unknown>
+    if (!raw.__lezioniSenzaIscritti) return true
+    return !occupied.has(corsoSlotKey(r))
+  })
 }
 
 /** Testo unificato macro/categoria/descrizione prenotazione (pagina Corsi vs Scuola nuoto). */
@@ -5905,6 +5966,8 @@ async function queryLezioniCorsiSenzaIscritti(
   const colPlOi = colPlOiRaw ?? "OraInizio"
   const colPlOf = colPlOfRaw ?? "OraFine"
   const colPlVis = colPlVisRaw ?? "WebVisibile"
+  const colPlDi = pickSqlCol(plIdx, ["DataInizio", "Datainizio", "DataDa", "InizioValidita"]) ?? "DataInizio"
+  const colPlDf = pickSqlCol(plIdx, ["DataFine", "Datafine", "DataA", "FineValidita"]) ?? "DataFine"
   const colPrenId = colPrenIdRaw ?? "IDPrenotazione"
   const colPrenDesc = colPrenDescRaw ?? "Descrizione"
 
@@ -5998,10 +6061,13 @@ async function queryLezioniCorsiSenzaIscritti(
       pl.[${colPlOi}] AS OraInizio,
       pl.[${colPlOf}] AS OraFine,
       pl.[${colPlVis}] AS WebVisibile,
+      pl.[${colPlDi}] AS LezioneDataInizio,
+      pl.[${colPlDf}] AS LezioneDataFine,
       ${selectDesc}${extraPrenSql}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
     WHERE ${where.join(" AND ")}
+      AND CAST(@giorno AS date) BETWEEN CAST(pl.[${colPlDi}] AS date) AND CAST(pl.[${colPlDf}] AS date)
     ORDER BY pl.[${colPlOi}] ASC;
   `
 
@@ -6335,6 +6401,8 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       if (vuote.length) base = [...base, ...vuote]
     }
 
+    const finalize = (rows: PrenotazioneCorsoRow[]) => dropDuplicateEmptyLessons(filterCorsiAttivi(rows))
+
     // Lista d'attesa (se esiste): RVW_PrenotazioniListaAttesaUtenti
     try {
       const waitView = await resolvePrenotazioniWaitlistViewName()
@@ -6392,10 +6460,10 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
         }
         return row
       })
-      return filterCorsiAttivi([...base, ...wait])
+      return finalize([...base, ...wait])
     } catch (e) {
       lastPrenotazioniWaitlistError = (e as Error)?.message ?? String(e)
-      return filterCorsiAttivi(base)
+      return finalize(base)
     }
   } catch (e) {
     // Se la vista non esiste o colonne diverse, fallback a vuoto (come le altre query "flessibili").

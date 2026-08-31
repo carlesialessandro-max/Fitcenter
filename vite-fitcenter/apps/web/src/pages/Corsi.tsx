@@ -1207,10 +1207,33 @@ export function Corsi() {
     return s
   }, [blocchiCorsiQ.data])
   const gruppi = useMemo(() => {
-    return rawGruppi.map((g) => {
+    const withBlock = rawGruppi.map((g) => {
       const idLez = g.idLezione
       const isBlocked = idLez ? blockedByCourse.has(idLez) : false
       return { ...g, isBloccato: isBlocked || g.isBloccato }
+    })
+    // Serie lezione doppie stesso titolo/ora: tieni quella con più iscritti.
+    const bySlot = new Map<string, CorsoGroup>()
+    for (const g of withBlock) {
+      if (g.key.includes("__WAITLIST")) {
+        bySlot.set(g.key, g)
+        continue
+      }
+      const slot = `${g.servizio.trim().toLocaleLowerCase()}|${g.giorno}|${g.oraInizio ?? ""}`
+      const prev = bySlot.get(slot)
+      if (!prev) {
+        bySlot.set(slot, g)
+        continue
+      }
+      const prevN = prev.partecipanti.filter((p) => !p.inAttesa).length
+      const nextN = g.partecipanti.filter((p) => !p.inAttesa).length
+      if (nextN > prevN) bySlot.set(slot, g)
+      else if (nextN === prevN && g.idLezione && !prev.idLezione) bySlot.set(slot, g)
+    }
+    return Array.from(bySlot.values()).sort((a, b) => {
+      const oa = a.oraInizio ?? "99:99"
+      const ob = b.oraInizio ?? "99:99"
+      return oa.localeCompare(ob) || a.servizio.localeCompare(b.servizio, "it")
     })
   }, [rawGruppi, blockedByCourse])
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
