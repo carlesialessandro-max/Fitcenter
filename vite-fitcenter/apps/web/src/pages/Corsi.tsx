@@ -104,6 +104,39 @@ function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
   )
 }
 
+type CorsoAmbito = "tutti" | "fitness" | "h2o"
+
+function normalizeCorsoText(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** Fitness = terra; H2O = acqua / nuoto adulti. */
+function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
+  const rawBits = g.partecipanti
+    .slice(0, 4)
+    .flatMap((p) => {
+      const raw = (p.raw ?? {}) as Record<string, unknown>
+      return [
+        raw.MacroCategoriaDescrizione,
+        raw.MacroCategoria,
+        raw.CategoriaDescrizione,
+        raw.Categoria,
+        raw.PrenotazioneDescrizione,
+      ]
+    })
+    .filter((v) => v != null && String(v).trim())
+    .map((v) => String(v))
+  const t = normalizeCorsoText([g.servizio, ...rawBits].join(" "))
+  if (/\bH2O\b/.test(t) || /\bACQUA\b/.test(t) || /\bAQUA\b/.test(t)) return "h2o"
+  if (/NUOTO ADULTI/.test(t) || /\bGESTANTI\b/.test(t)) return "h2o"
+  return "fitness"
+}
+
 function bestOraFromRaw(raw: any, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = raw?.[k]
@@ -971,6 +1004,13 @@ export function Corsi() {
   const { role } = useAuth()
   const [giorno, setGiorno] = useState(() => isoToday())
   const [search, setSearch] = useState("")
+  const [ambito, setAmbito] = useState<CorsoAmbito>(() => {
+    try {
+      const v = localStorage.getItem("fitcenter-corsi-ambito")
+      if (v === "fitness" || v === "h2o" || v === "tutti") return v
+    } catch {}
+    return "tutti"
+  })
   const [messaggiGroup, setMessaggiGroup] = useState<CorsoGroup | null>(null)
   const [messaggiChannel, setMessaggiChannel] = useState<"email" | "whatsapp">("email")
   const [messaggiSubject, setMessaggiSubject] = useState("")
@@ -1239,9 +1279,12 @@ export function Corsi() {
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
-    if (!q) return gruppi
-    return gruppi.filter((g) => g.servizio.toLocaleLowerCase().includes(q))
-  }, [gruppi, search])
+    return gruppi.filter((g) => {
+      if (ambito !== "tutti" && corsoAmbitoOf(g) !== ambito) return false
+      if (q && !g.servizio.toLocaleLowerCase().includes(q)) return false
+      return true
+    })
+  }, [gruppi, search, ambito])
   const [selectedCorsoKey, setSelectedCorsoKey] = useState<string | null>(null)
 
   useEffect(() => {
@@ -1273,8 +1316,8 @@ export function Corsi() {
     return m
   }, [gruppi, giorno])
   const totalePartecipanti = useMemo(
-    () => gruppi.reduce((s, g) => s + g.partecipanti.length, 0),
-    [gruppi]
+    () => gruppiFiltrati.reduce((s, g) => s + g.partecipanti.length, 0),
+    [gruppiFiltrati]
   )
   void data?.meta
 
@@ -1584,7 +1627,9 @@ export function Corsi() {
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
-          <p className="mt-1 text-sm text-zinc-400">Elenco corsi del giorno, inclusi quelli senza prenotazioni (per bloccarli).</p>
+          <p className="mt-1 text-sm text-zinc-400">
+            Corsi attivi del giorno (data inizio–fine include il giorno scelto). Filtra Fitness o H2O.
+          </p>
           <p className="mt-2">
             <Link
               to="/calendario/corsi"
@@ -1602,7 +1647,7 @@ export function Corsi() {
             </p>
           ) : null}
         </div>
-        <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-2 sm:items-end">
+        <div className="grid w-full gap-3 sm:w-auto sm:grid-cols-3 sm:items-end">
           <label className="grid gap-1 text-sm text-zinc-400">
             <span>Giorno</span>
             <input
@@ -1613,17 +1658,50 @@ export function Corsi() {
             />
           </label>
           <label className="grid gap-1 text-sm text-zinc-400">
+            <span>Ambito</span>
+            <div className="flex rounded-lg border border-zinc-700 bg-zinc-900/50 p-0.5">
+              {(
+                [
+                  ["tutti", "Tutti"],
+                  ["fitness", "Fitness"],
+                  ["h2o", "H2O"],
+                ] as const
+              ).map(([id, label]) => {
+                const on = ambito === id
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setAmbito(id)
+                      try {
+                        localStorage.setItem("fitcenter-corsi-ambito", id)
+                      } catch {}
+                    }}
+                    className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+                      on
+                        ? "bg-amber-500/20 text-amber-300"
+                        : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </div>
+          </label>
+          <label className="grid gap-1 text-sm text-zinc-400">
             <span>Cerca corso</span>
             <input
               type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Es. pilates"
-              className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30 sm:w-56"
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100 shadow-sm placeholder:text-zinc-600 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
             />
           </label>
           {canManageNoShow ? (
-            <label className="flex items-center gap-2 text-xs text-zinc-400 sm:col-span-2 sm:justify-end">
+            <label className="flex items-center gap-2 text-xs text-zinc-400 sm:col-span-3 sm:justify-end">
               <input
                 type="checkbox"
                 checked={debugCorsi}
@@ -1670,7 +1748,7 @@ export function Corsi() {
                     · senza prenotazioni: {String((data.meta as any).lezioniSenzaIscrittiCount ?? "0")}
                   </span>
                 ) : null}
-                {search.trim() ? (
+                {search.trim() || ambito !== "tutti" ? (
                   <span className="text-zinc-600"> (filtrati)</span>
                 ) : null}
                 {debugCorsi && data?.meta ? (

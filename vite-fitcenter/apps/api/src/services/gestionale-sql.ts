@@ -5686,32 +5686,49 @@ function buildLezionePlExactDaySql(plIdx: SqlColIndex, giornoParam: string, alia
   return parts.length ? `(${parts.join(" OR ")})` : null
 }
 
-/** Strategie: ricorrenza settimanale SEMPRE dentro DataInizio–DataFine della serie lezione. */
+/**
+ * Giorno settimana della lezione: se GGWeek è 1–7 vale solo quello
+ * (evita slot del martedì alle 9 che comparivano anche il lunedì via flag Lun/Mar tutti a -1).
+ */
+function buildLezioneDayOfWeekSql(plIdx: SqlColIndex | undefined, giornoParam: string, alias = "pl"): string {
+  const iso = buildIsoWeekdayExpr(giornoParam)
+  const dow = `DATEPART(weekday, CAST(${giornoParam} AS date))`
+  const hasIdx = Boolean(plIdx && plIdx.lower.size > 0)
+  const ggCol =
+    hasIdx && plIdx
+      ? pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
+      : "GGWeek"
+  const flags = buildWeekdayFlagsSql(hasIdx ? plIdx : undefined, giornoParam, alias)
+  const exactDay = hasIdx && plIdx ? buildLezionePlExactDaySql(plIdx, giornoParam, alias) : null
+  const parts: string[] = []
+  if (ggCol) {
+    const ggN = `TRY_CAST(${alias}.[${ggCol}] AS int)`
+    parts.push(`(${ggN} BETWEEN 1 AND 7 AND (${ggN} = ${iso} OR ${ggN} = ${dow}))`)
+    if (flags) {
+      parts.push(`((${ggN} IS NULL OR ${ggN} NOT BETWEEN 1 AND 7) AND ${flags})`)
+    }
+  } else if (flags) {
+    parts.push(flags)
+  }
+  if (exactDay) parts.push(exactDay)
+  if (parts.length === 0) return `(${iso} = ${iso})`
+  return `(${parts.join(" OR ")})`
+}
+
+/** Ricorrenza settimanale SEMPRE dentro DataInizio–DataFine della serie lezione. */
 function buildLezioneScheduleWhereSql(plIdx: SqlColIndex, giornoParam: string): string {
-  const strategies: string[] = []
   const plDateRangeSql = buildLezionePlDateRangeSql(plIdx, giornoParam, "pl")
   const dateRange =
     plDateRangeSql ??
     `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
-  const dayMatch = buildLezioneGiornoMatchSql(plIdx, giornoParam, "pl")
-  if (dayMatch) strategies.push(`(${dateRange} AND ${dayMatch})`)
-  strategies.push(buildHardcodedPlScheduleSql(giornoParam, plIdx))
-  const weekdayFlags = buildWeekdayFlagsSql(plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, "pl")
-  if (weekdayFlags) strategies.push(`(${dateRange} AND ${weekdayFlags})`)
-  // Giorno singolo: solo se la data scelta cade nel range della serie (niente serie scadute).
-  const exactDay = buildLezionePlExactDaySql(plIdx, giornoParam, "pl")
-  if (exactDay) strategies.push(`(${dateRange} AND ${exactDay})`)
-  return strategies.length ? `(${strategies.join(" OR ")})` : dateRange
+  const dayMatch = buildLezioneDayOfWeekSql(plIdx, giornoParam, "pl")
+  return `(${dateRange} AND ${dayMatch})`
 }
 
 function buildHardcodedPlScheduleSql(giornoParam: string, plIdx?: SqlColIndex): string {
-  const iso = buildIsoWeekdayExpr(giornoParam)
-  const dow = `DATEPART(weekday, CAST(${giornoParam} AS date))`
   const datePart = `(CAST(${giornoParam} AS date) BETWEEN CAST(pl.[DataInizio] AS date) AND CAST(pl.[DataFine] AS date))`
-  const ggPart = `(TRY_CAST(pl.[GGWeek] AS int) = ${iso} OR TRY_CAST(pl.[GGWeek] AS int) = ${dow})`
-  const weekdayFlags = buildWeekdayFlagsSql(plIdx && plIdx.lower.size > 0 ? plIdx : undefined, giornoParam, "pl")
-  if (weekdayFlags) return `(${datePart} AND (${ggPart} OR ${weekdayFlags}))`
-  return `(${datePart} AND ${ggPart})`
+  const dayMatch = buildLezioneDayOfWeekSql(plIdx, giornoParam, "pl")
+  return `(${datePart} AND ${dayMatch})`
 }
 
 function buildPrenotazioniWeekdaySql(prenIdx: SqlColIndex, plIdx: SqlColIndex, giornoParam: string): string | null {
@@ -5886,6 +5903,8 @@ function isCorsoPaginaCorsiFitnessH2o(raw: Record<string, unknown>): boolean {
   if (t.includes("AGONISMO")) return false
   if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return false
   if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return false
+  // Es. "nuoto adulti star 08.45 lun." (slot nominato, non macro H2O)
+  if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return false
   if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return false
   if (/\b(JU-?JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTO)\b/.test(t)) return false
   if (/\bPROVA\b/.test(t) && !/\b(FITNESS|H2O|ACQUA)\b/.test(t)) return false
