@@ -353,7 +353,7 @@ export function adultiWelcomeFollowupMsg(nome?: string | null): string {
     `🌊 Corsi in acqua: https://h2sport.it/#orari-acqua\n` +
     `🧘 Corsi fitness: https://h2sport.it/#orari-terra\n` +
     `🏊 Nuoto libero: https://h2sport.it/piscina#nuoto-libero\n` +
-    `📄 Planning corsie (PDF): https://h2sport.it/wp-content/uploads/2025/03/Planning-corsie-nuoto-libero.pdf\n\n` +
+    `📄 Planning corsie (PDF): https://h2sport.it/corsi/nuoto-libero-da-settembre-2026.pdf\n\n` +
     `🕒 Orari di apertura:\n` +
     `Lun–Ven 7:00–22:00 · Sab 9:00–19:00 · Dom 9:00–13:00\n` +
     `📍 Via Provinciale Lucchese 139, Pistoia\n` +
