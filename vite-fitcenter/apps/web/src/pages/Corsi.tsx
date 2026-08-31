@@ -921,7 +921,7 @@ function defaultMessageBody(g: CorsoGroup): string {
   return `Gentile socio,\n\nTi ricordiamo la lezione «${g.servizio}» in data ${fmtDateIt(g.giorno)}${g.oraInizio ? ` alle ${fmtTimeDot(g.oraInizio)}` : ""}${g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}.\n\nSportivi saluti.`
 }
 
-/** Lunedì=1 … Domenica=0 (come planning / getDay). */
+/** Abbreviazione giorno (dom…sab) da data ISO locale. */
 function dowFromIsoLocal(iso: string): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim())
   if (!m) return null
@@ -929,6 +929,12 @@ function dowFromIsoLocal(iso: string): number | null {
   const mo = Number(m[2])
   const d = Number(m[3])
   return new Date(y, mo - 1, d).getDay()
+}
+
+function weekdayAbbrIt(iso: string): string {
+  const names = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"]
+  const dow = dowFromIsoLocal(iso)
+  return dow == null ? "" : names[dow] ?? ""
 }
 
 function hhmmNormalized(v: string | undefined): string | null {
@@ -1857,7 +1863,7 @@ export function Corsi() {
                               ) : null}
                             </div>
                             <div className="mt-0.5 text-xs text-zinc-500">
-                              gio {fmtDateIt(g.giorno)}
+                              {weekdayAbbrIt(g.giorno)} {fmtDateIt(g.giorno)}
                               {g.oraInizio ? ` · ${fmtTimeDot(g.oraInizio)}` : ""}
                               {g.oraFine ? `–${fmtTimeDot(g.oraFine)}` : ""}
                             </div>

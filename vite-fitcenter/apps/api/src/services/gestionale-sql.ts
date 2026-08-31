@@ -5630,20 +5630,23 @@ function buildGgWeekMatchSql(plIdx: SqlColIndex, giornoParam: string, alias = "p
   return `(TRY_CAST(${alias}.[${gg}] AS int) = ${iso} OR TRY_CAST(${alias}.[${gg}] AS int) = DATEPART(weekday, CAST(${giornoParam} AS date)))`
 }
 
+const LEZIONE_DOW_FLAGS: { cols: string[]; dow: number; alias: string }[] = [
+  { cols: ["Lunedi", "Lunedì", "LUN", "FlagLunedi", "Lun", "GG_Lunedi"], dow: 1, alias: "Lunedi" },
+  { cols: ["Martedi", "Martedì", "MAR", "FlagMartedi", "Mar", "GG_Martedi"], dow: 2, alias: "Martedi" },
+  { cols: ["Mercoledi", "Mercoledì", "MER", "FlagMercoledi", "Mer", "GG_Mercoledi"], dow: 3, alias: "Mercoledi" },
+  { cols: ["Giovedi", "Giovedì", "GIO", "FlagGiovedi", "Gio", "GG_Giovedi"], dow: 4, alias: "Giovedi" },
+  { cols: ["Venerdi", "Venerdì", "VEN", "FlagVenerdi", "Ven", "GG_Venerdi"], dow: 5, alias: "Venerdi" },
+  { cols: ["Sabato", "SAB", "FlagSabato", "Sab", "GG_Sabato"], dow: 6, alias: "Sabato" },
+  { cols: ["Domenica", "DOM", "FlagDomenica", "Dom", "GG_Domenica"], dow: 7, alias: "Domenica" },
+]
+
 /** Flag giorno settimana su PrenotazioniLezioni: solo colonne presenti nello schema (no Domenica se assente). */
 function buildWeekdayFlagsSql(plIdx: SqlColIndex | undefined, giornoParam: string, alias: string): string | null {
-  const flagDefs = [
-    { cols: ["Lunedi", "Lunedì", "LUN", "FlagLunedi", "Lun", "GG_Lunedi"], dow: 1 },
-    { cols: ["Martedi", "Martedì", "MAR", "FlagMartedi", "Mar", "GG_Martedi"], dow: 2 },
-    { cols: ["Mercoledi", "Mercoledì", "MER", "FlagMercoledi", "Mer", "GG_Mercoledi"], dow: 3 },
-    { cols: ["Giovedi", "Giovedì", "GIO", "FlagGiovedi", "Gio", "GG_Giovedi"], dow: 4 },
-    { cols: ["Venerdi", "Venerdì", "VEN", "FlagVenerdi", "Ven", "GG_Venerdi"], dow: 5 },
-    { cols: ["Sabato", "SAB", "FlagSabato", "Sab", "GG_Sabato"], dow: 6 },
-    { cols: ["Domenica", "DOM", "FlagDomenica", "Dom", "GG_Domenica"], dow: 7 },
-  ]
   const hasIdx = Boolean(plIdx && plIdx.lower.size > 0)
+  const iso = buildIsoWeekdayExpr(giornoParam)
   const parts: string[] = []
-  for (const d of flagDefs) {
+  const usedCols: string[] = []
+  for (const d of LEZIONE_DOW_FLAGS) {
     let col: string | null = null
     if (hasIdx && plIdx) {
       col = pickSqlCol(plIdx, d.cols)
@@ -5653,12 +5656,17 @@ function buildWeekdayFlagsSql(plIdx: SqlColIndex | undefined, giornoParam: strin
       if (d.dow >= 6) continue
       col = d.cols[0]!
     }
+    usedCols.push(col)
     parts.push(
-      `(DATEPART(weekday, CAST(${giornoParam} AS date)) = ${d.dow} AND TRY_CAST(${alias}.[${col}] AS int) NOT IN (0))`
+      `(${iso} = ${d.dow} AND ${alias}.[${col}] IS NOT NULL AND TRY_CAST(${alias}.[${col}] AS int) NOT IN (0))`
     )
   }
   if (parts.length === 0) return null
-  return `(${parts.join(" OR ")})`
+  // Se Lun–Ven sono tutti -1 (default Access) non è un calendario, è rumore.
+  const notAllOn = usedCols
+    .map((c) => `(${alias}.[${c}] IS NULL OR TRY_CAST(${alias}.[${c}] AS int) IN (0))`)
+    .join(" OR ")
+  return `((${parts.join(" OR ")}) AND (${notAllOn}))`
 }
 
 /** Giorno settimana: GGWeek ISO oppure flag Lun/Mar/… (schema FitCenter). */
@@ -5686,33 +5694,94 @@ function buildLezionePlExactDaySql(plIdx: SqlColIndex, giornoParam: string, alia
   return parts.length ? `(${parts.join(" OR ")})` : null
 }
 
+/** Lunedì=1 … domenica=7 da YYYY-MM-DD, senza fuso. */
+function isoWeekdayMonday1FromYmd(ymd: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim())
+  if (!m) return 0
+  const js = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay()
+  return js === 0 ? 7 : js
+}
+
+function flagYes(v: unknown): boolean | null {
+  if (v == null || v === "") return null
+  const n = Number(v)
+  if (Number.isFinite(n)) return n !== 0
+  const s = String(v).trim().toLowerCase()
+  if (["1", "si", "sì", "true", "yes", "-1"].includes(s)) return true
+  if (["0", "no", "false"].includes(s)) return false
+  return null
+}
+
 /**
- * Giorno settimana della lezione: se GGWeek è 1–7 vale solo quello
- * (evita slot del martedì alle 9 che comparivano anche il lunedì via flag Lun/Mar tutti a -1).
+ * Lezione vuota: deve cadere nel giorno scelto.
+ * Se i flag Lun/Mar sono selettivi (non tutti accesi), valgono quelli — anche se GGWeek è sbagliato.
+ * Altrimenti GGWeek 1–7 (lun=1).
+ */
+function lezioneCadeNelGiornoIso(raw: Record<string, unknown>, giorno: string): boolean {
+  const want = isoWeekdayMonday1FromYmd(giorno)
+  if (want < 1) return false
+
+  const flags = LEZIONE_DOW_FLAGS.map((d) => {
+    for (const k of [d.alias, ...d.cols]) {
+      const v = rawValIgnoreCase(raw, k)
+      if (v == null || v === "") continue
+      return flagYes(v)
+    }
+    return null
+  })
+  const known = flags.filter((v) => v != null) as boolean[]
+  if (known.length > 0 && !known.every(Boolean)) {
+    return flags[want - 1] === true
+  }
+
+  const gg = Number(
+    rawValIgnoreCase(raw, "GGWeek") ??
+      rawValIgnoreCase(raw, "GiornoSettimana") ??
+      rawValIgnoreCase(raw, "Weekday") ??
+      rawValIgnoreCase(raw, "WeekDay")
+  )
+  if (Number.isFinite(gg) && gg >= 1 && gg <= 7) return gg === want
+  return false
+}
+
+/**
+ * Giorno settimana: flag selettivi hanno priorità su GGWeek
+ * (GGWeek a volte resta 1 per slot che in realtà sono martedì).
  */
 function buildLezioneDayOfWeekSql(plIdx: SqlColIndex | undefined, giornoParam: string, alias = "pl"): string {
   const iso = buildIsoWeekdayExpr(giornoParam)
-  const dow = `DATEPART(weekday, CAST(${giornoParam} AS date))`
   const hasIdx = Boolean(plIdx && plIdx.lower.size > 0)
   const ggCol =
     hasIdx && plIdx
       ? pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
       : "GGWeek"
-  const flags = buildWeekdayFlagsSql(hasIdx ? plIdx : undefined, giornoParam, alias)
-  const exactDay = hasIdx && plIdx ? buildLezionePlExactDaySql(plIdx, giornoParam, alias) : null
-  const parts: string[] = []
-  if (ggCol) {
-    const ggN = `TRY_CAST(${alias}.[${ggCol}] AS int)`
-    parts.push(`(${ggN} BETWEEN 1 AND 7 AND (${ggN} = ${iso} OR ${ggN} = ${dow}))`)
-    if (flags) {
-      parts.push(`((${ggN} IS NULL OR ${ggN} NOT BETWEEN 1 AND 7) AND ${flags})`)
+  const flagCols: { col: string; dow: number }[] = []
+  for (const d of LEZIONE_DOW_FLAGS) {
+    if (hasIdx && plIdx) {
+      const col = pickSqlCol(plIdx, d.cols)
+      if (!col) continue
+      flagCols.push({ col, dow: d.dow })
+    } else if (d.dow < 6) {
+      flagCols.push({ col: d.cols[0]!, dow: d.dow })
     }
-  } else if (flags) {
-    parts.push(flags)
   }
-  if (exactDay) parts.push(exactDay)
-  if (parts.length === 0) return `(${iso} = ${iso})`
-  return `(${parts.join(" OR ")})`
+  const ggN = ggCol ? `TRY_CAST(${alias}.[${ggCol}] AS int)` : null
+  const ggMatch = ggN ? `(${ggN} BETWEEN 1 AND 7 AND ${ggN} = ${iso})` : null
+  if (flagCols.length > 0) {
+    const todayFlags = flagCols
+      .map(
+        (f) =>
+          `(${iso} = ${f.dow} AND ${alias}.[${f.col}] IS NOT NULL AND TRY_CAST(${alias}.[${f.col}] AS int) NOT IN (0))`
+      )
+      .join(" OR ")
+    const notAllOn = flagCols
+      .map((f) => `(${alias}.[${f.col}] IS NULL OR TRY_CAST(${alias}.[${f.col}] AS int) IN (0))`)
+      .join(" OR ")
+    const selective = `((${todayFlags}) AND (${notAllOn}))`
+    if (ggMatch) return `(${selective} OR ((NOT (${notAllOn})) AND ${ggMatch}))`
+    return selective
+  }
+  return ggMatch ?? `(1 = 0)`
 }
 
 /** Ricorrenza settimanale SEMPRE dentro DataInizio–DataFine della serie lezione. */
@@ -6118,7 +6187,16 @@ async function queryLezioniCorsiSenzaIscritti(
     "PrenotazioniCategorieDescrizione",
   ])
   if (colPrenCat) extraPrenSelects.push(`p.[${colPrenCat}] AS CategoriaDescrizione`)
-  const extraPrenSql = `,\n      ${extraPrenSelects.join(",\n      ")}`
+  const extraPrenSql = extraPrenSelects.length ? `,\n      ${extraPrenSelects.join(",\n      ")}` : ""
+
+  const extraPlSelects: string[] = []
+  const colPlGg = pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
+  if (colPlGg) extraPlSelects.push(`pl.[${colPlGg}] AS GGWeek`)
+  for (const d of LEZIONE_DOW_FLAGS) {
+    const col = pickSqlCol(plIdx, d.cols)
+    if (col) extraPlSelects.push(`pl.[${col}] AS ${d.alias}`)
+  }
+  const extraPlSql = extraPlSelects.length ? `,\n      ${extraPlSelects.join(",\n      ")}` : ""
 
   const buildQuery = (where: string[]) => `
     SET DATEFIRST 1;
@@ -6130,7 +6208,7 @@ async function queryLezioniCorsiSenzaIscritti(
       pl.[${colPlVis}] AS WebVisibile,
       pl.[${colPlDi}] AS LezioneDataInizio,
       pl.[${colPlDf}] AS LezioneDataFine,
-      ${selectDesc}${extraPrenSql}
+      ${selectDesc}${extraPrenSql}${extraPlSql}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
     WHERE ${where.join(" AND ")}
@@ -6144,6 +6222,7 @@ async function queryLezioniCorsiSenzaIscritti(
       const idLez = Number(raw0.IDPrenotazioneLezione)
       if (!Number.isFinite(idLez) || idLez <= 0 || seenLez.has(idLez) || lezOccupati.has(idLez)) continue
       if (!isLezioneVuotaPaginaCorsi(raw0)) continue
+      if (!lezioneCadeNelGiornoIso(raw0, giorno)) continue
       const raw: Record<string, unknown> = {
         ...raw0,
         __lezioniSenzaIscritti: true,
