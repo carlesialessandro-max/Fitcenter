@@ -46,7 +46,7 @@ function kindClass(kind: string, status?: string): string {
 function displayText(e: WhatsappLogEvent): string {
   const t = String(e.text ?? "").trim()
   if (!t) return "—"
-  // Template Meta: template:lead_benvenuto [Nome]
+  // Template Meta: template:lead_benvenuto_adulti [Nome]
   const m = t.match(/^template:([^\s\[]+)\s*(?:\[(.*)\])?$/i)
   if (m) {
     const name = m[2]?.trim()

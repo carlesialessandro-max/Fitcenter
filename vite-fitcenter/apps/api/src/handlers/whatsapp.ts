@@ -292,7 +292,7 @@ export async function whatsappSendLead(req: Request, res: Response) {
     const hasNameParam =
       body.bodyParams != null
         ? Array.isArray(body.bodyParams) && body.bodyParams.length > 0
-        : (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
+        : cfg.hasNameParam
     const result = await sendWhatsappTemplate({
       toRaw: to,
       templateName,

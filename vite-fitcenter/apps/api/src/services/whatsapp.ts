@@ -256,8 +256,15 @@ export function leadWelcomeTemplateConfig(opts?: { bambini?: boolean }) {
       (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
     return { enabled, templateName, languageCode, hasNameParam }
   }
-  const templateName = (process.env.WHATSAPP_LEAD_TEMPLATE ?? "lead_benvenuto").trim() || "lead_benvenuto"
-  const hasNameParam = (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
+  const templateName =
+    (process.env.WHATSAPP_LEAD_TEMPLATE_ADULTI ?? "").trim() ||
+    "lead_benvenuto_adulti"
+  // Default true: lead_benvenuto_adulti ha {{1}} per il nome.
+  const adultiHasNameEnv = (process.env.WHATSAPP_LEAD_TEMPLATE_ADULTI_HAS_NAME ?? "").trim().toLowerCase()
+  const hasNameParam =
+    adultiHasNameEnv === "false"
+      ? (process.env.WHATSAPP_LEAD_TEMPLATE_HAS_NAME ?? "").trim().toLowerCase() === "true"
+      : true
   return { enabled, templateName, languageCode, hasNameParam }
 }
 
@@ -267,7 +274,9 @@ export function leadWelcomeTemplateConfig(opts?: { bambini?: boolean }) {
  * Se il template Meta non ha variabili, non inviare bodyParams
  * (WHATSAPP_LEAD_TEMPLATE_HAS_NAME=true solo se c’è {{1}} nel modello).
  * Bambini: WHATSAPP_LEAD_TEMPLATE_BAMBINI + testo libero con prova in acqua obbligatoria.
- * Adulti: un solo messaggio (testo con appuntamento + link). Niente template saluto né «ti richiamerà».
+ * Adulti: un solo messaggio (testo con appuntamento + link). Se WhatsApp rifiuta
+ * il testo libero (nessuna finestra 24h) si usa WHATSAPP_LEAD_TEMPLATE_ADULTI
+ * (default lead_benvenuto_adulti). Niente «ti richiamerà» in automatico.
  */
 export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
