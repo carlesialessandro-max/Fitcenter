@@ -361,6 +361,8 @@ function slotOnRelativeDay(
 export function parseCallbackRequestIt(text: string): boolean {
   const t = normText(text)
   if (!t || t.length > 200) return false
+  // Non è una richiesta del cliente: è il nostro messaggio di benvenuto.
+  if (/h2sport\.it/i.test(text) || /corsi adulti e programma/.test(t)) return false
   if (
     /\b(richiamatemi|richiamami|richiamateci|richiamaci|richiamarmi|richiamarlo)\b/.test(t) ||
     /\b(chiamatemi|chiamami|chiamateci|chiamaci)\b/.test(t) ||
