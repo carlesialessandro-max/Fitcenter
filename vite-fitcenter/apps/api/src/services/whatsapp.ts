@@ -267,6 +267,7 @@ export function leadWelcomeTemplateConfig(opts?: { bambini?: boolean }) {
  * Se il template Meta non ha variabili, non inviare bodyParams
  * (WHATSAPP_LEAD_TEMPLATE_HAS_NAME=true solo se c’è {{1}} nel modello).
  * Bambini: WHATSAPP_LEAD_TEMPLATE_BAMBINI + testo libero con prova in acqua obbligatoria.
+ * Adulti: template Meta + follow-up con appuntamento in sede, link corsi/orari e RICHIAMATEMI.
  */
 export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
@@ -288,13 +289,22 @@ export async function notifyLeadWelcomeWhatsapp(params: {
       languageCode,
       ...(hasNameParam ? { bodyParams: [nome] } : {}),
     })
-    // Dopo il template Meta (apre la finestra 24h) inviamo il testo operativo bambini.
+    // Dopo il template Meta (apre la finestra 24h) inviamo il testo operativo.
     if (params.bambini) {
       try {
         await sendWhatsappText(phone, bambiniWelcomeFollowupMsg())
       } catch (e2) {
         console.warn(
           "[whatsapp] follow-up benvenuto bambini:",
+          (e2 as Error)?.message ?? e2
+        )
+      }
+    } else {
+      try {
+        await sendWhatsappText(phone, adultiWelcomeFollowupMsg(nome))
+      } catch (e2) {
+        console.warn(
+          "[whatsapp] follow-up benvenuto adulti:",
           (e2 as Error)?.message ?? e2
         )
       }
@@ -323,5 +333,32 @@ export function bambiniWelcomeFollowupMsg(): string {
     `Esempio:\n` +
     `PRENOTA PROVA martedì 15:15 età 18 mesi\n\n` +
     `💙 Ti aspettiamo a H2Sport!`
+  )
+}
+
+/** Testo post-template lead adulti: appuntamento in sede + link corsi/orari/nuoto libero. */
+export function adultiWelcomeFollowupMsg(nome?: string | null): string {
+  const raw = String(nome ?? "").trim()
+  const chi = !raw || /^ciao$/i.test(raw) ? "Ciao" : `Ciao ${raw.split(/\s+/)[0]}`
+  return (
+    `${chi}, grazie per aver richiesto informazioni su H2Sport! 💙\n\n` +
+    `Per aiutarti a scegliere la soluzione più adatta, ti consigliamo di fissare un appuntamento in sede: ` +
+    `è il modo migliore per mostrarti la struttura e trovare la formula giusta per te.\n\n` +
+    `Per evitare attese, rispondi a questo messaggio indicando quando preferisci venire:\n` +
+    `👉 Lunedì alle 18:30\n` +
+    `👉 Sabato mattina\n\n` +
+    `Verificheremo subito la disponibilità e ti confermeremo l'appuntamento.\n\n` +
+    `Se preferisci dare un'occhiata in autonomia:\n` +
+    `🏋️ Corsi adulti e programma: https://h2sport.it/#attivita\n` +
+    `🌊 Corsi in acqua: https://h2sport.it/#orari-acqua\n` +
+    `🧘 Corsi fitness: https://h2sport.it/#orari-terra\n` +
+    `🏊 Nuoto libero: https://h2sport.it/piscina#nuoto-libero\n` +
+    `📄 Planning corsie (PDF): https://h2sport.it/wp-content/uploads/2025/03/Planning-corsie-nuoto-libero.pdf\n\n` +
+    `🕒 Orari di apertura:\n` +
+    `Lun–Ven 7:00–22:00 · Sab 9:00–19:00 · Dom 9:00–13:00\n` +
+    `📍 Via Provinciale Lucchese 139, Pistoia\n` +
+    `🗺 Mappa e contatti: https://h2sport.it/contatti\n\n` +
+    `📞 Preferisci parlare a voce? Rispondi con RICHIAMATEMI e ti contattiamo prima possibile.\n\n` +
+    `Ti aspettiamo a H2Sport! 💙`
   )
 }
