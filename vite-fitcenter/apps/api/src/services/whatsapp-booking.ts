@@ -970,6 +970,15 @@ export async function handleWhatsappInboundBooking(params: {
   const lead = findLeadByPhone(from)
   const t = normText(text)
 
+  // Eco del follow-up che abbiamo appena inviato (Meta a volte lo rimanda come inbound).
+  if (
+    /h2sport\.it\/#attivita/i.test(text) ||
+    /corsi adulti e programma/i.test(t) ||
+    /nuoto-libero-da-settembre-2026/i.test(text)
+  ) {
+    return { handled: true, detail: "echo follow-up adulti ignorato" }
+  }
+
   // 0) Annullamento: solo il segmento del lead (adulti vs bambini), non entrambi
   if (parseCancelRequestIt(text)) {
     try {

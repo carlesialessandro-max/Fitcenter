@@ -336,12 +336,10 @@ export function bambiniWelcomeFollowupMsg(): string {
   )
 }
 
-/** Testo post-template lead adulti: appuntamento in sede + link corsi/orari/nuoto libero. */
-export function adultiWelcomeFollowupMsg(nome?: string | null): string {
-  const raw = String(nome ?? "").trim()
-  const chi = !raw || /^ciao$/i.test(raw) ? "Ciao" : `Ciao ${raw.split(/\s+/)[0]}`
+/** Testo post-template lead adulti: il saluto è già nel template Meta. */
+export function adultiWelcomeFollowupMsg(_nome?: string | null): string {
+  void _nome
   return (
-    `${chi}, grazie per aver richiesto informazioni su H2Sport! 💙\n\n` +
     `Per aiutarti a scegliere la soluzione più adatta, ti consigliamo di fissare un appuntamento in sede: ` +
     `è il modo migliore per mostrarti la struttura e trovare la formula giusta per te.\n\n` +
     `Per evitare attese, rispondi a questo messaggio indicando quando preferisci venire:\n` +
@@ -358,7 +356,7 @@ export function adultiWelcomeFollowupMsg(nome?: string | null): string {
     `Lun–Ven 7:00–22:00 · Sab 9:00–19:00 · Dom 9:00–13:00\n` +
     `📍 Via Provinciale Lucchese 139, Pistoia\n` +
     `🗺 Mappa e contatti: https://h2sport.it/contatti\n\n` +
-    `📞 Preferisci parlare a voce? Rispondi con RICHIAMATEMI e ti contattiamo prima possibile.\n\n` +
+    `📞 Preferisci parlare a voce? Scrivi solo RICHIAMATEMI e ti contattiamo prima possibile.\n\n` +
     `Ti aspettiamo a H2Sport! 💙`
   )
 }
