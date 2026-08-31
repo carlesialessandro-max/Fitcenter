@@ -6,6 +6,7 @@ import { calendarioApi, type CalendarioMergedEventDto } from "@/api/calendario"
 import { corsiGestioneApi, type CorsiGestioneDayDto } from "@/api/corsiGestione"
 import { useAuth } from "@/contexts/AuthContext"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
+import planningWeekly from "@/data/planning-weekly.json"
 
 function isoToday(): string {
   const d = new Date()
@@ -958,8 +959,10 @@ function titleMatchesCalendarioCorso(servizio: string, eventTitle: string): bool
   const b = compactAlnum(eventTitle)
   if (!a || !b) return false
   if (a === b) return true
-  if (a.includes(b) || b.includes(a)) return true
-  return false
+  const shorter = a.length <= b.length ? a : b
+  const longer = a.length <= b.length ? b : a
+  // Evita «TERRA» ⊂ «SBARRATERRA» (sbarra a terra compariva il lunedì).
+  return shorter.length >= 8 && longer.includes(shorter)
 }
 
 function hhmmToMinutes(t: string | undefined): number | null {
@@ -969,25 +972,31 @@ function hhmmToMinutes(t: string | undefined): number | null {
   return h * 60 + m
 }
 
-function planningEventOnDay(e: CalendarioMergedEventDto, giornoIso: string): boolean {
+function planningEventOnDay(e: { dow: number; dateIso?: string | null }, giornoIso: string): boolean {
   if (e.dateIso) return e.dateIso === giornoIso
   const dow = dowFromIsoLocal(giornoIso)
   return dow != null && e.dow === dow
 }
 
+type PlanningSlot = { dow: number; start: string; title: string; dateIso?: string | null }
+
+const PLANNING_CORSI_EVENTS: PlanningSlot[] = Array.isArray(
+  (planningWeekly as { events?: PlanningSlot[] }).events,
+)
+  ? ((planningWeekly as { events: PlanningSlot[] }).events)
+  : []
+
 /**
  * Lezioni a 0 iscritti: se il corso è nel planning settimanale, deve esistere
  * uno slot quel giorno (stesso titolo, orario ±20 min). Evita «sbarra a terra»
- * il lunedì quando in planning è solo mar/ven/sab.
+ * il lunedì (in planning è mar/ven/sab).
  */
-function emptyLessonAllowedByPlanning(
-  g: CorsoGroup,
-  events: CalendarioMergedEventDto[] | undefined,
-): boolean {
+function emptyLessonAllowedByPlanning(g: CorsoGroup, extraEvents?: PlanningSlot[]): boolean {
   const booked = g.partecipanti.filter((p) => !p.inAttesa).length
   if (booked > 0) return true
   if (g.key.includes("__WAITLIST")) return true
-  if (!events?.length) return true
+  const events = extraEvents?.length ? [...PLANNING_CORSI_EVENTS, ...extraEvents] : PLANNING_CORSI_EVENTS
+  if (!events.length) return true
   const known = events.some((e) => titleMatchesCalendarioCorso(g.servizio, e.title))
   if (!known) return true
   const startMin = hhmmToMinutes(g.oraInizio)
