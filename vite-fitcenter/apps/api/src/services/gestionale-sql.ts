@@ -1509,7 +1509,7 @@ export function mergeConsultantIdStrings(parts: (string | undefined)[]): string 
 }
 
 /** Opzioni per query abbonamenti: inScadenza = 30 o 60 restituisce solo abbonamenti con DataFine tra oggi e oggi+N. */
-export type QueryAbbonamentiOptions = { inScadenza?: number }
+export type QueryAbbonamentiOptions = { inScadenza?: number; leftJoinVenditore?: boolean }
 
 /**
  * Età da tabella utenti: SOLO se imposti GESTIONALE_UTENTI_COL_ETA al nome reale della colonna.
@@ -1562,10 +1562,11 @@ export async function queryAbbonamenti(
     // Se configurata la view venditore, esponi anche il nome consulente per la lista admin (tutti).
     if (viewCfg) {
       try {
+        const joinVenditore = options?.leftJoinVenditore ? "LEFT JOIN" : "INNER JOIN"
         const r = await p.request().query(
           `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}, R.[${viewCfg.colNome}] AS ConsulenteNome
            FROM [${tblA}] a
-           INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
+           ${joinVenditore} [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
            LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
            ${where}
            ORDER BY a.IDIscrizione DESC`

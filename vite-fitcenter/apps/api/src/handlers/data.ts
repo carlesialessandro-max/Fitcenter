@@ -230,17 +230,25 @@ function isAbbonamentoStaff(a: Abbonamento): boolean {
   return blob.includes("ABBONAMENTI STAFF") || /\bSTAFF\b/.test(blob)
 }
 
-/** Abbonamenti attivi: validi alla data di riferimento, senza tesseramenti né staff. */
+function abbonamentoGiornoKey(raw: string | undefined): string | null {
+  const s = String(raw ?? "").trim()
+  const iso = s.slice(0, 10)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso
+  const it = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s)
+  if (!it) return null
+  return `${it[3]}-${String(Number(it[2])).padStart(2, "0")}-${String(Number(it[1])).padStart(2, "0")}`
+}
+
+/** Abbonamenti attivi: validi alla data di riferimento (calendario, senza timezone), senza tesseramenti né staff. */
 function filterAbbonamentiAttiviForKpi(abbonamenti: Abbonamento[], referenceDate: Date): Abbonamento[] {
   const oggi = toDateParts(referenceDate)
-  const oggiTime = new Date(oggi.year, oggi.month - 1, oggi.day).getTime()
+  const asOfKey = `${oggi.year}-${pad2(oggi.month)}-${pad2(oggi.day)}`
   return abbonamenti.filter((a) => {
     if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a)) return false
-    const inizio = new Date(String(a.dataInizio).trim().split("T")[0])
-    const fine = new Date(String(a.dataFine).trim().split("T")[0])
-    const tInizio = inizio.getTime()
-    const tFine = fine.getTime()
-    return !Number.isNaN(tInizio) && !Number.isNaN(tFine) && oggiTime >= tInizio && oggiTime <= tFine
+    const ini = abbonamentoGiornoKey(a.dataInizio)
+    const fine = abbonamentoGiornoKey(a.dataFine)
+    if (!ini || !fine) return false
+    return asOfKey >= ini && asOfKey <= fine
   })
 }
 
@@ -1160,13 +1168,14 @@ type AttiviContattiLoaded = { rows: AttiviContatto[]; categorie: string[]; piani
 let attiviContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
 
 async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
-  const key = `v2-${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  const p = toDateParts(date)
+  const key = `v3-${p.year}-${pad2(p.month)}-${pad2(p.day)}`
   const now = Date.now()
-  if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 90_000) {
+  if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 8_000) {
     return attiviContattiCacheSlot.data
   }
   if (!gestionaleSql.isGestionaleConfigured()) return { rows: [], categorie: [], piani: [] }
-  const rawRows = await gestionaleSql.queryAbbonamenti(undefined)
+  const rawRows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
   const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
   markRinnovato(pairs.map((p) => p.a))
   const attivi = filterAbbonamentiAttiviForKpi(
