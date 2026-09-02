@@ -1206,7 +1206,15 @@ async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
     const c = pickEmailTelFromAbbRow(p.row)
     const cat = categoriaLabelAttiviMsg(p.a)
     const piano = (p.a.abbonamentoDescrizione ?? p.a.pianoNome ?? "").trim()
-    const macro = (p.a.macroCategoriaDescrizione ?? "").trim()
+    const macroRaw = String(
+      p.a.macroCategoriaDescrizione ??
+        p.row.MacroCategoriaAbbonamentoDescrizione ??
+        p.row.Tipo ??
+        p.row.TipoDescrizione ??
+        p.row.Cartella ??
+        ""
+    ).trim()
+    const macro = macroRaw
     const clienteId = String(p.a.clienteId ?? "").trim() || `abb:${p.a.id}`
     const prodotto: AttiviProdotto = { macro, categoria: cat, piano: piano || cat }
     return {

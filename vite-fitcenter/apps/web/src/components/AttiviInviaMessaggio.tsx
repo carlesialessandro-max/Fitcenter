@@ -34,10 +34,6 @@ function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
   return [{ macro: c.macro ?? "", categoria: c.categoria, piano: c.piano || c.categoria }]
 }
 
-function leafKey(p: AttiviProdotto): string {
-  return `${p.categoria}|||${p.piano}`
-}
-
 function foldTesto(s: string): string {
   return s
     .toLowerCase()
@@ -45,7 +41,17 @@ function foldTesto(s: string): string {
     .replace(/h\s*2\s*o/g, "h2o")
 }
 
-/** q=h2o → solo prodotti il cui NOME (piano) contiene h2o; q=rossi → tutti i prodotti del gruppo Rossi. */
+/** Come «Macro cat.» in gestionale: PACCHETTI INGRESSI è un gruppo a sé, non va sotto Nuoto/H2O. */
+function gruppoDi(p: AttiviProdotto): string {
+  const macro = (p.macro ?? "").trim()
+  const cat = (p.categoria ?? "").trim()
+  const piano = (p.piano ?? "").trim()
+  if (macro && /PACCHETT/i.test(macro) && !isStaffOrDanza(macro)) return macro
+  if (cat && /PACCHETT/i.test(cat) && !isStaffOrDanza(cat)) return cat
+  return cat || macro || piano || "Altro"
+}
+
+/** q=h2o → solo piani H2O; q=rossi → gruppo Rossi. Non include i pacchetti ingressi. */
 function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
   if (!q) return true
   const ql = foldTesto(q)
@@ -93,15 +99,15 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     for (const c of bySegmento) {
       for (const p of prodottiDi(c)) {
         if (!p.piano || isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) continue
-        if (ql && !prodottoMatchQ(p, ql)) continue
-        const key = leafKey(p)
+        const g = gruppoDi(p)
+        const key = `${g}|||${p.piano}`
         const prev = m.get(key)
         if (prev) prev.n += 1
-        else m.set(key, { key, gruppo: p.categoria || p.macro || "Altro", piano: p.piano, n: 1 })
+        else m.set(key, { key, gruppo: g, piano: p.piano, n: 1 })
       }
     }
     return Array.from(m.values()).sort((a, b) => a.gruppo.localeCompare(b.gruppo, "it") || a.piano.localeCompare(b.piano, "it"))
-  }, [bySegmento, ql])
+  }, [bySegmento])
 
   const gruppi = useMemo(() => {
     const s = new Set(foglie.map((f) => f.gruppo))
@@ -139,15 +145,16 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
   const rows = useMemo(() => {
     return bySegmento.filter((c) => {
       const prods = prodottiDi(c)
+      const haFiltroTipo = Boolean(gruppo || pianoSel)
       const prodOk = prods.some((p) => {
-        if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria)) return false
-        if (ql && !prodottoMatchQ(p, ql)) return false
-        if (gruppo && p.categoria !== gruppo && p.macro !== gruppo) return false
+        if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) return false
+        if (gruppo && gruppoDi(p) !== gruppo) return false
         if (pianoSel && p.piano !== pianoSel) return false
+        if (!haFiltroTipo && ql && !prodottoMatchQ(p, ql)) return false
         return true
       })
       if (prodOk) return true
-      if (ql && !gruppo && !pianoSel) {
+      if (ql && !haFiltroTipo) {
         const hay = foldTesto(`${c.nome} ${c.email ?? ""}`)
         if (hay.includes(foldTesto(ql))) return true
       }
@@ -233,8 +240,8 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                   Messaggio agli abbonati attivi
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  Come in gestionale: gruppo (es. Rossi) poi prodotto (es. SMILE H2O). Cerca «h2o» per solo piscina H2O, non
-                  tutta la fascia. Staff esclusi. Validità alla data scelta.
+                  Come in gestionale: scegli il gruppo (Rossi, Pacchetti ingressi, Nuoto libero…) poi il prodotto. «h2o»
+                  filtra solo SMILE H2O; i pacchetti si selezionano dal menu, non arrivano da quella ricerca. Staff esclusi.
                 </p>
               </div>
               <button type="button" onClick={close} className="rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
@@ -308,8 +315,8 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                 </label>
               </div>
               <p className="mt-1 text-[11px] text-zinc-600">
-                Esempio: gruppo «ROSSI - orario libero» + prodotto «SMILE H2O» = solo H2O, non OPEN né SMILE FIT. Nuoto libero
-                include anche i pacchetti ingressi con lo stesso nome prodotto.
+                Esempio: gruppo «ROSSI - orario libero» + «SMILE H2O» = solo H2O. Per i pacchetti: gruppo «PACCHETTI
+                INGRESSI» poi il prodotto (nuoto libero, corsi, spa…).
               </p>
               {(gruppo || pianoSel || ql) && (
                 <button
