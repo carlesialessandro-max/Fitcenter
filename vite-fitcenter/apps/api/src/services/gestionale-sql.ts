@@ -21,7 +21,6 @@
  */
 
 import sql from "mssql"
-import { emptyLessonFitsPlanning } from "./planning-weekly.js"
 
 let pool: sql.ConnectionPool | null = null
 let poolWrite: sql.ConnectionPool | null = null
@@ -6233,7 +6232,6 @@ async function queryLezioniCorsiSenzaIscritti(
       row.giorno = giorno
       // Esclude corsi scaduti / disattivati (es. DataFine 2019 ancora in calendario settimanale).
       if (!isCorsoPrenotazioneAttivo(row, giorno)) continue
-      if (emptyLessonFitsPlanning(String(row.servizio ?? ""), giorno, row.oraInizio) === false) continue
       seenLez.add(idLez)
       out.push(row)
     }
@@ -6342,16 +6340,6 @@ export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Prom
       const raw = (r.raw ?? {}) as Record<string, unknown>
       // Solo FITNESS + H2O (anche con iscritti: evita bimbi/danza/ju-jitsu in elenco)
       if (!isCorsoPaginaCorsiFitnessH2o(raw)) return false
-      if (raw.__lezioniSenzaIscritti) {
-        const titolo = String(
-          r.servizio ??
-            rawValIgnoreCase(raw, "PrenotazioneDescrizione") ??
-            rawValIgnoreCase(raw, "Descrizione") ??
-            ""
-        )
-        const fit = emptyLessonFitsPlanning(titolo, giorno, r.oraInizio)
-        if (fit === false) return false
-      }
       return isCorsoPrenotazioneAttivo(r, giorno)
     })
   }
