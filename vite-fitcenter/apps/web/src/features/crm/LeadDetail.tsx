@@ -32,6 +32,7 @@ export function LeadDetail() {
   const queryClient = useQueryClient()
   const { role } = useAuth()
   const [waMsg, setWaMsg] = useState<string | null>(null)
+  const [infoCorsoPick, setInfoCorsoPick] = useState(false)
 
   const { data: leads = [], isLoading, error } = useQuery({
     queryKey: ["data", "leads"],
@@ -87,7 +88,28 @@ export function LeadDetail() {
     onError: (e) => setWaMsg((e as Error).message || "Invio WhatsApp fallito"),
   })
 
+  const waInfoMutation = useMutation({
+    mutationFn: (corso: "acquaticita" | "scuola_nuoto") =>
+      whatsappApi.sendLeadInfo({ leadId: id!, corso }),
+    onSuccess: (r) => {
+      setInfoCorsoPick(false)
+      queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
+      const docs = r.sent?.length ? r.sent.join(", ") : r.corso
+      setWaMsg(
+        r.missing
+          ? "File info non trovato sul server."
+          : `Info inviate dal numero H2Sport (${docs}).`
+      )
+    },
+    onError: (e) => setWaMsg((e as Error).message || "Invio info WhatsApp fallito"),
+  })
+
   const canSendWa = role === "admin" || role === "operatore" || role === "crm"
+  const isBambiniLead =
+    lead?.categoria === "bambini" ||
+    /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(
+      `${lead?.interesseDettaglio ?? ""} ${lead?.note ?? ""}`
+    )
 
   if (!id) {
     return (
@@ -156,7 +178,7 @@ export function LeadDetail() {
             </div>
             <div>
               <dt className="text-zinc-500">Telefono</dt>
-              <dd className="flex items-center gap-2 text-zinc-100">
+              <dd className="flex flex-wrap items-center gap-2 text-zinc-100">
                 {lead.telefono}
                 {lead.telefono && (
                   <>
@@ -179,7 +201,7 @@ export function LeadDetail() {
                           href={waChat}
                           target="_blank"
                           rel="noopener noreferrer"
-                          title="Apri chat WhatsApp"
+                          title="Apre la chat sul TUO WhatsApp (numero personale)"
                           className="inline-flex h-8 items-center justify-center rounded-md border border-zinc-600 bg-transparent px-3 text-sm font-medium text-zinc-100 hover:bg-zinc-800"
                         >
                           WhatsApp
@@ -202,6 +224,62 @@ export function LeadDetail() {
                       >
                         {waMutation.isPending ? "Invio…" : "Invia benvenuto"}
                       </Button>
+                    ) : null}
+                    {canSendWa && isBambiniLead ? (
+                      infoCorsoPick ? (
+                        <>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={waInfoMutation.isPending}
+                            onClick={() => {
+                              setWaMsg(null)
+                              waInfoMutation.mutate("acquaticita")
+                            }}
+                            title="Invia il documento Acquaticità dal numero WhatsApp H2Sport"
+                          >
+                            {waInfoMutation.isPending ? "Invio…" : "Acquaticità"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={waInfoMutation.isPending}
+                            onClick={() => {
+                              setWaMsg(null)
+                              waInfoMutation.mutate("scuola_nuoto")
+                            }}
+                            title="Invia il documento Scuola nuoto dal numero WhatsApp H2Sport"
+                          >
+                            {waInfoMutation.isPending ? "Invio…" : "Scuola nuoto"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-zinc-500"
+                            onClick={() => setInfoCorsoPick(false)}
+                          >
+                            Annulla
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-emerald-400"
+                          disabled={waInfoMutation.isPending}
+                          onClick={() => {
+                            setWaMsg(null)
+                            setInfoCorsoPick(true)
+                          }}
+                          title="Invia orari e costi dal numero WhatsApp H2Sport, non dal tuo cellulare"
+                        >
+                          Invia info
+                        </Button>
+                      )
                     ) : null}
                   </>
                 )}

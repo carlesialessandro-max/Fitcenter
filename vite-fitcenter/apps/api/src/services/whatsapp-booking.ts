@@ -268,7 +268,7 @@ function persistCorsoOnLead(
   }
 }
 
-async function sendBambiniInfoDocsWhatsapp(
+export async function sendBambiniInfoDocsWhatsapp(
   to: string,
   corso: BambiniCorso
 ): Promise<{ sent: string[]; missing: boolean }> {
@@ -310,6 +310,43 @@ async function sendBambiniInfoDocsWhatsapp(
     sent.push(d.label)
   }
   return { sent, missing: false }
+}
+
+/** Pulsante CRM: invia i documenti dal numero WhatsApp H2Sport (non dal cellulare del consulente). */
+export async function sendLeadBambiniInfoFromCrm(params: {
+  leadId: string
+  corso?: BambiniCorso | null
+}): Promise<{ sent: string[]; missing: boolean; corso: BambiniCorso; to: string }> {
+  const lead = leadsStore.get(params.leadId)
+  if (!lead) {
+    const err = new Error("Lead non trovato") as Error & { status: number }
+    err.status = 404
+    throw err
+  }
+  const to = String(lead.telefono ?? "").trim()
+  if (!to || to === "—") {
+    const err = new Error("Telefono mancante sul lead") as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  const corso =
+    params.corso ||
+    detectBambiniCorso({ lead, text: `${lead.note ?? ""} ${lead.interesseDettaglio ?? ""}` })
+  if (!corso) {
+    const err = new Error("Scegli il corso: Acquaticità oppure Scuola nuoto") as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  persistCorsoOnLead(lead, corso)
+  const r = await sendBambiniInfoDocsWhatsapp(to, corso)
+  appendLeadNote(
+    lead.id,
+    r.missing
+      ? `WA info ${corsoLabel(corso)}: documento non trovato (inviato da CRM)`
+      : `WA info ${corsoLabel(corso)}: ${r.sent.join(", ")} (inviato da CRM, numero H2Sport)`,
+    { stato: lead.stato === "nuovo" ? "contattato" : lead.stato }
+  )
+  return { ...r, corso, to }
 }
 
 function stripAccents(s: string): string {
@@ -1401,8 +1438,13 @@ export async function handleWhatsappInboundBooking(params: {
       return completeProvaBooking({ from, lead, text, parsed: parsedProva, eta, corso })
     }
 
-    const infoWa = forcedInfoChannel === "wa" || parseInfoChannelIt(text) === "wa"
     const infoMail = forcedInfoChannel === "email" || parseInfoChannelIt(text) === "email"
+    // In chat WhatsApp le info partono dal numero H2Sport, senza chiedere il canale.
+    const infoWa =
+      !infoMail &&
+      (forcedInfoChannel === "wa" ||
+        parseInfoChannelIt(text) === "wa" ||
+        wantsBambiniInfo(t))
 
     const resolveInfoCorso = (): BambiniCorso | null =>
       parseCorsoChoiceIt(text) ||
@@ -1515,23 +1557,6 @@ export async function handleWhatsappInboundBooking(params: {
         appendLeadNote(lead.id, `WA info email fallita (${mailErr}): docs WA (${r.sent.join(", ")})`)
       }
       return { handled: true, detail: "info email fail→wa" }
-    }
-
-    // «vorrei info / costi» senza INFO WHATSAPP|EMAIL → chiedi il canale, non rimandare il benvenuto
-    if (wantsBambiniInfo(t)) {
-      const corso = resolveInfoCorso()
-      if (corso) persistCorsoOnLead(lead, corso)
-      pendingInfoChannelByPhone.set(from, {
-        corso: corso ?? undefined,
-        expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
-      })
-      await sendWhatsappText(from, askInfoChannelMsg(corso))
-      if (lead) {
-        appendLeadNote(lead.id, `WA info: attesa canale WhatsApp/email («${text}»)`, {
-          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
-        })
-      }
-      return { handled: true, detail: "info attesa canale" }
     }
 
     // Solo corso / età → salva corso e guida al passo successivo

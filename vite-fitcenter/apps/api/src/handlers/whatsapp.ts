@@ -3,7 +3,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import type { Request, Response } from "express"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
-import { handleWhatsappInboundBooking } from "../services/whatsapp-booking.js"
+import { handleWhatsappInboundBooking, sendLeadBambiniInfoFromCrm } from "../services/whatsapp-booking.js"
 import {
   isWhatsappSendConfigured,
   leadWelcomeTemplateConfig,
@@ -302,5 +302,30 @@ export async function whatsappSendLead(req: Request, res: Response) {
     return res.json({ ok: true, templateName, languageCode, result })
   } catch (e) {
     return res.status(502).json({ message: (e as Error)?.message ?? String(e) })
+  }
+}
+
+/** Documenti info bambini dal numero WhatsApp H2Sport (non dal cellulare del consulente). */
+export async function whatsappSendLeadInfo(req: Request, res: Response) {
+  try {
+    if (!isWhatsappSendConfigured()) {
+      return res.status(400).json({
+        message: "Imposta WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID in apps/api/.env",
+      })
+    }
+    const body = (req.body ?? {}) as { leadId?: string; corso?: string }
+    const leadId = String(body.leadId ?? "").trim()
+    if (!leadId) return res.status(400).json({ message: "leadId obbligatorio" })
+    const rawCorso = String(body.corso ?? "").trim().toLowerCase()
+    const corso =
+      rawCorso === "acquaticita" || rawCorso === "scuola_nuoto"
+        ? (rawCorso as "acquaticita" | "scuola_nuoto")
+        : null
+    const result = await sendLeadBambiniInfoFromCrm({ leadId, corso })
+    return res.json({ ok: true, ...result })
+  } catch (e) {
+    const err = e as Error & { status?: number }
+    const status = err.status === 404 || err.status === 400 ? err.status : 502
+    return res.status(status).json({ message: err.message ?? String(e) })
   }
 }

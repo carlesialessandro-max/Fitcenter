@@ -3,6 +3,7 @@ import { requireAdmin, requireAdminOrOperatoreOrCrm, requireAuth } from "../midd
 import {
   whatsappEventsList,
   whatsappSendLead,
+  whatsappSendLeadInfo,
   whatsappSendTest,
   whatsappStatus,
 } from "../handlers/whatsapp.js"
@@ -16,3 +17,4 @@ whatsappRouter.post("/whatsapp/send-test", requireAuth, requireAdmin, whatsappSe
 whatsappRouter.get("/whatsapp/events", requireAuth, requireAdminOrOperatoreOrCrm, whatsappEventsList)
 /** Admin / consulente / CRM: template benvenuto al lead. */
 whatsappRouter.post("/whatsapp/send-lead", requireAuth, requireAdminOrOperatoreOrCrm, whatsappSendLead)
+whatsappRouter.post("/whatsapp/send-lead-info", requireAuth, requireAdminOrOperatoreOrCrm, whatsappSendLeadInfo)

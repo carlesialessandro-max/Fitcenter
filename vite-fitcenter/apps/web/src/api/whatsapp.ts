@@ -22,6 +22,15 @@ export const whatsappApi = {
   }) =>
     api.post<{ ok: boolean; templateName?: string; message?: string }>("/whatsapp/send-lead", body),
 
+  sendLeadInfo: (body: { leadId: string; corso?: "acquaticita" | "scuola_nuoto" }) =>
+    api.post<{
+      ok: boolean
+      sent?: string[]
+      missing?: boolean
+      corso?: string
+      message?: string
+    }>("/whatsapp/send-lead-info", body),
+
   listEvents: (params?: { limit?: number; phone?: string; kind?: string; q?: string }) => {
     const q = new URLSearchParams()
     if (params?.limit != null) q.set("limit", String(params.limit))
