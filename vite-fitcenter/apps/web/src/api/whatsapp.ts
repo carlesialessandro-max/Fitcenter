@@ -28,6 +28,8 @@ export const whatsappApi = {
       sent?: string[]
       missing?: boolean
       corso?: string
+      to?: string
+      toDisplay?: string
       message?: string
     }>("/whatsapp/send-lead-info", body),
 

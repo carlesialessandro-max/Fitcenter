@@ -94,11 +94,11 @@ export function LeadDetail() {
     onSuccess: (r) => {
       setInfoCorsoPick(false)
       queryClient.invalidateQueries({ queryKey: ["data", "leads"] })
-      const docs = r.sent?.length ? r.sent.join(", ") : r.corso
+      const dest = r.toDisplay || r.to || lead?.telefono
       setWaMsg(
         r.missing
           ? "File info non trovato sul server."
-          : `Info inviate dal numero H2Sport (${docs}).`
+          : `Inviato a ${dest} dal WhatsApp H2Sport. Arriva al cliente in quella chat, non sul tuo cellulare.`
       )
     },
     onError: (e) => setWaMsg((e as Error).message || "Invio info WhatsApp fallito"),
@@ -237,6 +237,12 @@ export function LeadDetail() {
                         disabled={waInfoMutation.isPending}
                         onClick={() => {
                           setWaMsg(null)
+                          if (
+                            !confirm(
+                              `Inviare le info Acquaticità a ${lead.telefono} dal WhatsApp H2Sport?\n\nArrivano al cliente, non sul tuo cellulare.`
+                            )
+                          )
+                            return
                           waInfoMutation.mutate("acquaticita")
                         }}
                       >
@@ -249,6 +255,12 @@ export function LeadDetail() {
                         disabled={waInfoMutation.isPending}
                         onClick={() => {
                           setWaMsg(null)
+                          if (
+                            !confirm(
+                              `Inviare le info Scuola nuoto a ${lead.telefono} dal WhatsApp H2Sport?\n\nArrivano al cliente, non sul tuo cellulare.`
+                            )
+                          )
+                            return
                           waInfoMutation.mutate("scuola_nuoto")
                         }}
                       >

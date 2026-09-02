@@ -20,14 +20,62 @@ export function isWhatsappSendConfigured(): boolean {
   return Boolean(c.token && c.phoneNumberId)
 }
 
+function stripPhoneDigits(raw: string): string {
+  let d = String(raw ?? "").replace(/\D/g, "")
+  if (d.startsWith("00")) d = d.slice(2)
+  return d
+}
+
+function fromItalianMobileDigits(d: string): string | null {
+  if (!d) return null
+  if (d.startsWith("39") && d.length >= 12 && d.length <= 13) {
+    const rest = d.slice(2)
+    if (/^3\d{8,9}$/.test(rest)) return `39${rest}`
+  }
+  if (/^3\d{8,9}$/.test(d) && (d.length === 9 || d.length === 10)) return `39${d}`
+  if (/^03\d{8,9}$/.test(d) && d.length >= 10 && d.length <= 11) return `39${d.slice(1)}`
+  return null
+}
+
+/** Uno o più cellulari italiani nel campo (es. due numeri concatenati o separati da /). */
+export function extractItalianMobileDestinations(raw: string): string[] {
+  const text = String(raw ?? "").trim()
+  if (!text) return []
+  const found: string[] = []
+  const add = (n: string | null) => {
+    if (n && !found.includes(n)) found.push(n)
+  }
+  for (const p of text.split(/[/,;|+]|e\s+|ed\s+/i)) {
+    add(fromItalianMobileDigits(stripPhoneDigits(p)))
+  }
+  if (found.length > 0) return found
+  const d = stripPhoneDigits(text)
+  if (d.length === 20 && d.startsWith("3") && d[10] === "3") {
+    add(fromItalianMobileDigits(d.slice(0, 10)))
+    add(fromItalianMobileDigits(d.slice(10)))
+    if (found.length) return found
+  }
+  if (d.length === 24 && d.startsWith("39") && d.slice(12, 14) === "39") {
+    add(fromItalianMobileDigits(d.slice(0, 12)))
+    add(fromItalianMobileDigits(d.slice(12)))
+    if (found.length) return found
+  }
+  add(fromItalianMobileDigits(d))
+  return found
+}
+
+export function formatWaDisplay(waTo: string): string {
+  const d = String(waTo ?? "").replace(/\D/g, "")
+  if (d.startsWith("39") && d.length >= 12) return `+39 ${d.slice(2)}`
+  return d ? `+${d}` : ""
+}
+
 /** Solo cifre, con prefisso paese (es. 393391234567). */
 export function normalizeWaTo(raw: string): string | null {
-  const digits = String(raw ?? "").replace(/\D/g, "")
-  if (!digits) return null
-  if (digits.startsWith("39") && digits.length >= 11) return digits
-  if (digits.startsWith("0") && digits.length >= 9) return `39${digits.slice(1)}`
-  if (digits.length === 10 && digits.startsWith("3")) return `39${digits}`
-  if (digits.length >= 10) return digits
+  const dests = extractItalianMobileDestinations(raw)
+  if (dests.length >= 1) return dests[0]
+  const digits = stripPhoneDigits(raw)
+  if (digits.length >= 10 && digits.length <= 15) return digits
   return null
 }
 

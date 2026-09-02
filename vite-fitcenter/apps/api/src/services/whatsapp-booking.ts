@@ -18,7 +18,14 @@ import {
   IDA2_SERVIZIO_CONSULENTI_ADULTI,
   type AgendaSegmento,
 } from "./agenda-a2.js"
-import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument } from "./whatsapp.js"
+import {
+  isWhatsappSendConfigured,
+  normalizeWaTo,
+  sendWhatsappText,
+  sendWhatsappDocument,
+  extractItalianMobileDestinations,
+  formatWaDisplay,
+} from "./whatsapp.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -316,7 +323,7 @@ export async function sendBambiniInfoDocsWhatsapp(
 export async function sendLeadBambiniInfoFromCrm(params: {
   leadId: string
   corso?: BambiniCorso | null
-}): Promise<{ sent: string[]; missing: boolean; corso: BambiniCorso; to: string }> {
+}): Promise<{ sent: string[]; missing: boolean; corso: BambiniCorso; to: string; toDisplay: string }> {
   const lead = leadsStore.get(params.leadId)
   if (!lead) {
     const err = new Error("Lead non trovato") as Error & { status: number }
@@ -337,16 +344,38 @@ export async function sendLeadBambiniInfoFromCrm(params: {
     err.status = 400
     throw err
   }
+  const dests = extractItalianMobileDestinations(to)
+  if (dests.length === 0) {
+    const err = new Error("Numero del lead non valido per WhatsApp") as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  if (dests.length > 1) {
+    const err = new Error(
+      `Sul lead ci sono più numeri (${dests.map(formatWaDisplay).join(" e ")}). ` +
+        `Lascia solo il cellulare del cliente e riprova.`
+    ) as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  const dest = dests[0]
+  const r = await sendBambiniInfoDocsWhatsapp(dest, corso)
   persistCorsoOnLead(lead, corso)
-  const r = await sendBambiniInfoDocsWhatsapp(to, corso)
   appendLeadNote(
     lead.id,
     r.missing
-      ? `WA info ${corsoLabel(corso)}: documento non trovato (inviato da CRM)`
-      : `WA info ${corsoLabel(corso)}: ${r.sent.join(", ")} (inviato da CRM, numero H2Sport)`,
+      ? `WA info ${corsoLabel(corso)}: FILE NON TROVATO sul server (nessun documento inviato)`
+      : `WA info ${corsoLabel(corso)}: ${r.sent.join(", ")} inviate a ${formatWaDisplay(dest)} dal WhatsApp H2Sport (non dal cellulare consulente)`,
     { stato: lead.stato === "nuovo" ? "contattato" : lead.stato }
   )
-  return { ...r, corso, to }
+  if (r.missing) {
+    const err = new Error(
+      `File info ${corsoLabel(corso)} non trovato sul server. Controlla la share BAMBINI / .env documenti.`
+    ) as Error & { status: number }
+    err.status = 502
+    throw err
+  }
+  return { ...r, corso, to: dest, toDisplay: formatWaDisplay(dest) }
 }
 
 function stripAccents(s: string): string {
