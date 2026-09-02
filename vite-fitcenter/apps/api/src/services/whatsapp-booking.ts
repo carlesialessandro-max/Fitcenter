@@ -18,7 +18,7 @@ import {
   IDA2_SERVIZIO_CONSULENTI_ADULTI,
   type AgendaSegmento,
 } from "./agenda-a2.js"
-import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument, bambiniWelcomeFollowupMsg } from "./whatsapp.js"
+import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText, sendWhatsappDocument } from "./whatsapp.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -61,6 +61,10 @@ const pendingProvaDayByPhone = new Map<string, PendingProvaDay>()
 /** Attesa scelta corso prima di INFO documenti. */
 type PendingInfoCorso = { channel: "wa" | "email"; expiresAt: number }
 const pendingInfoCorsoByPhone = new Map<string, PendingInfoCorso>()
+
+/** Attesa canale (WhatsApp vs email) dopo «vorrei info / costi». */
+type PendingInfoChannel = { corso?: BambiniCorso; expiresAt: number }
+const pendingInfoChannelByPhone = new Map<string, PendingInfoChannel>()
 
 const WEEKDAY: Record<string, number> = {
   domenica: 0,
@@ -180,7 +184,12 @@ export function detectBambiniCorso(opts: {
   const tag = String(opts.lead?.note ?? "").match(CORSO_TAG)
   if (tag) return tag[1].toLowerCase() === "acquaticita" ? "acquaticita" : "scuola_nuoto"
 
-  if (/\bacquaticit/.test(blob) || /\bliv\.?\s*[123]\b/.test(blob) || /\b(mesi|neonat|lattant)/.test(blob)) {
+  if (
+    /\bacquaticit/.test(blob) ||
+    /\bliv\.?\s*[123]\b/.test(blob) ||
+    /\b(mesi|neonat|lattant)/.test(blob) ||
+    /\b0\s*[-–\/]\s*3(\s*anni?)?\b/.test(blob)
+  ) {
     return "acquaticita"
   }
   if (/\bscuola\s*nuoto\b/.test(blob) || /\bsnb\b/.test(blob) || /\bnuoto\s*bambin/.test(blob)) {
@@ -196,7 +205,9 @@ export function detectBambiniCorso(opts: {
 function parseCorsoChoiceIt(text: string): BambiniCorso | null {
   const t = normText(text)
   if (!t) return null
-  if (/\bacquaticit/.test(t) || /^acq\b/.test(t)) return "acquaticita"
+  if (/\bacquaticit/.test(t) || /^acq\b/.test(t) || /\b0\s*[-–\/]\s*3(\s*anni?)?\b/.test(t)) {
+    return "acquaticita"
+  }
   if (/\bscuola\s*nuoto\b/.test(t) || /\bsnb\b/.test(t) || /^scuola\b/.test(t)) return "scuola_nuoto"
   return null
 }
@@ -208,6 +219,31 @@ function askCorsoMsg(): string {
     `👉 SCUOLA NUOTO (dai 4 anni in su)\n\n` +
     `Puoi anche scrivere età del bambino (es. «18 mesi» oppure «età 7»).`
   )
+}
+
+function askInfoChannelMsg(corso?: BambiniCorso | null): string {
+  const corsoBit = corso ? ` ${corsoLabel(corso)}` : ""
+  return (
+    `Perfetto, ti mando le info${corsoBit}.\n\n` +
+    `Dove le vuoi ricevere?\n` +
+    `📲 INFO WHATSAPP → te le invio qui in chat\n` +
+    `📧 INFO EMAIL → te le mando via email\n\n` +
+    `Scrivi INFO WHATSAPP oppure INFO EMAIL.`
+  )
+}
+
+/** Canale info: esplicito (INFO WHATSAPP) oppure risposta breve se stiamo aspettando. */
+function parseInfoChannelIt(text: string, opts?: { allowShort?: boolean }): "wa" | "email" | null {
+  const t = normText(text)
+  if (!t) return null
+  if (/\binfo\s*whatsapp\b/.test(t) && !/\binfo\s*(email|mail)\b/.test(t)) return "wa"
+  if (/\binfo\s*(email|mail)\b/.test(t) && !/\binfo\s*whatsapp\b/.test(t)) return "email"
+  if (!opts?.allowShort) return null
+  if (/^(whatsapp|wa|qui|in chat|su whatsapp)$/.test(t)) return "wa"
+  if (/^(email|e-mail|mail|via email|via mail)$/.test(t)) return "email"
+  if (/\bwhatsapp\b/.test(t) && !/\b(email|mail)\b/.test(t)) return "wa"
+  if (/\b(email|e-mail)\b/.test(t) && !/\bwhatsapp\b/.test(t)) return "email"
+  return null
 }
 
 function persistCorsoOnLead(
@@ -274,11 +310,6 @@ async function sendBambiniInfoDocsWhatsapp(
     sent.push(d.label)
   }
   return { sent, missing: false }
-}
-
-function bambiniGuideMsg(_nome?: string | null): string {
-  // Stesso contenuto del follow-up benvenuto: niente «fissa appuntamento in sede» senza prova.
-  return bambiniWelcomeFollowupMsg()
 }
 
 function stripAccents(s: string): string {
@@ -976,11 +1007,15 @@ export async function handleWhatsappInboundBooking(params: {
     /h2sport\.it\/#attivita/i.test(text) ||
     /corsi adulti e programma/i.test(t) ||
     /nuoto-libero-da-settembre-2026/i.test(text) ||
-    /una consulente h2sport ti richiamera a breve/i.test(t)
+    /una consulente h2sport ti richiamera a breve/i.test(t) ||
+    (/grazie per aver richiesto informazioni sui nostri corsi per bambini/.test(t) &&
+      /info whatsapp/.test(t) &&
+      /prenota prova/.test(t)) ||
+    (/dove le vuoi ricevere/.test(t) && /info whatsapp/.test(t) && /info email/.test(t))
 
   // Eco del follow-up che abbiamo appena inviato (Meta a volte lo rimanda come inbound).
   if (isWelcomeEcho) {
-    return { handled: true, detail: "echo follow-up adulti ignorato" }
+    return { handled: true, detail: "echo follow-up ignorato" }
   }
 
   // Ogni testo del cliente va in note (sito e Facebook Ads), se il telefono combacia.
@@ -1181,6 +1216,37 @@ export async function handleWhatsappInboundBooking(params: {
       pendingInfoCorsoByPhone.delete(from)
     }
 
+    const pendingCh = pendingInfoChannelByPhone.get(from)
+    const pendingChOk = Boolean(pendingCh && pendingCh.expiresAt > Date.now())
+    if (pendingCh && !pendingChOk) pendingInfoChannelByPhone.delete(from)
+
+    let infoCorsoHint: BambiniCorso | undefined
+    let forcedInfoChannel: "wa" | "email" | null = null
+
+    if (pendingChOk && pendingCh) {
+      const ch = parseInfoChannelIt(text, { allowShort: true })
+      if (!ch) {
+        const ageForCorso = parseChildAgeIt(text)
+        const corsoChoice =
+          parseCorsoChoiceIt(text) ||
+          (ageForCorso ? detectBambiniCorso({ ageYears: ageForCorso.years }) : null)
+        if (corsoChoice) {
+          persistCorsoOnLead(lead, corsoChoice)
+          pendingInfoChannelByPhone.set(from, {
+            corso: corsoChoice,
+            expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+          })
+          await sendWhatsappText(from, askInfoChannelMsg(corsoChoice))
+          return { handled: true, detail: "info corso ok attesa canale" }
+        }
+        await sendWhatsappText(from, askInfoChannelMsg(pendingCh.corso ?? null))
+        return { handled: true, detail: "info attesa canale (ripeti)" }
+      }
+      pendingInfoChannelByPhone.delete(from)
+      forcedInfoChannel = ch
+      infoCorsoHint = pendingCh.corso
+    }
+
     // Completa prova in attesa di età / corso
     const pending = pendingProvaByPhone.get(from)
     if (pending) {
@@ -1335,11 +1401,12 @@ export async function handleWhatsappInboundBooking(params: {
       return completeProvaBooking({ from, lead, text, parsed: parsedProva, eta, corso })
     }
 
-    const infoWa = /\binfo\s*whatsapp\b/.test(t)
-    const infoMail = /\binfo\s*(email|mail)\b/.test(t)
+    const infoWa = forcedInfoChannel === "wa" || parseInfoChannelIt(text) === "wa"
+    const infoMail = forcedInfoChannel === "email" || parseInfoChannelIt(text) === "email"
 
     const resolveInfoCorso = (): BambiniCorso | null =>
       parseCorsoChoiceIt(text) ||
+      infoCorsoHint ||
       detectBambiniCorso({
         lead,
         text,
@@ -1450,6 +1517,23 @@ export async function handleWhatsappInboundBooking(params: {
       return { handled: true, detail: "info email fail→wa" }
     }
 
+    // «vorrei info / costi» senza INFO WHATSAPP|EMAIL → chiedi il canale, non rimandare il benvenuto
+    if (wantsBambiniInfo(t)) {
+      const corso = resolveInfoCorso()
+      if (corso) persistCorsoOnLead(lead, corso)
+      pendingInfoChannelByPhone.set(from, {
+        corso: corso ?? undefined,
+        expiresAt: Date.now() + PENDING_PROVA_TTL_MS,
+      })
+      await sendWhatsappText(from, askInfoChannelMsg(corso))
+      if (lead) {
+        appendLeadNote(lead.id, `WA info: attesa canale WhatsApp/email («${text}»)`, {
+          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+        })
+      }
+      return { handled: true, detail: "info attesa canale" }
+    }
+
     // Solo corso / età → salva corso e guida al passo successivo
     {
       const ageOnly = parseChildAgeIt(text)
@@ -1474,11 +1558,16 @@ export async function handleWhatsappInboundBooking(params: {
       }
     }
 
-    // Chiede orari/info senza giorno+ora → guida
+    // Messaggio libero senza slot: non rimandare il benvenuto (già inviato al lead)
     const parsedEarly = parseSlotRequestIt(text)
-    if (!parsedEarly && (wantsBambiniInfo(t) || (!wantsExplicitAppointment(t) && !hasBookingIntent(t)))) {
+    if (!parsedEarly && !wantsExplicitAppointment(t) && !hasBookingIntent(t)) {
       if (!/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t)) {
-        await sendWhatsappText(from, bambiniGuideMsg(lead?.nome))
+        await sendWhatsappText(
+          from,
+          `Per le info scrivi INFO WHATSAPP oppure INFO EMAIL.\n` +
+            `Per la prova: PRENOTA PROVA + giorno + orario + età.\n` +
+            `Oppure RICHIAMATEMI.`
+        )
         if (lead) {
           appendLeadNote(lead.id, `WA guida bambini («${text}»)`, {
             stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
