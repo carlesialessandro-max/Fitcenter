@@ -52,9 +52,77 @@ export async function createLead(req: Request, res: Response) {
   res.status(201).json(created)
 }
 
-/** Fonti ammesse dal webhook Zapier: campagna FB, Google Ads, sito, o generico zapier. */
 const VALID_FONTE_ZAPIER: LeadSource[] = ["facebook", "google", "website", "zapier"]
 const VALID_INTERESSE: InteresseLead[] = ["palestra", "piscina", "spa", "corsi", "full_premium"]
+
+const FLATTEN_SKIP_KEYS = new Set([
+  "user",
+  "account",
+  "zap",
+  "_zapier",
+  "auth",
+  "authdata",
+  "created_by",
+  "createdby",
+  "assignee",
+  "owner",
+  "facebook_user",
+  "page_owner",
+])
+
+function phoneKeyForIgnore(raw: string): string {
+  let d = String(raw ?? "").replace(/\D/g, "")
+  if (d.startsWith("00")) d = d.slice(2)
+  if (d.startsWith("39") && d.length > 10) d = d.slice(2)
+  if (d.startsWith("0") && d.length > 9) d = d.slice(1)
+  return d
+}
+
+function ignoredOwnerPhones(): Set<string> {
+  const raw = process.env.LEAD_WEBHOOK_IGNORE_PHONES ?? "3357155744,393357155744"
+  return new Set(
+    raw
+      .split(/[,;\s]+/)
+      .map(phoneKeyForIgnore)
+      .filter((d) => d.length >= 8)
+  )
+}
+
+function ignoredOwnerEmails(): Set<string> {
+  const raw = process.env.LEAD_WEBHOOK_IGNORE_EMAILS ?? "carlesi.alessandro@gmail.com"
+  return new Set(
+    raw
+      .split(/[,;\s]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
+function ignoredOwnerNames(): Set<string> {
+  const raw = process.env.LEAD_WEBHOOK_IGNORE_NAMES ?? "alessandro carlesi"
+  return new Set(
+    raw
+      .split(/[;|]/)
+      .map((s) => s.trim().toLowerCase().replace(/\s+/g, " "))
+      .filter(Boolean)
+  )
+}
+
+/** Lead di test / account Facebook-Zapier del titolare, non un cliente. */
+export function isIgnoredOwnerLead(p: {
+  nome?: string
+  cognome?: string
+  email?: string
+  telefono?: string
+}): boolean {
+  const tel = phoneKeyForIgnore(p.telefono ?? "")
+  if (tel && ignoredOwnerPhones().has(tel)) return true
+  const em = String(p.email ?? "").trim().toLowerCase()
+  if (em && em !== "—" && ignoredOwnerEmails().has(em)) return true
+  const full = `${p.nome ?? ""} ${p.cognome ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ")
+  if (full && ignoredOwnerNames().has(full)) return true
+  return false
+}
 
 /** Webhook Zapier: nome, cognome, email, telefono; opzionale fonte (facebook|google|website|zapier) per CRM vendita. */
 function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
@@ -91,6 +159,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
         const fromValues = Array.isArray(o.values) ? unwrap(o.values[0]).trim() : ""
         if (key && (val || fromValues)) out[key] = val || fromValues
         for (const [k, vv] of Object.entries(o)) {
+          if (FLATTEN_SKIP_KEYS.has(k.toLowerCase())) continue
           visit(vv, path ? `${path}.${k}` : k, depth + 1)
         }
       }
@@ -164,14 +233,57 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     return { nome, cognome, email, telefono, tipologia, messaggio, oggetto }
   }
 
+  const parseFacebookFieldData = (): {
+    nome?: string
+    cognome?: string
+    email?: string
+    telefono?: string
+  } | null => {
+    const raw = body.field_data ?? body.fieldData ?? body.fields
+    if (!Array.isArray(raw) || raw.length === 0) return null
+    const map: Record<string, string> = {}
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue
+      const o = item as Record<string, unknown>
+      const key = unwrap(o.name ?? o.key ?? o.label)
+        .toLowerCase()
+        .replace(/\s+/g, "_")
+      const fromValues = Array.isArray(o.values) ? unwrap(o.values[0]) : ""
+      const val = (fromValues || unwrap(o.value ?? o.text)).trim()
+      if (key && val) map[key] = val
+    }
+    if (Object.keys(map).length === 0) return null
+    const full = map.full_name || map.nome_e_cognome || ""
+    const first = map.first_name || map.nome || ""
+    const last = map.last_name || map.cognome || ""
+    let nome = first
+    let cognome = last
+    if (!nome && full) {
+      const parts = full.split(/\s+/).filter(Boolean)
+      nome = parts[0] ?? ""
+      cognome = parts.slice(1).join(" ")
+    }
+    return {
+      nome: nome || undefined,
+      cognome: cognome || undefined,
+      email: map.email || map.email_address || undefined,
+      telefono:
+        map.phone_number ||
+        map.phone ||
+        map.mobile_number ||
+        map.work_number ||
+        map.cellulare ||
+        map.telefono ||
+        undefined,
+    }
+  }
+
   const nomePick = pick([
     "nome",
     "Nome",
     "first_name",
     "firstName",
     "FirstName",
-    "name",
-    "Name",
     "given_name",
     "givenName",
     "nome_e_cognome",
@@ -180,6 +292,8 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     "NomeCompleto",
     "full_name",
     "fullName",
+    "name",
+    "Name",
   ])
   const cognomePick = pick([
     "cognome",
@@ -215,6 +329,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   ])
   if (!telefonoPick) {
     for (const [fk, fv] of Object.entries(flat)) {
+      if (/user|account|\.zap|owner|created_by|assignee/i.test(fk)) continue
       if (/phone|telefon|cellulare|whatsapp|mobile|cell\b/i.test(fk) && /\d{8,}/.test(fv)) {
         telefonoPick = fv.trim()
         break
@@ -242,8 +357,14 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     }
   }
   splitIfNeeded()
-  const email = emailPick || labeled.email || parsed.email || ""
-  const telefonoRaw = telefonoPick || labeled.telefono || parsed.telefono || ""
+  const fd = parseFacebookFieldData()
+  if (fd?.nome) {
+    nome = fd.nome
+    cognome = fd.cognome || ""
+    splitIfNeeded()
+  }
+  const email = fd?.email || emailPick || labeled.email || parsed.email || ""
+  const telefonoRaw = fd?.telefono || telefonoPick || labeled.telefono || parsed.telefono || ""
   const telefonoDigits = telefonoRaw.replace(/\D/g, "")
   const telefono = telefonoDigits.length >= 8 ? telefonoDigits : telefonoRaw
   let fonte: LeadSource = "zapier"
@@ -401,10 +522,25 @@ export async function webhookZapier(req: Request, res: Response) {
       return res.status(400).json({ message: "Nessun lead da creare", created: 0 })
     }
     const created: unknown[] = []
+    const skipped: { reason: string; nome?: string; telefono?: string }[] = []
     const whatsapp: { leadId: string; sent: boolean; skipped?: string; error?: string }[] = []
     for (const item of items) {
       const payload = typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {}
       const leadPayload = normalizeZapierBody(payload)
+      if (isIgnoredOwnerLead(leadPayload)) {
+        console.warn(
+          "[zapier] scartato lead con dati account/titolare:",
+          leadPayload.nome,
+          leadPayload.cognome,
+          leadPayload.telefono
+        )
+        skipped.push({
+          reason: "dati account Facebook/Zapier (non un cliente)",
+          nome: `${leadPayload.nome} ${leadPayload.cognome}`.trim(),
+          telefono: leadPayload.telefono,
+        })
+        continue
+      }
       const lead = store.create(leadPayload)
       const isBambini =
         leadPayload.categoria === "bambini" ||
@@ -427,7 +563,7 @@ export async function webhookZapier(req: Request, res: Response) {
       })
       whatsapp.push({ leadId: saved.id, sent: wa.sent, skipped: wa.skipped, error: wa.error })
     }
-    res.status(201).json({ created: created.length, leads: created, whatsapp })
+    res.status(201).json({ created: created.length, skipped: skipped.length, skippedLeads: skipped, leads: created, whatsapp })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message, created: 0 })
   }
