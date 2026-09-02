@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
-import type { AttiviContatto } from "@/types/gestionale"
+import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
 
 type SegmentoFiltro = "tutti" | "adulti" | "bambini"
 type Channel = "email" | "sms"
 
 type Props = {
   asOf: string
+}
+
+type Leaf = {
+  key: string
+  gruppo: string
+  piano: string
+  n: number
 }
 
 function toggleSet(prev: Set<string>, id: string): Set<string> {
@@ -17,12 +24,45 @@ function toggleSet(prev: Set<string>, id: string): Set<string> {
   return next
 }
 
+function isStaffOrDanza(s: string): boolean {
+  const n = s.toUpperCase()
+  return n.includes("STAFF") || n.includes("DANZA")
+}
+
+function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
+  if (c.prodotti?.length) return c.prodotti
+  return [{ macro: c.macro ?? "", categoria: c.categoria, piano: c.piano || c.categoria }]
+}
+
+function leafKey(p: AttiviProdotto): string {
+  return `${p.categoria}|||${p.piano}`
+}
+
+function foldTesto(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/h\s*2\s*0/g, "h2o")
+    .replace(/h\s*2\s*o/g, "h2o")
+}
+
+/** q=h2o → solo prodotti il cui NOME (piano) contiene h2o; q=rossi → tutti i prodotti del gruppo Rossi. */
+function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
+  if (!q) return true
+  const ql = foldTesto(q)
+  const piano = foldTesto(p.piano)
+  const gruppo = foldTesto(p.categoria)
+  const macro = foldTesto(p.macro ?? "")
+  if (piano.includes(ql)) return true
+  if (gruppo.includes(ql) || macro.includes(ql)) return true
+  return false
+}
+
 export function AttiviInviaMessaggio({ asOf }: Props) {
   const [open, setOpen] = useState(false)
   const [segmento, setSegmento] = useState<SegmentoFiltro>("tutti")
-  const [categorieSel, setCategorieSel] = useState<string[]>([])
+  const [gruppo, setGruppo] = useState("")
+  const [pianoSel, setPianoSel] = useState("")
   const [q, setQ] = useState("")
-  const [qDebounced, setQDebounced] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [channel, setChannel] = useState<Channel>("email")
   const [subject, setSubject] = useState("")
@@ -30,39 +70,103 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
   const [confirm, setConfirm] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
 
-  useEffect(() => {
-    const t = setTimeout(() => setQDebounced(q.trim()), 280)
-    return () => clearTimeout(t)
-  }, [q])
-
-  const categorieKey = [...categorieSel].sort((a, b) => a.localeCompare(b, "it")).join("|")
-
   const { data, isLoading, error } = useQuery({
-    queryKey: ["abbonamenti-attivi-contatti", asOf, segmento, categorieKey, qDebounced],
-    queryFn: () =>
-      dataApi.getAbbonamentiAttiviContatti({
-        asOf,
-        segmento,
-        categorie: categorieSel,
-        q: qDebounced,
-      }),
+    queryKey: ["abbonamenti-attivi-contatti", asOf],
+    queryFn: () => dataApi.getAbbonamentiAttiviContatti({ asOf }),
     enabled: open,
     staleTime: 60_000,
   })
 
+  const allRows = data?.rows ?? []
+  const ql = q.trim().toLowerCase()
+
+  const bySegmento = useMemo(() => {
+    return allRows.filter((c) => {
+      if (segmento === "adulti" && c.segmento !== "adulti") return false
+      if (segmento === "bambini" && c.segmento !== "bambini") return false
+      return !isStaffOrDanza(c.categoria) && !isStaffOrDanza(c.macro ?? "") && !isStaffOrDanza(c.piano)
+    })
+  }, [allRows, segmento])
+
+  const foglie = useMemo(() => {
+    const m = new Map<string, Leaf>()
+    for (const c of bySegmento) {
+      for (const p of prodottiDi(c)) {
+        if (!p.piano || isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) continue
+        if (ql && !prodottoMatchQ(p, ql)) continue
+        const key = leafKey(p)
+        const prev = m.get(key)
+        if (prev) prev.n += 1
+        else m.set(key, { key, gruppo: p.categoria || p.macro || "Altro", piano: p.piano, n: 1 })
+      }
+    }
+    return Array.from(m.values()).sort((a, b) => a.gruppo.localeCompare(b.gruppo, "it") || a.piano.localeCompare(b.piano, "it"))
+  }, [bySegmento, ql])
+
+  const gruppi = useMemo(() => {
+    const s = new Set(foglie.map((f) => f.gruppo))
+    return Array.from(s).sort((a, b) => a.localeCompare(b, "it"))
+  }, [foglie])
+
+  const foglieGruppo = useMemo(() => {
+    if (!gruppo) return foglie
+    return foglie.filter((f) => f.gruppo === gruppo)
+  }, [foglie, gruppo])
+
+  const prodottiSelect = useMemo(() => {
+    const seen = new Set<string>()
+    const out: { piano: string; n: number }[] = []
+    for (const f of foglieGruppo) {
+      if (seen.has(f.piano)) {
+        const hit = out.find((x) => x.piano === f.piano)
+        if (hit) hit.n += f.n
+        continue
+      }
+      seen.add(f.piano)
+      out.push({ piano: f.piano, n: f.n })
+    }
+    return out.sort((a, b) => a.piano.localeCompare(b.piano, "it"))
+  }, [foglieGruppo])
+
   useEffect(() => {
-    if (!data?.rows) return
-    setSelected(new Set(data.rows.map((r) => r.clienteId)))
+    if (gruppo && !gruppi.includes(gruppo)) setGruppo("")
+  }, [gruppi, gruppo])
+
+  useEffect(() => {
+    if (pianoSel && !prodottiSelect.some((p) => p.piano === pianoSel)) setPianoSel("")
+  }, [prodottiSelect, pianoSel])
+
+  const rows = useMemo(() => {
+    return bySegmento.filter((c) => {
+      const prods = prodottiDi(c)
+      const prodOk = prods.some((p) => {
+        if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria)) return false
+        if (ql && !prodottoMatchQ(p, ql)) return false
+        if (gruppo && p.categoria !== gruppo && p.macro !== gruppo) return false
+        if (pianoSel && p.piano !== pianoSel) return false
+        return true
+      })
+      if (prodOk) return true
+      if (ql && !gruppo && !pianoSel) {
+        const hay = foldTesto(`${c.nome} ${c.email ?? ""}`)
+        if (hay.includes(foldTesto(ql))) return true
+      }
+      return false
+    })
+  }, [bySegmento, ql, gruppo, pianoSel])
+
+  const rowKey = `${segmento}|${gruppo}|${pianoSel}|${ql}|${rows.length}|${rows[0]?.clienteId ?? ""}`
+  useEffect(() => {
+    setSelected(new Set(rows.map((r) => r.clienteId)))
     setConfirm(false)
-    setResultMsg(null)
-  }, [data])
+  }, [rowKey])
 
   const sendM = useMutation({
     mutationFn: () =>
       dataApi.postAbbonamentiAttiviInvia({
         asOf,
         segmento,
-        categorie: categorieSel,
+        piani: pianoSel ? [pianoSel] : undefined,
         clienteIds: Array.from(selected),
         channel,
         subject: channel === "email" ? subject.trim() : undefined,
@@ -77,18 +181,11 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     },
   })
 
-  const rows = data?.rows ?? []
-  const categorie = data?.categorie ?? []
-
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.clienteId)), [rows, selected])
   const reachable = useMemo(() => {
     if (channel === "email") return selectedRows.filter((r) => r.email)
     return selectedRows.filter((r) => r.telefono)
   }, [selectedRows, channel])
-
-  function toggleCategoria(cat: string) {
-    setCategorieSel((prev) => (prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]))
-  }
 
   function close() {
     setOpen(false)
@@ -104,6 +201,9 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     reachable.length > 0 &&
     reachable.length <= 800 &&
     !sendM.isPending
+
+  const conEmail = rows.filter((r) => r.email).length
+  const conTel = rows.filter((r) => r.telefono).length
 
   return (
     <>
@@ -133,8 +233,8 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                   Messaggio agli abbonati attivi
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  Filtra adulti/bambini e tipo abbonamento (es. piscina), controlla l&apos;elenco e invia email o SMS
-                  (SMSHosting).
+                  Come in gestionale: gruppo (es. Rossi) poi prodotto (es. SMILE H2O). Cerca «h2o» per solo piscina H2O, non
+                  tutta la fascia. Staff esclusi. Validità alla data scelta.
                 </p>
               </div>
               <button type="button" onClick={close} className="rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
@@ -164,70 +264,72 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                 ))}
               </div>
 
-              <div className="mt-3">
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Tipologie abbonamento</p>
-                <p className="mb-2 text-[11px] text-zinc-600">Nessuna spunta = tutte. Esempio: seleziona solo le voci piscina / H2O / scuola nuoto.</p>
-                <div className="flex max-h-28 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-950/50 p-2">
-                  {categorie.length === 0 && !isLoading ? (
-                    <span className="text-xs text-zinc-500">Nessuna categoria</span>
-                  ) : (
-                    categorie.map((cat) => {
-                      const on = categorieSel.includes(cat)
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => toggleCategoria(cat)}
-                          className={`rounded-full px-2.5 py-1 text-xs ${
-                            on ? "bg-sky-600 text-white" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      )
-                    })
-                  )}
-                </div>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="text-xs text-sky-400 hover:underline"
-                    onClick={() =>
-                      setCategorieSel(categorie.filter((c) => /PISCINA|H2O|NUOTO|ACQUA|AQUATIC/i.test(c)))
-                    }
-                  >
-                    Solo piscina / H2O
-                  </button>
-                  <button
-                    type="button"
-                    className="text-xs text-emerald-400 hover:underline"
-                    onClick={() =>
-                      setCategorieSel(categorie.filter((c) => /GYM|PALESTR|FITNESS|SMILE FIT/i.test(c)))
-                    }
-                  >
-                    Solo palestra
-                  </button>
-                  {categorieSel.length > 0 && (
-                    <button type="button" onClick={() => setCategorieSel([])} className="text-xs text-amber-400 hover:underline">
-                      Azzera tipologie
-                    </button>
-                  )}
-                </div>
-              </div>
-
               <input
                 type="search"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Cerca nome, piano, email…"
+                placeholder="Cerca prodotto o nome: h2o, smile, nuoto libero…"
                 className="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
               />
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="block text-xs font-medium text-zinc-400">
+                  Gruppo (macro / categoria)
+                  <select
+                    value={gruppo}
+                    onChange={(e) => {
+                      setGruppo(e.target.value)
+                      setPianoSel("")
+                    }}
+                    className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  >
+                    <option value="">Tutti i gruppi</option>
+                    {gruppi.map((g) => (
+                      <option key={g} value={g}>
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-xs font-medium text-zinc-400">
+                  Prodotto (abbonamento)
+                  <select
+                    value={pianoSel}
+                    onChange={(e) => setPianoSel(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+                  >
+                    <option value="">{gruppo ? "Tutti i prodotti del gruppo" : "Tutti i prodotti"}</option>
+                    {prodottiSelect.map((p) => (
+                      <option key={p.piano} value={p.piano}>
+                        {p.piano} ({p.n})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="mt-1 text-[11px] text-zinc-600">
+                Esempio: gruppo «ROSSI - orario libero» + prodotto «SMILE H2O» = solo H2O, non OPEN né SMILE FIT. Nuoto libero
+                include anche i pacchetti ingressi con lo stesso nome prodotto.
+              </p>
+              {(gruppo || pianoSel || ql) && (
+                <button
+                  type="button"
+                  className="mt-2 text-xs text-amber-400 hover:underline"
+                  onClick={() => {
+                    setGruppo("")
+                    setPianoSel("")
+                    setQ("")
+                  }}
+                >
+                  Azzera filtri
+                </button>
+              )}
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">
                 <p>
                   {isLoading
                     ? "Caricamento elenco…"
-                    : `${rows.length} in elenco · ${data?.conEmail ?? 0} con email · ${data?.conTelefono ?? 0} con cellulare`}
+                    : `${rows.length} in elenco · ${conEmail} con email · ${conTel} con cellulare`}
                 </p>
                 <div className="flex gap-2">
                   <button
@@ -259,7 +361,7 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                   <tbody>
                     {rows.map((r) => (
                       <ContattoRow
-                        key={r.clienteId}
+                        key={`${r.segmento}-${r.clienteId}`}
                         row={r}
                         checked={selected.has(r.clienteId)}
                         channel={channel}
@@ -378,6 +480,9 @@ function ContattoRow({
   onToggle: () => void
 }) {
   const missing = channel === "email" ? !row.email : !row.telefono
+  const tipo = prodottiDi(row)
+    .map((p) => (p.categoria && p.piano && p.categoria !== p.piano ? `${p.categoria} · ${p.piano}` : p.piano || p.categoria))
+    .join(" · ")
   return (
     <tr className={`border-t border-zinc-800/70 ${missing ? "opacity-60" : ""} ${checked ? "bg-zinc-800/30" : ""}`}>
       <td className="px-2 py-1.5">
@@ -389,9 +494,8 @@ function ContattoRow({
           {row.segmento === "bambini" ? "B" : "A"}
         </span>
       </td>
-      <td className="max-w-[220px] truncate px-2 py-1.5 text-xs text-zinc-400" title={`${row.categoria} ${row.piano}`}>
-        {row.categoria}
-        {row.piano ? ` · ${row.piano}` : ""}
+      <td className="max-w-[260px] truncate px-2 py-1.5 text-xs text-zinc-400" title={tipo}>
+        {tipo}
       </td>
       <td className="px-2 py-1.5 text-xs text-zinc-500">
         {row.email ? <span className="mr-2 text-zinc-300">{row.email}</span> : <span className="mr-2">no email</span>}

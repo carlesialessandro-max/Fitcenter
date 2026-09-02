@@ -94,6 +94,7 @@ export const dataApi = {
     asOf?: string
     segmento?: "tutti" | "adulti" | "bambini"
     categorie?: string[]
+    piani?: string[]
     clienteIds?: string[]
     channel: "email" | "sms"
     subject?: string

@@ -108,6 +108,12 @@ export interface AbbAttiviAnalisiResponse {
 
 export type AttiviContattoSegmento = "adulti" | "bambini"
 
+export interface AttiviProdotto {
+  macro: string
+  categoria: string
+  piano: string
+}
+
 export interface AttiviContatto {
   clienteId: string
   nome: string
@@ -117,6 +123,8 @@ export interface AttiviContatto {
   categoria: string
   categorie?: string[]
   piano: string
+  macro?: string
+  prodotti?: AttiviProdotto[]
 }
 
 export interface AbbAttiviContattiResponse {
@@ -125,6 +133,7 @@ export interface AbbAttiviContattiResponse {
   conEmail: number
   conTelefono: number
   categorie: string[]
+  piani?: string[]
   rows: AttiviContatto[]
 }
 

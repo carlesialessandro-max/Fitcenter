@@ -161,7 +161,10 @@ function CategoriaDettaglioTable({
 }
 
 function filterCategoriaDettaglio(segment: AbbAttiviSegmentoAnalisi): AbbAttiviCategoriaDettaglioBucket[] {
-  return (segment.byCategoriaDettaglio ?? []).filter((r) => !String(r.categoria ?? "").toUpperCase().includes("DANZA"))
+  return (segment.byCategoriaDettaglio ?? []).filter((r) => {
+    const cat = String(r.categoria ?? "").toUpperCase()
+    return !cat.includes("DANZA") && !cat.includes("STAFF")
+  })
 }
 
 export function AttiviAnalisi() {
@@ -223,6 +226,7 @@ export function AttiviAnalisi() {
       const key = (categoria ?? "").trim()
       if (!key) return
       if (key.toUpperCase().includes("DANZA")) return
+      if (key.toUpperCase().includes("STAFF")) return
       map.set(key, (map.get(key) ?? 0) + (totale ?? 0))
     }
     data.adulti.byCategoria.forEach((r) => add(r.categoria, r.totale))
@@ -243,7 +247,7 @@ export function AttiviAnalisi() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Abbonamenti attivi — ripartizione</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Solo KPI attivi: esclusi i tesseramenti. Nella ripartizione adulti/bambini, per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
+            Solo KPI attivi: abbonamento valido alla data scelta, esclusi tesseramenti e staff. Nella ripartizione adulti/bambini, per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
