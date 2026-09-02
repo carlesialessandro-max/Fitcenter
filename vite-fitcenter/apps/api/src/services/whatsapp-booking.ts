@@ -73,6 +73,11 @@ const pendingInfoCorsoByPhone = new Map<string, PendingInfoCorso>()
 type PendingInfoChannel = { corso?: BambiniCorso; expiresAt: number }
 const pendingInfoChannelByPhone = new Map<string, PendingInfoChannel>()
 
+/** Ricontatto già richiesto: i messaggi successivi sono note per la chiamata, non slot sede. */
+type PendingCallback = { requestedAt: number; expiresAt: number }
+const pendingCallbackByPhone = new Map<string, PendingCallback>()
+const PENDING_CALLBACK_TTL_MS = 2 * 60 * 60_000
+
 const WEEKDAY: Record<string, number> = {
   domenica: 0,
   dom: 0,
@@ -105,8 +110,12 @@ const GUIDE_SLOT_MSG =
 
 const CALLBACK_MSG =
   `Perfetto, abbiamo segnato la tua richiesta.\n` +
-  `Una consulente H2Sport ti richiamerà a breve per fissare l'appuntamento in sede.\n` +
-  `Se nel frattempo vuoi proporre tu un orario, rispondi pure con giorno e ora (es. Martedì 17:00).`
+  `Una consulente H2Sport ti richiamerà a breve.\n` +
+  `Non serve indicare giorno e ora: ti contattiamo noi.`
+
+const CALLBACK_AGAIN_MSG =
+  `Ok, la richiesta di ricontatto è già in carico.\n` +
+  `Una consulente H2Sport ti richiamerà a breve.`
 
 /** Messaggio quando non capiamo la richiesta: lead a «contattato» + ricontatto umano. */
 const GENERIC_HANDOFF_MSG =
@@ -537,6 +546,56 @@ function takePendingProvaDay(from: string): PendingProvaDay | null {
     return null
   }
   return p
+}
+
+function peekPendingCallback(from: string): PendingCallback | null {
+  const p = pendingCallbackByPhone.get(from)
+  if (!p) return null
+  if (p.expiresAt <= Date.now()) {
+    pendingCallbackByPhone.delete(from)
+    return null
+  }
+  return p
+}
+
+function markCallbackPending(from: string) {
+  pendingCallbackByPhone.set(from, {
+    requestedAt: Date.now(),
+    expiresAt: Date.now() + PENDING_CALLBACK_TTL_MS,
+  })
+  pendingProvaByPhone.delete(from)
+  pendingProvaDayByPhone.delete(from)
+}
+
+function refreshCallbackPending(from: string) {
+  const p = peekPendingCallback(from)
+  if (!p) {
+    markCallbackPending(from)
+    return
+  }
+  p.expiresAt = Date.now() + PENDING_CALLBACK_TTL_MS
+}
+
+function callbackPreferenceMsg(raw: string): string {
+  const clipped = raw.trim().replace(/\s+/g, " ").slice(0, 140)
+  return (
+    `Ok, ho segnato: «${clipped}».\n` +
+    `Una consulente H2Sport ti richiamerà tenendone conto.`
+  )
+}
+
+/** Fascia ricorrente / flessibile: non è un appuntamento in un giorno preciso. */
+export function isRecurringAvailabilityIt(text: string): boolean {
+  const t = normText(text)
+  if (!t) return false
+  if (/\b(tutti|tutte|ogni)\s+(i|le|il|la)?\s*(giorn|pomerig|mattin|ser)/.test(t)) return true
+  if (/\b(tutti|tutte|ogni|qualsiasi|qualunque)\b.{0,24}\b(giorn|pomerig|mattin|ser|orari)\b/.test(t)) {
+    return true
+  }
+  if (/\bquando\s+(volete|potete|puoi|riuscite|vuoi)\b/.test(t)) return true
+  if (/\b(indifferente|quando\s+vi\s+pare)\b/.test(t)) return true
+  if (/\bqualsiasi\s+(giorno|orario|momento)\b/.test(t)) return true
+  return false
 }
 
 
@@ -1073,7 +1132,9 @@ export async function handleWhatsappInboundBooking(params: {
     /h2sport\.it\/#attivita/i.test(text) ||
     /corsi adulti e programma/i.test(t) ||
     /nuoto-libero-da-settembre-2026/i.test(text) ||
-    /una consulente h2sport ti richiamera a breve/i.test(t) ||
+    /una consulente h2sport ti richiamera/.test(t) ||
+    /la richiesta di ricontatto e gia in carico/.test(t) ||
+    /non serve indicare giorno e ora/.test(t) ||
     (/grazie per aver richiesto informazioni sui nostri corsi per bambini/.test(t) &&
       /info whatsapp/.test(t) &&
       /prenota prova/.test(t)) ||
@@ -1232,8 +1293,20 @@ export async function handleWhatsappInboundBooking(params: {
     }
   }
 
-  // 1) Preferisce ricontatto da consulente
+  // 1) Preferisce ricontatto da consulente (non è un appuntamento in sede)
   if (parseCallbackRequestIt(text)) {
+    const already = peekPendingCallback(from)
+    if (already) {
+      refreshCallbackPending(from)
+      await sendWhatsappText(from, CALLBACK_AGAIN_MSG)
+      if (lead) {
+        appendLeadNote(lead.id, `WA: ricontatto già in carico («${text}»)`, {
+          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+        })
+      }
+      return { handled: true, detail: "ricontatto già in carico" }
+    }
+    markCallbackPending(from)
     await sendWhatsappText(from, CALLBACK_MSG)
     if (lead) {
       appendLeadNote(lead.id, `WA: richiede ricontatto consulente («${text}»)`, {
@@ -1241,6 +1314,43 @@ export async function handleWhatsappInboundBooking(params: {
       })
     }
     return { handled: true, detail: "ricontatto consulente" }
+  }
+
+  // 1a) Dopo «richiamatemi»: fascia oraria / giorno incompleto = nota per la chiamata
+  {
+    const pendingCb = peekPendingCallback(from)
+    if (pendingCb) {
+      const parsedCb = parseSlotRequestIt(text)
+      const completeSlot = Boolean(parsedCb && hasWeekday(t) && hasTimeHint(t))
+      const leaveToOtherFlow =
+        completeSlot ||
+        parseProvaIntentIt(text) ||
+        wantsBambiniInfo(t) ||
+        wantsSedeConsulenza(t) ||
+        wantsExplicitAppointment(t)
+      if (completeSlot) {
+        pendingCallbackByPhone.delete(from)
+      } else if (!leaveToOtherFlow) {
+        const politeAck = /^(ok|va bene|grazie|perfetto|si|sì|no|👍|🙏)\b/.test(t) || t.length <= 2
+        if (politeAck) {
+          return { handled: false, detail: "ack dopo ricontatto" }
+        }
+        const isPref =
+          isRecurringAvailabilityIt(text) ||
+          (hasTimeHint(t) && !hasWeekday(t)) ||
+          (hasWeekday(t) && !hasTimeHint(t))
+        if (isPref) {
+          refreshCallbackPending(from)
+          await sendWhatsappText(from, callbackPreferenceMsg(text))
+          if (lead) {
+            appendLeadNote(lead.id, `WA nota per la chiamata: «${text}»`, {
+              stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+            })
+          }
+          return { handled: true, detail: "nota ricontatto" }
+        }
+      }
+    }
   }
 
   // 1b) Bambini: INFO / prova foglio (acquaticità vs scuola nuoto), guida
@@ -1646,6 +1756,18 @@ export async function handleWhatsappInboundBooking(params: {
       return { handled: false, detail: "non è richiesta slot" }
     }
 
+    // «tutti i pomeriggi», «ogni mattina»… non è un giorno preciso da fissare
+    if (isRecurringAvailabilityIt(text) && !wantsExplicitAppointment(t)) {
+      markCallbackPending(from)
+      await sendWhatsappText(from, callbackPreferenceMsg(text))
+      if (lead) {
+        appendLeadNote(lead.id, `WA disponibilità ricorrente → ricontatto («${text}»)`, {
+          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+        })
+      }
+      return { handled: true, detail: "disponibilità ricorrente" }
+    }
+
     if (!incomplete) {
       // Messaggio non interpretabile → handoff consulente
       await sendWhatsappText(from, GENERIC_HANDOFF_MSG)
@@ -1763,6 +1885,7 @@ export async function handleWhatsappInboundBooking(params: {
       `Durata circa 30 minuti.\n` +
       `Ti aspettiamo in sede! 💙`
     await sendWhatsappText(from, msg)
+    pendingCallbackByPhone.delete(from)
     whatsappEventsStore.append({
       kind: "booking",
       from,
