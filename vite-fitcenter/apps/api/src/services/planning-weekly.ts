@@ -66,7 +66,9 @@ function hhmmToMinutes(t: string | undefined): number | null {
 }
 
 /**
- * Lezione vuota: se il corso è nel planning, deve esserci uno slot quel giorno (±20 min).
+ * Lezione vuota: se il corso è nel planning, deve esserci uno slot quel giorno (±35 min).
+ * 35 min copre scarti gestionale/Excel (es. Pilates 18:30 vs 19:00) e tiene fuori
+ * i fantasmi lontani (es. Acqua Gym 09:00 vs 09:45).
  * `null` = planning assente o corso sconosciuto → non filtrare.
  */
 export function emptyLessonFitsPlanning(titolo: string, giornoIso: string, oraInizio?: string): boolean | null {
@@ -83,7 +85,7 @@ export function emptyLessonFitsPlanning(titolo: string, giornoIso: string, oraIn
     if (startMin == null) return true
     const em = hhmmToMinutes(e.start)
     if (em == null) return true
-    return Math.abs(em - startMin) <= 20
+    return Math.abs(em - startMin) <= 35
   })
   return hit
 }

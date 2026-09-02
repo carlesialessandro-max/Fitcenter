@@ -988,7 +988,7 @@ const PLANNING_CORSI_EVENTS: PlanningSlot[] = Array.isArray(
 
 /**
  * Lezioni a 0 iscritti: se il corso è nel planning settimanale, deve esistere
- * uno slot quel giorno (stesso titolo, orario ±20 min). Evita «sbarra a terra»
+ * uno slot quel giorno (stesso titolo, orario ±35 min). Evita «sbarra a terra»
  * il lunedì (in planning è mar/ven/sab).
  */
 function emptyLessonAllowedByPlanning(g: CorsoGroup, extraEvents?: PlanningSlot[]): boolean {
@@ -1006,7 +1006,7 @@ function emptyLessonAllowedByPlanning(g: CorsoGroup, extraEvents?: PlanningSlot[
     if (startMin == null) return true
     const em = hhmmToMinutes(e.start)
     if (em == null) return true
-    return Math.abs(em - startMin) <= 20
+    return Math.abs(em - startMin) <= 35
   })
 }
 
