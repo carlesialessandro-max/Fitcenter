@@ -105,11 +105,6 @@ export function LeadDetail() {
   })
 
   const canSendWa = role === "admin" || role === "operatore" || role === "crm"
-  const isBambiniLead =
-    lead?.categoria === "bambini" ||
-    /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(
-      `${lead?.interesseDettaglio ?? ""} ${lead?.note ?? ""}`
-    )
 
   if (!id) {
     return (
@@ -225,65 +220,66 @@ export function LeadDetail() {
                         {waMutation.isPending ? "Invio…" : "Invia benvenuto"}
                       </Button>
                     ) : null}
-                    {canSendWa && isBambiniLead ? (
-                      infoCorsoPick ? (
-                        <>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={waInfoMutation.isPending}
-                            onClick={() => {
-                              setWaMsg(null)
-                              waInfoMutation.mutate("acquaticita")
-                            }}
-                            title="Invia il documento Acquaticità dal numero WhatsApp H2Sport"
-                          >
-                            {waInfoMutation.isPending ? "Invio…" : "Acquaticità"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={waInfoMutation.isPending}
-                            onClick={() => {
-                              setWaMsg(null)
-                              waInfoMutation.mutate("scuola_nuoto")
-                            }}
-                            title="Invia il documento Scuola nuoto dal numero WhatsApp H2Sport"
-                          >
-                            {waInfoMutation.isPending ? "Invio…" : "Scuola nuoto"}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-zinc-500"
-                            onClick={() => setInfoCorsoPick(false)}
-                          >
-                            Annulla
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-emerald-400"
-                          disabled={waInfoMutation.isPending}
-                          onClick={() => {
-                            setWaMsg(null)
-                            setInfoCorsoPick(true)
-                          }}
-                          title="Invia orari e costi dal numero WhatsApp H2Sport, non dal tuo cellulare"
-                        >
-                          Invia info
-                        </Button>
-                      )
-                    ) : null}
                   </>
                 )}
               </dd>
+              {canSendWa && lead.telefono ? (
+                <div className="mt-3 rounded-md border border-emerald-800/60 bg-emerald-950/30 p-3">
+                  <p className="mb-2 text-xs text-emerald-200/80">
+                    Documenti corsi bambini dal numero WhatsApp H2Sport (non dal tuo cellulare)
+                  </p>
+                  {infoCorsoPick ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-emerald-600 text-white hover:bg-emerald-500"
+                        disabled={waInfoMutation.isPending}
+                        onClick={() => {
+                          setWaMsg(null)
+                          waInfoMutation.mutate("acquaticita")
+                        }}
+                      >
+                        {waInfoMutation.isPending ? "Invio…" : "Acquaticità (0–3 anni)"}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={waInfoMutation.isPending}
+                        onClick={() => {
+                          setWaMsg(null)
+                          waInfoMutation.mutate("scuola_nuoto")
+                        }}
+                      >
+                        {waInfoMutation.isPending ? "Invio…" : "Scuola nuoto (4+)"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-zinc-400"
+                        onClick={() => setInfoCorsoPick(false)}
+                      >
+                        Annulla
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="bg-emerald-600 text-white hover:bg-emerald-500"
+                      disabled={waInfoMutation.isPending}
+                      onClick={() => {
+                        setWaMsg(null)
+                        setInfoCorsoPick(true)
+                      }}
+                    >
+                      Invia info
+                    </Button>
+                  )}
+                </div>
+              ) : null}
               {waMsg ? <p className="mt-1 text-xs text-zinc-400">{waMsg}</p> : null}
             </div>
             {lead.fonteDettaglio && (
