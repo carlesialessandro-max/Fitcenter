@@ -50,7 +50,9 @@ function createTransportOrNull() {
   })
 }
 
-export async function sendMail(input: SendMailInput): Promise<{ sent: boolean }> {
+export type SendMailResult = { sent: boolean; detail?: string }
+
+export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   const from = env("SMTP_FROM") ?? env("SMTP_USER") ?? "noreply@fitcenter.local"
   const transport = createTransportOrNull()
   if (!transport) {
@@ -61,7 +63,7 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean }>
       text: input.text,
       attachments: input.attachments?.map((a) => a.filename) ?? [],
     })
-    return { sent: false }
+    return { sent: false, detail: "SMTP non configurato (SMTP_HOST / SMTP_USER / SMTP_PASS)" }
   }
   try {
     await transport.sendMail({
@@ -82,7 +84,7 @@ export async function sendMail(input: SendMailInput): Promise<{ sent: boolean }>
       error: msg,
       stack,
     })
-    return { sent: false }
+    return { sent: false, detail: msg }
   }
 }
 
