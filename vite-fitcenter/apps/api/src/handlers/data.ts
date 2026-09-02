@@ -28,6 +28,8 @@ import type {
   DettaglioConsulente,
   DettaglioMeseResponse,
 } from "../types/gestionale.js"
+import { sendMail, isSmtpConfigured } from "../services/mailer.js"
+import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 
 /** Budget mensile: solo valori salvati (somma consulenti o snapshot totale). */
 function getBudgetListForYear(anno: number): { anno: number; mese: number; budget: number; vendite?: number }[] {
@@ -1083,6 +1085,355 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         byFasciaRossiVerdi: byFasciaRossiVerdi(bambini),
       },
       notaClassificazione,
+    })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+export type AttiviContatto = {
+  clienteId: string
+  nome: string
+  email: string | null
+  telefono: string | null
+  segmento: "adulti" | "bambini"
+  categoria: string
+  categorie: string[]
+  piano: string
+}
+
+function pickEmailTelFromAbbRow(row: Record<string, unknown>): { email: string | null; telefono: string | null } {
+  const emailRaw = String(row.ClienteEmail ?? row.Email ?? row.E_mail ?? row.Mail ?? row.email ?? "").trim()
+  const telRaw = String(
+    row.ClienteSms ?? row.SMS ?? row.Cellulare ?? row.Telefono ?? row.Telefono_1 ?? row.telefono ?? ""
+  ).trim()
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : null
+  return { email, telefono: telRaw || null }
+}
+
+function categoriaLabelAttiviMsg(a: Abbonamento): string {
+  return (a.categoriaAbbonamentoDescrizione ?? a.macroCategoriaDescrizione ?? a.categoria ?? "ALTRO").toString().trim() || "ALTRO"
+}
+
+function normalizeCategoriaAttiviMsg(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+type AttiviContattiLoaded = { rows: AttiviContatto[]; categorie: string[] }
+
+let attiviContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
+
+async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
+  const key = `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
+  const now = Date.now()
+  if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 90_000) {
+    return attiviContattiCacheSlot.data
+  }
+  if (!gestionaleSql.isGestionaleConfigured()) return { rows: [], categorie: [] }
+  const rawRows = await gestionaleSql.queryAbbonamenti(undefined)
+  const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
+  markRinnovato(pairs.map((p) => p.a))
+  const attivi = filterAbbonamentiAttiviForKpi(
+    pairs.map((p) => p.a),
+    date
+  )
+  const attiviIds = new Set(attivi.map((a) => a.id))
+  const attiviPairs = pairs.filter((p) => attiviIds.has(p.a.id))
+
+  const adultiCategoriaEscluse = new Set(["QUOTE DANZA", "DANZA ADULTI", "DANZA BAMBINI", "PROFESSIONALE", "INVITO"])
+  const isGestantiCategoria = (a: Abbonamento) => normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a)).includes("GESTANTI")
+  const isAdultiCategoriaEsclusa = (a: Abbonamento) =>
+    adultiCategoriaEscluse.has(normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a)))
+
+  const adultiRaw = attiviPairs.filter((p) => !isAbbonamentoBambini(p.a))
+  const bambiniRaw = attiviPairs.filter((p) => isAbbonamentoBambini(p.a))
+  const adulti = adultiRaw.filter((p) => !isAdultiCategoriaEsclusa(p.a) && !isGestantiCategoria(p.a))
+  const bambiniMerged = [...bambiniRaw, ...adultiRaw.filter((p) => isGestantiCategoria(p.a))]
+
+  const toContact = (p: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
+    const c = pickEmailTelFromAbbRow(p.row)
+    const cat = categoriaLabelAttiviMsg(p.a)
+    const clienteId = String(p.a.clienteId ?? "").trim() || `abb:${p.a.id}`
+    return {
+      clienteId,
+      nome: p.a.clienteNome || "—",
+      email: c.email,
+      telefono: c.telefono,
+      segmento,
+      categoria: cat,
+      categorie: [cat],
+      piano: (p.a.abbonamentoDescrizione ?? p.a.pianoNome ?? "").trim(),
+    }
+  }
+
+  const mergeByCliente = (list: AttiviContatto[]): AttiviContatto[] => {
+    const m = new Map<string, AttiviContatto>()
+    for (const c of list) {
+      const id = c.clienteId
+      if (!id) continue
+      const prev = m.get(id)
+      if (!prev) {
+        m.set(id, { ...c, categorie: [...c.categorie] })
+        continue
+      }
+      if (!prev.email && c.email) prev.email = c.email
+      if (!prev.telefono && c.telefono) prev.telefono = c.telefono
+      for (const cat of c.categorie) {
+        if (!prev.categorie.includes(cat)) prev.categorie.push(cat)
+      }
+      prev.categoria = prev.categorie.join(" · ")
+      if (c.piano && prev.piano && c.piano !== prev.piano && !prev.piano.includes(c.piano)) {
+        prev.piano = `${prev.piano} · ${c.piano}`
+      }
+    }
+    return Array.from(m.values())
+  }
+
+  const categorie = Array.from(
+    new Set(
+      [...adulti, ...bambiniMerged]
+        .map((p) => categoriaLabelAttiviMsg(p.a))
+        .filter((x) => x && !normalizeCategoriaAttiviMsg(x).includes("DANZA"))
+    )
+  ).sort((a, b) => a.localeCompare(b, "it"))
+
+  const data: AttiviContattiLoaded = {
+    rows: [
+      ...mergeByCliente(adulti.map((p) => toContact(p, "adulti"))),
+      ...mergeByCliente(bambiniMerged.map((p) => toContact(p, "bambini"))),
+    ],
+    categorie,
+  }
+  attiviContattiCacheSlot = { key, at: now, data }
+  return data
+}
+
+function filterAttiviContatti(
+  all: AttiviContatto[],
+  opts: { segmento?: string; categorie?: string[]; q?: string }
+): AttiviContatto[] {
+  const seg = String(opts.segmento ?? "tutti").trim().toLowerCase()
+  const wanted = (opts.categorie ?? []).map(normalizeCategoriaAttiviMsg).filter(Boolean)
+  const q = String(opts.q ?? "").trim().toLowerCase()
+  return all.filter((c) => {
+    if (seg === "adulti" && c.segmento !== "adulti") return false
+    if (seg === "bambini" && c.segmento !== "bambini") return false
+    if (wanted.length) {
+      const blob = normalizeCategoriaAttiviMsg(`${(c.categorie ?? [c.categoria]).join(" ")} ${c.piano}`)
+      if (!wanted.some((w) => blob.includes(w))) return false
+    }
+    if (q) {
+      const hay = `${c.nome} ${c.categoria} ${c.piano} ${c.email ?? ""}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    return true
+  })
+}
+
+function parseCategorieParam(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((x) => String(x).trim()).filter(Boolean)
+  const s = String(raw ?? "").trim()
+  if (!s) return []
+  return s.split(/[,;|]/).map((x) => x.trim()).filter(Boolean)
+}
+
+/** Admin: elenco contatti attivi (email/SMS) per filtri adulti/bambini/categoria. */
+export async function getAbbonamentiAttiviContatti(req: Request, res: Response) {
+  try {
+    const { date, key } = parseAsOf(req)
+    const loaded = await loadAttiviContatti(date)
+    const all = loaded.rows
+    const categorie = parseCategorieParam(req.query.categorie ?? req.query.categoria)
+    const segmento = String(req.query.segmento ?? "tutti")
+    const rows = filterAttiviContatti(all, {
+      segmento,
+      categorie,
+      q: String(req.query.q ?? ""),
+    }).sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+    const segRows = filterAttiviContatti(all, { segmento })
+    const categorieDisponibili = Array.from(
+      new Set(segRows.flatMap((c) => c.categorie ?? [c.categoria]).filter((x) => x && !x.toUpperCase().includes("DANZA")))
+    ).sort((a, b) => a.localeCompare(b, "it"))
+    const cats = categorieDisponibili.length ? categorieDisponibili : loaded.categorie
+    res.json({
+      asOf: key,
+      totale: rows.length,
+      conEmail: rows.filter((r) => r.email).length,
+      conTelefono: rows.filter((r) => r.telefono).length,
+      categorie: cats,
+      rows,
+    })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+function sleepMs(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+/** Admin: invio email SMTP o SMS SMSHosting ai contatti attivi selezionati. */
+export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
+  try {
+    const body = (req.body ?? {}) as {
+      asOf?: string
+      segmento?: string
+      categorie?: string[] | string
+      clienteIds?: string[]
+      channel?: string
+      subject?: string
+      text?: string
+      confirm?: boolean
+    }
+    if (!body.confirm) {
+      return res.status(400).json({ message: "Conferma obbligatoria (confirm: true)" })
+    }
+    const channel = String(body.channel ?? "").trim().toLowerCase()
+    if (channel !== "email" && channel !== "sms") {
+      return res.status(400).json({ message: "channel deve essere email oppure sms" })
+    }
+    const text = String(body.text ?? "").trim()
+    if (!text) return res.status(400).json({ message: "Testo messaggio obbligatorio" })
+    if (channel === "sms" && text.length > 1000) {
+      return res.status(400).json({ message: "SMS: massimo 1000 caratteri" })
+    }
+    if (channel === "email" && text.length > 20_000) {
+      return res.status(400).json({ message: "Email: testo troppo lungo" })
+    }
+    const subject = String(body.subject ?? "").trim().slice(0, 300)
+    if (channel === "email" && !subject) {
+      return res.status(400).json({ message: "Oggetto email obbligatorio" })
+    }
+
+    if (channel === "email" && !isSmtpConfigured()) {
+      return res.status(503).json({ message: "SMTP non configurato (SMTP_HOST / SMTP_USER / SMTP_PASS)" })
+    }
+    if (channel === "sms") {
+      if (!isSmsConfigured()) {
+        return res.status(503).json({ message: "SMSHosting non configurato (SMS_PROVIDER=smshosting e credenziali)" })
+      }
+      if (isSmsSandboxMode()) {
+        return res.status(503).json({ message: "SMS in sandbox: disattiva SMSHOSTING_SANDBOX per invii reali" })
+      }
+    }
+
+    const asOfRaw = String(body.asOf ?? "").trim()
+    const fakeReq = { query: { asOf: asOfRaw } } as unknown as Request
+    const { date } = parseAsOf(fakeReq)
+    const loaded = await loadAttiviContatti(date)
+    const all = loaded.rows
+    const categorie = parseCategorieParam(body.categorie)
+    let rows = filterAttiviContatti(all, { segmento: body.segmento, categorie })
+    const ids = Array.isArray(body.clienteIds)
+      ? body.clienteIds.map((x) => String(x).trim()).filter(Boolean)
+      : []
+    if (ids.length === 0) {
+      return res.status(400).json({ message: "Seleziona almeno un destinatario dall'elenco" })
+    }
+    const allow = new Set(ids)
+    rows = rows.filter((r) => allow.has(r.clienteId))
+    if (rows.length === 0) {
+      return res.status(400).json({ message: "Nessun destinatario con i filtri scelti" })
+    }
+    if (rows.length > 800) {
+      return res.status(400).json({
+        message: `Troppi destinatari (${rows.length}). Restringi i filtri (max 800).`,
+      })
+    }
+
+    let sent = 0
+    let failed = 0
+    let skipped = 0
+    const errors: string[] = []
+
+    if (channel === "email") {
+      const emails: string[] = []
+      const seen = new Set<string>()
+      for (const r of rows) {
+        const e = (r.email ?? "").trim()
+        if (!e) {
+          skipped++
+          continue
+        }
+        const k = e.toLowerCase()
+        if (seen.has(k)) continue
+        seen.add(k)
+        emails.push(e)
+      }
+      if (emails.length === 0) {
+        return res.status(400).json({ message: "Nessuna email valida nei destinatari selezionati" })
+      }
+      const chunkSize = 40
+      for (let i = 0; i < emails.length; i += chunkSize) {
+        const chunk = emails.slice(i, i + chunkSize)
+        const to = chunk[0]!
+        const bcc = chunk.length > 1 ? chunk.slice(1).join(", ") : undefined
+        const out = await sendMail({ to, bcc, subject, text })
+        if (out.sent) sent += chunk.length
+        else {
+          failed += chunk.length
+          if (out.detail && errors.length < 8) errors.push(out.detail)
+        }
+        if (i + chunkSize < emails.length) await sleepMs(120)
+      }
+    } else {
+      const phones: string[] = []
+      const seen = new Set<string>()
+      for (const r of rows) {
+        const t = (r.telefono ?? "").trim()
+        if (!t) {
+          skipped++
+          continue
+        }
+        const k = t.replace(/\D/g, "")
+        if (!k || seen.has(k)) continue
+        seen.add(k)
+        phones.push(t)
+      }
+      if (phones.length === 0) {
+        return res.status(400).json({ message: "Nessun cellulare valido nei destinatari selezionati" })
+      }
+      const parallel = 6
+      for (let i = 0; i < phones.length; i += parallel) {
+        const part = phones.slice(i, i + parallel)
+        const outs = await Promise.all(part.map((to) => sendSms({ to, text })))
+        for (let j = 0; j < outs.length; j++) {
+          const o = outs[j]!
+          if (o.sent) sent++
+          else {
+            failed++
+            if (o.detail && errors.length < 8) {
+              errors.push(`${part[j]}: ${o.detail}`)
+            }
+          }
+        }
+        if (i + parallel < phones.length) await sleepMs(80)
+      }
+    }
+
+    const actor = getScopedUser(req)
+    console.log("[ATTIVI-MSG]", {
+      user: actor.username ?? actor.nome,
+      channel,
+      destinatari: rows.length,
+      sent,
+      failed,
+      skipped,
+    })
+
+    return res.json({
+      ok: failed === 0,
+      channel,
+      destinatari: rows.length,
+      sent,
+      failed,
+      skipped,
+      errors,
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

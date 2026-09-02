@@ -106,6 +106,38 @@ export interface AbbAttiviAnalisiResponse {
   notaClassificazione: string
 }
 
+export type AttiviContattoSegmento = "adulti" | "bambini"
+
+export interface AttiviContatto {
+  clienteId: string
+  nome: string
+  email: string | null
+  telefono: string | null
+  segmento: AttiviContattoSegmento
+  categoria: string
+  categorie?: string[]
+  piano: string
+}
+
+export interface AbbAttiviContattiResponse {
+  asOf: string
+  totale: number
+  conEmail: number
+  conTelefono: number
+  categorie: string[]
+  rows: AttiviContatto[]
+}
+
+export interface AbbAttiviInviaResponse {
+  ok: boolean
+  channel: "email" | "sms"
+  destinatari: number
+  sent: number
+  failed: number
+  skipped: number
+  errors: string[]
+}
+
 export interface DashboardStats {
   leadTotali: number
   leadVinti: number

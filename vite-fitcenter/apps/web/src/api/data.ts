@@ -6,6 +6,8 @@ import type {
   DettaglioMeseResponse,
   DettaglioBlocco,
   AbbAttiviAnalisiResponse,
+  AbbAttiviContattiResponse,
+  AbbAttiviInviaResponse,
 } from "@/types/gestionale"
 import type { Lead } from "@/types/lead"
 import { api } from "./client"
@@ -74,6 +76,30 @@ export const dataApi = {
     const q = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ""
     return api.get<AbbAttiviAnalisiResponse>(`/data/abbonamenti-attivi-analisi${q}`)
   },
+  getAbbonamentiAttiviContatti: (opts?: {
+    asOf?: string
+    segmento?: "tutti" | "adulti" | "bambini"
+    categorie?: string[]
+    q?: string
+  }) => {
+    const params = new URLSearchParams()
+    if (opts?.asOf) params.set("asOf", opts.asOf)
+    if (opts?.segmento && opts.segmento !== "tutti") params.set("segmento", opts.segmento)
+    if (opts?.categorie?.length) params.set("categorie", opts.categorie.join(","))
+    if (opts?.q?.trim()) params.set("q", opts.q.trim())
+    const q = params.toString()
+    return api.get<AbbAttiviContattiResponse>(`/data/abbonamenti-attivi-contatti${q ? `?${q}` : ""}`)
+  },
+  postAbbonamentiAttiviInvia: (body: {
+    asOf?: string
+    segmento?: "tutti" | "adulti" | "bambini"
+    categorie?: string[]
+    clienteIds?: string[]
+    channel: "email" | "sms"
+    subject?: string
+    text: string
+    confirm: true
+  }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
   getAbbonamenti: (consulente?: string, inScadenza?: 30 | 60) => {
     let url = withConsulente("/data/abbonamenti", consulente)
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza

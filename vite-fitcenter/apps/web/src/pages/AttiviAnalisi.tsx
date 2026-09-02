@@ -15,6 +15,7 @@ import {
   Legend,
 } from "recharts"
 import { dataApi } from "@/api/data"
+import { AttiviInviaMessaggio } from "@/components/AttiviInviaMessaggio"
 import { useAuth } from "@/contexts/AuthContext"
 import type {
   AbbAttiviCategoriaDettaglioBucket,
@@ -245,15 +246,18 @@ export function AttiviAnalisi() {
             Solo KPI attivi: esclusi i tesseramenti. Nella ripartizione adulti/bambini, per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
           </p>
         </div>
-        <label className="flex items-center gap-2 text-sm text-zinc-400">
-          Data riferimento
-          <input
-            type="date"
-            value={asOf}
-            onChange={(e) => setAsOf(e.target.value)}
-            className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
-          />
-        </label>
+        <div className="flex flex-wrap items-center gap-3">
+          <AttiviInviaMessaggio asOf={asOf} />
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Data riferimento
+            <input
+              type="date"
+              value={asOf}
+              onChange={(e) => setAsOf(e.target.value)}
+              className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+            />
+          </label>
+        </div>
       </div>
 
       {isLoading && <p className="mt-8 text-zinc-500">Caricamento…</p>}
