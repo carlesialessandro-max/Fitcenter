@@ -119,10 +119,9 @@ const CALLBACK_AGAIN_MSG =
 
 /** Messaggio quando non capiamo la richiesta: lead a «contattato» + ricontatto umano. */
 const GENERIC_HANDOFF_MSG =
-  `Grazie per il messaggio: non sono riuscito a interpretarlo in automatico.\n` +
-  `Verrà ricontattato a breve da una nostra consulente H2Sport.\n\n` +
-  `Se nel frattempo vuoi proporre un orario, rispondi con giorno e ora (es. Oggi 18:00 oppure Domani mattina), ` +
-  `oppure scrivi «richiamatemi».`
+  `Grazie per il messaggio: non sono riuscito a gestirlo in automatico.\n` +
+  `Una consulente H2Sport ti risponderà a breve.\n\n` +
+  `Se preferisci essere chiamato, scrivi «richiamatemi».`
 
 function bambiniInfoUrl(): string {
   return (process.env.WHATSAPP_BAMBINI_INFO_URL ?? "https://h2sport.it/bambini/").trim()
@@ -605,6 +604,52 @@ function hasBookingIntent(t: string): boolean {
     hasWeekday(t) ||
     hasTimeHint(t)
   )
+}
+
+/** Domanda libera (orari, chiusure, piscina…): non è una prenotazione. */
+export function looksLikeQuestionIt(text: string): boolean {
+  const raw = String(text ?? "")
+  const t = normText(raw)
+  if (!t) return false
+  if (/\?/.test(raw)) return true
+  if (/\b(quando|quanto|quanti|dove|come|perche|quale|quali)\b/.test(t)) return true
+  if (/\b(e\s+chius|e\s+apert|resta\s+chius|resta\s+apert|aprite|chiudete|apertura|chiusura)\b/.test(t)) {
+    return true
+  }
+  if (/\b(si\s+puo|posso|potete|avete|c'e|ce\s+l'avete|sapete|mi\s+dite|mi\s+dici)\b/.test(t)) {
+    return true
+  }
+  if (/\b(scusa|scusami|scusate|scusatemi)\b/.test(t) && t.length > 18) return true
+  return false
+}
+
+/** Richiesta operativa da chi ha già il numero (vasca, corsi, abbonamento…). */
+export function looksLikeOperationalQuestionIt(text: string): boolean {
+  const t = normText(text)
+  if (!t) return false
+  return /\b(piscina|vasca|corsie|corsia|nuoto\s+libero|25\s*m|25mt|50\s*m|50mt|chius[aoe]|apert[aoe]|abbonament|tessera|ingresso|spogliatoio|parcheggio|sauna|idromassaggio)\b/.test(
+    t
+  )
+}
+
+function shouldHandoffAsQuestion(text: string): boolean {
+  if (wantsExplicitAppointment(normText(text))) return false
+  return looksLikeQuestionIt(text) || looksLikeOperationalQuestionIt(text)
+}
+
+/** Frase corta da prenotazione (es. «giovedì», «domani mattina»), non una domanda. */
+function looksLikeSlotFragmentIt(text: string): boolean {
+  if (shouldHandoffAsQuestion(text)) return false
+  const t = normText(text)
+  if (wantsExplicitAppointment(t) && (hasWeekday(t) || hasTimeHint(t))) return true
+  const stripped = t
+    .replace(
+      /\b(ciao|salve|buongiorno|buonasera|ok|va bene|per favore|per piacere|grazie|vorrei|voglio|possibile)\b/g,
+      " "
+    )
+    .replace(/\s+/g, " ")
+    .trim()
+  return (hasWeekday(t) || hasTimeHint(t)) && stripped.length <= 36
 }
 
 function wantsBambiniInfo(t: string): boolean {
@@ -1135,6 +1180,7 @@ export async function handleWhatsappInboundBooking(params: {
     /una consulente h2sport ti richiamera/.test(t) ||
     /la richiesta di ricontatto e gia in carico/.test(t) ||
     /non serve indicare giorno e ora/.test(t) ||
+    /non sono riuscito a gestirlo in automatico/.test(t) ||
     (/grazie per aver richiesto informazioni sui nostri corsi per bambini/.test(t) &&
       /info whatsapp/.test(t) &&
       /prenota prova/.test(t)) ||
@@ -1327,7 +1373,8 @@ export async function handleWhatsappInboundBooking(params: {
         parseProvaIntentIt(text) ||
         wantsBambiniInfo(t) ||
         wantsSedeConsulenza(t) ||
-        wantsExplicitAppointment(t)
+        wantsExplicitAppointment(t) ||
+        shouldHandoffAsQuestion(text)
       if (completeSlot) {
         pendingCallbackByPhone.delete(from)
       } else if (!leaveToOtherFlow) {
@@ -1744,13 +1791,21 @@ export async function handleWhatsappInboundBooking(params: {
 
   const parsed = parseSlotRequestIt(text)
 
+  // Domanda libera (es. «la 25 mt giovedì è chiusa?»): non è un appuntamento
+  if (shouldHandoffAsQuestion(text)) {
+    await sendWhatsappText(from, GENERIC_HANDOFF_MSG)
+    if (lead) {
+      appendLeadNote(lead.id, `WA domanda libera → ricontatto consulente («${text}»)`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: "handoff domanda" }
+  }
+
   // 2) Risposta incompleta / sbagliata (giorno senza ora, solo «appuntamento», ora senza giorno…)
   if (!parsed) {
     const politeAck = /^(ok|va bene|grazie|perfetto|si|sì|no|👍|🙏)\b/.test(t) || t.length <= 2
-    const incomplete =
-      (hasWeekday(t) && !hasTimeHint(t)) ||
-      (hasTimeHint(t) && !hasWeekday(t)) ||
-      (hasBookingIntent(t) && !politeAck)
+    const incomplete = looksLikeSlotFragmentIt(text)
 
     if (politeAck) {
       return { handled: false, detail: "non è richiesta slot" }
