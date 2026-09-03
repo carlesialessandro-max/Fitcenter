@@ -44,4 +44,12 @@ export const whatsappApi = {
       `/whatsapp/events${qs ? `?${qs}` : ""}`
     )
   },
+
+  deleteByPhone: (phone: string) =>
+    api.delete<{ ok: boolean; removed: number; phones: string[] }>(
+      `/whatsapp/events?phone=${encodeURIComponent(phone)}`
+    ),
+
+  purgeTests: () =>
+    api.post<{ ok: boolean; removed: number; phones: string[] }>("/whatsapp/events/purge-tests"),
 }

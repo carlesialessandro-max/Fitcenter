@@ -42,6 +42,21 @@ function phonesLooseMatch(a?: string, b?: string): boolean {
   return x === y || x.endsWith(y) || y.endsWith(x)
 }
 
+/** Frasi usate solo nelle prove interne (Alessandro): intera chat di quel numero. */
+export const WHATSAPP_TEST_LOG_RE: RegExp[] = [
+  /lo lavo io o lo lavate voi/i,
+  /scusami la 25\s*mt/i,
+  /tutti i pomeriggi ore 17/i,
+  /prenota prova mercoled[iì']?\s*16\s*settembre\s*ore\s*16[.:]45/i,
+  /prova scuola_nuoto mercoled/i,
+]
+
+export function isWhatsappTestLogText(text?: string): boolean {
+  const t = String(text ?? "")
+  if (!t) return false
+  return WHATSAPP_TEST_LOG_RE.some((re) => re.test(t))
+}
+
 export type WhatsappEventsFilter = {
   limit?: number
   phone?: string
@@ -84,6 +99,40 @@ export const whatsappEventsStore = {
       })
     }
     return { events: rows.slice(0, limit), total: rows.length, limit }
+  },
+
+  /** Telefono normalizzato (senza 39/0) per confronto. */
+  phoneKey(raw?: string): string {
+    let x = phoneDigits(raw ?? "")
+    if (x.startsWith("39") && x.length > 10) x = x.slice(2)
+    if (x.startsWith("0")) x = x.slice(1)
+    return x
+  },
+
+  findPhonesWithTestLogs(): string[] {
+    const keys = new Set<string>()
+    for (const e of load().events) {
+      if (!isWhatsappTestLogText(e.text)) continue
+      // Solo il cellulare cliente, mai il numero WhatsApp H2Sport
+      const customer = e.kind === "message_out" ? this.phoneKey(e.to) : this.phoneKey(e.from)
+      if (customer) keys.add(customer)
+    }
+    return [...keys]
+  },
+
+  removeByPhones(phones: string[]): { removed: number; phones: string[] } {
+    const keys = new Set(phones.map((p) => this.phoneKey(p)).filter(Boolean))
+    if (keys.size === 0) return { removed: 0, phones: [] }
+    const data = load()
+    const before = data.events.length
+    data.events = data.events.filter((e) => {
+      const a = this.phoneKey(e.from)
+      const b = this.phoneKey(e.to)
+      return !(keys.has(a) || keys.has(b))
+    })
+    const removed = before - data.events.length
+    if (removed > 0) save(data)
+    return { removed, phones: [...keys] }
   },
 
   append(ev: Omit<WhatsappStoredEvent, "id" | "at"> & { id?: string; at?: string }): WhatsappStoredEvent {

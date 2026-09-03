@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { whatsappApi, type WhatsappLogEvent } from "@/api/whatsapp"
+import { useAuth } from "@/contexts/AuthContext"
 
 /** Solo conversazione utile: richiesta / risposta / appuntamento. */
 const CONV_KINDS = new Set(["message_in", "message_out", "booking"])
@@ -71,10 +72,33 @@ function statusSuffix(e: WhatsappLogEvent): string {
 }
 
 export function WhatsappLog() {
+  const { role } = useAuth()
+  const isAdmin = role === "admin"
+  const queryClient = useQueryClient()
   const [phone, setPhone] = useState("")
   const [kind, setKind] = useState("all")
   const [q, setQ] = useState("")
   const [applied, setApplied] = useState({ phone: "", kind: "all", q: "" })
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["whatsapp", "events"] })
+
+  const purgeTests = useMutation({
+    mutationFn: () => whatsappApi.purgeTests(),
+    onSuccess: (r) => {
+      invalidate()
+      alert(r.removed ? `Eliminate ${r.removed} righe di prova.` : "Nessuna chat di prova trovata.")
+    },
+    onError: (e) => alert((e as Error).message),
+  })
+
+  const deletePhone = useMutation({
+    mutationFn: (p: string) => whatsappApi.deleteByPhone(p),
+    onSuccess: (r) => {
+      invalidate()
+      if (!r.removed) alert("Nessun messaggio da cancellare.")
+    },
+    onError: (e) => alert((e as Error).message),
+  })
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["whatsapp", "events", applied.phone, applied.q],
@@ -127,6 +151,18 @@ export function WhatsappLog() {
           >
             CRM
           </Link>
+          {isAdmin ? (
+            <button
+              type="button"
+              disabled={purgeTests.isPending}
+              onClick={() => {
+                if (confirm("Cancellare le conversazioni di prova dal log?")) purgeTests.mutate()
+              }}
+              className="rounded-md border border-red-900/60 px-3 py-1.5 text-sm text-red-200 hover:bg-red-950/40"
+            >
+              {purgeTests.isPending ? "Elimino…" : "Elimina prove"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void refetch()}
@@ -203,8 +239,22 @@ export function WhatsappLog() {
         ) : null}
         {byPhone.map(([phoneKey, rows]) => (
           <section key={phoneKey} className="rounded-lg border border-zinc-800 bg-zinc-900/30">
-            <header className="border-b border-zinc-800 px-3 py-2">
+            <header className="flex items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
               <h2 className="text-sm font-medium text-zinc-200">+39 {phoneKey}</h2>
+              {isAdmin ? (
+                <button
+                  type="button"
+                  disabled={deletePhone.isPending}
+                  onClick={() => {
+                    if (confirm(`Cancellare tutti i messaggi di +39 ${phoneKey} dal log?`)) {
+                      deletePhone.mutate(phoneKey)
+                    }
+                  }}
+                  className="text-xs text-red-300 hover:text-red-200"
+                >
+                  Elimina chat
+                </button>
+              ) : null}
             </header>
             <ul className="divide-y divide-zinc-800/80">
               {[...rows].reverse().map((e) => (

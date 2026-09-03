@@ -219,6 +219,21 @@ export function whatsappEventsList(req: Request, res: Response) {
   })
 }
 
+/** Admin: cancella tutta la conversazione di un numero (prove). */
+export function whatsappEventsDeleteByPhone(req: Request, res: Response) {
+  const phone = String((req.body as { phone?: string })?.phone ?? req.query.phone ?? "").trim()
+  if (!phone) return res.status(400).json({ message: "phone obbligatorio" })
+  const result = whatsappEventsStore.removeByPhones([phone])
+  return res.json({ ok: true, ...result })
+}
+
+/** Admin: cancella le chat di prova (frasi test note). */
+export function whatsappEventsPurgeTests(_req: Request, res: Response) {
+  const phones = whatsappEventsStore.findPhonesWithTestLogs()
+  const result = whatsappEventsStore.removeByPhones(phones)
+  return res.json({ ok: true, ...result })
+}
+
 export async function whatsappSendTest(req: Request, res: Response) {
   try {
     if (!isWhatsappSendConfigured()) {
