@@ -181,6 +181,42 @@ function corsoLabel(corso: BambiniCorso): string {
   return corso === "acquaticita" ? "Acquaticità" : "Scuola Nuoto Bambini"
 }
 
+/** «Lo lavo io o lo lavate voi?» / spogliatoio genitori vs assistenti. */
+export function parseSpogliatoioWashQuestionIt(text: string): boolean {
+  const t = normText(text)
+  if (!t || t.length > 240) return false
+  if (/\b(lavo|lavate|lavarlo|lavarmi|laviamo)\b/.test(t)) return true
+  if (/\bchi\s+(lo\s+)?(lava|doccia|prepara)\b/.test(t)) return true
+  if (/\b(doccia|docciarlo|docciate)\b/.test(t) && /\b(io|voi|genitor|bambin|figli|chi)\b/.test(t)) {
+    return true
+  }
+  if (/\bspogliatoi/.test(t) && /\b(genitor|mamma|papa|entr|assist|chi|devo|lav)\b/.test(t)) {
+    return true
+  }
+  return false
+}
+
+function spogliatoioWashMsg(corso: BambiniCorso | null): string {
+  if (corso === "scuola_nuoto") {
+    return (
+      `Nella Scuola Nuoto Bambini ci sono gli assistenti in spogliatoio: i genitori non devono fare niente.\n` +
+      `Il bambino viene accompagnato e preparato dallo staff.`
+    )
+  }
+  if (corso === "acquaticita") {
+    return (
+      `In Acquaticità i genitori entrano direttamente in spogliatoio con il bambino.\n` +
+      `Lo lavate e lo preparate voi.`
+    )
+  }
+  return (
+    `Dipende dal corso:\n\n` +
+    `• Scuola Nuoto Bambini: ci sono gli assistenti in spogliatoio, i genitori non devono fare niente.\n` +
+    `• Acquaticità: i genitori entrano direttamente in spogliatoio con il bambino.\n\n` +
+    `Se mi dici corso o età, ti confermo quello che vale per voi.`
+  )
+}
+
 /** Rileva acquaticità vs scuola nuoto da lead / testo / età. */
 export function detectBambiniCorso(opts: {
   lead?: {
@@ -634,6 +670,7 @@ export function looksLikeOperationalQuestionIt(text: string): boolean {
 
 function shouldHandoffAsQuestion(text: string): boolean {
   if (wantsExplicitAppointment(normText(text))) return false
+  if (parseSpogliatoioWashQuestionIt(text)) return false
   return looksLikeQuestionIt(text) || looksLikeOperationalQuestionIt(text)
 }
 
@@ -801,11 +838,16 @@ async function completeProvaBooking(params: {
 
   if (result.ok) {
     pendingProvaDayByPhone.delete(from)
+    const bring =
+      corso === "acquaticita"
+        ? `Portate: costume, cuffia, ciabatte (anche per il genitore), accappatoio e occorrente per lavarsi.\n` +
+          `In Acquaticità i genitori entrano direttamente in spogliatoio con il bambino.`
+        : `Portate: costume, cuffia, ciabatte, accappatoio e occorrente per lavarsi.\n` +
+          `In spogliatoio ci sono gli assistenti: i genitori non devono fare niente.`
     const msg =
       `Perfetto! Prova in acqua prenotata:\n` +
       `${result.dayLabel} — ore ${result.orario} — età ${eta.label}\n\n` +
-      `Portate: costume, cuffia, ciabatte, accappatoio e occorrente per lavarsi ` +
-      `(anche ciabatte per il genitore).\n` +
+      `${bring}\n` +
       `H2Sport — 0573 572649`
     await sendWhatsappText(from, msg)
     whatsappEventsStore.append({
@@ -1181,6 +1223,8 @@ export async function handleWhatsappInboundBooking(params: {
     /la richiesta di ricontatto e gia in carico/.test(t) ||
     /non serve indicare giorno e ora/.test(t) ||
     /non sono riuscito a gestirlo in automatico/.test(t) ||
+    /ci sono gli assistenti in spogliatoio/.test(t) ||
+    /i genitori entrano direttamente in spogliatoio/.test(t) ||
     (/grazie per aver richiesto informazioni sui nostri corsi per bambini/.test(t) &&
       /info whatsapp/.test(t) &&
       /prenota prova/.test(t)) ||
@@ -1398,6 +1442,20 @@ export async function handleWhatsappInboundBooking(params: {
         }
       }
     }
+  }
+
+  // FAQ spogliatoio / chi lava il bambino (dopo la prova o in chat libera)
+  if (parseSpogliatoioWashQuestionIt(text)) {
+    const corso =
+      parseCorsoChoiceIt(text) ||
+      detectBambiniCorso({ lead, text, ageYears: parseChildAgeIt(text)?.years ?? null })
+    await sendWhatsappText(from, spogliatoioWashMsg(corso))
+    if (lead) {
+      appendLeadNote(lead.id, `WA faq spogliatoio (${corso ?? "corso non indicato"}): «${text}»`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: `faq spogliatoio ${corso ?? "n/d"}` }
   }
 
   // 1b) Bambini: INFO / prova foglio (acquaticità vs scuola nuoto), guida
