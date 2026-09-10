@@ -77,7 +77,7 @@ async function request<T>(
 
 export const api = {
   get: <T>(path: string, init?: RequestInit) => request<T>(path, { method: "GET", cache: "no-store", ...init }),
-  post: <T>(path: string, body: unknown) =>
+  post: <T>(path: string, body: unknown = {}) =>
     request<T>(path, {
       method: "POST",
       body: typeof FormData !== "undefined" && body instanceof FormData ? body : JSON.stringify(body),
