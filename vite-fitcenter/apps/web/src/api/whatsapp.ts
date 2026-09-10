@@ -51,5 +51,5 @@ export const whatsappApi = {
     ),
 
   purgeTests: () =>
-    api.post<{ ok: boolean; removed: number; phones: string[] }>("/whatsapp/events/purge-tests"),
+    api.post<{ ok: boolean; removed: number; phones: string[] }>("/whatsapp/events/purge-tests", {}),
 }
