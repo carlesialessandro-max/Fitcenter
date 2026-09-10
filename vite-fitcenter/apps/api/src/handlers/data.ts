@@ -1578,6 +1578,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       errors,
       skippedNames: recipients.filter((x) => x.esito === "skipped").map((x) => x.nome),
       failedNames: recipients.filter((x) => x.esito === "failed").map((x) => x.nome),
+      sentNames: recipients.filter((x) => x.esito === "sent").map((x) => x.nome),
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
