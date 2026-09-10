@@ -147,6 +147,36 @@ export interface AbbAttiviInviaResponse {
   errors: string[]
 }
 
+export type AbbAttiviInvioEsito = "sent" | "failed" | "skipped"
+
+export interface AbbAttiviInvioRecipient {
+  clienteId: string
+  nome: string
+  dest: string | null
+  esito: AbbAttiviInvioEsito
+}
+
+export interface AbbAttiviInvio {
+  id: string
+  at: string
+  user: string
+  channel: "email" | "sms"
+  subject: string
+  text: string
+  segmento?: string
+  piani?: string[]
+  destinatari: number
+  sent: number
+  failed: number
+  skipped: number
+  errors: string[]
+  recipients: AbbAttiviInvioRecipient[]
+}
+
+export interface AbbAttiviInviiResponse {
+  invii: AbbAttiviInvio[]
+}
+
 export interface DashboardStats {
   leadTotali: number
   leadVinti: number

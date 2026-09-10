@@ -16,6 +16,7 @@ import {
 } from "recharts"
 import { dataApi } from "@/api/data"
 import { AttiviInviaMessaggio } from "@/components/AttiviInviaMessaggio"
+import { AttiviInviiLog } from "@/components/AttiviInviiLog"
 import { useAuth } from "@/contexts/AuthContext"
 import type {
   AbbAttiviCategoriaDettaglioBucket,
@@ -263,6 +264,8 @@ export function AttiviAnalisi() {
           </label>
         </div>
       </div>
+
+      <AttiviInviiLog />
 
       {isLoading && <p className="mt-8 text-zinc-500">Caricamento…</p>}
       {error && (

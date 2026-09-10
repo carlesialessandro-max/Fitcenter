@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { getRicevuteUtenti, postInviaScontrino } from "../handlers/scontrini.js"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, postAbbonamentiAttiviInvia, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
   deleteCalendarioInstructor,
@@ -48,6 +48,7 @@ dataRouter.get("/abbonamenti", getAbbonamenti)
 dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
 dataRouter.get("/abbonamenti-attivi-contatti", requireAdmin, getAbbonamentiAttiviContatti)
 dataRouter.post("/abbonamenti-attivi-invia", requireAdmin, postAbbonamentiAttiviInvia)
+dataRouter.get("/abbonamenti-attivi-invii", requireAdmin, getAbbonamentiAttiviInvii)
 dataRouter.get("/danza/attivi-oggi", requireAdminOrDanza, getDanzaAttiviOggi)
 dataRouter.get("/referral-presentati", getReferralPresentati)
 dataRouter.get("/budget", requireAdmin, getBudget)

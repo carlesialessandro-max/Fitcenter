@@ -8,6 +8,7 @@ import type {
   AbbAttiviAnalisiResponse,
   AbbAttiviContattiResponse,
   AbbAttiviInviaResponse,
+  AbbAttiviInviiResponse,
 } from "@/types/gestionale"
 import type { Lead } from "@/types/lead"
 import { api } from "./client"
@@ -101,6 +102,8 @@ export const dataApi = {
     text: string
     confirm: true
   }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
+  getAbbonamentiAttiviInvii: (limit = 40) =>
+    api.get<AbbAttiviInviiResponse>(`/data/abbonamenti-attivi-invii?limit=${limit}`),
   getAbbonamenti: (consulente?: string, inScadenza?: 30 | 60) => {
     let url = withConsulente("/data/abbonamenti", consulente)
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza

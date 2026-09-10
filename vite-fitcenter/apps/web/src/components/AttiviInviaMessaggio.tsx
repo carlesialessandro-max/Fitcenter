@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { useMutation, useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
 
@@ -64,6 +64,7 @@ function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
 }
 
 export function AttiviInviaMessaggio({ asOf }: Props) {
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [segmento, setSegmento] = useState<SegmentoFiltro>("tutti")
   const [gruppo, setGruppo] = useState("")
@@ -183,8 +184,9 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     onSuccess: (res) => {
       const skipped = res.skipped ? `, saltati ${res.skipped} senza ${channel === "email" ? "email" : "telefono"}` : ""
       const fail = res.failed ? `, falliti ${res.failed}` : ""
-      setResultMsg(`Inviati ${res.sent}${fail}${skipped}.`)
+      setResultMsg(`Inviati ${res.sent}${fail}${skipped}. Vedi lo storico in basso in pagina.`)
       setConfirm(false)
+      void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
     },
   })
 

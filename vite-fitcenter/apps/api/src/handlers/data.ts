@@ -30,6 +30,7 @@ import type {
 } from "../types/gestionale.js"
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
 import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
+import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
 
 /** Budget mensile: solo valori salvati (somma consulenti o snapshot totale). */
 function getBudgetListForYear(anno: number): { anno: number; mese: number; budget: number; vendite?: number }[] {
@@ -1466,21 +1467,29 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     let failed = 0
     let skipped = 0
     const errors: string[] = []
+    const recipients: AttiviInvioRecipient[] = []
+
+    const mark = (r: (typeof rows)[number], esito: AttiviInvioRecipient["esito"], dest: string | null) => {
+      recipients.push({ clienteId: r.clienteId, nome: r.nome, dest, esito })
+      if (esito === "sent") sent++
+      else if (esito === "failed") failed++
+      else skipped++
+    }
 
     if (channel === "email") {
-      const emails: string[] = []
-      const seen = new Set<string>()
+      const byEmail = new Map<string, typeof rows>()
       for (const r of rows) {
         const e = (r.email ?? "").trim()
         if (!e) {
-          skipped++
+          mark(r, "skipped", null)
           continue
         }
         const k = e.toLowerCase()
-        if (seen.has(k)) continue
-        seen.add(k)
-        emails.push(e)
+        const list = byEmail.get(k) ?? []
+        list.push(r)
+        byEmail.set(k, list)
       }
+      const emails = Array.from(byEmail.keys())
       if (emails.length === 0) {
         return res.status(400).json({ message: "Nessuna email valida nei destinatari selezionati" })
       }
@@ -1490,51 +1499,65 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         const to = chunk[0]!
         const bcc = chunk.length > 1 ? chunk.slice(1).join(", ") : undefined
         const out = await sendMail({ to, bcc, subject, text })
-        if (out.sent) sent += chunk.length
-        else {
-          failed += chunk.length
-          if (out.detail && errors.length < 8) errors.push(out.detail)
+        const esito: AttiviInvioRecipient["esito"] = out.sent ? "sent" : "failed"
+        if (!out.sent && out.detail && errors.length < 8) errors.push(out.detail)
+        for (const em of chunk) {
+          for (const r of byEmail.get(em) ?? []) mark(r, esito, r.email)
         }
         if (i + chunkSize < emails.length) await sleepMs(120)
       }
     } else {
-      const phones: string[] = []
-      const seen = new Set<string>()
+      const byPhone = new Map<string, { raw: string; rows: typeof rows }>()
       for (const r of rows) {
         const t = (r.telefono ?? "").trim()
-        if (!t) {
-          skipped++
+        const k = t.replace(/\D/g, "")
+        if (!t || !k) {
+          mark(r, "skipped", null)
           continue
         }
-        const k = t.replace(/\D/g, "")
-        if (!k || seen.has(k)) continue
-        seen.add(k)
-        phones.push(t)
+        const prev = byPhone.get(k)
+        if (prev) prev.rows.push(r)
+        else byPhone.set(k, { raw: t, rows: [r] })
       }
+      const phones = Array.from(byPhone.values())
       if (phones.length === 0) {
         return res.status(400).json({ message: "Nessun cellulare valido nei destinatari selezionati" })
       }
       const parallel = 6
       for (let i = 0; i < phones.length; i += parallel) {
         const part = phones.slice(i, i + parallel)
-        const outs = await Promise.all(part.map((to) => sendSms({ to, text })))
+        const outs = await Promise.all(part.map((p) => sendSms({ to: p.raw, text })))
         for (let j = 0; j < outs.length; j++) {
           const o = outs[j]!
-          if (o.sent) sent++
-          else {
-            failed++
-            if (o.detail && errors.length < 8) {
-              errors.push(`${part[j]}: ${o.detail}`)
-            }
+          const pack = part[j]!
+          const esito: AttiviInvioRecipient["esito"] = o.sent ? "sent" : "failed"
+          if (!o.sent && o.detail && errors.length < 8) {
+            errors.push(`${pack.raw}: ${o.detail}`)
           }
+          for (const r of pack.rows) mark(r, esito, r.telefono)
         }
         if (i + parallel < phones.length) await sleepMs(80)
       }
     }
 
     const actor = getScopedUser(req)
+    const userLabel = String(actor.username ?? actor.nome ?? "").trim() || "admin"
+    attiviInviiStore.append({
+      user: userLabel,
+      channel,
+      subject: channel === "email" ? subject : "",
+      text,
+      segmento: String(body.segmento ?? "").trim() || undefined,
+      piani: piani.length ? piani : undefined,
+      destinatari: rows.length,
+      sent,
+      failed,
+      skipped,
+      errors,
+      recipients,
+    })
     console.log("[ATTIVI-MSG]", {
-      user: actor.username ?? actor.nome,
+      user: userLabel,
       channel,
       destinatari: rows.length,
       sent,
@@ -1551,6 +1574,32 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       skipped,
       errors,
     })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Admin: storico invii email/SMS dalla pagina Attivi. */
+export async function getAbbonamentiAttiviInvii(req: Request, res: Response) {
+  try {
+    const limit = Number((req.query as Record<string, unknown>).limit ?? 40)
+    const invii = attiviInviiStore.list(limit).map((row) => ({
+      id: row.id,
+      at: row.at,
+      user: row.user,
+      channel: row.channel,
+      subject: row.subject,
+      text: row.text,
+      segmento: row.segmento,
+      piani: row.piani,
+      destinatari: row.destinatari,
+      sent: row.sent,
+      failed: row.failed,
+      skipped: row.skipped,
+      errors: row.errors,
+      recipients: row.recipients,
+    }))
+    res.json({ invii })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
