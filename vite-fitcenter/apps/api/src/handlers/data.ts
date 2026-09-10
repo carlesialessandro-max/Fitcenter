@@ -1545,20 +1545,24 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
 
     const actor = getScopedUser(req)
     const userLabel = String(actor.username ?? actor.nome ?? "").trim() || "admin"
-    attiviInviiStore.append({
-      user: userLabel,
-      channel,
-      subject: channel === "email" ? subject : "",
-      text,
-      segmento: String(body.segmento ?? "").trim() || undefined,
-      piani: piani.length ? piani : undefined,
-      destinatari: rows.length,
-      sent,
-      failed,
-      skipped,
-      errors,
-      recipients,
-    })
+    try {
+      attiviInviiStore.append({
+        user: userLabel,
+        channel,
+        subject: channel === "email" ? subject : "",
+        text,
+        segmento: String(body.segmento ?? "").trim() || undefined,
+        piani: piani.length ? piani : undefined,
+        destinatari: rows.length,
+        sent,
+        failed,
+        skipped,
+        errors,
+        recipients,
+      })
+    } catch (e) {
+      console.error("[ATTIVI-MSG] log non salvato:", (e as Error)?.message ?? e)
+    }
     console.log("[ATTIVI-MSG]", {
       user: userLabel,
       channel,

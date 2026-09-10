@@ -253,6 +253,12 @@ export function AttiviAnalisi() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <AttiviInviaMessaggio asOf={asOf} />
+          <a
+            href="#log-invii"
+            className="rounded-lg border border-amber-700/60 px-3 py-2 text-sm text-amber-200 hover:bg-amber-950/40"
+          >
+            Log invii
+          </a>
           <label className="flex items-center gap-2 text-sm text-zinc-400">
             Data riferimento
             <input

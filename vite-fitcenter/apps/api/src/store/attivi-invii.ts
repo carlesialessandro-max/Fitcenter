@@ -1,7 +1,7 @@
 import { readJson, writeJson } from "./persist.js"
 
 const FILE = "attivi-invii.json"
-const MAX = 80
+const MAX = 200
 
 export type AttiviInvioEsito = "sent" | "failed" | "skipped"
 
