@@ -1143,11 +1143,14 @@ export type AttiviContatto = {
 }
 
 function pickEmailTelFromAbbRow(row: Record<string, unknown>): { email: string | null; telefono: string | null } {
-  const emailRaw = String(row.ClienteEmail ?? row.Email ?? row.E_mail ?? row.Mail ?? row.email ?? "").trim()
+  const emailRaw = String(
+    row.ClienteEmail ?? row.Email ?? row.E_mail ?? row.Mail ?? row.email ?? row.PEC ?? row.Pec ?? ""
+  ).trim()
+  const firstEmail = emailRaw.split(/[;,/\s]+/).map((x) => x.trim()).find((x) => x.includes("@")) ?? ""
+  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(firstEmail) ? firstEmail : null
   const telRaw = String(
     row.ClienteSms ?? row.SMS ?? row.Cellulare ?? row.Telefono ?? row.Telefono_1 ?? row.telefono ?? ""
   ).trim()
-  const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailRaw) ? emailRaw : null
   return { email, telefono: telRaw || null }
 }
 
@@ -1573,6 +1576,8 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       failed,
       skipped,
       errors,
+      skippedNames: recipients.filter((x) => x.esito === "skipped").map((x) => x.nome),
+      failedNames: recipients.filter((x) => x.esito === "failed").map((x) => x.nome),
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

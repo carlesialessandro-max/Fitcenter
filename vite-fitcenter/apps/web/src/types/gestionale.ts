@@ -145,6 +145,8 @@ export interface AbbAttiviInviaResponse {
   failed: number
   skipped: number
   errors: string[]
+  skippedNames?: string[]
+  failedNames?: string[]
 }
 
 export type AbbAttiviInvioEsito = "sent" | "failed" | "skipped"

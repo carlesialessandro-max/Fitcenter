@@ -182,9 +182,11 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
         confirm: true,
       }),
     onSuccess: (res) => {
-      const skipped = res.skipped ? `, saltati ${res.skipped} senza ${channel === "email" ? "email" : "telefono"}` : ""
+      const skipped = res.skipped ? `, saltati ${res.skipped}` : ""
       const fail = res.failed ? `, falliti ${res.failed}` : ""
-      setResultMsg(`Inviati ${res.sent}${fail}${skipped}. Vedi lo storico in basso in pagina.`)
+      const skipList = res.skippedNames?.length ? ` Non inviati: ${res.skippedNames.join(", ")}.` : ""
+      const failList = res.failedNames?.length ? ` Falliti: ${res.failedNames.join(", ")}.` : ""
+      setResultMsg(`Inviati ${res.sent}${fail}${skipped}.${skipList}${failList}`)
       setConfirm(false)
       void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
     },
@@ -451,6 +453,15 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
                   .
                 </span>
               </label>
+              {selectedRows.length > reachable.length && (
+                <p className="mt-2 text-xs text-amber-300/90">
+                  Esclusi (niente {channel === "email" ? "email" : "telefono"} in anagrafica):{" "}
+                  {selectedRows
+                    .filter((r) => (channel === "email" ? !r.email : !r.telefono))
+                    .map((r) => r.nome)
+                    .join(", ")}
+                </p>
+              )}
               {reachable.length > 800 && (
                 <p className="mt-2 text-sm text-red-400">Troppi destinatari ({reachable.length}). Max 800: restringi i filtri.</p>
               )}
