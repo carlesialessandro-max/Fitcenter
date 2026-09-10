@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import type { AbbAttiviInvio, AbbAttiviInvioEsito } from "@/types/gestionale"
 
@@ -36,13 +36,31 @@ type Hit = {
   esito: AbbAttiviInvioEsito
 }
 
-export function AttiviInviiLog() {
+export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
+  const queryClient = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
   const [q, setQ] = useState("")
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["abbonamenti-attivi-invii"],
     queryFn: () => dataApi.getAbbonamentiAttiviInvii(80),
     staleTime: 10_000,
+  })
+
+  const delOne = useMutation({
+    mutationFn: (id: string) => dataApi.deleteAbbonamentiAttiviInvio(id),
+    onSuccess: (_res, id) => {
+      setOpenId((cur) => (cur === id ? null : cur))
+      void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
+    },
+  })
+
+  const delAll = useMutation({
+    mutationFn: () => dataApi.deleteAbbonamentiAttiviInvii(),
+    onSuccess: () => {
+      setOpenId(null)
+      setQ("")
+      void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
+    },
   })
 
   const invii = data?.invii ?? []
@@ -61,15 +79,51 @@ export function AttiviInviiLog() {
   }, [invii, ql])
 
   const selected = invii.find((x) => x.id === openId) ?? null
+  const busy = delOne.isPending || delAll.isPending
+
+  function confirmDeleteOne(id: string, label: string) {
+    if (!window.confirm(`Eliminare questo invio dal log?\n${label}`)) return
+    delOne.mutate(id)
+  }
+
+  function confirmDeleteAll() {
+    if (!window.confirm("Svuotare tutto il log invii? Non si può recuperare.")) return
+    delAll.mutate()
+  }
 
   return (
     <section id="log-invii" className="mt-6 rounded-xl border border-amber-900/40 bg-zinc-900/40">
       <div className="border-b border-zinc-800 px-4 py-3">
-        <h2 className="text-base font-semibold text-zinc-100">Log invii — il cliente dice che non ha ricevuto?</h2>
-        <p className="mt-1 text-xs text-zinc-400">
-          Cerca cognome o email. «Inviato da FitCenter» = SMTP ha accettato la mail (può comunque finire in spam).
-          Gli invii fatti prima di questo log non ci sono.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-100">Log invii — il cliente dice che non ha ricevuto?</h2>
+            <p className="mt-1 text-xs text-zinc-400">
+              Cerca cognome o email. «Inviato da FitCenter» = SMTP ha accettato la mail (può comunque finire in spam).
+              Gli invii fatti prima di questo log non ci sono.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {invii.length > 0 ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={confirmDeleteAll}
+                className="rounded-md border border-red-900/70 px-3 py-1.5 text-xs text-red-300 hover:bg-red-950/40 disabled:opacity-40"
+              >
+                {delAll.isPending ? "Svuoto…" : "Svuota log"}
+              </button>
+            ) : null}
+            {onClose ? (
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                Chiudi
+              </button>
+            ) : null}
+          </div>
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <input
             type="search"
@@ -86,6 +140,11 @@ export function AttiviInviiLog() {
             {isFetching ? "Aggiorno…" : "Aggiorna"}
           </button>
         </div>
+        {delOne.isError || delAll.isError ? (
+          <p className="mt-2 text-xs text-red-300">
+            {(delOne.error as Error | undefined)?.message ?? (delAll.error as Error | undefined)?.message}
+          </p>
+        ) : null}
       </div>
 
       {isLoading ? <p className="px-4 py-6 text-sm text-zinc-500">Caricamento log…</p> : null}
@@ -107,6 +166,7 @@ export function AttiviInviiLog() {
                   <th className="px-2 py-1.5 font-medium">Indirizzo</th>
                   <th className="px-2 py-1.5 font-medium">Esito</th>
                   <th className="px-2 py-1.5 font-medium">Oggetto</th>
+                  <th className="px-2 py-1.5 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -119,11 +179,26 @@ export function AttiviInviiLog() {
                     <td className="max-w-[220px] truncate px-2 py-1.5 text-xs text-zinc-500">
                       {h.invio.channel === "email" ? h.invio.subject || "email" : "SMS"}
                     </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          confirmDeleteOne(
+                            h.invio.id,
+                            `${fmtAt(h.invio.at)} · ${h.invio.channel === "email" ? h.invio.subject || "email" : "SMS"}`,
+                          )
+                        }
+                        className="text-xs text-red-400 hover:underline disabled:opacity-40"
+                      >
+                        Elimina invio
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {hits.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-2 py-6 text-center text-zinc-500">
+                    <td colSpan={6} className="px-2 py-6 text-center text-zinc-500">
                       Nessun invio trovato per questo nome. O non era nel destinatario, o l&apos;invio è precedente al log.
                     </td>
                   </tr>
@@ -144,12 +219,12 @@ export function AttiviInviiLog() {
               const active = row.id === openId
               return (
                 <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => setOpenId(active ? null : row.id)}
-                    className="flex w-full flex-wrap items-start justify-between gap-2 px-4 py-3 text-left hover:bg-zinc-800/40"
-                  >
-                    <div className="min-w-0">
+                  <div className="flex w-full flex-wrap items-start justify-between gap-2 px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => setOpenId(active ? null : row.id)}
+                      className="min-w-0 flex-1 text-left hover:opacity-90"
+                    >
                       <p className="text-sm text-zinc-100">
                         {row.channel === "email" ? row.subject || "(senza oggetto)" : "SMS"}
                         <span className="ml-2 text-xs text-zinc-500">{fmtAt(row.at)}</span>
@@ -159,9 +234,30 @@ export function AttiviInviiLog() {
                         {row.failed ? ` · falliti ${row.failed}` : ""}
                         {row.skipped ? ` · saltati ${row.skipped}` : ""}
                       </p>
+                    </button>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setOpenId(active ? null : row.id)}
+                        className="text-xs text-amber-400"
+                      >
+                        {active ? "Chiudi elenco" : "Apri elenco"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          confirmDeleteOne(
+                            row.id,
+                            `${fmtAt(row.at)} · ${row.channel === "email" ? row.subject || "email" : "SMS"}`,
+                          )
+                        }
+                        className="text-xs text-red-400 hover:underline disabled:opacity-40"
+                      >
+                        Elimina
+                      </button>
                     </div>
-                    <span className="text-xs text-amber-400">{active ? "Chiudi elenco" : "Apri elenco"}</span>
-                  </button>
+                  </div>
                   {active && selected ? (
                     <div className="max-h-72 overflow-auto border-t border-zinc-800/80 bg-zinc-950/40">
                       <table className="w-full text-left text-xs">

@@ -63,4 +63,21 @@ export const attiviInviiStore = {
     save(data)
     return saved
   },
+
+  remove(id: string): boolean {
+    const data = load()
+    const next = data.invii.filter((x) => x.id !== id)
+    if (next.length === data.invii.length) return false
+    data.invii = next
+    save(data)
+    return true
+  },
+
+  clear(): number {
+    const data = load()
+    const n = data.invii.length
+    data.invii = []
+    save(data)
+    return n
+  },
 }

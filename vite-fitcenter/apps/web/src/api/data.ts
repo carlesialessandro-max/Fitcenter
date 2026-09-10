@@ -104,6 +104,10 @@ export const dataApi = {
   }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
   getAbbonamentiAttiviInvii: (limit = 40) =>
     api.get<AbbAttiviInviiResponse>(`/data/abbonamenti-attivi-invii?limit=${limit}`),
+  deleteAbbonamentiAttiviInvio: (id: string) =>
+    api.delete<{ ok: boolean }>(`/data/abbonamenti-attivi-invii/${encodeURIComponent(id)}`),
+  deleteAbbonamentiAttiviInvii: () =>
+    api.delete<{ ok: boolean; removed: number }>("/data/abbonamenti-attivi-invii"),
   getAbbonamenti: (consulente?: string, inScadenza?: 30 | 60) => {
     let url = withConsulente("/data/abbonamenti", consulente)
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza

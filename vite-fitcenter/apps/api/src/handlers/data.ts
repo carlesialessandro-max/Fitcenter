@@ -1615,6 +1615,29 @@ export async function getAbbonamentiAttiviInvii(req: Request, res: Response) {
   }
 }
 
+/** Admin: elimina un invio dallo storico. */
+export async function deleteAbbonamentiAttiviInvio(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id invio mancante" })
+    const ok = attiviInviiStore.remove(id)
+    if (!ok) return res.status(404).json({ message: "Invio non trovato" })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Admin: svuota tutto lo storico invii. */
+export async function deleteAbbonamentiAttiviInvii(_req: Request, res: Response) {
+  try {
+    const removed = attiviInviiStore.clear()
+    res.json({ ok: true, removed })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 /** Danza: abbonamenti attivi oggi filtrati su categoria DANZA (drilldown client). */
 export async function getDanzaAttiviOggi(req: Request, res: Response) {
   try {

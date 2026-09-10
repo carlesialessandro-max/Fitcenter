@@ -171,6 +171,7 @@ function filterCategoriaDettaglio(segment: AbbAttiviSegmentoAnalisi): AbbAttiviC
 export function AttiviAnalisi() {
   const { role } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [logOpen, setLogOpen] = useState(false)
   const asOfParam = searchParams.get("asOf")?.trim()
   const asOf = asOfParam && /^\d{4}-\d{2}-\d{2}$/.test(asOfParam) ? asOfParam : localIsoDate()
 
@@ -253,12 +254,17 @@ export function AttiviAnalisi() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <AttiviInviaMessaggio asOf={asOf} />
-          <a
-            href="#log-invii"
-            className="rounded-lg border border-amber-700/60 px-3 py-2 text-sm text-amber-200 hover:bg-amber-950/40"
+          <button
+            type="button"
+            onClick={() => setLogOpen((v) => !v)}
+            className={`rounded-lg border px-3 py-2 text-sm ${
+              logOpen
+                ? "border-amber-500 bg-amber-500/20 text-amber-100"
+                : "border-amber-700/60 text-amber-200 hover:bg-amber-950/40"
+            }`}
           >
-            Log invii
-          </a>
+            {logOpen ? "Chiudi log invii" : "Log invii"}
+          </button>
           <label className="flex items-center gap-2 text-sm text-zinc-400">
             Data riferimento
             <input
@@ -271,7 +277,7 @@ export function AttiviAnalisi() {
         </div>
       </div>
 
-      <AttiviInviiLog />
+      {logOpen ? <AttiviInviiLog onClose={() => setLogOpen(false)} /> : null}
 
       {isLoading && <p className="mt-8 text-zinc-500">Caricamento…</p>}
       {error && (
