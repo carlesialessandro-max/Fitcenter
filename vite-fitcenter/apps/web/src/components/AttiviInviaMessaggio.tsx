@@ -76,11 +76,6 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
   const [text, setText] = useState("")
   const [confirm, setConfirm] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
-  const [lastInvio, setLastInvio] = useState<{
-    sent: string[]
-    skipped: string[]
-    failed: string[]
-  } | null>(null)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["abbonamenti-attivi-contatti", asOf],
@@ -187,14 +182,9 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
         confirm: true,
       }),
     onSuccess: (res) => {
-      const skipped = res.skipped ? `, saltati ${res.skipped}` : ""
-      const fail = res.failed ? `, falliti ${res.failed}` : ""
-      setResultMsg(`Inviati ${res.sent}${fail}${skipped}. L'elenco nominativo è sotto (in Gmail/BCC gli altri destinatari non si vedono).`)
-      setLastInvio({
-        sent: res.sentNames ?? [],
-        skipped: res.skippedNames ?? [],
-        failed: res.failedNames ?? [],
-      })
+      const skipped = res.skipped ? `, ${res.skipped} senza contatto (nel log)` : ""
+      const fail = res.failed ? `, ${res.failed} rifiutati dal server (nel log)` : ""
+      setResultMsg(`Inviati ${res.sent}${fail}${skipped}. Per un reclamo: Log invii.`)
       setConfirm(false)
       void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
     },
@@ -210,7 +200,6 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     setOpen(false)
     setConfirm(false)
     setResultMsg(null)
-    setLastInvio(null)
     sendM.reset()
   }
 
@@ -441,29 +430,11 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
               <p className="mt-1 text-[11px] text-zinc-500">
                 {channel === "sms"
                   ? `${text.length}/1000 caratteri · SMSHosting (un SMS per cellulare; non compare in «Campagne»)`
-                  : "Email in copia nascosta (BCC): in posta non vedi gli altri destinatari. L'elenco è in questa finestra e nello storico in pagina."}
+                  : "Email in BCC: in Gmail non vedi gli altri. Chi è stato avvertito lo trovi in Log invii."}
               </p>
             </div>
 
             <div className="border-t border-zinc-800 px-4 py-3">
-              {reachable.length > 0 && (
-                <div className="mb-3 max-h-36 overflow-auto rounded-lg border border-zinc-800 bg-zinc-950/50 px-3 py-2">
-                  <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
-                    Destinatari di questo invio ({reachable.length})
-                  </p>
-                  <ul className="mt-1 columns-1 gap-x-6 text-xs text-zinc-200 sm:columns-2">
-                    {reachable.map((r) => (
-                      <li key={r.clienteId} className="break-inside-avoid py-0.5">
-                        {r.nome}
-                        <span className="text-zinc-500">
-                          {" "}
-                          · {channel === "email" ? r.email : r.telefono}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
               <label className="flex items-start gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"
@@ -494,21 +465,6 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
               )}
               {sendM.isError && <p className="mt-2 text-sm text-red-400">{(sendM.error as Error).message}</p>}
               {resultMsg && <p className="mt-2 text-sm text-emerald-400">{resultMsg}</p>}
-              {lastInvio && (lastInvio.sent.length > 0 || lastInvio.skipped.length > 0 || lastInvio.failed.length > 0) && (
-                <div className="mt-2 max-h-40 overflow-auto rounded-lg border border-zinc-800 px-3 py-2 text-xs">
-                  {lastInvio.sent.length > 0 && (
-                    <p className="text-zinc-200">
-                      <span className="text-emerald-400">Inviati:</span> {lastInvio.sent.join(", ")}
-                    </p>
-                  )}
-                  {lastInvio.skipped.length > 0 && (
-                    <p className="mt-1 text-amber-300">Saltati: {lastInvio.skipped.join(", ")}</p>
-                  )}
-                  {lastInvio.failed.length > 0 && (
-                    <p className="mt-1 text-red-300">Falliti: {lastInvio.failed.join(", ")}</p>
-                  )}
-                </div>
-              )}
               <div className="mt-3 flex justify-end gap-2">
                 <button type="button" onClick={close} className="rounded-lg px-3 py-2 text-sm text-zinc-400 hover:bg-zinc-800">
                   Annulla

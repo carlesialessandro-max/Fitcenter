@@ -1471,9 +1471,20 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     let skipped = 0
     const errors: string[] = []
     const recipients: AttiviInvioRecipient[] = []
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    const normAddr = (s: string) => {
+      const t = s.trim().toLowerCase()
+      const m = t.match(/<([^>]+)>/)
+      return (m?.[1] ?? t).trim()
+    }
 
-    const mark = (r: (typeof rows)[number], esito: AttiviInvioRecipient["esito"], dest: string | null) => {
-      recipients.push({ clienteId: r.clienteId, nome: r.nome, dest, esito })
+    const mark = (
+      r: (typeof rows)[number],
+      esito: AttiviInvioRecipient["esito"],
+      dest: string | null,
+      nota?: string,
+    ) => {
+      recipients.push({ clienteId: r.clienteId, nome: r.nome, dest, esito, nota })
       if (esito === "sent") sent++
       else if (esito === "failed") failed++
       else skipped++
@@ -1484,7 +1495,11 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       for (const r of rows) {
         const e = (r.email ?? "").trim()
         if (!e) {
-          mark(r, "skipped", null)
+          mark(r, "skipped", null, "Nessuna email in anagrafica")
+          continue
+        }
+        if (!emailOk.test(e)) {
+          mark(r, "skipped", e, "Email non valida")
           continue
         }
         const k = e.toLowerCase()
@@ -1502,10 +1517,26 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         const to = chunk[0]!
         const bcc = chunk.length > 1 ? chunk.slice(1).join(", ") : undefined
         const out = await sendMail({ to, bcc, subject, text })
-        const esito: AttiviInvioRecipient["esito"] = out.sent ? "sent" : "failed"
-        if (!out.sent && out.detail && errors.length < 8) errors.push(out.detail)
-        for (const em of chunk) {
-          for (const r of byEmail.get(em) ?? []) mark(r, esito, r.email)
+        const rejected = new Set((out.rejected ?? []).map(normAddr))
+        if (!out.sent && rejected.size === 0) {
+          if (out.detail && errors.length < 8) errors.push(out.detail)
+          for (const em of chunk) {
+            for (const r of byEmail.get(em) ?? []) {
+              mark(r, "failed", r.email, out.detail ?? "SMTP non ha accettato l'invio")
+            }
+          }
+        } else {
+          if (rejected.size && out.detail && errors.length < 8) errors.push(out.detail)
+          for (const em of chunk) {
+            const refused = rejected.has(normAddr(em))
+            for (const r of byEmail.get(em) ?? []) {
+              if (refused) {
+                mark(r, "failed", r.email, "SMTP ha rifiutato l'indirizzo")
+              } else {
+                mark(r, "sent", r.email, "Server mail ha accettato")
+              }
+            }
+          }
         }
         if (i + chunkSize < emails.length) await sleepMs(120)
       }
@@ -1515,7 +1546,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         const t = (r.telefono ?? "").trim()
         const k = t.replace(/\D/g, "")
         if (!t || !k) {
-          mark(r, "skipped", null)
+          mark(r, "skipped", null, "Nessun cellulare in anagrafica")
           continue
         }
         const prev = byPhone.get(k)
@@ -1533,11 +1564,13 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         for (let j = 0; j < outs.length; j++) {
           const o = outs[j]!
           const pack = part[j]!
-          const esito: AttiviInvioRecipient["esito"] = o.sent ? "sent" : "failed"
           if (!o.sent && o.detail && errors.length < 8) {
             errors.push(`${pack.raw}: ${o.detail}`)
           }
-          for (const r of pack.rows) mark(r, esito, r.telefono)
+          for (const r of pack.rows) {
+            if (o.sent) mark(r, "sent", r.telefono, "SMSHosting ha accettato")
+            else mark(r, "failed", r.telefono, o.detail ?? "SMS non inviato")
+          }
         }
         if (i + parallel < phones.length) await sleepMs(80)
       }
@@ -1580,9 +1613,6 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       failed,
       skipped,
       errors,
-      skippedNames: recipients.filter((x) => x.esito === "skipped").map((x) => x.nome),
-      failedNames: recipients.filter((x) => x.esito === "failed").map((x) => x.nome),
-      sentNames: recipients.filter((x) => x.esito === "sent").map((x) => x.nome),
     })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })

@@ -10,6 +10,8 @@ export type AttiviInvioRecipient = {
   nome: string
   dest: string | null
   esito: AttiviInvioEsito
+  /** Perché saltato/fallito, o conferma che SMTP ha accettato. */
+  nota?: string
 }
 
 export type AttiviInvio = {

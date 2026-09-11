@@ -50,7 +50,17 @@ function createTransportOrNull() {
   })
 }
 
-export type SendMailResult = { sent: boolean; detail?: string }
+export type SendMailResult = {
+  sent: boolean
+  detail?: string
+  accepted?: string[]
+  rejected?: string[]
+}
+
+function addrs(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.map((x) => String(x ?? "").trim()).filter(Boolean)
+}
 
 export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
   const from = env("SMTP_FROM") ?? env("SMTP_USER") ?? "noreply@fitcenter.local"
@@ -66,7 +76,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
     return { sent: false, detail: "SMTP non configurato (SMTP_HOST / SMTP_USER / SMTP_PASS)" }
   }
   try {
-    await transport.sendMail({
+    const info = await transport.sendMail({
       from,
       to: input.to,
       ...(input.bcc ? { bcc: input.bcc } : {}),
@@ -74,7 +84,22 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
       text: input.text,
       attachments: input.attachments,
     })
-    return { sent: true }
+    const accepted = addrs((info as { accepted?: unknown }).accepted)
+    const rejected = addrs((info as { rejected?: unknown }).rejected)
+    if (rejected.length > 0 && accepted.length === 0) {
+      return {
+        sent: false,
+        accepted,
+        rejected,
+        detail: `SMTP ha rifiutato: ${rejected.join(", ")}`,
+      }
+    }
+    return {
+      sent: true,
+      accepted,
+      rejected,
+      detail: rejected.length ? `Rifiutate: ${rejected.join(", ")}` : undefined,
+    }
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e)
     const stack = (e as Error)?.stack

@@ -145,9 +145,6 @@ export interface AbbAttiviInviaResponse {
   failed: number
   skipped: number
   errors: string[]
-  skippedNames?: string[]
-  failedNames?: string[]
-  sentNames?: string[]
 }
 
 export type AbbAttiviInvioEsito = "sent" | "failed" | "skipped"
@@ -157,6 +154,7 @@ export interface AbbAttiviInvioRecipient {
   nome: string
   dest: string | null
   esito: AbbAttiviInvioEsito
+  nota?: string
 }
 
 export interface AbbAttiviInvio {

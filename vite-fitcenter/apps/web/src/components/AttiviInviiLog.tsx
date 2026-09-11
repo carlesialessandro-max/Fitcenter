@@ -18,15 +18,21 @@ function fmtAt(iso: string): string {
 }
 
 function esitoLabel(e: AbbAttiviInvioEsito): string {
-  if (e === "sent") return "Inviato da FitCenter"
-  if (e === "failed") return "Invio fallito"
-  return "Non inviato (niente contatto)"
+  if (e === "sent") return "Inviato (server ha accettato)"
+  if (e === "failed") return "NON inviato — server ha rifiutato"
+  return "NON inviato — niente contatto valido"
 }
 
 function esitoClass(e: AbbAttiviInvioEsito): string {
   if (e === "sent") return "text-emerald-300"
   if (e === "failed") return "text-red-300"
-  return "text-zinc-500"
+  return "text-amber-300"
+}
+
+function esitoRank(e: AbbAttiviInvioEsito): number {
+  if (e === "failed") return 0
+  if (e === "skipped") return 1
+  return 2
 }
 
 type Hit = {
@@ -34,12 +40,14 @@ type Hit = {
   nome: string
   dest: string | null
   esito: AbbAttiviInvioEsito
+  nota?: string
 }
 
 export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   const queryClient = useQueryClient()
   const [openId, setOpenId] = useState<string | null>(null)
   const [q, setQ] = useState("")
+  const [soloProblemi, setSoloProblemi] = useState(false)
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["abbonamenti-attivi-invii"],
     queryFn: () => dataApi.getAbbonamentiAttiviInvii(80),
@@ -70,13 +78,15 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
     const out: Hit[] = []
     for (const invio of invii) {
       for (const r of invio.recipients ?? []) {
-        const hay = `${r.nome} ${r.dest ?? ""}`.toLowerCase()
+        const hay = `${r.nome} ${r.dest ?? ""} ${r.nota ?? ""}`.toLowerCase()
         if (!hay.includes(ql)) continue
-        out.push({ invio, nome: r.nome, dest: r.dest, esito: r.esito })
+        if (soloProblemi && r.esito === "sent") continue
+        out.push({ invio, nome: r.nome, dest: r.dest, esito: r.esito, nota: r.nota })
       }
     }
+    out.sort((a, b) => esitoRank(a.esito) - esitoRank(b.esito))
     return out
-  }, [invii, ql])
+  }, [invii, ql, soloProblemi])
 
   const selected = invii.find((x) => x.id === openId) ?? null
   const busy = delOne.isPending || delAll.isPending
@@ -98,8 +108,8 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
           <div>
             <h2 className="text-base font-semibold text-zinc-100">Log invii — il cliente dice che non ha ricevuto?</h2>
             <p className="mt-1 text-xs text-zinc-400">
-              Cerca cognome o email. «Inviato da FitCenter» = SMTP ha accettato la mail (può comunque finire in spam).
-              Gli invii fatti prima di questo log non ci sono.
+              Cerca cognome o email. Se manca l&apos;indirizzo o il server lo rifiuta, qui compare in giallo/rosso con il motivo.
+              Se l&apos;email è sbagliata ma sembra valida, il server di solito accetta comunque: risulta inviata (può finire in spam o non esistere).
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -139,6 +149,14 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
           >
             {isFetching ? "Aggiorno…" : "Aggiorna"}
           </button>
+          <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+            <input
+              type="checkbox"
+              checked={soloProblemi}
+              onChange={(e) => setSoloProblemi(e.target.checked)}
+            />
+            Solo problemi (non inviati / rifiutati)
+          </label>
         </div>
         {delOne.isError || delAll.isError ? (
           <p className="mt-2 text-xs text-red-300">
@@ -165,6 +183,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                   <th className="px-2 py-1.5 font-medium">Cliente</th>
                   <th className="px-2 py-1.5 font-medium">Indirizzo</th>
                   <th className="px-2 py-1.5 font-medium">Esito</th>
+                  <th className="px-2 py-1.5 font-medium">Motivo</th>
                   <th className="px-2 py-1.5 font-medium">Oggetto</th>
                   <th className="px-2 py-1.5 font-medium" />
                 </tr>
@@ -176,6 +195,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                     <td className="px-2 py-1.5 text-zinc-100">{h.nome}</td>
                     <td className="px-2 py-1.5 text-xs text-zinc-400">{h.dest ?? "—"}</td>
                     <td className={`px-2 py-1.5 text-xs ${esitoClass(h.esito)}`}>{esitoLabel(h.esito)}</td>
+                    <td className="max-w-[240px] px-2 py-1.5 text-xs text-zinc-400">{h.nota ?? "—"}</td>
                     <td className="max-w-[220px] truncate px-2 py-1.5 text-xs text-zinc-500">
                       {h.invio.channel === "email" ? h.invio.subject || "email" : "SMS"}
                     </td>
@@ -198,7 +218,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                 ))}
                 {hits.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-6 text-center text-zinc-500">
+                    <td colSpan={7} className="px-2 py-6 text-center text-zinc-500">
                       Nessun invio trovato per questo nome. O non era nel destinatario, o l&apos;invio è precedente al log.
                     </td>
                   </tr>
@@ -231,8 +251,8 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                       </p>
                       <p className="mt-0.5 text-xs text-zinc-500">
                         {row.channel === "email" ? "Email" : "SMS"} · {row.user} · inviati {row.sent}
-                        {row.failed ? ` · falliti ${row.failed}` : ""}
-                        {row.skipped ? ` · saltati ${row.skipped}` : ""}
+                        {row.failed ? ` · rifiutati ${row.failed}` : ""}
+                        {row.skipped ? ` · senza contatto ${row.skipped}` : ""}
                       </p>
                     </button>
                     <div className="flex items-center gap-3">
@@ -266,14 +286,19 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                             <th className="px-3 py-1.5 font-medium">Cliente</th>
                             <th className="px-3 py-1.5 font-medium">Destinatario</th>
                             <th className="px-3 py-1.5 font-medium">Esito</th>
+                            <th className="px-3 py-1.5 font-medium">Motivo</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {(selected.recipients ?? []).map((r) => (
+                          {([...selected.recipients ?? []]
+                            .filter((r) => !soloProblemi || r.esito !== "sent")
+                            .sort((a, b) => esitoRank(a.esito) - esitoRank(b.esito))
+                          ).map((r) => (
                             <tr key={`${r.clienteId}-${r.dest ?? "x"}`} className="border-t border-zinc-800/70">
                               <td className="px-3 py-1.5 text-zinc-100">{r.nome}</td>
                               <td className="px-3 py-1.5 text-zinc-400">{r.dest ?? "—"}</td>
                               <td className={`px-3 py-1.5 ${esitoClass(r.esito)}`}>{esitoLabel(r.esito)}</td>
+                              <td className="px-3 py-1.5 text-zinc-400">{r.nota ?? "—"}</td>
                             </tr>
                           ))}
                         </tbody>
