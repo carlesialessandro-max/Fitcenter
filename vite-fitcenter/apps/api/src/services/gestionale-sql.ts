@@ -21,6 +21,7 @@
  */
 
 import sql from "mssql"
+import { emptyLessonFitsPlanning } from "./planning-weekly.js"
 
 let pool: sql.ConnectionPool | null = null
 let poolWrite: sql.ConnectionPool | null = null
@@ -6233,6 +6234,11 @@ async function queryLezioniCorsiSenzaIscritti(
       row.giorno = giorno
       // Esclude corsi scaduti / disattivati (es. DataFine 2019 ancora in calendario settimanale).
       if (!isCorsoPrenotazioneAttivo(row, giorno)) continue
+      const oi = String(row.oraInizio ?? "").trim()
+      const of = String(row.oraFine ?? "").trim()
+      if (oi && of && oi === of) continue
+      const titolo = String(row.servizio ?? "").trim()
+      if (titolo && emptyLessonFitsPlanning(titolo, giorno, oi || undefined) === false) continue
       seenLez.add(idLez)
       out.push(row)
     }
