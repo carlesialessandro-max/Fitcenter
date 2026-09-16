@@ -3,6 +3,7 @@
  * Invio messaggi; webhook gestito in handlers/whatsapp.ts
  */
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
+import { welcomeTextFromWebsiteRequest } from "./whatsapp-site-topics.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
 
@@ -330,7 +331,11 @@ export async function notifyLeadWelcomeWhatsapp(params: {
   telefono?: string | null
   nome?: string | null
   bambini?: boolean
-}): Promise<{ sent: boolean; skipped?: string; error?: string; result?: unknown }> {
+  fonte?: string | null
+  note?: string | null
+  interesse?: string | null
+  interesseDettaglio?: string | null
+}): Promise<{ sent: boolean; skipped?: string; error?: string; result?: unknown; topic?: string }> {
   const { enabled, templateName, languageCode, hasNameParam } = leadWelcomeTemplateConfig({
     bambini: params.bambini,
   })
@@ -358,9 +363,18 @@ export async function notifyLeadWelcomeWhatsapp(params: {
       return { sent: true, result }
     }
 
+    const fromSite = welcomeTextFromWebsiteRequest({
+      nome,
+      fonte: params.fonte,
+      note: params.note,
+      interesse: params.interesse,
+      interesseDettaglio: params.interesseDettaglio,
+    })
+    const adultText = fromSite?.text ?? adultiWelcomeFollowupMsg(nome)
+
     try {
-      const result = await sendWhatsappText(phone, adultiWelcomeFollowupMsg(nome))
-      return { sent: true, result }
+      const result = await sendWhatsappText(phone, adultText)
+      return { sent: true, result, topic: fromSite?.topic }
     } catch (eText) {
       console.warn(
         "[whatsapp] adulti testo libero fallito (finestra 24h?), nessun secondo messaggio:",

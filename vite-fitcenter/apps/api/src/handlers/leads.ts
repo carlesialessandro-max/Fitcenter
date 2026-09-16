@@ -560,7 +560,16 @@ export async function webhookZapier(req: Request, res: Response) {
         telefono: saved.telefono,
         nome: saved.nome,
         bambini: isBambini,
+        fonte: saved.fonte,
+        note: saved.note,
+        interesse: saved.interesse,
+        interesseDettaglio: saved.interesseDettaglio,
       })
+      if (wa.topic) {
+        store.update(saved.id, {
+          note: [saved.note, `WA auto (sito): risposta su ${wa.topic}`].filter(Boolean).join("\n"),
+        })
+      }
       whatsapp.push({ leadId: saved.id, sent: wa.sent, skipped: wa.skipped, error: wa.error })
     }
     res.status(201).json({ created: created.length, skipped: skipped.length, skippedLeads: skipped, leads: created, whatsapp })

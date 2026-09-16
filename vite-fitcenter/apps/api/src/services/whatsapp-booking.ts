@@ -26,6 +26,7 @@ import {
   extractItalianMobileDestinations,
   formatWaDisplay,
 } from "./whatsapp.js"
+import { adultTopicReplyMsg } from "./whatsapp-site-topics.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -1851,6 +1852,16 @@ export async function handleWhatsappInboundBooking(params: {
 
   // Domanda libera (es. «la 25 mt giovedì è chiusa?»): non è un appuntamento
   if (shouldHandoffAsQuestion(text)) {
+    const topicMsg = adultTopicReplyMsg({ nome: lead?.nome, blob: text, fromSite: false })
+    if (topicMsg) {
+      await sendWhatsappText(from, topicMsg)
+      if (lead) {
+        appendLeadNote(lead.id, `WA domanda → risposta su richiesta («${text}»)`, {
+          stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+        })
+      }
+      return { handled: true, detail: "risposta topic" }
+    }
     await sendWhatsappText(from, GENERIC_HANDOFF_MSG)
     if (lead) {
       appendLeadNote(lead.id, `WA domanda libera → ricontatto consulente («${text}»)`, {
