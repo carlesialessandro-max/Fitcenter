@@ -5936,6 +5936,7 @@ function prenotazioneScopeText(raw: Record<string, unknown>): string {
   const keys = [
     "PrenotazioneDescrizione",
     "Descrizione",
+    "PrenotazioniCategorieDescrizione",
     "MacroCategoriaDescrizione",
     "MacroCategoria",
     "CategoriaDescrizione",
@@ -5961,68 +5962,213 @@ function prenotazioneScopeText(raw: Record<string, unknown>): string {
     .trim()
 }
 
+function normCorsoCatalogTitle(s: string): string {
+  return String(s ?? "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+type PrenCatJoin = { joinSql: string; catDescExpr: string }
+
+let corsiFitnessH2oCatalog: { at: number; titles: Set<string> } | null = null
+const CORSI_CATALOG_TTL_MS = 5 * 60_000
+
+function isFitnessH2oCategoriaLabel(s: string): boolean {
+  const t = normCorsoCatalogTitle(s)
+  if (!t) return false
+  // Nel gestionale la categoria acqua è «H20» (zero), non «H2O».
+  if (t === "FITNESS" || t === "H2O" || t === "H20") return true
+  if (/\bFITNESS\b/.test(t) || /\bH2O\b/.test(t) || /\bH20\b/.test(t)) return true
+  return false
+}
+
+function corsoPrenotazioneCategoriaRaw(raw: Record<string, unknown>): string {
+  return String(
+    rawValIgnoreCase(raw, "PrenotazioniCategorieDescrizione") ??
+      rawValIgnoreCase(raw, "CategoriaPrenotazioneDescrizione") ??
+      ""
+  ).trim()
+}
+
+function corsoPrenotazioneTitoloRaw(raw: Record<string, unknown>): string {
+  return String(
+    rawValIgnoreCase(raw, "PrenotazioneDescrizione") ??
+      rawValIgnoreCase(raw, "Descrizione") ??
+      rawValIgnoreCase(raw, "ServizioDescrizione") ??
+      ""
+  ).trim()
+}
+
+/** Titoli da non mostrare in pagina Corsi (scuola nuoto, danza, prove, ecc.). */
+function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
+  if (!t) return false
+  if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return true
+  if (t.includes("AGONISMO")) return true
+  if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return true
+  if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
+  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return true
+  if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return true
+  if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
+  if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTO)\b/.test(t)) return true
+  if (/\bPROVA\b/.test(t) || t === "PROVE") return true
+  if (/\bDANZA\b/.test(t) && !/\bZUMBA\b/.test(t)) return true
+  const water = /\b(ACQUA|AQUA|H2O|H20|NUOTO ADULTI|GESTANTI)\b/.test(t)
+  if (!water) {
+    if (/\bLIV\b/.test(t)) return true
+    if (/\b(CLASSICO|PROFESSIONALE|GRADO|MUSICAL|CAPOEIRA|CAPOERIRA|KIZOMBA|HIP HOP|HIP-HOP)\b/.test(t)) return true
+    if (/PERSONAL/.test(t)) return true
+    if (/\bPERCORSO\b/.test(t)) return true
+    if (/^(BABY|CATEGORIA|CORSO ADULTI)$/.test(t)) return true
+  }
+  return false
+}
+
+async function resolvePrenotazioniCategoriaJoin(prenIdx: SqlColIndex, prenAlias = "p"): Promise<PrenCatJoin | null> {
+  const denorm = pickSqlCol(prenIdx, [
+    "PrenotazioniCategorieDescrizione",
+    "CategoriaPrenotazioneDescrizione",
+  ])
+  const idCat = pickSqlCol(prenIdx, [
+    "IDCategoriaPrenotazione",
+    "IDCategoria",
+    "IdCategoria",
+    "IDCategorie",
+    "IDPrenotazioniCategoria",
+    "IDPrenotazioneCategoria",
+  ])
+  const envCat = String(process.env.GESTIONALE_TABLE_PRENOTAZIONI_CATEGORIE ?? "").trim()
+  const catTables = [
+    envCat,
+    "dbo.PrenotazioniCategorie",
+    "dbo.CategoriePrenotazioni",
+    "dbo.PrenotazioneCategorie",
+  ].filter((x) => x && isSafeSqlIdentifierLoose(x))
+
+  if (idCat) {
+    for (const tbl of catTables) {
+      const idx = await sqlObjectCols(tbl)
+      if (idx.lower.size === 0) continue
+      const catId = pickSqlCol(idx, [
+        "IDCategoriaPrenotazione",
+        "IDCategoria",
+        "IdCategoria",
+        "IDCategorie",
+        "IDPrenotazioniCategoria",
+      ])
+      const catDesc = pickSqlCol(idx, ["Descrizione", "CategoriaDescrizione", "Nome", "Categoria"])
+      if (!catId || !catDesc) continue
+      const q = qualifySqlObject(tbl).query
+      return {
+        joinSql: `LEFT JOIN ${q} cat ON ${prenAlias}.[${idCat}] = cat.[${catId}]`,
+        catDescExpr: `cat.[${catDesc}]`,
+      }
+    }
+  }
+  if (denorm) {
+    return { joinSql: "", catDescExpr: `${prenAlias}.[${denorm}]` }
+  }
+  return null
+}
+
+async function refreshCorsiFitnessH2oCatalog(): Promise<void> {
+  if (corsiFitnessH2oCatalog && Date.now() - corsiFitnessH2oCatalog.at < CORSI_CATALOG_TTL_MS) return
+  const titles = new Set<string>()
+  const pool = await getPool()
+  if (!pool) {
+    corsiFitnessH2oCatalog = { at: Date.now(), titles }
+    return
+  }
+  try {
+    const rawPren = (process.env.GESTIONALE_TABLE_PRENOTAZIONI ?? "dbo.Prenotazioni").trim()
+    if (!isSafeSqlIdentifierLoose(rawPren)) {
+      corsiFitnessH2oCatalog = { at: Date.now(), titles }
+      return
+    }
+    const prenQ = qualifySqlObject(rawPren).query
+    const prenIdx = await sqlObjectCols(rawPren)
+    const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione", "Nome", "Titolo"]) ?? "Descrizione"
+    const catJoin = await resolvePrenotazioniCategoriaJoin(prenIdx, "p")
+    const attivoCol = pickSqlCol(prenIdx, ["Attivo"])
+    const attivoSql = attivoCol
+      ? `AND (p.[${attivoCol}] IS NULL OR TRY_CAST(p.[${attivoCol}] AS int) NOT IN (0))`
+      : ""
+    const catSelect = catJoin ? `, ${catJoin.catDescExpr} AS Categoria` : `, CAST(NULL AS nvarchar(200)) AS Categoria`
+    const sqlText = `
+      SELECT DISTINCT p.[${descCol}] AS Descrizione${catSelect}
+      FROM ${prenQ} p
+      ${catJoin?.joinSql ?? ""}
+      WHERE p.[${descCol}] IS NOT NULL AND LTRIM(RTRIM(p.[${descCol}])) <> ''
+      ${attivoSql}
+    `
+    const rs = ((await pool.request().query(sqlText)).recordset ?? []) as {
+      Descrizione?: string
+      Categoria?: string
+    }[]
+    for (const row of rs) {
+      const cat = String(row.Categoria ?? "")
+      const desc = String(row.Descrizione ?? "")
+      if (!isFitnessH2oCategoriaLabel(cat) && !isFitnessH2oCategoriaLabel(desc)) continue
+      const descU = desc
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/\s+/g, " ")
+        .trim()
+      if (isCorsoPaginaCorsiTitleExcluded(descU)) continue
+      const n = normCorsoCatalogTitle(desc.replace(/^\s*(FITNESS|H2O|H20)\s*[-–:]\s*/i, ""))
+      if (n && n !== "FITNESS" && n !== "H2O" && n !== "H20" && n.length >= 3) titles.add(n)
+    }
+  } catch (e) {
+    console.warn("[corsi] catalogo FITNESS/H2O:", (e as Error)?.message ?? e)
+  }
+  corsiFitnessH2oCatalog = { at: Date.now(), titles }
+  if (titles.size) console.info("[corsi] catalogo FITNESS/H2O:", titles.size, "titoli")
+}
+
+function corsoTitleInFitnessH2oCatalog(rawTitle: string): boolean {
+  const titles = corsiFitnessH2oCatalog?.titles
+  if (!titles || titles.size === 0) return false
+  const n = normCorsoCatalogTitle(rawTitle.replace(/^\s*(FITNESS|H2O|H20)\s*[-–:]\s*/i, ""))
+  if (!n) return false
+  if (titles.has(n)) return true
+  for (const c of titles) {
+    if (c.length >= 6 && (n.includes(c) || c.includes(n))) return true
+  }
+  return false
+}
+
 /**
- * Pagina Corsi: solo macro FITNESS e H2O (gestionale).
+ * Pagina Corsi: corsi della categoria FITNESS / H20 del gestionale (elenco dinamico).
  * Esclude danza, bimbi, scuola nuoto, ju-jitsu, squadre, prove, ecc.
  */
 function isCorsoPaginaCorsiFitnessH2o(raw: Record<string, unknown>): boolean {
+  const titolo = corsoPrenotazioneTitoloRaw(raw)
+  const titoloU = titolo
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (titoloU && isCorsoPaginaCorsiTitleExcluded(titoloU)) return false
+
+  const cat = corsoPrenotazioneCategoriaRaw(raw)
+  if (isFitnessH2oCategoriaLabel(cat)) return true
+
   const t = prenotazioneScopeText(raw)
   if (!t) return false
+  if (isCorsoPaginaCorsiTitleExcluded(t)) return false
 
-  // Fuori scope (anche se taggati male)
-  if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return false
-  if (t.includes("AGONISMO")) return false
-  if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return false
-  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return false
-  // Es. "nuoto adulti star 08.45 lun." (slot nominato, non macro H2O)
-  if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return false
-  if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return false
-  if (/\b(JU-?JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTO)\b/.test(t)) return false
-  if (/\bPROVA\b/.test(t) && !/\b(FITNESS|H2O|ACQUA)\b/.test(t)) return false
-  // Ramo danza (non FITNESS): es. "Corsi Pagamento DANZA"
-  if (/\bDANZA\b/.test(t) && !/\bFITNESS\b/.test(t)) return false
-
-  // Macro categoria esplicita
-  if (/\bH2O\b/.test(t) || /\bFITNESS\b/.test(t)) return true
-
-  // H2O per titolo (quando manca la macro nella riga)
+  if (/\bH2O\b/.test(t) || /\bH20\b/.test(t) || /\bFITNESS\b/.test(t)) return true
   if (/\bACQUA\b|\bAQUA\b/.test(t)) return true
   if (/NUOTO ADULTI/.test(t)) return true
   if (/\bGESTANTI\b/.test(t)) return true
 
-  // FITNESS per titolo (albero gestionale)
-  const fitnessTitles = [
-    "ADDOMINALI",
-    "BODY PUMP",
-    "BODY TONE",
-    "BRUCIA ADDOME",
-    "FIT BOXE",
-    "FITBOXE",
-    "FLEX & TONE",
-    "FLEX AND TONE",
-    "FUNZIONALE",
-    "GABBIA",
-    "GAG",
-    "GRAVIDANZA YOGA",
-    "HATHA YOGA",
-    "JOLLY",
-    "JUST BARRE",
-    "PILATES",
-    "POSTURALE",
-    "POWER YOGA",
-    "SBARRA A TERRA",
-    "SPARTAN",
-    "SPINNING",
-    "STEP ENERGY",
-    "TONIFICAZIONE",
-    "TOTAL BODY",
-    "TOTALBODY",
-    "TRX",
-    "WALKING",
-    "YOGA GINNASTICA",
-    "ZUMBA",
-  ]
-  if (fitnessTitles.some((name) => t.includes(name))) return true
+  const desc = titolo || t
+  if (corsoTitleInFitnessH2oCatalog(desc) || corsoTitleInFitnessH2oCatalog(t)) return true
 
   return false
 }
@@ -6032,22 +6178,44 @@ function isLezioneVuotaPaginaCorsi(raw: Record<string, unknown>): boolean {
   return isCorsoPaginaCorsiFitnessH2o(raw)
 }
 
-function buildPrenotazioniLezioniVuoteSql(prenIdx: SqlColIndex, alias = "p"): string[] {
+function buildPrenotazioniLezioniVuoteSql(
+  prenIdx: SqlColIndex,
+  alias = "p",
+  catDescExpr?: string | null
+): string[] {
   const descCol = pickSqlCol(prenIdx, ["Descrizione", "PrenotazioneDescrizione"]) ?? "Descrizione"
   const n = `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${descCol}] AS NVARCHAR(512)), ''))))`
-  // Preferisci FITNESS / H2O / ACQUA / titoli tipici; escludi bimbi / danza / scuola nuoto
+  const cat = catDescExpr
+    ? `UPPER(LTRIM(RTRIM(COALESCE(CAST(${catDescExpr} AS NVARCHAR(512)), ''))))`
+    : null
+  const catOk = cat
+    ? `(${cat} IN (N'FITNESS', N'H2O', N'H20') OR ${cat} LIKE N'%FITNESS%' OR ${cat} LIKE N'%H2O%' OR ${cat} LIKE N'%H20%')`
+    : null
+  const titleH2o = `(${n} LIKE N'%H2O%' OR ${n} LIKE N'%ACQUA%' OR ${n} LIKE N'%AQUA%' OR ${n} LIKE N'%NUOTO ADULTI%' OR ${n} LIKE N'%GESTANTI%')`
+  const titleFitness = `(${n} LIKE N'%FITNESS%')`
+  const catalogTitles = [...(corsiFitnessH2oCatalog?.titles ?? [])].slice(0, 80)
+  const catalogOk =
+    catalogTitles.length > 0
+      ? `(${catalogTitles
+          .map((t) => {
+            const safe = t.replace(/'/g, "''")
+            return `${n} LIKE N'%${safe}%'`
+          })
+          .join(" OR ")})`
+      : null
+  const scope = [catOk, titleH2o, titleFitness, catalogOk].filter(Boolean).join(" OR ")
   return [
-    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%H2O%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%' OR ${n} LIKE '%NUOTO ADULTI%' OR ${n} LIKE '%GESTANTI%' OR ${n} LIKE '%GAG%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%FUNZIONALE%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%YOGA%' OR ${n} LIKE '%SPARTAN%' OR ${n} LIKE '%TONIFICAZIONE%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POSTURALE%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%BRUCIA ADDOME%' OR ${n} LIKE '%JUST BARRE%' OR ${n} LIKE '%SBARRA%' OR ${n} LIKE '%FITBOXE%' OR ${n} LIKE '%FIT BOXE%' OR ${n} LIKE '%ZUMBA%')`,
-    `${n} NOT LIKE '%SCUOLA NUOTO%'`,
-    `${n} NOT LIKE '%BAMBINI%'`,
-    `${n} NOT LIKE '%BIMBI%'`,
-    `${n} NOT LIKE '%PROPEDEUTICA%'`,
-    `${n} NOT LIKE '%DANZA%'`,
-    `${n} NOT LIKE '%JU-JITSU%'`,
-    `${n} NOT LIKE '%JUJITSU%'`,
-    `${n} NOT LIKE '%AGONISMO%'`,
-    `${n} NOT LIKE '%BISETTIMANALE%'`,
-    `${n} NOT LIKE '%TRISETTIMANALE%'`,
+    `(${scope})`,
+    `${n} NOT LIKE N'%SCUOLA NUOTO%'`,
+    `${n} NOT LIKE N'%BAMBINI%'`,
+    `${n} NOT LIKE N'%BIMBI%'`,
+    `${n} NOT LIKE N'%PROPEDEUTICA%'`,
+    `${n} NOT LIKE N'%DANZA%'`,
+    `${n} NOT LIKE N'%JU-JITSU%'`,
+    `${n} NOT LIKE N'%JUJITSU%'`,
+    `${n} NOT LIKE N'%AGONISMO%'`,
+    `${n} NOT LIKE N'%BISETTIMANALE%'`,
+    `${n} NOT LIKE N'%TRISETTIMANALE%'`,
   ]
 }
 
@@ -6086,6 +6254,8 @@ async function queryLezioniCorsiSenzaIscritti(
   const prenQ = qualifySqlObject(rawPren).query
   const plIdx = await sqlObjectCols(rawPl)
   const prenIdx = await sqlObjectCols(rawPren)
+  await refreshCorsiFitnessH2oCatalog()
+  const catJoin = await resolvePrenotazioniCategoriaJoin(prenIdx, "p")
 
   const colPlIdRaw = pickSqlCol(plIdx, ["IDPrenotazioneLezione", "IdPrenotazioneLezione"])
   const colPlPrenRaw = pickSqlCol(plIdx, ["IDPrenotazione", "IdPrenotazione"])
@@ -6137,7 +6307,7 @@ async function queryLezioniCorsiSenzaIscritti(
       where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
       where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
     }
-    where.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
+    where.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
     return where
   }
 
@@ -6153,7 +6323,7 @@ async function queryLezioniCorsiSenzaIscritti(
         )
       }
       base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
-      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
+      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
       return base
     })(),
     (() => {
@@ -6164,7 +6334,7 @@ async function queryLezioniCorsiSenzaIscritti(
         )
       }
       base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
-      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p"))
+      base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
       return base
     })(),
   ]
@@ -6193,6 +6363,8 @@ async function queryLezioniCorsiSenzaIscritti(
     "PrenotazioniCategorieDescrizione",
   ])
   if (colPrenCat) extraPrenSelects.push(`p.[${colPrenCat}] AS CategoriaDescrizione`)
+  if (catJoin) extraPrenSelects.push(`${catJoin.catDescExpr} AS PrenotazioniCategorieDescrizione`)
+  else if (!colPrenCat) extraPrenSelects.push(`CAST(NULL AS nvarchar(200)) AS PrenotazioniCategorieDescrizione`)
   const extraPrenSql = extraPrenSelects.length ? `,\n      ${extraPrenSelects.join(",\n      ")}` : ""
 
   const extraPlSelects: string[] = []
@@ -6217,6 +6389,7 @@ async function queryLezioniCorsiSenzaIscritti(
       ${selectDesc}${extraPrenSql}${extraPlSql}
     FROM ${plQ} pl
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
+    ${catJoin?.joinSql ?? ""}
     WHERE ${where.join(" AND ")}
       AND CAST(@giorno AS date) BETWEEN CAST(pl.[${colPlDi}] AS date) AND CAST(pl.[${colPlDf}] AS date)
     ORDER BY pl.[${colPlOi}] ASC;
@@ -6284,6 +6457,7 @@ async function queryLezioniCorsiSenzaIscritti(
 export async function queryPrenotazioniCorsi(params?: { giorno?: string }): Promise<PrenotazioneCorsoRow[]> {
   const p = await getPool()
   if (!p) return []
+  await refreshCorsiFitnessH2oCatalog()
   const view = await resolvePrenotazioniViewName()
   const vq = qualifySqlObject(view).query
   const giorno = params?.giorno?.trim()
