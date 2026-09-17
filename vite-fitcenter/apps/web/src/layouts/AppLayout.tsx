@@ -33,7 +33,7 @@ const navCorsi: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
 ] as const
 const navIstruttore: NavItem[] = [
   {
@@ -103,6 +103,7 @@ const navBagnini: NavItem[] = [
     ],
   },
   { to: "/piscina", label: "Mappa Piscina" },
+  { to: "/corsi/nuoto-libero", label: "Nuoto libero" },
 ] as const
 const navDanza: NavItem[] = [
   {
@@ -150,7 +151,7 @@ const navAdmin: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
   {
     to: "__admin_group__",
     label: "Altri",
@@ -188,7 +189,8 @@ export function AppLayout() {
     !location.pathname.startsWith("/piscina") &&
     location.pathname !== "/calendario/piscina" &&
     location.pathname !== "/calendario/personale" &&
-    location.pathname !== "/calendario/istruttori"
+    location.pathname !== "/calendario/istruttori" &&
+    location.pathname !== "/corsi/nuoto-libero"
   const mustRedirectCrm =
     role === "crm" &&
     location.pathname !== "/crm" &&

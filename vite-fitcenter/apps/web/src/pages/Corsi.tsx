@@ -1756,6 +1756,11 @@ export function Corsi() {
             <Link to="/corsi/presenze" className="text-sm font-medium text-amber-300 underline-offset-2 hover:underline">
               Report presenze
             </Link>
+            {role === "admin" || role === "corsi" ? (
+              <Link to="/corsi/nuoto-libero" className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
+                Nuoto libero
+              </Link>
+            ) : null}
           </p>
           {enabled ? (
             <p className="mt-1 text-xs text-zinc-500">

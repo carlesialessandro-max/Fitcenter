@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { piscinaApi } from "@/api/piscina"
 import { useAuth } from "@/contexts/AuthContext"
-import { Navigate } from "react-router-dom"
+import { Link, Navigate } from "react-router-dom"
 
 type ShapeRect = { kind: "rect"; x: number; y: number; w: number; h: number; r?: number }
 type ShapeCircle = { kind: "circle"; cx: number; cy: number; r: number }
@@ -239,6 +239,14 @@ export function PiscinaMappa() {
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Mappa Piscina</h2>
             <p className="text-sm text-zinc-500">Clicca un posto per prenotare / annullare (per data).</p>
+            {role === "admin" || role === "bagnini" ? (
+              <Link
+                to="/corsi/nuoto-libero"
+                className="mt-2 inline-block text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
+              >
+                Nuoto libero (persone in vasca)
+              </Link>
+            ) : null}
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <label className="text-xs text-zinc-500">

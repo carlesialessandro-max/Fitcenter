@@ -21,6 +21,7 @@ import { Scontrini } from "@/pages/Scontrini"
 import { SignPublicPage } from "@/pages/SignPublic"
 import { Corsi, CorsiNoShow } from "@/pages/Corsi"
 import { CorsiPresenze } from "@/pages/CorsiPresenze"
+import { NuotoLiberoPresenze } from "@/pages/NuotoLiberoPresenze"
 import { InformativaPrivacy } from "@/pages/InformativaPrivacy"
 import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
@@ -86,6 +87,7 @@ export const router = createBrowserRouter([
       { index: true, element: <DashboardOrRedirect /> },
       { path: "corsi", element: <Corsi /> },
       { path: "corsi/presenze", element: <CorsiPresenze /> },
+      { path: "corsi/nuoto-libero", element: <NuotoLiberoPresenze /> },
       { path: "corsi/assenze", element: <CorsiNoShow /> },
       { path: "corsi/no-show", element: <Navigate to="/corsi/assenze" replace /> },
       { path: "campus", element: <Campus /> },

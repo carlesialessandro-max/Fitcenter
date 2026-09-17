@@ -104,6 +104,7 @@ const VENDITE_LINKS: { to: string; label: string }[] = [
 const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/corsi", label: "Corsi" },
   { to: "/corsi/presenze", label: "Presenze" },
+  { to: "/corsi/nuoto-libero", label: "Nuoto libero" },
   { to: "/corsi/assenze", label: "Assenze (mese)" },
   { to: "/incassi", label: "Incassi" },
   { to: "/firme", label: "Firme" },

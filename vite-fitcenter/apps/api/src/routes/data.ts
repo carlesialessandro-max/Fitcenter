@@ -13,6 +13,7 @@ import {
   putCalendarioInstructor,
 } from "../handlers/calendario.js"
 import { getCorsiGestione, patchCorsiGestione, getCorsiClientiSearch } from "../handlers/corsiGestione.js"
+import { getNuotoLibero, patchNuotoLibero } from "../handlers/nuotoLibero.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
 import { getIncassi } from "../handlers/incassi.js"
@@ -34,6 +35,8 @@ dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 dataRouter.get("/corsi/gestione", getCorsiGestione)
 dataRouter.patch("/corsi/gestione", patchCorsiGestione)
 dataRouter.get("/corsi/clienti-search", getCorsiClientiSearch)
+dataRouter.get("/nuoto-libero", getNuotoLibero)
+dataRouter.patch("/nuoto-libero", patchNuotoLibero)
 
 dataRouter.get("/debug-consulenti", getDebugConsulenti)
 dataRouter.get("/sql-status", getSqlStatus)

@@ -3,7 +3,9 @@ import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { prenotazioniApi } from "@/api/prenotazioni"
 import { corsiGestioneApi } from "@/api/corsiGestione"
+import { TabellaOrariaSettimana } from "@/components/TabellaOrariaSettimana"
 import { useAuth } from "@/contexts/AuthContext"
+import { oreCoperteLezione, weekMondaySunday } from "@/lib/tabella-oraria"
 import {
   buildAccessIndexForDay,
   corsoAmbitoOf,
@@ -20,7 +22,7 @@ import {
 } from "@/pages/Corsi"
 
 type Periodo = "giorno" | "settimana" | "mese"
-type Vista = "corso" | "tipologia"
+type Vista = "corso" | "tipologia" | "oraria"
 
 type AggRow = {
   key: string
@@ -71,12 +73,14 @@ export function CorsiPresenze() {
   const [periodo, setPeriodo] = useState<Periodo>("giorno")
   const [ambito, setAmbito] = useState<CorsoAmbito>("tutti")
   const [vista, setVista] = useState<Vista>("corso")
+  const week = useMemo(() => weekMondaySunday(day), [day])
 
   const range = useMemo(() => {
+    if (vista === "oraria") return { from: week.from, to: week.to }
     if (periodo === "giorno") return { from: day, to: day }
     if (periodo === "settimana") return weekRangeFromDay(day)
     return monthRangeFromDay(day)
-  }, [day, periodo])
+  }, [day, periodo, vista, week.from, week.to])
 
   const prenQ = useQuery({
     queryKey: ["prenotazioni-corsi-range", range.from, range.to],
@@ -182,6 +186,51 @@ export function CorsiPresenze() {
     return { corsi, tipi: [byTipo.fitness, byTipo.h2o], totale }
   }, [prenQ.data, accessiQ.data, gestioneQ.data, range.from, range.to, ambito])
 
+  const orariaValues = useMemo(() => {
+    const rows = prenQ.data?.rows ?? []
+    const byDay = new Map<string, typeof rows>()
+    for (const r of rows) {
+      const d = String(r.giorno ?? "").slice(0, 10)
+      if (!d) continue
+      const list = byDay.get(d) ?? []
+      list.push(r)
+      byDay.set(d, list)
+    }
+    const out: Record<string, Record<string, number | null>> = {}
+    for (const giorno of week.days) {
+      const cells: Record<string, number | null> = {}
+      const accessIdx = buildAccessIndexForDay(accessiQ.data?.rows ?? [], giorno)
+      const groups = mergeWalkInsIntoGruppi(
+        groupByCorso(byDay.get(giorno) ?? []),
+        gestioneQ.data?.walkInsByDay?.[giorno],
+      )
+      const appello = gestioneQ.data?.appelloByDay?.[giorno] ?? {}
+      for (const g of groups) {
+        if (g.key.includes("__WAITLIST")) continue
+        const amb = corsoAmbitoOf(g)
+        if (ambito !== "tutti" && amb !== ambito) continue
+        const hours = oreCoperteLezione(g.oraInizio, g.oraFine)
+        if (!hours.length) continue
+        for (const ora of hours) {
+          if (cells[ora] == null) cells[ora] = 0
+        }
+        g.partecipanti.forEach((p, idx) => {
+          if (p.inAttesa) return
+          const walkIn = isWalkInRow(p)
+          const k = `${g.key}::${participantStableKey(p, idx)}`
+          const pWithTimes = participantForLessonAccess(g, p, giorno)
+          const fromAccess = isPresentByAccess(accessIdx, pWithTimes, giorno).present
+          const ov = Object.prototype.hasOwnProperty.call(appello, k) ? !!appello[k] : undefined
+          const presente = walkIn ? true : (ov ?? fromAccess)
+          if (!presente) return
+          for (const ora of hours) cells[ora] = (cells[ora] ?? 0) + 1
+        })
+      }
+      out[giorno] = cells
+    }
+    return out
+  }, [prenQ.data, accessiQ.data, gestioneQ.data, week.days, ambito])
+
   const tableRows = vista === "tipologia" ? report.tipi.filter((r) => r.prenotati + r.manuali > 0 || ambito === "tutti") : report.corsi
 
   if (!enabled) {
@@ -197,13 +246,21 @@ export function CorsiPresenze() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Presenze corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Report giornaliero, settimanale o mensile. Include gli ingressi manuali (pallino giallo).
+            Report giornaliero, settimanale o mensile, oppure tabella oraria lun–dom. Include gli ingressi manuali (pallino giallo).
           </p>
-          <Link to="/corsi" className="mt-2 inline-block text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
-            Torna a Corsi
-          </Link>
+          <p className="mt-2 flex flex-wrap gap-3">
+            <Link to="/corsi" className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
+              Torna a Corsi
+            </Link>
+            {role === "admin" || role === "corsi" ? (
+              <Link to="/corsi/nuoto-libero" className="text-sm font-medium text-amber-300 underline-offset-2 hover:underline">
+                Nuoto libero
+              </Link>
+            ) : null}
+          </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
+          {vista !== "oraria" ? (
           <label className="grid gap-1 text-sm text-zinc-400">
             <span>Periodo</span>
             <div className="flex rounded-lg border border-zinc-700 bg-zinc-900/50 p-0.5">
@@ -227,9 +284,10 @@ export function CorsiPresenze() {
               ))}
             </div>
           </label>
+          ) : null}
           <label className="grid gap-1 text-sm text-zinc-400">
-            <span>{periodo === "mese" ? "Mese" : "Giorno"}</span>
-            {periodo === "mese" ? (
+            <span>{vista !== "oraria" && periodo === "mese" ? "Mese" : "Giorno"}</span>
+            {vista !== "oraria" && periodo === "mese" ? (
               <input
                 type="month"
                 value={day.slice(0, 7)}
@@ -278,6 +336,7 @@ export function CorsiPresenze() {
                 [
                   ["corso", "Per corso"],
                   ["tipologia", "Per tipologia"],
+                  ["oraria", "Oraria"],
                 ] as const
               ).map(([id, label]) => (
                 <button
@@ -304,22 +363,35 @@ export function CorsiPresenze() {
       </div>
 
       <p className="mt-4 text-sm text-zinc-400 print:text-zinc-700">
-        Dal {fmtDateIt(range.from)} al {fmtDateIt(range.to)}
+        {vista === "oraria"
+          ? `Tabella oraria · ${fmtDateIt(week.from)} – ${fmtDateIt(week.to)}`
+          : `Dal ${fmtDateIt(range.from)} al ${fmtDateIt(range.to)}`}
         {ambito !== "tutti" ? ` · ${ambito === "h2o" ? "H2O" : "Fitness"}` : ""}
       </p>
 
+      {vista !== "oraria" ? (
       <div className="mt-4 grid gap-3 sm:grid-cols-4">
         <Kpi label="Prenotati" value={report.totale.prenotati} />
         <Kpi label="Presenti" value={report.totale.presenti} tone="emerald" />
         <Kpi label="Assenti" value={report.totale.assenti} />
         <Kpi label="Ingressi manuali" value={report.totale.manuali} tone="amber" />
       </div>
+      ) : null}
 
       {err ? (
         <p className="mt-4 text-sm text-red-400">{String((err as Error).message ?? err)}</p>
       ) : null}
       {loading ? <p className="mt-4 text-sm text-zinc-500">Caricamento…</p> : null}
 
+      {vista === "oraria" ? (
+        <div className="mt-5">
+          <TabellaOrariaSettimana days={week.days} values={orariaValues} />
+          <p className="mt-3 text-xs text-zinc-500 print:hidden">
+            Cella vuota = nessun corso in quella fascia. Zero = lezione in orario ma nessuno presente. Per il nuoto libero
+            senza prenotazione usare la pagina dedicata.
+          </p>
+        </div>
+      ) : (
       <div className="mt-5 overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/30 print:border-zinc-300">
         <table className="min-w-full text-left text-sm">
           <thead>
@@ -372,6 +444,7 @@ export function CorsiPresenze() {
           ) : null}
         </table>
       </div>
+      )}
     </div>
   )
 }
