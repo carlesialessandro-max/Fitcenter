@@ -5995,13 +5995,16 @@ function isCorsoPaginaCorsiFitnessH2o(raw: Record<string, unknown>): boolean {
     "ADDOMINALI",
     "BODY PUMP",
     "BODY TONE",
+    "BRUCIA ADDOME",
     "FIT BOXE",
+    "FITBOXE",
     "FLEX & TONE",
     "FLEX AND TONE",
     "FUNZIONALE",
     "GABBIA",
     "GAG",
     "GRAVIDANZA YOGA",
+    "HATHA YOGA",
     "JOLLY",
     "JUST BARRE",
     "PILATES",
@@ -6017,6 +6020,7 @@ function isCorsoPaginaCorsiFitnessH2o(raw: Record<string, unknown>): boolean {
     "TRX",
     "WALKING",
     "YOGA GINNASTICA",
+    "ZUMBA",
   ]
   if (fitnessTitles.some((name) => t.includes(name))) return true
 
@@ -6033,7 +6037,7 @@ function buildPrenotazioniLezioniVuoteSql(prenIdx: SqlColIndex, alias = "p"): st
   const n = `UPPER(LTRIM(RTRIM(COALESCE(CAST(${alias}.[${descCol}] AS NVARCHAR(512)), ''))))`
   // Preferisci FITNESS / H2O / ACQUA / titoli tipici; escludi bimbi / danza / scuola nuoto
   return [
-    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%H2O%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%' OR ${n} LIKE '%NUOTO ADULTI%' OR ${n} LIKE '%GESTANTI%' OR ${n} LIKE '%GAG%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%FUNZIONALE%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%YOGA%' OR ${n} LIKE '%SPARTAN%' OR ${n} LIKE '%TONIFICAZIONE%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POSTURALE%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%JUST BARRE%' OR ${n} LIKE '%SBARRA%')`,
+    `(${n} LIKE '%FITNESS%' OR ${n} LIKE '%H2O%' OR ${n} LIKE '%ACQUA%' OR ${n} LIKE '%AQUA%' OR ${n} LIKE '%NUOTO ADULTI%' OR ${n} LIKE '%GESTANTI%' OR ${n} LIKE '%GAG%' OR ${n} LIKE '%PILATES%' OR ${n} LIKE '%SPINNING%' OR ${n} LIKE '%BODY PUMP%' OR ${n} LIKE '%FUNZIONALE%' OR ${n} LIKE '%TRX%' OR ${n} LIKE '%YOGA%' OR ${n} LIKE '%SPARTAN%' OR ${n} LIKE '%TONIFICAZIONE%' OR ${n} LIKE '%WALKING%' OR ${n} LIKE '%POSTURALE%' OR ${n} LIKE '%ADDOMINALI%' OR ${n} LIKE '%BRUCIA ADDOME%' OR ${n} LIKE '%JUST BARRE%' OR ${n} LIKE '%SBARRA%' OR ${n} LIKE '%FITBOXE%' OR ${n} LIKE '%FIT BOXE%' OR ${n} LIKE '%ZUMBA%')`,
     `${n} NOT LIKE '%SCUOLA NUOTO%'`,
     `${n} NOT LIKE '%BAMBINI%'`,
     `${n} NOT LIKE '%BIMBI%'`,
