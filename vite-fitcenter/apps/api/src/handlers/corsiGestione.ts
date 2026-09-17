@@ -1,6 +1,13 @@
+import crypto from "crypto"
 import type { Request, Response } from "express"
 import type { User } from "../store/auth.js"
-import { readCorsiGestioneDb, writeCorsiGestioneDb, type CorsiGestioneDb } from "../store/corsi-gestione-db.js"
+import {
+  readCorsiGestioneDb,
+  writeCorsiGestioneDb,
+  type CorsiGestioneDb,
+  type CorsiWalkIn,
+} from "../store/corsi-gestione-db.js"
+import * as gestionaleSql from "../services/gestionale-sql.js"
 
 function canCorsiGestione(u: User): boolean {
   return u.role === "admin" || u.role === "corsi" || u.role === "istruttore"
@@ -68,6 +75,14 @@ function sliceAppelloRange(db: CorsiGestioneDb, from: string, to: string): Recor
   return out
 }
 
+function sliceWalkInsRange(db: CorsiGestioneDb, from: string, to: string): Record<string, CorsiWalkIn[]> {
+  const out: Record<string, CorsiWalkIn[]> = {}
+  for (const [day, list] of Object.entries(db.walkInsByDay ?? {})) {
+    if (day >= from && day <= to && Array.isArray(list) && list.length) out[day] = list
+  }
+  return out
+}
+
 /** GET: ?giorno= oppure ?from=&to= (mese assenze). */
 export function getCorsiGestione(req: Request, res: Response) {
   const u = req.user!
@@ -85,6 +100,7 @@ export function getCorsiGestione(req: Request, res: Response) {
       courseNotes: filterCourseNotesForRange(db, from, to),
       courseInstructors: filterCourseInstructorsForRange(db, from, to),
       appelloByDay: sliceAppelloRange(db, from, to),
+      walkInsByDay: sliceWalkInsRange(db, from, to),
     })
   }
 
@@ -94,6 +110,7 @@ export function getCorsiGestione(req: Request, res: Response) {
       courseNotes: filterCourseNotesForDay(db, giorno),
       courseInstructors: filterCourseInstructorsForDay(db, giorno),
       appello: db.appelloByDay[giorno] && typeof db.appelloByDay[giorno] === "object" ? { ...db.appelloByDay[giorno] } : {},
+      walkIns: Array.isArray(db.walkInsByDay?.[giorno]) ? db.walkInsByDay[giorno] : [],
     })
   }
 
@@ -112,6 +129,22 @@ export function patchCorsiGestione(req: Request, res: Response) {
     courseNote?: { key?: string; text?: string | null }
     courseInstructor?: { key?: string; name?: string | null }
     appello?: { giorno?: string; merge?: Record<string, boolean> }
+    walkIn?: {
+      giorno?: string
+      add?: {
+        id?: string
+        groupKey?: string
+        servizio?: string
+        oraInizio?: string
+        oraFine?: string
+        idUtente?: string
+        cognome?: string
+        nome?: string
+        email?: string
+        sms?: string
+      }
+      removeId?: string
+    }
   }
 
   let db = readCorsiGestioneDb()
@@ -175,10 +208,75 @@ export function patchCorsiGestione(req: Request, res: Response) {
     changed = true
   }
 
+  if (body.walkIn) {
+    const giorno = String(body.walkIn.giorno ?? "").trim()
+    if (!isYmd(giorno)) return res.status(400).json({ message: "walkIn.giorno deve essere YYYY-MM-DD" })
+    const prevList = Array.isArray(db.walkInsByDay?.[giorno]) ? [...db.walkInsByDay[giorno]] : []
+    const removeId = String(body.walkIn.removeId ?? "").trim()
+    if (removeId) {
+      const next = prevList.filter((w) => w.id !== removeId)
+      if (next.length !== prevList.length) {
+        const walkInsByDay = { ...(db.walkInsByDay ?? {}) }
+        if (next.length) walkInsByDay[giorno] = next
+        else delete walkInsByDay[giorno]
+        db = { ...db, walkInsByDay }
+        changed = true
+      }
+    } else if (body.walkIn.add) {
+      const a = body.walkIn.add
+      const groupKey = String(a.groupKey ?? "").trim()
+      const cognome = String(a.cognome ?? "").trim()
+      const nome = String(a.nome ?? "").trim()
+      if (!groupKey || groupKey.length > MAX_KEY) return res.status(400).json({ message: "walkIn.add.groupKey non valida" })
+      if (!cognome && !nome) return res.status(400).json({ message: "Indica cognome o nome del cliente" })
+      const idUtente = String(a.idUtente ?? "").trim()
+      if (idUtente && prevList.some((w) => w.groupKey === groupKey && w.idUtente === idUtente)) {
+        return res.status(409).json({ message: "Cliente già inserito in questo corso" })
+      }
+      if (prevList.length >= 250) return res.status(400).json({ message: "Troppi ingressi manuali in questo giorno" })
+      const row: CorsiWalkIn = {
+        id: String(a.id ?? "").trim() || crypto.randomUUID(),
+        groupKey,
+        servizio: String(a.servizio ?? "").trim(),
+        cognome,
+        nome,
+        addedAt: new Date().toISOString(),
+        addedBy: u.nome || u.username,
+      }
+      const oraInizio = String(a.oraInizio ?? "").trim()
+      const oraFine = String(a.oraFine ?? "").trim()
+      const email = String(a.email ?? "").trim()
+      const sms = String(a.sms ?? "").trim()
+      if (oraInizio) row.oraInizio = oraInizio
+      if (oraFine) row.oraFine = oraFine
+      if (idUtente) row.idUtente = idUtente
+      if (email) row.email = email
+      if (sms) row.sms = sms
+      db = {
+        ...db,
+        walkInsByDay: { ...(db.walkInsByDay ?? {}), [giorno]: [...prevList, row] },
+      }
+      changed = true
+    }
+  }
+
   if (!changed) {
-    if ((body.courseNote || body.courseInstructor) && !body.appello) return res.json({ ok: true })
+    if ((body.courseNote || body.courseInstructor) && !body.appello && !body.walkIn) return res.json({ ok: true })
     return res.status(400).json({ message: "Nessun aggiornamento richiesto" })
   }
   writeCorsiGestioneDb(db)
   res.json({ ok: true })
+}
+
+export async function getCorsiClientiSearch(req: Request, res: Response) {
+  const u = req.user!
+  if (!canCorsiGestione(u)) return res.status(403).json({ message: "Permessi insufficienti" })
+  const q = String(req.query.q ?? "").trim()
+  if (q.length < 2) return res.json({ rows: [] })
+  try {
+    const rows = await gestionaleSql.queryClientiSearch(q)
+    res.json({ rows })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
 }

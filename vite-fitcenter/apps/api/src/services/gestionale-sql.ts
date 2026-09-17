@@ -740,6 +740,67 @@ export async function queryClienti(): Promise<Record<string, unknown>[]> {
   }
 }
 
+export type ClienteSearchHit = {
+  id: string
+  cognome: string
+  nome: string
+  email?: string
+  telefono?: string
+  tessera?: string
+}
+
+/** Ricerca anagrafica per inserimento ingresso manuale in pagina Corsi. */
+export async function queryClientiSearch(qRaw: string): Promise<ClienteSearchHit[]> {
+  const p = await getPool()
+  if (!p) return []
+  const q = qRaw.replace(/[%_\[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)
+  if (q.length < 2) return []
+  const tbl = defaultTables.clienti
+  if (!isSafeSqlIdentifierLoose(tbl)) return []
+  const qObj = qualifySqlObject(tbl).query
+  try {
+    const like = `%${q}%`
+    const r = await p
+      .request()
+      .input("q", sql.NVarChar(120), like)
+      .query(
+        `SELECT TOP 25
+           u.[IDUtente] AS id,
+           u.[Cognome] AS cognome,
+           u.[Nome] AS nome,
+           u.[Email] AS email,
+           COALESCE(u.[SMS], u.[Telefono_1]) AS telefono
+         FROM ${qObj} u
+         WHERE
+           u.[Cognome] LIKE @q
+           OR u.[Nome] LIKE @q
+           OR (LTRIM(RTRIM(COALESCE(u.[Cognome], '') + N' ' + COALESCE(u.[Nome], '')))) LIKE @q
+           OR (LTRIM(RTRIM(COALESCE(u.[Nome], '') + N' ' + COALESCE(u.[Cognome], '')))) LIKE @q
+           OR u.[Email] LIKE @q
+         ORDER BY u.[Cognome], u.[Nome]`
+      )
+    const out: ClienteSearchHit[] = []
+    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const id = String(row.id ?? "").trim()
+      const cognome = String(row.cognome ?? "").trim()
+      const nome = String(row.nome ?? "").trim()
+      if (!id && !cognome && !nome) continue
+      const hit: ClienteSearchHit = { id, cognome, nome }
+      const email = String(row.email ?? "").trim()
+      const telefono = String(row.telefono ?? "").trim()
+      const tessera = String(row.tessera ?? "").trim()
+      if (email) hit.email = email
+      if (telefono) hit.telefono = telefono
+      if (tessera) hit.tessera = tessera
+      out.push(hit)
+    }
+    return out
+  } catch (e) {
+    console.warn("[corsi] ricerca clienti:", (e as Error)?.message ?? e)
+    return []
+  }
+}
+
 /** Colonna FK sul cliente verso chi ha presentato (default IDPresentatore). Override: GESTIONALE_UTENTI_COL_ID_PRESENTATORE. */
 function referralPresenterColumn(): string {
   const raw = process.env.GESTIONALE_UTENTI_COL_ID_PRESENTATORE?.trim()

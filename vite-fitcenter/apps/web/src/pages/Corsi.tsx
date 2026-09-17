@@ -3,11 +3,12 @@ import { Link } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prenotazioniApi, type AccessoUtenteRow, type PrenotazioneCorsoRow } from "@/api/prenotazioni"
 import { calendarioApi, type CalendarioMergedEventDto } from "@/api/calendario"
-import { corsiGestioneApi, type CorsiGestioneDayDto } from "@/api/corsiGestione"
+import { corsiGestioneApi, type CorsiClienteSearchHit, type CorsiGestioneDayDto, type CorsiWalkIn } from "@/api/corsiGestione"
+import { CorsiAggiungiCliente } from "@/components/CorsiAggiungiCliente"
 import { useAuth } from "@/contexts/AuthContext"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 
-function isoToday(): string {
+export function isoToday(): string {
   const d = new Date()
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
@@ -15,7 +16,7 @@ function isoToday(): string {
   return `${y}-${m}-${day}`
 }
 
-function monthRangeFromDay(dayIso: string): { from: string; to: string; monthKey: string } {
+export function monthRangeFromDay(dayIso: string): { from: string; to: string; monthKey: string } {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayIso)
   if (!m) return { from: dayIso, to: dayIso, monthKey: dayIso.slice(0, 7) }
   const y = Number(m[1])
@@ -31,18 +32,18 @@ function monthRangeFromDay(dayIso: string): { from: string; to: string; monthKey
   return { from, to, monthKey }
 }
 
-function fmtDateIt(iso: string): string {
+export function fmtDateIt(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
   if (!m) return iso
   return `${m[3]}/${m[2]}/${m[1]}`
 }
 
-function fmtTimeDot(hhmm: string): string {
+export function fmtTimeDot(hhmm: string): string {
   const m = /^(\d{2}):(\d{2})$/.exec(hhmm)
   return m ? `${m[1]}.${m[2]}` : hhmm
 }
 
-type CorsoGroup = {
+export type CorsoGroup = {
   key: string
   servizio: string
   giorno: string
@@ -104,7 +105,7 @@ function getCorsoTitolo(r: PrenotazioneCorsoRow): string {
   )
 }
 
-type CorsoAmbito = "tutti" | "fitness" | "h2o"
+export type CorsoAmbito = "tutti" | "fitness" | "h2o"
 
 function normalizeCorsoText(s: string): string {
   return s
@@ -116,12 +117,13 @@ function normalizeCorsoText(s: string): string {
 }
 
 /** Fitness = terra; H2O = acqua / nuoto adulti. */
-function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
+export function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
   const rawBits = g.partecipanti
     .slice(0, 4)
     .flatMap((p) => {
       const raw = (p.raw ?? {}) as Record<string, unknown>
       return [
+        raw.PrenotazioniCategorieDescrizione,
         raw.MacroCategoriaDescrizione,
         raw.MacroCategoria,
         raw.CategoriaDescrizione,
@@ -132,7 +134,7 @@ function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
     .filter((v) => v != null && String(v).trim())
     .map((v) => String(v))
   const t = normalizeCorsoText([g.servizio, ...rawBits].join(" "))
-  if (/\bH2O\b/.test(t) || /\bACQUA\b/.test(t) || /\bAQUA\b/.test(t)) return "h2o"
+  if (/\bH2O\b/.test(t) || /\bH20\b/.test(t) || /\bACQUA\b/.test(t) || /\bAQUA\b/.test(t)) return "h2o"
   if (/NUOTO ADULTI/.test(t) || /\bGESTANTI\b/.test(t)) return "h2o"
   return "fitness"
 }
@@ -151,7 +153,7 @@ function bestOraFromRaw(raw: any, keys: string[]): string | undefined {
   return undefined
 }
 
-function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
+export function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const map = new Map<string, CorsoGroup>()
   const byBase = new Map<string, CorsoGroup[]>() // servizio+giorno(+id) -> gruppi (per agganciare attese senza orario)
   const byServiceDay = new Map<string, CorsoGroup[]>() // servizio+giorno -> gruppi (per agganciare attese per orario)
@@ -417,6 +419,9 @@ function formatPrenotatoIlIt(raw: string): string {
 
 /** Lista attesa: posizione in coda (come gestionale). La data operazione può essere di mesi fa. */
 function formatPrenotatoIlCell(p: PrenotazioneCorsoRow): { label: string; title?: string } {
+  if (isWalkInRow(p)) {
+    return { label: "Manuale", title: "Cliente inserito in sala, senza prenotazione" }
+  }
   if (p.inAttesa) {
     const ord = ordineListaAttesaFromRow(p)
     const label = ord != null ? `Pos. ${ord} in coda` : "In attesa"
@@ -442,7 +447,7 @@ function uniqueValidEmails(part: PrenotazioneCorsoRow[]): string[] {
   return out
 }
 
-function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
+export function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
   const raw = (p.raw ?? {}) as any
   // Priorità: ID già normalizzato dalla API (evita mismatch/collisioni su viste diverse).
   const idFromRow = firstNonEmptyStr((p as any)?.idUtente)
@@ -466,6 +471,53 @@ function participantStableKey(p: PrenotazioneCorsoRow, idx: number): string {
   // Possibili collisioni sono rare (nome+email/sms).
   void idx
   return `fallback:${nome}|${em}|${sms}`
+}
+
+export function isWalkInRow(p: PrenotazioneCorsoRow): boolean {
+  return !!(p.raw as { __walkIn?: unknown } | undefined)?.__walkIn
+}
+
+export function walkInIdOf(p: PrenotazioneCorsoRow): string | null {
+  const id = String((p.raw as { __walkInId?: unknown } | undefined)?.__walkInId ?? "").trim()
+  return id || null
+}
+
+function walkInToPrenRow(w: CorsiWalkIn, g: CorsoGroup): PrenotazioneCorsoRow {
+  return {
+    idUtente: w.idUtente,
+    giorno: g.giorno,
+    servizio: g.servizio,
+    oraInizio: g.oraInizio,
+    oraFine: g.oraFine,
+    cognome: w.cognome,
+    nome: w.nome,
+    email: w.email,
+    sms: w.sms,
+    prenotatoIl: w.addedAt,
+    note: "Ingresso senza prenotazione",
+    raw: {
+      __walkIn: true,
+      __walkInId: w.id,
+      IDUtente: w.idUtente,
+    },
+  }
+}
+
+export function mergeWalkInsIntoGruppi(gruppi: CorsoGroup[], walkIns: CorsiWalkIn[] | undefined): CorsoGroup[] {
+  if (!walkIns?.length) return gruppi
+  const byKey = new Map(gruppi.map((g) => [g.key, { ...g, partecipanti: [...g.partecipanti] }]))
+  for (const w of walkIns) {
+    const g = byKey.get(w.groupKey)
+    if (!g) continue
+    const dup = g.partecipanti.some((p) => {
+      if (walkInIdOf(p) === w.id) return true
+      if (w.idUtente && participantStableKey(p, 0) === `id:${w.idUtente}`) return true
+      return false
+    })
+    if (dup) continue
+    g.partecipanti.push(walkInToPrenRow(w, g))
+  }
+  return Array.from(byKey.values())
 }
 
 function groupKeyForRow(p: PrenotazioneCorsoRow): string {
@@ -656,7 +708,7 @@ function getLessonWindow(p: PrenotazioneCorsoRow, fallbackDayIso?: string): { st
 }
 
 /** Per presenza/accessi in elenco partecipanti: orari lezione = quelli del corso aperto (`g`), non eventuali orari errati sulla singola riga prenotazione (es. stesso slot ripetuto su più corsi). */
-function participantForLessonAccess(g: CorsoGroup, p: PrenotazioneCorsoRow, giornoIso: string): PrenotazioneCorsoRow {
+export function participantForLessonAccess(g: CorsoGroup, p: PrenotazioneCorsoRow, giornoIso: string): PrenotazioneCorsoRow {
   const oraInizio = String(g.oraInizio ?? "").trim() || String(p.oraInizio ?? "").trim()
   const oraFine = String(g.oraFine ?? "").trim() || String(p.oraFine ?? "").trim()
   return { ...p, giorno: giornoIso, oraInizio, oraFine }
@@ -751,7 +803,7 @@ function parseAccessDateAny(val: unknown): Date | null {
   return parseDateAny(val)
 }
 
-function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
+export function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): AccessIndex {
   const m = new Map<string, AccessEvent[]>()
   const push = (k: string, ev: AccessEvent) => {
     const list = m.get(k) ?? []
@@ -790,7 +842,7 @@ function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: string): Ac
   return m
 }
 
-function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
+export function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
   const stable = participantStableKey(p, 0)
   const candidateKeys: string[] = []
   if (stable.startsWith("id:")) candidateKeys.push(stable)
@@ -1113,7 +1165,7 @@ export function Corsi() {
     mutationFn: corsiGestioneApi.patch,
     onSuccess: (_d, vars) => {
       void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === "corsi-gestione-range" })
-      if (vars.appello || vars.courseNote || vars.courseInstructor) {
+      if (vars.appello || vars.courseNote || vars.courseInstructor || vars.walkIn) {
         void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] })
       }
     },
@@ -1144,6 +1196,7 @@ export function Corsi() {
       courseNotes: { ...(prev?.courseNotes ?? {}), [k]: text },
       courseInstructors: { ...(prev?.courseInstructors ?? {}) },
       appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? {}) },
+      walkIns: [...(prev?.walkIns ?? [])],
     }))
     const prevT = persistedNoteTimers.current[k]
     if (prevT) clearTimeout(prevT)
@@ -1162,6 +1215,7 @@ export function Corsi() {
       courseNotes: { ...(prev?.courseNotes ?? {}) },
       courseInstructors: { ...(prev?.courseInstructors ?? {}), [k]: name },
       appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? {}) },
+      walkIns: [...(prev?.walkIns ?? [])],
     }))
     const prevT = persistedInstructorTimers.current[k]
     if (prevT) clearTimeout(prevT)
@@ -1253,7 +1307,7 @@ export function Corsi() {
     }
     return s
   }, [blocchiCorsiQ.data])
-  const gruppi = useMemo(() => {
+  const gruppiBase = useMemo(() => {
     const withBlock = rawGruppi.map((g) => {
       const idLez = g.idLezione
       const isBlocked = idLez ? blockedByCourse.has(idLez) : false
@@ -1283,6 +1337,10 @@ export function Corsi() {
       return oa.localeCompare(ob) || a.servizio.localeCompare(b.servizio, "it")
     })
   }, [rawGruppi, blockedByCourse])
+  const gruppi = useMemo(
+    () => mergeWalkInsIntoGruppi(gruppiBase, corsiGestioneQ.data?.walkIns),
+    [gruppiBase, corsiGestioneQ.data?.walkIns],
+  )
   const accessIdxDay = useMemo(() => buildAccessIndexForDay(accessiDayQ.data?.rows ?? [], giorno), [accessiDayQ.data, giorno])
   const gruppiFiltrati = useMemo(() => {
     const q = search.trim().toLocaleLowerCase()
@@ -1388,10 +1446,61 @@ export function Corsi() {
     const merge = { [k]: nextValue, [old]: nextValue }
     queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
       courseNotes: { ...(prev?.courseNotes ?? corsiGestioneQ.data?.courseNotes ?? {}) },
+      courseInstructors: { ...(prev?.courseInstructors ?? corsiGestioneQ.data?.courseInstructors ?? {}) },
       appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? corsiGestioneQ.data?.appello ?? {}), ...merge },
+      walkIns: [...(prev?.walkIns ?? corsiGestioneQ.data?.walkIns ?? [])],
     }))
     patchCorsiGestioneM.mutate(
       { appello: { giorno, merge } },
+      { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
+    )
+  }
+
+  function addWalkInToCourse(g: CorsoGroup, hit: { id?: string; cognome: string; nome: string; email?: string; telefono?: string }) {
+    const already = g.partecipanti.some((p) => {
+      if (hit.id && participantStableKey(p, 0) === `id:${hit.id}`) return true
+      const n = `${(p.cognome ?? "").trim().toLowerCase()}|${(p.nome ?? "").trim().toLowerCase()}`
+      const m = `${hit.cognome.trim().toLowerCase()}|${hit.nome.trim().toLowerCase()}`
+      return n === m && n !== "|"
+    })
+    if (already) {
+      window.alert("Questo cliente è già in elenco per il corso.")
+      return
+    }
+    const id = crypto.randomUUID()
+    const add = {
+      id,
+      groupKey: g.key,
+      servizio: g.servizio,
+      oraInizio: g.oraInizio,
+      oraFine: g.oraFine,
+      idUtente: hit.id,
+      cognome: hit.cognome,
+      nome: hit.nome,
+      email: hit.email,
+      sms: hit.telefono,
+    }
+    queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
+      courseNotes: { ...(prev?.courseNotes ?? corsiGestioneQ.data?.courseNotes ?? {}) },
+      courseInstructors: { ...(prev?.courseInstructors ?? corsiGestioneQ.data?.courseInstructors ?? {}) },
+      appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? corsiGestioneQ.data?.appello ?? {}) },
+      walkIns: [...(prev?.walkIns ?? corsiGestioneQ.data?.walkIns ?? []), { ...add, servizio: g.servizio, addedAt: new Date().toISOString() }],
+    }))
+    patchCorsiGestioneM.mutate(
+      { walkIn: { giorno, add } },
+      { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
+    )
+  }
+
+  function removeWalkInFromCourse(walkInId: string) {
+    queryClient.setQueryData(["corsi-gestione", giorno], (prev: CorsiGestioneDayDto | undefined) => ({
+      courseNotes: { ...(prev?.courseNotes ?? corsiGestioneQ.data?.courseNotes ?? {}) },
+      courseInstructors: { ...(prev?.courseInstructors ?? corsiGestioneQ.data?.courseInstructors ?? {}) },
+      appello: { ...readAppelloForDay(giorno), ...(prev?.appello ?? corsiGestioneQ.data?.appello ?? {}) },
+      walkIns: (prev?.walkIns ?? corsiGestioneQ.data?.walkIns ?? []).filter((w) => w.id !== walkInId),
+    }))
+    patchCorsiGestioneM.mutate(
+      { walkIn: { giorno, removeId: walkInId } },
       { onError: () => void queryClient.invalidateQueries({ queryKey: ["corsi-gestione", giorno] }) },
     )
   }
@@ -1635,14 +1744,17 @@ export function Corsi() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Corsi attivi del giorno (data inizio–fine include il giorno scelto). Filtra Fitness o H2O.
+            Corsi attivi del giorno. Pallino verde = presente, grigio = assente, giallo = ingresso senza prenotazione.
           </p>
-          <p className="mt-2">
+          <p className="mt-2 flex flex-wrap gap-3">
             <Link
               to="/calendario/corsi"
               className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
             >
               Calendario planning corsi
+            </Link>
+            <Link to="/corsi/presenze" className="text-sm font-medium text-amber-300 underline-offset-2 hover:underline">
+              Report presenze
             </Link>
           </p>
           {enabled ? (
@@ -1844,12 +1956,15 @@ export function Corsi() {
                     const courseInstructorDisplay = instructorOverride || planningInstructor
                     const planningNoteReadonly = planningNotesFromCalendarioCorsi(g, calendarioCorsiQ.data?.events)
                     const presentiCount = g.partecipanti.filter((p, idx) => {
+                      if (p.inAttesa) return false
+                      if (isWalkInRow(p)) return true
                       const pWithTimes = participantForLessonAccess(g, p, giorno)
                       const okAccesso = isPresentByAccess(accessIdxDay, pWithTimes, giorno).present
                       const ov = appelloOverride(g.key, p, idx)
                       return ov.hasOverride ? ov.value : okAccesso
                     }).length
                     const attesaCount = g.partecipanti.filter((p) => !!p.inAttesa).length
+                    const walkInCount = g.partecipanti.filter((p) => isWalkInRow(p)).length
                     const assentiCount = Math.max(0, g.partecipanti.length - attesaCount - presentiCount)
                     return (
                       <>
@@ -1898,10 +2013,28 @@ export function Corsi() {
                                   Attesa {attesaCount}
                                 </span>
                               ) : null}
+                              {walkInCount > 0 ? (
+                                <span className="rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 font-semibold text-amber-200">
+                                  Manuali {walkInCount}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-sm font-semibold text-amber-300">
                               {g.partecipanti.length} partecipanti
                             </div>
+                            <CorsiAggiungiCliente
+                              disabled={patchCorsiGestioneM.isPending || g.key.includes("__WAITLIST")}
+                              onPick={(hit: CorsiClienteSearchHit) =>
+                                addWalkInToCourse(g, {
+                                  id: hit.id,
+                                  cognome: hit.cognome,
+                                  nome: hit.nome,
+                                  email: hit.email,
+                                  telefono: hit.telefono,
+                                })
+                              }
+                              onGuest={(cognome, nome) => addWalkInToCourse(g, { cognome, nome })}
+                            />
                             <button
                               type="button"
                               className="touch-manipulation rounded-lg border border-zinc-600 bg-zinc-800/60 px-4 py-2 text-sm font-medium text-zinc-100 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
@@ -2002,8 +2135,8 @@ export function Corsi() {
                           <div className="divide-y divide-zinc-800/60">
                             {g.partecipanti.length === 0 ? (
                               <div className="px-4 py-6 text-sm text-zinc-500">
-                                Nessun iscritto. Puoi bloccare il corso con il pulsante sopra, qualche ora prima
-                                dell&apos;inizio.
+                                Nessun iscritto. Puoi aggiungere chi si presenta in sala (pallino giallo) o bloccare il
+                                corso.
                               </div>
                             ) : null}
                             {(() => {
@@ -2034,6 +2167,11 @@ export function Corsi() {
                                   {p.inAttesa ? (
                                     <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
                                       ATTESA
+                                    </span>
+                                  ) : null}
+                                  {isWalkInRow(p) ? (
+                                    <span className="ml-2 inline-flex items-center rounded border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+                                      MANUALE
                                     </span>
                                   ) : null}
                                   {blocked ? (
@@ -2077,17 +2215,38 @@ export function Corsi() {
                                 ) : null}
                               </div>
                               <div className="flex shrink-0 items-center gap-2">
-                                <button
-                                  type="button"
-                                  title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
-                                  aria-pressed={presente}
-                                  onClick={() => toggleAppello(g.key, p, idx, !presente)}
-                                  className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
-                                    presente
-                                      ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
-                                      : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  }`}
-                                />
+                                {isWalkInRow(p) ? (
+                                  <>
+                                    <span
+                                      className="inline-flex h-5 w-5 items-center justify-center"
+                                      title="Ingresso senza prenotazione"
+                                    >
+                                      <span className="h-3.5 w-3.5 rounded-full border border-amber-300 bg-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.45)]" />
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-medium text-zinc-500 hover:text-red-300"
+                                      onClick={() => {
+                                        const id = walkInIdOf(p)
+                                        if (id) removeWalkInFromCourse(id)
+                                      }}
+                                    >
+                                      Togli
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
+                                    aria-pressed={presente}
+                                    onClick={() => toggleAppello(g.key, p, idx, !presente)}
+                                    className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
+                                      presente
+                                        ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
+                                        : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
+                                    }`}
+                                  />
+                                )}
                               </div>
                             </div>
                             {note ? (
@@ -2119,8 +2278,8 @@ export function Corsi() {
                               {g.partecipanti.length === 0 ? (
                                 <tr>
                                   <td colSpan={6} className="px-5 py-6 text-sm text-zinc-500">
-                                    Nessun iscritto. Puoi bloccare il corso con il pulsante sopra, qualche ora prima
-                                    dell&apos;inizio.
+                                    Nessun iscritto. Puoi aggiungere chi si presenta in sala (pallino giallo) o bloccare
+                                    il corso.
                                   </td>
                                 </tr>
                               ) : null}
@@ -2146,17 +2305,38 @@ export function Corsi() {
                             <tr key={idx} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/20">
                               <td className="px-5 py-3 text-zinc-300">{String(prog)}</td>
                               <td className="px-5 py-3">
-                                <button
-                                  type="button"
-                                  title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
-                                  aria-pressed={presente}
-                                  onClick={() => toggleAppello(g.key, p, idx, !presente)}
-                                  className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
-                                    presente
-                                      ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
-                                      : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
-                                  }`}
-                                />
+                                {isWalkInRow(p) ? (
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="inline-flex h-5 w-5 items-center justify-center"
+                                      title="Ingresso senza prenotazione"
+                                    >
+                                      <span className="h-3.5 w-3.5 rounded-full border border-amber-300 bg-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.45)]" />
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-medium text-zinc-500 hover:text-red-300"
+                                      onClick={() => {
+                                        const id = walkInIdOf(p)
+                                        if (id) removeWalkInFromCourse(id)
+                                      }}
+                                    >
+                                      Togli
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    title={presente ? "Imposta assente (manuale)" : "Imposta presente (manuale)"}
+                                    aria-pressed={presente}
+                                    onClick={() => toggleAppello(g.key, p, idx, !presente)}
+                                    className={`touch-manipulation h-5 w-5 rounded border transition-colors ${
+                                      presente
+                                        ? "border-emerald-400 bg-emerald-500/70 shadow-[0_0_0_1px_rgba(16,185,129,0.35)]"
+                                        : "border-zinc-600 bg-zinc-900/40 hover:bg-zinc-800/50"
+                                    }`}
+                                  />
+                                )}
                               </td>
                               <td className="max-w-[11rem] px-5 py-3 align-top text-xs text-zinc-400">
                                 <div className="flex flex-col gap-1">
@@ -2188,6 +2368,11 @@ export function Corsi() {
                                 {p.inAttesa ? (
                                   <span className="ml-2 inline-flex items-center rounded border border-fuchsia-500/30 bg-fuchsia-500/10 px-2 py-0.5 text-[10px] font-semibold text-fuchsia-300">
                                     ATTESA
+                                  </span>
+                                ) : null}
+                                {isWalkInRow(p) ? (
+                                  <span className="ml-2 inline-flex items-center rounded border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 text-[10px] font-semibold text-amber-200">
+                                    MANUALE
                                   </span>
                                 ) : null}
                                 {blocked ? (

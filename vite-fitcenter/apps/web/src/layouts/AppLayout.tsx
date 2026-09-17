@@ -33,7 +33,7 @@ const navCorsi: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
 ] as const
 const navIstruttore: NavItem[] = [
   {
@@ -46,7 +46,7 @@ const navIstruttore: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/corsi", label: "Corsi" },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }] },
 ] as const
 const navCampus: NavItem[] = [
   {
@@ -150,7 +150,7 @@ const navAdmin: NavItem[] = [
       { to: "/calendario/personale", label: "Personale" },
     ],
   },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
   {
     to: "__admin_group__",
     label: "Altri",

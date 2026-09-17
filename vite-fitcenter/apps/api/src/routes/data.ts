@@ -12,7 +12,7 @@ import {
   postCalendarioSendTurni,
   putCalendarioInstructor,
 } from "../handlers/calendario.js"
-import { getCorsiGestione, patchCorsiGestione } from "../handlers/corsiGestione.js"
+import { getCorsiGestione, patchCorsiGestione, getCorsiClientiSearch } from "../handlers/corsiGestione.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
 import { getIncassi } from "../handlers/incassi.js"
@@ -33,6 +33,7 @@ dataRouter.get("/calendario/:comparto", getCalendarioComparto)
 dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 dataRouter.get("/corsi/gestione", getCorsiGestione)
 dataRouter.patch("/corsi/gestione", patchCorsiGestione)
+dataRouter.get("/corsi/clienti-search", getCorsiClientiSearch)
 
 dataRouter.get("/debug-consulenti", getDebugConsulenti)
 dataRouter.get("/sql-status", getSqlStatus)
