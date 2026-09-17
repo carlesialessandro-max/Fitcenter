@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { prenotazioniApi } from "@/api/prenotazioni"
@@ -24,6 +24,14 @@ import {
 type Periodo = "giorno" | "settimana" | "mese"
 type Vista = "corso" | "tipologia" | "oraria"
 
+type DayAgg = {
+  giorno: string
+  prenotati: number
+  presenti: number
+  assenti: number
+  manuali: number
+}
+
 type AggRow = {
   key: string
   label: string
@@ -32,6 +40,7 @@ type AggRow = {
   presenti: number
   assenti: number
   manuali: number
+  giorni: DayAgg[]
 }
 
 function toIsoUtc(d: Date): string {
@@ -63,7 +72,23 @@ function pct(num: number, den: number): string {
 }
 
 function emptyAgg(key: string, label: string, ambito: AggRow["ambito"]): AggRow {
-  return { key, label, ambito, prenotati: 0, presenti: 0, assenti: 0, manuali: 0 }
+  return { key, label, ambito, prenotati: 0, presenti: 0, assenti: 0, manuali: 0, giorni: [] }
+}
+
+function presenceRate(r: Pick<AggRow, "prenotati" | "presenti" | "manuali">): number {
+  const den = r.prenotati + r.manuali
+  return den <= 0 ? 1 : r.presenti / den
+}
+
+function mediaPresentiGiorno(r: AggRow): number | null {
+  if (!r.giorni.length) return null
+  return r.presenti / r.giorni.length
+}
+
+function isPochePresenze(r: AggRow): boolean {
+  const media = mediaPresentiGiorno(r)
+  if (media != null && media < 4) return true
+  return presenceRate(r) < 0.5 && r.prenotati + r.manuali > 0
 }
 
 export function CorsiPresenze() {
@@ -73,6 +98,7 @@ export function CorsiPresenze() {
   const [periodo, setPeriodo] = useState<Periodo>("giorno")
   const [ambito, setAmbito] = useState<CorsoAmbito>("tutti")
   const [vista, setVista] = useState<Vista>("corso")
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const week = useMemo(() => weekMondaySunday(day), [day])
 
   const range = useMemo(() => {
@@ -140,12 +166,20 @@ export function CorsiPresenze() {
       const appello = gestioneQ.data?.appelloByDay?.[giorno] ?? {}
       for (const g of groups) {
         if (g.key.includes("__WAITLIST")) continue
+        const attivi = g.partecipanti.filter((p) => !p.inAttesa)
+        if (!attivi.length) continue
         const amb = corsoAmbitoOf(g)
         if (ambito !== "tutti" && amb !== ambito) continue
         const corsoKey = g.servizio.trim().toLocaleLowerCase()
         const corso = byCorso.get(corsoKey) ?? emptyAgg(corsoKey, g.servizio, amb)
         if (corso.ambito !== amb) corso.ambito = "misto"
         const tipo = byTipo[amb]
+        let daySlot = corso.giorni.find((d) => d.giorno === giorno)
+        if (!daySlot) {
+          daySlot = { giorno, prenotati: 0, presenti: 0, assenti: 0, manuali: 0 }
+          corso.giorni.push(daySlot)
+        }
+        let counted = 0
         g.partecipanti.forEach((p, idx) => {
           if (p.inAttesa) return
           const walkIn = isWalkInRow(p)
@@ -154,28 +188,58 @@ export function CorsiPresenze() {
           const fromAccess = isPresentByAccess(accessIdx, pWithTimes, giorno).present
           const ov = Object.prototype.hasOwnProperty.call(appello, k) ? !!appello[k] : undefined
           const presente = walkIn ? true : (ov ?? fromAccess)
+          counted += 1
           if (walkIn) {
             corso.manuali += 1
             corso.presenti += 1
+            daySlot.manuali += 1
+            daySlot.presenti += 1
             tipo.manuali += 1
             tipo.presenti += 1
             return
           }
           corso.prenotati += 1
+          daySlot.prenotati += 1
           tipo.prenotati += 1
           if (presente) {
             corso.presenti += 1
+            daySlot.presenti += 1
             tipo.presenti += 1
           } else {
             corso.assenti += 1
+            daySlot.assenti += 1
             tipo.assenti += 1
           }
         })
-        byCorso.set(corsoKey, corso)
+        if (counted > 0) {
+          if (daySlot.prenotati + daySlot.manuali === 0) {
+            corso.giorni = corso.giorni.filter((d) => d !== daySlot)
+          } else {
+            byCorso.set(corsoKey, corso)
+          }
+        } else {
+          corso.giorni = corso.giorni.filter((d) => d !== daySlot)
+        }
       }
     }
 
-    const corsi = [...byCorso.values()].sort((a, b) => a.label.localeCompare(b.label, "it"))
+    const corsi = [...byCorso.values()]
+      .filter((r) => r.prenotati + r.manuali > 0)
+      .map((r) => ({ ...r, giorni: [...r.giorni].sort((a, b) => a.giorno.localeCompare(b.giorno)) }))
+      .sort((a, b) => {
+        if (periodo !== "giorno") {
+          const la = isPochePresenze(a) ? 0 : 1
+          const lb = isPochePresenze(b) ? 0 : 1
+          if (la !== lb) return la - lb
+          const ma = mediaPresentiGiorno(a) ?? 99
+          const mb = mediaPresentiGiorno(b) ?? 99
+          if (ma !== mb) return ma - mb
+          const ra = presenceRate(a)
+          const rb = presenceRate(b)
+          if (ra !== rb) return ra - rb
+        }
+        return a.label.localeCompare(b.label, "it")
+      })
     const totale = emptyAgg("totale", "Totale", ambito === "h2o" ? "h2o" : ambito === "fitness" ? "fitness" : "misto")
     for (const r of corsi) {
       totale.prenotati += r.prenotati
@@ -184,7 +248,7 @@ export function CorsiPresenze() {
       totale.manuali += r.manuali
     }
     return { corsi, tipi: [byTipo.fitness, byTipo.h2o], totale }
-  }, [prenQ.data, accessiQ.data, gestioneQ.data, range.from, range.to, ambito])
+  }, [prenQ.data, accessiQ.data, gestioneQ.data, range.from, range.to, ambito, periodo])
 
   const orariaValues = useMemo(() => {
     const rows = prenQ.data?.rows ?? []
@@ -209,6 +273,8 @@ export function CorsiPresenze() {
         if (g.key.includes("__WAITLIST")) continue
         const amb = corsoAmbitoOf(g)
         if (ambito !== "tutti" && amb !== ambito) continue
+        const attivi = g.partecipanti.filter((p) => !p.inAttesa)
+        if (!attivi.length) continue
         const hours = oreCoperteLezione(g.oraInizio, g.oraFine)
         if (!hours.length) continue
         for (const ora of hours) {
@@ -239,6 +305,7 @@ export function CorsiPresenze() {
 
   const loading = prenQ.isLoading || accessiQ.isLoading || gestioneQ.isLoading
   const err = prenQ.error || accessiQ.error || gestioneQ.error
+  const canDrill = vista === "corso" && periodo !== "giorno"
 
   return (
     <div className="p-4 sm:p-6 print:p-0">
@@ -246,7 +313,8 @@ export function CorsiPresenze() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Presenze corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Report giornaliero, settimanale o mensile, oppure tabella oraria lun–dom. Include gli ingressi manuali (pallino giallo).
+            Solo corsi con iscritti nel periodo. In settimana e mese i corsi con poche presenze stanno in cima: clicca per
+            vedere la frequenza giorno per giorno.
           </p>
           <p className="mt-2 flex flex-wrap gap-3">
             <Link to="/corsi" className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
@@ -274,7 +342,10 @@ export function CorsiPresenze() {
                 <button
                   key={id}
                   type="button"
-                  onClick={() => setPeriodo(id)}
+                  onClick={() => {
+                    setPeriodo(id)
+                    setExpandedKey(null)
+                  }}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                     periodo === id ? "bg-amber-500/20 text-amber-300" : "text-zinc-400 hover:bg-zinc-800"
                   }`}
@@ -293,7 +364,10 @@ export function CorsiPresenze() {
                 value={day.slice(0, 7)}
                 onChange={(e) => {
                   const v = e.target.value
-                  if (/^\d{4}-\d{2}$/.test(v)) setDay(`${v}-01`)
+                  if (/^\d{4}-\d{2}$/.test(v)) {
+                    setDay(`${v}-01`)
+                    setExpandedKey(null)
+                  }
                 }}
                 className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
               />
@@ -301,7 +375,10 @@ export function CorsiPresenze() {
               <input
                 type="date"
                 value={day}
-                onChange={(e) => setDay(e.target.value)}
+                onChange={(e) => {
+                  setDay(e.target.value)
+                  setExpandedKey(null)
+                }}
                 className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
               />
             )}
@@ -398,6 +475,7 @@ export function CorsiPresenze() {
             <tr className="border-b border-zinc-800 bg-zinc-950/50 print:bg-white">
               <th className="px-4 py-3 font-medium text-zinc-400">{vista === "corso" ? "Corso" : "Tipologia"}</th>
               {vista === "corso" ? <th className="px-4 py-3 font-medium text-zinc-400">Ambito</th> : null}
+              {canDrill ? <th className="px-4 py-3 font-medium text-zinc-400">Media/giorno</th> : null}
               <th className="px-4 py-3 font-medium text-zinc-400">Prenotati</th>
               <th className="px-4 py-3 font-medium text-zinc-400">Presenti</th>
               <th className="px-4 py-3 font-medium text-zinc-400">Assenti</th>
@@ -408,30 +486,96 @@ export function CorsiPresenze() {
           <tbody>
             {tableRows.length === 0 && !loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-6 text-zinc-500">
-                  Nessun dato nel periodo.
+                <td colSpan={canDrill ? 8 : 7} className="px-4 py-6 text-zinc-500">
+                  Nessun corso con iscritti nel periodo.
                 </td>
               </tr>
             ) : null}
-            {tableRows.map((r) => (
-              <tr key={r.key} className="border-b border-zinc-800/60 last:border-0">
-                <td className="px-4 py-2.5 font-medium text-zinc-100 print:text-zinc-900">{r.label}</td>
-                {vista === "corso" ? (
-                  <td className="px-4 py-2.5 text-zinc-400">{r.ambito === "h2o" ? "H2O" : r.ambito === "misto" ? "Misto" : "Fitness"}</td>
-                ) : null}
-                <td className="px-4 py-2.5 text-zinc-200">{r.prenotati}</td>
-                <td className="px-4 py-2.5 text-emerald-200 print:text-zinc-800">{r.presenti}</td>
-                <td className="px-4 py-2.5 text-zinc-300">{r.assenti}</td>
-                <td className="px-4 py-2.5 text-amber-200 print:text-zinc-800">{r.manuali}</td>
-                <td className="px-4 py-2.5 text-zinc-200">{pct(r.presenti, r.prenotati + r.manuali)}</td>
-              </tr>
-            ))}
+            {tableRows.map((r) => {
+              const poche = isPochePresenze(r)
+              const media = mediaPresentiGiorno(r)
+              const open = canDrill && expandedKey === r.key
+              return (
+                <Fragment key={r.key}>
+                  <tr
+                    className={`border-b border-zinc-800/60 last:border-0 ${
+                      poche ? "bg-amber-500/10" : ""
+                    } ${canDrill ? "cursor-pointer hover:bg-zinc-800/50" : ""}`}
+                    onClick={
+                      canDrill
+                        ? () => setExpandedKey((prev) => (prev === r.key ? null : r.key))
+                        : undefined
+                    }
+                  >
+                    <td className="px-4 py-2.5 font-medium text-zinc-100 print:text-zinc-900">
+                      {canDrill ? <span className="mr-2 text-zinc-500">{open ? "▾" : "▸"}</span> : null}
+                      {r.label}
+                      {poche ? (
+                        <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                          poche presenze
+                        </span>
+                      ) : null}
+                    </td>
+                    {vista === "corso" ? (
+                      <td className="px-4 py-2.5 text-zinc-400">{r.ambito === "h2o" ? "H2O" : r.ambito === "misto" ? "Misto" : "Fitness"}</td>
+                    ) : null}
+                    {canDrill ? (
+                      <td className={`px-4 py-2.5 ${poche ? "text-amber-200" : "text-zinc-200"}`}>
+                        {media == null ? "—" : String(Math.round(media * 10) / 10).replace(".", ",")}
+                      </td>
+                    ) : null}
+                    <td className="px-4 py-2.5 text-zinc-200">{r.prenotati}</td>
+                    <td className="px-4 py-2.5 text-emerald-200 print:text-zinc-800">{r.presenti}</td>
+                    <td className="px-4 py-2.5 text-zinc-300">{r.assenti}</td>
+                    <td className="px-4 py-2.5 text-amber-200 print:text-zinc-800">{r.manuali}</td>
+                    <td className="px-4 py-2.5 text-zinc-200">{pct(r.presenti, r.prenotati + r.manuali)}</td>
+                  </tr>
+                  {open ? (
+                    <tr className="border-b border-zinc-800/60 bg-zinc-950/60">
+                      <td colSpan={canDrill ? 8 : 7} className="px-4 py-3">
+                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                          Frequenza giorno per giorno · {r.label}
+                        </p>
+                        <table className="min-w-full text-left text-sm">
+                          <thead>
+                            <tr className="text-zinc-500">
+                              <th className="py-1 pr-3 font-medium">Giorno</th>
+                              <th className="py-1 pr-3 font-medium">Prenotati</th>
+                              <th className="py-1 pr-3 font-medium">Presenti</th>
+                              <th className="py-1 pr-3 font-medium">Assenti</th>
+                              <th className="py-1 pr-3 font-medium">Manuali</th>
+                              <th className="py-1 font-medium">% presenza</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {r.giorni.map((d) => {
+                              const pocheGiorno = d.presenti < 4 && d.prenotati + d.manuali > 0
+                              return (
+                                <tr key={d.giorno} className={pocheGiorno ? "text-amber-200" : "text-zinc-200"}>
+                                  <td className="py-1 pr-3">{fmtDateIt(d.giorno)}</td>
+                                  <td className="py-1 pr-3">{d.prenotati}</td>
+                                  <td className="py-1 pr-3">{d.presenti}</td>
+                                  <td className="py-1 pr-3">{d.assenti}</td>
+                                  <td className="py-1 pr-3">{d.manuali}</td>
+                                  <td className="py-1">{pct(d.presenti, d.prenotati + d.manuali)}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              )
+            })}
           </tbody>
           {tableRows.length > 0 ? (
             <tfoot>
               <tr className="bg-zinc-950/60 font-semibold print:bg-zinc-100">
                 <td className="px-4 py-3 text-zinc-100">Totale</td>
                 {vista === "corso" ? <td className="px-4 py-3 text-zinc-400">—</td> : null}
+                {canDrill ? <td className="px-4 py-3 text-zinc-400">—</td> : null}
                 <td className="px-4 py-3 text-zinc-100">{report.totale.prenotati}</td>
                 <td className="px-4 py-3 text-emerald-200">{report.totale.presenti}</td>
                 <td className="px-4 py-3 text-zinc-100">{report.totale.assenti}</td>

@@ -133,9 +133,20 @@ export function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
     })
     .filter((v) => v != null && String(v).trim())
     .map((v) => String(v))
+  const cat = normalizeCorsoText(
+    g.partecipanti
+      .slice(0, 4)
+      .map((p) => String((p.raw as Record<string, unknown> | undefined)?.PrenotazioniCategorieDescrizione ?? ""))
+      .filter((s) => s.trim())
+      .join(" "),
+  )
+  if (cat === "H2O" || cat === "H20" || /\bH2O\b/.test(cat) || /\bH20\b/.test(cat)) return "h2o"
   const t = normalizeCorsoText([g.servizio, ...rawBits].join(" "))
-  if (/\bH2O\b/.test(t) || /\bH20\b/.test(t) || /\bACQUA\b/.test(t) || /\bAQUA\b/.test(t)) return "h2o"
-  if (/NUOTO ADULTI/.test(t) || /\bGESTANTI\b/.test(t)) return "h2o"
+  if (/\bH2O\b/.test(t) || /\bH20\b/.test(t)) return "h2o"
+  if (/ACQUA/.test(t) || /AQUA/.test(t)) return "h2o"
+  if (/NUOTO/.test(t) || /\bGESTANTI\b/.test(t) || /\bESORDIENTI\b/.test(t) || /\bAQ\b/.test(t)) return "h2o"
+  if (/\bANNI\b/.test(t)) return "h2o"
+  if (cat === "FITNESS" || /\bFITNESS\b/.test(cat)) return "fitness"
   return "fitness"
 }
 
