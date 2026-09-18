@@ -1,6 +1,13 @@
 import type { Request, Response } from "express"
 import type { User } from "../store/auth.js"
-import { isWhatsappSendConfigured, sendWhatsappText } from "../services/whatsapp.js"
+import {
+  formatWaDisplay,
+  isWhatsappSendConfigured,
+  leadWelcomeTemplateConfig,
+  normalizeWaTo,
+  sendWhatsappTemplate,
+  sendWhatsappText,
+} from "../services/whatsapp.js"
 import {
   assertSlotLibero,
   corsieMax,
@@ -72,14 +79,95 @@ function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
   return out
 }
 
-async function notifyIstruttoriWa(r: LpRichiesta, by: string) {
-  const db = readLezioniPrivateDb()
-  const dest = db.instructors.filter((i) => i.attivo && String(i.telefono ?? "").trim())
-  if (!dest.length) return { sent: 0, errors: [] as string[], skipped: "Elenco istruttori vuoto: inseriscilo in Lezioni private → Istruttori" }
-  if (!isWhatsappSendConfigured()) {
-    return { sent: 0, errors: [] as string[], skipped: "WhatsApp non configurato sul server" }
+function isWa24hWindowError(msg: string): boolean {
+  const s = msg.toLowerCase()
+  return s.includes("131047") || s.includes("24 hour") || s.includes("24-hour") || s.includes("re-engage")
+}
+
+function waLabel(nome: string, telefono: string): string {
+  return `${nome} (${formatWaDisplay(normalizeWaTo(telefono) ?? telefono) || telefono})`
+}
+
+async function sendLpWaToNumber(telefono: string, text: string, nome: string): Promise<void> {
+  if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
+  try {
+    await sendWhatsappText(telefono, text)
+    return
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    if (!isWa24hWindowError(msg)) throw e
+    const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
+    const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
+    if (lpTpl) {
+      const summary = text.length > 900 ? `${text.slice(0, 897)}...` : text
+      await sendWhatsappTemplate({
+        toRaw: telefono,
+        templateName: lpTpl,
+        languageCode: lang,
+        bodyParams: [summary],
+      })
+      return
+    }
+    const { templateName, languageCode, hasNameParam } = leadWelcomeTemplateConfig({
+      bambini: false,
+    })
+    await sendWhatsappTemplate({
+      toRaw: telefono,
+      templateName,
+      languageCode,
+      ...(hasNameParam ? { bodyParams: [nome.trim() || "Ciao"] } : {}),
+    })
+    try {
+      await sendWhatsappText(telefono, text)
+    } catch {
+      /* template consegnato; il testo libero resta bloccato senza finestra 24h */
+    }
   }
-  const text =
+}
+
+function clienteWaText(r: LpRichiesta): string {
+  const nome = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
+  return (
+    `Ciao ${nome},\n\n` +
+    `abbiamo ricevuto la tua richiesta di lezione privata in acqua.\n` +
+    `Ti contatteremo per fissare la lezione di prova.\n` +
+    `Dopo la prova potrai scegliere l'abbonamento da 5 o 10 lezioni.\n\n` +
+    `FitCenter`
+  )
+}
+
+async function notifyRichiestaWa(r: LpRichiesta, by: string) {
+  const errors: string[] = []
+  const destinations: string[] = []
+  let sent = 0
+  if (!isWhatsappSendConfigured()) {
+    return { sent: 0, errors, destinations, skipped: "WhatsApp non configurato sul server" }
+  }
+
+  const push = async (labelNome: string, telefono: string, text: string, templateNome: string) => {
+    const label = waLabel(labelNome, telefono)
+    try {
+      await sendLpWaToNumber(telefono, text, templateNome)
+      sent += 1
+      destinations.push(label)
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      const hint = isWa24hWindowError(msg)
+        ? " (fuori finestra 24h: il numero deve aver scritto al WhatsApp FitCenter, oppure serve un template Meta WHATSAPP_LP_TEMPLATE)"
+        : ""
+      errors.push(`${label}: ${msg}${hint}`)
+    }
+  }
+
+  if (String(r.telefono ?? "").trim()) {
+    await push(`richiedente ${r.clienteNome}`, r.telefono, clienteWaText(r), r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome)
+  } else {
+    errors.push("Richiedente: telefono mancante")
+  }
+
+  const db = readLezioniPrivateDb()
+  const clientNorm = normalizeWaTo(r.telefono)
+  const istrText =
     `Nuova richiesta lezione privata (acqua)\n` +
     `Cliente: ${r.clienteNome}${r.eta ? ` (${r.eta})` : ""}\n` +
     (r.tutore ? `Tutore: ${r.tutore}\n` : "") +
@@ -87,19 +175,23 @@ async function notifyIstruttoriWa(r: LpRichiesta, by: string) {
     `Quando: ${r.quando || "—"}\n` +
     `Pref. istruttore: ${r.prefIstruttore || "indifferente"}\n` +
     (r.note ? `Note: ${r.note}\n` : "") +
-    `Registrata da: ${by}\n\n` +
-    `Per prendere in carico: FitCenter → Lezioni private (scegli vasca e corsia libera). Prima lezione = prova.`
-  const errors: string[] = []
-  let sent = 0
-  for (const i of dest) {
-    try {
-      await sendWhatsappText(i.telefono, text)
-      sent += 1
-    } catch (e) {
-      errors.push(`${i.nome}: ${(e as Error).message}`)
-    }
+    `Compilata da: ${by}\n\n` +
+    `Per prendere in carico: FitCenter → Lezioni private.`
+  for (const i of db.instructors.filter((x) => x.attivo && String(x.telefono ?? "").trim())) {
+    const n = normalizeWaTo(i.telefono)
+    if (n && clientNorm && n === clientNorm) continue
+    await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome.trim().split(/\s+/)[0] || i.nome)
   }
-  return { sent, errors, skipped: undefined as string | undefined }
+
+  const skipped =
+    sent === 0
+      ? errors.length
+        ? errors.join("; ")
+        : "Nessun WhatsApp inviato"
+      : errors.length
+        ? `Inviati ${sent}, errori: ${errors.join("; ")}`
+        : undefined
+  return { sent, errors, destinations, skipped }
 }
 
 export function getLezioniPrivate(req: Request, res: Response) {
@@ -165,7 +257,22 @@ export function deleteLezioniPrivateIstruttore(req: Request, res: Response) {
   if (!canManageRoster(u)) return res.status(403).json({ message: "Solo admin / scuola nuoto" })
   const id = String(req.params.id ?? "")
   const db = readLezioniPrivateDb()
+  if (!db.instructors.some((x) => x.id === id)) return res.status(404).json({ message: "Istruttore non trovato" })
   writeLezioniPrivateDb({ ...db, instructors: db.instructors.filter((x) => x.id !== id) })
+  res.json({ ok: true })
+}
+
+export function deleteLezioniPrivateRichiesta(req: Request, res: Response) {
+  const u = req.user!
+  if (!canDesk(u) && !canManageRoster(u)) return res.status(403).json({ message: "Permessi insufficienti" })
+  const id = String(req.params.id ?? "")
+  const db = readLezioniPrivateDb()
+  if (!db.richieste.some((x) => x.id === id)) return res.status(404).json({ message: "Richiesta non trovata" })
+  writeLezioniPrivateDb({
+    ...db,
+    richieste: db.richieste.filter((x) => x.id !== id),
+    pacchetti: db.pacchetti.filter((p) => p.richiestaId !== id),
+  })
   res.json({ ok: true })
 }
 
@@ -180,15 +287,18 @@ export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
     quando?: string
     prefIstruttore?: string
     note?: string
+    createdBy?: string
   }
   const clienteNome = String(b.clienteNome ?? "").trim()
   const telefono = String(b.telefono ?? "").trim()
+  const createdBy = String(b.createdBy ?? "").trim() || u.nome || u.username
   if (!clienteNome) return res.status(400).json({ message: "Cognome e nome obbligatori" })
   if (!telefono) return res.status(400).json({ message: "Telefono obbligatorio" })
+  if (!createdBy) return res.status(400).json({ message: "Indica chi compila il modulo" })
   const r: LpRichiesta = {
     id: newLpId("rich"),
     createdAt: new Date().toISOString(),
-    createdBy: u.nome || u.username,
+    createdBy,
     clienteNome,
     eta: String(b.eta ?? "").trim() || undefined,
     telefono,
@@ -200,11 +310,10 @@ export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
   }
   const db = readLezioniPrivateDb()
   db.richieste.push(r)
-  const wa = await notifyIstruttoriWa(r, r.createdBy)
+  const wa = await notifyRichiestaWa(r, r.createdBy)
   r.waNotifiedAt = new Date().toISOString()
+  r.waDestinations = wa.destinations
   if (wa.skipped) r.waSkipped = wa.skipped
-  else if (wa.errors.length && !wa.sent) r.waSkipped = wa.errors.join("; ")
-  else if (wa.errors.length) r.waSkipped = `Inviati ${wa.sent}, errori: ${wa.errors.join("; ")}`
   writeLezioniPrivateDb(db)
   res.json({ ok: true, richiesta: r, wa })
 }
@@ -269,6 +378,82 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
   r.status = "assegnata"
   r.istruttoreId = istr.id
   r.istruttoreNome = istr.nome
+  db.pacchetti.push(pac)
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, richiesta: r, pacchetto: pac })
+}
+
+export function postLezioniPrivatePrenota(req: Request, res: Response) {
+  const u = req.user!
+  const b = req.body as {
+    clienteNome?: string
+    telefono?: string
+    istruttoreId?: string
+    giorno?: string
+    ora?: string
+    vasca?: string
+    corsia?: number
+    durataMin?: number
+    eta?: string
+    createdBy?: string
+  }
+  const clienteNome = String(b.clienteNome ?? "").trim()
+  const telefono = String(b.telefono ?? "").trim()
+  const vasca = asVasca(b.vasca)
+  const giorno = String(b.giorno ?? "").trim()
+  const ora = String(b.ora ?? "").trim()
+  const durataMin = Number(b.durataMin) > 0 ? Math.round(Number(b.durataMin)) : 30
+  const corsia = Number(b.corsia)
+  if (!clienteNome) return res.status(400).json({ message: "Cognome e nome obbligatori" })
+  if (!telefono) return res.status(400).json({ message: "Telefono obbligatorio" })
+  if (!vasca) return res.status(400).json({ message: "Vasca obbligatoria (v25 o ludica)" })
+  if (!isYmd(giorno) || !isHm(ora)) return res.status(400).json({ message: "Giorno e ora obbligatori" })
+  if (!Number.isFinite(corsia)) return res.status(400).json({ message: "Corsia obbligatoria" })
+
+  const db = readLezioniPrivateDb()
+  let istr = db.instructors.find((i) => i.id === String(b.istruttoreId ?? "").trim())
+  if (!istr && u.role === "istruttore") {
+    const n = (u.nome || "").trim().toLowerCase()
+    istr = db.instructors.find((i) => i.attivo && i.nome.trim().toLowerCase() === n)
+  }
+  if (!istr) return res.status(400).json({ message: "Seleziona l'istruttore" })
+  const busy = assertSlotLibero(db, giorno, ora, vasca, corsia, durataMin)
+  if (busy) return res.status(409).json({ message: busy })
+
+  const createdBy = String(b.createdBy ?? "").trim() || u.nome || u.username
+  const r: LpRichiesta = {
+    id: newLpId("rich"),
+    createdAt: new Date().toISOString(),
+    createdBy,
+    clienteNome,
+    eta: String(b.eta ?? "").trim() || undefined,
+    telefono,
+    status: "assegnata",
+    istruttoreId: istr.id,
+    istruttoreNome: istr.nome,
+  }
+  const pac: LpPacchetto = {
+    id: newLpId("pck"),
+    richiestaId: r.id,
+    clienteNome,
+    telefono,
+    tipo: "prova",
+    istruttoreId: istr.id,
+    istruttoreNome: istr.nome,
+    createdAt: new Date().toISOString(),
+    lezioni: [
+      {
+        id: newLpId("lez"),
+        giorno,
+        ora,
+        durataMin,
+        vasca,
+        corsia,
+        stato: "prenotata",
+      },
+    ],
+  }
+  db.richieste.push(r)
   db.pacchetti.push(pac)
   writeLezioniPrivateDb(db)
   res.json({ ok: true, richiesta: r, pacchetto: pac })

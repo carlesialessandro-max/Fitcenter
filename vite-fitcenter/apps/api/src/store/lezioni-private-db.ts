@@ -27,6 +27,7 @@ export type LpRichiesta = {
   istruttoreNome?: string
   waNotifiedAt?: string
   waSkipped?: string
+  waDestinations?: string[]
 }
 
 export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente"

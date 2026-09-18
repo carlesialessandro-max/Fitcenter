@@ -20,6 +20,7 @@ export type LpRichiesta = {
   istruttoreNome?: string
   waNotifiedAt?: string
   waSkipped?: string
+  waDestinations?: string[]
 }
 export type LpLezioneFlat = {
   lezioneId: string
@@ -38,6 +39,8 @@ export type LpLezioneFlat = {
   stato: LpLezioneStato
 }
 export type LpRegole = Record<string, { v25: number; ludica: number }>
+
+export type LpSlot = { giorno: string; ora: string; vasca: VascaId; corsia: number }
 
 export const lezioniPrivateApi = {
   getAll: () =>
@@ -63,7 +66,26 @@ export const lezioniPrivateApi = {
     quando?: string
     prefIstruttore?: string
     note?: string
-  }) => api.post<{ ok: boolean; richiesta: LpRichiesta; wa: { sent: number; errors: string[]; skipped?: string } }>("/lezioni-private/richieste", body),
+    createdBy: string
+  }) =>
+    api.post<{
+      ok: boolean
+      richiesta: LpRichiesta
+      wa: { sent: number; errors: string[]; destinations: string[]; skipped?: string }
+    }>("/lezioni-private/richieste", body),
+  deleteRichiesta: (id: string) => api.delete<{ ok: boolean }>(`/lezioni-private/richieste/${encodeURIComponent(id)}`),
+  prenota: (body: {
+    clienteNome: string
+    telefono: string
+    istruttoreId: string
+    giorno: string
+    ora: string
+    vasca: VascaId
+    corsia: number
+    durataMin?: number
+    eta?: string
+    createdBy?: string
+  }) => api.post<{ ok: boolean }>("/lezioni-private/prenota", body),
   prendi: (
     id: string,
     body: { istruttoreId?: string; giorno: string; ora: string; vasca: VascaId; corsia: number; durataMin?: number },

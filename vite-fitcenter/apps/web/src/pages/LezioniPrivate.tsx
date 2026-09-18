@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { lezioniPrivateApi, type LpLezioneFlat, type LpRichiesta, type VascaId } from "@/api/lezioniPrivate"
+import { lezioniPrivateApi, type LpIstruttore, type LpLezioneFlat, type LpRichiesta, type LpSlot, type VascaId } from "@/api/lezioniPrivate"
 import { useAuth } from "@/contexts/AuthContext"
 import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
@@ -42,6 +42,8 @@ export function LezioniPrivate() {
   const [periodo, setPeriodo] = useState<Periodo>("giorno")
   const [prendiId, setPrendiId] = useState<string | null>(null)
   const [packId, setPackId] = useState<string | null>(null)
+  const [bookSlot, setBookSlot] = useState<LpSlot | null>(null)
+  const [detailLezione, setDetailLezione] = useState<LpLezioneFlat | null>(null)
 
   const q = useQuery({
     queryKey: ["lezioni-private"],
@@ -161,7 +163,7 @@ export function LezioniPrivate() {
             )}
           </div>
           <p className="mt-2 text-sm text-zinc-500">
-            Vasca 25 m: 1 corsia · Ludica 18 m: fino a 2 corsie. Le regole per giorno si impostano in Istruttori / regole.
+            Clicca uno slot libero per prenotare. Clicca una lezione per vedere istruttore e nominativo.
           </p>
           {periodo === "mese" ? (
             <MeseGrid byDay={occQ.data?.byDay ?? {}} from={month.from} to={month.to} />
@@ -171,11 +173,37 @@ export function LezioniPrivate() {
               ore={ore}
               regole={occQ.data?.regole ?? q.data?.regole ?? {}}
               booked={booked}
+              onBook={setBookSlot}
+              onOpen={setDetailLezione}
               onCancel={(id, chi) => {
                 void lezioniPrivateApi.patchLezione(id, chi).then(invalidate)
               }}
             />
           )}
+          {bookSlot ? (
+            <BookSlotModal
+              slot={bookSlot}
+              instructors={instructors}
+              userNome={user?.nome ?? ""}
+              onClose={() => setBookSlot(null)}
+              onDone={() => {
+                setBookSlot(null)
+                invalidate()
+              }}
+            />
+          ) : null}
+          {detailLezione ? (
+            <LezioneDetailModal
+              lezione={detailLezione}
+              onClose={() => setDetailLezione(null)}
+              onCancel={(id, chi) => {
+                void lezioniPrivateApi.patchLezione(id, chi).then(() => {
+                  setDetailLezione(null)
+                  invalidate()
+                })
+              }}
+            />
+          ) : null}
         </div>
       ) : null}
 
@@ -217,13 +245,30 @@ function RichiesteTab({
     quando: "",
     prefIstruttore: "",
     note: "",
+    createdBy: userNome,
   })
+  useEffect(() => {
+    setForm((f) => (f.createdBy.trim() ? f : { ...f, createdBy: userNome }))
+  }, [userNome])
   const createM = useMutation({
     mutationFn: () => lezioniPrivateApi.createRichiesta(form),
     onSuccess: () => {
-      setForm({ clienteNome: "", eta: "", telefono: "", tutore: "", quando: "", prefIstruttore: "", note: "" })
+      setForm({
+        clienteNome: "",
+        eta: "",
+        telefono: "",
+        tutore: "",
+        quando: "",
+        prefIstruttore: "",
+        note: "",
+        createdBy: userNome,
+      })
       onDone()
     },
+  })
+  const delM = useMutation({
+    mutationFn: (id: string) => lezioniPrivateApi.deleteRichiesta(id),
+    onSuccess: onDone,
   })
 
   return (
@@ -237,7 +282,21 @@ function RichiesteTab({
           }}
         >
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
+          <p className="mt-1 text-xs text-zinc-500">
+            WhatsApp al richiedente: sarà contattato per la prova, poi abbonamento 5 o 10 lezioni. Copia anche agli
+            altri istruttori (stesso numero del richiedente = un solo messaggio).
+          </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="grid gap-1 text-sm text-zinc-400">
+              Chi compila il modulo *
+              <input
+                required
+                value={form.createdBy}
+                onChange={(e) => setForm((f) => ({ ...f, createdBy: e.target.value }))}
+                placeholder="Nome di chi registra"
+                className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+              />
+            </label>
             {(
               [
                 ["clienteNome", "Cognome e nome *"],
@@ -251,6 +310,7 @@ function RichiesteTab({
               <label key={k} className="grid gap-1 text-sm text-zinc-400">
                 {label}
                 <input
+                  required={k === "clienteNome" || k === "telefono"}
                   value={form[k]}
                   onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
                   className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
@@ -271,14 +331,24 @@ function RichiesteTab({
             disabled={createM.isPending}
             className="mt-3 rounded-lg bg-amber-500/20 px-4 py-2 text-sm font-medium text-amber-200 hover:bg-amber-500/30"
           >
-            {createM.isPending ? "Invio…" : "Registra e avvisa istruttori su WhatsApp"}
+            {createM.isPending ? "Invio…" : "Registra e invia WhatsApp"}
           </button>
           {createM.isError ? <p className="mt-2 text-sm text-red-400">{String((createM.error as Error).message)}</p> : null}
           {createM.isSuccess && createM.data.wa.skipped ? (
             <p className="mt-2 text-sm text-amber-300">{createM.data.wa.skipped}</p>
           ) : null}
-          {createM.isSuccess && !createM.data.wa.skipped ? (
-            <p className="mt-2 text-sm text-emerald-300">WhatsApp inviato a {createM.data.wa.sent} istruttori.</p>
+          {createM.isSuccess && !createM.data.wa.skipped && createM.data.wa.sent > 0 ? (
+            <p className="mt-2 text-sm text-emerald-300">
+              WhatsApp inviato a {createM.data.wa.sent} numeri
+              {createM.data.wa.destinations?.length ? `: ${createM.data.wa.destinations.join(", ")}` : "."}
+            </p>
+          ) : null}
+          {createM.data?.wa.errors?.length ? (
+            <ul className="mt-2 list-disc pl-5 text-sm text-red-400">
+              {createM.data.wa.errors.map((err) => (
+                <li key={err}>{err}</li>
+              ))}
+            </ul>
           ) : null}
         </form>
       ) : null}
@@ -321,16 +391,34 @@ function RichiesteTab({
                 <td className="px-3 py-2 text-zinc-400">{r.note ?? ""}</td>
                 <td className="px-3 py-2 text-amber-200">{r.istruttoreNome ?? r.status}</td>
                 <td className="px-3 py-2">
-                  {r.status === "aperta" ? (
-                    <button type="button" className="text-sm text-[#46A6D9] underline" onClick={() => setPrendiId(r.id)}>
-                      Prendi in carico
-                    </button>
-                  ) : r.status === "assegnata" ? (
-                    <button type="button" className="text-sm text-amber-300 underline" onClick={() => setPackId(r.id)}>
-                      Pacchetto 5/10
-                    </button>
-                  ) : null}
-                  {r.waSkipped ? <div className="mt-1 text-[11px] text-amber-400/80">{r.waSkipped}</div> : null}
+                  <div className="flex flex-col items-start gap-1">
+                    {r.status === "aperta" ? (
+                      <button type="button" className="text-sm text-[#46A6D9] underline" onClick={() => setPrendiId(r.id)}>
+                        Prendi in carico
+                      </button>
+                    ) : r.status === "assegnata" ? (
+                      <button type="button" className="text-sm text-amber-300 underline" onClick={() => setPackId(r.id)}>
+                        Pacchetto 5/10
+                      </button>
+                    ) : null}
+                    {canDesk ? (
+                      <button
+                        type="button"
+                        className="text-sm text-red-400 underline"
+                        disabled={delM.isPending}
+                        onClick={() => {
+                          if (!window.confirm(`Eliminare la richiesta di ${r.clienteNome}?`)) return
+                          delM.mutate(r.id)
+                        }}
+                      >
+                        Elimina
+                      </button>
+                    ) : null}
+                    {r.waDestinations?.length ? (
+                      <div className="text-[11px] text-zinc-500">WA: {r.waDestinations.join(", ")}</div>
+                    ) : null}
+                    {r.waSkipped ? <div className="text-[11px] text-amber-400/80">{r.waSkipped}</div> : null}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -509,17 +597,165 @@ function PackModal({
   )
 }
 
+function BookSlotModal({
+  slot,
+  instructors,
+  userNome,
+  onClose,
+  onDone,
+}: {
+  slot: LpSlot
+  instructors: LpIstruttore[]
+  userNome: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const match = instructors.find((i) => i.attivo && i.nome.trim().toLowerCase() === userNome.trim().toLowerCase())
+  const [istruttoreId, setIstruttoreId] = useState(match?.id ?? instructors.find((i) => i.attivo)?.id ?? "")
+  const [clienteNome, setClienteNome] = useState("")
+  const [telefono, setTelefono] = useState("")
+  const [eta, setEta] = useState("")
+  const m = useMutation({
+    mutationFn: () =>
+      lezioniPrivateApi.prenota({
+        clienteNome,
+        telefono,
+        istruttoreId,
+        giorno: slot.giorno,
+        ora: slot.ora,
+        vasca: slot.vasca,
+        corsia: slot.corsia,
+        durataMin: 30,
+        eta,
+        createdBy: userNome,
+      }),
+    onSuccess: onDone,
+  })
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+        <h3 className="font-semibold text-zinc-100">Prenota orario</h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          {fmtDateIt(slot.giorno)} {slot.ora} · {VASCA_LABEL[slot.vasca]} · corsia {slot.corsia}
+        </p>
+        <label className="mt-3 grid gap-1 text-sm text-zinc-400">
+          Nominativo *
+          <input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+        </label>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label className="grid gap-1 text-sm text-zinc-400">
+            Telefono *
+            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          </label>
+          <label className="grid gap-1 text-sm text-zinc-400">
+            Età
+            <input value={eta} onChange={(e) => setEta(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          </label>
+        </div>
+        <label className="mt-2 grid gap-1 text-sm text-zinc-400">
+          Istruttore
+          <select value={istruttoreId} onChange={(e) => setIstruttoreId(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
+            <option value="">—</option>
+            {instructors.filter((i) => i.attivo).map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nome}
+              </option>
+            ))}
+          </select>
+        </label>
+        {m.isError ? <p className="mt-2 text-sm text-red-400">{String((m.error as Error).message)}</p> : null}
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-zinc-400">
+            Annulla
+          </button>
+          <button
+            type="button"
+            disabled={m.isPending || !clienteNome.trim() || !telefono.trim() || !istruttoreId}
+            onClick={() => m.mutate()}
+            className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200"
+          >
+            Prenota prova
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LezioneDetailModal({
+  lezione,
+  onClose,
+  onCancel,
+}: {
+  lezione: LpLezioneFlat
+  onClose: () => void
+  onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+        <h3 className="font-semibold text-zinc-100">Lezione in vasca</h3>
+        <dl className="mt-3 grid gap-2 text-sm">
+          <div>
+            <dt className="text-zinc-500">Nominativo</dt>
+            <dd className="text-zinc-100">{lezione.clienteNome}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">Istruttore</dt>
+            <dd className="text-amber-200">{lezione.istruttoreNome}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">Quando</dt>
+            <dd className="text-zinc-200">
+              {fmtDateIt(lezione.giorno)} {lezione.ora} · {lezione.durataMin} min
+            </dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">Vasca</dt>
+            <dd className="text-zinc-200">
+              {VASCA_LABEL[lezione.vasca]} · corsia {lezione.corsia}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">Tipo</dt>
+            <dd className="text-zinc-200">{lezione.tipo === "prova" ? "Prova" : `Pacchetto ${lezione.tipo}`}</dd>
+          </div>
+          <div>
+            <dt className="text-zinc-500">Telefono</dt>
+            <dd className="text-zinc-200">{lezione.telefono}</dd>
+          </div>
+        </dl>
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button type="button" onClick={() => onCancel(lezione.lezioneId, "annullata_istruttore")} className="rounded-lg px-3 py-2 text-sm text-red-300">
+            Annulla istruttore
+          </button>
+          <button type="button" onClick={() => onCancel(lezione.lezioneId, "annullata_cliente")} className="rounded-lg px-3 py-2 text-sm text-red-300">
+            Annulla cliente
+          </button>
+          <button type="button" onClick={onClose} className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200">
+            Chiudi
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function DayWeekGrid({
   days,
   ore,
   regole,
   booked,
+  onBook,
+  onOpen,
   onCancel,
 }: {
   days: string[]
   ore: string[]
   regole: Record<string, { v25: number; ludica: number }>
   booked: LpLezioneFlat[]
+  onBook: (slot: LpSlot) => void
+  onOpen: (lezione: LpLezioneFlat) => void
   onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
 }) {
   function cap(giorno: string, vasca: VascaId): number {
@@ -555,9 +791,42 @@ function DayWeekGrid({
               <td className="whitespace-nowrap px-2 py-1 text-left text-zinc-400">{ora}</td>
               {days.flatMap((d) => {
                 const cells: ReactNode[] = []
-                if (cap(d, "v25") >= 1) cells.push(<LaneCell key={`${d}-25`} hit={cell(d, ora, "v25", 1)} onCancel={onCancel} />)
-                if (cap(d, "ludica") >= 1) cells.push(<LaneCell key={`${d}-l1`} hit={cell(d, ora, "ludica", 1)} onCancel={onCancel} />)
-                if (cap(d, "ludica") >= 2) cells.push(<LaneCell key={`${d}-l2`} hit={cell(d, ora, "ludica", 2)} onCancel={onCancel} />)
+                if (cap(d, "v25") >= 1) {
+                  cells.push(
+                    <LaneCell
+                      key={`${d}-25`}
+                      hit={cell(d, ora, "v25", 1)}
+                      slot={{ giorno: d, ora, vasca: "v25", corsia: 1 }}
+                      onBook={onBook}
+                      onOpen={onOpen}
+                      onCancel={onCancel}
+                    />,
+                  )
+                }
+                if (cap(d, "ludica") >= 1) {
+                  cells.push(
+                    <LaneCell
+                      key={`${d}-l1`}
+                      hit={cell(d, ora, "ludica", 1)}
+                      slot={{ giorno: d, ora, vasca: "ludica", corsia: 1 }}
+                      onBook={onBook}
+                      onOpen={onOpen}
+                      onCancel={onCancel}
+                    />,
+                  )
+                }
+                if (cap(d, "ludica") >= 2) {
+                  cells.push(
+                    <LaneCell
+                      key={`${d}-l2`}
+                      hit={cell(d, ora, "ludica", 2)}
+                      slot={{ giorno: d, ora, vasca: "ludica", corsia: 2 }}
+                      onBook={onBook}
+                      onOpen={onOpen}
+                      onCancel={onCancel}
+                    />,
+                  )
+                }
                 while (cells.length < 3) cells.push(<td key={`${d}-e${cells.length}`} className="bg-zinc-950/40" />)
                 return cells
               })}
@@ -587,27 +856,55 @@ function addMin(ora: string, min: number): string {
 
 function LaneCell({
   hit,
+  slot,
+  onBook,
+  onOpen,
   onCancel,
 }: {
   hit?: LpLezioneFlat
+  slot: LpSlot
+  onBook: (slot: LpSlot) => void
+  onOpen: (lezione: LpLezioneFlat) => void
   onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
 }) {
-  if (!hit) return <td className="px-1 py-1 text-emerald-700/80">libero</td>
+  if (!hit) {
+    return (
+      <td className="px-1 py-1">
+        <button type="button" onClick={() => onBook(slot)} className="w-full rounded px-1 py-1 text-emerald-600/90 hover:bg-emerald-500/10">
+          libero
+        </button>
+      </td>
+    )
+  }
   return (
     <td className="px-1 py-1">
-      <div className="rounded bg-amber-500/15 px-1 py-0.5 text-[11px] text-amber-100">
-        {hit.clienteNome}
+      <button type="button" onClick={() => onOpen(hit)} className="w-full rounded bg-amber-500/15 px-1 py-0.5 text-left text-[11px] text-amber-100 hover:bg-amber-500/25">
+        <div className="font-medium">{hit.clienteNome}</div>
         <div className="text-[10px] text-zinc-400">
           {hit.istruttoreNome} · {hit.tipo}
         </div>
-        <div className="mt-0.5 flex justify-center gap-1">
-          <button type="button" className="text-[10px] text-red-300" onClick={() => onCancel(hit.lezioneId, "annullata_istruttore")}>
-            ann. istr.
-          </button>
-          <button type="button" className="text-[10px] text-red-300" onClick={() => onCancel(hit.lezioneId, "annullata_cliente")}>
-            ann. cliente
-          </button>
-        </div>
+      </button>
+      <div className="mt-0.5 flex justify-center gap-1">
+        <button
+          type="button"
+          className="text-[10px] text-red-300"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCancel(hit.lezioneId, "annullata_istruttore")
+          }}
+        >
+          ann. istr.
+        </button>
+        <button
+          type="button"
+          className="text-[10px] text-red-300"
+          onClick={(e) => {
+            e.stopPropagation()
+            onCancel(hit.lezioneId, "annullata_cliente")
+          }}
+        >
+          ann. cliente
+        </button>
       </div>
     </td>
   )
@@ -693,15 +990,28 @@ function IstruttoriTab({
             <li key={i.id} className="flex items-center justify-between text-sm text-zinc-200">
               <span>
                 {i.nome} <span className="text-zinc-500">{i.telefono || "senza tel."}</span>
+                {!i.attivo ? <span className="ml-2 text-xs text-zinc-600">disattivo</span> : null}
               </span>
               {canRoster ? (
-                <button
-                  type="button"
-                  className="text-xs text-zinc-500 underline"
-                  onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { attivo: !i.attivo }).then(onDone)}
-                >
-                  {i.attivo ? "disattiva" : "attiva"}
-                </button>
+                <span className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs text-zinc-500 underline"
+                    onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { attivo: !i.attivo }).then(onDone)}
+                  >
+                    {i.attivo ? "disattiva" : "attiva"}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-red-400 underline"
+                    onClick={() => {
+                      if (!window.confirm(`Eliminare ${i.nome} dall'elenco istruttori?`)) return
+                      void lezioniPrivateApi.deleteIstruttore(i.id).then(onDone)
+                    }}
+                  >
+                    Elimina
+                  </button>
+                </span>
               ) : null}
             </li>
           ))}

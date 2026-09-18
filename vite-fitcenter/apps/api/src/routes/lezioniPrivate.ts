@@ -2,12 +2,14 @@ import { Router } from "express"
 import { requireAuth, requireLezioniPrivate } from "../middleware/auth.js"
 import {
   deleteLezioniPrivateIstruttore,
+  deleteLezioniPrivateRichiesta,
   getLezioniPrivate,
   getLezioniPrivateOccupazione,
   patchLezioniPrivateIstruttore,
   patchLezioniPrivateLezione,
   postLezioniPrivateIstruttore,
   postLezioniPrivatePacchetto,
+  postLezioniPrivatePrenota,
   postLezioniPrivatePrendi,
   postLezioniPrivateRichiesta,
   putLezioniPrivateRegole,
@@ -23,6 +25,8 @@ lezioniPrivateRouter.post("/istruttori", postLezioniPrivateIstruttore)
 lezioniPrivateRouter.patch("/istruttori/:id", patchLezioniPrivateIstruttore)
 lezioniPrivateRouter.delete("/istruttori/:id", deleteLezioniPrivateIstruttore)
 lezioniPrivateRouter.post("/richieste", postLezioniPrivateRichiesta)
+lezioniPrivateRouter.delete("/richieste/:id", deleteLezioniPrivateRichiesta)
 lezioniPrivateRouter.post("/richieste/:id/prendi", postLezioniPrivatePrendi)
+lezioniPrivateRouter.post("/prenota", postLezioniPrivatePrenota)
 lezioniPrivateRouter.post("/pacchetti", postLezioniPrivatePacchetto)
 lezioniPrivateRouter.patch("/lezioni/:id", patchLezioniPrivateLezione)
