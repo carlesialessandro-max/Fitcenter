@@ -20,7 +20,7 @@ const navOperatore: NavItem[] = [
   { to: "/andamento-vendite", label: "Andamento Vendite" },
   { to: "/vendite-cross", label: "Cross" },
   { to: "/piscina", label: "Mappa Piscina" },
-  { to: "/scuola-nuoto/lezioni-private", label: "Lezioni private" },
+  { to: "/lezioni-private", label: "Lezioni private" },
 ] as const
 
 const navCorsi: NavItem[] = [
@@ -48,7 +48,7 @@ const navIstruttore: NavItem[] = [
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }] },
-  { to: "/scuola-nuoto/lezioni-private", label: "Lezioni private" },
+  { to: "/lezioni-private", label: "Lezioni private" },
 ] as const
 const navCampus: NavItem[] = [
   {
@@ -75,7 +75,7 @@ const navFirme: NavItem[] = [
   },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/piscina", label: "Mappa Piscina" },
-  { to: "/scuola-nuoto/lezioni-private", label: "Lezioni private" },
+  { to: "/lezioni-private", label: "Lezioni private" },
 ] as const
 const navScuolaNuoto: NavItem[] = [
   {
@@ -91,8 +91,9 @@ const navScuolaNuoto: NavItem[] = [
   {
     to: "/scuola-nuoto",
     label: "Scuola Nuoto",
-    children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }, { to: "/scuola-nuoto/lezioni-private", label: "Lezioni private" }],
+    children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
   },
+  { to: "/lezioni-private", label: "Lezioni private" },
 ] as const
 const navBagnini: NavItem[] = [
   {
@@ -155,6 +156,7 @@ const navAdmin: NavItem[] = [
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
+  { to: "/lezioni-private", label: "Lezioni private" },
   {
     to: "__admin_group__",
     label: "Altri",
@@ -169,7 +171,7 @@ const navAdmin: NavItem[] = [
       {
         to: "/scuola-nuoto",
         label: "Scuola nuoto",
-        children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }, { to: "/scuola-nuoto/lezioni-private", label: "Lezioni private" }],
+        children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
       },
       { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto (S.N. bambini)" },
       { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
