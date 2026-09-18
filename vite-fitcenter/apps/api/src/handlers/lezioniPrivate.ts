@@ -3,7 +3,6 @@ import type { User } from "../store/auth.js"
 import {
   formatWaDisplay,
   isWhatsappSendConfigured,
-  leadWelcomeTemplateConfig,
   normalizeWaTo,
   sendWhatsappTemplate,
   sendWhatsappText,
@@ -84,7 +83,7 @@ function compactWaParam(text: string, fallback: string): string {
     .replace(/[\r\n\t]+/g, " ")
     .replace(/ {3,}/g, "  ")
     .trim()
-  return (s || fallback).slice(0, 500)
+  return (s || fallback).slice(0, 200)
 }
 
 function isWa24hWindowError(msg: string): boolean {
@@ -104,63 +103,43 @@ function waLabel(nome: string, telefono: string): string {
   return `${nome} (${formatWaDisplay(normalizeWaTo(telefono) ?? telefono) || telefono})`
 }
 
-/** Template Meta (funziona senza chat aperta) + testo libero se la finestra 24h è aperta. */
+/** Solo testo breve della richiesta. Mai il template lead di benvenuto H2Sport. */
 async function sendLpWaToNumber(telefono: string, text: string, nome: string): Promise<void> {
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
-  const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
-  const cfg = leadWelcomeTemplateConfig({ bambini: false })
-  const templateName = lpTpl || cfg.templateName
-  const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? cfg.languageCode ?? "it").trim() || "it"
-  const param = compactWaParam(text, nome.trim() || "Ciao")
-  const nameParam = nome.trim().split(/\s+/)[0] || "Ciao"
-
-  let delivered = false
-  let lastErr: Error | null = null
-  for (const bodyParams of [[param], [nameParam]] as string[][]) {
-    try {
-      await sendWhatsappTemplate({
-        toRaw: telefono,
-        templateName,
-        languageCode: lang,
-        bodyParams,
-      })
-      delivered = true
-      break
-    } catch (e) {
-      lastErr = e as Error
-    }
-  }
   try {
     await sendWhatsappText(telefono, text)
-    delivered = true
+    return
   } catch (e) {
-    if (!delivered) throw lastErr ?? (e as Error)
+    const msg = (e as Error).message || String(e)
+    const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
+    if (!lpTpl || !isWa24hWindowError(msg)) throw e
+    const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
+    await sendWhatsappTemplate({
+      toRaw: telefono,
+      templateName: lpTpl,
+      languageCode: lang,
+      bodyParams: [compactWaParam(text, nome.trim() || "Ciao")],
+    })
   }
 }
 
 function clienteWaText(r: LpRichiesta): string {
   const nome = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
-  return (
-    `Ciao ${nome},\n\n` +
-    `abbiamo ricevuto la tua richiesta di lezione privata in acqua.\n` +
-    `Ti contatteremo per fissare la lezione di prova.\n` +
-    `Dopo la prova potrai scegliere l'abbonamento da 5 o 10 lezioni.\n\n` +
-    `FitCenter`
-  )
+  return `Ciao ${nome}, richiesta lezione privata ricevuta. Ti contattiamo per la prova; poi puoi fare 5 o 10 lezioni. FitCenter`
 }
 
 function istruttoriWaText(r: LpRichiesta, by: string): string {
-  return (
-    `Nuova richiesta lezione privata (acqua)\n` +
-    `Cliente: ${r.clienteNome}${r.eta ? ` (${r.eta})` : ""}\n` +
-    (r.tutore ? `Tutore: ${r.tutore}\n` : "") +
-    `Tel: ${r.telefono}\n` +
-    `Quando: ${r.quando || "—"}\n` +
-    `Pref. istruttore: ${r.prefIstruttore || "indifferente"}\n` +
-    (r.note ? `Note: ${r.note}\n` : "") +
-    `Compilata da: ${by}\n\n` +
-    `Apri FitCenter → Lezioni private per prendere in carico (prova, poi 5 o 10).`
-  )
+  const bits = [
+    r.clienteNome.trim(),
+    r.eta ? `${r.eta} anni` : "",
+    r.tutore?.trim() ? `tutore ${r.tutore.trim()}` : "",
+    r.telefono.trim(),
+    r.quando?.trim() || "",
+    r.prefIstruttore?.trim() ? `pref. ${r.prefIstruttore.trim()}` : "",
+    r.note?.trim() ? r.note.trim().slice(0, 40) : "",
+    by.trim() ? `da ${by.trim()}` : "",
+  ].filter(Boolean)
+  return `Lezione privata: ${bits.join(" · ")}`
 }
 
 async function notifyRichiestaWa(r: LpRichiesta, by: string) {
