@@ -74,6 +74,11 @@ export const lezioniPrivateApi = {
       wa: { sent: number; errors: string[]; destinations: string[]; skipped?: string }
     }>("/lezioni-private/richieste", body),
   deleteRichiesta: (id: string) => api.delete<{ ok: boolean }>(`/lezioni-private/richieste/${encodeURIComponent(id)}`),
+  riavvisa: (id: string) =>
+    api.post<{
+      ok: boolean
+      wa: { sent: number; errors: string[]; destinations: string[]; skipped?: string }
+    }>(`/lezioni-private/richieste/${encodeURIComponent(id)}/riavvisa`, {}),
   prenota: (body: {
     clienteNome: string
     telefono: string

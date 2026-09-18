@@ -79,49 +79,62 @@ function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
   return out
 }
 
+function compactWaParam(text: string, fallback: string): string {
+  const s = String(text ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/ {3,}/g, "  ")
+    .trim()
+  return (s || fallback).slice(0, 500)
+}
+
 function isWa24hWindowError(msg: string): boolean {
   const s = msg.toLowerCase()
-  return s.includes("131047") || s.includes("24 hour") || s.includes("24-hour") || s.includes("re-engage")
+  return (
+    s.includes("131047") ||
+    s.includes("131051") ||
+    s.includes("24 hour") ||
+    s.includes("24-hour") ||
+    s.includes("re-engage") ||
+    s.includes("outside the allowed") ||
+    s.includes("not in allowed")
+  )
 }
 
 function waLabel(nome: string, telefono: string): string {
   return `${nome} (${formatWaDisplay(normalizeWaTo(telefono) ?? telefono) || telefono})`
 }
 
+/** Template Meta (funziona senza chat aperta) + testo libero se la finestra 24h è aperta. */
 async function sendLpWaToNumber(telefono: string, text: string, nome: string): Promise<void> {
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
-  try {
-    await sendWhatsappText(telefono, text)
-    return
-  } catch (e) {
-    const msg = (e as Error).message || String(e)
-    if (!isWa24hWindowError(msg)) throw e
-    const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
-    const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
-    if (lpTpl) {
-      const summary = text.length > 900 ? `${text.slice(0, 897)}...` : text
+  const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
+  const cfg = leadWelcomeTemplateConfig({ bambini: false })
+  const templateName = lpTpl || cfg.templateName
+  const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? cfg.languageCode ?? "it").trim() || "it"
+  const param = compactWaParam(text, nome.trim() || "Ciao")
+  const nameParam = nome.trim().split(/\s+/)[0] || "Ciao"
+
+  let delivered = false
+  let lastErr: Error | null = null
+  for (const bodyParams of [[param], [nameParam]] as string[][]) {
+    try {
       await sendWhatsappTemplate({
         toRaw: telefono,
-        templateName: lpTpl,
+        templateName,
         languageCode: lang,
-        bodyParams: [summary],
+        bodyParams,
       })
-      return
+      delivered = true
+      break
+    } catch (e) {
+      lastErr = e as Error
     }
-    const { templateName, languageCode, hasNameParam } = leadWelcomeTemplateConfig({
-      bambini: false,
-    })
-    await sendWhatsappTemplate({
-      toRaw: telefono,
-      templateName,
-      languageCode,
-      ...(hasNameParam ? { bodyParams: [nome.trim() || "Ciao"] } : {}),
-    })
-    try {
-      await sendWhatsappText(telefono, text)
-    } catch {
-      /* template consegnato; il testo libero resta bloccato senza finestra 24h */
-    }
+  }
+  try {
+    await sendWhatsappText(telefono, text)
+    delivered = true
+  } catch (e) {
+    if (!delivered) throw lastErr ?? (e as Error)
   }
 }
 
@@ -133,6 +146,20 @@ function clienteWaText(r: LpRichiesta): string {
     `Ti contatteremo per fissare la lezione di prova.\n` +
     `Dopo la prova potrai scegliere l'abbonamento da 5 o 10 lezioni.\n\n` +
     `FitCenter`
+  )
+}
+
+function istruttoriWaText(r: LpRichiesta, by: string): string {
+  return (
+    `Nuova richiesta lezione privata (acqua)\n` +
+    `Cliente: ${r.clienteNome}${r.eta ? ` (${r.eta})` : ""}\n` +
+    (r.tutore ? `Tutore: ${r.tutore}\n` : "") +
+    `Tel: ${r.telefono}\n` +
+    `Quando: ${r.quando || "—"}\n` +
+    `Pref. istruttore: ${r.prefIstruttore || "indifferente"}\n` +
+    (r.note ? `Note: ${r.note}\n` : "") +
+    `Compilata da: ${by}\n\n` +
+    `Apri FitCenter → Lezioni private per prendere in carico (prova, poi 5 o 10).`
   )
 }
 
@@ -153,34 +180,26 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     } catch (e) {
       const msg = (e as Error).message || String(e)
       const hint = isWa24hWindowError(msg)
-        ? " (fuori finestra 24h: il numero deve aver scritto al WhatsApp FitCenter, oppure serve un template Meta WHATSAPP_LP_TEMPLATE)"
+        ? " (WhatsApp ha rifiutato il testo libero: controlla il template Meta o che il numero sia su WhatsApp)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }
   }
 
-  if (String(r.telefono ?? "").trim()) {
-    await push(`richiedente ${r.clienteNome}`, r.telefono, clienteWaText(r), r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome)
-  } else {
-    errors.push("Richiedente: telefono mancante")
+  const db = readLezioniPrivateDb()
+  const istrText = istruttoriWaText(r, by)
+  const istruttori = db.instructors.filter((x) => x.attivo && String(x.telefono ?? "").trim())
+  if (!istruttori.length) {
+    errors.push("Nessun istruttore attivo con cellulare in elenco")
+  }
+  for (const i of istruttori) {
+    await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome)
   }
 
-  const db = readLezioniPrivateDb()
   const clientNorm = normalizeWaTo(r.telefono)
-  const istrText =
-    `Nuova richiesta lezione privata (acqua)\n` +
-    `Cliente: ${r.clienteNome}${r.eta ? ` (${r.eta})` : ""}\n` +
-    (r.tutore ? `Tutore: ${r.tutore}\n` : "") +
-    `Tel: ${r.telefono}\n` +
-    `Quando: ${r.quando || "—"}\n` +
-    `Pref. istruttore: ${r.prefIstruttore || "indifferente"}\n` +
-    (r.note ? `Note: ${r.note}\n` : "") +
-    `Compilata da: ${by}\n\n` +
-    `Per prendere in carico: FitCenter → Lezioni private.`
-  for (const i of db.instructors.filter((x) => x.attivo && String(x.telefono ?? "").trim())) {
-    const n = normalizeWaTo(i.telefono)
-    if (n && clientNorm && n === clientNorm) continue
-    await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome.trim().split(/\s+/)[0] || i.nome)
+  const sameAsInstructor = istruttori.some((i) => normalizeWaTo(i.telefono) === clientNorm)
+  if (String(r.telefono ?? "").trim() && !sameAsInstructor) {
+    await push(`richiedente ${r.clienteNome}`, r.telefono, clienteWaText(r), r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome)
   }
 
   const skipped =
@@ -231,6 +250,10 @@ export function postLezioniPrivateIstruttore(req: Request, res: Response) {
   const nome = String((req.body as { nome?: string })?.nome ?? "").trim()
   const telefono = String((req.body as { telefono?: string })?.telefono ?? "").trim()
   if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
+  if (!telefono) return res.status(400).json({ message: "Cellulare obbligatorio per WhatsApp" })
+  if (!normalizeWaTo(telefono)) {
+    return res.status(400).json({ message: "Cellulare non valido (es. 3331234567)" })
+  }
   const db = readLezioniPrivateDb()
   const row = { id: newLpId("ins"), nome, telefono, attivo: true }
   writeLezioniPrivateDb({ ...db, instructors: [...db.instructors, row] })
@@ -314,6 +337,21 @@ export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
   r.waNotifiedAt = new Date().toISOString()
   r.waDestinations = wa.destinations
   if (wa.skipped) r.waSkipped = wa.skipped
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, richiesta: r, wa })
+}
+
+export async function postLezioniPrivateRiavvisa(req: Request, res: Response) {
+  const u = req.user!
+  if (!canDesk(u) && !canManageRoster(u)) return res.status(403).json({ message: "Permessi insufficienti" })
+  const id = String(req.params.id ?? "")
+  const db = readLezioniPrivateDb()
+  const r = db.richieste.find((x) => x.id === id)
+  if (!r) return res.status(404).json({ message: "Richiesta non trovata" })
+  const wa = await notifyRichiestaWa(r, r.createdBy || u.nome || u.username)
+  r.waNotifiedAt = new Date().toISOString()
+  r.waDestinations = wa.destinations
+  r.waSkipped = wa.skipped
   writeLezioniPrivateDb(db)
   res.json({ ok: true, richiesta: r, wa })
 }

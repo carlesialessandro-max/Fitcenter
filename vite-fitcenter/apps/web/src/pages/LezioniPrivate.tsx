@@ -270,6 +270,10 @@ function RichiesteTab({
     mutationFn: (id: string) => lezioniPrivateApi.deleteRichiesta(id),
     onSuccess: onDone,
   })
+  const waM = useMutation({
+    mutationFn: (id: string) => lezioniPrivateApi.riavvisa(id),
+    onSuccess: onDone,
+  })
 
   return (
     <div className="mt-5 grid gap-6">
@@ -283,8 +287,8 @@ function RichiesteTab({
         >
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            WhatsApp al richiedente: sarà contattato per la prova, poi abbonamento 5 o 10 lezioni. Copia anche agli
-            altri istruttori (stesso numero del richiedente = un solo messaggio).
+            WhatsApp parte a tutti gli istruttori attivi in elenco (ora ci sei tu). Se il richiedente ha un altro numero,
+            riceve anche lui l’avviso sulla prova e sul pacchetto 5/10.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="grid gap-1 text-sm text-zinc-400">
@@ -331,7 +335,7 @@ function RichiesteTab({
             disabled={createM.isPending}
             className="mt-3 rounded-lg bg-amber-500/20 px-4 py-2 text-sm font-medium text-amber-200 hover:bg-amber-500/30"
           >
-            {createM.isPending ? "Invio…" : "Registra e invia WhatsApp"}
+            {createM.isPending ? "Invio…" : "Registra e avvisa gli istruttori su WhatsApp"}
           </button>
           {createM.isError ? <p className="mt-2 text-sm text-red-400">{String((createM.error as Error).message)}</p> : null}
           {createM.isSuccess && createM.data.wa.skipped ? (
@@ -351,6 +355,22 @@ function RichiesteTab({
             </ul>
           ) : null}
         </form>
+      ) : null}
+
+      {waM.isError ? <p className="text-sm text-red-400">{String((waM.error as Error).message)}</p> : null}
+      {waM.isSuccess && waM.data.wa.skipped ? <p className="text-sm text-amber-300">{waM.data.wa.skipped}</p> : null}
+      {waM.isSuccess && !waM.data.wa.skipped ? (
+        <p className="text-sm text-emerald-300">
+          WhatsApp reinviato a {waM.data.wa.sent} numeri
+          {waM.data.wa.destinations?.length ? `: ${waM.data.wa.destinations.join(", ")}` : "."}
+        </p>
+      ) : null}
+      {waM.data?.wa.errors?.length ? (
+        <ul className="list-disc pl-5 text-sm text-red-400">
+          {waM.data.wa.errors.map((err) => (
+            <li key={err}>{err}</li>
+          ))}
+        </ul>
       ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
@@ -402,17 +422,27 @@ function RichiesteTab({
                       </button>
                     ) : null}
                     {canDesk ? (
-                      <button
-                        type="button"
-                        className="text-sm text-red-400 underline"
-                        disabled={delM.isPending}
-                        onClick={() => {
-                          if (!window.confirm(`Eliminare la richiesta di ${r.clienteNome}?`)) return
-                          delM.mutate(r.id)
-                        }}
-                      >
-                        Elimina
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="text-sm text-[#46A6D9] underline"
+                          disabled={waM.isPending}
+                          onClick={() => waM.mutate(r.id)}
+                        >
+                          Reinvia WhatsApp istruttori
+                        </button>
+                        <button
+                          type="button"
+                          className="text-sm text-red-400 underline"
+                          disabled={delM.isPending}
+                          onClick={() => {
+                            if (!window.confirm(`Eliminare la richiesta di ${r.clienteNome}?`)) return
+                            delM.mutate(r.id)
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </>
                     ) : null}
                     {r.waDestinations?.length ? (
                       <div className="text-[11px] text-zinc-500">WA: {r.waDestinations.join(", ")}</div>
@@ -974,7 +1004,9 @@ function IstruttoriTab({
     <div className="mt-5 grid gap-6 lg:grid-cols-2">
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Istruttori (WhatsApp)</h2>
-        <p className="mt-1 text-sm text-zinc-500">Passami l’elenco: intanto puoi inserirli qui. Senza numeri l’avviso non parte.</p>
+        <p className="mt-1 text-sm text-zinc-500">
+          Ogni nuova richiesta arriva su WhatsApp a questi cellulari. Serve il numero completo (es. 3331234567).
+        </p>
         {canRoster ? (
           <div className="mt-3 flex flex-wrap gap-2">
             <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome" className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
