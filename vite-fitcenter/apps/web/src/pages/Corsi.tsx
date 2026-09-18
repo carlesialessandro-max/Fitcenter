@@ -116,14 +116,12 @@ function normalizeCorsoText(s: string): string {
     .trim()
 }
 
-/** Solo fuori da FITNESS/H2O (tesseramenti, appuntamenti, scuola nuoto, slot giorno+ora). I corsi attivi restano. */
+/** Solo fuori da FITNESS/H2O (tesseramenti, appuntamenti, scuola nuoto). I corsi attivi restano anche a 0 iscritti. */
 function isCorsoTitoloNonAttivo(servizio: string): boolean {
   const t = normalizeCorsoText(servizio)
   if (!t) return false
   if (/\bUISP\b/.test(t) || /\bAPPUNTAMENTI?\b/.test(t)) return true
   if (/\bESORDIENTI\b/.test(t)) return true
-  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s*\d/.test(t)) return true
-  if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
   return false
 }
 

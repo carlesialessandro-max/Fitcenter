@@ -5563,10 +5563,29 @@ function toIsoTimeHHmm(val: unknown): string | undefined {
 }
 
 function toIsoDay(val: unknown): string | undefined {
-  if (val == null) return undefined
-  const d = val instanceof Date ? val : new Date(val as any)
+  if (val == null || val === "") return undefined
+  if (val instanceof Date) {
+    if (Number.isNaN(val.getTime())) return undefined
+    const y = val.getFullYear()
+    const m = String(val.getMonth() + 1).padStart(2, "0")
+    const d = String(val.getDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+  }
+  const s = String(val).trim()
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  const it = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s)
+  if (it) {
+    const dd = String(Number(it[1])).padStart(2, "0")
+    const mm = String(Number(it[2])).padStart(2, "0")
+    return `${it[3]}-${mm}-${dd}`
+  }
+  const d = new Date(val as any)
   if (Number.isNaN(d.getTime())) return undefined
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
 }
 
 function toIsoDateTime(val: unknown): string | undefined {
@@ -5916,21 +5935,34 @@ function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): 
     if (Number.isFinite(n) && n !== 0) return false
   }
   if (giorno && /^\d{4}-\d{2}-\d{2}$/.test(giorno)) {
-    // Preferisci validità della SERIE lezione (PrenotazioniLezioni), non solo della scheda Prenotazioni.
-    const di = toIsoDay(
-      rawValIgnoreCase(raw, "LezioneDataInizio") ??
-        rawValIgnoreCase(raw, "DataInizioLezione") ??
+    const lessonDi = toIsoDay(
+      rawValIgnoreCase(raw, "LezioneDataInizio") ?? rawValIgnoreCase(raw, "DataInizioLezione")
+    )
+    const lessonDf = toIsoDay(
+      rawValIgnoreCase(raw, "LezioneDataFine") ?? rawValIgnoreCase(raw, "DataFineLezione")
+    )
+    const emptyLesson = !!rawValIgnoreCase(raw, "__lezioniSenzaIscritti")
+    // Lezione vuota: vale solo Inizio/Fine DELLA SERIE (griglia gestionale). Non usare DataFine della scheda Prenotazioni
+    // (può arrivare al 2027 mentre la singola lezione è scaduta nel 2022).
+    if (emptyLesson) {
+      if (!lessonDf || giorno > lessonDf) return false
+      if (lessonDi && giorno < lessonDi) return false
+      return true
+    }
+    const di =
+      lessonDi ??
+      toIsoDay(
         rawValIgnoreCase(raw, "DataInizio") ??
-        rawValIgnoreCase(raw, "PrenotazioneDataInizio") ??
-        rawValIgnoreCase(raw, "InizioValidita")
-    )
-    const df = toIsoDay(
-      rawValIgnoreCase(raw, "LezioneDataFine") ??
-        rawValIgnoreCase(raw, "DataFineLezione") ??
+          rawValIgnoreCase(raw, "PrenotazioneDataInizio") ??
+          rawValIgnoreCase(raw, "InizioValidita")
+      )
+    const df =
+      lessonDf ??
+      toIsoDay(
         rawValIgnoreCase(raw, "DataFine") ??
-        rawValIgnoreCase(raw, "PrenotazioneDataFine") ??
-        rawValIgnoreCase(raw, "FineValidita")
-    )
+          rawValIgnoreCase(raw, "PrenotazioneDataFine") ??
+          rawValIgnoreCase(raw, "FineValidita")
+      )
     if (di && giorno < di) return false
     if (df && giorno > df) return false
   }
@@ -6071,8 +6103,7 @@ function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
   if (t.includes("AGONISMO")) return true
   if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return true
   if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
-  // Slot nominati col giorno (es. "nuoto adulti start ven.19.15"), non il corso "liv. start".
-  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s*\d/.test(t)) return true
+  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return true
   if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return true
   if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|ESORDIENTI|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
   if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTI?)\b/.test(t)) return true
@@ -6287,7 +6318,8 @@ function buildPrenotazioniLezioniVuoteSql(
 
 /**
  * Lezioni programmate (PrenotazioniLezioni + Prenotazioni) senza iscritti nel giorno.
- * Serve per mostrare in pagina Corsi i corsi a zero prenotazioni e poterli bloccare.
+ * Restano in elenco (anche a 0) per poterle bloccare, ma solo se la SERIE è ancora in vigore:
+ * DataInizio <= oggi <= DataFine su PrenotazioniLezioni.
  */
 async function queryLezioniCorsiSenzaIscritti(
   giorno: string,
@@ -6463,6 +6495,7 @@ async function queryLezioniCorsiSenzaIscritti(
     INNER JOIN ${prenQ} p ON pl.[${colPlPren}] = p.[${colPrenId}]
     ${catJoin?.joinSql ?? ""}
     WHERE ${where.join(" AND ")}
+      AND pl.[${colPlDf}] IS NOT NULL
       AND CAST(@giorno AS date) BETWEEN CAST(pl.[${colPlDi}] AS date) AND CAST(pl.[${colPlDf}] AS date)
     ORDER BY pl.[${colPlOi}] ASC;
   `
