@@ -31,23 +31,24 @@ function latestRichiestaByPhone(telefono: string): LpRichiesta | null {
   return rows[0] ?? null
 }
 
-function cancelRichiesta(r: LpRichiesta, by: string) {
+async function avvisaIstruttori(text: string, istruttoreId?: string) {
   const db = readLezioniPrivateDb()
-  const row = db.richieste.find((x) => x.id === r.id)
-  if (!row) return
-  row.status = "annullata"
-  appendNote(row, `WA annullata (${by})`)
-  for (const p of db.pacchetti.filter((x) => x.richiestaId === row.id)) {
-    for (const l of p.lezioni) {
-      if (l.stato === "prenotata") {
-        l.stato = "annullata_cliente"
-        l.annullataAt = new Date().toISOString()
-        l.annullataBy = by
-      }
+  let dest = db.instructors.filter((i) => i.attivo && String(i.telefono ?? "").trim())
+  if (istruttoreId) {
+    const one = dest.filter((i) => i.id === istruttoreId)
+    if (one.length) dest = one
+  }
+  for (const i of dest) {
+    try {
+      await sendWhatsappText(i.telefono, text)
+    } catch (e) {
+      console.error("[lp-wa istruttore]", i.nome, (e as Error).message)
     }
   }
-  writeLezioniPrivateDb(db)
 }
+
+const CLIENTE_CONTATTA_ISTR =
+  "Per annullare o spostare la lezione privata contatta l'istruttore: da WhatsApp non togliamo noi l'orario in vasca."
 
 export async function handleWhatsappLezioniPrivate(params: {
   from?: string
@@ -57,6 +58,26 @@ export async function handleWhatsappLezioniPrivate(params: {
   const text = String(params.text ?? "").trim()
   if (!from || !text || text.startsWith("[")) return { handled: false }
   if (!isWhatsappSendConfigured()) return { handled: false }
+
+  const richiesta = latestRichiestaByPhone(from)
+  const wantsCancel = parseCancelRequestIt(text)
+  const wantsMove = wantsChange(text)
+
+  if (richiesta && (wantsCancel || wantsMove)) {
+    const db = readLezioniPrivateDb()
+    const row = db.richieste.find((x) => x.id === richiesta.id)
+    if (row) {
+      appendNote(row, `WA cliente: «${text.trim().slice(0, 180)}»`)
+      writeLezioniPrivateDb(db)
+    }
+    const azione = wantsCancel ? "annullare" : "spostare"
+    await avvisaIstruttori(
+      `${richiesta.clienteNome} chiede di ${azione} la lezione privata. Tel ${richiesta.telefono}. Messaggio: «${text.trim().slice(0, 120)}»`,
+      richiesta.istruttoreId,
+    )
+    await sendWhatsappText(from, CLIENTE_CONTATTA_ISTR)
+    return { handled: true, detail: wantsCancel ? "cliente chiede annullo → istruttore" : "cliente chiede spostamento → istruttore" }
+  }
 
   const db = readLezioniPrivateDb()
   const instructor = db.instructors.find((i) => i.attivo && samePhone(i.telefono, from))
@@ -68,49 +89,20 @@ export async function handleWhatsappLezioniPrivate(params: {
       writeLezioniPrivateDb(db)
       await sendWhatsappText(
         from,
-        `Ricevuto ${instructor.nome}. Per fissare vasca e orario apri FitCenter → Lezioni private → Prendi in carico.`
+        `Ricevuto ${instructor.nome}. Per fissare vasca e orario apri FitCenter → Lezioni private → Prendi in carico.`,
       )
       return { handled: true, detail: "istruttore prendi" }
     }
     await sendWhatsappText(
       from,
-      `Ricevuto. Per le lezioni private usa FitCenter → Lezioni private (prendi in carico, calendario vasche).`
+      `Ricevuto. Per le lezioni private usa FitCenter → Lezioni private (prendi in carico, calendario vasche).`,
     )
     return { handled: true, detail: "istruttore handoff fitcenter" }
   }
 
-  const richiesta = latestRichiestaByPhone(from)
   if (!richiesta) return { handled: false }
-
-  if (parseCancelRequestIt(text)) {
-    cancelRichiesta(richiesta, richiesta.clienteNome)
-    await sendWhatsappText(
-      from,
-      `Ok, abbiamo annullato la lezione privata di ${richiesta.clienteNome}. Se vuoi riprenotare, passa in reception o fai una nuova richiesta.`
-    )
-    return { handled: true, detail: "cliente annulla lp" }
-  }
-
-  if (wantsChange(text)) {
-    const fresh = readLezioniPrivateDb()
-    const row = fresh.richieste.find((x) => x.id === richiesta.id)
-    if (row) {
-      row.quando = text.trim().slice(0, 180)
-      appendNote(row, `WA cambio: «${text.trim().slice(0, 180)}»`)
-      writeLezioniPrivateDb(fresh)
-    }
-    await sendWhatsappText(
-      from,
-      `Abbiamo segnato la nuova disponibilità. L'istruttore ti conferma giorno e ora: l'orario in vasca non si sposta da solo.`
-    )
-    return { handled: true, detail: "cliente cambio lp" }
-  }
-
   if (politeAck(text)) return { handled: true, detail: "cliente ack lp" }
 
-  await sendWhatsappText(
-    from,
-    `Per la lezione privata puoi scrivere ANNULLA oppure il giorno/ora che preferisci (es. sabato mattina). Un istruttore ti conferma.`
-  )
+  await sendWhatsappText(from, CLIENTE_CONTATTA_ISTR)
   return { handled: true, detail: "cliente guida lp" }
 }

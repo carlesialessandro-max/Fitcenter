@@ -287,8 +287,8 @@ function RichiesteTab({
         >
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            WhatsApp parte a tutti gli istruttori attivi in elenco (ora ci sei tu). Se il richiedente ha un altro numero,
-            riceve anche lui l’avviso sulla prova e sul pacchetto 5/10.
+            WhatsApp parte sempre agli istruttori e al cliente (prova, poi 5 o 10). Per annullare o spostare il cliente
+            deve contattare l’istruttore.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="grid gap-1 text-sm text-zinc-400">

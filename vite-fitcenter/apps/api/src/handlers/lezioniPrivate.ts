@@ -125,7 +125,10 @@ async function sendLpWaToNumber(telefono: string, text: string, nome: string): P
 
 function clienteWaText(r: LpRichiesta): string {
   const nome = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
-  return `Ciao ${nome}, richiesta lezione privata ricevuta. Ti contattiamo per la prova; poi puoi fare 5 o 10 lezioni. FitCenter`
+  return (
+    `Ciao ${nome}, richiesta prova ricevuta. Ti contattiamo per fissarla; poi puoi fare 5 o 10 lezioni. ` +
+    `Per annullare o spostare contatta l'istruttore. FitCenter`
+  )
 }
 
 function istruttoriWaText(r: LpRichiesta, by: string): string {
@@ -175,9 +178,7 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome)
   }
 
-  const clientNorm = normalizeWaTo(r.telefono)
-  const sameAsInstructor = istruttori.some((i) => normalizeWaTo(i.telefono) === clientNorm)
-  if (String(r.telefono ?? "").trim() && !sameAsInstructor) {
+  if (String(r.telefono ?? "").trim()) {
     await push(`richiedente ${r.clienteNome}`, r.telefono, clienteWaText(r), r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome)
   }
 
@@ -541,7 +542,7 @@ export function postLezioniPrivatePacchetto(req: Request, res: Response) {
   res.json({ ok: true, pacchetto: pac })
 }
 
-export function patchLezioniPrivateLezione(req: Request, res: Response) {
+export async function patchLezioniPrivateLezione(req: Request, res: Response) {
   const u = req.user!
   const id = String(req.params.id ?? "")
   const b = req.body as { stato?: LpLezioneStato }
@@ -562,6 +563,18 @@ export function patchLezioniPrivateLezione(req: Request, res: Response) {
       l.annullataBy = undefined
     }
     writeLezioniPrivateDb(db)
+    if (stato.startsWith("annullata")) {
+      const chi = stato === "annullata_cliente" ? "cliente" : "istruttore"
+      const msg = `Lezione privata annullata (${chi}): ${p.clienteNome} · ${l.giorno} ${l.ora}.`
+      const istr = db.instructors.find((i) => i.id === p.istruttoreId && String(i.telefono ?? "").trim())
+      if (istr) void sendWhatsappText(istr.telefono, msg).catch((e) => console.error("[lp-wa]", (e as Error).message))
+      if (stato === "annullata_istruttore" && p.telefono) {
+        void sendWhatsappText(
+          p.telefono,
+          `La lezione privata del ${l.giorno} alle ${l.ora} è stata annullata. Per riprenotare contatta l'istruttore.`,
+        ).catch((e) => console.error("[lp-wa]", (e as Error).message))
+      }
+    }
     return res.json({ ok: true, lezione: l })
   }
   return res.status(404).json({ message: "Lezione non trovata" })
