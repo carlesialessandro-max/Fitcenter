@@ -4,6 +4,7 @@ import { fileURLToPath } from "url"
 import type { Request, Response } from "express"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import { handleWhatsappInboundBooking, sendLeadBambiniInfoFromCrm } from "../services/whatsapp-booking.js"
+import { handleWhatsappLezioniPrivate } from "../services/whatsapp-lezioni-private.js"
 import {
   isWhatsappSendConfigured,
   leadWelcomeTemplateConfig,
@@ -91,14 +92,22 @@ function ingestChangeValue(value: WaChangeValue, rawChange: unknown) {
       raw: msg,
     })
     stored++
-    // Booking async: non blocca l'ack a Meta
-    void handleWhatsappInboundBooking({
-      from: msg.from,
-      text,
-      waMessageId: msg.id,
-    }).then((r) => {
-      if (r.handled) console.log("[whatsapp-booking]", r.detail)
-    }).catch((e) => console.error("[whatsapp-booking]", (e as Error)?.message ?? e))
+    void handleWhatsappLezioniPrivate({ from: msg.from, text })
+      .then((lp) => {
+        if (lp.handled) {
+          console.log("[whatsapp-lp]", lp.detail)
+          return
+        }
+        return handleWhatsappInboundBooking({
+          from: msg.from,
+          text,
+          waMessageId: msg.id,
+        })
+      })
+      .then((r) => {
+        if (r?.handled) console.log("[whatsapp-booking]", r.detail)
+      })
+      .catch((e) => console.error("[whatsapp-inbound]", (e as Error)?.message ?? e))
   }
 
   for (const st of value.statuses ?? []) {
