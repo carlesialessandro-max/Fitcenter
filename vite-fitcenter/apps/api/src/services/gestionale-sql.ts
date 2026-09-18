@@ -6064,7 +6064,7 @@ function corsoPrenotazioneTitoloRaw(raw: Record<string, unknown>): string {
   ).trim()
 }
 
-/** Titoli da non mostrare in pagina Corsi (scuola nuoto, danza, prove, ecc.). */
+/** Titoli fuori da FITNESS/H2O: scuola nuoto, danza, tesseramenti, prove. Non escludere corsi acqua/terra attivi. */
 function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
   if (!t) return false
   if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return true
@@ -6073,7 +6073,7 @@ function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
   if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
   if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return true
   if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return true
-  if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
+  if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|ESORDIENTI|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
   if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTI?)\b/.test(t)) return true
   if (/\bUISP\b/.test(t)) return true
   if (/\bPROVA\b/.test(t) || t === "PROVE") return true
@@ -6280,6 +6280,7 @@ function buildPrenotazioniLezioniVuoteSql(
     `${n} NOT LIKE N'%TRISETTIMANALE%'`,
     `${n} NOT LIKE N'%UISP%'`,
     `${n} NOT LIKE N'%APPUNTAMENT%'`,
+    `${n} NOT LIKE N'%ESORDIENTI%'`,
   ]
 }
 

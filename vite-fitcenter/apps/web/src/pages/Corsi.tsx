@@ -116,11 +116,13 @@ function normalizeCorsoText(s: string): string {
     .trim()
 }
 
-/** UISP / appuntamenti non sono corsi FITNESS-H2O attivi: non mostrarli in pagina Corsi. */
+/** Solo fuori da FITNESS/H2O (tesseramenti, appuntamenti, scuola nuoto). I corsi attivi restano. */
 function isCorsoTitoloNonAttivo(servizio: string): boolean {
   const t = normalizeCorsoText(servizio)
   if (!t) return false
-  return /\bUISP\b/.test(t) || /\bAPPUNTAMENTI?\b/.test(t)
+  if (/\bUISP\b/.test(t) || /\bAPPUNTAMENTI?\b/.test(t)) return true
+  if (/\bESORDIENTI\b/.test(t)) return true
+  return false
 }
 
 /** Fitness = terra; H2O = acqua / nuoto adulti. */
