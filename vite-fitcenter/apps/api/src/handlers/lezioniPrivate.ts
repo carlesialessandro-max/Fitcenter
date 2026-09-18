@@ -4,9 +4,8 @@ import {
   formatWaDisplay,
   isWhatsappSendConfigured,
   normalizeWaTo,
-  sendWhatsappTemplate,
-  sendWhatsappText,
 } from "../services/whatsapp.js"
+import { sendLezionePrivataWhatsapp } from "../services/whatsapp-lezioni-private.js"
 import {
   assertSlotLibero,
   corsieMax,
@@ -78,49 +77,8 @@ function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
   return out
 }
 
-function compactWaParam(text: string, fallback: string): string {
-  const s = String(text ?? "")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/ {3,}/g, "  ")
-    .trim()
-  return (s || fallback).slice(0, 200)
-}
-
-function isWa24hWindowError(msg: string): boolean {
-  const s = msg.toLowerCase()
-  return (
-    s.includes("131047") ||
-    s.includes("131051") ||
-    s.includes("24 hour") ||
-    s.includes("24-hour") ||
-    s.includes("re-engage") ||
-    s.includes("outside the allowed") ||
-    s.includes("not in allowed")
-  )
-}
-
 function waLabel(nome: string, telefono: string): string {
   return `${nome} (${formatWaDisplay(normalizeWaTo(telefono) ?? telefono) || telefono})`
-}
-
-/** Solo testo breve della richiesta. Mai il template lead di benvenuto H2Sport. */
-async function sendLpWaToNumber(telefono: string, text: string, nome: string): Promise<void> {
-  if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
-  try {
-    await sendWhatsappText(telefono, text)
-    return
-  } catch (e) {
-    const msg = (e as Error).message || String(e)
-    const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
-    if (!lpTpl || !isWa24hWindowError(msg)) throw e
-    const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
-    await sendWhatsappTemplate({
-      toRaw: telefono,
-      templateName: lpTpl,
-      languageCode: lang,
-      bodyParams: [compactWaParam(text, nome.trim() || "Ciao")],
-    })
-  }
 }
 
 function clienteWaText(r: LpRichiesta): string {
@@ -156,13 +114,13 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
   const push = async (labelNome: string, telefono: string, text: string, templateNome: string) => {
     const label = waLabel(labelNome, telefono)
     try {
-      await sendLpWaToNumber(telefono, text, templateNome)
+      await sendLezionePrivataWhatsapp(telefono, text, templateNome)
       sent += 1
       destinations.push(label)
     } catch (e) {
       const msg = (e as Error).message || String(e)
-      const hint = isWa24hWindowError(msg)
-        ? " (WhatsApp ha rifiutato il testo libero: controlla il template Meta o che il numero sia su WhatsApp)"
+      const hint = /131047|24 hour|re-engage|not in allowed/i.test(msg)
+        ? " (Meta non consegna il testo senza chat aperta: usiamo anche il template)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }
@@ -567,11 +525,12 @@ export async function patchLezioniPrivateLezione(req: Request, res: Response) {
       const chi = stato === "annullata_cliente" ? "cliente" : "istruttore"
       const msg = `Lezione privata annullata (${chi}): ${p.clienteNome} · ${l.giorno} ${l.ora}.`
       const istr = db.instructors.find((i) => i.id === p.istruttoreId && String(i.telefono ?? "").trim())
-      if (istr) void sendWhatsappText(istr.telefono, msg).catch((e) => console.error("[lp-wa]", (e as Error).message))
+      if (istr) void sendLezionePrivataWhatsapp(istr.telefono, msg, istr.nome).catch((e) => console.error("[lp-wa]", (e as Error).message))
       if (stato === "annullata_istruttore" && p.telefono) {
-        void sendWhatsappText(
+        void sendLezionePrivataWhatsapp(
           p.telefono,
           `La lezione privata del ${l.giorno} alle ${l.ora} è stata annullata. Per riprenotare contatta l'istruttore.`,
+          p.clienteNome,
         ).catch((e) => console.error("[lp-wa]", (e as Error).message))
       }
     }

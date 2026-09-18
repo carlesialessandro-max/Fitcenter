@@ -65,9 +65,13 @@ function phoneOf(e: WhatsappLogEvent): string {
 }
 
 function statusSuffix(e: WhatsappLogEvent): string {
-  if (e.status === "error") return " · errore"
+  if (e.status === "error") return " · non consegnato"
+  if (e.status === "failed" || e.status === "undelivered") return " · non consegnato"
   if (e.status === "cancelled") return " · annullato"
   if (e.status === "none") return " · non trovato"
+  if (e.status === "delivered") return " · consegnato"
+  if (e.status === "read") return " · letto"
+  if (e.status === "sent") return " · accettato da Meta (non è detto che sia sul telefono)"
   return ""
 }
 
@@ -141,7 +145,8 @@ export function WhatsappLog() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Log WhatsApp</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Solo richiesta, risposta del bot e esito appuntamento.
+            «Risposta» nel log = Meta ha accettato l’invio. Se sul telefono non arriva, spesso è fuori finestra 24h
+            (serve una risposta al numero FitCenter, o un template Meta).
           </p>
         </div>
         <div className="flex gap-2">

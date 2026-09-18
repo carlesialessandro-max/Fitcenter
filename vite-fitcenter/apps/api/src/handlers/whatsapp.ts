@@ -68,6 +68,7 @@ type WaChangeValue = {
     status?: string
     timestamp?: string
     recipient_id?: string
+    errors?: Array<{ code?: number; title?: string; message?: string }>
   }>
   metadata?: { display_phone_number?: string; phone_number_id?: string }
 }
@@ -111,11 +112,17 @@ function ingestChangeValue(value: WaChangeValue, rawChange: unknown) {
   }
 
   for (const st of value.statuses ?? []) {
+    const err = st.errors?.[0]
+    const errText = err ? `${err.code ?? ""} ${err.title ?? err.message ?? ""}`.trim() : undefined
+    if (st.id && st.status) {
+      whatsappEventsStore.markOutboundStatus(st.id, st.status, errText)
+    }
     whatsappEventsStore.append({
       kind: "status",
       to: st.recipient_id,
       waMessageId: st.id,
       status: st.status,
+      text: errText,
       raw: st,
     })
     stored++

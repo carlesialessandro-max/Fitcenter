@@ -153,4 +153,24 @@ export const whatsappEventsStore = {
     save(data)
     return row
   },
+
+  /** Aggiorna l'esito reale Meta (failed/delivered) sul messaggio in uscita. */
+  markOutboundStatus(waMessageId: string, status: string, errorText?: string): void {
+    const id = String(waMessageId ?? "").trim()
+    if (!id) return
+    const data = load()
+    const row = data.events.find((e) => e.kind === "message_out" && e.waMessageId === id)
+    if (!row) return
+    const st = status.toLowerCase()
+    if (st === "failed" || st === "undelivered") {
+      row.status = "error"
+      if (errorText) {
+        const raw = row.raw && typeof row.raw === "object" ? (row.raw as Record<string, unknown>) : {}
+        row.raw = { ...raw, deliveryError: errorText }
+      }
+    } else if (st === "delivered" || st === "read" || st === "sent") {
+      if (row.status !== "error") row.status = st
+    }
+    save(data)
+  },
 }
