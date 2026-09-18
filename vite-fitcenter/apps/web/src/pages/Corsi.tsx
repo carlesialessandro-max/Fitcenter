@@ -116,6 +116,13 @@ function normalizeCorsoText(s: string): string {
     .trim()
 }
 
+/** UISP / appuntamenti non sono corsi FITNESS-H2O attivi: non mostrarli in pagina Corsi. */
+function isCorsoTitoloNonAttivo(servizio: string): boolean {
+  const t = normalizeCorsoText(servizio)
+  if (!t) return false
+  return /\bUISP\b/.test(t) || /\bAPPUNTAMENTI?\b/.test(t)
+}
+
 /** Fitness = terra; H2O = acqua / nuoto adulti. */
 export function corsoAmbitoOf(g: CorsoGroup): "fitness" | "h2o" {
   const rawBits = g.partecipanti
@@ -171,6 +178,7 @@ export function groupByCorso(rows: PrenotazioneCorsoRow[]): CorsoGroup[] {
   const waitBuckets = new Map<string, CorsoGroup>() // servizio+giorno -> gruppo "attesa" separato
   for (const r of rows) {
     const servizio = getCorsoTitolo(r)
+    if (isCorsoTitoloNonAttivo(servizio)) continue
     const giorno = (r.giorno ?? "").trim() || "—"
     const raw = (r.raw ?? {}) as any
     const lessonOnly = !!raw?.__lezioniSenzaIscritti

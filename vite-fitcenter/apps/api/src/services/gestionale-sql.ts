@@ -5903,7 +5903,7 @@ function buildRecordEnabledSql(
 
 function isCorsoPrenotazioneAttivo(row: PrenotazioneCorsoRow, giorno?: string): boolean {
   const raw = row.raw ?? {}
-  for (const key of ["Attivo"]) {
+  for (const key of ["Attivo", "LezioneAttivo", "AttivoLezione"]) {
     const v = rawValIgnoreCase(raw, key)
     if (v == null || v === "") continue
     const n = Number(v)
@@ -6074,7 +6074,8 @@ function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
   if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return true
   if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return true
   if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
-  if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTO)\b/.test(t)) return true
+  if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTI?)\b/.test(t)) return true
+  if (/\bUISP\b/.test(t)) return true
   if (/\bPROVA\b/.test(t) || t === "PROVE") return true
   if (/\bDANZA\b/.test(t) && !/\bZUMBA\b/.test(t)) return true
   const water = /\b(ACQUA|AQUA|H2O|H20|NUOTO ADULTI|GESTANTI)\b/.test(t)
@@ -6277,6 +6278,8 @@ function buildPrenotazioniLezioniVuoteSql(
     `${n} NOT LIKE N'%AGONISMO%'`,
     `${n} NOT LIKE N'%BISETTIMANALE%'`,
     `${n} NOT LIKE N'%TRISETTIMANALE%'`,
+    `${n} NOT LIKE N'%UISP%'`,
+    `${n} NOT LIKE N'%APPUNTAMENT%'`,
   ]
 }
 
@@ -6367,6 +6370,8 @@ async function queryLezioniCorsiSenzaIscritti(
       // Corso disattivato nel gestionale (Attivo=0 / flag eliminazione). Non usare WebVisibile: 0 = blocco giornaliero.
       where.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
       where.push(...buildRecordEnabledSql(prenIdx, "p", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
+      where.push(...buildRecordEnabledSql(plIdx, "pl", ["Attivo"]))
+      where.push(...buildRecordEnabledSql(plIdx, "pl", [], ["Disattivo", "Disabilitato", "Eliminato", "Cancellato", "Annullato"]))
     }
     where.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
     return where
@@ -6384,6 +6389,7 @@ async function queryLezioniCorsiSenzaIscritti(
         )
       }
       base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      base.push(...buildRecordEnabledSql(plIdx, "pl", ["Attivo"]))
       base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
       return base
     })(),
@@ -6395,6 +6401,7 @@ async function queryLezioniCorsiSenzaIscritti(
         )
       }
       base.push(...buildRecordEnabledSql(prenIdx, "p", ["Attivo"]))
+      base.push(...buildRecordEnabledSql(plIdx, "pl", ["Attivo"]))
       base.push(...buildPrenotazioniLezioniVuoteSql(prenIdx, "p", catJoin?.catDescExpr))
       return base
     })(),
@@ -6429,6 +6436,8 @@ async function queryLezioniCorsiSenzaIscritti(
   const extraPrenSql = extraPrenSelects.length ? `,\n      ${extraPrenSelects.join(",\n      ")}` : ""
 
   const extraPlSelects: string[] = []
+  const colPlAttivo = pickSqlCol(plIdx, ["Attivo"])
+  if (colPlAttivo) extraPlSelects.push(`pl.[${colPlAttivo}] AS LezioneAttivo`)
   const colPlGg = pickSqlCol(plIdx, ["GGWeek", "GiornoSettimana", "Weekday", "WeekDay"])
   if (colPlGg) extraPlSelects.push(`pl.[${colPlGg}] AS GGWeek`)
   for (const d of LEZIONE_DOW_FLAGS) {
