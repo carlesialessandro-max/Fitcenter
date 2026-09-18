@@ -64,6 +64,22 @@ export function requireAdminOrScuolaNuoto(req: Request, res: Response, next: Nex
   next()
 }
 
+/** Reception, scuola nuoto e istruttori: lezioni private acqua. */
+export function requireLezioniPrivate(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (
+    u.role !== "admin" &&
+    u.role !== "scuola_nuoto" &&
+    u.role !== "istruttore" &&
+    u.role !== "operatore" &&
+    u.role !== "firme"
+  ) {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
+  next()
+}
+
 export function requireAdminOrDanza(req: Request, res: Response, next: NextFunction) {
   const u = req.user
   if (!u) return res.status(401).json({ message: "Token mancante" })

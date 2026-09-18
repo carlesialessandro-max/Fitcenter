@@ -1,0 +1,398 @@
+import type { Request, Response } from "express"
+import type { User } from "../store/auth.js"
+import { isWhatsappSendConfigured, sendWhatsappText } from "../services/whatsapp.js"
+import {
+  assertSlotLibero,
+  corsieMax,
+  lpOreSlots,
+  newLpId,
+  oreCoperteLezioneLp,
+  readLezioniPrivateDb,
+  writeLezioniPrivateDb,
+  type LpLezioneStato,
+  type LpPacchetto,
+  type LpRichiesta,
+  type VascaId,
+} from "../store/lezioni-private-db.js"
+
+function isYmd(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+function isHm(s: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
+}
+function asVasca(v: unknown): VascaId | null {
+  return v === "v25" || v === "ludica" ? v : null
+}
+
+function canDesk(u: User): boolean {
+  return u.role === "admin" || u.role === "scuola_nuoto" || u.role === "operatore" || u.role === "firme"
+}
+function canManageRoster(u: User): boolean {
+  return u.role === "admin" || u.role === "scuola_nuoto"
+}
+
+function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
+  const out: Array<{
+    lezioneId: string
+    pacchettoId: string
+    richiestaId: string
+    clienteNome: string
+    telefono: string
+    tipo: LpPacchetto["tipo"]
+    istruttoreId: string
+    istruttoreNome: string
+    giorno: string
+    ora: string
+    durataMin: number
+    vasca: VascaId
+    corsia: number
+    stato: LpLezioneStato
+  }> = []
+  for (const p of db.pacchetti) {
+    for (const l of p.lezioni) {
+      out.push({
+        lezioneId: l.id,
+        pacchettoId: p.id,
+        richiestaId: p.richiestaId,
+        clienteNome: p.clienteNome,
+        telefono: p.telefono,
+        tipo: p.tipo,
+        istruttoreId: p.istruttoreId,
+        istruttoreNome: p.istruttoreNome,
+        giorno: l.giorno,
+        ora: l.ora,
+        durataMin: l.durataMin,
+        vasca: l.vasca,
+        corsia: l.corsia,
+        stato: l.stato,
+      })
+    }
+  }
+  return out
+}
+
+async function notifyIstruttoriWa(r: LpRichiesta, by: string) {
+  const db = readLezioniPrivateDb()
+  const dest = db.instructors.filter((i) => i.attivo && String(i.telefono ?? "").trim())
+  if (!dest.length) return { sent: 0, errors: [] as string[], skipped: "Elenco istruttori vuoto: inseriscilo in Lezioni private → Istruttori" }
+  if (!isWhatsappSendConfigured()) {
+    return { sent: 0, errors: [] as string[], skipped: "WhatsApp non configurato sul server" }
+  }
+  const text =
+    `Nuova richiesta lezione privata (acqua)\n` +
+    `Cliente: ${r.clienteNome}${r.eta ? ` (${r.eta})` : ""}\n` +
+    (r.tutore ? `Tutore: ${r.tutore}\n` : "") +
+    `Tel: ${r.telefono}\n` +
+    `Quando: ${r.quando || "—"}\n` +
+    `Pref. istruttore: ${r.prefIstruttore || "indifferente"}\n` +
+    (r.note ? `Note: ${r.note}\n` : "") +
+    `Registrata da: ${by}\n\n` +
+    `Per prendere in carico: FitCenter → Lezioni private (scegli vasca e corsia libera). Prima lezione = prova.`
+  const errors: string[] = []
+  let sent = 0
+  for (const i of dest) {
+    try {
+      await sendWhatsappText(i.telefono, text)
+      sent += 1
+    } catch (e) {
+      errors.push(`${i.nome}: ${(e as Error).message}`)
+    }
+  }
+  return { sent, errors, skipped: undefined as string | undefined }
+}
+
+export function getLezioniPrivate(req: Request, res: Response) {
+  const db = readLezioniPrivateDb()
+  res.json({
+    instructors: db.instructors,
+    richieste: db.richieste.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    pacchetti: db.pacchetti,
+    lezioni: flattenLezioni(db),
+    regole: db.regole,
+    ore: lpOreSlots(),
+  })
+}
+
+export function putLezioniPrivateRegole(req: Request, res: Response) {
+  const u = req.user!
+  if (!canManageRoster(u)) return res.status(403).json({ message: "Solo admin / scuola nuoto" })
+  const raw = (req.body as { regole?: unknown })?.regole
+  if (!raw || typeof raw !== "object") return res.status(400).json({ message: "regole obbligatorie" })
+  const db = readLezioniPrivateDb()
+  const next = { ...db.regole }
+  for (let d = 0; d <= 6; d++) {
+    const row = (raw as Record<string, { v25?: unknown; ludica?: unknown }>)[String(d)]
+    if (!row) continue
+    next[String(d)] = {
+      v25: Math.max(0, Math.min(1, Number(row.v25) || 0)),
+      ludica: Math.max(0, Math.min(2, Number(row.ludica) || 0)),
+    }
+  }
+  writeLezioniPrivateDb({ ...db, regole: next })
+  res.json({ ok: true, regole: next })
+}
+
+export function postLezioniPrivateIstruttore(req: Request, res: Response) {
+  const u = req.user!
+  if (!canManageRoster(u)) return res.status(403).json({ message: "Solo admin / scuola nuoto" })
+  const nome = String((req.body as { nome?: string })?.nome ?? "").trim()
+  const telefono = String((req.body as { telefono?: string })?.telefono ?? "").trim()
+  if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
+  const db = readLezioniPrivateDb()
+  const row = { id: newLpId("ins"), nome, telefono, attivo: true }
+  writeLezioniPrivateDb({ ...db, instructors: [...db.instructors, row] })
+  res.json({ ok: true, instructor: row })
+}
+
+export function patchLezioniPrivateIstruttore(req: Request, res: Response) {
+  const u = req.user!
+  if (!canManageRoster(u)) return res.status(403).json({ message: "Solo admin / scuola nuoto" })
+  const id = String(req.params.id ?? "")
+  const db = readLezioniPrivateDb()
+  const i = db.instructors.find((x) => x.id === id)
+  if (!i) return res.status(404).json({ message: "Istruttore non trovato" })
+  const b = req.body as { nome?: string; telefono?: string; attivo?: boolean }
+  if (typeof b.nome === "string" && b.nome.trim()) i.nome = b.nome.trim()
+  if (typeof b.telefono === "string") i.telefono = b.telefono.trim()
+  if (typeof b.attivo === "boolean") i.attivo = b.attivo
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, instructor: i })
+}
+
+export function deleteLezioniPrivateIstruttore(req: Request, res: Response) {
+  const u = req.user!
+  if (!canManageRoster(u)) return res.status(403).json({ message: "Solo admin / scuola nuoto" })
+  const id = String(req.params.id ?? "")
+  const db = readLezioniPrivateDb()
+  writeLezioniPrivateDb({ ...db, instructors: db.instructors.filter((x) => x.id !== id) })
+  res.json({ ok: true })
+}
+
+export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
+  const u = req.user!
+  if (!canDesk(u)) return res.status(403).json({ message: "Permessi insufficienti per registrare richieste" })
+  const b = req.body as {
+    clienteNome?: string
+    eta?: string
+    telefono?: string
+    tutore?: string
+    quando?: string
+    prefIstruttore?: string
+    note?: string
+  }
+  const clienteNome = String(b.clienteNome ?? "").trim()
+  const telefono = String(b.telefono ?? "").trim()
+  if (!clienteNome) return res.status(400).json({ message: "Cognome e nome obbligatori" })
+  if (!telefono) return res.status(400).json({ message: "Telefono obbligatorio" })
+  const r: LpRichiesta = {
+    id: newLpId("rich"),
+    createdAt: new Date().toISOString(),
+    createdBy: u.nome || u.username,
+    clienteNome,
+    eta: String(b.eta ?? "").trim() || undefined,
+    telefono,
+    tutore: String(b.tutore ?? "").trim() || undefined,
+    quando: String(b.quando ?? "").trim() || undefined,
+    prefIstruttore: String(b.prefIstruttore ?? "").trim() || undefined,
+    note: String(b.note ?? "").trim() || undefined,
+    status: "aperta",
+  }
+  const db = readLezioniPrivateDb()
+  db.richieste.push(r)
+  const wa = await notifyIstruttoriWa(r, r.createdBy)
+  r.waNotifiedAt = new Date().toISOString()
+  if (wa.skipped) r.waSkipped = wa.skipped
+  else if (wa.errors.length && !wa.sent) r.waSkipped = wa.errors.join("; ")
+  else if (wa.errors.length) r.waSkipped = `Inviati ${wa.sent}, errori: ${wa.errors.join("; ")}`
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, richiesta: r, wa })
+}
+
+export function postLezioniPrivatePrendi(req: Request, res: Response) {
+  const u = req.user!
+  const id = String(req.params.id ?? "")
+  const b = req.body as {
+    istruttoreId?: string
+    giorno?: string
+    ora?: string
+    durataMin?: number
+    vasca?: string
+    corsia?: number
+  }
+  const vasca = asVasca(b.vasca)
+  const giorno = String(b.giorno ?? "").trim()
+  const ora = String(b.ora ?? "").trim()
+  const durataMin = Number(b.durataMin) > 0 ? Math.round(Number(b.durataMin)) : 30
+  const corsia = Number(b.corsia)
+  if (!vasca) return res.status(400).json({ message: "Vasca obbligatoria (v25 o ludica)" })
+  if (!isYmd(giorno) || !isHm(ora)) return res.status(400).json({ message: "Giorno e ora obbligatori" })
+  if (!Number.isFinite(corsia)) return res.status(400).json({ message: "Corsia obbligatoria" })
+
+  const db = readLezioniPrivateDb()
+  const r = db.richieste.find((x) => x.id === id)
+  if (!r) return res.status(404).json({ message: "Richiesta non trovata" })
+  if (r.status === "annullata") return res.status(400).json({ message: "Richiesta annullata" })
+  if (r.status === "assegnata") return res.status(400).json({ message: "Già assegnata" })
+
+  let istr = db.instructors.find((i) => i.id === String(b.istruttoreId ?? "").trim())
+  if (!istr && u.role === "istruttore") {
+    const n = (u.nome || "").trim().toLowerCase()
+    istr = db.instructors.find((i) => i.attivo && i.nome.trim().toLowerCase() === n)
+  }
+  if (!istr) return res.status(400).json({ message: "Seleziona l'istruttore (elenco in attesa se vuoto)" })
+
+  const busy = assertSlotLibero(db, giorno, ora, vasca, corsia, durataMin)
+  if (busy) return res.status(409).json({ message: busy })
+
+  const pac: LpPacchetto = {
+    id: newLpId("pck"),
+    richiestaId: r.id,
+    clienteNome: r.clienteNome,
+    telefono: r.telefono,
+    tipo: "prova",
+    istruttoreId: istr.id,
+    istruttoreNome: istr.nome,
+    createdAt: new Date().toISOString(),
+    lezioni: [
+      {
+        id: newLpId("lez"),
+        giorno,
+        ora,
+        durataMin,
+        vasca,
+        corsia,
+        stato: "prenotata",
+      },
+    ],
+  }
+  r.status = "assegnata"
+  r.istruttoreId = istr.id
+  r.istruttoreNome = istr.nome
+  db.pacchetti.push(pac)
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, richiesta: r, pacchetto: pac })
+}
+
+export function postLezioniPrivatePacchetto(req: Request, res: Response) {
+  const u = req.user!
+  const b = req.body as {
+    richiestaId?: string
+    tipo?: "5" | "10"
+    lezioni?: Array<{ giorno?: string; ora?: string; durataMin?: number; vasca?: string; corsia?: number }>
+  }
+  const tipo = b.tipo === "10" ? "10" : b.tipo === "5" ? "5" : null
+  if (!tipo) return res.status(400).json({ message: "Tipo pacchetto 5 o 10" })
+  const db = readLezioniPrivateDb()
+  const r = db.richieste.find((x) => x.id === String(b.richiestaId ?? ""))
+  if (!r || r.status !== "assegnata" || !r.istruttoreId) {
+    return res.status(400).json({ message: "Prima assegna la prova a un istruttore" })
+  }
+  const rows = Array.isArray(b.lezioni) ? b.lezioni : []
+  if (rows.length < 1 || rows.length > 10) return res.status(400).json({ message: "Indica da 1 a 10 date" })
+  const lezioni = []
+  for (const row of rows) {
+    const vasca = asVasca(row.vasca)
+    const giorno = String(row.giorno ?? "").trim()
+    const ora = String(row.ora ?? "").trim()
+    const corsia = Number(row.corsia)
+    const durataMin = Number(row.durataMin) > 0 ? Math.round(Number(row.durataMin)) : 30
+    if (!vasca || !isYmd(giorno) || !isHm(ora)) return res.status(400).json({ message: "Ogni lezione serve giorno, ora, vasca" })
+    const busy = assertSlotLibero(db, giorno, ora, vasca, corsia, durataMin)
+    if (busy) return res.status(409).json({ message: `${giorno} ${ora}: ${busy}` })
+    const l = {
+      id: newLpId("lez"),
+      giorno,
+      ora,
+      durataMin,
+      vasca,
+      corsia,
+      stato: "prenotata" as const,
+    }
+    lezioni.push(l)
+    db.pacchetti.push({
+      id: "__tmp__",
+      richiestaId: r.id,
+      clienteNome: r.clienteNome,
+      telefono: r.telefono,
+      tipo,
+      istruttoreId: r.istruttoreId,
+      istruttoreNome: r.istruttoreNome || "",
+      createdAt: "",
+      lezioni: [l],
+    })
+  }
+  db.pacchetti = db.pacchetti.filter((p) => p.id !== "__tmp__")
+  const pac: LpPacchetto = {
+    id: newLpId("pck"),
+    richiestaId: r.id,
+    clienteNome: r.clienteNome,
+    telefono: r.telefono,
+    tipo,
+    istruttoreId: r.istruttoreId,
+    istruttoreNome: r.istruttoreNome || "",
+    createdAt: new Date().toISOString(),
+    lezioni,
+  }
+  db.pacchetti.push(pac)
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, pacchetto: pac })
+}
+
+export function patchLezioniPrivateLezione(req: Request, res: Response) {
+  const u = req.user!
+  const id = String(req.params.id ?? "")
+  const b = req.body as { stato?: LpLezioneStato }
+  const stato = b.stato
+  if (stato !== "svolta" && stato !== "annullata_istruttore" && stato !== "annullata_cliente" && stato !== "prenotata") {
+    return res.status(400).json({ message: "Stato non valido" })
+  }
+  const db = readLezioniPrivateDb()
+  for (const p of db.pacchetti) {
+    const l = p.lezioni.find((x) => x.id === id)
+    if (!l) continue
+    l.stato = stato
+    if (stato.startsWith("annullata")) {
+      l.annullataAt = new Date().toISOString()
+      l.annullataBy = u.nome || u.username
+    } else {
+      l.annullataAt = undefined
+      l.annullataBy = undefined
+    }
+    writeLezioniPrivateDb(db)
+    return res.json({ ok: true, lezione: l })
+  }
+  return res.status(404).json({ message: "Lezione non trovata" })
+}
+
+export function getLezioniPrivateOccupazione(req: Request, res: Response) {
+  const from = String(req.query.from ?? "").trim()
+  const to = String(req.query.to ?? "").trim()
+  if (!isYmd(from) || !isYmd(to) || from > to) return res.status(400).json({ message: "from/to YYYY-MM-DD" })
+  const db = readLezioniPrivateDb()
+  const days: string[] = []
+  const cur = new Date(`${from}T12:00:00`)
+  const end = new Date(`${to}T12:00:00`)
+  while (cur.getTime() <= end.getTime()) {
+    const y = cur.getFullYear()
+    const mo = String(cur.getMonth() + 1).padStart(2, "0")
+    const dd = String(cur.getDate()).padStart(2, "0")
+    days.push(`${y}-${mo}-${dd}`)
+    cur.setDate(cur.getDate() + 1)
+  }
+  const ore = lpOreSlots()
+  const booked = flattenLezioni(db).filter((l) => l.stato === "prenotata" || l.stato === "svolta")
+  const byDay: Record<string, { totali: number; occupati: number; v25: number; ludica: number }> = {}
+  for (const giorno of days) {
+    const cap25 = corsieMax(db.regole, giorno, "v25")
+    const capL = corsieMax(db.regole, giorno, "ludica")
+    const totali = ore.length * (cap25 + capL)
+    const occ = new Set<string>()
+    for (const l of booked) {
+      if (l.giorno !== giorno) continue
+      for (const o of oreCoperteLezioneLp(l.ora, l.durataMin)) occ.add(`${l.vasca}|${l.corsia}|${o}`)
+    }
+    byDay[giorno] = { totali, occupati: occ.size, v25: cap25, ludica: capL }
+  }
+  res.json({ from, to, ore, regole: db.regole, byDay, booked: booked.filter((l) => l.giorno >= from && l.giorno <= to) })
+}
