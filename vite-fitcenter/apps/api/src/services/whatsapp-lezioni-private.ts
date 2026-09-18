@@ -1,48 +1,12 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
-import {
-  isWhatsappSendConfigured,
-  leadWelcomeTemplateConfig,
-  normalizeWaTo,
-  sendWhatsappTemplate,
-  sendWhatsappText,
-} from "./whatsapp.js"
+import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText } from "./whatsapp.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-function compactWaParam(text: string, fallback: string): string {
-  const s = String(text ?? "")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/ {3,}/g, "  ")
-    .trim()
-  return (s || fallback).slice(0, 90)
-}
-
-export async function sendLezionePrivataWhatsapp(telefono: string, text: string, nome: string): Promise<void> {
+/** Solo il testo breve della lezione privata. Mai il template di benvenuto H2Sport. */
+export async function sendLezionePrivataWhatsapp(telefono: string, text: string, _nome?: string): Promise<void> {
+  void _nome
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
-  const lpTpl = (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
-  const cfg = leadWelcomeTemplateConfig({ bambini: false })
-  const templateName = lpTpl || cfg.templateName
-  const lang = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? cfg.languageCode ?? "it").trim() || "it"
-  const param = compactWaParam(text, nome.trim() || "Ciao")
-
-  let delivered = false
-  let lastErr: Error | null = null
-  try {
-    await sendWhatsappTemplate({
-      toRaw: telefono,
-      templateName,
-      languageCode: lang,
-      bodyParams: [param],
-    })
-    delivered = true
-  } catch (e) {
-    lastErr = e as Error
-  }
-  try {
-    await sendWhatsappText(telefono, text)
-    delivered = true
-  } catch (e) {
-    if (!delivered) throw lastErr ?? (e as Error)
-  }
+  await sendWhatsappText(telefono, text)
 }
 
 function samePhone(a: string, b: string): boolean {
