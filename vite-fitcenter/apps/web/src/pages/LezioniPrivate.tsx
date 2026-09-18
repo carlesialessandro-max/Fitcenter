@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { lezioniPrivateApi, type LpLezioneFlat, type LpRichiesta, type VascaId } from "@/api/lezioniPrivate"
 import { useAuth } from "@/contexts/AuthContext"
@@ -21,14 +22,22 @@ function addDaysIso(iso: string, n: number): string {
   return `${y}-${m}-${day}`
 }
 
+function tabFromPath(pathname: string): Tab {
+  if (pathname.includes("/calendario")) return "calendario"
+  if (pathname.includes("/istruttori")) return "istruttori"
+  return "richieste"
+}
+
 export function LezioniPrivate() {
   const { role, user } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const tab = tabFromPath(location.pathname)
   const enabled =
     role === "admin" || role === "scuola_nuoto" || role === "istruttore" || role === "operatore" || role === "firme"
   const canDesk = role === "admin" || role === "scuola_nuoto" || role === "operatore" || role === "firme"
   const canRoster = role === "admin" || role === "scuola_nuoto"
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>("richieste")
   const [day, setDay] = useState(() => isoToday())
   const [periodo, setPeriodo] = useState<Periodo>("giorno")
   const [prendiId, setPrendiId] = useState<string | null>(null)
@@ -86,7 +95,9 @@ export function LezioniPrivate() {
             <button
               key={id}
               type="button"
-              onClick={() => setTab(id)}
+              onClick={() =>
+                navigate(id === "richieste" ? "/lezioni-private/richieste" : `/lezioni-private/${id}`)
+              }
               className={`rounded-md px-3 py-1.5 text-sm font-medium ${tab === id ? "bg-amber-500/20 text-amber-300" : "text-zinc-400 hover:bg-zinc-800"}`}
             >
               {label}

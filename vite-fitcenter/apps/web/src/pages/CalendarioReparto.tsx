@@ -111,7 +111,7 @@ const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/firma-cassa", label: "Firma cassa" },
   { to: "/piscina", label: "Mappa piscina" },
   { to: "/scuola-nuoto", label: "Scuola nuoto" },
-  { to: "/lezioni-private", label: "Lezioni private" },
+  { to: "/lezioni-private/richieste", label: "Lezioni private" },
   { to: "/campus", label: "Campus" },
   { to: "/danza", label: "Danza" },
   { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },

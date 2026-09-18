@@ -6,22 +6,34 @@ import { BrandLogo } from "@/components/BrandLogo"
 
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
 
+const navLezioniPrivateGroup: NavItem = {
+  to: "__lp_group__",
+  label: "Lezioni private",
+  group: true,
+  groupKey: "lp",
+  children: [
+    { to: "/lezioni-private/richieste", label: "Richieste" },
+    { to: "/lezioni-private/calendario", label: "Calendario vasche" },
+    { to: "/lezioni-private/istruttori", label: "Istruttori / regole" },
+  ],
+}
+
 const navOperatore: NavItem[] = [
-  { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
-  { to: "/firme", label: "Firme" },
-  { to: "/firma-cassa", label: "Firma Cassa" },
-  { to: "/scontrini", label: "Scontrini" },
-  { to: "/calendario/reception", label: "Calendario reception" },
-  { to: "/crm", label: "CRM Vendita" },
-  { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
-  { to: "/telefonate", label: "Telefonate" },
-  { to: "/stampa-report", label: "Stampa report" },
-  { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
-  { to: "/andamento-vendite", label: "Andamento Vendite" },
-  { to: "/vendite-cross", label: "Cross" },
-  { to: "/piscina", label: "Mappa Piscina" },
-  { to: "/lezioni-private", label: "Lezioni private" },
-] as const
+    { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
+    { to: "/firme", label: "Firme" },
+    { to: "/firma-cassa", label: "Firma Cassa" },
+    { to: "/scontrini", label: "Scontrini" },
+    { to: "/calendario/reception", label: "Calendario reception" },
+    { to: "/crm", label: "CRM Vendita" },
+    { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
+    { to: "/telefonate", label: "Telefonate" },
+    { to: "/stampa-report", label: "Stampa report" },
+    { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
+    { to: "/andamento-vendite", label: "Andamento Vendite" },
+    { to: "/vendite-cross", label: "Cross" },
+    { to: "/piscina", label: "Mappa Piscina" },
+    navLezioniPrivateGroup,
+  ] as const
 
 const navCorsi: NavItem[] = [
   {
@@ -48,7 +60,7 @@ const navIstruttore: NavItem[] = [
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }] },
-  { to: "/lezioni-private", label: "Lezioni private" },
+  navLezioniPrivateGroup,
 ] as const
 const navCampus: NavItem[] = [
   {
@@ -75,7 +87,7 @@ const navFirme: NavItem[] = [
   },
   { to: "/calendario/reception", label: "Calendario reception" },
   { to: "/piscina", label: "Mappa Piscina" },
-  { to: "/lezioni-private", label: "Lezioni private" },
+  navLezioniPrivateGroup,
 ] as const
 const navScuolaNuoto: NavItem[] = [
   {
@@ -93,7 +105,7 @@ const navScuolaNuoto: NavItem[] = [
     label: "Scuola Nuoto",
     children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
   },
-  { to: "/lezioni-private", label: "Lezioni private" },
+  navLezioniPrivateGroup,
 ] as const
 const navBagnini: NavItem[] = [
   {
@@ -144,6 +156,7 @@ const navAdmin: NavItem[] = [
       { to: "/vendite-cross", label: "Cross" },
     ],
   },
+  navLezioniPrivateGroup,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -156,7 +169,6 @@ const navAdmin: NavItem[] = [
     ],
   },
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
-  { to: "/lezioni-private", label: "Lezioni private" },
   {
     to: "__admin_group__",
     label: "Altri",
@@ -188,7 +200,7 @@ export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true, piano: true })
+  const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true, piano: true, lp: true })
   const mustRedirectBagnini =
     role === "bagnini" &&
     !location.pathname.startsWith("/piscina") &&
@@ -370,7 +382,7 @@ export function AppLayout() {
         setGroupOpen((prev) => ({ ...prev, admin: legacy !== "0" }))
       }
     } catch {
-      setGroupOpen({ vendite: true, admin: true, piano: true })
+      setGroupOpen({ vendite: true, admin: true, piano: true, lp: true })
     }
   }, [])
 
