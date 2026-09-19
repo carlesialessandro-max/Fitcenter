@@ -145,8 +145,8 @@ export function WhatsappLog() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Log WhatsApp</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            «Risposta» nel log = Meta ha accettato l’invio. Se sul telefono non arriva, spesso è fuori finestra 24h
-            (serve una risposta al numero FitCenter, o un template Meta).
+            «Non consegnato» = WhatsApp non l’ha messo sul telefono. Sotto compare il motivo Meta (spesso finestra
+            24h o numero non recapitabile, non per forza un blocco).
           </p>
         </div>
         <div className="flex gap-2">
@@ -272,6 +272,7 @@ export function WhatsappLog() {
                     </span>
                   </div>
                   <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-100">{displayText(e)}</p>
+                  {e.errorIt ? <p className="mt-1 text-xs text-red-300">{e.errorIt}</p> : null}
                 </li>
               ))}
             </ul>

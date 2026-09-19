@@ -14,7 +14,54 @@ export interface WhatsappStoredEvent {
   waMessageId?: string
   text?: string
   status?: string
+  /** Motivo italiano se Meta non ha consegnato. */
+  errorIt?: string
   raw: unknown
+}
+
+/** Codice Meta → cosa fare. Non è detto che abbiano bloccato il numero. */
+export function explainWhatsappDeliveryError(raw: unknown, fallback?: string): string | undefined {
+  const blob = JSON.stringify(raw ?? "")
+  const fallbackText = String(fallback ?? "").trim()
+  const codeMatch = blob.match(/\b(13\d{4}|130429|13200\d)\b/) || fallbackText.match(/\b(13\d{4}|130429|13200\d)\b/)
+  const code = codeMatch?.[1]
+  const details =
+    (raw && typeof raw === "object"
+      ? String(
+          (raw as { deliveryError?: string }).deliveryError ??
+            (raw as { error?: string }).error ??
+            (raw as { errors?: Array<{ code?: number; title?: string; message?: string; error_data?: { details?: string } }> }).errors?.[0]
+              ?.error_data?.details ??
+            (raw as { errors?: Array<{ title?: string; message?: string }> }).errors?.[0]?.message ??
+            (raw as { errors?: Array<{ title?: string }> }).errors?.[0]?.title ??
+            ""
+        )
+      : "") || fallbackText
+  const lower = `${details} ${blob}`.toLowerCase()
+
+  if (code === "131047" || lower.includes("24 hour") || lower.includes("re-engage")) {
+    return "Fuori finestra 24 ore: il cliente non ha scritto al WhatsApp FitCenter di recente. Il testo libero non arriva (non è un blocco)."
+  }
+  if (code === "131026" || lower.includes("undeliverable")) {
+    return "Non recapitabile: numero non su WhatsApp, sbagliato, o l’app non accetta messaggi da aziende. Controlla il cellulare in anagrafica (non è detto che abbia bloccato H2Sport)."
+  }
+  if (code === "131048" || lower.includes("spam")) {
+    return "Meta l’ha tenuto fermo (spam / troppi invii). Non è un blocco del cliente."
+  }
+  if (code === "130429") {
+    return "Troppi messaggi in poco tempo. Riprova più tardi."
+  }
+  if (code === "132001" || lower.includes("template name")) {
+    return "Template Meta non trovato o non approvato."
+  }
+  if (code === "131051") {
+    return "Tipo di messaggio non supportato su quel WhatsApp."
+  }
+  if (code === "131031") {
+    return "Account WhatsApp Business con limitazioni. Controlla Meta Manager."
+  }
+  if (!details && !code) return undefined
+  return `Errore WhatsApp${code ? ` ${code}` : ""}: ${details || "consegna rifiutata da Meta"}`
 }
 
 type StoreShape = { events: WhatsappStoredEvent[] }
@@ -146,6 +193,7 @@ export const whatsappEventsStore = {
       waMessageId: ev.waMessageId,
       text: ev.text,
       status: ev.status,
+      errorIt: ev.errorIt,
       raw: ev.raw,
     }
     data.events.unshift(row)
@@ -164,6 +212,10 @@ export const whatsappEventsStore = {
     const st = status.toLowerCase()
     if (st === "failed" || st === "undelivered") {
       row.status = "error"
+      row.errorIt = explainWhatsappDeliveryError(
+        { ...(typeof row.raw === "object" && row.raw ? row.raw : {}), deliveryError: errorText },
+        errorText
+      )
       if (errorText) {
         const raw = row.raw && typeof row.raw === "object" ? (row.raw as Record<string, unknown>) : {}
         row.raw = { ...raw, deliveryError: errorText }

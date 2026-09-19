@@ -2,7 +2,7 @@
  * Client WhatsApp Cloud API (Meta Graph).
  * Invio messaggi; webhook gestito in handlers/whatsapp.ts
  */
-import { whatsappEventsStore } from "../store/whatsapp-events.js"
+import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import { welcomeTextFromWebsiteRequest } from "./whatsapp-site-topics.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
@@ -224,6 +224,7 @@ export async function sendWhatsappText(toRaw: string, text: string): Promise<unk
       to,
       text: body,
       status: "error",
+      errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
       raw: { error: (e as Error)?.message ?? String(e) },
     })
     throw e
@@ -282,6 +283,7 @@ export async function sendWhatsappTemplate(params: {
       to,
       text: preview,
       status: "error",
+      errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
       raw: { error: (e as Error)?.message ?? String(e) },
     })
     throw e

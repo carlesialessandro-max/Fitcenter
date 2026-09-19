@@ -9,7 +9,7 @@ export type WhatsappLogEvent = {
   text?: string
   status?: string
   waMessageId?: string
-  raw?: unknown
+  errorIt?: string
 }
 
 export const whatsappApi = {

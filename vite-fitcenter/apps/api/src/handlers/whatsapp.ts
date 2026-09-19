@@ -2,7 +2,7 @@ import crypto from "crypto"
 import path from "path"
 import { fileURLToPath } from "url"
 import type { Request, Response } from "express"
-import { whatsappEventsStore } from "../store/whatsapp-events.js"
+import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import { handleWhatsappInboundBooking, sendLeadBambiniInfoFromCrm } from "../services/whatsapp-booking.js"
 import { handleWhatsappLezioniPrivate } from "../services/whatsapp-lezioni-private.js"
 import {
@@ -230,7 +230,11 @@ export function whatsappEventsList(req: Request, res: Response) {
       text: e.text,
       status: e.status,
       waMessageId: e.waMessageId,
-      raw: e.raw,
+      errorIt:
+        e.errorIt ||
+        (e.status === "error" || e.status === "failed" || e.status === "undelivered"
+          ? explainWhatsappDeliveryError(e.raw, e.text)
+          : undefined),
     })),
   })
 }
