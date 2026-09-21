@@ -386,7 +386,7 @@ function dettaglioMeseCacheLookup(
     }
   }
   return {
-    cacheAsOf: cacheAsOfKeyForTotals(asOfKey),
+    cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
     cacheParams: { anno, mese, giorno, consulente: consulente ?? null },
   }
 }
@@ -395,6 +395,7 @@ function dettaglioAnnoCacheAsOf(anno: number, asOfKey: string): string {
   const t = parseYmdKey(getTodayKey())
   if (!t) return asOfKey
   if (anno < t.year) return `${anno}-12-31`
+  if (isAsOfToday(asOfKey)) return todayHourCacheKey(asOfKey)
   return cacheAsOfKeyForTotals(asOfKey)
 }
 
@@ -402,23 +403,35 @@ function isAsOfToday(asOfKey: string): boolean {
   return isTodayCacheAsOf(asOfKey, getTodayKey())
 }
 
-/** Chiave cache «oggi»: blocco orario (es. 2026-05-20T14) — istantaneo se esci e rientri nella stessa ora. */
-function todayHourCacheKey(dateKey: string): string {
-  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
-  const d = new Date()
-  const h = useLocal ? d.getHours() : d.getUTCHours()
-  return `${baseAsOfDateKey(dateKey)}T${pad2(h)}`
+/** Slot cache «oggi»: 2 minuti (es. 2026-09-21T1214). Override minuti con TODAY_CACHE_SLOT_MS. */
+function todayCacheSlotMs(): number {
+  const env = Number(process.env.TODAY_CACHE_SLOT_MS)
+  if (Number.isFinite(env) && env >= 30_000) return env
+  return 2 * 60_000
 }
 
-/** TTL cache oggi: fino al cambio ora (override con TODAY_CACHE_TTL_MS, min 60s). */
+function todaySlotParts(slotOffset = 0): { h: number; min: number } {
+  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
+  const slotMs = todayCacheSlotMs()
+  const d = new Date(Date.now() + slotOffset * slotMs)
+  const h = useLocal ? d.getHours() : d.getUTCHours()
+  const min = useLocal ? d.getMinutes() : d.getUTCMinutes()
+  const step = Math.max(1, Math.round(slotMs / 60_000))
+  return { h, min: Math.floor(min / step) * step }
+}
+
+function todayHourCacheKey(dateKey: string, slotOffset = 0): string {
+  const { h, min } = todaySlotParts(slotOffset)
+  return `${baseAsOfDateKey(dateKey)}T${pad2(h)}${pad2(min)}`
+}
+
+/** TTL cache oggi: fino alla fine dello slot da 2 minuti (override TODAY_CACHE_TTL_MS, min 30s). */
 function getTodayCacheTtlMs(): number {
   const env = Number(process.env.TODAY_CACHE_TTL_MS)
-  if (Number.isFinite(env) && env >= 60_000) return env
-  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
-  const d = new Date()
-  const min = useLocal ? d.getMinutes() : d.getUTCMinutes()
-  const sec = useLocal ? d.getSeconds() : d.getUTCSeconds()
-  return Math.max(60_000, ((59 - min) * 60 + (59 - sec) + 1) * 1000)
+  if (Number.isFinite(env) && env >= 30_000) return env
+  const slotMs = todayCacheSlotMs()
+  const now = Date.now()
+  return Math.max(30_000, slotMs - (now % slotMs))
 }
 
 function getCacheTtlMsForAsOf(asOfKey: string, _fallbackMs: number): number {
@@ -450,17 +463,10 @@ function dashboardCacheAsOf(asOfKey: string): string {
   return cacheAsOfKeyForTotals(asOfKey)
 }
 
-/** Chiavi cache da provare in ordine (ora corrente → ora precedente → giorno). */
+/** Chiavi cache «oggi»: slot corrente, poi quello precedente (niente ora/giorno intero: troppo vecchi). */
 function dashboardCacheLookupKeys(asOfKey: string): string[] {
   if (!isAsOfToday(asOfKey)) return [cacheAsOfKeyForTotals(asOfKey)]
-  const keys: string[] = [todayHourCacheKey(asOfKey)]
-  const useLocal = process.env.GESTIONALE_DATE_LOCALE === "true"
-  const d = new Date()
-  const h = (useLocal ? d.getHours() : d.getUTCHours()) - 1
-  if (h >= 0) keys.push(`${baseAsOfDateKey(asOfKey)}T${pad2(h)}`)
-  keys.push(cacheAsOfKeyForTotals(asOfKey))
-  keys.push(baseAsOfDateKey(asOfKey))
-  return [...new Set(keys)]
+  return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1)])]
 }
 
 async function readDashboardCache(

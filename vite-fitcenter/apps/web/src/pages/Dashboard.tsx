@@ -35,14 +35,11 @@ function fmtDateIt(iso: string): string {
   return `${m[3]}/${m[2]}/${m[1]}`
 }
 
-/** Allineato alla cache API «oggi» per blocco orario. */
-function currentHourBucket(): number {
-  return new Date().getHours()
-}
+/** Allineato alla cache API «oggi»: ricalcolo ogni 2 minuti. */
+const TODAY_REFRESH_MS = 2 * 60 * 1000
 
-function msUntilNextHour(): number {
-  const d = new Date()
-  return Math.max(60_000, ((60 - d.getMinutes()) * 60 - d.getSeconds()) * 1000 + 500)
+function currentTodayBucket(): number {
+  return Math.floor(Date.now() / TODAY_REFRESH_MS)
 }
 
 
@@ -55,8 +52,8 @@ export function Dashboard() {
   const [asOf, setAsOf] = useState(() => localIsoDate())
   const todayIso = localIsoDate()
   const isAdminToday = role === "admin" ? asOf === todayIso : true
-  const todayHourBucket = isAdminToday ? currentHourBucket() : null
-  const todayStaleMs = isAdminToday ? msUntilNextHour() : 30_000
+  const todayHourBucket = isAdminToday ? currentTodayBucket() : null
+  const todayStaleMs = isAdminToday ? TODAY_REFRESH_MS : 30_000
   const [budgetAnno, setBudgetAnno] = useState(annoInCorso)
   const [budgetMese, setBudgetMese] = useState(new Date().getMonth() + 1)
   const [budgetPerConsulente, setBudgetPerConsulente] = useState<Record<string, number>>({})
@@ -74,8 +71,9 @@ export function Dashboard() {
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
     retry: 1,
     retryDelay: 3000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnWindowFocus: isAdminToday,
+    refetchOnReconnect: isAdminToday,
+    refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
     staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : todayStaleMs,
     gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -142,8 +140,9 @@ export function Dashboard() {
     queryFn: () => dataApi.getDettaglioMese(annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : undefined),
     retry: 1,
     retryDelay: 3000,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnWindowFocus: isAdminToday,
+    refetchOnReconnect: isAdminToday,
+    refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
     staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
     gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -154,8 +153,9 @@ export function Dashboard() {
     queryFn: () => dataApi.getDettaglioAnno(annoOggi, role === "admin" ? asOf : undefined),
     enabled: role === "admin",
     retry: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
+    refetchOnWindowFocus: isAdminToday,
+    refetchOnReconnect: isAdminToday,
+    refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
     staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
     gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
   })
