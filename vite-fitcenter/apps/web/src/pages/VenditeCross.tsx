@@ -63,7 +63,8 @@ export function VenditeCross() {
         <p className="mt-1 text-sm text-zinc-400">
           Solo cross reali (importo aumentato, movimento U, rate future o pagamento al/dopo il cambio tipo).
           Escluse correzioni tipologia (pagamento stesso giorno prima del log, stesso importo, senza U).
-          Sommati alle entrate in dashboard senza doppio conteggio.
+          Se c’è già un movimento vendita nel mese, l’importo è già nel consuntivo dashboard e nell’analisi
+          abbonamenti: non sommarlo di nuovo.
         </p>
       </div>
 

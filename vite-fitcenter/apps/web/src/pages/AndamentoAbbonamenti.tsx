@@ -106,7 +106,7 @@ export function AndamentoAbbonamenti() {
     const crossEuro = venditeMovimentiAndamento?.crossEuro ?? 0
     const totalEuro =
       venditeMovimentiAndamento?.totalEuro ??
-      rows.reduce((s, r) => s + Number(r.totalEuro ?? 0), 0) + crossEuro
+      rows.reduce((s, r) => s + Number(r.totalEuro ?? 0), 0)
     if (totalForPct <= 0 && totalEuro <= 0) return null
 
     const byCategoriaMap: Record<string, { count: number; euro: number }> = {}
@@ -204,7 +204,8 @@ export function AndamentoAbbonamenti() {
                   </p>
                   {computed.crossEuro > 0 ? (
                     <p className="mt-1 text-xs text-zinc-500">
-                      di cui €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} cross
+                      Cross €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} già nel
+                      venduto se c’è movimento: non sommarli all’analisi
                     </p>
                   ) : null}
                 </div>
@@ -244,7 +245,8 @@ export function AndamentoAbbonamenti() {
                 </p>
                 {computed.crossEuro > 0 ? (
                   <p className="mt-1 text-xs text-zinc-500">
-                    incl. €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} cross
+                    Cross €{computed.crossEuro.toLocaleString("it-IT", { minimumFractionDigits: 2 })} già nei
+                    movimenti se c’è vendita: non sommarli
                   </p>
                 ) : null}
               </div>

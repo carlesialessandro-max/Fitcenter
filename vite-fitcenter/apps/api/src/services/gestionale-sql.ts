@@ -3619,7 +3619,43 @@ async function queryVenditeTotaleViewPerIscrizioni(
   return Number(row?.Totale ?? row?.totale) || 0
 }
 
-/** base + cross reali − overlap (Totale view iscrizioni cross già in base). */
+/** Iscrizioni con già un movimento I/U nel periodo (importo già nel venduto o nel cambio tipo). */
+async function queryIscrizioniConVenditaNelPeriodo(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idIscrizioni: number[]
+): Promise<Set<number>> {
+  const ids = [...new Set(idIscrizioni.filter((id) => Number.isFinite(id) && id > 0))]
+  if (!ids.length) return new Set()
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+  let req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req = req.input(`x${i}`, sql.Int, id)
+  })
+  const r = await req.query(
+    `SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
+     FROM [${defaultTables.movimentiVenduto}] M
+     WHERE M.[${COL_ISCRIZIONE}] IN (${ids.map((_, i) => `@x${i}`).join(", ")})
+       AND M.[${COL_IMPORTO}] <> 0
+       AND M.[TipoOperazione] IN ('I', 'U')
+       AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+       AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)`
+  )
+  return new Set(
+    (r.recordset ?? []).map((row) => Number((row as Record<string, unknown>).ID ?? 0)).filter((id) => id > 0)
+  )
+}
+
+/**
+ * Consuntivo = venduto base (movimenti / Totale iscrizione).
+ * I cross si sommano SOLO se quell'iscrizione non ha già un movimento vendita nel periodo
+ * (altrimenti Altare/Baldi/Pisaneschi finiscono due volte: analisi + pagina Cross).
+ */
 async function getVenditeTotaleConCrossNetto(
   p: sql.ConnectionPool,
   from: string,
@@ -3638,20 +3674,18 @@ async function getVenditeTotaleConCrossNetto(
   }
   if (!idConsultant) return base
   try {
-    const { crossEuro, overlapEuro } = await queryVenditeCrossNettoAggregatoCached(p, from, to, idConsultant)
-    return Math.max(0, base + crossEuro - overlapEuro)
+    const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
+    if (!rows.length) return base
+    const inBase = await queryIscrizioniConVenditaNelPeriodo(
+      p,
+      from,
+      to,
+      rows.map((r) => r.idIscrizione)
+    )
+    const extra = rows.filter((r) => !inBase.has(r.idIscrizione)).reduce((s, r) => s + r.totale, 0)
+    return Math.round((base + extra) * 100) / 100
   } catch {
-    try {
-      const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-      const crossEuro = rows.reduce((s, r) => s + r.totale, 0)
-      const ids = [...new Set(rows.map((r) => r.idIscrizione).filter((id) => id > 0))]
-      const overlapEuro = ids.length
-        ? await queryVenditeTotaleViewPerIscrizioni(p, from, to, ids, idConsultant)
-        : 0
-      return Math.max(0, base + crossEuro - overlapEuro)
-    } catch {
-      return base
-    }
+    return base
   }
 }
 
