@@ -148,6 +148,19 @@ export const whatsappEventsStore = {
     return { events: rows.slice(0, limit), total: rows.length, limit }
   },
 
+  /** True se quel numero ha scritto a FitCenter nelle ultime 24h (testo libero consegnabile). */
+  hasCustomerWindow(phone: string, maxAgeMs = 24 * 60 * 60 * 1000): boolean {
+    const key = this.phoneKey(phone)
+    if (!key) return false
+    const since = Date.now() - maxAgeMs
+    return load().events.some((e) => {
+      if (e.kind !== "message_in") return false
+      if (this.phoneKey(e.from) !== key) return false
+      const t = Date.parse(e.at)
+      return Number.isFinite(t) && t >= since
+    })
+  },
+
   /** Telefono normalizzato (senza 39/0) per confronto. */
   phoneKey(raw?: string): string {
     let x = phoneDigits(raw ?? "")

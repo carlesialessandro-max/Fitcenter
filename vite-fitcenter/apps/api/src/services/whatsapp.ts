@@ -354,13 +354,15 @@ export async function notifyLeadWelcomeWhatsapp(params: {
         languageCode,
         ...(hasNameParam ? { bodyParams: [nome] } : {}),
       })
-      try {
-        await sendWhatsappText(phone, bambiniWelcomeFollowupMsg())
-      } catch (e2) {
-        console.warn(
-          "[whatsapp] follow-up benvenuto bambini:",
-          (e2 as Error)?.message ?? e2
-        )
+      if (whatsappEventsStore.hasCustomerWindow(phone)) {
+        try {
+          await sendWhatsappText(phone, bambiniWelcomeFollowupMsg())
+        } catch (e2) {
+          console.warn(
+            "[whatsapp] follow-up benvenuto bambini:",
+            (e2 as Error)?.message ?? e2
+          )
+        }
       }
       return { sent: true, result }
     }
@@ -374,22 +376,18 @@ export async function notifyLeadWelcomeWhatsapp(params: {
     })
     const adultText = fromSite?.text ?? adultiWelcomeFollowupMsg(nome)
 
-    try {
+    if (whatsappEventsStore.hasCustomerWindow(phone)) {
       const result = await sendWhatsappText(phone, adultText)
       return { sent: true, result, topic: fromSite?.topic }
-    } catch (eText) {
-      console.warn(
-        "[whatsapp] adulti testo libero fallito (finestra 24h?), nessun secondo messaggio:",
-        (eText as Error)?.message ?? eText
-      )
-      const result = await sendWhatsappTemplate({
-        toRaw: phone,
-        templateName,
-        languageCode,
-        ...(hasNameParam ? { bodyParams: [nome] } : {}),
-      })
-      return { sent: true, result }
     }
+
+    const result = await sendWhatsappTemplate({
+      toRaw: phone,
+      templateName,
+      languageCode,
+      ...(hasNameParam ? { bodyParams: [nome] } : {}),
+    })
+    return { sent: true, result, topic: fromSite?.topic }
   } catch (e) {
     const error = (e as Error)?.message ?? String(e)
     console.error("[whatsapp] notify lead:", error)
