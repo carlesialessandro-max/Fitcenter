@@ -214,6 +214,53 @@ function isTemplateAlreadyExistsError(msg: string): boolean {
   return /already exists|taken|duplicate|already been created/i.test(msg)
 }
 
+/** Crea un UTILITY in italiano (`it` come i template già approvati). Mai `it_IT` (Meta 2380849). */
+export async function createWhatsappUtilityTemplateIt(params: {
+  name: string
+  body: string
+  example: string
+}): Promise<unknown> {
+  const name = params.name.trim()
+  const payloads: Record<string, unknown>[] = [
+    {
+      name,
+      language: "it",
+      category: "UTILITY",
+      parameter_format: "positional",
+      components: [
+        {
+          type: "BODY",
+          text: params.body,
+          example: { body_text: [[params.example]] },
+        },
+      ],
+    },
+    {
+      name,
+      language: "it",
+      category: "UTILITY",
+      components: [
+        {
+          type: "BODY",
+          text: params.body,
+          example: { body_text: [[params.example]] },
+        },
+      ],
+    },
+  ]
+  let lastErr: Error | null = null
+  for (const body of payloads) {
+    try {
+      return await graphWaba("POST", "message_templates", body)
+    } catch (e) {
+      lastErr = e as Error
+      const msg = lastErr.message || String(e)
+      if (isTemplateAlreadyExistsError(msg)) throw lastErr
+    }
+  }
+  throw lastErr ?? new Error("Creazione template WhatsApp fallita")
+}
+
 export async function createWhatsappUtilityTemplate(params: {
   name: string
   languageCode?: string

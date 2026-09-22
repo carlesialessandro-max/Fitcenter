@@ -1,7 +1,8 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
+  createWhatsappUtilityTemplateIt,
+  findWhatsappTemplate,
   isWhatsappSendConfigured,
-  leadWelcomeTemplateConfig,
   listWhatsappTemplates,
   normalizeWaTo,
   sendWhatsappTemplate,
@@ -10,12 +11,13 @@ import {
 } from "./whatsapp.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-function lpPreferredName(): string {
-  return (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
-}
+const LP_TPL_NAME = "fitcenter_lp_avviso"
+const LP_TPL_BODY = "FitCenter lezione privata: {{1}}"
+const LP_TPL_EXAMPLE =
+  "Andrea Pecci 5 anni tel 3331234567 mercoledi pomeriggio. Prenota in calendario poi chiama il genitore."
 
-function lpLang(): string {
-  return (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
+function lpPreferredName(): string {
+  return (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim() || LP_TPL_NAME
 }
 
 function sanitizeLpTemplateParam(text: string): string {
@@ -34,92 +36,89 @@ function isShortApprovedBody(text?: string): boolean {
   return t.length <= 120 && staticLen <= 80
 }
 
-function positionalPlaceholders(body?: string): number {
-  const nums = [...String(body ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]))
-  return nums.length ? Math.max(...nums) : 0
+const MANAGER_HINT =
+  "In WhatsApp Manager crea un modello UTILITY lingua Italiano (it), nome fitcenter_lp_avviso, testo: FitCenter lezione privata: {{1}}"
+
+function pickShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
+  const preferred = lpPreferredName()
+  const ok = rows.filter((t) => !isLongWelcomeBody(t.bodyText))
+  return (
+    ok.find((t) => t.name === preferred && t.status === "APPROVED") ??
+    ok.find((t) => t.name === LP_TPL_NAME && t.status === "APPROVED") ??
+    ok.find((t) => t.status === "APPROVED" && isShortApprovedBody(t.bodyText)) ??
+    null
+  )
 }
 
-function namedPlaceholders(body?: string): string[] {
-  const out: string[] = []
-  for (const m of String(body ?? "").matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g)) {
-    const n = m[1]!
-    if (!out.includes(n)) out.push(n)
-  }
-  return out
+function pendingShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
+  const names = new Set([lpPreferredName(), LP_TPL_NAME, "lezione_privata_breve"])
+  return rows.find((t) => names.has(t.name) && (t.status === "PENDING" || t.status === "IN_APPEAL")) ?? null
 }
 
-let listedTplCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
+let listedAllCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
+let ensureTpl: Promise<WhatsappTemplateInfo> | null = null
 
-async function approvedTemplates(): Promise<WhatsappTemplateInfo[]> {
+async function listAllTemplates(): Promise<WhatsappTemplateInfo[]> {
   const now = Date.now()
-  if (listedTplCache && now - listedTplCache.at < 10 * 60_000) return listedTplCache.rows
-  const rows = (await listWhatsappTemplates()).filter((t) => t.status === "APPROVED")
-  listedTplCache = { at: now, rows }
+  if (listedAllCache && now - listedAllCache.at < 60_000) return listedAllCache.rows
+  const rows = await listWhatsappTemplates()
+  listedAllCache = { at: now, rows }
   return rows
 }
 
-function pickShortFrom(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
-  const lang = lpLang().slice(0, 2).toLowerCase()
-  const preferred = lpPreferredName()
-  const it = rows.filter((t) => String(t.language ?? "").toLowerCase().startsWith(lang) || !t.language)
-  if (preferred) {
-    const own = it.find((t) => t.name === preferred && !isLongWelcomeBody(t.bodyText))
-    if (own) return own
+async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
+  if (!ensureTpl) {
+    ensureTpl = (async () => {
+      const rows = await listAllTemplates()
+      const short = pickShort(rows)
+      if (short) return short
+      const pending = pendingShort(rows)
+      if (pending) {
+        throw new Error(
+          `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). ${MANAGER_HINT}`,
+        )
+      }
+      try {
+        await createWhatsappUtilityTemplateIt({
+          name: LP_TPL_NAME,
+          body: LP_TPL_BODY,
+          example: LP_TPL_EXAMPLE,
+        })
+      } catch (e) {
+        const msg = (e as Error).message || String(e)
+        if (!/already exists|taken|duplicate/i.test(msg)) {
+          throw new Error(`Non riesco a creare il template breve. ${msg}. ${MANAGER_HINT}`)
+        }
+      }
+      listedAllCache = null
+      const again = await findWhatsappTemplate(LP_TPL_NAME, "it").catch(() => null)
+      if (again?.status === "APPROVED" && !isLongWelcomeBody(again.bodyText)) return again
+      if (again?.status === "PENDING" || again?.status === "IN_APPEAL") {
+        throw new Error(
+          `Template breve «${LP_TPL_NAME}» inviato a Meta, attendi lo stato verde e reinvia. Non usiamo il benvenuto delle consulenti.`,
+        )
+      }
+      throw new Error(`Template breve non disponibile. ${MANAGER_HINT}`)
+    })().catch((e) => {
+      ensureTpl = null
+      throw e
+    })
   }
-  return it.find((t) => isShortApprovedBody(t.bodyText)) ?? null
+  return ensureTpl
 }
 
-function consultantFallbackNames(): string[] {
-  const adulti = leadWelcomeTemplateConfig({ bambini: false })
-  const bambini = leadWelcomeTemplateConfig({ bambini: true })
-  return [
-    lpPreferredName(),
-    adulti.templateName,
-    "lead_benvenuto_adulti",
-    "lead_benvenuto",
-    bambini.templateName,
-  ].filter((n, i, a) => Boolean(n) && a.indexOf(n) === i)
-}
-
-async function sendApprovedTemplate(
-  telefono: string,
-  tpl: WhatsappTemplateInfo,
-  dettaglio: string,
-  chi: string,
-): Promise<void> {
-  const langs = Array.from(new Set([tpl.language || lpLang(), "it"].filter(Boolean)))
-  const named = namedPlaceholders(tpl.bodyText)
-  const nPos = positionalPlaceholders(tpl.bodyText)
-  const namedFmt = String(tpl.parameterFormat ?? "").toUpperCase() === "NAMED" || (named.length > 0 && nPos === 0)
-  const attempts: Array<{ languageCode: string; bodyParams?: string[]; namedBodyParams?: Array<{ name: string; text: string }> }> =
-    []
-  for (const languageCode of langs) {
-    if (namedFmt && named.length) {
-      attempts.push({
-        languageCode,
-        namedBodyParams: named.map((name, i) => ({ name, text: i === 0 ? dettaglio : chi })),
-      })
-    } else if (nPos <= 0) {
-      attempts.push({ languageCode })
-    } else if (nPos === 1) {
-      attempts.push({ languageCode, bodyParams: [dettaglio] })
-      attempts.push({ languageCode, bodyParams: [chi] })
-    } else {
-      attempts.push({ languageCode, bodyParams: [chi, dettaglio].slice(0, nPos) })
-      attempts.push({ languageCode, bodyParams: Array.from({ length: nPos }, (_, i) => (i === 0 ? chi : dettaglio)) })
-    }
-  }
+async function sendLpShortTemplate(telefono: string, text: string, tpl: WhatsappTemplateInfo): Promise<void> {
+  const param = sanitizeLpTemplateParam(text)
+  const langs = Array.from(new Set([tpl.language || "it", "it"].filter(Boolean)))
   let last: Error | null = null
-  for (let i = 0; i < attempts.length; i++) {
-    const a = attempts[i]!
+  for (let i = 0; i < langs.length; i++) {
     try {
       await sendWhatsappTemplate({
         toRaw: telefono,
         templateName: tpl.name,
-        languageCode: a.languageCode,
-        bodyParams: a.bodyParams,
-        namedBodyParams: a.namedBodyParams,
-        skipLog: i < attempts.length - 1,
+        languageCode: langs[i],
+        bodyParams: [param],
+        skipLog: i < langs.length - 1,
       })
       return
     } catch (e) {
@@ -129,67 +128,16 @@ async function sendApprovedTemplate(
   throw last ?? new Error(`Invio template «${tpl.name}» fallito`)
 }
 
-/** Invio diretto, senza GET su Meta: stessi modelli che già usano le consulenti. */
-async function sendBlindConsultantTemplates(telefono: string, dettaglio: string, chi: string): Promise<void> {
-  const names = consultantFallbackNames()
-  const langs = Array.from(new Set([lpLang(), "it"].filter(Boolean)))
-  const paramSets: Array<string[] | undefined> = [[dettaglio.slice(0, 220)], [chi], undefined]
-  const tries: Array<{ name: string; languageCode: string; bodyParams?: string[] }> = []
-  for (const name of names) {
-    for (const languageCode of langs) {
-      for (const bodyParams of paramSets) {
-        tries.push({ name, languageCode, bodyParams })
-      }
-    }
-  }
-  let last: Error | null = null
-  for (let i = 0; i < tries.length; i++) {
-    const t = tries[i]!
-    try {
-      await sendWhatsappTemplate({
-        toRaw: telefono,
-        templateName: t.name,
-        languageCode: t.languageCode,
-        bodyParams: t.bodyParams,
-        skipLog: i < tries.length - 1,
-      })
-      return
-    } catch (e) {
-      last = e as Error
-    }
-  }
-  throw last ?? new Error("Invio template consulenti fallito")
-}
-
-/** Chat chiusa: modelli già approvati, senza GET obbligatorio su Meta. */
-async function sendClosedWindowTemplate(telefono: string, text: string, nome?: string): Promise<void> {
-  const dettaglio = sanitizeLpTemplateParam(text)
-  const chi = sanitizeLpTemplateParam((nome ?? "").trim().split(/\s+/)[0] || "Ciao")
-  const rows = await approvedTemplates().catch((e) => {
-    console.warn("[lp-wa] elenco template Meta:", (e as Error).message)
-    return [] as WhatsappTemplateInfo[]
-  })
-  const short = pickShortFrom(rows)
-  if (short) {
-    try {
-      await sendApprovedTemplate(telefono, short, dettaglio, chi)
-      return
-    } catch (e) {
-      console.warn("[lp-wa] template breve:", (e as Error).message)
-    }
-  }
-  await sendBlindConsultantTemplates(telefono, dettaglio, chi)
-}
-
 /**
- * Primo contatto lezione privata: solo template già approvati.
- * Il testo libero Graph può tornare 200 e poi fallire in webhook (131047): non usarlo qui.
+ * Mai il benvenuto H2Sport. Solo un UTILITY breve (FitCenter lezione privata: {{1}}).
  */
-export async function sendLezionePrivataWhatsapp(telefono: string, text: string, nome?: string): Promise<void> {
+export async function sendLezionePrivataWhatsapp(telefono: string, text: string, _nome?: string): Promise<void> {
+  void _nome
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  await sendClosedWindowTemplate(telefono, body, nome)
+  const tpl = await ensureLpShortTemplate()
+  await sendLpShortTemplate(telefono, body, tpl)
 }
 
 function samePhone(a: string, b: string): boolean {
