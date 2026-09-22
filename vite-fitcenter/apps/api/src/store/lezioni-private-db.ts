@@ -33,7 +33,7 @@ export type LpRichiesta = {
   waDestinations?: string[]
 }
 
-export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente"
+export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente" | "tolta"
 
 export type LpLezione = {
   id: string

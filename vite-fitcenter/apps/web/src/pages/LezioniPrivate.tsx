@@ -36,6 +36,31 @@ function tabFromPath(pathname: string): Tab {
   return "richieste"
 }
 
+type LpTipoPrenota = "prova" | "5" | "10"
+
+function TipoButtons({ value, onChange }: { value: LpTipoPrenota; onChange: (v: LpTipoPrenota) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(
+        [
+          ["prova", "Prova"],
+          ["5", "Pacchetto 5"],
+          ["10", "Pacchetto 10"],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onChange(id)}
+          className={`rounded-md px-3 py-1.5 text-sm ${value === id ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400"}`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function LezioniPrivate() {
   const { role, user } = useAuth()
   const location = useLocation()
@@ -92,7 +117,8 @@ export function LezioniPrivate() {
           <p className="mt-1 text-sm text-zinc-400">
             Come il foglio richieste: nuova richiesta → WhatsApp agli istruttori (solo uomini o solo donne se c’è
             preferenza). Chi prende in carico sceglie vasca e
-            corsia libera (prova, poi pacchetto 5 o 10).
+            Chi prende in carico sceglie prova o pacchetto e una corsia libera. Sul calendario puoi
+            spostare o togliere una data: la richiesta resta.
           </p>
         </div>
         <div className="flex rounded-lg border border-zinc-700 bg-zinc-900/50 p-0.5">
@@ -172,7 +198,8 @@ export function LezioniPrivate() {
             )}
           </div>
           <p className="mt-2 text-sm text-zinc-500">
-            Clicca uno slot libero per prenotare. Clicca una lezione per vedere istruttore e nominativo.
+            Slot libero: prenota (prova o pacchetto). Lezione già in vasca: apri per spostare o togliere la data, senza
+            cancellare la richiesta.
           </p>
           {periodo === "mese" ? (
             <MeseGrid byDay={occQ.data?.byDay ?? {}} from={month.from} to={month.to} />
@@ -184,8 +211,8 @@ export function LezioniPrivate() {
               booked={booked}
               onBook={setBookSlot}
               onOpen={setDetailLezione}
-              onCancel={(id, chi) => {
-                void lezioniPrivateApi.patchLezione(id, chi).then(invalidate)
+              onTogli={(id) => {
+                void lezioniPrivateApi.patchLezione(id, { stato: "tolta" }).then(invalidate)
               }}
             />
           )}
@@ -193,6 +220,7 @@ export function LezioniPrivate() {
             <BookSlotModal
               slot={bookSlot}
               instructors={instructors}
+              richieste={richieste.filter((r) => r.status !== "annullata")}
               userNome={user?.nome ?? ""}
               onClose={() => setBookSlot(null)}
               onDone={() => {
@@ -205,11 +233,9 @@ export function LezioniPrivate() {
             <LezioneDetailModal
               lezione={detailLezione}
               onClose={() => setDetailLezione(null)}
-              onCancel={(id, chi) => {
-                void lezioniPrivateApi.patchLezione(id, chi).then(() => {
-                  setDetailLezione(null)
-                  invalidate()
-                })
+              onDone={() => {
+                setDetailLezione(null)
+                invalidate()
               }}
             />
           ) : null}
@@ -297,7 +323,7 @@ function RichiesteTab({
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
           <p className="mt-1 text-xs text-zinc-500">
             WhatsApp al cliente sempre; agli istruttori solo se la preferenza è uomo, donna, o a tutti se indifferente.
-            Poi 5 o 10 lezioni. Per annullare o spostare il cliente deve contattare l’istruttore.
+            Poi scegli prova o pacchetto 5/10 sul calendario. Togliere una data dal calendario non cancella la richiesta.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="grid gap-1 text-sm text-zinc-400">
@@ -429,14 +455,25 @@ function RichiesteTab({
                 <td className="px-3 py-2 text-zinc-300">{r.quando ?? ""}</td>
                 <td className="px-3 py-2 text-zinc-400">{fmtPrefIstr(r.prefIstruttore)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.note ?? ""}</td>
-                <td className="px-3 py-2 text-amber-200">{r.istruttoreNome ?? r.status}</td>
+                <td className="px-3 py-2 text-amber-200">
+                  {r.istruttoreNome ?? r.status}
+                  {lezioni.filter((l) => l.richiestaId === r.id && (l.stato === "prenotata" || l.stato === "svolta")).length ? (
+                    <div className="mt-1 text-[11px] font-normal text-zinc-500">
+                      {lezioni
+                        .filter((l) => l.richiestaId === r.id && (l.stato === "prenotata" || l.stato === "svolta"))
+                        .map((l) => `${fmtDateIt(l.giorno)} ${l.ora}`)
+                        .join(" · ")}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2">
                   <div className="flex flex-col items-start gap-1">
-                    {r.status === "aperta" ? (
+                    {r.status !== "annullata" ? (
                       <button type="button" className="text-sm text-[#46A6D9] underline" onClick={() => setPrendiId(r.id)}>
-                        Prendi in carico
+                        {r.status === "aperta" ? "Prenota in vasca" : "Aggiungi data"}
                       </button>
-                    ) : r.status === "assegnata" ? (
+                    ) : null}
+                    {r.status === "assegnata" ? (
                       <button type="button" className="text-sm text-amber-300 underline" onClick={() => setPackId(r.id)}>
                         Pacchetto 5/10
                       </button>
@@ -522,15 +559,36 @@ function PrendiModal({
   const [ora, setOra] = useState("18:30")
   const [vasca, setVasca] = useState<VascaId>("ludica")
   const [corsia, setCorsia] = useState(1)
+  const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
+  const [ripeti, setRipeti] = useState(true)
   const m = useMutation({
-    mutationFn: () => lezioniPrivateApi.prendi(richiesta.id, { istruttoreId, giorno, ora, vasca, corsia, durataMin: 30 }),
+    mutationFn: () =>
+      lezioniPrivateApi.prendi(richiesta.id, {
+        istruttoreId,
+        giorno,
+        ora,
+        vasca,
+        corsia,
+        durataMin: 30,
+        tipo,
+        ripetiSettimanale: tipo === "prova" ? false : ripeti,
+      }),
     onSuccess: onDone,
   })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
-        <h3 className="font-semibold text-zinc-100">Prova in vasca · {richiesta.clienteNome}</h3>
-        <p className="mt-1 text-xs text-zinc-500">Segna la prima lezione (prova) su una corsia libera.</p>
+        <h3 className="font-semibold text-zinc-100">Prenota in vasca · {richiesta.clienteNome}</h3>
+        <p className="mt-1 text-xs text-zinc-500">Scegli prova o pacchetto e una corsia libera. La richiesta non viene cancellata.</p>
+        <div className="mt-3">
+          <TipoButtons value={tipo} onChange={setTipo} />
+        </div>
+        {tipo !== "prova" ? (
+          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
+            <input type="checkbox" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+            Ripeti ogni settimana ({tipo} date)
+          </label>
+        ) : null}
         <label className="mt-3 grid gap-1 text-sm text-zinc-400">
           Istruttore
           <select value={istruttoreId} onChange={(e) => setIstruttoreId(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
@@ -562,7 +620,7 @@ function PrendiModal({
             Annulla
           </button>
           <button type="button" disabled={m.isPending} onClick={() => m.mutate()} className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200">
-            Conferma prova
+            Conferma
           </button>
         </div>
       </div>
@@ -650,12 +708,14 @@ function PackModal({
 function BookSlotModal({
   slot,
   instructors,
+  richieste,
   userNome,
   onClose,
   onDone,
 }: {
   slot: LpSlot
   instructors: LpIstruttore[]
+  richieste: LpRichiesta[]
   userNome: string
   onClose: () => void
   onDone: () => void
@@ -665,6 +725,9 @@ function BookSlotModal({
   const [clienteNome, setClienteNome] = useState("")
   const [telefono, setTelefono] = useState("")
   const [eta, setEta] = useState("")
+  const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
+  const [ripeti, setRipeti] = useState(true)
+  const [richiestaId, setRichiestaId] = useState("")
   const m = useMutation({
     mutationFn: () =>
       lezioniPrivateApi.prenota({
@@ -678,9 +741,13 @@ function BookSlotModal({
         durataMin: 30,
         eta,
         createdBy: userNome,
+        tipo,
+        ripetiSettimanale: tipo === "prova" ? false : ripeti,
+        richiestaId: richiestaId || undefined,
       }),
     onSuccess: onDone,
   })
+  const existing = richiestaId ? richieste.find((r) => r.id === richiestaId) : null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
@@ -688,20 +755,64 @@ function BookSlotModal({
         <p className="mt-1 text-xs text-zinc-500">
           {fmtDateIt(slot.giorno)} {slot.ora} · {VASCA_LABEL[slot.vasca]} · corsia {slot.corsia}
         </p>
-        <label className="mt-3 grid gap-1 text-sm text-zinc-400">
-          Nominativo *
-          <input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
-        </label>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <label className="grid gap-1 text-sm text-zinc-400">
-            Telefono *
-            <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
-          </label>
-          <label className="grid gap-1 text-sm text-zinc-400">
-            Età
-            <input value={eta} onChange={(e) => setEta(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
-          </label>
+        <div className="mt-3">
+          <TipoButtons value={tipo} onChange={setTipo} />
         </div>
+        {tipo !== "prova" ? (
+          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
+            <input type="checkbox" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+            Ripeti ogni settimana ({tipo} date)
+          </label>
+        ) : null}
+        {richieste.length ? (
+          <label className="mt-3 grid gap-1 text-sm text-zinc-400">
+            Richiesta esistente
+            <select
+              value={richiestaId}
+              onChange={(e) => {
+                const id = e.target.value
+                setRichiestaId(id)
+                const r = richieste.find((x) => x.id === id)
+                if (r) {
+                  setClienteNome(r.clienteNome)
+                  setTelefono(r.telefono)
+                  if (r.istruttoreId) setIstruttoreId(r.istruttoreId)
+                }
+              }}
+              className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100"
+            >
+              <option value="">Nuova (compilare sotto)</option>
+              {richieste.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.clienteNome}
+                  {r.istruttoreNome ? ` · ${r.istruttoreNome}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {!existing ? (
+          <>
+            <label className="mt-3 grid gap-1 text-sm text-zinc-400">
+              Nominativo *
+              <input value={clienteNome} onChange={(e) => setClienteNome(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+            </label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label className="grid gap-1 text-sm text-zinc-400">
+                Telefono *
+                <input value={telefono} onChange={(e) => setTelefono(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+              </label>
+              <label className="grid gap-1 text-sm text-zinc-400">
+                Età
+                <input value={eta} onChange={(e) => setEta(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+              </label>
+            </div>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-zinc-300">
+            Aggiunge la data a <span className="font-medium text-zinc-100">{existing.clienteNome}</span> (la richiesta resta).
+          </p>
+        )}
         <label className="mt-2 grid gap-1 text-sm text-zinc-400">
           Istruttore
           <select value={istruttoreId} onChange={(e) => setIstruttoreId(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
@@ -720,11 +831,11 @@ function BookSlotModal({
           </button>
           <button
             type="button"
-            disabled={m.isPending || !clienteNome.trim() || !telefono.trim() || !istruttoreId}
+            disabled={m.isPending || !istruttoreId || (!richiestaId && (!clienteNome.trim() || !telefono.trim()))}
             onClick={() => m.mutate()}
             className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200"
           >
-            Prenota prova
+            Prenota
           </button>
         </div>
       </div>
@@ -735,16 +846,29 @@ function BookSlotModal({
 function LezioneDetailModal({
   lezione,
   onClose,
-  onCancel,
+  onDone,
 }: {
   lezione: LpLezioneFlat
   onClose: () => void
-  onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
+  onDone: () => void
 }) {
+  const [giorno, setGiorno] = useState(lezione.giorno)
+  const [ora, setOra] = useState(lezione.ora)
+  const [vasca, setVasca] = useState<VascaId>(lezione.vasca)
+  const [corsia, setCorsia] = useState(lezione.corsia)
+  const moveM = useMutation({
+    mutationFn: () => lezioniPrivateApi.patchLezione(lezione.lezioneId, { giorno, ora, vasca, corsia }),
+    onSuccess: onDone,
+  })
+  const togliM = useMutation({
+    mutationFn: () => lezioniPrivateApi.patchLezione(lezione.lezioneId, { stato: "tolta" }),
+    onSuccess: onDone,
+  })
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
         <h3 className="font-semibold text-zinc-100">Lezione in vasca</h3>
+        <p className="mt-1 text-xs text-zinc-500">Sposta la data o toglila dal calendario: la richiesta resta in elenco.</p>
         <dl className="mt-3 grid gap-2 text-sm">
           <div>
             <dt className="text-zinc-500">Nominativo</dt>
@@ -755,18 +879,6 @@ function LezioneDetailModal({
             <dd className="text-amber-200">{lezione.istruttoreNome}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Quando</dt>
-            <dd className="text-zinc-200">
-              {fmtDateIt(lezione.giorno)} {lezione.ora} · {lezione.durataMin} min
-            </dd>
-          </div>
-          <div>
-            <dt className="text-zinc-500">Vasca</dt>
-            <dd className="text-zinc-200">
-              {VASCA_LABEL[lezione.vasca]} · corsia {lezione.corsia}
-            </dd>
-          </div>
-          <div>
             <dt className="text-zinc-500">Tipo</dt>
             <dd className="text-zinc-200">{lezione.tipo === "prova" ? "Prova" : `Pacchetto ${lezione.tipo}`}</dd>
           </div>
@@ -775,15 +887,42 @@ function LezioneDetailModal({
             <dd className="text-zinc-200">{lezione.telefono}</dd>
           </div>
         </dl>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          <input type="time" value={ora} onChange={(e) => setOra(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          <select value={vasca} onChange={(e) => setVasca(e.target.value as VascaId)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
+            <option value="v25">Vasca 25 m</option>
+            <option value="ludica">Vasca ludica 18 m</option>
+          </select>
+          <select value={corsia} onChange={(e) => setCorsia(Number(e.target.value))} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
+            <option value={1}>Corsia 1</option>
+            {vasca === "ludica" ? <option value={2}>Corsia 2</option> : null}
+          </select>
+        </div>
+        {moveM.isError ? <p className="mt-2 text-sm text-red-400">{String((moveM.error as Error).message)}</p> : null}
+        {togliM.isError ? <p className="mt-2 text-sm text-red-400">{String((togliM.error as Error).message)}</p> : null}
         <div className="mt-4 flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={() => onCancel(lezione.lezioneId, "annullata_istruttore")} className="rounded-lg px-3 py-2 text-sm text-red-300">
-            Annulla istruttore
+          <button
+            type="button"
+            disabled={togliM.isPending}
+            onClick={() => {
+              if (!window.confirm("Togliere questa data dal calendario? La richiesta non viene eliminata.")) return
+              togliM.mutate()
+            }}
+            className="rounded-lg px-3 py-2 text-sm text-red-300"
+          >
+            Togli data
           </button>
-          <button type="button" onClick={() => onCancel(lezione.lezioneId, "annullata_cliente")} className="rounded-lg px-3 py-2 text-sm text-red-300">
-            Annulla cliente
-          </button>
-          <button type="button" onClick={onClose} className="rounded-lg bg-zinc-800 px-3 py-2 text-sm text-zinc-200">
+          <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-zinc-400">
             Chiudi
+          </button>
+          <button
+            type="button"
+            disabled={moveM.isPending}
+            onClick={() => moveM.mutate()}
+            className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200"
+          >
+            Sposta
           </button>
         </div>
       </div>
@@ -798,7 +937,7 @@ function DayWeekGrid({
   booked,
   onBook,
   onOpen,
-  onCancel,
+  onTogli,
 }: {
   days: string[]
   ore: string[]
@@ -806,7 +945,7 @@ function DayWeekGrid({
   booked: LpLezioneFlat[]
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
-  onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
+  onTogli: (id: string) => void
 }) {
   function cap(giorno: string, vasca: VascaId): number {
     const dow = new Date(`${giorno}T12:00:00`).getDay()
@@ -849,7 +988,7 @@ function DayWeekGrid({
                       slot={{ giorno: d, ora, vasca: "v25", corsia: 1 }}
                       onBook={onBook}
                       onOpen={onOpen}
-                      onCancel={onCancel}
+                      onTogli={onTogli}
                     />,
                   )
                 }
@@ -861,7 +1000,7 @@ function DayWeekGrid({
                       slot={{ giorno: d, ora, vasca: "ludica", corsia: 1 }}
                       onBook={onBook}
                       onOpen={onOpen}
-                      onCancel={onCancel}
+                      onTogli={onTogli}
                     />,
                   )
                 }
@@ -873,7 +1012,7 @@ function DayWeekGrid({
                       slot={{ giorno: d, ora, vasca: "ludica", corsia: 2 }}
                       onBook={onBook}
                       onOpen={onOpen}
-                      onCancel={onCancel}
+                      onTogli={onTogli}
                     />,
                   )
                 }
@@ -909,13 +1048,13 @@ function LaneCell({
   slot,
   onBook,
   onOpen,
-  onCancel,
+  onTogli,
 }: {
   hit?: LpLezioneFlat
   slot: LpSlot
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
-  onCancel: (id: string, chi: "annullata_istruttore" | "annullata_cliente") => void
+  onTogli: (id: string) => void
 }) {
   if (!hit) {
     return (
@@ -931,31 +1070,20 @@ function LaneCell({
       <button type="button" onClick={() => onOpen(hit)} className="w-full rounded bg-amber-500/15 px-1 py-0.5 text-left text-[11px] text-amber-100 hover:bg-amber-500/25">
         <div className="font-medium">{hit.clienteNome}</div>
         <div className="text-[10px] text-zinc-400">
-          {hit.istruttoreNome} · {hit.tipo}
+          {hit.istruttoreNome} · {hit.tipo === "prova" ? "prova" : `pacc. ${hit.tipo}`}
         </div>
       </button>
-      <div className="mt-0.5 flex justify-center gap-1">
-        <button
-          type="button"
-          className="text-[10px] text-red-300"
-          onClick={(e) => {
-            e.stopPropagation()
-            onCancel(hit.lezioneId, "annullata_istruttore")
-          }}
-        >
-          ann. istr.
-        </button>
-        <button
-          type="button"
-          className="text-[10px] text-red-300"
-          onClick={(e) => {
-            e.stopPropagation()
-            onCancel(hit.lezioneId, "annullata_cliente")
-          }}
-        >
-          ann. cliente
-        </button>
-      </div>
+      <button
+        type="button"
+        className="mt-0.5 text-[10px] text-red-300"
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!window.confirm("Togliere questa data dal calendario? La richiesta resta.")) return
+          onTogli(hit.lezioneId)
+        }}
+      >
+        togli data
+      </button>
     </td>
   )
 }

@@ -1,7 +1,7 @@
 import { api } from "./client"
 
 export type VascaId = "v25" | "ludica"
-export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente"
+export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente" | "tolta"
 
 export type LpSesso = "M" | "F"
 export type LpIstruttore = { id: string; nome: string; telefono: string; attivo: boolean; sesso?: LpSesso }
@@ -81,8 +81,8 @@ export const lezioniPrivateApi = {
       wa: { sent: number; errors: string[]; destinations: string[]; skipped?: string }
     }>(`/lezioni-private/richieste/${encodeURIComponent(id)}/riavvisa`, {}),
   prenota: (body: {
-    clienteNome: string
-    telefono: string
+    clienteNome?: string
+    telefono?: string
     istruttoreId: string
     giorno: string
     ora: string
@@ -91,17 +91,39 @@ export const lezioniPrivateApi = {
     durataMin?: number
     eta?: string
     createdBy?: string
+    tipo?: "prova" | "5" | "10"
+    ripetiSettimanale?: boolean
+    richiestaId?: string
   }) => api.post<{ ok: boolean }>("/lezioni-private/prenota", body),
   prendi: (
     id: string,
-    body: { istruttoreId?: string; giorno: string; ora: string; vasca: VascaId; corsia: number; durataMin?: number },
+    body: {
+      istruttoreId?: string
+      giorno: string
+      ora: string
+      vasca: VascaId
+      corsia: number
+      durataMin?: number
+      tipo?: "prova" | "5" | "10"
+      ripetiSettimanale?: boolean
+    },
   ) => api.post<{ ok: boolean }>(`/lezioni-private/richieste/${encodeURIComponent(id)}/prendi`, body),
   pacchetto: (body: {
     richiestaId: string
-    tipo: "5" | "10"
+    tipo: "prova" | "5" | "10"
     lezioni: Array<{ giorno: string; ora: string; vasca: VascaId; corsia: number; durataMin?: number }>
   }) => api.post<{ ok: boolean }>("/lezioni-private/pacchetti", body),
-  patchLezione: (id: string, stato: LpLezioneStato) => api.patch<{ ok: boolean }>(`/lezioni-private/lezioni/${encodeURIComponent(id)}`, { stato }),
+  patchLezione: (
+    id: string,
+    body: {
+      stato?: LpLezioneStato
+      giorno?: string
+      ora?: string
+      vasca?: VascaId
+      corsia?: number
+      durataMin?: number
+    },
+  ) => api.patch<{ ok: boolean }>(`/lezioni-private/lezioni/${encodeURIComponent(id)}`, body),
   addIstruttore: (nome: string, telefono: string) => api.post<{ ok: boolean }>("/lezioni-private/istruttori", { nome, telefono }),
   patchIstruttore: (id: string, body: Partial<Pick<LpIstruttore, "nome" | "telefono" | "attivo" | "sesso">>) =>
     api.patch<{ ok: boolean }>(`/lezioni-private/istruttori/${encodeURIComponent(id)}`, body),
