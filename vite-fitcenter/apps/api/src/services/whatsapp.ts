@@ -102,6 +102,64 @@ async function graphPost(pathSuffix: string, body: Record<string, unknown>): Pro
   return json
 }
 
+async function graphWaba(method: "GET" | "POST", pathSuffix: string, body?: Record<string, unknown>): Promise<unknown> {
+  const { token, wabaId, graphVersion } = whatsappConfig()
+  if (!token || !wabaId) {
+    throw new Error("WhatsApp WABA non configurato: imposta WHATSAPP_WABA_ID e WHATSAPP_ACCESS_TOKEN")
+  }
+  const url = `https://graph.facebook.com/${graphVersion}/${wabaId}/${pathSuffix}`
+  const res = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(method === "POST" ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(method === "POST" && body ? { body: JSON.stringify(body) } : {}),
+  })
+  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  if (!res.ok) {
+    const err = json.error as { message?: string } | undefined
+    throw new Error(err?.message ?? `WhatsApp WABA HTTP ${res.status}`)
+  }
+  return json
+}
+
+export async function findWhatsappTemplateStatus(name: string, languageCode = "it"): Promise<string | null> {
+  const q = new URLSearchParams({
+    name,
+    fields: "name,status,language",
+    limit: "20",
+  })
+  const json = (await graphWaba("GET", `message_templates?${q.toString()}`)) as {
+    data?: Array<{ name?: string; status?: string; language?: string }>
+  }
+  const lang = languageCode.toLowerCase()
+  const row = (json.data ?? []).find(
+    (t) => String(t.name ?? "") === name && String(t.language ?? "").toLowerCase().startsWith(lang)
+  ) ?? (json.data ?? []).find((t) => String(t.name ?? "") === name)
+  return row?.status ? String(row.status).toUpperCase() : null
+}
+
+export async function createWhatsappUtilityTemplate(params: {
+  name: string
+  languageCode?: string
+  body: string
+  example: string
+}): Promise<unknown> {
+  return graphWaba("POST", "message_templates", {
+    name: params.name,
+    language: params.languageCode ?? "it",
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text: params.body,
+        example: { body_text: [[params.example]] },
+      },
+    ],
+  })
+}
+
 /** Upload file → media id (Cloud API). */
 export async function uploadWhatsappMedia(params: {
   filePath: string

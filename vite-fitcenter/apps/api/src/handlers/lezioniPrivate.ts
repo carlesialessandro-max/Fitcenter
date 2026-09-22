@@ -120,7 +120,7 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     } catch (e) {
       const msg = (e as Error).message || String(e)
       const hint = /131047|24 hour|re-engage|not in allowed/i.test(msg)
-        ? " (Meta non consegna il testo senza chat aperta: usiamo anche il template)"
+        ? " (chat non aperta: serve il template Meta lezione_privata_richiesta)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }

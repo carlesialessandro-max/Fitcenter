@@ -1,12 +1,114 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
-import { isWhatsappSendConfigured, normalizeWaTo, sendWhatsappText } from "./whatsapp.js"
+import {
+  createWhatsappUtilityTemplate,
+  findWhatsappTemplateStatus,
+  isWhatsappSendConfigured,
+  normalizeWaTo,
+  sendWhatsappTemplate,
+  sendWhatsappText,
+} from "./whatsapp.js"
+import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-/** Solo il testo breve della lezione privata. Mai il template di benvenuto H2Sport. */
+const LP_TEMPLATE_BODY = "FitCenter — lezione privata:\n{{1}}"
+const LP_TEMPLATE_EXAMPLE = "Mario Rossi, 40 anni, mercoledi mattina, tel 3331234567"
+
+function lpTemplateConfig() {
+  const name = (process.env.WHATSAPP_LP_TEMPLATE ?? "lezione_privata_richiesta").trim() || "lezione_privata_richiesta"
+  const languageCode = (process.env.WHATSAPP_LP_TEMPLATE_LANG ?? "it").trim() || "it"
+  return { name, languageCode }
+}
+
+function sanitizeLpTemplateParam(text: string): string {
+  return text.replace(/[\r\n]+/g, " · ").replace(/\s+/g, " ").trim().slice(0, 600)
+}
+
+let lpTemplateReady: Promise<string> | null = null
+
+async function ensureLpTemplateApproved(): Promise<{ name: string; languageCode: string }> {
+  const cfg = lpTemplateConfig()
+  if (!lpTemplateReady) {
+    lpTemplateReady = (async () => {
+      let status: string | null = null
+      try {
+        status = await findWhatsappTemplateStatus(cfg.name, cfg.languageCode)
+      } catch (e) {
+        console.warn("[lp-wa] lettura template Meta:", (e as Error).message)
+      }
+      if (status === "APPROVED") return "APPROVED"
+      if (status === "PENDING" || status === "IN_APPEAL" || status === "PAUSED") {
+        throw new Error(
+          `Template WhatsApp «${cfg.name}» non ancora approvato (${status}). In Meta Business Manager attendi lo stato verde, poi reinvia.`
+        )
+      }
+      if (status === "REJECTED" || status === "DISABLED") {
+        throw new Error(
+          `Template WhatsApp «${cfg.name}» rifiutato da Meta. Correggilo in Business Manager (categoria UTILITY) e reinvia.`
+        )
+      }
+      try {
+        await createWhatsappUtilityTemplate({
+          name: cfg.name,
+          languageCode: cfg.languageCode,
+          body: LP_TEMPLATE_BODY,
+          example: LP_TEMPLATE_EXAMPLE,
+        })
+      } catch (e) {
+        const msg = (e as Error).message || String(e)
+        if (!/already exists|taken|duplicate/i.test(msg)) {
+          throw new Error(
+            `Serve il template Meta «${cfg.name}» (UTILITY, italiano, testo: FitCenter — lezione privata: {{1}}). ${msg}`
+          )
+        }
+      }
+      throw new Error(
+        `Template «${cfg.name}» inviato a Meta per approvazione. Di solito è questione di minuti: appena è APPROVED i WhatsApp arrivano anche a chat chiusa.`
+      )
+    })().catch((e) => {
+      lpTemplateReady = null
+      throw e
+    })
+  }
+  await lpTemplateReady
+  return cfg
+}
+
+/**
+ * Se la persona ha già scritto a FitCenter (24h) parte il testo breve.
+ * Altrimenti Meta rifiuta il testo libero: si usa il template UTILITY, mai il benvenuto H2Sport.
+ */
 export async function sendLezionePrivataWhatsapp(telefono: string, text: string, _nome?: string): Promise<void> {
   void _nome
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
-  await sendWhatsappText(telefono, text)
+  const body = text.trim()
+  if (!body) throw new Error("Testo messaggio vuoto")
+  if (whatsappEventsStore.hasCustomerWindow(telefono)) {
+    await sendWhatsappText(telefono, body)
+    return
+  }
+  const cfg = lpTemplateConfig()
+  const param = sanitizeLpTemplateParam(body)
+  try {
+    await sendWhatsappTemplate({
+      toRaw: telefono,
+      templateName: cfg.name,
+      languageCode: cfg.languageCode,
+      bodyParams: [param],
+    })
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    if (/132001|133010|does not exist|template name/i.test(msg)) {
+      await ensureLpTemplateApproved()
+      await sendWhatsappTemplate({
+        toRaw: telefono,
+        templateName: cfg.name,
+        languageCode: cfg.languageCode,
+        bodyParams: [param],
+      })
+      return
+    }
+    throw e
+  }
 }
 
 function samePhone(a: string, b: string): boolean {
