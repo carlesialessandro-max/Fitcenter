@@ -58,56 +58,63 @@ function pendingShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null
 }
 
 let listedAllCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
+let ensureTplAt = 0
 let ensureTpl: Promise<WhatsappTemplateInfo> | null = null
 
 async function listAllTemplates(): Promise<WhatsappTemplateInfo[]> {
   const now = Date.now()
-  if (listedAllCache && now - listedAllCache.at < 60_000) return listedAllCache.rows
+  if (listedAllCache && now - listedAllCache.at < 30_000) return listedAllCache.rows
   const rows = await listWhatsappTemplates()
   listedAllCache = { at: now, rows }
   return rows
 }
 
 async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
-  if (!ensureTpl) {
-    ensureTpl = (async () => {
-      for (const name of [lpPreferredName(), ...LP_TPL_FALLBACKS]) {
-        const row = await findWhatsappTemplate(name, "it").catch(() => null)
-        if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
-      }
-      const rows = await listAllTemplates()
-      const short = pickShort(rows)
-      if (short) return short
-      const pending = pendingShort(rows)
-      if (pending) {
-        throw new Error(
-          `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). Non eliminarlo: quando è verde, reinvia.`,
-        )
-      }
+  if (ensureTpl && Date.now() - ensureTplAt < 30_000) return ensureTpl
+  ensureTplAt = Date.now()
+  ensureTpl = (async () => {
+    for (const name of [lpPreferredName(), ...LP_TPL_FALLBACKS]) {
+      const row = await findWhatsappTemplate(name, "it").catch(() => null)
+      if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
+    }
+    const rows = await listAllTemplates()
+    const short = pickShort(rows)
+    if (short) return short
+    const pending = pendingShort(rows)
+    if (pending) {
       throw new Error(
-        `Usa il modello già attivo «lezione_privata_richiesta_avviso» (non eliminarlo). ${MANAGER_HINT}`,
+        `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). Non eliminarlo: quando è verde, reinvia.`,
       )
-    })().catch((e) => {
-      ensureTpl = null
-      throw e
-    })
-  }
+    }
+    throw new Error(
+      `Usa il modello già attivo «lezione_privata_richiesta_avviso» (non eliminarlo). ${MANAGER_HINT}`,
+    )
+  })().catch((e) => {
+    ensureTpl = null
+    ensureTplAt = 0
+    throw e
+  })
   return ensureTpl
 }
 
 async function sendLpShortTemplate(telefono: string, text: string, tpl: WhatsappTemplateInfo): Promise<void> {
   const param = sanitizeLpTemplateParam(text)
-  const hasVar = /\{\{\s*\d+\s*\}\}/.test(String(tpl.bodyText ?? "")) || /\{\{\s*[a-zA-Z_]/.test(String(tpl.bodyText ?? ""))
   const langs = Array.from(new Set([tpl.language || "it", "it"].filter(Boolean)))
+  const tries: Array<{ languageCode: string; bodyParams?: string[] }> = []
+  for (const languageCode of langs) {
+    tries.push({ languageCode, bodyParams: [param] })
+    tries.push({ languageCode })
+  }
   let last: Error | null = null
-  for (let i = 0; i < langs.length; i++) {
+  for (let i = 0; i < tries.length; i++) {
+    const t = tries[i]!
     try {
       await sendWhatsappTemplate({
         toRaw: telefono,
         templateName: tpl.name,
-        languageCode: langs[i],
-        ...(hasVar ? { bodyParams: [param] } : {}),
-        skipLog: i < langs.length - 1,
+        languageCode: t.languageCode,
+        bodyParams: t.bodyParams,
+        skipLog: i < tries.length - 1,
       })
       return
     } catch (e) {
