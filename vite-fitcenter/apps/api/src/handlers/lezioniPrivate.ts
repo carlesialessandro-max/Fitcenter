@@ -253,8 +253,8 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
       destinations.push(label)
     } catch (e) {
       const msg = (e as Error).message || String(e)
-      const hint = /131047|24 hour|re-engage|not in allowed/i.test(msg)
-        ? " (chat chiusa: usato il template già approvato delle consulenti)"
+      const hint = /131047|24 ore|24 hour|fuori finestra|re-engage|not in allowed/i.test(msg)
+        ? " (chat chiusa: va usato il template delle consulenti, non il testo libero)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }

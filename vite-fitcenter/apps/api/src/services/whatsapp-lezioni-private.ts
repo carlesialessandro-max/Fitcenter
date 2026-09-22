@@ -1,6 +1,5 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
-  findWhatsappTemplate,
   isWhatsappSendConfigured,
   leadWelcomeTemplateConfig,
   listWhatsappTemplates,
@@ -9,7 +8,6 @@ import {
   sendWhatsappText,
   type WhatsappTemplateInfo,
 } from "./whatsapp.js"
-import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
 function lpPreferredName(): string {
@@ -22,10 +20,6 @@ function lpLang(): string {
 
 function sanitizeLpTemplateParam(text: string): string {
   return text.replace(/[\r\n]+/g, " · ").replace(/\s+/g, " ").trim().slice(0, 500)
-}
-
-function isClosedWindowError(msg: string): boolean {
-  return /131047|24 hour|24 ore|fuori finestra|re-engage|not in allowed|testo libero non arriva/i.test(msg)
 }
 
 function isLongWelcomeBody(text?: string): boolean {
@@ -167,7 +161,7 @@ async function sendBlindConsultantTemplates(telefono: string, dettaglio: string,
   throw last ?? new Error("Invio template consulenti fallito")
 }
 
-/** Chat chiusa: solo modelli già approvati. Non crearne di nuovi (Meta rifiuta la lingua). */
+/** Chat chiusa: modelli già approvati, senza GET obbligatorio su Meta. */
 async function sendClosedWindowTemplate(telefono: string, text: string, nome?: string): Promise<void> {
   const dettaglio = sanitizeLpTemplateParam(text)
   const chi = sanitizeLpTemplateParam((nome ?? "").trim().split(/\s+/)[0] || "Ciao")
@@ -184,39 +178,17 @@ async function sendClosedWindowTemplate(telefono: string, text: string, nome?: s
       console.warn("[lp-wa] template breve:", (e as Error).message)
     }
   }
-  for (const name of consultantFallbackNames()) {
-    const tpl =
-      rows.find((t) => t.name === name) ??
-      (await findWhatsappTemplate(name, lpLang()).catch(() => null))
-    if (!tpl || tpl.status !== "APPROVED") continue
-    if (short && tpl.name === short.name) continue
-    try {
-      await sendApprovedTemplate(telefono, tpl, dettaglio, chi)
-      return
-    } catch (e) {
-      console.warn("[lp-wa] template", name, (e as Error).message)
-    }
-  }
   await sendBlindConsultantTemplates(telefono, dettaglio, chi)
 }
 
 /**
- * Chat aperta (24h): testo della richiesta.
- * Chat chiusa: niente testo libero (Meta lo rifiuta). Si usano i template già approvati.
+ * Primo contatto lezione privata: solo template già approvati.
+ * Il testo libero Graph può tornare 200 e poi fallire in webhook (131047): non usarlo qui.
  */
 export async function sendLezionePrivataWhatsapp(telefono: string, text: string, nome?: string): Promise<void> {
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  if (whatsappEventsStore.hasCustomerWindow(telefono)) {
-    try {
-      await sendWhatsappText(telefono, body)
-      return
-    } catch (e) {
-      const msg = (e as Error).message || String(e)
-      if (!isClosedWindowError(msg)) throw e
-    }
-  }
   await sendClosedWindowTemplate(telefono, body, nome)
 }
 

@@ -21,7 +21,8 @@ function fmtAt(iso: string): string {
   }
 }
 
-function kindLabel(kind: string): string {
+function kindLabel(kind: string, text?: string): string {
+  if (kind === "message_out" && /^template:/i.test(String(text ?? ""))) return "Template"
   switch (kind) {
     case "message_in":
       return "Richiesta"
@@ -51,7 +52,11 @@ function displayText(e: WhatsappLogEvent): string {
   const m = t.match(/^template:([^\s\[]+)\s*(?:\[(.*)\])?$/i)
   if (m) {
     const name = m[2]?.trim()
-    return name ? `Messaggio di benvenuto (template) · ${name}` : `Messaggio di benvenuto (${m[1]})`
+    const tpl = m[1] ?? ""
+    if (/lezione|privata/i.test(tpl) || /lezione privata|prenota in fitcenter/i.test(name ?? "")) {
+      return name ? `Lezione privata (template) · ${name}` : `Lezione privata (${tpl})`
+    }
+    return name ? `Messaggio di benvenuto (template) · ${name}` : `Messaggio di benvenuto (${tpl})`
   }
   if (e.kind === "booking") {
     if (e.status === "cancelled" || /^annullat/i.test(t)) return t.replace(/^annullato/i, "Annullato")
@@ -267,7 +272,7 @@ export function WhatsappLog() {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-zinc-500">{fmtAt(e.at)}</span>
                     <span className={`rounded border px-1.5 py-0.5 text-[11px] ${kindClass(e.kind, e.status)}`}>
-                      {kindLabel(e.kind)}
+                      {kindLabel(e.kind, e.text)}
                       {statusSuffix(e)}
                     </span>
                   </div>
