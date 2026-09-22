@@ -1,6 +1,5 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
-  createWhatsappUtilityTemplateIt,
   findWhatsappTemplate,
   isWhatsappSendConfigured,
   listWhatsappTemplates,
@@ -11,10 +10,8 @@ import {
 } from "./whatsapp.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-const LP_TPL_NAME = "fitcenter_lp_avviso"
-const LP_TPL_BODY = "FitCenter lezione privata: {{1}}"
-const LP_TPL_EXAMPLE =
-  "Andrea Pecci 5 anni tel 3331234567 mercoledi pomeriggio. Prenota in calendario poi chiama il genitore."
+const LP_TPL_NAME = "lezione_privata_richiesta_avviso"
+const LP_TPL_FALLBACKS = ["lezione_privata_richiesta_avviso", "fitcenter_lp_avviso", "lezione_privata_breve"]
 
 function lpPreferredName(): string {
   return (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim() || LP_TPL_NAME
@@ -37,21 +34,26 @@ function isShortApprovedBody(text?: string): boolean {
 }
 
 const MANAGER_HINT =
-  "In WhatsApp Manager crea un modello UTILITY lingua Italiano (it), nome fitcenter_lp_avviso, testo: FitCenter lezione privata: {{1}}"
+  "Modello da usare: lezione_privata_richiesta_avviso (già attivo in Manager, non eliminarlo)."
 
 function pickShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
   const preferred = lpPreferredName()
-  const ok = rows.filter((t) => !isLongWelcomeBody(t.bodyText))
-  return (
-    ok.find((t) => t.name === preferred && t.status === "APPROVED") ??
-    ok.find((t) => t.name === LP_TPL_NAME && t.status === "APPROVED") ??
-    ok.find((t) => t.status === "APPROVED" && isShortApprovedBody(t.bodyText)) ??
-    null
-  )
+  const names = [preferred, ...LP_TPL_FALLBACKS]
+  const ok = rows.filter((t) => !isLongWelcomeBody(t.bodyText) && isUsableStatus(t.status))
+  for (const name of names) {
+    const hit = ok.find((t) => t.name === name)
+    if (hit) return hit
+  }
+  return ok.find((t) => isShortApprovedBody(t.bodyText)) ?? null
+}
+
+function isUsableStatus(status?: string): boolean {
+  const s = String(status ?? "").toUpperCase()
+  return s === "APPROVED" || s === "ACTIVE" || s === "QUALITY_PENDING" || s.includes("APPROVED")
 }
 
 function pendingShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
-  const names = new Set([lpPreferredName(), LP_TPL_NAME, "lezione_privata_breve"])
+  const names = new Set([lpPreferredName(), ...LP_TPL_FALLBACKS])
   return rows.find((t) => names.has(t.name) && (t.status === "PENDING" || t.status === "IN_APPEAL")) ?? null
 }
 
@@ -69,36 +71,22 @@ async function listAllTemplates(): Promise<WhatsappTemplateInfo[]> {
 async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
   if (!ensureTpl) {
     ensureTpl = (async () => {
+      for (const name of [lpPreferredName(), ...LP_TPL_FALLBACKS]) {
+        const row = await findWhatsappTemplate(name, "it").catch(() => null)
+        if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
+      }
       const rows = await listAllTemplates()
       const short = pickShort(rows)
       if (short) return short
       const pending = pendingShort(rows)
       if (pending) {
         throw new Error(
-          `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). ${MANAGER_HINT}`,
+          `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). Non eliminarlo: quando è verde, reinvia.`,
         )
       }
-      try {
-        await createWhatsappUtilityTemplateIt({
-          name: LP_TPL_NAME,
-          body: LP_TPL_BODY,
-          example: LP_TPL_EXAMPLE,
-        })
-      } catch (e) {
-        const msg = (e as Error).message || String(e)
-        if (!/already exists|taken|duplicate/i.test(msg)) {
-          throw new Error(`Non riesco a creare il template breve. ${msg}. ${MANAGER_HINT}`)
-        }
-      }
-      listedAllCache = null
-      const again = await findWhatsappTemplate(LP_TPL_NAME, "it").catch(() => null)
-      if (again?.status === "APPROVED" && !isLongWelcomeBody(again.bodyText)) return again
-      if (again?.status === "PENDING" || again?.status === "IN_APPEAL") {
-        throw new Error(
-          `Template breve «${LP_TPL_NAME}» inviato a Meta, attendi lo stato verde e reinvia. Non usiamo il benvenuto delle consulenti.`,
-        )
-      }
-      throw new Error(`Template breve non disponibile. ${MANAGER_HINT}`)
+      throw new Error(
+        `Usa il modello già attivo «lezione_privata_richiesta_avviso» (non eliminarlo). ${MANAGER_HINT}`,
+      )
     })().catch((e) => {
       ensureTpl = null
       throw e
@@ -109,6 +97,7 @@ async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
 
 async function sendLpShortTemplate(telefono: string, text: string, tpl: WhatsappTemplateInfo): Promise<void> {
   const param = sanitizeLpTemplateParam(text)
+  const hasVar = /\{\{\s*\d+\s*\}\}/.test(String(tpl.bodyText ?? "")) || /\{\{\s*[a-zA-Z_]/.test(String(tpl.bodyText ?? ""))
   const langs = Array.from(new Set([tpl.language || "it", "it"].filter(Boolean)))
   let last: Error | null = null
   for (let i = 0; i < langs.length; i++) {
@@ -117,7 +106,7 @@ async function sendLpShortTemplate(telefono: string, text: string, tpl: Whatsapp
         toRaw: telefono,
         templateName: tpl.name,
         languageCode: langs[i],
-        bodyParams: [param],
+        ...(hasVar ? { bodyParams: [param] } : {}),
         skipLog: i < langs.length - 1,
       })
       return
