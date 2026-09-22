@@ -12,6 +12,8 @@ export type LpIstruttore = {
   attivo: boolean
   /** M uomo / F donna. Se manca si deduce dal nome. */
   sesso?: LpSesso
+  /** Abilitato per lezioni con ragazzi disabili. */
+  special?: boolean
 }
 
 export type LpRichiesta = {
@@ -153,12 +155,13 @@ export function slotOccupato(
   ora: string,
   vasca: VascaId,
   corsia: number,
-  exceptLezioneId?: string,
+  exceptLezioneIds?: string | string[],
 ): boolean {
+  const skip = new Set(Array.isArray(exceptLezioneIds) ? exceptLezioneIds : exceptLezioneIds ? [exceptLezioneIds] : [])
   for (const p of db.pacchetti) {
     for (const l of p.lezioni) {
       if (!lezioneAttiva(l)) continue
-      if (exceptLezioneId && l.id === exceptLezioneId) continue
+      if (skip.has(l.id)) continue
       if (l.giorno !== giorno || l.vasca !== vasca || l.corsia !== corsia) continue
       if (oreCoperteLezioneLp(l.ora, l.durataMin).includes(ora)) return true
     }
@@ -173,7 +176,7 @@ export function assertSlotLibero(
   vasca: VascaId,
   corsia: number,
   durataMin: number,
-  exceptLezioneId?: string,
+  exceptLezioneIds?: string | string[],
 ): string | null {
   const max = corsieMax(db.regole, giorno, vasca)
   if (max <= 0) return "Quel giorno la vasca non è disponibile per le private"
@@ -181,7 +184,7 @@ export function assertSlotLibero(
   const v = asVasca(vasca)
   if (!v) return "Vasca non valida"
   for (const o of oreCoperteLezioneLp(ora, durataMin)) {
-    if (slotOccupato(db, giorno, o, vasca, corsia, exceptLezioneId)) {
+    if (slotOccupato(db, giorno, o, vasca, corsia, exceptLezioneIds)) {
       return `Corsia occupata alle ${o}`
     }
   }

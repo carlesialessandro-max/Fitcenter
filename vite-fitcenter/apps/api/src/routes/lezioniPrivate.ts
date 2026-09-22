@@ -13,6 +13,7 @@ import {
   postLezioniPrivatePrendi,
   postLezioniPrivateRiavvisa,
   postLezioniPrivateRichiesta,
+  postLezioniPrivateSpostaPacchetto,
   putLezioniPrivateRegole,
 } from "../handlers/lezioniPrivate.js"
 
@@ -31,4 +32,5 @@ lezioniPrivateRouter.delete("/richieste/:id", deleteLezioniPrivateRichiesta)
 lezioniPrivateRouter.post("/richieste/:id/prendi", postLezioniPrivatePrendi)
 lezioniPrivateRouter.post("/prenota", postLezioniPrivatePrenota)
 lezioniPrivateRouter.post("/pacchetti", postLezioniPrivatePacchetto)
+lezioniPrivateRouter.post("/pacchetti/:id/sposta", postLezioniPrivateSpostaPacchetto)
 lezioniPrivateRouter.patch("/lezioni/:id", patchLezioniPrivateLezione)

@@ -71,11 +71,19 @@ export function inferSessoDaNome(nome: string): LpSesso | null {
 }
 
 export function parsePrefSessoIstruttore(pref?: string | null): LpSesso | null {
+  return parsePrefIstruttore(pref).sesso
+}
+
+export function parsePrefIstruttore(pref?: string | null): { sesso: LpSesso | null; special: boolean } {
   const t = fold(String(pref ?? ""))
-  if (!t) return null
-  if (/\b(femmin|donna|istruttrice|ragazza)\b/.test(t) || t === "f") return "F"
-  if (/\b(maschi|uomo|istruttore|ragazzo)\b/.test(t) || t === "m") return "M"
-  return inferSessoDaNome(t)
+  if (!t) return { sesso: null, special: false }
+  if (/\b(special|disabil|diversament|bes|npi|ragazz[io] disabil)\b/.test(t) || t === "s") {
+    return { sesso: null, special: true }
+  }
+  if (/\b(femmin|donna|istruttrice|ragazza)\b/.test(t) || t === "f") return { sesso: "F", special: false }
+  if (/\b(maschi|uomo|istruttore|ragazzo)\b/.test(t) || t === "m") return { sesso: "M", special: false }
+  const fromName = inferSessoDaNome(t)
+  return { sesso: fromName, special: false }
 }
 
 export function sessoIstruttore(i: { nome: string; sesso?: LpSesso | null }): LpSesso | null {
@@ -83,16 +91,16 @@ export function sessoIstruttore(i: { nome: string; sesso?: LpSesso | null }): Lp
   return inferSessoDaNome(i.nome)
 }
 
-export function istruttoriPerPreferenza<T extends { nome: string; sesso?: LpSesso | null; attivo?: boolean; telefono?: string }>(
-  instructors: T[],
-  pref?: string | null
-): T[] {
+export function istruttoriPerPreferenza<
+  T extends { nome: string; sesso?: LpSesso | null; special?: boolean | null; attivo?: boolean; telefono?: string },
+>(instructors: T[], pref?: string | null): T[] {
   const attivi = instructors.filter((i) => i.attivo !== false && String(i.telefono ?? "").trim())
-  const want = parsePrefSessoIstruttore(pref)
-  if (!want) return attivi
+  const want = parsePrefIstruttore(pref)
+  if (want.special) return attivi.filter((i) => i.special === true)
+  if (!want.sesso) return attivi
   const matched = attivi.filter((i) => {
     const s = sessoIstruttore(i)
-    return s === want || s == null
+    return s === want.sesso || s == null
   })
   return matched
 }

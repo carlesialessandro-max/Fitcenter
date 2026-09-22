@@ -16,6 +16,7 @@ const VASCA_LABEL: Record<VascaId, string> = { v25: "25 m (1 corsia)", ludica: "
 function fmtPrefIstr(p?: string): string {
   const t = (p ?? "").toLowerCase()
   if (!t) return "indifferente"
+  if (/special|disabil/.test(t)) return "special"
   if (/femmin|donna|istruttrice/.test(t)) return "donna"
   if (/maschi|uomo/.test(t) && !/femmin/.test(t)) return "uomo"
   return p ?? ""
@@ -115,10 +116,8 @@ export function LezioniPrivate() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Lezioni private acqua</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Come il foglio richieste: nuova richiesta → WhatsApp agli istruttori (solo uomini o solo donne se c’è
-            preferenza). Chi prende in carico sceglie vasca e
-            Chi prende in carico sceglie prova o pacchetto e una corsia libera. Sul calendario puoi
-            spostare o togliere una data: la richiesta resta.
+            WhatsApp agli istruttori (uomo, donna o Special). Prenota prova o pacchetto in vasca. Puoi spostare una data
+            o tutte quelle del pacchetto senza cancellare la richiesta.
           </p>
         </div>
         <div className="flex rounded-lg border border-zinc-700 bg-zinc-900/50 p-0.5">
@@ -156,6 +155,10 @@ export function LezioniPrivate() {
           setPrendiId={setPrendiId}
           packId={packId}
           setPackId={setPackId}
+          onSpostaDate={(id) => {
+            const l = lezioni.find((x) => x.richiestaId === id && x.stato === "prenotata")
+            if (l) setDetailLezione(l)
+          }}
           onDone={invalidate}
         />
       ) : null}
@@ -229,21 +232,25 @@ export function LezioniPrivate() {
               }}
             />
           ) : null}
-          {detailLezione ? (
-            <LezioneDetailModal
-              lezione={detailLezione}
-              onClose={() => setDetailLezione(null)}
-              onDone={() => {
-                setDetailLezione(null)
-                invalidate()
-              }}
-            />
-          ) : null}
         </div>
       ) : null}
 
       {tab === "istruttori" ? (
         <IstruttoriTab canRoster={canRoster} instructors={instructors} regole={q.data?.regole ?? {}} onDone={invalidate} />
+      ) : null}
+
+      {detailLezione ? (
+        <LezioneDetailModal
+          lezione={detailLezione}
+          pacchettoLezioni={lezioni.filter(
+            (l) => l.pacchettoId === detailLezione.pacchettoId && l.stato === "prenotata",
+          )}
+          onClose={() => setDetailLezione(null)}
+          onDone={() => {
+            setDetailLezione(null)
+            invalidate()
+          }}
+        />
       ) : null}
     </div>
   )
@@ -259,6 +266,7 @@ function RichiesteTab({
   setPrendiId,
   packId,
   setPackId,
+  onSpostaDate,
   onDone,
 }: {
   canDesk: boolean
@@ -270,6 +278,7 @@ function RichiesteTab({
   setPrendiId: (id: string | null) => void
   packId: string | null
   setPackId: (id: string | null) => void
+  onSpostaDate: (richiestaId: string) => void
   onDone: () => void
 }) {
   const [form, setForm] = useState({
@@ -322,7 +331,7 @@ function RichiesteTab({
         >
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            WhatsApp al cliente sempre; agli istruttori solo se la preferenza è uomo, donna, o a tutti se indifferente.
+            WhatsApp al cliente sempre; agli istruttori uomo, donna, Special (flag in tabella) o tutti se indifferente.
             Poi scegli prova o pacchetto 5/10 sul calendario. Togliere una data dal calendario non cancella la richiesta.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -365,6 +374,7 @@ function RichiesteTab({
                 <option value="">Indifferente (tutti)</option>
                 <option value="maschio">Istruttore uomo</option>
                 <option value="femmina">Istruttrice donna</option>
+                <option value="special">Special (ragazzi disabili)</option>
               </select>
             </label>
             <label className="grid gap-1 text-sm text-zinc-400 sm:col-span-2">
@@ -476,6 +486,11 @@ function RichiesteTab({
                     {r.status === "assegnata" ? (
                       <button type="button" className="text-sm text-amber-300 underline" onClick={() => setPackId(r.id)}>
                         Pacchetto 5/10
+                      </button>
+                    ) : null}
+                    {lezioni.some((l) => l.richiestaId === r.id && l.stato === "prenotata") ? (
+                      <button type="button" className="text-sm text-amber-200 underline" onClick={() => onSpostaDate(r.id)}>
+                        Sposta date
                       </button>
                     ) : null}
                     {canDesk ? (
@@ -845,30 +860,51 @@ function BookSlotModal({
 
 function LezioneDetailModal({
   lezione,
+  pacchettoLezioni,
   onClose,
   onDone,
 }: {
   lezione: LpLezioneFlat
+  pacchettoLezioni: LpLezioneFlat[]
   onClose: () => void
   onDone: () => void
 }) {
+  const datePacchetto = pacchettoLezioni.length ? pacchettoLezioni : [lezione]
+  const [selezionate, setSelezionate] = useState<Set<string>>(() => new Set([lezione.lezioneId]))
   const [giorno, setGiorno] = useState(lezione.giorno)
   const [ora, setOra] = useState(lezione.ora)
   const [vasca, setVasca] = useState<VascaId>(lezione.vasca)
   const [corsia, setCorsia] = useState(lezione.corsia)
+  const nSel = selezionate.size
   const moveM = useMutation({
-    mutationFn: () => lezioniPrivateApi.patchLezione(lezione.lezioneId, { giorno, ora, vasca, corsia }),
+    mutationFn: () => {
+      const ids = [...selezionate]
+      if (ids.length <= 1 && ids[0] === lezione.lezioneId) {
+        return lezioniPrivateApi.patchLezione(lezione.lezioneId, { giorno, ora, vasca, corsia })
+      }
+      return lezioniPrivateApi.spostaPacchetto(lezione.pacchettoId, {
+        lezioneIds: ids,
+        lezioneAncoraId: lezione.lezioneId,
+        giornoAncora: giorno,
+        ora,
+        vasca,
+        corsia,
+      })
+    },
     onSuccess: onDone,
   })
   const togliM = useMutation({
     mutationFn: () => lezioniPrivateApi.patchLezione(lezione.lezioneId, { stato: "tolta" }),
     onSuccess: onDone,
   })
+  const tutte = datePacchetto.length > 1 && datePacchetto.every((l) => selezionate.has(l.lezioneId))
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
+      <div className="w-full max-w-lg rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
         <h3 className="font-semibold text-zinc-100">Lezione in vasca</h3>
-        <p className="mt-1 text-xs text-zinc-500">Sposta la data o toglila dal calendario: la richiesta resta in elenco.</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Sposta una data, più date o tutto il pacchetto. Togliere una data non elimina la richiesta.
+        </p>
         <dl className="mt-3 grid gap-2 text-sm">
           <div>
             <dt className="text-zinc-500">Nominativo</dt>
@@ -883,13 +919,65 @@ function LezioneDetailModal({
             <dd className="text-zinc-200">{lezione.tipo === "prova" ? "Prova" : `Pacchetto ${lezione.tipo}`}</dd>
           </div>
           <div>
-            <dt className="text-zinc-500">Telefono</dt>
+            <dt className="text-zinc-500">Telefono genitore</dt>
             <dd className="text-zinc-200">{lezione.telefono}</dd>
           </div>
         </dl>
+        {datePacchetto.length > 1 ? (
+          <div className="mt-3 rounded-lg border border-zinc-800 p-2">
+            <div className="mb-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="text-xs text-[#46A6D9] underline"
+                onClick={() => setSelezionate(new Set(datePacchetto.map((l) => l.lezioneId)))}
+              >
+                Tutte le date
+              </button>
+              <button type="button" className="text-xs text-zinc-400 underline" onClick={() => setSelezionate(new Set([lezione.lezioneId]))}>
+                Solo questa
+              </button>
+            </div>
+            <ul className="max-h-36 space-y-1 overflow-auto text-sm">
+              {datePacchetto
+                .slice()
+                .sort((a, b) => a.giorno.localeCompare(b.giorno) || a.ora.localeCompare(b.ora))
+                .map((l) => (
+                  <li key={l.lezioneId}>
+                    <label className="flex items-center gap-2 text-zinc-300">
+                      <input
+                        type="checkbox"
+                        checked={selezionate.has(l.lezioneId)}
+                        onChange={() => {
+                          setSelezionate((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(l.lezioneId)) next.delete(l.lezioneId)
+                            else next.add(l.lezioneId)
+                            if (next.size === 0) next.add(lezione.lezioneId)
+                            return next
+                          })
+                        }}
+                      />
+                      {fmtDateIt(l.giorno)} {l.ora}
+                      {l.lezioneId === lezione.lezioneId ? <span className="text-[10px] text-zinc-500">questa</span> : null}
+                    </label>
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              {tutte ? "Sposti tutto il pacchetto" : nSel === 1 ? "Sposti una sola data" : `Sposti ${nSel} date`}
+              : la prima selezionata va alla nuova data, le altre dello stesso numero di giorni.
+            </p>
+          </div>
+        ) : null}
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
-          <input type="time" value={ora} onChange={(e) => setOra(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          <label className="grid gap-1 text-xs text-zinc-500">
+            {nSel > 1 ? "Nuova data della prima selezionata" : "Data"}
+            <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Ora
+            <input type="time" value={ora} onChange={(e) => setOra(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
+          </label>
           <select value={vasca} onChange={(e) => setVasca(e.target.value as VascaId)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100">
             <option value="v25">Vasca 25 m</option>
             <option value="ludica">Vasca ludica 18 m</option>
@@ -918,11 +1006,11 @@ function LezioneDetailModal({
           </button>
           <button
             type="button"
-            disabled={moveM.isPending}
+            disabled={moveM.isPending || nSel < 1}
             onClick={() => moveM.mutate()}
             className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200"
           >
-            Sposta
+            {nSel > 1 ? `Sposta ${nSel} date` : "Sposta"}
           </button>
         </div>
       </div>
@@ -1151,16 +1239,18 @@ function IstruttoriTab({
   const uomini = instructors.filter((i) => i.sesso === "M")
   const donne = instructors.filter((i) => i.sesso === "F")
   const altri = instructors.filter((i) => i.sesso !== "M" && i.sesso !== "F")
+  const special = instructors.filter((i) => i.special)
 
   function riga(i: LpIstruttore) {
     return (
       <li key={i.id} className="flex items-center justify-between gap-2 text-sm text-zinc-200">
         <span>
           {i.nome} <span className="text-zinc-500">{i.telefono || "senza tel."}</span>
+          {i.special ? <span className="ml-2 text-xs text-violet-300">special</span> : null}
           {!i.attivo ? <span className="ml-2 text-xs text-zinc-600">disattivo</span> : null}
         </span>
         {canRoster ? (
-          <span className="flex shrink-0 items-center gap-2">
+          <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <button
               type="button"
               className={`text-xs ${i.sesso === "M" ? "text-sky-300" : "text-zinc-500 underline"}`}
@@ -1174,6 +1264,13 @@ function IstruttoriTab({
               onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { sesso: "F" }).then(onDone)}
             >
               donna
+            </button>
+            <button
+              type="button"
+              className={`text-xs ${i.special ? "text-violet-300" : "text-zinc-500 underline"}`}
+              onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { special: !i.special }).then(onDone)}
+            >
+              {i.special ? "special sì" : "special no"}
             </button>
             <button
               type="button"
@@ -1203,8 +1300,8 @@ function IstruttoriTab({
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Istruttori (WhatsApp)</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Uomini e donne dal nome. Se sbaglia, correggi con uomo/donna. Le richieste con preferenza avvisano solo quel
-          gruppo.
+          Uomo/donna dal nome; Special è un flag a parte per i ragazzi disabili. Le richieste Special avvisano solo chi
+          ha il flag attivo.
         </p>
         {canRoster ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1223,6 +1320,10 @@ function IstruttoriTab({
           <div>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-pink-300">Donne ({donne.length})</h3>
             <ul className="mt-2 space-y-2">{donne.length ? donne.map(riga) : <li className="text-sm text-zinc-500">Nessuna.</li>}</ul>
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-violet-300">Special ({special.length})</h3>
+            <ul className="mt-2 space-y-2">{special.length ? special.map(riga) : <li className="text-sm text-zinc-500">Nessuno abilitato.</li>}</ul>
           </div>
           {altri.length ? (
             <div>
