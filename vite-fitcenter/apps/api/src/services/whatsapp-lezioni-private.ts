@@ -25,7 +25,7 @@ function sanitizeLpTemplateParam(text: string): string {
 }
 
 function isClosedWindowError(msg: string): boolean {
-  return /131047|24 hour|re-engage|not in allowed/i.test(msg)
+  return /131047|24 hour|24 ore|fuori finestra|re-engage|not in allowed|testo libero non arriva/i.test(msg)
 }
 
 function isLongWelcomeBody(text?: string): boolean {
@@ -135,6 +135,38 @@ async function sendApprovedTemplate(
   throw last ?? new Error(`Invio template «${tpl.name}» fallito`)
 }
 
+/** Invio diretto, senza GET su Meta: stessi modelli che già usano le consulenti. */
+async function sendBlindConsultantTemplates(telefono: string, dettaglio: string, chi: string): Promise<void> {
+  const names = consultantFallbackNames()
+  const langs = Array.from(new Set([lpLang(), "it"].filter(Boolean)))
+  const paramSets: Array<string[] | undefined> = [[dettaglio.slice(0, 220)], [chi], undefined]
+  const tries: Array<{ name: string; languageCode: string; bodyParams?: string[] }> = []
+  for (const name of names) {
+    for (const languageCode of langs) {
+      for (const bodyParams of paramSets) {
+        tries.push({ name, languageCode, bodyParams })
+      }
+    }
+  }
+  let last: Error | null = null
+  for (let i = 0; i < tries.length; i++) {
+    const t = tries[i]!
+    try {
+      await sendWhatsappTemplate({
+        toRaw: telefono,
+        templateName: t.name,
+        languageCode: t.languageCode,
+        bodyParams: t.bodyParams,
+        skipLog: i < tries.length - 1,
+      })
+      return
+    } catch (e) {
+      last = e as Error
+    }
+  }
+  throw last ?? new Error("Invio template consulenti fallito")
+}
+
 /** Chat chiusa: solo modelli già approvati. Non crearne di nuovi (Meta rifiuta la lingua). */
 async function sendClosedWindowTemplate(telefono: string, text: string, nome?: string): Promise<void> {
   const dettaglio = sanitizeLpTemplateParam(text)
@@ -144,48 +176,46 @@ async function sendClosedWindowTemplate(telefono: string, text: string, nome?: s
     return [] as WhatsappTemplateInfo[]
   })
   const short = pickShortFrom(rows)
-  let last: Error | null = null
-  const tryTpl = async (tpl: WhatsappTemplateInfo) => {
+  if (short) {
     try {
-      await sendApprovedTemplate(telefono, tpl, dettaglio, chi)
-      return true
+      await sendApprovedTemplate(telefono, short, dettaglio, chi)
+      return
     } catch (e) {
-      last = e as Error
-      return false
+      console.warn("[lp-wa] template breve:", (e as Error).message)
     }
   }
-  if (short && (await tryTpl(short))) return
   for (const name of consultantFallbackNames()) {
     const tpl =
       rows.find((t) => t.name === name) ??
       (await findWhatsappTemplate(name, lpLang()).catch(() => null))
     if (!tpl || tpl.status !== "APPROVED") continue
-    if (short && tpl.name === short.name && tpl.language === short.language) continue
-    if (await tryTpl(tpl)) return
+    if (short && tpl.name === short.name) continue
+    try {
+      await sendApprovedTemplate(telefono, tpl, dettaglio, chi)
+      return
+    } catch (e) {
+      console.warn("[lp-wa] template", name, (e as Error).message)
+    }
   }
-  throw (
-    last ??
-    new Error(
-      "Nessun template WhatsApp approvato disponibile. Meta non lascia creare lezione_privata_breve (lingua non supportata). In Business Manager crea un modello UTILITY italiano di una riga: FitCenter lezione privata: {{1}}",
-    )
-  )
+  await sendBlindConsultantTemplates(telefono, dettaglio, chi)
 }
 
 /**
  * Chat aperta (24h): testo della richiesta.
- * Chat chiusa: template già approvato delle consulenti (niente creazione Meta).
+ * Chat chiusa: niente testo libero (Meta lo rifiuta). Si usano i template già approvati.
  */
 export async function sendLezionePrivataWhatsapp(telefono: string, text: string, nome?: string): Promise<void> {
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  try {
-    await sendWhatsappText(telefono, body)
-    return
-  } catch (e) {
-    const msg = (e as Error).message || String(e)
-    if (/131026|undeliverable|numero WhatsApp non valido/i.test(msg)) throw e
-    if (!isClosedWindowError(msg) && whatsappEventsStore.hasCustomerWindow(telefono)) throw e
+  if (whatsappEventsStore.hasCustomerWindow(telefono)) {
+    try {
+      await sendWhatsappText(telefono, body)
+      return
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      if (!isClosedWindowError(msg)) throw e
+    }
   }
   await sendClosedWindowTemplate(telefono, body, nome)
 }

@@ -394,7 +394,11 @@ export async function sendWhatsappDocument(params: {
   }
 }
 
-export async function sendWhatsappText(toRaw: string, text: string): Promise<unknown> {
+export async function sendWhatsappText(
+  toRaw: string,
+  text: string,
+  opts?: { skipLog?: boolean },
+): Promise<unknown> {
   const to = normalizeWaTo(toRaw)
   if (!to) throw new Error("Numero destinatario non valido")
   const body = text.trim()
@@ -419,14 +423,16 @@ export async function sendWhatsappText(toRaw: string, text: string): Promise<unk
     })
     return result
   } catch (e) {
-    whatsappEventsStore.append({
-      kind: "message_out",
-      to,
-      text: body,
-      status: "error",
-      errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
-      raw: { error: (e as Error)?.message ?? String(e) },
-    })
+    if (!opts?.skipLog) {
+      whatsappEventsStore.append({
+        kind: "message_out",
+        to,
+        text: body,
+        status: "error",
+        errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
+        raw: { error: (e as Error)?.message ?? String(e) },
+      })
+    }
     throw e
   }
 }
