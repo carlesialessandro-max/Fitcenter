@@ -1,7 +1,9 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
+  createWhatsappNamedUtilityTemplate,
+  createWhatsappPlainUtilityTemplate,
   createWhatsappUtilityTemplate,
-  findWhatsappTemplateStatus,
+  findWhatsappTemplate,
   isWhatsappSendConfigured,
   normalizeWaTo,
   sendWhatsappTemplate,
@@ -10,8 +12,14 @@ import {
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-const LP_TEMPLATE_BODY = "FitCenter — lezione privata:\n{{1}}"
+const LP_TEMPLATE_BODY = "FitCenter: nuova richiesta lezione privata. {{1}}"
+const LP_TEMPLATE_BODY_NAMED = "FitCenter: nuova richiesta lezione privata. {{dettaglio}}"
+const LP_TEMPLATE_BODY_PLAIN =
+  "FitCenter: hai una nuova richiesta di lezione privata. Apri FitCenter, pagina Lezioni private."
 const LP_TEMPLATE_EXAMPLE = "Mario Rossi, 40 anni, mercoledi mattina, tel 3331234567"
+const LP_NAMED_PARAM = "dettaglio"
+
+type LpTemplateKind = "positional" | "named" | "plain"
 
 function lpTemplateConfig() {
   const name = (process.env.WHATSAPP_LP_TEMPLATE ?? "lezione_privata_richiesta").trim() || "lezione_privata_richiesta"
@@ -23,54 +31,182 @@ function sanitizeLpTemplateParam(text: string): string {
   return text.replace(/[\r\n]+/g, " · ").replace(/\s+/g, " ").trim().slice(0, 600)
 }
 
-let lpTemplateReady: Promise<string> | null = null
+let lpTemplateReady: Promise<LpTemplateKind> | null = null
 
-async function ensureLpTemplateApproved(): Promise<{ name: string; languageCode: string }> {
+function alreadyExists(msg: string): boolean {
+  return /already exists|taken|duplicate|already been created/i.test(msg)
+}
+
+function kindFromTemplate(row: { bodyText?: string; parameterFormat?: string } | null): LpTemplateKind {
+  const fmt = String(row?.parameterFormat ?? "").toLowerCase()
+  const body = row?.bodyText ?? ""
+  if (fmt === "named" || /\{\{[a-z_][a-z0-9_]*\}\}/i.test(body)) return "named"
+  if (body && !/\{\{/.test(body)) return "plain"
+  return "positional"
+}
+
+async function statusOrNull(name: string, languageCode: string) {
+  try {
+    return await findWhatsappTemplate(name, languageCode)
+  } catch (e) {
+    console.warn("[lp-wa] lettura template Meta:", (e as Error).message)
+    return null
+  }
+}
+
+function throwIfNotSendable(name: string, status: string | null | undefined) {
+  if (!status || status === "APPROVED") return
+  if (status === "PENDING" || status === "IN_APPEAL" || status === "PAUSED") {
+    throw new Error(
+      `Template WhatsApp «${name}» non ancora approvato (${status}). In Meta Business Manager attendi lo stato verde, poi reinvia.`
+    )
+  }
+  if (status === "REJECTED" || status === "DISABLED") {
+    throw new Error(
+      `Template WhatsApp «${name}» rifiutato da Meta. Correggilo in Business Manager (categoria UTILITY) e reinvia.`
+    )
+  }
+}
+
+async function submitLpTemplate(): Promise<LpTemplateKind> {
+  const cfg = lpTemplateConfig()
+  const existing = await statusOrNull(cfg.name, cfg.languageCode)
+  if (existing?.status === "APPROVED") return kindFromTemplate(existing)
+  throwIfNotSendable(cfg.name, existing?.status)
+
+  const errors: string[] = []
+  try {
+    await createWhatsappUtilityTemplate({
+      name: cfg.name,
+      languageCode: cfg.languageCode,
+      body: LP_TEMPLATE_BODY,
+      example: LP_TEMPLATE_EXAMPLE,
+    })
+    throw new Error(
+      `Template «${cfg.name}» inviato a Meta per approvazione. Di solito è questione di minuti: appena è APPROVED i WhatsApp arrivano anche a chat chiusa.`
+    )
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    if (alreadyExists(msg)) {
+      const again = await statusOrNull(cfg.name, cfg.languageCode)
+      if (again?.status === "APPROVED") return kindFromTemplate(again)
+      throwIfNotSendable(cfg.name, again?.status)
+    }
+    if (/approvazione/i.test(msg)) throw e
+    errors.push(msg)
+  }
+
+  try {
+    await createWhatsappNamedUtilityTemplate({
+      name: cfg.name,
+      languageCode: cfg.languageCode,
+      body: LP_TEMPLATE_BODY_NAMED,
+      paramName: LP_NAMED_PARAM,
+      example: LP_TEMPLATE_EXAMPLE,
+    })
+    throw new Error(
+      `Template «${cfg.name}» inviato a Meta per approvazione. Di solito è questione di minuti: appena è APPROVED i WhatsApp arrivano anche a chat chiusa.`
+    )
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    if (alreadyExists(msg)) {
+      const again = await statusOrNull(cfg.name, cfg.languageCode)
+      if (again?.status === "APPROVED") return kindFromTemplate(again)
+      throwIfNotSendable(cfg.name, again?.status)
+    }
+    if (/approvazione/i.test(msg)) throw e
+    errors.push(msg)
+  }
+
+  const plainName = `${cfg.name}_avviso`
+  const plain = await statusOrNull(plainName, cfg.languageCode)
+  if (plain?.status === "APPROVED") return "plain"
+  if (!plain?.status) {
+    try {
+      await createWhatsappPlainUtilityTemplate({
+        name: plainName,
+        languageCode: cfg.languageCode,
+        body: LP_TEMPLATE_BODY_PLAIN,
+      })
+      throw new Error(
+        `Template «${plainName}» inviato a Meta per approvazione. Di solito è questione di minuti: appena è APPROVED i WhatsApp arrivano anche a chat chiusa.`
+      )
+    } catch (e) {
+      const msg = (e as Error).message || String(e)
+      if (alreadyExists(msg)) {
+        const again = await statusOrNull(plainName, cfg.languageCode)
+        if (again?.status === "APPROVED") return "plain"
+        throwIfNotSendable(plainName, again?.status)
+      }
+      if (/approvazione/i.test(msg)) throw e
+      errors.push(msg)
+    }
+  } else {
+    throwIfNotSendable(plainName, plain.status)
+  }
+
+  throw new Error(
+    `Serve il template Meta «${cfg.name}» (UTILITY, italiano). ${errors.filter(Boolean).join(" · ")}`
+  )
+}
+
+async function ensureLpTemplateApproved(): Promise<{ name: string; languageCode: string; kind: LpTemplateKind }> {
   const cfg = lpTemplateConfig()
   if (!lpTemplateReady) {
-    lpTemplateReady = (async () => {
-      let status: string | null = null
-      try {
-        status = await findWhatsappTemplateStatus(cfg.name, cfg.languageCode)
-      } catch (e) {
-        console.warn("[lp-wa] lettura template Meta:", (e as Error).message)
-      }
-      if (status === "APPROVED") return "APPROVED"
-      if (status === "PENDING" || status === "IN_APPEAL" || status === "PAUSED") {
-        throw new Error(
-          `Template WhatsApp «${cfg.name}» non ancora approvato (${status}). In Meta Business Manager attendi lo stato verde, poi reinvia.`
-        )
-      }
-      if (status === "REJECTED" || status === "DISABLED") {
-        throw new Error(
-          `Template WhatsApp «${cfg.name}» rifiutato da Meta. Correggilo in Business Manager (categoria UTILITY) e reinvia.`
-        )
-      }
-      try {
-        await createWhatsappUtilityTemplate({
-          name: cfg.name,
-          languageCode: cfg.languageCode,
-          body: LP_TEMPLATE_BODY,
-          example: LP_TEMPLATE_EXAMPLE,
-        })
-      } catch (e) {
-        const msg = (e as Error).message || String(e)
-        if (!/already exists|taken|duplicate/i.test(msg)) {
-          throw new Error(
-            `Serve il template Meta «${cfg.name}» (UTILITY, italiano, testo: FitCenter — lezione privata: {{1}}). ${msg}`
-          )
-        }
-      }
-      throw new Error(
-        `Template «${cfg.name}» inviato a Meta per approvazione. Di solito è questione di minuti: appena è APPROVED i WhatsApp arrivano anche a chat chiusa.`
-      )
-    })().catch((e) => {
-      lpTemplateReady = null
+    lpTemplateReady = submitLpTemplate().catch((e) => {
+      setTimeout(() => {
+        lpTemplateReady = null
+      }, 60_000)
       throw e
     })
   }
-  await lpTemplateReady
-  return cfg
+  const kind = await lpTemplateReady
+  return { ...cfg, kind }
+}
+
+async function sendLpTemplateMessage(telefono: string, param: string, kind: LpTemplateKind) {
+  const cfg = lpTemplateConfig()
+  const langs = Array.from(new Set([cfg.languageCode, "it", "it_IT"].filter(Boolean)))
+  if (kind === "plain") {
+    let last: Error | null = null
+    for (const languageCode of langs) {
+      try {
+        await sendWhatsappTemplate({
+          toRaw: telefono,
+          templateName: `${cfg.name}_avviso`,
+          languageCode,
+        })
+        return
+      } catch (e) {
+        last = e as Error
+      }
+    }
+    throw last ?? new Error("Invio template WhatsApp fallito")
+  }
+  let last: Error | null = null
+  for (const languageCode of langs) {
+    try {
+      if (kind === "named") {
+        await sendWhatsappTemplate({
+          toRaw: telefono,
+          templateName: cfg.name,
+          languageCode,
+          namedBodyParams: [{ name: LP_NAMED_PARAM, text: param }],
+        })
+      } else {
+        await sendWhatsappTemplate({
+          toRaw: telefono,
+          templateName: cfg.name,
+          languageCode,
+          bodyParams: [param],
+        })
+      }
+      return
+    } catch (e) {
+      last = e as Error
+    }
+  }
+  throw last ?? new Error("Invio template WhatsApp fallito")
 }
 
 /**
@@ -86,29 +222,18 @@ export async function sendLezionePrivataWhatsapp(telefono: string, text: string,
     await sendWhatsappText(telefono, body)
     return
   }
-  const cfg = lpTemplateConfig()
   const param = sanitizeLpTemplateParam(body)
   try {
-    await sendWhatsappTemplate({
-      toRaw: telefono,
-      templateName: cfg.name,
-      languageCode: cfg.languageCode,
-      bodyParams: [param],
-    })
+    await sendLpTemplateMessage(telefono, param, "positional")
+    return
   } catch (e) {
     const msg = (e as Error).message || String(e)
-    if (/132001|133010|does not exist|template name/i.test(msg)) {
-      await ensureLpTemplateApproved()
-      await sendWhatsappTemplate({
-        toRaw: telefono,
-        templateName: cfg.name,
-        languageCode: cfg.languageCode,
-        bodyParams: [param],
-      })
-      return
+    if (!/132001|133010|does not exist|template name|invalid parameter|#100|not exist/i.test(msg)) {
+      throw e
     }
-    throw e
   }
+  const ready = await ensureLpTemplateApproved()
+  await sendLpTemplateMessage(telefono, param, ready.kind)
 }
 
 function samePhone(a: string, b: string): boolean {

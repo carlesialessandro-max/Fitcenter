@@ -3,7 +3,8 @@ import { api } from "./client"
 export type VascaId = "v25" | "ludica"
 export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente"
 
-export type LpIstruttore = { id: string; nome: string; telefono: string; attivo: boolean }
+export type LpSesso = "M" | "F"
+export type LpIstruttore = { id: string; nome: string; telefono: string; attivo: boolean; sesso?: LpSesso }
 export type LpRichiesta = {
   id: string
   createdAt: string
@@ -102,7 +103,7 @@ export const lezioniPrivateApi = {
   }) => api.post<{ ok: boolean }>("/lezioni-private/pacchetti", body),
   patchLezione: (id: string, stato: LpLezioneStato) => api.patch<{ ok: boolean }>(`/lezioni-private/lezioni/${encodeURIComponent(id)}`, { stato }),
   addIstruttore: (nome: string, telefono: string) => api.post<{ ok: boolean }>("/lezioni-private/istruttori", { nome, telefono }),
-  patchIstruttore: (id: string, body: Partial<Pick<LpIstruttore, "nome" | "telefono" | "attivo">>) =>
+  patchIstruttore: (id: string, body: Partial<Pick<LpIstruttore, "nome" | "telefono" | "attivo" | "sesso">>) =>
     api.patch<{ ok: boolean }>(`/lezioni-private/istruttori/${encodeURIComponent(id)}`, body),
   deleteIstruttore: (id: string) => api.delete<{ ok: boolean }>(`/lezioni-private/istruttori/${encodeURIComponent(id)}`),
   putRegole: (regole: LpRegole) => api.put<{ ok: boolean; regole: LpRegole }>("/lezioni-private/regole", { regole }),

@@ -7,6 +7,12 @@ import {
 } from "../services/whatsapp.js"
 import { sendLezionePrivataWhatsapp } from "../services/whatsapp-lezioni-private.js"
 import {
+  istruttoriPerPreferenza,
+  inferSessoDaNome,
+  parsePrefSessoIstruttore,
+  type LpSesso,
+} from "../services/lp-istruttore-sesso.js"
+import {
   assertSlotLibero,
   corsieMax,
   lpOreSlots,
@@ -128,9 +134,14 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
 
   const db = readLezioniPrivateDb()
   const istrText = istruttoriWaText(r, by)
-  const istruttori = db.instructors.filter((x) => x.attivo && String(x.telefono ?? "").trim())
+  const want = parsePrefSessoIstruttore(r.prefIstruttore)
+  const istruttori = istruttoriPerPreferenza(db.instructors, r.prefIstruttore)
   if (!istruttori.length) {
-    errors.push("Nessun istruttore attivo con cellulare in elenco")
+    errors.push(
+      want
+        ? `Nessun istruttore ${want === "F" ? "donna" : "uomo"} attivo con cellulare`
+        : "Nessun istruttore attivo con cellulare in elenco"
+    )
   }
   for (const i of istruttori) {
     await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome)
@@ -153,6 +164,7 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
 
 export function getLezioniPrivate(req: Request, res: Response) {
   const db = readLezioniPrivateDb()
+  writeLezioniPrivateDb(db)
   res.json({
     instructors: db.instructors,
     richieste: db.richieste.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -193,7 +205,8 @@ export function postLezioniPrivateIstruttore(req: Request, res: Response) {
     return res.status(400).json({ message: "Cellulare non valido (es. 3331234567)" })
   }
   const db = readLezioniPrivateDb()
-  const row = { id: newLpId("ins"), nome, telefono, attivo: true }
+  const sesso = inferSessoDaNome(nome) ?? undefined
+  const row = { id: newLpId("ins"), nome, telefono, attivo: true, sesso }
   writeLezioniPrivateDb({ ...db, instructors: [...db.instructors, row] })
   res.json({ ok: true, instructor: row })
 }
@@ -205,10 +218,13 @@ export function patchLezioniPrivateIstruttore(req: Request, res: Response) {
   const db = readLezioniPrivateDb()
   const i = db.instructors.find((x) => x.id === id)
   if (!i) return res.status(404).json({ message: "Istruttore non trovato" })
-  const b = req.body as { nome?: string; telefono?: string; attivo?: boolean }
+  const b = req.body as { nome?: string; telefono?: string; attivo?: boolean; sesso?: LpSesso | "" }
   if (typeof b.nome === "string" && b.nome.trim()) i.nome = b.nome.trim()
   if (typeof b.telefono === "string") i.telefono = b.telefono.trim()
   if (typeof b.attivo === "boolean") i.attivo = b.attivo
+  if (b.sesso === "M" || b.sesso === "F") i.sesso = b.sesso
+  if (b.sesso === "") delete i.sesso
+  if (!i.sesso) i.sesso = inferSessoDaNome(i.nome) ?? undefined
   writeLezioniPrivateDb(db)
   res.json({ ok: true, instructor: i })
 }

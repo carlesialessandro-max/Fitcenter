@@ -13,6 +13,14 @@ type Periodo = "giorno" | "settimana" | "mese"
 const DOW_IT = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"]
 const VASCA_LABEL: Record<VascaId, string> = { v25: "25 m (1 corsia)", ludica: "Ludica 18 m" }
 
+function fmtPrefIstr(p?: string): string {
+  const t = (p ?? "").toLowerCase()
+  if (!t) return "indifferente"
+  if (/femmin|donna|istruttrice/.test(t)) return "donna"
+  if (/maschi|uomo/.test(t) && !/femmin/.test(t)) return "uomo"
+  return p ?? ""
+}
+
 function addDaysIso(iso: string, n: number): string {
   const d = new Date(`${iso}T12:00:00`)
   d.setDate(d.getDate() + n)
@@ -82,7 +90,8 @@ export function LezioniPrivate() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Lezioni private acqua</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Come il foglio richieste: nuova richiesta → WhatsApp agli istruttori. Chi prende in carico sceglie vasca e
+            Come il foglio richieste: nuova richiesta → WhatsApp agli istruttori (solo uomini o solo donne se c’è
+            preferenza). Chi prende in carico sceglie vasca e
             corsia libera (prova, poi pacchetto 5 o 10).
           </p>
         </div>
@@ -287,8 +296,8 @@ function RichiesteTab({
         >
           <h2 className="text-sm font-semibold text-zinc-200">Nuova richiesta</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            WhatsApp parte sempre agli istruttori e al cliente (prova, poi 5 o 10). Per annullare o spostare il cliente
-            deve contattare l’istruttore.
+            WhatsApp al cliente sempre; agli istruttori solo se la preferenza è uomo, donna, o a tutti se indifferente.
+            Poi 5 o 10 lezioni. Per annullare o spostare il cliente deve contattare l’istruttore.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="grid gap-1 text-sm text-zinc-400">
@@ -308,7 +317,6 @@ function RichiesteTab({
                 ["telefono", "Telefono *"],
                 ["tutore", "Tutore"],
                 ["quando", "Quando (disponibilità)"],
-                ["prefIstruttore", "Preferenza istruttore"],
               ] as const
             ).map(([k, label]) => (
               <label key={k} className="grid gap-1 text-sm text-zinc-400">
@@ -321,6 +329,18 @@ function RichiesteTab({
                 />
               </label>
             ))}
+            <label className="grid gap-1 text-sm text-zinc-400">
+              Preferenza istruttore
+              <select
+                value={form.prefIstruttore}
+                onChange={(e) => setForm((f) => ({ ...f, prefIstruttore: e.target.value }))}
+                className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+              >
+                <option value="">Indifferente (tutti)</option>
+                <option value="maschio">Istruttore uomo</option>
+                <option value="femmina">Istruttrice donna</option>
+              </select>
+            </label>
             <label className="grid gap-1 text-sm text-zinc-400 sm:col-span-2">
               Note
               <input
@@ -407,7 +427,7 @@ function RichiesteTab({
                 <td className="px-3 py-2 text-zinc-300">{r.telefono}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.tutore ?? ""}</td>
                 <td className="px-3 py-2 text-zinc-300">{r.quando ?? ""}</td>
-                <td className="px-3 py-2 text-zinc-400">{r.prefIstruttore ?? ""}</td>
+                <td className="px-3 py-2 text-zinc-400">{fmtPrefIstr(r.prefIstruttore)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.note ?? ""}</td>
                 <td className="px-3 py-2 text-amber-200">{r.istruttoreNome ?? r.status}</td>
                 <td className="px-3 py-2">
@@ -980,7 +1000,7 @@ function IstruttoriTab({
   onDone,
 }: {
   canRoster: boolean
-  instructors: { id: string; nome: string; telefono: string; attivo: boolean }[]
+  instructors: LpIstruttore[]
   regole: Record<string, { v25: number; ludica: number }>
   onDone: () => void
 }) {
@@ -1000,12 +1020,63 @@ function IstruttoriTab({
     mutationFn: () => lezioniPrivateApi.putRegole(localRegole),
     onSuccess: onDone,
   })
+  const uomini = instructors.filter((i) => i.sesso === "M")
+  const donne = instructors.filter((i) => i.sesso === "F")
+  const altri = instructors.filter((i) => i.sesso !== "M" && i.sesso !== "F")
+
+  function riga(i: LpIstruttore) {
+    return (
+      <li key={i.id} className="flex items-center justify-between gap-2 text-sm text-zinc-200">
+        <span>
+          {i.nome} <span className="text-zinc-500">{i.telefono || "senza tel."}</span>
+          {!i.attivo ? <span className="ml-2 text-xs text-zinc-600">disattivo</span> : null}
+        </span>
+        {canRoster ? (
+          <span className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              className={`text-xs ${i.sesso === "M" ? "text-sky-300" : "text-zinc-500 underline"}`}
+              onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { sesso: "M" }).then(onDone)}
+            >
+              uomo
+            </button>
+            <button
+              type="button"
+              className={`text-xs ${i.sesso === "F" ? "text-pink-300" : "text-zinc-500 underline"}`}
+              onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { sesso: "F" }).then(onDone)}
+            >
+              donna
+            </button>
+            <button
+              type="button"
+              className="text-xs text-zinc-500 underline"
+              onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { attivo: !i.attivo }).then(onDone)}
+            >
+              {i.attivo ? "disattiva" : "attiva"}
+            </button>
+            <button
+              type="button"
+              className="text-xs text-red-400 underline"
+              onClick={() => {
+                if (!window.confirm(`Eliminare ${i.nome} dall'elenco istruttori?`)) return
+                void lezioniPrivateApi.deleteIstruttore(i.id).then(onDone)
+              }}
+            >
+              Elimina
+            </button>
+          </span>
+        ) : null}
+      </li>
+    )
+  }
+
   return (
     <div className="mt-5 grid gap-6 lg:grid-cols-2">
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Istruttori (WhatsApp)</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Ogni nuova richiesta arriva su WhatsApp a questi cellulari. Serve il numero completo (es. 3331234567).
+          Uomini e donne dal nome. Se sbaglia, correggi con uomo/donna. Le richieste con preferenza avvisano solo quel
+          gruppo.
         </p>
         {canRoster ? (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1016,38 +1087,22 @@ function IstruttoriTab({
             </button>
           </div>
         ) : null}
-        <ul className="mt-4 space-y-2">
-          {instructors.length === 0 ? <li className="text-sm text-zinc-500">Elenco vuoto.</li> : null}
-          {instructors.map((i) => (
-            <li key={i.id} className="flex items-center justify-between text-sm text-zinc-200">
-              <span>
-                {i.nome} <span className="text-zinc-500">{i.telefono || "senza tel."}</span>
-                {!i.attivo ? <span className="ml-2 text-xs text-zinc-600">disattivo</span> : null}
-              </span>
-              {canRoster ? (
-                <span className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className="text-xs text-zinc-500 underline"
-                    onClick={() => void lezioniPrivateApi.patchIstruttore(i.id, { attivo: !i.attivo }).then(onDone)}
-                  >
-                    {i.attivo ? "disattiva" : "attiva"}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-xs text-red-400 underline"
-                    onClick={() => {
-                      if (!window.confirm(`Eliminare ${i.nome} dall'elenco istruttori?`)) return
-                      void lezioniPrivateApi.deleteIstruttore(i.id).then(onDone)
-                    }}
-                  >
-                    Elimina
-                  </button>
-                </span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+        <div className="mt-4 space-y-4">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-sky-300">Uomini ({uomini.length})</h3>
+            <ul className="mt-2 space-y-2">{uomini.length ? uomini.map(riga) : <li className="text-sm text-zinc-500">Nessuno.</li>}</ul>
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-pink-300">Donne ({donne.length})</h3>
+            <ul className="mt-2 space-y-2">{donne.length ? donne.map(riga) : <li className="text-sm text-zinc-500">Nessuna.</li>}</ul>
+          </div>
+          {altri.length ? (
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-amber-300">Da confermare ({altri.length})</h3>
+              <ul className="mt-2 space-y-2">{altri.map(riga)}</ul>
+            </div>
+          ) : null}
+        </div>
       </div>
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Corsie per giorno</h2>

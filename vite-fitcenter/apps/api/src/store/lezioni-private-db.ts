@@ -1,4 +1,5 @@
 import { readJson, writeJson } from "./persist.js"
+import { inferSessoDaNome, type LpSesso } from "../services/lp-istruttore-sesso.js"
 
 const FILE = "lezioni-private.json"
 
@@ -9,6 +10,8 @@ export type LpIstruttore = {
   nome: string
   telefono: string
   attivo: boolean
+  /** M uomo / F donna. Se manca si deduce dal nome. */
+  sesso?: LpSesso
 }
 
 export type LpRichiesta = {
@@ -80,8 +83,12 @@ function asVasca(v: unknown): VascaId | null {
 
 export function readLezioniPrivateDb(): LezioniPrivateDb {
   const raw = readJson<Partial<LezioniPrivateDb>>(FILE, DEFAULT)
+  const instructors = (Array.isArray(raw.instructors) ? raw.instructors : []).map((i) => {
+    const sesso = i.sesso === "M" || i.sesso === "F" ? i.sesso : inferSessoDaNome(i.nome) ?? undefined
+    return { ...i, sesso }
+  })
   return {
-    instructors: Array.isArray(raw.instructors) ? raw.instructors : [],
+    instructors,
     richieste: Array.isArray(raw.richieste) ? raw.richieste : [],
     pacchetti: Array.isArray(raw.pacchetti) ? raw.pacchetti : [],
     regole: raw.regole && typeof raw.regole === "object" ? { ...defaultRegole(), ...raw.regole } : defaultRegole(),

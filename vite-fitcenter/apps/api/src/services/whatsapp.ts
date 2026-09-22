@@ -71,6 +71,21 @@ export function formatWaDisplay(waTo: string): string {
   return d ? `+${d}` : ""
 }
 
+function formatGraphError(json: Record<string, unknown>, fallback: string): string {
+  const err = json.error as
+    | { message?: string; error_user_title?: string; error_user_msg?: string; error_subcode?: number; code?: number }
+    | undefined
+  const bits = [
+    err?.error_user_msg,
+    err?.error_user_title,
+    err?.message,
+    err?.error_subcode != null ? `subcode ${err.error_subcode}` : "",
+  ]
+    .map((x) => String(x ?? "").trim())
+    .filter(Boolean)
+  return bits.join(" — ") || fallback
+}
+
 /** Solo cifre, con prefisso paese (es. 393391234567). */
 export function normalizeWaTo(raw: string): string | null {
   const dests = extractItalianMobileDestinations(raw)
@@ -96,8 +111,7 @@ async function graphPost(pathSuffix: string, body: Record<string, unknown>): Pro
   })
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) {
-    const err = json.error as { message?: string } | undefined
-    throw new Error(err?.message ?? `WhatsApp API HTTP ${res.status}`)
+    throw new Error(formatGraphError(json, `WhatsApp API HTTP ${res.status}`))
   }
   return json
 }
@@ -118,26 +132,51 @@ async function graphWaba(method: "GET" | "POST", pathSuffix: string, body?: Reco
   })
   const json = (await res.json().catch(() => ({}))) as Record<string, unknown>
   if (!res.ok) {
-    const err = json.error as { message?: string } | undefined
-    throw new Error(err?.message ?? `WhatsApp WABA HTTP ${res.status}`)
+    throw new Error(formatGraphError(json, `WhatsApp WABA HTTP ${res.status}`))
   }
   return json
 }
 
 export async function findWhatsappTemplateStatus(name: string, languageCode = "it"): Promise<string | null> {
+  const row = await findWhatsappTemplate(name, languageCode)
+  return row?.status ?? null
+}
+
+export async function findWhatsappTemplate(
+  name: string,
+  languageCode = "it"
+): Promise<{ status: string; language?: string; bodyText?: string; parameterFormat?: string } | null> {
   const q = new URLSearchParams({
     name,
-    fields: "name,status,language",
+    fields: "name,status,language,parameter_format,components",
     limit: "20",
   })
   const json = (await graphWaba("GET", `message_templates?${q.toString()}`)) as {
-    data?: Array<{ name?: string; status?: string; language?: string }>
+    data?: Array<{
+      name?: string
+      status?: string
+      language?: string
+      parameter_format?: string
+      components?: Array<{ type?: string; text?: string }>
+    }>
   }
   const lang = languageCode.toLowerCase()
-  const row = (json.data ?? []).find(
-    (t) => String(t.name ?? "") === name && String(t.language ?? "").toLowerCase().startsWith(lang)
-  ) ?? (json.data ?? []).find((t) => String(t.name ?? "") === name)
-  return row?.status ? String(row.status).toUpperCase() : null
+  const row =
+    (json.data ?? []).find(
+      (t) => String(t.name ?? "") === name && String(t.language ?? "").toLowerCase().startsWith(lang)
+    ) ?? (json.data ?? []).find((t) => String(t.name ?? "") === name)
+  if (!row?.status) return null
+  const bodyText = (row.components ?? []).find((c) => String(c.type ?? "").toUpperCase() === "BODY")?.text
+  return {
+    status: String(row.status).toUpperCase(),
+    language: row.language,
+    bodyText,
+    parameterFormat: row.parameter_format,
+  }
+}
+
+function isTemplateAlreadyExistsError(msg: string): boolean {
+  return /already exists|taken|duplicate|already been created/i.test(msg)
 }
 
 export async function createWhatsappUtilityTemplate(params: {
@@ -146,17 +185,85 @@ export async function createWhatsappUtilityTemplate(params: {
   body: string
   example: string
 }): Promise<unknown> {
+  const language = (params.languageCode ?? "it").trim() || "it"
+  const languages = language.toLowerCase() === "it" ? ["it", "it_IT"] : [language]
+  const payloads: Record<string, unknown>[] = []
+  for (const lang of languages) {
+    payloads.push({
+      name: params.name,
+      language: lang,
+      category: "UTILITY",
+      parameter_format: "positional",
+      components: [
+        {
+          type: "BODY",
+          text: params.body,
+          example: { body_text: [[params.example]] },
+        },
+      ],
+    })
+    payloads.push({
+      name: params.name,
+      language: lang,
+      category: "UTILITY",
+      components: [
+        {
+          type: "BODY",
+          text: params.body,
+          example: { body_text: [[params.example]] },
+        },
+      ],
+    })
+  }
+  let lastErr: Error | null = null
+  for (const body of payloads) {
+    try {
+      return await graphWaba("POST", "message_templates", body)
+    } catch (e) {
+      lastErr = e as Error
+      const msg = lastErr.message || String(e)
+      if (isTemplateAlreadyExistsError(msg)) throw lastErr
+    }
+  }
+  throw lastErr ?? new Error("Creazione template WhatsApp fallita")
+}
+
+export async function createWhatsappNamedUtilityTemplate(params: {
+  name: string
+  languageCode?: string
+  body: string
+  paramName: string
+  example: string
+}): Promise<unknown> {
+  const language = (params.languageCode ?? "it").trim() || "it"
   return graphWaba("POST", "message_templates", {
     name: params.name,
-    language: params.languageCode ?? "it",
+    language,
     category: "UTILITY",
+    parameter_format: "named",
     components: [
       {
         type: "BODY",
         text: params.body,
-        example: { body_text: [[params.example]] },
+        example: {
+          body_text_named_params: [{ param_name: params.paramName, example: params.example }],
+        },
       },
     ],
+  })
+}
+
+export async function createWhatsappPlainUtilityTemplate(params: {
+  name: string
+  languageCode?: string
+  body: string
+}): Promise<unknown> {
+  const language = (params.languageCode ?? "it").trim() || "it"
+  return graphWaba("POST", "message_templates", {
+    name: params.name,
+    language,
+    category: "UTILITY",
+    components: [{ type: "BODY", text: params.body }],
   })
 }
 
@@ -294,24 +401,36 @@ export async function sendWhatsappTemplate(params: {
   templateName: string
   languageCode?: string
   bodyParams?: string[]
+  namedBodyParams?: Array<{ name: string; text: string }>
 }): Promise<unknown> {
   const to = normalizeWaTo(params.toRaw)
   if (!to) throw new Error("Numero destinatario non valido")
   const name = params.templateName.trim()
   if (!name) throw new Error("Nome template obbligatorio")
   const language = { code: (params.languageCode ?? "it").trim() || "it" }
+  const bodyParameters =
+    params.namedBodyParams && params.namedBodyParams.length > 0
+      ? params.namedBodyParams.map((p) => ({
+          type: "text",
+          parameter_name: p.name,
+          text: p.text,
+        }))
+      : (params.bodyParams ?? []).map((text) => ({ type: "text", text }))
   const components =
-    params.bodyParams && params.bodyParams.length > 0
+    bodyParameters.length > 0
       ? [
           {
             type: "body",
-            parameters: params.bodyParams.map((text) => ({ type: "text", text })),
+            parameters: bodyParameters,
           },
         ]
       : undefined
   const preview =
     `template:${name}` +
-    (params.bodyParams?.length ? ` [${params.bodyParams.join(", ")}]` : "")
+    (params.bodyParams?.length ? ` [${params.bodyParams.join(", ")}]` : "") +
+    (params.namedBodyParams?.length
+      ? ` [${params.namedBodyParams.map((p) => `${p.name}=${p.text}`).join(", ")}]`
+      : "")
   try {
     const result = await graphPost("messages", {
       messaging_product: "whatsapp",
