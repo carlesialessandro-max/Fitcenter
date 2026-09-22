@@ -402,6 +402,7 @@ export async function sendWhatsappTemplate(params: {
   languageCode?: string
   bodyParams?: string[]
   namedBodyParams?: Array<{ name: string; text: string }>
+  skipLog?: boolean
 }): Promise<unknown> {
   const to = normalizeWaTo(params.toRaw)
   if (!to) throw new Error("Numero destinatario non valido")
@@ -455,14 +456,16 @@ export async function sendWhatsappTemplate(params: {
     })
     return result
   } catch (e) {
-    whatsappEventsStore.append({
-      kind: "message_out",
-      to,
-      text: preview,
-      status: "error",
-      errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
-      raw: { error: (e as Error)?.message ?? String(e) },
-    })
+    if (!params.skipLog) {
+      whatsappEventsStore.append({
+        kind: "message_out",
+        to,
+        text: preview,
+        status: "error",
+        errorIt: explainWhatsappDeliveryError({ error: (e as Error)?.message ?? String(e) }, (e as Error)?.message),
+        raw: { error: (e as Error)?.message ?? String(e) },
+      })
+    }
     throw e
   }
 }
