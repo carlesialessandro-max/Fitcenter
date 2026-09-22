@@ -142,10 +142,44 @@ export async function findWhatsappTemplateStatus(name: string, languageCode = "i
   return row?.status ?? null
 }
 
+export type WhatsappTemplateInfo = {
+  name: string
+  status: string
+  language?: string
+  bodyText?: string
+  parameterFormat?: string
+}
+
+export async function listWhatsappTemplates(): Promise<WhatsappTemplateInfo[]> {
+  const q = new URLSearchParams({
+    fields: "name,status,language,parameter_format,components",
+    limit: "100",
+  })
+  const json = (await graphWaba("GET", `message_templates?${q.toString()}`)) as {
+    data?: Array<{
+      name?: string
+      status?: string
+      language?: string
+      parameter_format?: string
+      components?: Array<{ type?: string; text?: string }>
+    }>
+  }
+  return (json.data ?? []).map((row) => {
+    const bodyText = (row.components ?? []).find((c) => String(c.type ?? "").toUpperCase() === "BODY")?.text
+    return {
+      name: String(row.name ?? "").trim(),
+      status: String(row.status ?? "").toUpperCase(),
+      language: row.language,
+      bodyText,
+      parameterFormat: row.parameter_format,
+    }
+  }).filter((t) => t.name)
+}
+
 export async function findWhatsappTemplate(
   name: string,
   languageCode = "it"
-): Promise<{ status: string; language?: string; bodyText?: string; parameterFormat?: string } | null> {
+): Promise<WhatsappTemplateInfo | null> {
   const q = new URLSearchParams({
     name,
     fields: "name,status,language,parameter_format,components",
@@ -168,6 +202,7 @@ export async function findWhatsappTemplate(
   if (!row?.status) return null
   const bodyText = (row.components ?? []).find((c) => String(c.type ?? "").toUpperCase() === "BODY")?.text
   return {
+    name: String(row.name ?? name).trim(),
     status: String(row.status).toUpperCase(),
     language: row.language,
     bodyText,

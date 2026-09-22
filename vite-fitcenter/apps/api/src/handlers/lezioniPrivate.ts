@@ -126,7 +126,7 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     } catch (e) {
       const msg = (e as Error).message || String(e)
       const hint = /131047|24 hour|re-engage|not in allowed/i.test(msg)
-        ? " (chat chiusa: si usa il template delle consulenti, es. lead_benvenuto_adulti)"
+        ? " (chat chiusa: serve il template breve lezione_privata_breve, non il benvenuto H2Sport)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }
