@@ -1,21 +1,19 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
-  createWhatsappUtilityTemplate,
   findWhatsappTemplate,
   isWhatsappSendConfigured,
+  leadWelcomeTemplateConfig,
   listWhatsappTemplates,
   normalizeWaTo,
   sendWhatsappTemplate,
   sendWhatsappText,
+  type WhatsappTemplateInfo,
 } from "./whatsapp.js"
 import { whatsappEventsStore } from "../store/whatsapp-events.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-const LP_SHORT_BODY = "FitCenter lezione privata: {{1}}"
-const LP_SHORT_EXAMPLE = "Mario Rossi, 40 anni, mercoledi mattina, tel 3331234567"
-
-function lpShortTemplateName(): string {
-  return (process.env.WHATSAPP_LP_TEMPLATE ?? "lezione_privata_breve").trim() || "lezione_privata_breve"
+function lpPreferredName(): string {
+  return (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim()
 }
 
 function lpLang(): string {
@@ -24,6 +22,10 @@ function lpLang(): string {
 
 function sanitizeLpTemplateParam(text: string): string {
   return text.replace(/[\r\n]+/g, " · ").replace(/\s+/g, " ").trim().slice(0, 500)
+}
+
+function isClosedWindowError(msg: string): boolean {
+  return /131047|24 hour|re-engage|not in allowed/i.test(msg)
 }
 
 function isLongWelcomeBody(text?: string): boolean {
@@ -38,117 +40,154 @@ function isShortApprovedBody(text?: string): boolean {
   return t.length <= 120 && staticLen <= 80
 }
 
-let lpShortReady: Promise<{ name: string; languageCode: string }> | null = null
-
-async function pickShortApprovedTemplate(): Promise<{ name: string; languageCode: string } | null> {
-  const preferred = lpShortTemplateName()
-  const lang = lpLang()
-  const own = await findWhatsappTemplate(preferred, lang).catch(() => null)
-  if (own?.status === "APPROVED" && !isLongWelcomeBody(own.bodyText)) {
-    return { name: own.name || preferred, languageCode: own.language || lang }
-  }
-  if (own?.status === "PENDING" || own?.status === "IN_APPEAL" || own?.status === "PAUSED") {
-    throw new Error(
-      `Template breve «${preferred}» non ancora approvato (${own.status}). In Meta attendi lo stato verde, poi reinvia: i messaggi saranno di una riga, senza il testo delle consulenti.`
-    )
-  }
-  if (own?.status === "REJECTED" || own?.status === "DISABLED") {
-    throw new Error(
-      `Template breve «${preferred}» rifiutato da Meta. In Business Manager creane uno UTILITY italiano con testo: FitCenter lezione privata: {{1}}`
-    )
-  }
-  try {
-    const all = await listWhatsappTemplates()
-    const short = all.find(
-      (t) =>
-        t.status === "APPROVED" &&
-        String(t.language ?? "").toLowerCase().startsWith(lang.slice(0, 2)) &&
-        isShortApprovedBody(t.bodyText)
-    )
-    if (short) return { name: short.name, languageCode: short.language || lang }
-  } catch (e) {
-    console.warn("[lp-wa] elenco template Meta:", (e as Error).message)
-  }
-  return null
+function positionalPlaceholders(body?: string): number {
+  const nums = [...String(body ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]))
+  return nums.length ? Math.max(...nums) : 0
 }
 
-async function ensureShortLpTemplate(): Promise<{ name: string; languageCode: string }> {
-  if (!lpShortReady) {
-    lpShortReady = (async () => {
-      const existing = await pickShortApprovedTemplate()
-      if (existing) return existing
-      const name = lpShortTemplateName()
-      const languageCode = lpLang()
-      try {
-        await createWhatsappUtilityTemplate({
-          name,
-          languageCode,
-          body: LP_SHORT_BODY,
-          example: LP_SHORT_EXAMPLE,
-        })
-      } catch (e) {
-        const msg = (e as Error).message || String(e)
-        if (!/already exists|taken|duplicate/i.test(msg)) {
-          throw new Error(`Non riesco a creare il template breve «${name}». ${msg}`)
-        }
-      }
-      const again = await findWhatsappTemplate(name, languageCode).catch(() => null)
-      if (again?.status === "APPROVED") return { name, languageCode: again.language || languageCode }
-      throw new Error(
-        `Template breve «${name}» inviato a Meta (una riga, senza il testo H2Sport). Attendi l'approvazione e reinvia.`
-      )
-    })().catch((e) => {
-      setTimeout(() => {
-        lpShortReady = null
-      }, 60_000)
-      throw e
-    })
+function namedPlaceholders(body?: string): string[] {
+  const out: string[] = []
+  for (const m of String(body ?? "").matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g)) {
+    const n = m[1]!
+    if (!out.includes(n)) out.push(n)
   }
-  return lpShortReady
+  return out
 }
 
-async function sendShortLpTemplate(
+let listedTplCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
+
+async function approvedTemplates(): Promise<WhatsappTemplateInfo[]> {
+  const now = Date.now()
+  if (listedTplCache && now - listedTplCache.at < 10 * 60_000) return listedTplCache.rows
+  const rows = (await listWhatsappTemplates()).filter((t) => t.status === "APPROVED")
+  listedTplCache = { at: now, rows }
+  return rows
+}
+
+function pickShortFrom(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
+  const lang = lpLang().slice(0, 2).toLowerCase()
+  const preferred = lpPreferredName()
+  const it = rows.filter((t) => String(t.language ?? "").toLowerCase().startsWith(lang) || !t.language)
+  if (preferred) {
+    const own = it.find((t) => t.name === preferred && !isLongWelcomeBody(t.bodyText))
+    if (own) return own
+  }
+  return it.find((t) => isShortApprovedBody(t.bodyText)) ?? null
+}
+
+function consultantFallbackNames(): string[] {
+  const adulti = leadWelcomeTemplateConfig({ bambini: false })
+  const bambini = leadWelcomeTemplateConfig({ bambini: true })
+  return [
+    lpPreferredName(),
+    adulti.templateName,
+    "lead_benvenuto_adulti",
+    "lead_benvenuto",
+    bambini.templateName,
+  ].filter((n, i, a) => Boolean(n) && a.indexOf(n) === i)
+}
+
+async function sendApprovedTemplate(
   telefono: string,
-  text: string,
-  tpl: { name: string; languageCode: string }
+  tpl: WhatsappTemplateInfo,
+  dettaglio: string,
+  chi: string,
 ): Promise<void> {
-  const param = sanitizeLpTemplateParam(text)
-  const langs = Array.from(new Set([tpl.languageCode, "it", "it_IT"].filter(Boolean)))
+  const langs = Array.from(new Set([tpl.language || lpLang(), "it"].filter(Boolean)))
+  const named = namedPlaceholders(tpl.bodyText)
+  const nPos = positionalPlaceholders(tpl.bodyText)
+  const namedFmt = String(tpl.parameterFormat ?? "").toUpperCase() === "NAMED" || (named.length > 0 && nPos === 0)
+  const attempts: Array<{ languageCode: string; bodyParams?: string[]; namedBodyParams?: Array<{ name: string; text: string }> }> =
+    []
+  for (const languageCode of langs) {
+    if (namedFmt && named.length) {
+      attempts.push({
+        languageCode,
+        namedBodyParams: named.map((name, i) => ({ name, text: i === 0 ? dettaglio : chi })),
+      })
+    } else if (nPos <= 0) {
+      attempts.push({ languageCode })
+    } else if (nPos === 1) {
+      attempts.push({ languageCode, bodyParams: [dettaglio] })
+      attempts.push({ languageCode, bodyParams: [chi] })
+    } else {
+      attempts.push({ languageCode, bodyParams: [chi, dettaglio].slice(0, nPos) })
+      attempts.push({ languageCode, bodyParams: Array.from({ length: nPos }, (_, i) => (i === 0 ? chi : dettaglio)) })
+    }
+  }
   let last: Error | null = null
-  for (let i = 0; i < langs.length; i++) {
-    const languageCode = langs[i]!
-    const lastTry = i === langs.length - 1
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i]!
     try {
       await sendWhatsappTemplate({
         toRaw: telefono,
         templateName: tpl.name,
-        languageCode,
-        bodyParams: [param],
-        skipLog: !lastTry,
+        languageCode: a.languageCode,
+        bodyParams: a.bodyParams,
+        namedBodyParams: a.namedBodyParams,
+        skipLog: i < attempts.length - 1,
       })
       return
     } catch (e) {
       last = e as Error
     }
   }
-  throw last ?? new Error("Invio template breve fallito")
+  throw last ?? new Error(`Invio template «${tpl.name}» fallito`)
+}
+
+/** Chat chiusa: solo modelli già approvati. Non crearne di nuovi (Meta rifiuta la lingua). */
+async function sendClosedWindowTemplate(telefono: string, text: string, nome?: string): Promise<void> {
+  const dettaglio = sanitizeLpTemplateParam(text)
+  const chi = sanitizeLpTemplateParam((nome ?? "").trim().split(/\s+/)[0] || "Ciao")
+  const rows = await approvedTemplates().catch((e) => {
+    console.warn("[lp-wa] elenco template Meta:", (e as Error).message)
+    return [] as WhatsappTemplateInfo[]
+  })
+  const short = pickShortFrom(rows)
+  let last: Error | null = null
+  const tryTpl = async (tpl: WhatsappTemplateInfo) => {
+    try {
+      await sendApprovedTemplate(telefono, tpl, dettaglio, chi)
+      return true
+    } catch (e) {
+      last = e as Error
+      return false
+    }
+  }
+  if (short && (await tryTpl(short))) return
+  for (const name of consultantFallbackNames()) {
+    const tpl =
+      rows.find((t) => t.name === name) ??
+      (await findWhatsappTemplate(name, lpLang()).catch(() => null))
+    if (!tpl || tpl.status !== "APPROVED") continue
+    if (short && tpl.name === short.name && tpl.language === short.language) continue
+    if (await tryTpl(tpl)) return
+  }
+  throw (
+    last ??
+    new Error(
+      "Nessun template WhatsApp approvato disponibile. Meta non lascia creare lezione_privata_breve (lingua non supportata). In Business Manager crea un modello UTILITY italiano di una riga: FitCenter lezione privata: {{1}}",
+    )
+  )
 }
 
 /**
- * Chat aperta (24h): solo il testo della richiesta.
- * Chat chiusa: template UTILITY di una riga. Mai il benvenuto lungo delle consulenti.
+ * Chat aperta (24h): testo della richiesta.
+ * Chat chiusa: template già approvato delle consulenti (niente creazione Meta).
  */
-export async function sendLezionePrivataWhatsapp(telefono: string, text: string, _nome?: string): Promise<void> {
-  void _nome
+export async function sendLezionePrivataWhatsapp(telefono: string, text: string, nome?: string): Promise<void> {
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  if (whatsappEventsStore.hasCustomerWindow(telefono)) {
+  try {
     await sendWhatsappText(telefono, body)
     return
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    if (/131026|undeliverable|numero WhatsApp non valido/i.test(msg)) throw e
+    if (!isClosedWindowError(msg) && whatsappEventsStore.hasCustomerWindow(telefono)) throw e
   }
-  const tpl = await ensureShortLpTemplate()
-  await sendShortLpTemplate(telefono, body, tpl)
+  await sendClosedWindowTemplate(telefono, body, nome)
 }
 
 function samePhone(a: string, b: string): boolean {
