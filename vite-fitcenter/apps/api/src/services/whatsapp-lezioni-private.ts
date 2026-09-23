@@ -1,6 +1,5 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
-  createWhatsappUtilityTemplateIt,
   findWhatsappTemplate,
   isWhatsappSendConfigured,
   listWhatsappTemplates,
@@ -12,15 +11,9 @@ import {
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
 const LP_TPL_NAME = "lezione_privata_richiesta_avviso_v2"
-const LP_TPL_BODY =
-  "FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
-const LP_TPL_EXAMPLE =
-  "Andrea Pecci 5 anni tel 3331234567 mercoledi pomeriggio. Prenota in calendario poi chiama il genitore."
 const LP_TPL_FALLBACKS = [
   "lezione_privata_richiesta_avviso_v2",
   "lezione_privata_richiesta_avviso",
-  "fitcenter_lp_avviso",
-  "lezione_privata_breve",
 ]
 
 function lpPreferredName(): string {
@@ -62,11 +55,6 @@ function isUsableStatus(status?: string): boolean {
   return s === "APPROVED" || s === "ACTIVE" || s === "QUALITY_PENDING" || s.includes("APPROVED")
 }
 
-function pendingShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
-  const names = new Set([lpPreferredName(), ...LP_TPL_FALLBACKS])
-  return rows.find((t) => names.has(t.name) && (t.status === "PENDING" || t.status === "IN_APPEAL")) ?? null
-}
-
 let listedAllCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
 let ensureTplAt = 0
 let ensureTpl: Promise<WhatsappTemplateInfo> | null = null
@@ -88,30 +76,8 @@ async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
     if (v2 && isUsableStatus(v2.status) && !isLongWelcomeBody(v2.bodyText)) return v2
     if (v2?.status === "PENDING" || v2?.status === "IN_APPEAL") {
       throw new Error(
-        `Template «${v2.name}» in controllo Meta (${v2.status}). Quando è verde, reinvia. Poi elimina lezione_privata_richiesta_avviso.`,
+        `Template «${v2.name}» in controllo Meta. Quando è verde, reinvia da FitCenter. Poi elimina lezione_privata_richiesta_avviso.`,
       )
-    }
-    if (!v2) {
-      try {
-        await createWhatsappUtilityTemplateIt({
-          name: preferred,
-          body: LP_TPL_BODY,
-          example: LP_TPL_EXAMPLE,
-        })
-      } catch (e) {
-        const msg = (e as Error).message || String(e)
-        if (!/already exists|taken|duplicate/i.test(msg)) {
-          console.warn("[lp-wa] create v2:", msg)
-        }
-      }
-      listedAllCache = null
-      const created = await findWhatsappTemplate(preferred, "it").catch(() => null)
-      if (created && isUsableStatus(created.status) && !isLongWelcomeBody(created.bodyText)) return created
-      if (created?.status === "PENDING" || created?.status === "IN_APPEAL") {
-        throw new Error(
-          `Template «${preferred}» inviato a Meta. Attendi lo stato verde e reinvia. Poi elimina il vecchio lezione_privata_richiesta_avviso.`,
-        )
-      }
     }
     for (const name of LP_TPL_FALLBACKS) {
       if (name === preferred) continue
