@@ -10,8 +10,9 @@ import {
 } from "./whatsapp.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-const LP_TPL_NAME = "lezione_privata_richiesta_avviso_v2"
+const LP_TPL_NAME = "lp_avviso_fitcenter"
 const LP_TPL_FALLBACKS = [
+  "lp_avviso_fitcenter",
   "lezione_privata_richiesta_avviso_v2",
   "lezione_privata_richiesta_avviso",
 ]
@@ -37,7 +38,7 @@ function isShortApprovedBody(text?: string): boolean {
 }
 
 const MANAGER_HINT =
-  "In Manager crea Utility Italiano (it), nome lezione_privata_richiesta_avviso_v2, testo: FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
+  "In Manager crea (nome nuovo, mai usato) lp_avviso_fitcenter, Utility se disponibile altrimenti Marketing Predefinita, Italiano, testo: FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
 
 function pickShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
   const preferred = lpPreferredName()
