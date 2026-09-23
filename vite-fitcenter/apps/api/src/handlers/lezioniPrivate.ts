@@ -210,12 +210,13 @@ function waLabel(nome: string, telefono: string): string {
 
 function clienteWaText(r: LpRichiesta): string {
   const allievo = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
-  const chi = (r.tutore ?? "").trim().split(/\s+/)[0] || allievo
-  const quando = r.quando?.trim() || "l'orario chiesto"
+  const chi = (r.tutore ?? "").trim() || allievo
+  const quando = r.quando?.trim() || "l'orario richiesto"
   return (
-    `Ciao ${chi}, abbiamo preso in carico la lezione privata di ${allievo}. ` +
-    `Verifichiamo il posto in vasca (${quando}) e ti confermiamo. ` +
-    `La prima lezione e una prova; poi puoi scegliere pacchetto 5 o 10. Per spostare o annullare parla con l'istruttore. Lo staff H2Sport`
+    `Ciao ${chi}, abbiamo preso in carico la richiesta per la lezione privata di ${allievo}. ` +
+    `Stiamo verificando la disponibilita dell'acqua e dell'istruttore per ${quando}. ` +
+    `Ti contatteremo a breve per confermare il giorno e l'orario definitivo. ` +
+    `In base alla situazione concorderemo prova o pacchetto 5/10. Per annullare o spostare, accordati con l'istruttore. Lo staff H2SPORT`
   )
 }
 
