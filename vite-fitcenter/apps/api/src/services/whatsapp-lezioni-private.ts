@@ -11,6 +11,8 @@ import {
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
 const LP_TPL_NAME = "lp_avviso_fitcenter"
+const LP_TPL_ISTRUTTORE = "lp_avviso_istruttore"
+const LP_TPL_GENITORE = "lp_avviso_genitore"
 const LP_TPL_FALLBACKS = [
   "lp_avviso_fitcenter",
   "lezione_privata_richiesta_avviso_v2",
@@ -38,7 +40,17 @@ function isShortApprovedBody(text?: string): boolean {
 }
 
 const MANAGER_HINT =
-  "In Manager crea (nome nuovo, mai usato) lp_avviso_fitcenter, Utility se disponibile altrimenti Marketing Predefinita, Italiano, testo: FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
+  "In Manager i modelli belli sono lp_avviso_istruttore e lp_avviso_genitore (testo con a capo e {{1}} in mezzo). Finche non sono verdi si usa lp_avviso_fitcenter."
+
+function placeholderCount(body?: string): number {
+  const nums = [...String(body ?? "").matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map((m) => Number(m[1]))
+  return nums.length ? Math.max(...nums) : 0
+}
+
+function dash(s?: string | null): string {
+  const t = sanitizeLpTemplateParam(String(s ?? ""))
+  return t || "-"
+}
 
 function pickShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
   const preferred = lpPreferredName()
@@ -57,8 +69,6 @@ function isUsableStatus(status?: string): boolean {
 }
 
 let listedAllCache: { at: number; rows: WhatsappTemplateInfo[] } | null = null
-let ensureTplAt = 0
-let ensureTpl: Promise<WhatsappTemplateInfo> | null = null
 
 async function listAllTemplates(): Promise<WhatsappTemplateInfo[]> {
   const now = Date.now()
@@ -68,42 +78,50 @@ async function listAllTemplates(): Promise<WhatsappTemplateInfo[]> {
   return rows
 }
 
-async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
-  if (ensureTpl && Date.now() - ensureTplAt < 30_000) return ensureTpl
-  ensureTplAt = Date.now()
-  ensureTpl = (async () => {
-    const preferred = lpPreferredName()
-    const v2 = await findWhatsappTemplate(preferred, "it").catch(() => null)
-    if (v2 && isUsableStatus(v2.status) && !isLongWelcomeBody(v2.bodyText)) return v2
-    if (v2?.status === "PENDING" || v2?.status === "IN_APPEAL") {
-      throw new Error(
-        `Template «${v2.name}» in controllo Meta. Quando è verde, reinvia da FitCenter. Poi elimina lezione_privata_richiesta_avviso.`,
-      )
-    }
-    for (const name of LP_TPL_FALLBACKS) {
-      if (name === preferred) continue
-      const row = await findWhatsappTemplate(name, "it").catch(() => null)
-      if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
-    }
-    const rows = await listAllTemplates()
-    const short = pickShort(rows)
-    if (short) return short
-    throw new Error(MANAGER_HINT)
-  })().catch((e) => {
-    ensureTpl = null
-    ensureTplAt = 0
-    throw e
-  })
-  return ensureTpl
+async function findUsable(name: string): Promise<WhatsappTemplateInfo | null> {
+  const row = await findWhatsappTemplate(name, "it").catch(() => null)
+  if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
+  return null
 }
 
-async function sendLpShortTemplate(telefono: string, text: string, tpl: WhatsappTemplateInfo): Promise<void> {
-  const param = sanitizeLpTemplateParam(text)
+async function ensureLpTemplate(kind: "istruttore" | "cliente" | "altro"): Promise<WhatsappTemplateInfo> {
+  const names =
+    kind === "istruttore"
+      ? [LP_TPL_ISTRUTTORE, lpPreferredName(), ...LP_TPL_FALLBACKS]
+      : kind === "cliente"
+        ? [LP_TPL_GENITORE, lpPreferredName(), ...LP_TPL_FALLBACKS]
+        : [lpPreferredName(), ...LP_TPL_FALLBACKS]
+  const seen = new Set<string>()
+  for (const name of names) {
+    if (!name || seen.has(name)) continue
+    seen.add(name)
+    const row = await findUsable(name)
+    if (row) return row
+  }
+  const rows = await listAllTemplates()
+  const short = pickShort(rows)
+  if (short) return short
+  throw new Error(MANAGER_HINT)
+}
+
+async function sendLpTemplate(
+  telefono: string,
+  tpl: WhatsappTemplateInfo,
+  oneLine: string,
+  fields?: string[],
+): Promise<void> {
+  const n = placeholderCount(tpl.bodyText)
   const langs = Array.from(new Set([tpl.language || "it", "it"].filter(Boolean)))
+  const paramSets: Array<string[] | undefined> = []
+  if (n > 1 && fields?.length) {
+    const padded = Array.from({ length: n }, (_, i) => dash(fields[i]))
+    paramSets.push(padded)
+  }
+  paramSets.push([sanitizeLpTemplateParam(oneLine)])
+  paramSets.push(undefined)
   const tries: Array<{ languageCode: string; bodyParams?: string[] }> = []
   for (const languageCode of langs) {
-    tries.push({ languageCode, bodyParams: [param] })
-    tries.push({ languageCode })
+    for (const bodyParams of paramSets) tries.push({ languageCode, bodyParams })
   }
   let last: Error | null = null
   for (let i = 0; i < tries.length; i++) {
@@ -124,16 +142,25 @@ async function sendLpShortTemplate(telefono: string, text: string, tpl: Whatsapp
   throw last ?? new Error(`Invio template «${tpl.name}» fallito`)
 }
 
+export type LpWaKind = "istruttore" | "cliente" | "altro"
+
 /**
- * Mai il benvenuto H2Sport. Solo un UTILITY breve (FitCenter lezione privata: {{1}}).
+ * Istruttore/genitore: se in Manager esistono lp_avviso_istruttore / lp_avviso_genitore
+ * (layout con a capo) si usano quelli. Altrimenti lp_avviso_fitcenter con un solo {{1}}.
  */
-export async function sendLezionePrivataWhatsapp(telefono: string, text: string, _nome?: string): Promise<void> {
+export async function sendLezionePrivataWhatsapp(
+  telefono: string,
+  text: string,
+  _nome?: string,
+  opts?: { kind?: LpWaKind; fields?: string[] },
+): Promise<void> {
   void _nome
   if (!normalizeWaTo(telefono)) throw new Error("numero WhatsApp non valido")
   const body = text.trim()
   if (!body) throw new Error("Testo messaggio vuoto")
-  const tpl = await ensureLpShortTemplate()
-  await sendLpShortTemplate(telefono, body, tpl)
+  const kind = opts?.kind ?? "altro"
+  const tpl = await ensureLpTemplate(kind)
+  await sendLpTemplate(telefono, tpl, body, opts?.fields)
 }
 
 function samePhone(a: string, b: string): boolean {

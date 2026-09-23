@@ -209,32 +209,57 @@ function waLabel(nome: string, telefono: string): string {
 }
 
 function clienteWaText(r: LpRichiesta): string {
-  const nome = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
+  const allievo = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
+  const chi = (r.tutore ?? "").trim().split(/\s+/)[0] || allievo
+  const quando = r.quando?.trim() || "l'orario chiesto"
   return (
-    `Ciao ${nome}, richiesta ricevuta. Ti contattiamo dopo aver verificato il posto in vasca. ` +
-    `Poi puoi fare prova o pacchetto 5/10. Per annullare o spostare contatta l'istruttore. FitCenter`
+    `Ciao ${chi}, abbiamo preso in carico la lezione privata di ${allievo}. ` +
+    `Verifichiamo il posto in vasca (${quando}) e ti confermiamo. ` +
+    `La prima lezione e una prova; poi puoi scegliere pacchetto 5 o 10. Per spostare o annullare parla con l'istruttore. Lo staff H2Sport`
   )
 }
 
 function istruttoriWaText(r: LpRichiesta, by: string): string {
   const tel = r.telefono.trim()
-  const bits = [
-    r.clienteNome.trim(),
-    r.eta ? `${r.eta} anni` : "",
-    r.tutore?.trim() ? `tutore ${r.tutore.trim()}` : "",
-    tel ? `tel genitore ${tel}` : "",
-    r.quando?.trim() ? `orario chiesto: ${r.quando.trim()}` : "",
-    r.prefIstruttore?.trim() ? `pref. ${r.prefIstruttore.trim()}` : "",
-    r.note?.trim() ? r.note.trim().slice(0, 40) : "",
-    by.trim() ? `da ${by.trim()}` : "",
-  ].filter(Boolean)
+  const allievo = r.eta?.trim() ? `${r.clienteNome.trim()} (${r.eta.trim()} anni)` : r.clienteNome.trim()
+  const orario = [
+    r.quando?.trim(),
+    r.prefIstruttore?.trim() ? `(${r.prefIstruttore.trim()})` : "",
+  ]
+    .filter(Boolean)
+    .join(" ")
+  const chi = by.trim() || "reception"
   return (
-    `Lezione privata: ${bits.join(" · ")}. ` +
-    `PRIMA prenota in FitCenter Calendario vasche, POI contatta il genitore. ` +
-    (tel
-      ? `Se quell'orario non e libero chiama o scrivi al ${tel} per proporne un altro.`
-      : `Se l'orario non e libero contatta il genitore per proporne un altro.`)
+    `Nuova richiesta lezione privata inserita da ${chi}. Chi e disponibile? ` +
+    `Allievo ${allievo}. ` +
+    (r.tutore?.trim() ? `Tutore ${r.tutore.trim()}. ` : "") +
+    (orario ? `Orario ${orario}. ` : "") +
+    (r.note?.trim() ? `Note: ${r.note.trim().slice(0, 80)}. ` : "") +
+    `Chi prende la lezione: 1) segnati sulla richiesta in FitCenter. 2) Prenota in Calendario vasche. ` +
+    `3) SOLO DOPO contatta il genitore` +
+    (tel ? ` al ${tel}` : "") +
+    `. 4) Se l'orario e occupato, chiama o scrivi per un'alternativa.`
   )
+}
+
+function istruttoreWaFields(r: LpRichiesta, by: string): string[] {
+  const allievo = r.eta?.trim() ? `${r.clienteNome.trim()} (${r.eta.trim()} anni)` : r.clienteNome.trim() || "-"
+  const pref = r.prefIstruttore?.trim()
+  const orario = [r.quando?.trim(), pref ? `(${pref})` : ""].filter(Boolean).join(" ")
+  return [
+    by.trim() || "reception",
+    allievo,
+    r.tutore?.trim() || "-",
+    orario || "-",
+    r.note?.trim().slice(0, 80) || "-",
+    r.telefono.trim() || "-",
+  ]
+}
+
+function clienteWaFields(r: LpRichiesta): string[] {
+  const allievo = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome.trim() || "-"
+  const chi = (r.tutore ?? "").trim() || allievo
+  return [chi, allievo, r.quando?.trim() || "l'orario richiesto"]
 }
 
 async function notifyRichiestaWa(r: LpRichiesta, by: string) {
@@ -245,16 +270,23 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     return { sent: 0, errors, destinations, skipped: "WhatsApp non configurato sul server" }
   }
 
-  const push = async (labelNome: string, telefono: string, text: string, templateNome: string) => {
+  const push = async (
+    labelNome: string,
+    telefono: string,
+    text: string,
+    templateNome: string,
+    kind: "istruttore" | "cliente",
+    fields: string[],
+  ) => {
     const label = waLabel(labelNome, telefono)
     try {
-      await sendLezionePrivataWhatsapp(telefono, text, templateNome)
+      await sendLezionePrivataWhatsapp(telefono, text, templateNome, { kind, fields })
       sent += 1
       destinations.push(label)
     } catch (e) {
       const msg = (e as Error).message || String(e)
       const hint = /131047|24 ore|24 hour|fuori finestra|re-engage|not in allowed/i.test(msg)
-        ? " (chat chiusa: va usato il template delle consulenti, non il testo libero)"
+        ? " (chat chiusa: serve il template approvato)"
         : ""
       errors.push(`${label}: ${msg}${hint}`)
     }
@@ -262,6 +294,7 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
 
   const db = readLezioniPrivateDb()
   const istrText = istruttoriWaText(r, by)
+  const istrFields = istruttoreWaFields(r, by)
   const want = parsePrefIstruttore(r.prefIstruttore)
   const istruttori = istruttoriPerPreferenza(db.instructors, r.prefIstruttore)
   if (!istruttori.length) {
@@ -274,11 +307,18 @@ async function notifyRichiestaWa(r: LpRichiesta, by: string) {
     )
   }
   for (const i of istruttori) {
-    await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome)
+    await push(`istruttore ${i.nome}`, i.telefono, istrText, i.nome, "istruttore", istrFields)
   }
 
   if (String(r.telefono ?? "").trim()) {
-    await push(`richiedente ${r.clienteNome}`, r.telefono, clienteWaText(r), r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome)
+    await push(
+      `richiedente ${r.clienteNome}`,
+      r.telefono,
+      clienteWaText(r),
+      r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome,
+      "cliente",
+      clienteWaFields(r),
+    )
   }
 
   const skipped =
