@@ -22,7 +22,7 @@ export const whatsappApi = {
   }) =>
     api.post<{ ok: boolean; templateName?: string; message?: string }>("/whatsapp/send-lead", body),
 
-  sendLeadInfo: (body: { leadId: string; corso?: "acquaticita" | "scuola_nuoto" }) =>
+  sendLeadInfo: (body: { leadId: string; corso?: "acquaticita" | "scuola_nuoto" | "open_day_spa" }) =>
     api.post<{
       ok: boolean
       sent?: string[]

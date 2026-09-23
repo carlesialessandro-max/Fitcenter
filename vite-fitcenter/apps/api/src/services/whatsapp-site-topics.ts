@@ -3,7 +3,10 @@
  * Il primo WhatsApp risponde a quello, non col benvenuto generico.
  */
 
+import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
+
 export type AdultSiteTopic =
+  | "open_day_spa"
   | "nuoto_libero"
   | "palestra"
   | "spa"
@@ -47,6 +50,7 @@ export function extractSiteCustomerText(note?: string | null): string {
 export function classifyAdultSiteTopic(blob: string): AdultSiteTopic | null {
   const t = foldIt(blob)
   if (!t) return null
+  if (isOpenDaySpaText(t)) return "open_day_spa"
   if (
     /nuoto\s*libero/.test(t) ||
     /planning\s*cors/.test(t) ||
@@ -110,6 +114,9 @@ export function adultTopicReplyMsg(opts: {
       `Per costi e la formula più adatta ti confermiamo in sede o al 0573 572649.` +
       FOOTER
     )
+  }
+  if (topic === "open_day_spa") {
+    return openDaySpaReplyMsg({ nome: opts.nome, fromSite: opts.fromSite })
   }
   if (topic === "spa") {
     return (

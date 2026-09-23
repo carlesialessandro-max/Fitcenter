@@ -5,9 +5,11 @@ import { importFromSqlServer } from "../services/sql-import.js"
 import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types/lead.js"
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 import { notifyLeadWelcomeWhatsapp } from "../services/whatsapp.js"
+import { applyOpenDaySpaLeadFields, isOpenDaySpaText } from "../services/open-day-spa.js"
 
-/** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. */
+/** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. Open Day SPA no. */
 export function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
+  if (isOpenDaySpaText(...parts)) return false
   const blob = parts
     .filter((p) => p != null && String(p).trim() !== "")
     .join(" ")
@@ -48,7 +50,7 @@ export async function getLead(req: Request, res: Response) {
 }
 
 export async function createLead(req: Request, res: Response) {
-  const created = store.create(req.body)
+  const created = store.create(applyOpenDaySpaLeadFields(req.body))
   res.status(201).json(created)
 }
 
@@ -459,7 +461,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   if (categoriaRaw === "bambini") categoria = "bambini"
   else if (categoriaRaw === "generale" || categoriaRaw === "adulti") categoria = undefined
   else categoria = isLeadBambiniText(blobCat) ? "bambini" : undefined
-  return {
+  return applyOpenDaySpaLeadFields({
     nome: nome || "—",
     cognome: cognome || "—",
     email: email || "—",
@@ -470,7 +472,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     interesseDettaglio: interesseDettaglio || undefined,
     categoria,
     note: noteOut,
-  }
+  })
 }
 
 export async function webhookZapier(req: Request, res: Response) {

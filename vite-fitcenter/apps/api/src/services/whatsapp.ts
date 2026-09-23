@@ -4,6 +4,7 @@
  */
 import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import { welcomeTextFromWebsiteRequest } from "./whatsapp-site-topics.js"
+import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
 
@@ -606,8 +607,12 @@ export async function notifyLeadWelcomeWhatsapp(params: {
   interesse?: string | null
   interesseDettaglio?: string | null
 }): Promise<{ sent: boolean; skipped?: string; error?: string; result?: unknown; topic?: string }> {
+  const openDayBlobEarly = [params.note, params.interesseDettaglio, params.interesse]
+    .filter((x) => x && String(x).trim() && String(x).trim() !== "—")
+    .join(" ")
+  const isOpenDay = isOpenDaySpaText(openDayBlobEarly)
   const { enabled, templateName, languageCode, hasNameParam } = leadWelcomeTemplateConfig({
-    bambini: params.bambini,
+    bambini: Boolean(params.bambini) && !isOpenDay,
   })
   if (!enabled) return { sent: false, skipped: "WHATSAPP_AUTO_LEAD=false" }
   if (!isWhatsappSendConfigured()) return { sent: false, skipped: "whatsapp non configurato" }
@@ -615,6 +620,21 @@ export async function notifyLeadWelcomeWhatsapp(params: {
   if (!phone || phone === "—") return { sent: false, skipped: "telefono mancante" }
   const nome = String(params.nome ?? "").trim() || "Ciao"
   try {
+    if (isOpenDay) {
+      const adultText = openDaySpaReplyMsg({ nome, fromSite: String(params.fonte ?? "").toLowerCase() === "website" })
+      if (whatsappEventsStore.hasCustomerWindow(phone)) {
+        const result = await sendWhatsappText(phone, adultText)
+        return { sent: true, result, topic: "open_day_spa" }
+      }
+      const result = await sendWhatsappTemplate({
+        toRaw: phone,
+        templateName,
+        languageCode,
+        ...(hasNameParam ? { bodyParams: [nome] } : {}),
+      })
+      return { sent: true, result, topic: "open_day_spa" }
+    }
+
     if (params.bambini) {
       const result = await sendWhatsappTemplate({
         toRaw: phone,

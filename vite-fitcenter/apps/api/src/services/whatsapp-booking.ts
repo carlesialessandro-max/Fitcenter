@@ -26,7 +26,8 @@ import {
   extractItalianMobileDestinations,
   formatWaDisplay,
 } from "./whatsapp.js"
-import { adultTopicReplyMsg } from "./whatsapp-site-topics.js"
+import { adultTopicReplyMsg, classifyAdultSiteTopic } from "./whatsapp-site-topics.js"
+import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -421,6 +422,46 @@ export async function sendLeadBambiniInfoFromCrm(params: {
     throw err
   }
   return { ...r, corso, to: dest, toDisplay: formatWaDisplay(dest) }
+}
+
+export async function sendOpenDaySpaInfoFromCrm(leadId: string): Promise<{
+  sent: string[]
+  to: string
+  toDisplay: string
+}> {
+  const lead = leadsStore.get(leadId)
+  if (!lead) {
+    const err = new Error("Lead non trovato") as Error & { status: number }
+    err.status = 404
+    throw err
+  }
+  const to = String(lead.telefono ?? "").trim()
+  if (!to || to === "—") {
+    const err = new Error("Telefono mancante sul lead") as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  const dests = extractItalianMobileDestinations(to)
+  if (dests.length === 0) {
+    const err = new Error("Numero del lead non valido per WhatsApp") as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  if (dests.length > 1) {
+    const err = new Error(
+      `Sul lead ci sono più numeri (${dests.map(formatWaDisplay).join(" e ")}). ` +
+        `Lascia solo il cellulare del cliente e riprova.`
+    ) as Error & { status: number }
+    err.status = 400
+    throw err
+  }
+  const dest = dests[0]
+  const text = openDaySpaReplyMsg({ nome: lead.nome, fromSite: false })
+  await sendWhatsappText(dest, text)
+  appendLeadNote(lead.id, `WA info Open Day SPA 30/09 inviata a ${formatWaDisplay(dest)}`, {
+    stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+  })
+  return { sent: ["open_day_spa"], to: dest, toDisplay: formatWaDisplay(dest) }
 }
 
 function stripAccents(s: string): string {
@@ -1172,6 +1213,7 @@ function pickLeadForCancel(phone: string) {
 
 function isLeadBambini(lead: { categoria?: string | null; interesseDettaglio?: string | null; note?: string | null } | null): boolean {
   if (!lead) return false
+  if (isOpenDaySpaText(lead.interesseDettaglio, lead.note, lead.categoria)) return false
   if (lead.categoria === "bambini") return true
   const blob = `${lead.interesseDettaglio ?? ""} ${lead.note ?? ""}`
   return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(blob)
@@ -1852,7 +1894,13 @@ export async function handleWhatsappInboundBooking(params: {
 
   // Domanda libera (es. «la 25 mt giovedì è chiusa?»): non è un appuntamento
   if (shouldHandoffAsQuestion(text)) {
-    const topicMsg = adultTopicReplyMsg({ nome: lead?.nome, blob: text, fromSite: false })
+    const topicFromText = classifyAdultSiteTopic(text)
+    const leadIsOpenDay = isOpenDaySpaText(lead?.interesseDettaglio, lead?.note)
+    const topicBlob =
+      leadIsOpenDay && (topicFromText == null || topicFromText === "info_generica" || topicFromText === "spa")
+        ? `${text} open day spa`
+        : text
+    const topicMsg = adultTopicReplyMsg({ nome: lead?.nome, blob: topicBlob, fromSite: false })
     if (topicMsg) {
       await sendWhatsappText(from, topicMsg)
       if (lead) {

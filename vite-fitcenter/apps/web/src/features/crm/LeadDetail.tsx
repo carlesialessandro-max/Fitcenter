@@ -14,6 +14,7 @@ import { ChiamaButton } from "@/components/ChiamaButton"
 import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
+import { isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
 
 const STATUSES: LeadStatus[] = [
   "nuovo",
@@ -89,7 +90,7 @@ export function LeadDetail() {
   })
 
   const waInfoMutation = useMutation({
-    mutationFn: (corso: "acquaticita" | "scuola_nuoto") =>
+    mutationFn: (corso: "acquaticita" | "scuola_nuoto" | "open_day_spa") =>
       whatsappApi.sendLeadInfo({ leadId: id!, corso }),
     onSuccess: (r) => {
       setInfoCorsoPick(false)
@@ -145,6 +146,11 @@ export function LeadDetail() {
             <div className="mt-1 flex items-center gap-2">
               <LeadSourceBadge source={lead.fonte} />
               <LeadStatusBadge status={lead.stato} />
+              {isOpenDaySpaLead(lead) && (
+                <span className="rounded-full border border-fuchsia-500/40 bg-fuchsia-500/20 px-2 py-0.5 text-xs text-fuchsia-200">
+                  {OPEN_DAY_SPA_LABEL}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -223,7 +229,31 @@ export function LeadDetail() {
                   </>
                 )}
               </dd>
-              {canSendWa && lead.telefono ? (
+              {canSendWa && lead.telefono && isOpenDaySpaLead(lead) ? (
+                <div className="mt-3 rounded-md border border-fuchsia-800/60 bg-fuchsia-950/30 p-3">
+                  <p className="mb-2 text-xs text-fuchsia-200/80">
+                    Info Open Day SPA 30/09 dal WhatsApp H2Sport (orari 11–20, −50% abbonamento, prenotazione obbligatoria)
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="bg-fuchsia-600 text-white hover:bg-fuchsia-500"
+                    disabled={waInfoMutation.isPending}
+                    onClick={() => {
+                      setWaMsg(null)
+                      if (
+                        !confirm(
+                          `Inviare le info Open Day SPA a ${lead.telefono} dal WhatsApp H2Sport?\n\nServe la finestra 24h (il cliente deve aver scritto di recente).`
+                        )
+                      )
+                        return
+                      waInfoMutation.mutate("open_day_spa")
+                    }}
+                  >
+                    {waInfoMutation.isPending ? "Invio…" : "Invia info Open Day"}
+                  </Button>
+                </div>
+              ) : canSendWa && lead.telefono ? (
                 <div className="mt-3 rounded-md border border-emerald-800/60 bg-emerald-950/30 p-3">
                   <p className="mb-2 text-xs text-emerald-200/80">
                     Documenti corsi bambini dal numero WhatsApp H2Sport (non dal tuo cellulare)
@@ -304,6 +334,9 @@ export function LeadDetail() {
               <dt className="text-zinc-500">Interesse</dt>
               <dd className="text-zinc-100">
                 {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
+                {isOpenDaySpaLead(lead) && lead.interesse && lead.interesseDettaglio
+                  ? ` · ${lead.interesseDettaglio}`
+                  : ""}
               </dd>
             </div>
             <div>

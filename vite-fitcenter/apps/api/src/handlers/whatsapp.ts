@@ -3,7 +3,11 @@ import path from "path"
 import { fileURLToPath } from "url"
 import type { Request, Response } from "express"
 import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
-import { handleWhatsappInboundBooking, sendLeadBambiniInfoFromCrm } from "../services/whatsapp-booking.js"
+import {
+  handleWhatsappInboundBooking,
+  sendLeadBambiniInfoFromCrm,
+  sendOpenDaySpaInfoFromCrm,
+} from "../services/whatsapp-booking.js"
 import { handleWhatsappLezioniPrivate } from "../services/whatsapp-lezioni-private.js"
 import {
   isWhatsappSendConfigured,
@@ -352,6 +356,10 @@ export async function whatsappSendLeadInfo(req: Request, res: Response) {
     const leadId = String(body.leadId ?? "").trim()
     if (!leadId) return res.status(400).json({ message: "leadId obbligatorio" })
     const rawCorso = String(body.corso ?? "").trim().toLowerCase()
+    if (rawCorso === "open_day_spa") {
+      const result = await sendOpenDaySpaInfoFromCrm(leadId)
+      return res.json({ ok: true, ...result })
+    }
     const corso =
       rawCorso === "acquaticita" || rawCorso === "scuola_nuoto"
         ? (rawCorso as "acquaticita" | "scuola_nuoto")

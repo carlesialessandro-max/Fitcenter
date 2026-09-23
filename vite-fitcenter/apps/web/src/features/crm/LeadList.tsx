@@ -12,6 +12,7 @@ import { ChiamaButton } from "@/components/ChiamaButton"
 import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { useAuth } from "@/contexts/AuthContext"
+import { isOpenDaySpaCampaignActive, isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
 
 const PIPELINE_STATUSES: LeadStatus[] = [
   "nuovo",
@@ -42,6 +43,7 @@ export function LeadList() {
   const [search, setSearch] = useState("")
   const [fonte, setFonte] = useState<LeadSource | "">("")
   const [consulente, setConsulente] = useState("")
+  const [openSpaOnly, setOpenSpaOnly] = useState(false)
 
   const assignToMe = useMutation({
     mutationFn: (leadId: string) => dataApi.assignLeadToMe(leadId),
@@ -76,8 +78,12 @@ export function LeadList() {
     }
     if (fonte) list = list.filter((l) => l.fonte === fonte)
     if (consulente) list = list.filter((l) => l.consulenteNome === consulente)
+    if (openSpaOnly) list = list.filter((l) => isOpenDaySpaLead(l))
     return list
-  }, [allLeads, search, fonte, consulente])
+  }, [allLeads, search, fonte, consulente, openSpaOnly])
+
+  const openSpaCount = useMemo(() => allLeads.filter((l) => isOpenDaySpaLead(l)).length, [allLeads])
+  const showOpenSpaFilter = isOpenDaySpaCampaignActive() || openSpaCount > 0
 
   const countsByStatus = useMemo(() => {
     const m: Record<LeadStatus, number> = {
@@ -156,6 +162,20 @@ export function LeadList() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+        {showOpenSpaFilter && (
+          <button
+            type="button"
+            onClick={() => setOpenSpaOnly((v) => !v)}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              openSpaOnly
+                ? "border-fuchsia-500/50 bg-fuchsia-500/20 text-fuchsia-200"
+                : "border-zinc-700 bg-zinc-800/50 text-zinc-200 hover:border-fuchsia-500/40"
+            }`}
+          >
+            {OPEN_DAY_SPA_LABEL}
+            {openSpaCount > 0 ? ` (${openSpaCount})` : ""}
+          </button>
+        )}
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-800">
@@ -206,7 +226,19 @@ export function LeadList() {
                     <LeadSourceBadge source={lead.fonte} />
                   </td>
                   <td className="px-4 py-3 text-zinc-400">
-                    {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {isOpenDaySpaLead(lead) && (
+                        <span className="rounded-full border border-fuchsia-500/40 bg-fuchsia-500/20 px-2 py-0.5 text-xs text-fuchsia-200">
+                          {OPEN_DAY_SPA_LABEL}
+                        </span>
+                      )}
+                      <span>
+                        {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
+                        {isOpenDaySpaLead(lead) && lead.interesse && lead.interesseDettaglio
+                          ? ` · ${lead.interesseDettaglio}`
+                          : ""}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <LeadStatusBadge status={lead.stato} />
