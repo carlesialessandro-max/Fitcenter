@@ -1,5 +1,6 @@
 import { parseCancelRequestIt, parseSlotRequestIt } from "./whatsapp-booking.js"
 import {
+  createWhatsappUtilityTemplateIt,
   findWhatsappTemplate,
   isWhatsappSendConfigured,
   listWhatsappTemplates,
@@ -10,8 +11,17 @@ import {
 } from "./whatsapp.js"
 import { readLezioniPrivateDb, writeLezioniPrivateDb, type LpRichiesta } from "../store/lezioni-private-db.js"
 
-const LP_TPL_NAME = "lezione_privata_richiesta_avviso"
-const LP_TPL_FALLBACKS = ["lezione_privata_richiesta_avviso", "fitcenter_lp_avviso", "lezione_privata_breve"]
+const LP_TPL_NAME = "lezione_privata_richiesta_avviso_v2"
+const LP_TPL_BODY =
+  "FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
+const LP_TPL_EXAMPLE =
+  "Andrea Pecci 5 anni tel 3331234567 mercoledi pomeriggio. Prenota in calendario poi chiama il genitore."
+const LP_TPL_FALLBACKS = [
+  "lezione_privata_richiesta_avviso_v2",
+  "lezione_privata_richiesta_avviso",
+  "fitcenter_lp_avviso",
+  "lezione_privata_breve",
+]
 
 function lpPreferredName(): string {
   return (process.env.WHATSAPP_LP_TEMPLATE ?? "").trim() || LP_TPL_NAME
@@ -34,7 +44,7 @@ function isShortApprovedBody(text?: string): boolean {
 }
 
 const MANAGER_HINT =
-  "Modello da usare: lezione_privata_richiesta_avviso (già attivo in Manager, non eliminarlo)."
+  "In Manager crea Utility Italiano (it), nome lezione_privata_richiesta_avviso_v2, testo: FitCenter: hai una nuova richiesta di lezione privata. {{1}} Apri FitCenter, pagina Lezioni private."
 
 function pickShort(rows: WhatsappTemplateInfo[]): WhatsappTemplateInfo | null {
   const preferred = lpPreferredName()
@@ -73,22 +83,45 @@ async function ensureLpShortTemplate(): Promise<WhatsappTemplateInfo> {
   if (ensureTpl && Date.now() - ensureTplAt < 30_000) return ensureTpl
   ensureTplAt = Date.now()
   ensureTpl = (async () => {
-    for (const name of [lpPreferredName(), ...LP_TPL_FALLBACKS]) {
+    const preferred = lpPreferredName()
+    const v2 = await findWhatsappTemplate(preferred, "it").catch(() => null)
+    if (v2 && isUsableStatus(v2.status) && !isLongWelcomeBody(v2.bodyText)) return v2
+    if (v2?.status === "PENDING" || v2?.status === "IN_APPEAL") {
+      throw new Error(
+        `Template «${v2.name}» in controllo Meta (${v2.status}). Quando è verde, reinvia. Poi elimina lezione_privata_richiesta_avviso.`,
+      )
+    }
+    if (!v2) {
+      try {
+        await createWhatsappUtilityTemplateIt({
+          name: preferred,
+          body: LP_TPL_BODY,
+          example: LP_TPL_EXAMPLE,
+        })
+      } catch (e) {
+        const msg = (e as Error).message || String(e)
+        if (!/already exists|taken|duplicate/i.test(msg)) {
+          console.warn("[lp-wa] create v2:", msg)
+        }
+      }
+      listedAllCache = null
+      const created = await findWhatsappTemplate(preferred, "it").catch(() => null)
+      if (created && isUsableStatus(created.status) && !isLongWelcomeBody(created.bodyText)) return created
+      if (created?.status === "PENDING" || created?.status === "IN_APPEAL") {
+        throw new Error(
+          `Template «${preferred}» inviato a Meta. Attendi lo stato verde e reinvia. Poi elimina il vecchio lezione_privata_richiesta_avviso.`,
+        )
+      }
+    }
+    for (const name of LP_TPL_FALLBACKS) {
+      if (name === preferred) continue
       const row = await findWhatsappTemplate(name, "it").catch(() => null)
       if (row && isUsableStatus(row.status) && !isLongWelcomeBody(row.bodyText)) return row
     }
     const rows = await listAllTemplates()
     const short = pickShort(rows)
     if (short) return short
-    const pending = pendingShort(rows)
-    if (pending) {
-      throw new Error(
-        `Template breve «${pending.name}» in attesa di approvazione Meta (${pending.status}). Non eliminarlo: quando è verde, reinvia.`,
-      )
-    }
-    throw new Error(
-      `Usa il modello già attivo «lezione_privata_richiesta_avviso» (non eliminarlo). ${MANAGER_HINT}`,
-    )
+    throw new Error(MANAGER_HINT)
   })().catch((e) => {
     ensureTpl = null
     ensureTplAt = 0
