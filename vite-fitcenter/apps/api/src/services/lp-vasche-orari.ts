@@ -7,7 +7,7 @@ import type { VascaId } from "../store/lezioni-private-db.js"
 
 export const LP_SLOT_START = 7 * 60 + 30
 export const LP_SLOT_END = 22 * 60
-export const LP_SLOT_STEP = 15
+export const LP_SLOT_STEP = 30
 export const LP_LEZIONE_MIN = 30
 
 export type LpFasciaVasca = {
@@ -61,7 +61,7 @@ export function fasceVascaGiorno(giornoIso: string, vasca: VascaId): LpFasciaVas
   return fasceDow(dow, vasca)
 }
 
-/** Inizio lezione valido se tutta la durata sta nella fascia. */
+/** Inizio lezione valido: 30 min, allineato all’inizio fascia (niente slot ogni 15 min). */
 export function fasciaPerInizio(
   giornoIso: string,
   ora: string,
@@ -72,7 +72,11 @@ export function fasciaPerInizio(
   if (start == null) return null
   const dur = Number.isFinite(durataMin) && durataMin > 0 ? durataMin : LP_LEZIONE_MIN
   const end = start + dur
-  return fasceVascaGiorno(giornoIso, vasca).find((f) => start >= f.from && end <= f.to) ?? null
+  return (
+    fasceVascaGiorno(giornoIso, vasca).find(
+      (f) => start >= f.from && end <= f.to && (start - f.from) % LP_SLOT_STEP === 0,
+    ) ?? null
+  )
 }
 
 export function corsieAperteGiorno(giornoIso: string, vasca: VascaId): number {

@@ -202,8 +202,9 @@ export function LezioniPrivate() {
             )}
           </div>
           <p className="mt-2 text-sm text-zinc-500">
-            Solo gli orari aperti sono prenotabili. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa).
-            Ludica: lun/mer/gio 11:15–13:30, 15:15–16:15, 18:30–22:00 (4 posti); mar/ven 7:30–8:15 solo 2 (1 per corsia).
+            Ogni lezione dura 30 minuti (uno slot, senza intervalli da 15). 25 m: 1 persona, lun–ven 8:00–14:30 e
+            18:30–22:00 (sabato chiusa). Ludica: lun/mer/gio 11:15–13:30, 15:15–16:15, 18:30–22:00 (4 posti); mar/ven
+            7:30–8:15 solo 2 (1 per corsia).
           </p>
           <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
             <table className="min-w-full text-left text-xs text-zinc-400">

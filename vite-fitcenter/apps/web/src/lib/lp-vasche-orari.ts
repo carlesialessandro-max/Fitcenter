@@ -1,6 +1,6 @@
 import type { VascaId } from "@/api/lezioniPrivate"
 
-export const LP_SLOT_STEP = 15
+export const LP_SLOT_STEP = 30
 export const LP_LEZIONE_MIN = 30
 
 export type LpFasciaVasca = {
@@ -70,7 +70,11 @@ export function fasciaPerInizio(
   if (start == null) return null
   const dur = Number.isFinite(durataMin) && durataMin > 0 ? durataMin : LP_LEZIONE_MIN
   const end = start + dur
-  return fasceVascaGiorno(giornoIso, vasca).find((f) => start >= f.from && end <= f.to) ?? null
+  return (
+    fasceVascaGiorno(giornoIso, vasca).find(
+      (f) => start >= f.from && end <= f.to && (start - f.from) % LP_SLOT_STEP === 0,
+    ) ?? null
+  )
 }
 
 export function slotAperto(

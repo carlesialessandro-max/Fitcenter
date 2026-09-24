@@ -160,15 +160,23 @@ export function slotOccupanti(
   vasca: VascaId,
   corsia: number,
   exceptLezioneIds?: string | string[],
+  durataMin = 30,
 ): number {
   const skip = new Set(Array.isArray(exceptLezioneIds) ? exceptLezioneIds : exceptLezioneIds ? [exceptLezioneIds] : [])
+  const start = hmToMin(ora)
+  if (start == null) return 0
+  const dur = Number.isFinite(durataMin) && durataMin > 0 ? durataMin : 30
+  const end = start + dur
   let n = 0
   for (const p of db.pacchetti) {
     for (const l of p.lezioni) {
       if (!lezioneAttiva(l)) continue
       if (skip.has(l.id)) continue
       if (l.giorno !== giorno || l.vasca !== vasca || l.corsia !== corsia) continue
-      if (oreCoperteLezioneLp(l.ora, l.durataMin).includes(ora)) n += 1
+      const ls = hmToMin(l.ora)
+      if (ls == null) continue
+      const le = ls + (l.durataMin > 0 ? l.durataMin : 30)
+      if (ls < end && start < le) n += 1
     }
   }
   return n
@@ -203,11 +211,11 @@ export function assertSlotLibero(
     if (corsieAperteGiorno(giorno, vasca) <= 0) return "Quel giorno la vasca non è disponibile per le private"
     return "Orario non disponibile in questa vasca"
   }
-  for (const o of oreCoperteLezioneLp(ora, durataMin)) {
-    const usati = slotOccupanti(db, giorno, o, vasca, corsia, exceptLezioneIds)
-    if (usati >= fascia.capCorsia) {
-      return fascia.capCorsia > 1 ? `Corsia piena alle ${o} (${fascia.capCorsia} posti)` : `Corsia occupata alle ${o}`
-    }
+  const usati = slotOccupanti(db, giorno, ora, vasca, corsia, exceptLezioneIds, durataMin)
+  if (usati >= fascia.capCorsia) {
+    return fascia.capCorsia > 1
+      ? `Corsia piena alle ${ora} (${fascia.capCorsia} posti)`
+      : `Corsia occupata alle ${ora}`
   }
   return null
 }
