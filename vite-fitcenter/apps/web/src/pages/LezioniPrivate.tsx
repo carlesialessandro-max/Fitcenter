@@ -203,7 +203,7 @@ export function LezioniPrivate() {
           </div>
           <p className="mt-2 text-sm text-zinc-500">
             Solo gli orari aperti sono prenotabili. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa).
-            Ludica: fino a 4 persone (2 per corsia); mar/ven 7:30–8:15 solo 2 (1 per corsia).
+            Ludica: lun/mer/gio 11:15–13:30, 15:15–16:15, 18:30–22:00 (4 posti); mar/ven 7:30–8:15 solo 2 (1 per corsia).
           </p>
           <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
             <table className="min-w-full text-left text-xs text-zinc-400">
@@ -1342,8 +1342,8 @@ function IstruttoriTab({
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Orari vasche (ufficiali)</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Ludica giovedì chiusa. Mar/ven in ludica solo
-          7:30–8:15, 1 persona per corsia.
+          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Lun/mer/gio in ludica come da tabella.
+          Mar/ven in ludica solo 7:30–8:15, 1 persona per corsia.
         </p>
         <table className="mt-3 w-full text-sm">
           <thead>

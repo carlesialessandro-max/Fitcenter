@@ -24,7 +24,7 @@ function fasceDow(dow: number, vasca: VascaId): LpFasciaVasca[] {
     }
     return []
   }
-  if (dow === 1 || dow === 3) {
+  if (dow === 1 || dow === 3 || dow === 4) {
     return [
       { from: hm(11, 15), to: hm(13, 30), corsie: 2, capCorsia: 2 },
       { from: hm(15, 15), to: hm(16, 15), corsie: 2, capCorsia: 2 },
@@ -89,8 +89,7 @@ export function slotAperto(
 export const LP_VASCHE_LEGENDA = [
   { giorni: "Lun–Ven", vasca: "25 m", orari: "08:00–14:30 e 18:30–22:00", posti: "1 persona" },
   { giorni: "Sabato", vasca: "25 m", orari: "chiusa", posti: "—" },
-  { giorni: "Lun e Mer", vasca: "Ludica", orari: "11:15–13:30 · 15:15–16:15 · 18:30–22:00", posti: "4 pers. (2/corsia)" },
+  { giorni: "Lun, mer e gio", vasca: "Ludica", orari: "11:15–13:30 · 15:15–16:15 · 18:30–22:00", posti: "4 pers. (2/corsia)" },
   { giorni: "Mar e Ven", vasca: "Ludica", orari: "07:30–08:15", posti: "2 pers. (1/corsia)" },
-  { giorni: "Giovedì", vasca: "Ludica", orari: "chiusa", posti: "—" },
   { giorni: "Sabato", vasca: "Ludica", orari: "09:00–13:15 · 17:45–19:00", posti: "4 pers. (2/corsia)" },
 ] as const
