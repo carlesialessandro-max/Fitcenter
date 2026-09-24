@@ -18,6 +18,7 @@ import {
   lpOreSlotsSettimanaTipo,
   newLpId,
   oreCoperteLezioneLp,
+  postiGiorno,
   readLezioniPrivateDb,
   writeLezioniPrivateDb,
   type LpLezione,
