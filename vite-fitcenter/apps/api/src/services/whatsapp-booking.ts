@@ -3,7 +3,7 @@
  * Gestisce anche: ricontatto consulente, giorno senza orario, slot pieno.
  */
 import { store as leadsStore } from "../store/leads.js"
-import { whatsappEventsStore } from "../store/whatsapp-events.js"
+import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import {
   createConsulenzaAppuntamento,
   phonesMatch,
@@ -321,17 +321,20 @@ function persistCorsoOnLead(
   }
 }
 
+function waCrmInfoError(e: unknown): Error {
+  const raw = (e as Error)?.message ?? String(e)
+  const it = explainWhatsappDeliveryError({ error: raw }, raw)
+  const err = new Error(it || raw || "Invio WhatsApp fallito") as Error & { status: number }
+  err.status = 502
+  return err
+}
+
 export async function sendBambiniInfoDocsWhatsapp(
   to: string,
   corso: BambiniCorso
 ): Promise<{ sent: string[]; missing: boolean }> {
   const docs = resolveBambiniDocs(corso)
   if (docs.length === 0) {
-    await sendWhatsappText(
-      to,
-      `Al momento non trovo il file info ${corsoLabel(corso)} sul server.\n` +
-        `Una consulente ti ricontatterà a breve, oppure consulta ${bambiniInfoUrl()}`
-    )
     return { sent: [], missing: true }
   }
   const provaHint = isProveSnbSheetConfigured()
@@ -343,26 +346,30 @@ export async function sendBambiniInfoDocsWhatsapp(
       `Se indichi solo il giorno (es. mercoledì) uso la prossima data disponibile sul foglio.\n\n` +
       `In alternativa puoi chiamare il 0573 572649.`
     : `📞 Per prenotare la prova puoi contattarci al 0573 572649.`
-  await sendWhatsappText(
-    to,
-    `Ti invio le info ${corsoLabel(corso)} stagione 2026-27:\n` +
-      docs.map((d) => `• ${d.label}`).join("\n") +
-      `\n\nPer individuare il gruppo e il posto in vasca più adatti, è necessario effettuare una prova in acqua ` +
-      `per verificare il livello di acquaticità del bambino.\n\n` +
-      `${provaHint}\n` +
-      `Successivamente potremo procedere con l'iscrizione in base al livello e alle esigenze del bambino.`
-  )
-  const sent: string[] = []
-  for (const d of docs) {
-    await sendWhatsappDocument({
-      toRaw: to,
-      filePath: d.filePath,
-      filename: d.filename,
-      caption: d.label,
-    })
-    sent.push(d.label)
+  try {
+    await sendWhatsappText(
+      to,
+      `Ti invio le info ${corsoLabel(corso)} stagione 2026-27:\n` +
+        docs.map((d) => `• ${d.label}`).join("\n") +
+        `\n\nPer individuare il gruppo e il posto in vasca più adatti, è necessario effettuare una prova in acqua ` +
+        `per verificare il livello di acquaticità del bambino.\n\n` +
+        `${provaHint}\n` +
+        `Successivamente potremo procedere con l'iscrizione in base al livello e alle esigenze del bambino.`
+    )
+    const sent: string[] = []
+    for (const d of docs) {
+      await sendWhatsappDocument({
+        toRaw: to,
+        filePath: d.filePath,
+        filename: d.filename,
+        caption: d.label,
+      })
+      sent.push(d.label)
+    }
+    return { sent, missing: false }
+  } catch (e) {
+    throw waCrmInfoError(e)
   }
-  return { sent, missing: false }
 }
 
 /** Pulsante CRM: invia i documenti dal numero WhatsApp H2Sport (non dal cellulare del consulente). */
@@ -405,6 +412,14 @@ export async function sendLeadBambiniInfoFromCrm(params: {
     throw err
   }
   const dest = dests[0]
+  if (!whatsappEventsStore.hasCustomerWindow(dest)) {
+    const err = new Error(
+      "Fuori finestra 24 ore: il cliente deve aver scritto al WhatsApp H2Sport di recente. " +
+        "Invia il benvenuto e, quando risponde, riprova Invia info."
+    ) as Error & { status: number }
+    err.status = 400
+    throw err
+  }
   const r = await sendBambiniInfoDocsWhatsapp(dest, corso)
   persistCorsoOnLead(lead, corso)
   appendLeadNote(
@@ -456,8 +471,20 @@ export async function sendOpenDaySpaInfoFromCrm(leadId: string): Promise<{
     throw err
   }
   const dest = dests[0]
+  if (!whatsappEventsStore.hasCustomerWindow(dest)) {
+    const err = new Error(
+      "Fuori finestra 24 ore: il cliente deve aver scritto al WhatsApp H2Sport di recente. " +
+        "Invia il benvenuto e, quando risponde, riprova Invia info."
+    ) as Error & { status: number }
+    err.status = 400
+    throw err
+  }
   const text = openDaySpaReplyMsg({ nome: lead.nome, fromSite: false })
-  await sendWhatsappText(dest, text)
+  try {
+    await sendWhatsappText(dest, text)
+  } catch (e) {
+    throw waCrmInfoError(e)
+  }
   appendLeadNote(lead.id, `WA info Open Day SPA 30/09 inviata a ${formatWaDisplay(dest)}`, {
     stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
   })

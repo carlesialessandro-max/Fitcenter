@@ -16,6 +16,14 @@ import { Button } from "@workspace/ui/components/button"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 import { isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
 
+function waErr(e: unknown): string {
+  if (e instanceof Error && e.message.trim()) return e.message
+  if (e && typeof e === "object" && "message" in e && String((e as { message?: unknown }).message ?? "").trim()) {
+    return String((e as { message: unknown }).message)
+  }
+  return ""
+}
+
 const STATUSES: LeadStatus[] = [
   "nuovo",
   "contattato",
@@ -86,7 +94,7 @@ export function LeadDetail() {
   const waMutation = useMutation({
     mutationFn: () => whatsappApi.sendLead({ leadId: id! }),
     onSuccess: () => setWaMsg("WhatsApp inviato (template benvenuto)."),
-    onError: (e) => setWaMsg((e as Error).message || "Invio WhatsApp fallito"),
+    onError: (e) => setWaMsg(waErr(e) || "Invio WhatsApp fallito"),
   })
 
   const waInfoMutation = useMutation({
@@ -102,7 +110,7 @@ export function LeadDetail() {
           : `Inviato a ${dest} dal WhatsApp H2Sport. Arriva al cliente in quella chat, non sul tuo cellulare.`
       )
     },
-    onError: (e) => setWaMsg((e as Error).message || "Invio info WhatsApp fallito"),
+    onError: (e) => setWaMsg(waErr(e) || "Invio info WhatsApp fallito"),
   })
 
   const canSendWa = role === "admin" || role === "operatore" || role === "crm"
@@ -256,7 +264,8 @@ export function LeadDetail() {
               ) : canSendWa && lead.telefono ? (
                 <div className="mt-3 rounded-md border border-emerald-800/60 bg-emerald-950/30 p-3">
                   <p className="mb-2 text-xs text-emerald-200/80">
-                    Documenti corsi bambini dal numero WhatsApp H2Sport (non dal tuo cellulare)
+                    Documenti corsi bambini dal numero WhatsApp H2Sport (non dal tuo cellulare). Serve che il cliente
+                    abbia scritto di recente (finestra 24h).
                   </p>
                   {infoCorsoPick ? (
                     <div className="flex flex-wrap items-center gap-2">
