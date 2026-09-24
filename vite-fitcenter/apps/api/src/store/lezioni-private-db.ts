@@ -1,5 +1,16 @@
 import { readJson, writeJson } from "./persist.js"
 import { inferSessoDaNome, type LpSesso } from "../services/lp-istruttore-sesso.js"
+import {
+  LP_SLOT_END,
+  LP_SLOT_START,
+  LP_SLOT_STEP,
+  corsieAperteGiorno,
+  lpOreSlotsAperti,
+  lpOreSlotsSettimanaTipo,
+  lpOreSlotsTutti,
+  postiGiorno,
+  slotAperto,
+} from "../services/lp-vasche-orari.js"
 
 const FILE = "lezioni-private.json"
 
@@ -117,14 +128,10 @@ export function minToHm(n: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-export const LP_SLOT_START = 8 * 60
-export const LP_SLOT_END = 21 * 60
-export const LP_SLOT_STEP = 30
+export { LP_SLOT_START, LP_SLOT_END, LP_SLOT_STEP, lpOreSlotsAperti, lpOreSlotsSettimanaTipo, postiGiorno }
 
 export function lpOreSlots(): string[] {
-  const out: string[] = []
-  for (let m = LP_SLOT_START; m < LP_SLOT_END; m += LP_SLOT_STEP) out.push(minToHm(m))
-  return out
+  return lpOreSlotsTutti()
 }
 
 export function oreCoperteLezioneLp(ora: string, durataMin: number): string[] {
@@ -142,11 +149,29 @@ export function lezioneAttiva(l: LpLezione): boolean {
   return l.stato === "prenotata" || l.stato === "svolta"
 }
 
-export function corsieMax(regole: LpRegoleDow, giornoIso: string, vasca: VascaId): number {
-  const dt = new Date(`${giornoIso}T12:00:00`)
-  const dow = Number.isNaN(dt.getTime()) ? 1 : dt.getDay()
-  const row = regole[String(dow)] ?? { v25: 1, ludica: 2 }
-  return vasca === "v25" ? Math.max(0, Math.min(1, Number(row.v25) || 0)) : Math.max(0, Math.min(2, Number(row.ludica) || 0))
+export function corsieMax(_regole: LpRegoleDow, giornoIso: string, vasca: VascaId): number {
+  return corsieAperteGiorno(giornoIso, vasca)
+}
+
+export function slotOccupanti(
+  db: LezioniPrivateDb,
+  giorno: string,
+  ora: string,
+  vasca: VascaId,
+  corsia: number,
+  exceptLezioneIds?: string | string[],
+): number {
+  const skip = new Set(Array.isArray(exceptLezioneIds) ? exceptLezioneIds : exceptLezioneIds ? [exceptLezioneIds] : [])
+  let n = 0
+  for (const p of db.pacchetti) {
+    for (const l of p.lezioni) {
+      if (!lezioneAttiva(l)) continue
+      if (skip.has(l.id)) continue
+      if (l.giorno !== giorno || l.vasca !== vasca || l.corsia !== corsia) continue
+      if (oreCoperteLezioneLp(l.ora, l.durataMin).includes(ora)) n += 1
+    }
+  }
+  return n
 }
 
 export function slotOccupato(
@@ -157,16 +182,9 @@ export function slotOccupato(
   corsia: number,
   exceptLezioneIds?: string | string[],
 ): boolean {
-  const skip = new Set(Array.isArray(exceptLezioneIds) ? exceptLezioneIds : exceptLezioneIds ? [exceptLezioneIds] : [])
-  for (const p of db.pacchetti) {
-    for (const l of p.lezioni) {
-      if (!lezioneAttiva(l)) continue
-      if (skip.has(l.id)) continue
-      if (l.giorno !== giorno || l.vasca !== vasca || l.corsia !== corsia) continue
-      if (oreCoperteLezioneLp(l.ora, l.durataMin).includes(ora)) return true
-    }
-  }
-  return false
+  const f = slotAperto(giorno, ora, vasca, corsia)
+  const cap = f?.capCorsia ?? 1
+  return slotOccupanti(db, giorno, ora, vasca, corsia, exceptLezioneIds) >= cap
 }
 
 export function assertSlotLibero(
@@ -178,14 +196,17 @@ export function assertSlotLibero(
   durataMin: number,
   exceptLezioneIds?: string | string[],
 ): string | null {
-  const max = corsieMax(db.regole, giorno, vasca)
-  if (max <= 0) return "Quel giorno la vasca non è disponibile per le private"
-  if (corsia < 1 || corsia > max) return "Corsia non valida per quella vasca"
   const v = asVasca(vasca)
   if (!v) return "Vasca non valida"
+  const fascia = slotAperto(giorno, ora, vasca, corsia, durataMin)
+  if (!fascia) {
+    if (corsieAperteGiorno(giorno, vasca) <= 0) return "Quel giorno la vasca non è disponibile per le private"
+    return "Orario non disponibile in questa vasca"
+  }
   for (const o of oreCoperteLezioneLp(ora, durataMin)) {
-    if (slotOccupato(db, giorno, o, vasca, corsia, exceptLezioneIds)) {
-      return `Corsia occupata alle ${o}`
+    const usati = slotOccupanti(db, giorno, o, vasca, corsia, exceptLezioneIds)
+    if (usati >= fascia.capCorsia) {
+      return fascia.capCorsia > 1 ? `Corsia piena alle ${o} (${fascia.capCorsia} posti)` : `Corsia occupata alle ${o}`
     }
   }
   return null

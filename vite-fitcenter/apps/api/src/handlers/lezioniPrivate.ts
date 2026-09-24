@@ -14,8 +14,8 @@ import {
 } from "../services/lp-istruttore-sesso.js"
 import {
   assertSlotLibero,
-  corsieMax,
-  lpOreSlots,
+  lpOreSlotsAperti,
+  lpOreSlotsSettimanaTipo,
   newLpId,
   oreCoperteLezioneLp,
   readLezioniPrivateDb,
@@ -26,6 +26,7 @@ import {
   type LpRichiesta,
   type VascaId,
 } from "../store/lezioni-private-db.js"
+import { fasciaPerInizio } from "../services/lp-vasche-orari.js"
 
 function isYmd(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -342,7 +343,7 @@ export function getLezioniPrivate(req: Request, res: Response) {
     pacchetti: db.pacchetti,
     lezioni: flattenLezioni(db),
     regole: db.regole,
-    ore: lpOreSlots(),
+    ore: lpOreSlotsSettimanaTipo(),
   })
 }
 
@@ -813,19 +814,29 @@ export function getLezioniPrivateOccupazione(req: Request, res: Response) {
     days.push(`${y}-${mo}-${dd}`)
     cur.setDate(cur.getDate() + 1)
   }
-  const ore = lpOreSlots()
+  const ore = lpOreSlotsAperti(days)
   const booked = flattenLezioni(db).filter((l) => l.stato === "prenotata" || l.stato === "svolta")
   const byDay: Record<string, { totali: number; occupati: number; v25: number; ludica: number }> = {}
   for (const giorno of days) {
-    const cap25 = corsieMax(db.regole, giorno, "v25")
-    const capL = corsieMax(db.regole, giorno, "ludica")
-    const totali = ore.length * (cap25 + capL)
-    const occ = new Set<string>()
-    for (const l of booked) {
-      if (l.giorno !== giorno) continue
-      for (const o of oreCoperteLezioneLp(l.ora, l.durataMin)) occ.add(`${l.vasca}|${l.corsia}|${o}`)
+    const cap = postiGiorno(giorno)
+    let occupati = 0
+    for (const ora of ore) {
+      for (const vasca of ["v25", "ludica"] as const) {
+        const f = fasciaPerInizio(giorno, ora, vasca)
+        if (!f) continue
+        for (let c = 1; c <= f.corsie; c++) {
+          const usati = booked.filter(
+            (l) =>
+              l.giorno === giorno &&
+              l.vasca === vasca &&
+              l.corsia === c &&
+              oreCoperteLezioneLp(l.ora, l.durataMin).includes(ora),
+          ).length
+          occupati += Math.min(usati, f.capCorsia)
+        }
+      }
     }
-    byDay[giorno] = { totali, occupati: occ.size, v25: cap25, ludica: capL }
+    byDay[giorno] = { totali: cap.totali, occupati: Math.min(occupati, cap.totali), v25: cap.v25, ludica: cap.ludica }
   }
   res.json({ from, to, ore, regole: db.regole, byDay, booked: booked.filter((l) => l.giorno >= from && l.giorno <= to) })
 }

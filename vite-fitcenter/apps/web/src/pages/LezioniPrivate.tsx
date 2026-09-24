@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react"
-import type { ReactNode } from "react"
+import { Fragment } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { lezioniPrivateApi, type LpIstruttore, type LpLezioneFlat, type LpRichiesta, type LpSlot, type VascaId } from "@/api/lezioniPrivate"
 import { useAuth } from "@/contexts/AuthContext"
 import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
+import { LP_VASCHE_LEGENDA, slotAperto } from "@/lib/lp-vasche-orari"
 
 type Tab = "richieste" | "calendario" | "istruttori"
 type Periodo = "giorno" | "settimana" | "mese"
@@ -201,16 +202,37 @@ export function LezioniPrivate() {
             )}
           </div>
           <p className="mt-2 text-sm text-zinc-500">
-            Slot libero: prenota (prova o pacchetto). Lezione già in vasca: apri per spostare o togliere la data, senza
-            cancellare la richiesta.
+            Solo gli orari aperti sono prenotabili. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa).
+            Ludica: fino a 4 persone (2 per corsia); mar/ven 7:30–8:15 solo 2 (1 per corsia).
           </p>
+          <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
+            <table className="min-w-full text-left text-xs text-zinc-400">
+              <thead>
+                <tr className="border-b border-zinc-800 text-zinc-500">
+                  <th className="px-3 py-1.5 font-medium">Giorni</th>
+                  <th className="px-3 py-1.5 font-medium">Vasca</th>
+                  <th className="px-3 py-1.5 font-medium">Orari</th>
+                  <th className="px-3 py-1.5 font-medium">Posti</th>
+                </tr>
+              </thead>
+              <tbody>
+                {LP_VASCHE_LEGENDA.map((r) => (
+                  <tr key={`${r.giorni}-${r.vasca}`} className="border-b border-zinc-800/50">
+                    <td className="px-3 py-1.5 text-zinc-300">{r.giorni}</td>
+                    <td className="px-3 py-1.5">{r.vasca}</td>
+                    <td className="px-3 py-1.5">{r.orari}</td>
+                    <td className="px-3 py-1.5">{r.posti}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {periodo === "mese" ? (
             <MeseGrid byDay={occQ.data?.byDay ?? {}} from={month.from} to={month.to} />
           ) : (
             <DayWeekGrid
               days={periodo === "giorno" ? [day] : week.days}
               ore={ore}
-              regole={occQ.data?.regole ?? q.data?.regole ?? {}}
               booked={booked}
               onBook={setBookSlot}
               onOpen={setDetailLezione}
@@ -236,7 +258,7 @@ export function LezioniPrivate() {
       ) : null}
 
       {tab === "istruttori" ? (
-        <IstruttoriTab canRoster={canRoster} instructors={instructors} regole={q.data?.regole ?? {}} onDone={invalidate} />
+        <IstruttoriTab canRoster={canRoster} instructors={instructors} onDone={invalidate} />
       ) : null}
 
       {detailLezione ? (
@@ -1021,7 +1043,6 @@ function LezioneDetailModal({
 function DayWeekGrid({
   days,
   ore,
-  regole,
   booked,
   onBook,
   onOpen,
@@ -1029,20 +1050,21 @@ function DayWeekGrid({
 }: {
   days: string[]
   ore: string[]
-  regole: Record<string, { v25: number; ludica: number }>
   booked: LpLezioneFlat[]
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
   onTogli: (id: string) => void
 }) {
-  function cap(giorno: string, vasca: VascaId): number {
-    const dow = new Date(`${giorno}T12:00:00`).getDay()
-    const row = regole[String(dow)] ?? { v25: 1, ludica: 2 }
-    return vasca === "v25" ? row.v25 : row.ludica
+  function hits(giorno: string, ora: string, vasca: VascaId, corsia: number) {
+    return booked.filter(
+      (l) => l.giorno === giorno && l.vasca === vasca && l.corsia === corsia && l.ora <= ora && ora < addMin(l.ora, l.durataMin),
+    )
   }
-  function cell(giorno: string, ora: string, vasca: VascaId, corsia: number) {
-    return booked.find((l) => l.giorno === giorno && l.vasca === vasca && l.corsia === corsia && l.ora <= ora && ora < addMin(l.ora, l.durataMin))
-  }
+  const lanes: Array<{ vasca: VascaId; corsia: number; label: string }> = [
+    { vasca: "v25", corsia: 1, label: "25m C1" },
+    { vasca: "ludica", corsia: 1, label: "Lud C1" },
+    { vasca: "ludica", corsia: 2, label: "Lud C2" },
+  ]
   return (
     <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
       <table className="min-w-full border-collapse text-center text-xs">
@@ -1058,7 +1080,13 @@ function DayWeekGrid({
           <tr className="border-b border-zinc-800 text-zinc-500">
             <th />
             {days.map((d) => (
-              <FragmentCols key={d} cap25={cap(d, "v25")} capL={cap(d, "ludica")} />
+              <Fragment key={`${d}-h`}>
+                {lanes.map((ln) => (
+                  <th key={`${d}-${ln.label}`} className="px-1 py-1">
+                    {ln.label}
+                  </th>
+                ))}
+              </Fragment>
             ))}
           </tr>
         </thead>
@@ -1066,62 +1094,28 @@ function DayWeekGrid({
           {ore.map((ora) => (
             <tr key={ora} className="border-b border-zinc-800/40">
               <td className="whitespace-nowrap px-2 py-1 text-left text-zinc-400">{ora}</td>
-              {days.flatMap((d) => {
-                const cells: ReactNode[] = []
-                if (cap(d, "v25") >= 1) {
-                  cells.push(
+              {days.flatMap((d) =>
+                lanes.map((ln) => {
+                  const fascia = slotAperto(d, ora, ln.vasca, ln.corsia)
+                  return (
                     <LaneCell
-                      key={`${d}-25`}
-                      hit={cell(d, ora, "v25", 1)}
-                      slot={{ giorno: d, ora, vasca: "v25", corsia: 1 }}
+                      key={`${d}-${ln.vasca}-${ln.corsia}`}
+                      hits={hits(d, ora, ln.vasca, ln.corsia)}
+                      cap={fascia?.capCorsia ?? 0}
+                      aperto={!!fascia}
+                      slot={{ giorno: d, ora, vasca: ln.vasca, corsia: ln.corsia }}
                       onBook={onBook}
                       onOpen={onOpen}
                       onTogli={onTogli}
-                    />,
+                    />
                   )
-                }
-                if (cap(d, "ludica") >= 1) {
-                  cells.push(
-                    <LaneCell
-                      key={`${d}-l1`}
-                      hit={cell(d, ora, "ludica", 1)}
-                      slot={{ giorno: d, ora, vasca: "ludica", corsia: 1 }}
-                      onBook={onBook}
-                      onOpen={onOpen}
-                      onTogli={onTogli}
-                    />,
-                  )
-                }
-                if (cap(d, "ludica") >= 2) {
-                  cells.push(
-                    <LaneCell
-                      key={`${d}-l2`}
-                      hit={cell(d, ora, "ludica", 2)}
-                      slot={{ giorno: d, ora, vasca: "ludica", corsia: 2 }}
-                      onBook={onBook}
-                      onOpen={onOpen}
-                      onTogli={onTogli}
-                    />,
-                  )
-                }
-                while (cells.length < 3) cells.push(<td key={`${d}-e${cells.length}`} className="bg-zinc-950/40" />)
-                return cells
-              })}
+                }),
+              )}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
-  )
-}
-
-function FragmentCols({ cap25, capL }: { cap25: number; capL: number }) {
-  return (
-    <>
-      <th className="px-1 py-1">{cap25 ? "25m C1" : "—"}</th>
-      <th className="px-1 py-1">{capL >= 1 ? "Lud C1" : "—"}</th>
-      <th className="px-1 py-1">{capL >= 2 ? "Lud C2" : "—"}</th>
-    </>
   )
 }
 
@@ -1132,46 +1126,66 @@ function addMin(ora: string, min: number): string {
 }
 
 function LaneCell({
-  hit,
+  hits,
+  cap,
+  aperto,
   slot,
   onBook,
   onOpen,
   onTogli,
 }: {
-  hit?: LpLezioneFlat
+  hits: LpLezioneFlat[]
+  cap: number
+  aperto: boolean
   slot: LpSlot
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
   onTogli: (id: string) => void
 }) {
-  if (!hit) {
+  if (!aperto) {
     return (
-      <td className="px-1 py-1">
-        <button type="button" onClick={() => onBook(slot)} className="w-full rounded px-1 py-1 text-emerald-600/90 hover:bg-emerald-500/10">
-          libero
-        </button>
-      </td>
+      <td className="bg-zinc-950/50 px-1 py-1 text-[10px] text-zinc-600">chiuso</td>
     )
   }
+  const liberi = Math.max(0, cap - hits.length)
   return (
-    <td className="px-1 py-1">
-      <button type="button" onClick={() => onOpen(hit)} className="w-full rounded bg-amber-500/15 px-1 py-0.5 text-left text-[11px] text-amber-100 hover:bg-amber-500/25">
-        <div className="font-medium">{hit.clienteNome}</div>
-        <div className="text-[10px] text-zinc-400">
-          {hit.istruttoreNome} · {hit.tipo === "prova" ? "prova" : `pacc. ${hit.tipo}`}
+    <td className="px-1 py-1 align-top">
+      {hits.map((hit) => (
+        <div key={hit.lezioneId} className="mb-0.5">
+          <button
+            type="button"
+            onClick={() => onOpen(hit)}
+            className="w-full rounded bg-amber-500/15 px-1 py-0.5 text-left text-[11px] text-amber-100 hover:bg-amber-500/25"
+          >
+            <div className="font-medium">{hit.clienteNome}</div>
+            <div className="text-[10px] text-zinc-400">
+              {hit.istruttoreNome} · {hit.tipo === "prova" ? "prova" : `pacc. ${hit.tipo}`}
+            </div>
+          </button>
+          <button
+            type="button"
+            className="mt-0.5 text-[10px] text-red-300"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (!window.confirm("Togliere questa data dal calendario? La richiesta resta.")) return
+              onTogli(hit.lezioneId)
+            }}
+          >
+            togli data
+          </button>
         </div>
-      </button>
-      <button
-        type="button"
-        className="mt-0.5 text-[10px] text-red-300"
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!window.confirm("Togliere questa data dal calendario? La richiesta resta.")) return
-          onTogli(hit.lezioneId)
-        }}
-      >
-        togli data
-      </button>
+      ))}
+      {liberi > 0 ? (
+        <button
+          type="button"
+          onClick={() => onBook(slot)}
+          className="w-full rounded px-1 py-1 text-emerald-600/90 hover:bg-emerald-500/10"
+        >
+          {hits.length === 0 ? `libero${cap > 1 ? ` ${cap}` : ""}` : `+${liberi} posto`}
+        </button>
+      ) : hits.length === 0 ? (
+        <span className="text-zinc-600">—</span>
+      ) : null}
     </td>
   )
 }
@@ -1212,18 +1226,14 @@ function MeseGrid({
 function IstruttoriTab({
   canRoster,
   instructors,
-  regole,
   onDone,
 }: {
   canRoster: boolean
   instructors: LpIstruttore[]
-  regole: Record<string, { v25: number; ludica: number }>
   onDone: () => void
 }) {
   const [nome, setNome] = useState("")
   const [tel, setTel] = useState("")
-  const [localRegole, setLocalRegole] = useState(regole)
-  useEffect(() => setLocalRegole(regole), [regole])
   const addM = useMutation({
     mutationFn: () => lezioniPrivateApi.addIstruttore(nome, tel),
     onSuccess: () => {
@@ -1231,10 +1241,6 @@ function IstruttoriTab({
       setTel("")
       onDone()
     },
-  })
-  const saveR = useMutation({
-    mutationFn: () => lezioniPrivateApi.putRegole(localRegole),
-    onSuccess: onDone,
   })
   const uomini = instructors.filter((i) => i.sesso === "M")
   const donne = instructors.filter((i) => i.sesso === "F")
@@ -1334,54 +1340,31 @@ function IstruttoriTab({
         </div>
       </div>
       <div className="rounded-2xl border border-zinc-800 p-4">
-        <h2 className="font-semibold text-zinc-100">Corsie per giorno</h2>
-        <p className="mt-1 text-sm text-zinc-500">Default: 25 m = 1 corsia, ludica = 2. Quando hai le regole precise le aggiorniamo qui (0 = chiuso).</p>
+        <h2 className="font-semibold text-zinc-100">Orari vasche (ufficiali)</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Ludica giovedì chiusa. Mar/ven in ludica solo
+          7:30–8:15, 1 persona per corsia.
+        </p>
         <table className="mt-3 w-full text-sm">
           <thead>
             <tr className="text-zinc-500">
-              <th className="py-1 text-left">Giorno</th>
-              <th className="py-1">25 m</th>
-              <th className="py-1">Ludica</th>
+              <th className="py-1 text-left">Giorni</th>
+              <th className="py-1 text-left">Vasca</th>
+              <th className="py-1 text-left">Orari</th>
+              <th className="py-1 text-left">Posti</th>
             </tr>
           </thead>
           <tbody>
-            {DOW_IT.map((label, d) => {
-              const row = localRegole[String(d)] ?? { v25: 1, ludica: 2 }
-              return (
-                <tr key={d}>
-                  <td className="py-1 text-zinc-300">{label}</td>
-                  <td className="py-1 text-center">
-                    <input
-                      type="number"
-                      min={0}
-                      max={1}
-                      value={row.v25}
-                      disabled={!canRoster}
-                      onChange={(e) => setLocalRegole((r) => ({ ...r, [String(d)]: { ...row, v25: Number(e.target.value) } }))}
-                      className="w-16 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-center text-zinc-100"
-                    />
-                  </td>
-                  <td className="py-1 text-center">
-                    <input
-                      type="number"
-                      min={0}
-                      max={2}
-                      value={row.ludica}
-                      disabled={!canRoster}
-                      onChange={(e) => setLocalRegole((r) => ({ ...r, [String(d)]: { ...row, ludica: Number(e.target.value) } }))}
-                      className="w-16 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-center text-zinc-100"
-                    />
-                  </td>
-                </tr>
-              )
-            })}
+            {LP_VASCHE_LEGENDA.map((r) => (
+              <tr key={`${r.giorni}-${r.vasca}`} className="text-zinc-300">
+                <td className="py-1.5">{r.giorni}</td>
+                <td className="py-1.5">{r.vasca}</td>
+                <td className="py-1.5 text-zinc-400">{r.orari}</td>
+                <td className="py-1.5 text-zinc-400">{r.posti}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
-        {canRoster ? (
-          <button type="button" disabled={saveR.isPending} onClick={() => saveR.mutate()} className="mt-3 rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200">
-            Salva regole
-          </button>
-        ) : null}
       </div>
     </div>
   )
