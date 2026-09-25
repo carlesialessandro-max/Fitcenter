@@ -243,20 +243,10 @@ export function CorsiPresenze() {
       .filter((r) => r.prenotati + r.manuali > 0)
       .map((r) => ({ ...r, giorni: [...r.giorni].sort((a, b) => a.giorno.localeCompare(b.giorno)) }))
       .sort((a, b) => {
-        if (periodo !== "giorno") {
-          const la = isPochePresenze(a) ? 0 : 1
-          const lb = isPochePresenze(b) ? 0 : 1
-          if (la !== lb) return la - lb
-          const ma = mediaPresentiGiorno(a) ?? 99
-          const mb = mediaPresentiGiorno(b) ?? 99
-          if (ma !== mb) return ma - mb
-          const ra = presenceRate(a)
-          const rb = presenceRate(b)
-          if (ra !== rb) return ra - rb
-        }
-        const byName = a.label.localeCompare(b.label, "it")
-        if (byName !== 0) return byName
-        return (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "")
+        const oa = a.oraInizio ?? "99:99"
+        const ob = b.oraInizio ?? "99:99"
+        if (oa !== ob) return oa.localeCompare(ob)
+        return a.label.localeCompare(b.label, "it")
       })
     const totale = emptyAgg("totale", "Totale", ambito === "h2o" ? "h2o" : ambito === "fitness" ? "fitness" : "misto")
     for (const r of corsi) {
@@ -266,7 +256,7 @@ export function CorsiPresenze() {
       totale.manuali += r.manuali
     }
     return { corsi, tipi: [byTipo.fitness, byTipo.h2o], totale }
-  }, [prenQ.data, accessiQ.data, gestioneQ.data, range.from, range.to, ambito, periodo])
+  }, [prenQ.data, accessiQ.data, gestioneQ.data, range.from, range.to, ambito])
 
   const orariaValues = useMemo(() => {
     const rows = prenQ.data?.rows ?? []
@@ -332,9 +322,8 @@ export function CorsiPresenze() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Presenze corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Solo corsi con iscritti nel periodo. Stesso corso a orari diversi = righe separate (ogni fascia ha le sue
-            presenze). In settimana e mese i corsi con poche presenze stanno in cima: clicca per vedere la frequenza
-            giorno per giorno.
+            Solo corsi con iscritti nel periodo. Stesso corso a orari diversi = righe separate, in ordine di orario.
+            In settimana e mese clicca una riga per vedere la frequenza giorno per giorno.
           </p>
           <p className="mt-2 flex flex-wrap gap-3">
             <Link to="/corsi" className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
