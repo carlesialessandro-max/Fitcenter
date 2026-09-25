@@ -10,6 +10,7 @@ import {
   buildAccessIndexForDay,
   corsoAmbitoOf,
   fmtDateIt,
+  fmtTimeDot,
   groupByCorso,
   isPresentByAccess,
   isWalkInRow,
@@ -36,11 +37,22 @@ type AggRow = {
   key: string
   label: string
   ambito: "fitness" | "h2o" | "misto"
+  oraInizio?: string
+  oraFine?: string
   prenotati: number
   presenti: number
   assenti: number
   manuali: number
   giorni: DayAgg[]
+}
+
+function slotAggKey(g: { servizio: string; oraInizio?: string; oraFine?: string }): string {
+  return `${g.servizio.trim().toLocaleLowerCase()}|${g.oraInizio ?? ""}|${g.oraFine ?? ""}`
+}
+
+function slotOraLabel(g: { oraInizio?: string; oraFine?: string }): string {
+  if (!g.oraInizio) return "—"
+  return g.oraFine ? `${fmtTimeDot(g.oraInizio)}–${fmtTimeDot(g.oraFine)}` : fmtTimeDot(g.oraInizio)
 }
 
 function toIsoUtc(d: Date): string {
@@ -170,8 +182,12 @@ export function CorsiPresenze() {
         if (!attivi.length) continue
         const amb = corsoAmbitoOf(g)
         if (ambito !== "tutti" && amb !== ambito) continue
-        const corsoKey = g.servizio.trim().toLocaleLowerCase()
-        const corso = byCorso.get(corsoKey) ?? emptyAgg(corsoKey, g.servizio, amb)
+        const corsoKey = slotAggKey(g)
+        const corso = byCorso.get(corsoKey) ?? {
+          ...emptyAgg(corsoKey, g.servizio, amb),
+          oraInizio: g.oraInizio,
+          oraFine: g.oraFine,
+        }
         if (corso.ambito !== amb) corso.ambito = "misto"
         const tipo = byTipo[amb]
         let daySlot = corso.giorni.find((d) => d.giorno === giorno)
@@ -238,7 +254,9 @@ export function CorsiPresenze() {
           const rb = presenceRate(b)
           if (ra !== rb) return ra - rb
         }
-        return a.label.localeCompare(b.label, "it")
+        const byName = a.label.localeCompare(b.label, "it")
+        if (byName !== 0) return byName
+        return (a.oraInizio ?? "").localeCompare(b.oraInizio ?? "")
       })
     const totale = emptyAgg("totale", "Totale", ambito === "h2o" ? "h2o" : ambito === "fitness" ? "fitness" : "misto")
     for (const r of corsi) {
@@ -306,6 +324,7 @@ export function CorsiPresenze() {
   const loading = prenQ.isLoading || accessiQ.isLoading || gestioneQ.isLoading
   const err = prenQ.error || accessiQ.error || gestioneQ.error
   const canDrill = vista === "corso" && periodo !== "giorno"
+  const tableColSpan = 6 + (vista === "corso" ? 2 : 0) + (canDrill ? 1 : 0)
 
   return (
     <div className="p-4 sm:p-6 print:p-0">
@@ -313,8 +332,9 @@ export function CorsiPresenze() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Presenze corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Solo corsi con iscritti nel periodo. In settimana e mese i corsi con poche presenze stanno in cima: clicca per
-            vedere la frequenza giorno per giorno.
+            Solo corsi con iscritti nel periodo. Stesso corso a orari diversi = righe separate (ogni fascia ha le sue
+            presenze). In settimana e mese i corsi con poche presenze stanno in cima: clicca per vedere la frequenza
+            giorno per giorno.
           </p>
           <p className="mt-2 flex flex-wrap gap-3">
             <Link to="/corsi" className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline">
@@ -474,6 +494,7 @@ export function CorsiPresenze() {
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-950/50 print:bg-white">
               <th className="px-4 py-3 font-medium text-zinc-400">{vista === "corso" ? "Corso" : "Tipologia"}</th>
+              {vista === "corso" ? <th className="px-4 py-3 font-medium text-zinc-400">Orario</th> : null}
               {vista === "corso" ? <th className="px-4 py-3 font-medium text-zinc-400">Ambito</th> : null}
               {canDrill ? <th className="px-4 py-3 font-medium text-zinc-400">Media/giorno</th> : null}
               <th className="px-4 py-3 font-medium text-zinc-400">Prenotati</th>
@@ -486,7 +507,7 @@ export function CorsiPresenze() {
           <tbody>
             {tableRows.length === 0 && !loading ? (
               <tr>
-                <td colSpan={canDrill ? 8 : 7} className="px-4 py-6 text-zinc-500">
+                <td colSpan={tableColSpan} className="px-4 py-6 text-zinc-500">
                   Nessun corso con iscritti nel periodo.
                 </td>
               </tr>
@@ -517,6 +538,9 @@ export function CorsiPresenze() {
                       ) : null}
                     </td>
                     {vista === "corso" ? (
+                      <td className="whitespace-nowrap px-4 py-2.5 text-zinc-200">{slotOraLabel(r)}</td>
+                    ) : null}
+                    {vista === "corso" ? (
                       <td className="px-4 py-2.5 text-zinc-400">{r.ambito === "h2o" ? "H2O" : r.ambito === "misto" ? "Misto" : "Fitness"}</td>
                     ) : null}
                     {canDrill ? (
@@ -532,9 +556,9 @@ export function CorsiPresenze() {
                   </tr>
                   {open ? (
                     <tr className="border-b border-zinc-800/60 bg-zinc-950/60">
-                      <td colSpan={canDrill ? 8 : 7} className="px-4 py-3">
+                      <td colSpan={tableColSpan} className="px-4 py-3">
                         <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                          Frequenza giorno per giorno · {r.label}
+                          Frequenza giorno per giorno · {r.label} {slotOraLabel(r)}
                         </p>
                         <table className="min-w-full text-left text-sm">
                           <thead>
@@ -574,6 +598,7 @@ export function CorsiPresenze() {
             <tfoot>
               <tr className="bg-zinc-950/60 font-semibold print:bg-zinc-100">
                 <td className="px-4 py-3 text-zinc-100">Totale</td>
+                {vista === "corso" ? <td className="px-4 py-3 text-zinc-400">—</td> : null}
                 {vista === "corso" ? <td className="px-4 py-3 text-zinc-400">—</td> : null}
                 {canDrill ? <td className="px-4 py-3 text-zinc-400">—</td> : null}
                 <td className="px-4 py-3 text-zinc-100">{report.totale.prenotati}</td>
