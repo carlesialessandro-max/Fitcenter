@@ -447,8 +447,19 @@ function getFrozenDepSig(asOfKey: string, depSig: string): string {
   return isAsOfToday(asOfKey) ? depSig : `frozen:${asOfKey}`
 }
 
+const sqlInflight = new Map<string, Promise<unknown>>()
+function shareInflight<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = sqlInflight.get(key)
+  if (existing) return existing as Promise<T>
+  const pending = fn().finally(() => {
+    if (sqlInflight.get(key) === pending) sqlInflight.delete(key)
+  })
+  sqlInflight.set(key, pending)
+  return pending
+}
+
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
-const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 120_000)
+const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 45_000)
 function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
@@ -644,7 +655,10 @@ async function refreshDashboardCache(args: {
   asOf: { key: string; date: Date }
 }): Promise<void> {
   try {
-    const stats = await withDashboardSqlTimeout(computeDashboardSqlStats(args.consulente, args.asOf))
+    const stats = await shareInflight(
+      `dashboard:${args.scope}:${String(args.consulente ?? "")}:${args.cacheAsOf}`,
+      () => withDashboardSqlTimeout(computeDashboardSqlStats(args.consulente, args.asOf))
+    )
     await cacheSet({
       name: "data.dashboard",
       scope: args.scope,
@@ -689,7 +703,10 @@ export async function getDashboard(req: Request, res: Response) {
         }
       }
       try {
-        const stats = await withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
+        const stats = await shareInflight(
+          `dashboard:${scope}:${String(consulente ?? "")}:${dashboardCacheAsOf(asOf.key)}`,
+          () => withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
+        )
         await cacheSet({
           name: "data.dashboard",
           scope,
@@ -2988,8 +3005,47 @@ function buildDettaglioBlocco(
   }
 }
 
+function dettaglioMeseCacheLookupKeys(asOfKey: string, anno: number, mese: number): string[] {
+  if (isPastCalendarMonth(anno, mese)) return [lastDayOfMonthKey(anno, mese)]
+  if (isAsOfToday(asOfKey)) {
+    return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1)])]
+  }
+  return [cacheAsOfKeyForTotals(asOfKey)]
+}
+
+async function readDettaglioMeseCache(
+  scope: string,
+  asOfKey: string,
+  anno: number,
+  mese: number,
+  giorno: number,
+  consulente: string | undefined,
+  depSig: string,
+  allowExpired: boolean
+): Promise<{
+  result: DettaglioMeseResponse
+  cacheAsOf: string
+  cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null }
+} | null> {
+  const { cacheParams } = dettaglioMeseCacheLookup(asOfKey, anno, mese, giorno, consulente)
+  for (const cacheAsOf of dettaglioMeseCacheLookupKeys(asOfKey, anno, mese)) {
+    const args = {
+      name: "data.dettaglio-mese" as const,
+      scope,
+      params: cacheParams,
+      asOf: cacheAsOf,
+      depSig,
+    }
+    const hit = allowExpired
+      ? await cacheGetAllowExpired<DettaglioMeseResponse>(args)
+      : await cacheGet<DettaglioMeseResponse>(args)
+    if (hit) return { result: hit, cacheAsOf, cacheParams }
+  }
+  return null
+}
+
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
-const DETTAGLIO_SQL_TIMEOUT_MS = Number(process.env.DETTAGLIO_SQL_TIMEOUT_MS ?? 120_000)
+const DETTAGLIO_SQL_TIMEOUT_MS = Number(process.env.DETTAGLIO_SQL_TIMEOUT_MS ?? 45_000)
 function withDettaglioSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
@@ -3013,75 +3069,37 @@ function withReportConsulentiSqlTimeout<T>(p: Promise<T>): Promise<T> {
   ])
 }
 
-export async function getDettaglioMese(req: Request, res: Response) {
-  try {
-    const anno = Number(req.query.anno)
-    const mese = Number(req.query.mese)
-    let giorno = req.query.giorno != null ? Number(req.query.giorno) : null
-    if (isNaN(anno) || isNaN(mese) || mese < 1 || mese > 12) {
-      return res.status(400).json({ message: "anno e mese obbligatori e validi" })
-    }
-    const operatoreNome = getOperatoreConsulenteNome(req)
-    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
-    const giorniNelMese = new Date(anno, mese, 0).getDate()
-    if (giorno == null || isNaN(giorno)) {
-      const oggi = toDateParts(parseAsOf(req).date)
-      giorno = oggi.year === anno && oggi.month === mese
-        ? Math.min(oggi.day, giorniNelMese)
-        : giorniNelMese
-    }
-    giorno = Math.min(Math.max(1, giorno), giorniNelMese)
+async function computeAndCacheDettaglioMese(args: {
+  anno: number
+  mese: number
+  giorno: number
+  giorniNelMese: number
+  consulente: string | undefined
+  asOf: { key: string; date: Date }
+  scope: string
+  cacheAsOf: string
+  cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null }
+  depSig: string
+}): Promise<DettaglioMeseResponse & { _debug?: { consulente: string | undefined; idUtente: string | undefined }; _warning?: string }> {
+  const { anno, mese, giorno, giorniNelMese, consulente, asOf, scope, cacheAsOf, cacheParams, depSig } = args
+  let abbonamenti: Abbonamento[] = []
+  let budgetMese: number
+  let fromSql = gestionaleSql.isGestionaleConfigured()
+  let dettaglioMeseWarning: string | undefined
+  const idUtente = await resolveConsultantId(consulente)
+  const movimenti = fromSql ? [] : ((await gestionaleSql.queryMovimentiVenduto(idUtente)) as Record<string, unknown>[])
+  const useMovimenti = movimenti.length > 0
 
-    const scope = cacheScope(req)
-    const asOf = parseAsOf(req)
-    const { cacheAsOf, cacheParams } = dettaglioMeseCacheLookup(asOf.key, anno, mese, giorno, consulente)
-    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cached = await cacheGet<DettaglioMeseResponse>({
-      name: "data.dettaglio-mese",
-      scope,
-      params: cacheParams,
-      asOf: cacheAsOf,
-      depSig,
-    })
-    if (cached) return res.json(cached)
-
-    let abbonamenti: Abbonamento[] = []
-    let budgetMese: number
-    let fromSql = gestionaleSql.isGestionaleConfigured()
-    let dettaglioMeseWarning: string | undefined
-    const idUtente = await resolveConsultantId(consulente)
-    const movimenti = fromSql ? [] : ((await gestionaleSql.queryMovimentiVenduto(idUtente)) as Record<string, unknown>[])
-    const useMovimenti = movimenti.length > 0
-
-    if (fromSql) {
-      budgetMese = consulente
-        ? budgetConsulenteSalvato(anno, mese, consulente)
-        : budgetPerConsulente.getTotaleMese(anno, mese) || (budgetStore.get(anno, mese) ?? 0)
-      if (!useMovimenti) {
-        try {
-          const rows = isAsOfToday(asOf.key)
-            ? await withDettaglioSqlTimeout(gestionaleSql.queryAbbonamenti(idUtente))
-            : []
-          abbonamenti = rows.map((r) => rowToAbbonamento(r))
-        } catch (e) {
-          if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
-            dettaglioMeseWarning = `Timeout SQL per dettaglio-mese dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms — uso dati mock`
-            fromSql = false
-            const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
-            abbonamenti = mockAbbonamenti
-            budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
-            if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
-          } else {
-            throw e
-          }
-        }
-      }
-    } else {
-      const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
-      abbonamenti = mockAbbonamenti
-      budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
-      if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
-    }
+  if (fromSql) {
+    budgetMese = consulente
+      ? budgetConsulenteSalvato(anno, mese, consulente)
+      : budgetPerConsulente.getTotaleMese(anno, mese) || (budgetStore.get(anno, mese) ?? 0)
+  } else {
+    const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
+    abbonamenti = mockAbbonamenti
+    budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
+    if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
+  }
 
     let budgetGiorno = budgetMese / giorniNelMese
     let budgetProgressivoMese = (budgetMese * giorno) / giorniNelMese
@@ -3233,7 +3251,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
     if (dettaglioMeseWarning && !isAsOfToday(asOf.key)) {
       // Evita di "congelare" dati mock su storico: se oggi abbiamo problemi di rete/SQL,
       // al prossimo refresh (con storico non scaduto) verrà ricalcolato solo dopo un buon segnale.
-      return res.json(result)
+      return result
     }
 
     await cacheSet({
@@ -3245,42 +3263,86 @@ export async function getDettaglioMese(req: Request, res: Response) {
       ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: result,
     })
-    res.json(result)
+    return result
+}
+
+export async function getDettaglioMese(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno)
+    const mese = Number(req.query.mese)
+    let giorno = req.query.giorno != null ? Number(req.query.giorno) : null
+    if (isNaN(anno) || isNaN(mese) || mese < 1 || mese > 12) {
+      return res.status(400).json({ message: "anno e mese obbligatori e validi" })
+    }
+    const operatoreNome = getOperatoreConsulenteNome(req)
+    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const giorniNelMese = new Date(anno, mese, 0).getDate()
+    if (giorno == null || isNaN(giorno)) {
+      const oggi = toDateParts(parseAsOf(req).date)
+      giorno = oggi.year === anno && oggi.month === mese
+        ? Math.min(oggi.day, giorniNelMese)
+        : giorniNelMese
+    }
+    giorno = Math.min(Math.max(1, giorno), giorniNelMese)
+
+    const scope = cacheScope(req)
+    const asOf = parseAsOf(req)
+    const { cacheAsOf, cacheParams } = dettaglioMeseCacheLookup(asOf.key, anno, mese, giorno, consulente)
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
+    const fresh = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, false)
+    if (fresh) return res.json(fresh.result)
+
+    const computeArgs = {
+      anno,
+      mese,
+      giorno,
+      giorniNelMese,
+      consulente,
+      asOf,
+      scope,
+      cacheAsOf,
+      cacheParams,
+      depSig,
+    }
+    const inflightKey = `dettaglio-mese:${scope}:${cacheAsOf}:${JSON.stringify(cacheParams)}`
+    if (gestionaleSql.isGestionaleConfigured() && isAsOfToday(asOf.key)) {
+      const stale = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, true)
+      if (stale) {
+        res.json(stale.result)
+        void shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs)).catch(() => {})
+        return
+      }
+    }
+
+    const result = await shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs))
+    return res.json(result)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
 }
 
 
-/** Dettaglio anno: totale + per consulente (budget anno, progressivo a oggi, consuntivo, scostamento, assenze, improduttivi, trend). */
-export async function getDettaglioAnno(req: Request, res: Response) {
-  try {
-    const anno = Number(req.query.anno)
-    if (Number.isNaN(anno) || anno < 2000 || anno > 2100) {
-      return res.status(400).json({ message: "anno obbligatorio e valido (2000-2100)" })
-    }
-    const scope = cacheScope(req)
-    const asOf = parseAsOf(req)
-    const cacheAsOf = dettaglioAnnoCacheAsOf(anno, asOf.key)
-    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { anno }
-    const cached = await cacheGet<{ anno: number; annoLabel: string; dettaglio: DettaglioBlocco }>({
-      name: "data.dettaglio-anno",
-      scope,
-      params: cacheKeyParams,
-      asOf: cacheAsOf,
-      depSig,
-    })
-    if (cached) return res.json(cached)
-    const oggi = toDateParts(asOf.date)
-    const labels = budgetPerConsulente.getConsulentiLabels()
-    const perConsulente: DettaglioConsulente[] = []
+type DettaglioAnnoPayload = { anno: number; annoLabel: string; dettaglio: DettaglioBlocco }
 
-    for (const label of labels) {
+async function computeAndCacheDettaglioAnno(args: {
+  anno: number
+  asOf: { key: string; date: Date }
+  scope: string
+  cacheAsOf: string
+  cacheKeyParams: { anno: number }
+  depSig: string
+}): Promise<DettaglioAnnoPayload> {
+  const { anno, asOf, scope, cacheAsOf, cacheKeyParams, depSig } = args
+  const oggi = toDateParts(asOf.date)
+  const labels = budgetPerConsulente.getConsulentiLabels()
+  const perConsulente = await Promise.all(
+    labels.map(async (label) => {
       const id = await resolveConsultantId(label)
-      const venditePerMese = gestionaleSql.isGestionaleConfigured()
-        ? await gestionaleSql.getVenditePerMeseAnno(anno, id)
-        : []
+      const throughMonth = anno < oggi.year ? 12 : anno === oggi.year ? oggi.month : 0
+      const venditePerMese =
+        gestionaleSql.isGestionaleConfigured() && throughMonth > 0
+          ? await gestionaleSql.getVenditePerMeseAnno(anno, id, { throughMonth })
+          : []
       const venditeAnno = venditePerMese.reduce((s, x) => s + x.totale, 0)
       let budgetAnno = 0
       let budgetProgressivoAnno = 0
@@ -3296,7 +3358,7 @@ export async function getDettaglioAnno(req: Request, res: Response) {
       }
       const scost = venditeAnno - budgetProgressivoAnno
       const trend = budgetProgressivoAnno > 0 ? Math.round((venditeAnno / budgetProgressivoAnno) * 10000) / 100 : 0
-      perConsulente.push({
+      return {
         consulente: label,
         budget: Math.round(budgetAnno * 100) / 100,
         budgetProgressivo: Math.round(budgetProgressivoAnno * 100) / 100,
@@ -3305,21 +3367,72 @@ export async function getDettaglioAnno(req: Request, res: Response) {
         assenze: 0,
         improduttivi: 0,
         trend,
-      })
-    }
+      } satisfies DettaglioConsulente
+    })
+  )
 
-    const dettaglio = buildDettaglioBloccoFromPerConsulente(perConsulente)
-    const payload = { anno, annoLabel: String(anno), dettaglio }
-    await cacheSet({
-      name: "data.dettaglio-anno",
+  const dettaglio = buildDettaglioBloccoFromPerConsulente(perConsulente)
+  const payload = { anno, annoLabel: String(anno), dettaglio }
+  await cacheSet({
+    name: "data.dettaglio-anno",
+    scope,
+    params: cacheKeyParams,
+    asOf: cacheAsOf,
+    depSig,
+    ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
+    value: payload,
+  })
+  return payload
+}
+
+/** Dettaglio anno: totale + per consulente (budget anno, progressivo a oggi, consuntivo, scostamento, assenze, improduttivi, trend). */
+export async function getDettaglioAnno(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno)
+    if (Number.isNaN(anno) || anno < 2000 || anno > 2100) {
+      return res.status(400).json({ message: "anno obbligatorio e valido (2000-2100)" })
+    }
+    const scope = cacheScope(req)
+    const asOf = parseAsOf(req)
+    const cacheAsOf = dettaglioAnnoCacheAsOf(anno, asOf.key)
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
+    const cacheKeyParams = { anno }
+    const cacheArgs = {
+      name: "data.dettaglio-anno" as const,
       scope,
       params: cacheKeyParams,
       asOf: cacheAsOf,
       depSig,
-      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
-      value: payload,
-    })
-    res.json(payload)
+    }
+    const cached = await cacheGet<DettaglioAnnoPayload>(cacheArgs)
+    if (cached) return res.json(cached)
+
+    const computeArgs = { anno, asOf, scope, cacheAsOf, cacheKeyParams, depSig }
+    const inflightKey = `dettaglio-anno:${scope}:${cacheAsOf}:${anno}`
+    if (isAsOfToday(asOf.key)) {
+      const stale = await cacheGetAllowExpired<DettaglioAnnoPayload>(cacheArgs)
+      if (stale) {
+        res.json(stale)
+        void shareInflight(inflightKey, () =>
+          withDettaglioSqlTimeout(computeAndCacheDettaglioAnno(computeArgs))
+        ).catch(() => {})
+        return
+      }
+    }
+
+    try {
+      const payload = await shareInflight(inflightKey, () =>
+        withDettaglioSqlTimeout(computeAndCacheDettaglioAnno(computeArgs))
+      )
+      return res.json(payload)
+    } catch (e) {
+      if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
+        const stale = await cacheGetAllowExpired<DettaglioAnnoPayload>(cacheArgs)
+        if (stale) return res.json(stale)
+        return res.status(504).json({ message: `Timeout SQL per totali anno dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms` })
+      }
+      throw e
+    }
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

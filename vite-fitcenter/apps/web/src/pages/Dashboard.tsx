@@ -69,8 +69,7 @@ export function Dashboard() {
   const { data, isLoading, isFetching, error, refetch: refetchDashboard } = useQuery({
     queryKey: ["dashboard", consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDashboard(consulenteFilter, role === "admin" ? asOf : undefined),
-    retry: 1,
-    retryDelay: 3000,
+    retry: 0,
     refetchOnWindowFocus: isAdminToday,
     refetchOnReconnect: isAdminToday,
     refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
@@ -138,8 +137,7 @@ export function Dashboard() {
   } = useQuery({
     queryKey: ["dettaglio-oggi-mese", annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDettaglioMese(annoOggi, meseOggi, giornoOggi, consulenteFilter, role === "admin" ? asOf : undefined),
-    retry: 1,
-    retryDelay: 3000,
+    retry: 0,
     refetchOnWindowFocus: isAdminToday,
     refetchOnReconnect: isAdminToday,
     refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
@@ -151,7 +149,7 @@ export function Dashboard() {
   const { data: dettaglioAnnoData } = useQuery({
     queryKey: ["dettaglio-anno", annoOggi, role === "admin" ? asOf : null, todayHourBucket],
     queryFn: () => dataApi.getDettaglioAnno(annoOggi, role === "admin" ? asOf : undefined),
-    enabled: role === "admin",
+    enabled: role === "admin" && !dettaglioLoading,
     retry: false,
     refetchOnWindowFocus: isAdminToday,
     refetchOnReconnect: isAdminToday,
@@ -286,6 +284,9 @@ export function Dashboard() {
             onMeseChange={(m) => setMeseConsulente(Math.max(1, Math.min(12, Math.floor(m))))}
             giornoSelezionato={giornoConsulente}
             onGiornoChange={setGiornoConsulente}
+            dettaglio={dettaglioGiornoMese}
+            dettaglioLoading={dettaglioPending}
+            dettaglioError={dettaglioError ? (dettaglioGiornoMese ? undefined : "Errore caricamento vendite") : undefined}
           />
         </div>
       )}
@@ -436,6 +437,12 @@ export function Dashboard() {
       </div>
 
       {/* Totale del giorno / Totale per mese / Totale per anno (stessi parametri per consulenti) */}
+      {role === "admin" && !dettaglioGiornoMese && dettaglioPending ? (
+        <p className="mt-6 text-sm text-amber-400/90">Caricamento vendite giorno/mese…</p>
+      ) : null}
+      {role === "admin" && dettaglioGiornoMese && !dettaglioAnnoData ? (
+        <p className="mt-4 text-sm text-zinc-500">Caricamento totali anno in sottofondo…</p>
+      ) : null}
       {(dettaglioGiornoMese || dettaglioAnnoData) && (
         <div className="mt-8 space-y-8">
           {dettaglioGiornoMese && (

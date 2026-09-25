@@ -64,6 +64,9 @@ export function DettaglioVenditePrimoPiano({
   onMeseChange,
   giornoSelezionato: giornoControlled,
   onGiornoChange,
+  dettaglio,
+  dettaglioLoading,
+  dettaglioError,
 }: {
   annoSelezionato?: number
   meseSelezionato?: number
@@ -71,6 +74,9 @@ export function DettaglioVenditePrimoPiano({
   onMeseChange?: (month: number) => void
   giornoSelezionato?: number
   onGiornoChange?: (day: number) => void
+  dettaglio?: DettaglioMeseResponse
+  dettaglioLoading?: boolean
+  dettaglioError?: string
 } = {}) {
   const { consulenteFilter } = useAuth()
   const now = new Date()
@@ -83,11 +89,23 @@ export function DettaglioVenditePrimoPiano({
   const giornoSelezionato = giornoControlled ?? giornoInternal
   const setGiornoSelezionato = onGiornoChange ?? setGiornoInternal
 
-  const { data, isLoading, error } = useQuery({
+  const useParentData =
+    dettaglio !== undefined || dettaglioLoading !== undefined || dettaglioError !== undefined
+
+  const { data: fetched, isLoading: fetchedLoading, error: fetchedError } = useQuery({
     queryKey: ["dettaglio-mese-primo-piano", anno, mese, giornoSelezionato, consulenteFilter],
     queryFn: () => dataApi.getDettaglioMese(anno, mese, giornoSelezionato, consulenteFilter),
-    staleTime: 0,
+    staleTime: 60_000,
+    enabled: !useParentData,
   })
+
+  const data = useParentData ? dettaglio : fetched
+  const isLoading = useParentData ? !!dettaglioLoading && !dettaglio : fetchedLoading
+  const error = useParentData
+    ? dettaglioError && !dettaglio
+      ? new Error(dettaglioError)
+      : null
+    : fetchedError
 
   const giorniNelMese = new Date(anno, mese, 0).getDate()
   const giornoSafe = Math.min(giornoSelezionato, giorniNelMese)
