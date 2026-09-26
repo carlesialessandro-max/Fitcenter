@@ -75,7 +75,11 @@ export function Dashboard() {
     refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
     staleTime: role === "admin" && !isAdminToday ? 6 * 60 * 60 * 1000 : todayStaleMs,
     gcTime: role === "admin" && !isAdminToday ? 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
-    placeholderData: (prev) => prev,
+    placeholderData: (prev, prevQuery) => {
+      if (!prevQuery) return undefined
+      if (prevQuery.queryKey[2] !== (role === "admin" ? asOf : null)) return undefined
+      return prev
+    },
   })
 
   const { data: budgetData } = useQuery({
@@ -143,7 +147,12 @@ export function Dashboard() {
     refetchInterval: isAdminToday ? TODAY_REFRESH_MS : false,
     staleTime: role === "admin" && !isAdminToday ? 7 * 24 * 60 * 60 * 1000 : todayStaleMs,
     gcTime: role === "admin" && !isAdminToday ? 30 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000,
-    placeholderData: (prev) => prev,
+    placeholderData: (prev, prevQuery) => {
+      if (!prevQuery) return undefined
+      if (prevQuery.queryKey[3] !== giornoOggi) return undefined
+      if (prevQuery.queryKey[5] !== (role === "admin" ? asOf : null)) return undefined
+      return prev
+    },
   })
 
   const { data: dettaglioAnnoData } = useQuery({

@@ -282,14 +282,12 @@ async function main() {
     }
   }
 
-  // Mese corrente: precompute per ogni giorno (ieri, ecc.) così la UI con data picker è istantanea.
-  if (includeCurrentMonth) {
-    const y = end.year
-    const m = end.month
-    const lastPrecomputed = end.day
-    console.log(`[precompute] giorni mese corrente ${y}-${pad2(m)} (1..${lastPrecomputed})`)
-    for (let d = 1; d <= lastPrecomputed; d++) {
-      const asOf = ymdToAsOfKey(y, m, d)
+  // Giorni già chiusi del mese in corso: il venduto non cambia più, va sigillato giorno per giorno.
+  const nowParts = toDateParts(now)
+  if (nowParts.day > 1) {
+    console.log(`[precompute] sigillo giorni chiusi ${nowParts.year}-${pad2(nowParts.month)} (1..${nowParts.day - 1})`)
+    for (let d = 1; d < nowParts.day; d++) {
+      const asOf = ymdToAsOfKey(nowParts.year, nowParts.month, d)
       const dashCached = await cacheGet({
         name: "data.dashboard",
         scope,
@@ -298,19 +296,19 @@ async function main() {
         depSig,
       })
       if (!dashCached || force) {
-        console.log(`[precompute] giorno ${y}-${pad2(m)}-${pad2(d)} dashboard`)
+        console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dashboard`)
         await call(getDashboard as any, { asOf })
       }
       const meseCached = await cacheGet({
         name: "data.dettaglio-mese",
         scope,
-        params: { anno: y, mese: m, giorno: d, consulente: null },
+        params: { anno: nowParts.year, mese: nowParts.month, giorno: d, consulente: null },
         asOf,
         depSig,
       })
       if (!meseCached || force) {
-        console.log(`[precompute] giorno ${y}-${pad2(m)}-${pad2(d)} dettaglio-mese`)
-        await call(getDettaglioMese as any, { anno: y, mese: m, giorno: d, asOf })
+        console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dettaglio-mese`)
+        await call(getDettaglioMese as any, { anno: nowParts.year, mese: nowParts.month, giorno: d, asOf })
       }
     }
   }

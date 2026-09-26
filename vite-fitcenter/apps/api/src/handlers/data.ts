@@ -447,6 +447,47 @@ function getFrozenDepSig(asOfKey: string, depSig: string): string {
   return isAsOfToday(asOfKey) ? depSig : `frozen:${asOfKey}`
 }
 
+function previousDateKey(dateKey: string): string {
+  const p = parseYmdKey(baseAsOfDateKey(dateKey))
+  if (!p) return dateKey
+  const d = new Date(Date.UTC(p.year, p.month - 1, p.day, 12, 0, 0))
+  d.setUTCDate(d.getUTCDate() - 1)
+  return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
+}
+
+async function persistTotalsSnapshot(args: {
+  name: "data.dashboard" | "data.dettaglio-mese" | "data.dettaglio-anno"
+  scope: string
+  params: unknown
+  asOfKey: string
+  cacheAsOf: string
+  depSig: string
+  ttlMs: number
+  value: unknown
+}): Promise<void> {
+  await cacheSet({
+    name: args.name,
+    scope: args.scope,
+    params: args.params,
+    asOf: args.cacheAsOf,
+    depSig: args.depSig,
+    ttlMs: args.ttlMs,
+    value: args.value,
+  })
+  const dateKey = baseAsOfDateKey(args.asOfKey)
+  if (args.cacheAsOf !== dateKey) {
+    await cacheSet({
+      name: args.name,
+      scope: args.scope,
+      params: args.params,
+      asOf: dateKey,
+      depSig: args.depSig,
+      ttlMs: isAsOfToday(args.asOfKey) ? args.ttlMs : HISTORICAL_TTL_MS,
+      value: args.value,
+    })
+  }
+}
+
 const sqlInflight = new Map<string, Promise<unknown>>()
 function shareInflight<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const existing = sqlInflight.get(key)
@@ -474,10 +515,11 @@ function dashboardCacheAsOf(asOfKey: string): string {
   return cacheAsOfKeyForTotals(asOfKey)
 }
 
-/** Chiavi cache «oggi»: slot corrente, poi quello precedente (niente ora/giorno intero: troppo vecchi). */
+/** Chiavi cache: per i giorni chiusi la data; per oggi slot + snapshot del giorno. */
 function dashboardCacheLookupKeys(asOfKey: string): string[] {
-  if (!isAsOfToday(asOfKey)) return [cacheAsOfKeyForTotals(asOfKey)]
-  return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1)])]
+  const dateKey = baseAsOfDateKey(asOfKey)
+  if (!isAsOfToday(asOfKey)) return [cacheAsOfKeyForTotals(asOfKey), dateKey]
+  return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1), dateKey])]
 }
 
 async function readDashboardCache(
@@ -499,6 +541,17 @@ async function readDashboardCache(
       ? await cacheGetAllowExpired<DashboardStats>({ ...args, depSig })
       : await cacheGet<DashboardStats>({ ...args, depSig })
     if (hit) return { stats: hit, cacheAsOf }
+  }
+  if (allowExpired && isAsOfToday(asOfKey)) {
+    const yesterday = previousDateKey(asOfKey)
+    const hit = await cacheGetAllowExpired<DashboardStats>({
+      name: "data.dashboard",
+      scope,
+      params: cacheKeyParams,
+      asOf: yesterday,
+      depSig,
+    })
+    if (hit) return { stats: hit, cacheAsOf: yesterday }
   }
   return null
 }
@@ -646,6 +699,52 @@ async function computeDashboardSqlStats(
   )
 }
 
+let closedDaysSealStarted = false
+async function sealClosedDaysInBackground(): Promise<void> {
+  if (closedDaysSealStarted) return
+  closedDaysSealStarted = true
+  const today = getTodayKey()
+  const p = parseYmdKey(today)
+  if (!p) return
+  const adminUser = { username: "admin", nome: "Amministratore", role: "admin" as const }
+  try {
+    for (let d = p.day - 1; d >= 1; d--) {
+      const asOf = `${p.year}-${pad2(p.month)}-${pad2(d)}`
+      const depSig = await getBudgetDepSig()
+      const dash = await cacheGet<DashboardStats>({
+        name: "data.dashboard",
+        scope: "admin",
+        params: { consulente: null },
+        asOf,
+        depSig,
+      })
+      const mese = await cacheGet<DettaglioMeseResponse>({
+        name: "data.dettaglio-mese",
+        scope: "admin",
+        params: { anno: p.year, mese: p.month, giorno: d, consulente: null },
+        asOf,
+        depSig,
+      })
+      if (dash && mese) continue
+      const fakeReq = { query: { asOf, anno: p.year, mese: p.month, giorno: d }, user: adminUser } as unknown as Request
+      const fakeRes: any = {
+        statusCode: 200,
+        status(code: number) {
+          fakeRes.statusCode = code
+          return fakeRes
+        },
+        json() {
+          return fakeRes
+        },
+      }
+      if (!dash) await getDashboard(fakeReq, fakeRes)
+      if (!mese) await getDettaglioMese(fakeReq, fakeRes)
+    }
+  } catch {
+    closedDaysSealStarted = false
+  }
+}
+
 async function refreshDashboardCache(args: {
   scope: string
   cacheKeyParams: { consulente: string | null }
@@ -659,11 +758,12 @@ async function refreshDashboardCache(args: {
       `dashboard:${args.scope}:${String(args.consulente ?? "")}:${args.cacheAsOf}`,
       () => withDashboardSqlTimeout(computeDashboardSqlStats(args.consulente, args.asOf))
     )
-    await cacheSet({
+    await persistTotalsSnapshot({
       name: "data.dashboard",
       scope: args.scope,
       params: args.cacheKeyParams,
-      asOf: args.cacheAsOf,
+      asOfKey: args.asOf.key,
+      cacheAsOf: args.cacheAsOf,
       depSig: args.depSig,
       ttlMs: getCacheTtlMsForAsOf(args.cacheAsOf, 0),
       value: stats,
@@ -683,14 +783,18 @@ export async function getDashboard(req: Request, res: Response) {
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = { consulente: consulente ?? null }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
-    if (cachedHit) return res.json(cachedHit.stats)
+    if (cachedHit) {
+      if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
+      return res.json(cachedHit.stats)
+    }
 
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
-      if (isAsOfToday(asOf.key)) {
-        const staleHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
-        if (staleHit) {
-          res.json(staleHit.stats)
+      if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
+      const staleHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+      if (staleHit) {
+        res.json(staleHit.stats)
+        if (isAsOfToday(asOf.key)) {
           void refreshDashboardCache({
             scope,
             cacheKeyParams,
@@ -699,19 +803,20 @@ export async function getDashboard(req: Request, res: Response) {
             consulente,
             asOf,
           })
-          return
         }
+        return
       }
       try {
         const stats = await shareInflight(
           `dashboard:${scope}:${String(consulente ?? "")}:${dashboardCacheAsOf(asOf.key)}`,
           () => withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
         )
-        await cacheSet({
+        await persistTotalsSnapshot({
           name: "data.dashboard",
           scope,
           params: cacheKeyParams,
-          asOf: dashboardCacheAsOf(asOf.key),
+          asOfKey: asOf.key,
+          cacheAsOf: dashboardCacheAsOf(asOf.key),
           depSig,
           ttlMs: getCacheTtlMsForAsOf(dashboardCacheAsOf(asOf.key), 0),
           value: stats,
@@ -719,26 +824,9 @@ export async function getDashboard(req: Request, res: Response) {
         return res.json(stats)
       } catch (e) {
         if ((e as Error).message !== "__FITCENTER_DASHBOARD_SQL_TIMEOUT__") throw e
-        const staleHit = isAsOfToday(asOf.key)
-          ? await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
-          : null
-        if (staleHit) return res.json(staleHit.stats)
-        const leads = leadsStore.list({})
-        const leadVinti = leads.filter((l) => l.stato === "chiuso_vinto").length
-        const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
-        const stats = getMockDashboardStats(leads.length, leadVinti, leadPersi, consulente)
-        if (isAsOfToday(asOf.key)) {
-          await cacheSet({
-            name: "data.dashboard",
-            scope,
-            params: cacheKeyParams,
-            asOf: dashboardCacheAsOf(asOf.key),
-            depSig,
-            ttlMs: 10_000,
-            value: stats,
-          })
-        }
-        return res.json(stats)
+        const staleAfter = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+        if (staleAfter) return res.json(staleAfter.stats)
+        return res.status(504).json({ message: `Timeout SQL dashboard dopo ${DASHBOARD_SQL_TIMEOUT_MS} ms` })
       }
     }
     const leads = leadsStore.list({})
@@ -3007,10 +3095,11 @@ function buildDettaglioBlocco(
 
 function dettaglioMeseCacheLookupKeys(asOfKey: string, anno: number, mese: number): string[] {
   if (isPastCalendarMonth(anno, mese)) return [lastDayOfMonthKey(anno, mese)]
+  const dateKey = baseAsOfDateKey(asOfKey)
   if (isAsOfToday(asOfKey)) {
-    return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1)])]
+    return [...new Set([todayHourCacheKey(asOfKey, 0), todayHourCacheKey(asOfKey, -1), dateKey])]
   }
-  return [cacheAsOfKeyForTotals(asOfKey)]
+  return [...new Set([cacheAsOfKeyForTotals(asOfKey), dateKey])]
 }
 
 async function readDettaglioMeseCache(
@@ -3042,6 +3131,41 @@ async function readDettaglioMeseCache(
     if (hit) return { result: hit, cacheAsOf, cacheParams }
   }
   return null
+}
+
+function synthesizeTodayDettaglioFromYesterday(
+  yesterday: DettaglioMeseResponse,
+  anno: number,
+  mese: number,
+  giorno: number,
+  giorniNelMese: number
+): DettaglioMeseResponse {
+  const dataOra = new Date(anno, mese - 1, giorno)
+  const giornoLabel = `${GIORNI_SETTIMANA[dataOra.getDay()].toUpperCase()} ${giorno} ${MESI_LABEL[mese - 1].toUpperCase()} ${anno}`
+  const budgetGiorno = giorniNelMese > 0 ? yesterday.dettaglioMese.budget / giorniNelMese : 0
+  return {
+    anno,
+    mese,
+    meseLabel: `${MESI_LABEL[mese - 1].toUpperCase()} ${anno}`,
+    giorno,
+    giornoLabel,
+    giorniNelMese,
+    dettaglioGiorno: {
+      ...yesterday.dettaglioGiorno,
+      budget: Math.round(budgetGiorno * 100) / 100,
+      budgetProgressivo: Math.round(budgetGiorno * 100) / 100,
+      consuntivo: 0,
+      scostamento: Math.round(-budgetGiorno * 100) / 100,
+      trend: 0,
+      perConsulente: (yesterday.dettaglioGiorno.perConsulente ?? []).map((r) => ({
+        ...r,
+        consuntivo: 0,
+        scostamento: Math.round(-(r.budget ?? 0) * 100) / 100,
+        trend: 0,
+      })),
+    },
+    dettaglioMese: yesterday.dettaglioMese,
+  }
 }
 
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
@@ -3182,17 +3306,9 @@ async function computeAndCacheDettaglioMese(args: {
         bloccoMese = sqlBuilt.bloccoMese
       } catch (e) {
         if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
-          dettaglioMeseWarning = `Timeout SQL per dettaglio-mese dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms — uso dati mock`
-          fromSql = false
-          const { mockAbbonamenti, mockBudget } = await import("../data/mock-gestionale.js")
-          abbonamenti = mockAbbonamenti
-          budgetMese = mockBudget.find((b) => b.anno === anno && b.mese === mese)?.budget ?? 60000
-          if (consulente) abbonamenti = abbonamenti.filter((a) => a.consulenteNome === consulente)
-          budgetGiorno = budgetMese / giorniNelMese
-          budgetProgressivoMese = (budgetMese * giorno) / giorniNelMese
-        } else {
           throw e
         }
+        throw e
       }
     }
 
@@ -3248,19 +3364,16 @@ async function computeAndCacheDettaglioMese(args: {
       _debug: { consulente, idUtente: idUtente ?? undefined },
       ...(dettaglioMeseWarning ? { _warning: dettaglioMeseWarning } : {}),
     }
-    if (dettaglioMeseWarning && !isAsOfToday(asOf.key)) {
-      // Evita di "congelare" dati mock su storico: se oggi abbiamo problemi di rete/SQL,
-      // al prossimo refresh (con storico non scaduto) verrà ricalcolato solo dopo un buon segnale.
-      return result
-    }
+    if (dettaglioMeseWarning) return result
 
-    await cacheSet({
+    await persistTotalsSnapshot({
       name: "data.dettaglio-mese",
       scope,
       params: cacheParams,
-      asOf: cacheAsOf,
+      asOfKey: asOf.key,
+      cacheAsOf,
       depSig,
-      ttlMs: dettaglioMeseWarning ? 10_000 : getCacheTtlMsForAsOf(cacheAsOf, 0),
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
       value: result,
     })
     return result
@@ -3305,17 +3418,39 @@ export async function getDettaglioMese(req: Request, res: Response) {
       depSig,
     }
     const inflightKey = `dettaglio-mese:${scope}:${cacheAsOf}:${JSON.stringify(cacheParams)}`
-    if (gestionaleSql.isGestionaleConfigured() && isAsOfToday(asOf.key)) {
-      const stale = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, true)
-      if (stale) {
-        res.json(stale.result)
+    const stale = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, true)
+    if (stale) {
+      res.json(stale.result)
+      if (isAsOfToday(asOf.key)) {
         void shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs)).catch(() => {})
-        return
+      }
+      return
+    }
+
+    if (isAsOfToday(asOf.key)) {
+      const yKey = previousDateKey(asOf.key)
+      const yParts = parseYmdKey(yKey)
+      if (yParts && yParts.month === mese && yParts.year === anno) {
+        const yHit = await readDettaglioMeseCache(scope, yKey, anno, mese, yParts.day, consulente, depSig, true)
+        if (yHit) {
+          res.json(synthesizeTodayDettaglioFromYesterday(yHit.result, anno, mese, giorno, giorniNelMese))
+          void shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs)).catch(() => {})
+          return
+        }
       }
     }
 
-    const result = await shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs))
-    return res.json(result)
+    try {
+      const result = await shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs))
+      return res.json(result)
+    } catch (e) {
+      if ((e as Error).message === "__FITCENTER_DETTAGLIO_SQL_TIMEOUT__") {
+        const staleAfter = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, true)
+        if (staleAfter) return res.json(staleAfter.result)
+        return res.status(504).json({ message: `Timeout SQL per dettaglio-mese dopo ${DETTAGLIO_SQL_TIMEOUT_MS} ms` })
+      }
+      throw e
+    }
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }
@@ -3373,11 +3508,12 @@ async function computeAndCacheDettaglioAnno(args: {
 
   const dettaglio = buildDettaglioBloccoFromPerConsulente(perConsulente)
   const payload = { anno, annoLabel: String(anno), dettaglio }
-  await cacheSet({
+  await persistTotalsSnapshot({
     name: "data.dettaglio-anno",
     scope,
     params: cacheKeyParams,
-    asOf: cacheAsOf,
+    asOfKey: asOf.key,
+    cacheAsOf,
     depSig,
     ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
     value: payload,

@@ -134,18 +134,7 @@ export function isTodayCacheAsOf(asOf: string, todayKey?: string): boolean {
   return baseAsOfDateKey(asOf) === t
 }
 
-/** Cache storica recente con vendite 0: di solito errore/timeout, non un mese davvero vuoto. */
-export function isLikelyPoisonedZeroCache(name: string, asOf: string, value: unknown): boolean {
-  if (!isHistoricalTotalsCacheName(name)) return false
-  const todayKey = getTodayCacheKey()
-  if (isTodayCacheAsOf(asOf, todayKey)) return false
-  const p = parseYmdKey(asOf)
-  const t = parseYmdKey(todayKey)
-  if (!p || !t) return false
-  const diffDays =
-    (Date.UTC(t.year, t.month - 1, t.day) - Date.UTC(p.year, p.month - 1, p.day)) / 86_400_000
-  if (diffDays < 1 || diffDays > 120) return false
-
+function isZeroVendutoPayload(name: string, value: unknown): boolean {
   if (name === "data.dashboard") {
     const d = value as { entrateMese?: number }
     return (d.entrateMese ?? 0) === 0
@@ -158,6 +147,22 @@ export function isLikelyPoisonedZeroCache(name: string, asOf: string, value: unk
     return (d.dettaglioMese?.consuntivo ?? 0) === 0 && (d.dettaglioGiorno?.consuntivo ?? 0) === 0
   }
   return false
+}
+
+/** Cache con vendite 0: di solito timeout/mock, non un giorno/mese davvero vuoto (dopo il giorno 1). */
+export function isLikelyPoisonedZeroCache(name: string, asOf: string, value: unknown): boolean {
+  if (!isHistoricalTotalsCacheName(name)) return false
+  const todayKey = getTodayCacheKey()
+  const p = parseYmdKey(asOf)
+  const t = parseYmdKey(todayKey)
+  if (!p || !t) return false
+  if (p.day <= 1 && p.month === t.month && p.year === t.year) return false
+  if (!isTodayCacheAsOf(asOf, todayKey)) {
+    const diffDays =
+      (Date.UTC(t.year, t.month - 1, t.day) - Date.UTC(p.year, p.month - 1, p.day)) / 86_400_000
+    if (diffDays < 1 || diffDays > 120) return false
+  }
+  return isZeroVendutoPayload(name, value)
 }
 
 /** Elimina righe cache (es. rigenerazione precompute --force). */
@@ -218,6 +223,39 @@ function isHistoricalCacheEntry(name: string, asOf: string, todayKey: string): b
   const isHistoricalReportConsulenti =
     name === "data.report-consulenti" && /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey < todayKey
   return (isHistoricalTotalsName && !isTodayCacheAsOf(asOf, todayKey)) || isHistoricalReportConsulenti
+}
+
+function readLatestForDatePrefix<T>(
+  db: any,
+  name: string,
+  scope: string,
+  paramsHash: string,
+  dateKey: string,
+  treatAsNoExpiry: boolean,
+  now: number
+): T | null {
+  const like = `${dateKey}T%`
+  const rows = db.exec(
+    `SELECT value_json, expires_at_ms FROM cache_results
+     WHERE name = ? AND scope = ? AND params_hash = ?
+     AND (asof = ? OR asof LIKE ?)
+     ORDER BY created_at_ms DESC
+     LIMIT 40;`,
+    [name, scope, paramsHash, dateKey, like]
+  )
+  const values = rows?.[0]?.values ?? []
+  for (const row of values) {
+    const valueJson = row[0]
+    const expiresAt = Number(row[1] ?? 0)
+    if (!treatAsNoExpiry && (Number.isNaN(expiresAt) || expiresAt < now)) continue
+    if (!valueJson) continue
+    try {
+      return JSON.parse(String(valueJson)) as T
+    } catch {
+      continue
+    }
+  }
+  return null
 }
 
 function readCacheRow<T>(
@@ -292,6 +330,10 @@ export async function cacheGet<T>(args: {
     if (hit) return hit
   }
 
+  const dateKey = baseAsOfDateKey(args.asOf)
+  hit = accept(readLatestForDatePrefix<T>(db, args.name, args.scope, paramsHash, dateKey, treatAsNoExpiry, now))
+  if (hit) return hit
+
   return null
 }
 
@@ -326,6 +368,11 @@ export async function cacheGetAllowExpired<T>(args: {
     hit = accept(tryReadExpired(args.asOf, null))
     if (hit) return hit
   }
+
+  const dateKey = baseAsOfDateKey(args.asOf)
+  hit = accept(readLatestForDatePrefix<T>(db, args.name, args.scope, paramsHash, dateKey, true, now))
+  if (hit) return hit
+
   return null
 }
 
@@ -345,7 +392,7 @@ export async function cacheSet(args: {
   const expiresAt = now + Math.max(0, args.ttlMs)
   const todayKey = getTodayCacheKey()
   const treatAsNoExpiry = isHistoricalCacheEntry(args.name, args.asOf, todayKey)
-  if (treatAsNoExpiry && isLikelyPoisonedZeroCache(args.name, args.asOf, args.value)) {
+  if (isLikelyPoisonedZeroCache(args.name, args.asOf, args.value)) {
     return
   }
   const depSig = treatAsNoExpiry ? frozenDepSigForAsOf(args.asOf) : args.depSig
