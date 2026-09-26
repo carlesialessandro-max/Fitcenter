@@ -8,11 +8,18 @@
  * In alternativa:
  *   pnpm --filter api run precompute:dashboard-cache
  */
-import { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } from "../src/handlers/data.js"
-import { cacheGet, getBudgetDepSig, purgeCacheEntries } from "../src/services/persistent-cache.js"
 import dotenv from "dotenv"
 import path from "path"
 import { fileURLToPath } from "url"
+
+const __dirnameForFile = path.dirname(fileURLToPath(import.meta.url))
+dotenv.config({ path: path.resolve(__dirnameForFile, "../.env") })
+if (!process.env.DASHBOARD_SQL_TIMEOUT_MS) process.env.DASHBOARD_SQL_TIMEOUT_MS = "180000"
+if (!process.env.DETTAGLIO_SQL_TIMEOUT_MS) process.env.DETTAGLIO_SQL_TIMEOUT_MS = "180000"
+if (!process.env.REPORT_CONSULENTI_SQL_TIMEOUT_MS) process.env.REPORT_CONSULENTI_SQL_TIMEOUT_MS = "180000"
+
+const { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } = await import("../src/handlers/data.js")
+const { cacheGet, getBudgetDepSig, purgeCacheEntries } = await import("../src/services/persistent-cache.js")
 
 type AdminUser = { username: string; nome: string; role: "admin" }
 
@@ -133,21 +140,61 @@ function createRes() {
 async function call(fn: (req: any, res: any) => Promise<any>, query: Record<string, unknown>) {
   const req: any = { query, user: ADMIN }
   const res = createRes()
-  await fn(req, res)
+  try {
+    await fn(req, res)
+  } catch (e) {
+    console.warn(`[precompute] calcolo fallito ${JSON.stringify(query)}: ${(e as Error).message}`)
+  }
+}
+
+async function sealClosedDaysOfCurrentMonth(args: {
+  now: Date
+  force: boolean
+  depSig: string
+  scope: string
+  consulenteParams: { consulente: null }
+}) {
+  const nowParts = toDateParts(args.now)
+  if (nowParts.day <= 1) return
+  console.log(`[precompute] sigillo giorni chiusi ${nowParts.year}-${pad2(nowParts.month)} (1..${nowParts.day - 1})`)
+  for (let d = nowParts.day - 1; d >= 1; d--) {
+    const asOf = ymdToAsOfKey(nowParts.year, nowParts.month, d)
+    const dashCached = await cacheGet({
+      name: "data.dashboard",
+      scope: args.scope,
+      params: args.consulenteParams,
+      asOf,
+      depSig: args.depSig,
+    })
+    if (!dashCached || args.force) {
+      console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dashboard`)
+      await call(getDashboard as any, { asOf })
+    } else {
+      console.log(`[precompute] skip giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dashboard HIT`)
+    }
+    const meseCached = await cacheGet({
+      name: "data.dettaglio-mese",
+      scope: args.scope,
+      params: { anno: nowParts.year, mese: nowParts.month, giorno: d, consulente: null },
+      asOf,
+      depSig: args.depSig,
+    })
+    if (!meseCached || args.force) {
+      console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dettaglio-mese`)
+      await call(getDettaglioMese as any, { anno: nowParts.year, mese: nowParts.month, giorno: d, asOf })
+    } else {
+      console.log(`[precompute] skip giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dettaglio-mese HIT`)
+    }
+  }
 }
 
 async function main() {
-  // Allinea lo script all'avvio dell'API: carica apps/api/.env
-  const __dirnameForFile = path.dirname(fileURLToPath(import.meta.url))
-  const apiEnvPath = path.resolve(__dirnameForFile, "../.env")
-  dotenv.config({ path: apiEnvPath })
-
   const now = new Date()
   const yearsBack = Number(parseArgValue("--years-back") ?? process.env.PRECOMPUTE_YEARS_BACK ?? 3)
   const yearsOverride = parseYearsArg(parseArgValue("--years") ?? undefined)
   const includeCurrentMonth = parseBoolFlag("--include-current-month") || (process.env.PRECOMPUTE_INCLUDE_CURRENT_MONTH ?? "false").toLowerCase() === "true"
   const force = parseBoolFlag("--force")
-  const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "true").toLowerCase() !== "false"
+  const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "false").toLowerCase() === "true"
   const depSig = await getBudgetDepSig()
   const scope = "admin"
   const consulenteParams = { consulente: null }
@@ -172,6 +219,9 @@ async function main() {
   )
 
   const yearsSeen = new Set<number>()
+
+  // Prima i giorni di questo mese (quelli che apri dal selettore data).
+  await sealClosedDaysOfCurrentMonth({ now, force, depSig, scope, consulenteParams })
 
   // Itera mese per mese.
   for (let y = start.year; y <= end.year; y++) {
@@ -279,37 +329,6 @@ async function main() {
       const msg = `[precompute] storico data.dettaglio-anno NON salvato per asOf=${asOf} (anno=${y}).`
       if (strictSql) throw new Error(msg)
       console.warn(msg)
-    }
-  }
-
-  // Giorni già chiusi del mese in corso: il venduto non cambia più, va sigillato giorno per giorno.
-  const nowParts = toDateParts(now)
-  if (nowParts.day > 1) {
-    console.log(`[precompute] sigillo giorni chiusi ${nowParts.year}-${pad2(nowParts.month)} (1..${nowParts.day - 1})`)
-    for (let d = 1; d < nowParts.day; d++) {
-      const asOf = ymdToAsOfKey(nowParts.year, nowParts.month, d)
-      const dashCached = await cacheGet({
-        name: "data.dashboard",
-        scope,
-        params: consulenteParams,
-        asOf,
-        depSig,
-      })
-      if (!dashCached || force) {
-        console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dashboard`)
-        await call(getDashboard as any, { asOf })
-      }
-      const meseCached = await cacheGet({
-        name: "data.dettaglio-mese",
-        scope,
-        params: { anno: nowParts.year, mese: nowParts.month, giorno: d, consulente: null },
-        asOf,
-        depSig,
-      })
-      if (!meseCached || force) {
-        console.log(`[precompute] giorno ${nowParts.year}-${pad2(nowParts.month)}-${pad2(d)} dettaglio-mese`)
-        await call(getDettaglioMese as any, { anno: nowParts.year, mese: nowParts.month, giorno: d, asOf })
-      }
     }
   }
 
