@@ -146,6 +146,11 @@ function isZeroVendutoPayload(name: string, value: unknown): boolean {
     }
     return (d.dettaglioMese?.consuntivo ?? 0) === 0 && (d.dettaglioGiorno?.consuntivo ?? 0) === 0
   }
+  if (name === "data.andamento-vendite") {
+    const d = value as { totalEuro?: number; ambito?: string }
+    if (d.ambito === "bambini") return false
+    return (d.totalEuro ?? 0) === 0
+  }
   return false
 }
 
@@ -214,7 +219,12 @@ export function frozenDepSigForAsOf(asOf: string): string {
 }
 
 function isHistoricalTotalsCacheName(name: string): boolean {
-  return name === "data.dashboard" || name === "data.dettaglio-mese" || name === "data.dettaglio-anno"
+  return (
+    name === "data.dashboard" ||
+    name === "data.dettaglio-mese" ||
+    name === "data.dettaglio-anno" ||
+    name === "data.andamento-vendite"
+  )
 }
 
 function isHistoricalCacheEntry(name: string, asOf: string, todayKey: string): boolean {

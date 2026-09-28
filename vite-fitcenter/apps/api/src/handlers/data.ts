@@ -456,7 +456,7 @@ function previousDateKey(dateKey: string): string {
 }
 
 async function persistTotalsSnapshot(args: {
-  name: "data.dashboard" | "data.dettaglio-mese" | "data.dettaglio-anno"
+  name: "data.dashboard" | "data.dettaglio-mese" | "data.dettaglio-anno" | "data.andamento-vendite"
   scope: string
   params: unknown
   asOfKey: string
@@ -2593,33 +2593,141 @@ export async function getVenditeStorico(req: Request, res: Response) {
 }
 
 /** Distribuzione vendite (movimenti) per categoria e durata (abbonamenti venduti).
- *  Periodo: ultimi N mesi (default 12). */
+ *  Periodo: mese scelto. Giorni chiusi in cache permanente; solo il mese in corso si ricalcola. */
+function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string): string | null {
+  const blob = `${categoria} ${abbonamento ?? ""}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
+  if (/ACQUATIC/.test(blob)) return "Acquaticità"
+  if (/AGONIST/.test(blob)) return "Squadra agonistica"
+  if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
+  return null
+}
+
 export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Response) {
   try {
     const operatoreNome = getOperatoreConsulenteNome(req)
     const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const ambito = String(req.query.ambito ?? "adulti").toLowerCase() === "bambini" ? "bambini" : "adulti"
 
-    const now = new Date()
-    const to = now.toISOString().slice(0, 10)
-
-    // Richiesta: "mese corrente" (non ultimi N mesi).
-    const year = now.getUTCFullYear()
-    const monthIndex = now.getUTCMonth() // 0..11
-    const from = new Date(Date.UTC(year, monthIndex, 1, 12, 0, 0)).toISOString().slice(0, 10)
+    const oggi = toDateParts(new Date())
+    const anno = parseIntParam(req.query.anno, 2000, 2100) ?? oggi.year
+    const mese = parseIntParam(req.query.mese, 1, 12) ?? oggi.month
+    const last = new Date(anno, mese, 0).getDate()
+    const isCurrentMonth = anno === oggi.year && mese === oggi.month
+    const giornoCap = parseIntParam(req.query.giorno, 1, 31)
+    const from = `${anno}-${pad2(mese)}-01`
+    const toDay = isCurrentMonth
+      ? Math.min(oggi.day, last)
+      : giornoCap != null
+        ? Math.min(giornoCap, last)
+        : last
+    const to = `${anno}-${pad2(mese)}-${pad2(toDay)}`
 
     let idUtente = await resolveConsultantId(consulente)
-    // Se admin non seleziona consulente: default = somma delle 3 consulenti (come dashboard).
     if (!idUtente) {
       const labels = budgetPerConsulente.getConsulentiLabels()
       const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
       idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
     }
-    const { rows, totalCount, byAbbonamento, totalEuro, crossEuro } =
-      await gestionaleSql.getVenditeMovimentiCategoriaDurata(from, to, idUtente ?? undefined)
 
-    res.json({ from, to, totalCount, totalEuro, crossEuro, rows, byAbbonamento })
+    const scope = cacheScope(req)
+    const cacheAsOf = isCurrentMonth ? todayHourCacheKey(getTodayKey()) : to
+    const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
+    const cacheParams = { from, to, ambito, consulente: consulente ?? null }
+    const cacheArgs = {
+      name: "data.andamento-vendite" as const,
+      scope,
+      params: cacheParams,
+      asOf: cacheAsOf,
+      depSig,
+    }
+    const fresh = await cacheGet<Record<string, unknown>>(cacheArgs)
+    if (fresh) return res.json(fresh)
+    if (!isCurrentMonth) {
+      const hist = await cacheGetAllowExpired<Record<string, unknown>>(cacheArgs)
+      if (hist) return res.json(hist)
+    } else {
+      const stale = await cacheGetAllowExpired<Record<string, unknown>>(cacheArgs)
+      if (stale) {
+        res.json(stale)
+        void (async () => {
+          try {
+            const payload = await computeAndamentoPayload({ from, to, idUtente, ambito })
+            await persistTotalsSnapshot({
+              name: "data.andamento-vendite",
+              scope,
+              params: cacheParams,
+              asOfKey: getTodayKey(),
+              cacheAsOf,
+              depSig,
+              ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
+              value: payload,
+            })
+          } catch {
+            /* best-effort */
+          }
+        })()
+        return
+      }
+    }
+
+    const payload = await computeAndamentoPayload({ from, to, idUtente, ambito })
+    await persistTotalsSnapshot({
+      name: "data.andamento-vendite",
+      scope,
+      params: cacheParams,
+      asOfKey: isCurrentMonth ? getTodayKey() : to,
+      cacheAsOf,
+      depSig,
+      ttlMs: getCacheTtlMsForAsOf(cacheAsOf, 0),
+      value: payload,
+    })
+    res.json(payload)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+async function computeAndamentoPayload(args: {
+  from: string
+  to: string
+  idUtente: string | undefined
+  ambito: "adulti" | "bambini"
+}) {
+  const { rows, totalCount, byAbbonamento, totalEuro, crossEuro } =
+    await gestionaleSql.getVenditeMovimentiCategoriaDurata(
+      args.from,
+      args.to,
+      args.idUtente ?? undefined,
+      args.ambito
+    )
+  let mappedRows = rows
+  if (args.ambito === "bambini") {
+    const agg = new Map<string, { categoria: string; durataMesi: number | null; count: number; totalEuro: number }>()
+    for (const r of rows) {
+      const tipo = classifyBambiniTipoAbbonamento(r.categoria) ?? "Altro"
+      const key = `${tipo}|${r.durataMesi ?? "x"}`
+      const prev = agg.get(key)
+      if (!prev) agg.set(key, { categoria: tipo, durataMesi: r.durataMesi, count: r.count, totalEuro: r.totalEuro })
+      else {
+        prev.count += r.count
+        prev.totalEuro += r.totalEuro
+      }
+    }
+    mappedRows = Array.from(agg.values())
+  }
+  return {
+    from: args.from,
+    to: args.to,
+    ambito: args.ambito,
+    totalCount,
+    totalEuro: args.ambito === "bambini" ? mappedRows.reduce((s, r) => s + r.totalEuro, 0) : totalEuro,
+    crossEuro: args.ambito === "bambini" ? 0 : crossEuro,
+    rows: mappedRows,
+    byAbbonamento,
   }
 }
 

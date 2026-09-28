@@ -3172,6 +3172,26 @@ function whereExcludeAbbonamentiSpecificiIds(alias = "R"): string {
   `
 }
 
+/** Adulti vs bambini: solo tipo abbonamento/categoria, mai l'età anagrafica. */
+export type AndamentoAmbito = "adulti" | "bambini"
+
+function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDurataDescrizione], ${alias}.[AbbonamentoDescrizione], N''))))`
+  const isBambini = `(
+    ${cat} LIKE N'%GESTANTI%' OR ${abb} LIKE N'%GESTANTI%'
+    OR ${cat} LIKE N'%ACQUATIC%' OR ${abb} LIKE N'%ACQUATIC%'
+    OR ${cat} LIKE N'%AGONIST%' OR ${abb} LIKE N'%AGONIST%'
+    OR (
+      ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%'))
+      AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
+      AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%'
+    )
+  )`
+  if (ambito === "bambini") return `\n      AND ${isBambini}`
+  return `\n      AND NOT ${isBambini}`
+}
+
 function whereEsclusioniVenditeView(alias = "R"): string {
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], ''))))`
   const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], ''))))`
@@ -4493,7 +4513,8 @@ export async function getVenditeTotaliPerAnno(
 export async function getVenditeMovimentiCategoriaDurata(
   from: string,
   to: string,
-  idConsultant?: string
+  idConsultant?: string,
+  ambito: AndamentoAmbito = "adulti"
 ): Promise<{
   totalCount: number
   totalEuro: number
@@ -4533,8 +4554,10 @@ export async function getVenditeMovimentiCategoriaDurata(
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
     const whereAndamentoEsclusioniView = `
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+      AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
       ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
       ${whereExcludeAbbonamentiSpecificiIds("R")}
+      ${whereAndamentoAmbito("R", ambito)}
     `
     const consultantFilter =
       idConsultant && ids.length > 0
@@ -4558,6 +4581,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          WHERE 1=1
            ${consultantFilter}
           ${whereExcludeAbbonamentiSpecificiIds("R")}
+          ${whereAndamentoAmbito("R", ambito)}
        ),
        PerIscrizione AS (
          SELECT
@@ -4670,14 +4694,16 @@ export async function getVenditeMovimentiCategoriaDurata(
     const baseEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
     let crossEuro = 0
     let totalEuro = baseEuro
-    try {
-      if (idConsultant) {
-        const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-        crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
+    if (ambito === "adulti") {
+      try {
+        if (idConsultant) {
+          const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
+          crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
+        }
+        totalEuro = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
+      } catch {
+        /* cross opzionale */
       }
-      totalEuro = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
-    } catch {
-      /* cross opzionale */
     }
 
     return { totalCount, totalEuro, crossEuro, rows, byAbbonamento }

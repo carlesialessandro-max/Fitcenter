@@ -30,6 +30,7 @@ const navOperatore: NavItem[] = [
     { to: "/stampa-report", label: "Stampa report" },
     { to: "/abbonamenti", label: "Abbonamenti in Scadenza" },
     { to: "/andamento-vendite", label: "Andamento Vendite" },
+    { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
     { to: "/vendite-cross", label: "Cross" },
     { to: "/piscina", label: "Mappa Piscina" },
     navLezioniPrivateGroup,
@@ -105,6 +106,7 @@ const navScuolaNuoto: NavItem[] = [
     label: "Scuola Nuoto",
     children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
   },
+  { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
   navLezioniPrivateGroup,
 ] as const
 const navBagnini: NavItem[] = [
@@ -153,6 +155,7 @@ const navAdmin: NavItem[] = [
       { to: "/telefonate", label: "Telefonate" },
       { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
       { to: "/andamento-vendite", label: "Andamento vendite" },
+      { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
       { to: "/vendite-cross", label: "Cross" },
     ],
   },

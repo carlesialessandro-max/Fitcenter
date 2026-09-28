@@ -100,6 +100,7 @@ const VENDITE_LINKS: { to: string; label: string }[] = [
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
   { to: "/andamento-vendite", label: "Andamento vendite" },
+  { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
 ]
 const ALTRI_LINKS: { to: string; label: string }[] = [
   { to: "/corsi", label: "Corsi" },

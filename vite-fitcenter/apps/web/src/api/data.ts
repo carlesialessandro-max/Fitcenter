@@ -201,21 +201,32 @@ export const dataApi = {
     if (consulente) params.set("consulente", consulente)
     return api.get<{ anno: number; venditePerMese: { mese: string; anno: number; meseNum: number; vendite: number; budget: number; percentuale: number }[] }>(`/data/vendite-storico?${params}`)
   },
-  getVenditeMovimentiCategoriaDurata: (params: { months?: number; consulente?: string } = {}) => {
+  getVenditeMovimentiCategoriaDurata: (params: {
+    months?: number
+    consulente?: string
+    anno?: number
+    mese?: number
+    giorno?: number
+    ambito?: "adulti" | "bambini"
+  } = {}) => {
     const q = new URLSearchParams()
     if (params.months != null) q.set("months", String(params.months))
     if (params.consulente) q.set("consulente", params.consulente)
+    if (params.anno != null) q.set("anno", String(params.anno))
+    if (params.mese != null) q.set("mese", String(params.mese))
+    if (params.giorno != null) q.set("giorno", String(params.giorno))
+    if (params.ambito) q.set("ambito", params.ambito)
     const query = q.toString()
     return api.get<{
       from: string
       to: string
+      ambito?: "adulti" | "bambini"
       totalCount: number
       totalEuro: number
       crossEuro?: number
       rows: { categoria: string; durataMesi: number | null; count: number; totalEuro?: number }[]
-    }>(
-      `/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`
-    )
+      byAbbonamento?: { abbonamento: string; count: number; totalEuro: number }[]
+    }>(`/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`)
   },
   getVenditeCross: (params: { anno: number; mese: number; consulente?: string }) => {
     const q = new URLSearchParams({ anno: String(params.anno), mese: String(params.mese) })
