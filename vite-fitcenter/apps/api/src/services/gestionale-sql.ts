@@ -3435,18 +3435,112 @@ function whereEsclusioniVenditeView(alias = "R"): string {
   `
 }
 
+type DanzaOpExcludeSpec =
+  | { kind: "none" }
+  | { kind: "col"; col: string }
+  | { kind: "iscrizione"; table: string; opCol: string; joinCol: string }
+
+let danzaOpExcludeSpec: DanzaOpExcludeSpec | null = null
+let danzaOpExcludePromise: Promise<DanzaOpExcludeSpec> | null = null
+
+function isSafeSqlIdent(s: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
+}
+
+/** La view vendite (RVW_AbbonamentiUtenti) non ha NomeOperatore: si usa la colonna reale o AbbonamentiIscrizione. */
+async function resolveDanzaOpExcludeSpec(): Promise<DanzaOpExcludeSpec> {
+  if (danzaOpExcludeSpec) return danzaOpExcludeSpec
+  if (!danzaOpExcludePromise) {
+    danzaOpExcludePromise = (async () => {
+      const viewCfg = getViewVenditeGestionale()
+      const cols = await prenGetCols(viewCfg.view)
+      const set = new Set(cols.map((c) => c.toLowerCase()))
+      const candidates = [
+        "NomeOperatore",
+        "NomeOperatoreAbbonamento",
+        "OperatoreNome",
+        "NomeOperatoreIscrizione",
+        "AbbonamentiNomeOperatore",
+        "Operatore",
+      ]
+      for (const c of candidates) {
+        if (set.has(c.toLowerCase()) && isSafeSqlIdent(c)) {
+          const spec: DanzaOpExcludeSpec = { kind: "col", col: c }
+          danzaOpExcludeSpec = spec
+          return spec
+        }
+      }
+      const fuzzy = cols.find((x) => {
+        const n = x.toLowerCase()
+        return n.includes("operatore") && !n.includes("id") && !n.includes("venditor") && isSafeSqlIdent(x)
+      })
+      if (fuzzy) {
+        const spec: DanzaOpExcludeSpec = { kind: "col", col: fuzzy }
+        danzaOpExcludeSpec = spec
+        return spec
+      }
+
+      const tbl = "AbbonamentiIscrizione"
+      const tblCols = await prenGetCols(tbl)
+      if (tblCols.length) {
+        const tblSet = new Set(tblCols.map((c) => c.toLowerCase()))
+        let opCol: string | null = null
+        for (const c of ["NomeOperatore", "Operatore", "NomeOperatoreAbbonamento"]) {
+          if (tblSet.has(c.toLowerCase())) {
+            opCol = c
+            break
+          }
+        }
+        const joinCol = tblSet.has("idiscrizione")
+          ? "IDIscrizione"
+          : isSafeSqlIdent(viewCfg.colJoin)
+            ? viewCfg.colJoin
+            : "IDIscrizione"
+        if (opCol && isSafeSqlIdent(opCol) && isSafeSqlIdent(joinCol)) {
+          const spec: DanzaOpExcludeSpec = { kind: "iscrizione", table: tbl, opCol, joinCol }
+          danzaOpExcludeSpec = spec
+          return spec
+        }
+      }
+      const spec: DanzaOpExcludeSpec = { kind: "none" }
+      danzaOpExcludeSpec = spec
+      return spec
+    })().catch((err) => {
+      danzaOpExcludePromise = null
+      throw err
+    })
+  }
+  return danzaOpExcludePromise
+}
+
 /** Quote danza, iscrizione arte danza, e vendite con operatore Centro Arte Danza. */
 function whereExcludeDanzaEOperatoreArte(alias = "R"): string {
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
   const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], ${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
   const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
-  const op = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[NomeOperatore], N''))))`
+  const spec = danzaOpExcludeSpec ?? { kind: "none" as const }
+  let opSql = ""
+  if (spec.kind === "col") {
+    const op = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${spec.col}], N''))))`
+    opSql = `
+    AND ${op} NOT LIKE N'%ARTE DANZA%'
+    AND ${op} NOT LIKE N'%CENTRO ARTE%'`
+  } else if (spec.kind === "iscrizione") {
+    const viewJoin = getViewVenditeGestionale().colJoin
+    const viewJoinSafe = isSafeSqlIdent(viewJoin) ? viewJoin : spec.joinCol
+    const op = `UPPER(LTRIM(RTRIM(COALESCE(_OpArte.[${spec.opCol}], N''))))`
+    opSql = `
+    AND NOT EXISTS (
+      SELECT 1 FROM [${spec.table}] _OpArte
+      WHERE _OpArte.[${spec.joinCol}] = ${alias}.[${viewJoinSafe}]
+        AND (${op} LIKE N'%ARTE DANZA%' OR ${op} LIKE N'%CENTRO ARTE%')
+    )`
+  }
   return `
     AND ${cat} NOT LIKE N'%DANZA%'
     AND ${abb} NOT LIKE N'%DANZA%'
     AND ${macro} NOT LIKE N'%DANZA%'
-    AND ${op} NOT LIKE N'%ARTE DANZA%'
-    AND ${op} NOT LIKE N'%CENTRO ARTE%'
+    ${opSql}
   `
 }
 
@@ -3588,6 +3682,7 @@ async function buildCrossSqlParts(
   toParam: "@to" | "@dataFine",
   idConsultant?: string
 ): Promise<CrossSqlBuild | null> {
+  await resolveDanzaOpExcludeSpec()
   const pagParts = await getPagamentiCrossSqlParts()
   if (!pagParts) return null
   const viewCfg = getViewVenditeGestionale()
@@ -4079,6 +4174,7 @@ async function queryVenditeTotaleComeAndamento(
   to: string,
   idConsultant?: string
 ): Promise<number> {
+  await resolveDanzaOpExcludeSpec()
   const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
   const ids = idConsultant ? parseConsultantIds(idConsultant) : []
@@ -4766,6 +4862,7 @@ export async function getVenditeMovimentiCategoriaDurata(
 }> {
   const p = await getPool()
   if (!p) return { totalCount: 0, totalEuro: 0, crossEuro: 0, rows: [], byAbbonamento: [] }
+  await resolveDanzaOpExcludeSpec()
 
   const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
