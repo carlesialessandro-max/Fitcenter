@@ -593,7 +593,60 @@ let cacheConsultantIdMap: Map<string, string> | null = null
 export async function getConsultantIdUtente(consulenteNome: string): Promise<string | null> {
   const map = await getConsultantIdUtenteMap()
   const trimmed = consulenteNome.trim()
-  return map.get(trimmed) ?? map.get(trimmed.toLowerCase()) ?? null
+  const fromMap = map.get(trimmed) ?? map.get(trimmed.toLowerCase()) ?? null
+  if (fromMap) return fromMap
+  return getVenditoreIdByNome(trimmed)
+}
+
+let cacheVenditoriNomeToId: Map<string, string> | null = null
+
+/** Qualsiasi venditore in vista (Irene, Elisa, Victoria, Alba, …), non solo Carmen/Serena/Ombretta. */
+export async function getVenditoreIdByNome(consulenteNome: string): Promise<string | null> {
+  const wanted = norm(consulenteNome)
+  if (!wanted) return null
+  const map = await getAllVenditoriNomeToId()
+  const exact = map.get(wanted)
+  if (exact) return exact
+  const first = wanted.split(" ")[0] ?? ""
+  if (first.length < 3) return null
+  const ids = [
+    ...new Set(
+      [...map.entries()]
+        .filter(([k]) => k === first || k.startsWith(`${first} `))
+        .map(([, id]) => id)
+    ),
+  ]
+  if (ids.length === 0) return null
+  return ids.join(",")
+}
+
+async function getAllVenditoriNomeToId(): Promise<Map<string, string>> {
+  if (cacheVenditoriNomeToId) return cacheVenditoriNomeToId
+  const result = new Map<string, string>()
+  const p = await getPool()
+  if (!p) {
+    cacheVenditoriNomeToId = result
+    return result
+  }
+  const viewCfg = getViewVenditeGestionale()
+  try {
+    const r = await p.request().query(
+      `SELECT DISTINCT [${viewCfg.colId}] AS IdVend, [${viewCfg.colNome}] AS NomeVend
+       FROM [${viewCfg.view}]
+       WHERE [${viewCfg.colId}] IS NOT NULL AND [${viewCfg.colNome}] IS NOT NULL`
+    )
+    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const id = String(row.IdVend ?? "").trim()
+      const nome = norm(String(row.NomeVend ?? ""))
+      if (!id || !nome) continue
+      const prev = result.get(nome)
+      result.set(nome, prev ? [...new Set([...prev.split(","), id])].join(",") : id)
+    }
+  } catch {
+    /* view assente o colonne diverse */
+  }
+  cacheVenditoriNomeToId = result
+  return result
 }
 
 /** Normalizza per match: lowercase, trim, spazi multipli → uno. */
@@ -3182,6 +3235,7 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     ${cat} LIKE N'%GESTANTI%' OR ${abb} LIKE N'%GESTANTI%'
     OR ${cat} LIKE N'%ACQUATIC%' OR ${abb} LIKE N'%ACQUATIC%'
     OR ${cat} LIKE N'%AGONIST%' OR ${abb} LIKE N'%AGONIST%'
+    OR ${cat} LIKE N'%BAMBIN%' OR ${abb} LIKE N'%BAMBIN%'
     OR (
       ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%'))
       AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
@@ -4552,6 +4606,10 @@ export async function getVenditeMovimentiCategoriaDurata(
     const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
     const durataCol = "Durata"
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+    const categoriaOrAbbExpr =
+      ambito === "bambini"
+        ? `COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr})`
+        : categoriaExpr
     const whereAndamentoEsclusioniView = `
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
@@ -4564,6 +4622,92 @@ export async function getVenditeMovimentiCategoriaDurata(
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
         : ""
 
+    if (ambito === "bambini") {
+      const r = await req.query(
+        `;WITH MovAgg AS (
+           SELECT
+             M.[${COL_ISCRIZIONE}] AS ID,
+             COUNT(*) AS nMov,
+             SUM(COALESCE(TRY_CONVERT(float, M.[${COL_IMPORTO}]), 0)) AS TotaleEuro
+           FROM [${tblM}] M
+           ${whereBase}
+           GROUP BY M.[${COL_ISCRIZIONE}]
+         ),
+         ViewFiltro AS (
+           SELECT
+             R.[${viewCfg.colJoin}] AS ID,
+             ${categoriaOrAbbExpr} AS Categoria,
+             R.[${durataCol}] AS DurataMesi,
+             ROW_NUMBER() OVER (PARTITION BY R.[${viewCfg.colJoin}] ORDER BY (SELECT 1)) AS rn
+           FROM [${viewCfg.view}] R
+           WHERE 1=1
+             ${consultantFilter}
+             ${whereAndamentoEsclusioniView}
+         )
+         SELECT
+           V.Categoria,
+           V.DurataMesi,
+           SUM(M.nMov) AS count,
+           SUM(COALESCE(M.TotaleEuro, 0)) AS totalEuro
+         FROM MovAgg M
+         INNER JOIN ViewFiltro V ON V.ID = M.ID AND V.rn = 1
+         WHERE 1=1
+           ${whereExcludeUispTesseramenti("V", "V.Categoria")}
+         GROUP BY V.Categoria, V.DurataMesi
+         ORDER BY count DESC;`
+      )
+      const rAbb = await req.query(
+        `;WITH MovAgg AS (
+           SELECT
+             M.[${COL_ISCRIZIONE}] AS ID,
+             COUNT(*) AS nMov,
+             SUM(COALESCE(TRY_CONVERT(float, M.[${COL_IMPORTO}]), 0)) AS TotaleEuro
+           FROM [${tblM}] M
+           ${whereBase}
+           GROUP BY M.[${COL_ISCRIZIONE}]
+         ),
+         ViewFiltro AS (
+           SELECT
+             R.[${viewCfg.colJoin}] AS ID,
+             COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr}) AS Abbonamento,
+             ROW_NUMBER() OVER (PARTITION BY R.[${viewCfg.colJoin}] ORDER BY (SELECT 1)) AS rn
+           FROM [${viewCfg.view}] R
+           WHERE 1=1
+             ${consultantFilter}
+             ${whereAndamentoEsclusioniView}
+         )
+         SELECT
+           V.Abbonamento,
+           SUM(M.nMov) AS count,
+           SUM(COALESCE(M.TotaleEuro, 0)) AS totalEuro
+         FROM MovAgg M
+         INNER JOIN ViewFiltro V ON V.ID = M.ID AND V.rn = 1
+         WHERE 1=1
+           ${whereExcludeUispTesseramenti("V", "V.Abbonamento")}
+         GROUP BY V.Abbonamento
+         ORDER BY totalEuro DESC;`
+      )
+      const rows = (r.recordset ?? []).map((row) => {
+        const durataRaw = row.DurataMesi == null ? null : Number(row.DurataMesi)
+        const durataMesi =
+          durataRaw == null || Number.isNaN(durataRaw) || durataRaw === -1 ? null : durataRaw
+        return {
+          categoria: String(row.Categoria ?? "").toLowerCase().trim() || "palestra",
+          durataMesi,
+          count: Number(row.count ?? row.Count ?? 0) || 0,
+          totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
+        }
+      })
+      const byAbbonamento = (rAbb.recordset ?? []).map((row) => ({
+        abbonamento: String(row.Abbonamento ?? "").trim() || "—",
+        count: Number(row.count ?? row.Count ?? 0) || 0,
+        totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
+      }))
+      const totalCount = rows.reduce((s, row) => s + row.count, 0)
+      const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)
+      return { totalCount, totalEuro, crossEuro: 0, rows, byAbbonamento }
+    }
+
     const rTotal = await req.query(
       `;WITH Temp_Stampe AS (
          SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
@@ -4573,7 +4717,7 @@ export async function getVenditeMovimentiCategoriaDurata(
        RigheView AS (
          SELECT
            R.[${viewCfg.colJoin}] AS ID,
-           ${categoriaExpr} AS Categoria,
+           ${categoriaOrAbbExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
            TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
          FROM [${viewCfg.view}] R
@@ -4606,7 +4750,7 @@ export async function getVenditeMovimentiCategoriaDurata(
        RigheView AS (
          SELECT
            R.[${viewCfg.colJoin}] AS ID,
-           ${categoriaExpr} AS Categoria,
+           ${categoriaOrAbbExpr} AS Categoria,
            R.[${durataCol}] AS DurataMesi,
            TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
          FROM [${viewCfg.view}] R

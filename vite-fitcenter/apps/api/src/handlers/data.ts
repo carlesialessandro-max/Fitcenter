@@ -121,6 +121,16 @@ const CONSULENTE_NOME_TO_ID: Record<string, string> = {
   "ombretta zenoni": process.env.CONSULENTE_ID_OMBRETTA ?? "312,352,73",
 }
 
+/** Consulenti pagina andamento bambini (non Carmen/Serena/Ombretta). Override: CONSULENTI_BAMBINI. */
+function consulentiBambiniLabels(): string[] {
+  const raw = (process.env.CONSULENTI_BAMBINI ?? "").trim()
+  const fromEnv = raw
+    ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+    : []
+  const fallback = ["Irene Carlesi", "Elisa Garisi", "Victoria", "Alba Salata", "Tommaso", "Simona Chiti"]
+  return fromEnv.length ? fromEnv : fallback
+}
+
 /** Converte stringa data (YYYY-MM-DD o DD/MM/YYYY) in timestamp per confronti. */
 function parseDateToTime(s: string): number {
   if (!s || !s.trim()) return 0
@@ -2601,7 +2611,8 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     .replace(/\p{M}/gu, "")
   if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
   if (/ACQUATIC/.test(blob)) return "Acquaticità"
-  if (/AGONIST/.test(blob)) return "Squadra agonistica"
+  if (/AGONIST/.test(blob) && !/\bBAMBIN/.test(blob)) return "Squadra agonistica"
+  if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
   return null
 }
@@ -2627,16 +2638,17 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
     const to = `${anno}-${pad2(mese)}-${pad2(toDay)}`
 
     let idUtente = await resolveConsultantId(consulente)
-    if (!idUtente) {
+    if (!idUtente && ambito === "adulti") {
       const labels = budgetPerConsulente.getConsulentiLabels()
       const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
       idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
     }
+    // Bambini: senza consulente scelto non si usano Carmen/Serena/Ombretta — tutti i venditori (Irene, Elisa, Victoria, Alba, …).
 
     const scope = cacheScope(req)
     const cacheAsOf = isCurrentMonth ? todayHourCacheKey(getTodayKey()) : to
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheParams = { from, to, ambito, consulente: consulente ?? null }
+    const cacheParams = { from, to, ambito, consulente: consulente ?? null, venditori: ambito === "bambini" ? "bambini-all" : "adulti-3" }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
       scope,
@@ -2708,7 +2720,7 @@ async function computeAndamentoPayload(args: {
   if (args.ambito === "bambini") {
     const agg = new Map<string, { categoria: string; durataMesi: number | null; count: number; totalEuro: number }>()
     for (const r of rows) {
-      const tipo = classifyBambiniTipoAbbonamento(r.categoria) ?? "Altro"
+      const tipo = classifyBambiniTipoAbbonamento(r.categoria, r.categoria) ?? "Altro"
       const key = `${tipo}|${r.durataMesi ?? "x"}`
       const prev = agg.get(key)
       if (!prev) agg.set(key, { categoria: tipo, durataMesi: r.durataMesi, count: r.count, totalEuro: r.totalEuro })
@@ -2723,6 +2735,7 @@ async function computeAndamentoPayload(args: {
     from: args.from,
     to: args.to,
     ambito: args.ambito,
+    consulenti: args.ambito === "bambini" ? consulentiBambiniLabels() : undefined,
     totalCount,
     totalEuro: args.ambito === "bambini" ? mappedRows.reduce((s, r) => s + r.totalEuro, 0) : totalEuro,
     crossEuro: args.ambito === "bambini" ? 0 : crossEuro,

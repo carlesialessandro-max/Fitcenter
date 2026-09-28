@@ -186,9 +186,8 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
   const { data: budgetData } = useQuery({
     queryKey: ["budget"],
     queryFn: () => dataApi.getBudget(),
-    enabled: role === "admin",
+    enabled: role === "admin" && ambito === "adulti",
   })
-  const consulentiList = role === "admin" && budgetData?.consulenti?.length ? budgetData.consulenti : (consulenti ?? [])
 
   const queryBase = {
     anno,
@@ -218,6 +217,13 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
     refetchOnWindowFocus: false,
     staleTime: 7 * 24 * 60 * 60 * 1000,
   })
+
+  const consulentiList =
+    ambito === "bambini"
+      ? (data?.consulenti?.length ? data.consulenti : ["Irene Carlesi", "Elisa Garisi", "Victoria", "Alba Salata", "Tommaso", "Simona Chiti"])
+      : role === "admin" && budgetData?.consulenti?.length
+        ? budgetData.consulenti
+        : (consulenti ?? [])
 
   const computed = useMemo(() => aggregate(data), [data])
   const computedPrev = useMemo(() => aggregate(dataPrev), [dataPrev])
@@ -301,7 +307,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <label className="flex flex-col gap-1 text-sm text-zinc-400">
             Consulente
             <select value={adminConsulente} onChange={(e) => setAdminConsulente(e.target.value)} className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100">
-              <option value="">Tutte le consulenti</option>
+              <option value="">{ambito === "bambini" ? "Tutte (Irene, Elisa, Victoria, Alba, …)" : "Tutte le consulenti"}</option>
               {consulentiList.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}

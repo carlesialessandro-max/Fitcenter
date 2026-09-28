@@ -226,6 +226,7 @@ export const dataApi = {
       crossEuro?: number
       rows: { categoria: string; durataMesi: number | null; count: number; totalEuro?: number }[]
       byAbbonamento?: { abbonamento: string; count: number; totalEuro: number }[]
+      consulenti?: string[]
     }>(`/data/vendite-movimenti-andamento${query ? `?${query}` : ""}`)
   },
   getVenditeCross: (params: { anno: number; mese: number; consulente?: string }) => {
