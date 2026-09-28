@@ -3369,10 +3369,9 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'
     AND ${cat} NOT LIKE N'%SENIOR%' AND ${abbDesc} NOT LIKE N'%SENIOR%'
   )`
-  // Pagina adulti: esclusione larga (invariata).
+  // Pagina adulti: esclusione larga. Gestanti restano negli adulti (gravidanza).
   const isBambiniBroad = `(
-    ${like("GESTANTI")}
-    OR ${like("ACQUATIC")}
+    ${like("ACQUATIC")}
     OR ${like("BAMBIN")}
     OR (${like("AGONISM")} AND ${notAdultMaster})
     OR (
@@ -3382,7 +3381,7 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     OR (${like("PRIVATE")} AND ${notAdultMaster})
     OR ${like("ASI")}
   )`
-  // Listino gestionale bambini: Acquaticità, Gestanti, private bambini, Scuola nuoto, ASI Sc/AQ/Rin.
+  // Listino gestionale bambini: Acquaticità, private bambini, Scuola nuoto, ASI Sc/AQ/Rin.
   // Agonismo categorie: NON dal venduto (pagano a rate → movimenti di cassa/pagamenti).
   const isAsiBambini = `(
     ((${abbDesc} LIKE N'%ASI%' AND ${abbDesc} LIKE N'%ISCRIZIONE%')
@@ -3391,12 +3390,11 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
       ${abbDesc} LIKE N'% SC%' OR ${abbDesc} LIKE N'%SC'
       OR ${abbDesc} LIKE N'% AQ%' OR ${abbDesc} LIKE N'%AQ%'
       OR ${abbDesc} LIKE N'%RIN%'
-      OR ${like("BAMBIN")} OR ${like("SCUOLA")} OR ${like("ACQUATIC")} OR ${like("GESTANT")}
+      OR ${like("BAMBIN")} OR ${like("SCUOLA")} OR ${like("ACQUATIC")}
     )
   )`
   const isBambiniListino = `(
-    ${like("GESTANTI")}
-    OR ${like("ACQUATIC")}
+    ${like("ACQUATIC")}
     OR ${like("BAMBIN")}
     OR (
       ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abbDesc} LIKE N'%SCUOLA%' AND ${abbDesc} LIKE N'%NUOT%'))

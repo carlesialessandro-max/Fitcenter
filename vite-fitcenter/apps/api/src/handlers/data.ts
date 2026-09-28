@@ -213,7 +213,7 @@ function isTesseramentoAbbForKpi(a: Abbonamento): boolean {
  */
 const EXCLUDE_MACRO_VENDITE_LISTE = new Set(["DANZA"])
 // Non escludere "SCUOLA NUOTO": include anche vendite come "AGONISMO MASTER" e lezioni private adulti.
-const EXCLUDE_CAT_DESC_VENDITE_LISTE = new Set(["ACQUATICITA", "CAMPUS SPORTIVI", "GESTANTI"])
+const EXCLUDE_CAT_DESC_VENDITE_LISTE = new Set(["ACQUATICITA", "CAMPUS SPORTIVI"])
 
 function normalizeVenditeListeKey(s: string | undefined) {
   return (s ?? "")
@@ -398,12 +398,12 @@ function dettaglioMeseCacheLookup(
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "ex-danza-arte-3" },
+      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-1" },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "ex-danza-arte-3" },
+    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-1" },
   }
 }
 
@@ -797,7 +797,7 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null, v: "ex-danza-arte-3" }
+    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-1" }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
     if (cachedHit) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
@@ -1179,7 +1179,6 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
       "INVITO",
       "ABBONAMENTI STAFF",
     ])
-    const isGestantiCategoria = (a: Abbonamento) => normalizeCategoria(categoriaLabel(a)).includes("GESTANTI")
     const isAdultiCategoriaEsclusa = (a: Abbonamento) => {
       const n = normalizeCategoria(categoriaLabel(a))
       const macro = normalizeCategoria(a.macroCategoriaDescrizione ?? "")
@@ -1200,8 +1199,8 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a))
     // Regole business applicate in modo unico a TUTTI i blocchi (card/grafici/liste),
     // così i totali tornano sempre con la somma per categoria.
-    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a) && !isGestantiCategoria(a))
-    const bambini = dedupBambiniByClienteId([...bambiniRaw, ...adultiRaw.filter((a) => isGestantiCategoria(a))])
+    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a))
+    const bambini = dedupBambiniByClienteId(bambiniRaw)
     const attiviSegmentati = [...adulti, ...bambini]
     const conEta = attiviSegmentati.filter((a) => a.clienteEta != null).length
 
@@ -1324,7 +1323,6 @@ async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
     "INVITO",
     "ABBONAMENTI STAFF",
   ])
-  const isGestantiCategoria = (a: Abbonamento) => normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a)).includes("GESTANTI")
   const isAdultiCategoriaEsclusa = (a: Abbonamento) => {
     const n = normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a))
     const macro = normalizeCategoriaAttiviMsg(a.macroCategoriaDescrizione ?? "")
@@ -1339,8 +1337,8 @@ async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
 
   const adultiRaw = attiviPairs.filter((p) => !isAbbonamentoBambini(p.a))
   const bambiniRaw = attiviPairs.filter((p) => isAbbonamentoBambini(p.a))
-  const adulti = adultiRaw.filter((p) => !isAdultiCategoriaEsclusa(p.a) && !isGestantiCategoria(p.a))
-  const bambiniMerged = [...bambiniRaw, ...adultiRaw.filter((p) => isGestantiCategoria(p.a))]
+  const adulti = adultiRaw.filter((p) => !isAdultiCategoriaEsclusa(p.a))
+  const bambiniMerged = [...bambiniRaw]
 
   const toContact = (p: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
     const c = pickEmailTelFromAbbRow(p.row)
@@ -2615,7 +2613,6 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
-  if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
   if (/ACQUATIC/.test(blob) && !/\bASI\b/.test(blob)) return "Acquaticità"
   if (/PRIVATE/.test(blob) && !/ADULT/.test(blob)) return "Lezioni private bambini"
   if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob) && !/ABBIGLIAMENTO/.test(blob)) {
@@ -2663,7 +2660,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-scuola-asi-merch-v1" : "adulti-ex-danza-arte-3",
+      venditori: ambito === "bambini" ? "bambini-no-gestanti-v1" : "adulti-gestanti-v1",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -2748,7 +2745,6 @@ async function computeAndamentoPayload(args: {
     const order = [
       "Scuola nuoto",
       "Acquaticità",
-      "Gestanti",
       "Agonismo categorie",
       "Lezioni private bambini",
       "Altro",

@@ -264,7 +264,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
               ? "Scuola nuoto include ASI e bracciali (non Carmen/Serena/Ombretta). Agonismo: rate in cassa."
-              : "Distribuzione vendite adulti per categoria e durata — esclusi danza e Centro Arte Danza"}
+              : "Distribuzione vendite adulti per categoria e durata — incluse gestanti; esclusi danza e Centro Arte Danza"}
           </p>
         </div>
         <div className="flex gap-2">
