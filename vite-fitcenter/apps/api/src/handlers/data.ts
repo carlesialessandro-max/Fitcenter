@@ -393,17 +393,17 @@ function dettaglioMeseCacheLookup(
   mese: number,
   giorno: number,
   consulente: string | undefined
-): { cacheAsOf: string; cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null } } {
+): { cacheAsOf: string; cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null; v?: string } } {
   if (isPastCalendarMonth(anno, mese)) {
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null },
+      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "ex-danza-arte-1" },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-    cacheParams: { anno, mese, giorno, consulente: consulente ?? null },
+    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "ex-danza-arte-1" },
   }
 }
 
@@ -540,7 +540,7 @@ function dashboardCacheLookupKeys(asOfKey: string): string[] {
 
 async function readDashboardCache(
   scope: string,
-  cacheKeyParams: { consulente: string | null },
+  cacheKeyParams: { consulente: string | null; v?: string },
   asOfKey: string,
   depSig: string,
   allowExpired: boolean
@@ -763,7 +763,7 @@ async function sealClosedDaysInBackground(): Promise<void> {
 
 async function refreshDashboardCache(args: {
   scope: string
-  cacheKeyParams: { consulente: string | null }
+  cacheKeyParams: { consulente: string | null; v?: string }
   cacheAsOf: string
   depSig: string
   consulente: string | undefined
@@ -797,7 +797,7 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null }
+    const cacheKeyParams = { consulente: consulente ?? null, v: "ex-danza-arte-1" }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
     if (cachedHit) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
@@ -2616,13 +2616,12 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
   if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
-  if (/BADGE|MERCHAND|ABBIGLIAMENTO/.test(blob)) return "Altro"
-  if (/ACQUATIC/.test(blob) || (/\bAQ\b/.test(blob) && !/\bASI\b/.test(blob))) return "Acquaticità"
+  if (/ACQUATIC/.test(blob) && !/\bASI\b/.test(blob)) return "Acquaticità"
   if (/PRIVATE/.test(blob) && !/ADULT/.test(blob)) return "Lezioni private bambini"
   if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob) && !/ABBIGLIAMENTO/.test(blob)) {
     return "Agonismo categorie"
   }
-  if (/\bASI\b/.test(blob)) return "ASI"
+  if (/\bASI\b/.test(blob) || /BADGE|MERCHAND|BRACCIALE/.test(blob)) return "Scuola nuoto"
   if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
   return "Altro"
@@ -2664,7 +2663,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-cassa-agonismo-v1" : "adulti-3",
+      venditori: ambito === "bambini" ? "bambini-scuola-asi-merch-v1" : "adulti-ex-danza-arte-1",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -2752,7 +2751,6 @@ async function computeAndamentoPayload(args: {
       "Gestanti",
       "Agonismo categorie",
       "Lezioni private bambini",
-      "ASI",
       "Altro",
     ]
     mappedRows = order.filter((k) => agg.has(k)).map((k) => agg.get(k)!)
@@ -2774,8 +2772,8 @@ async function computeAndamentoPayload(args: {
       args.ambito === "bambini"
         ? "Agonismo categorie: incassi cassa delle rate nel mese (non il listino venduto)."
         : undefined,
-    totalCount,
-    totalEuro: args.ambito === "bambini" ? mappedRows.reduce((s, r) => s + r.totalEuro, 0) : totalEuro,
+    totalCount: mappedRows.reduce((s, r) => s + r.count, 0),
+    totalEuro: mappedRows.reduce((s, r) => s + r.totalEuro, 0),
     crossEuro: args.ambito === "bambini" ? 0 : crossEuro,
     rows: mappedRows,
     byAbbonamento: mappedAbb,

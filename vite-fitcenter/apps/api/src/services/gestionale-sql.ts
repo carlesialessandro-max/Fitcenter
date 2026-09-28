@@ -3404,12 +3404,13 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     )
     OR (${like("PRIVATE")} AND ${notAdultMaster} AND NOT ${like("ADULT")})
     OR ${isAsiBambini}
+    OR ${like("BADGE")}
+    OR ${like("MERCHAND")}
+    OR ${like("BRACCIALE")}
   )
   AND ${cat} NOT LIKE N'%JUJITSU%' AND ${abbDesc} NOT LIKE N'%JUJITSU%'
   AND ${cat} NOT LIKE N'%CAMPUS%' AND ${abbDesc} NOT LIKE N'%CAMPUS%'
   AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'
-  AND ${cat} NOT LIKE N'%BADGE%' AND ${abbDesc} NOT LIKE N'%BADGE%'
-  AND ${cat} NOT LIKE N'%MERCHAND%' AND ${abbDesc} NOT LIKE N'%MERCHAND%'
   AND ${cat} NOT LIKE N'%ABBIGLIAMENTO%' AND ${abbDesc} NOT LIKE N'%ABBIGLIAMENTO%'`
   if (ambito === "bambini") return `\n      AND ${isBambiniListino}`
   return `\n      AND NOT ${isBambiniBroad}`
@@ -3428,8 +3429,24 @@ function whereEsclusioniVenditeView(alias = "R"): string {
     AND NOT (
       ${macroNorm} LIKE '%FIN%' AND ${catNorm} LIKE '%ISCRIZIONE%1GIORNO%' AND (${catNorm} LIKE '%GARE%' OR ${catNorm} LIKE '%TRASFERTA%' OR ${catNorm} LIKE '%RIMBORSO%')
     )
+    ${whereExcludeDanzaEOperatoreArte(alias)}
     ${whereExcludeAbbonamentoDurataTesseramentoGare(alias)}
     ${whereExcludeAbbonamentiSpecificiIds(alias)}
+  `
+}
+
+/** Quote danza, iscrizione arte danza, e vendite con operatore Centro Arte Danza. */
+function whereExcludeDanzaEOperatoreArte(alias = "R"): string {
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], ${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
+  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
+  const op = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[NomeOperatore], N''))))`
+  return `
+    AND ${cat} NOT LIKE N'%DANZA%'
+    AND ${abb} NOT LIKE N'%DANZA%'
+    AND ${macro} NOT LIKE N'%DANZA%'
+    AND ${op} NOT LIKE N'%ARTE DANZA%'
+    AND ${op} NOT LIKE N'%CENTRO ARTE%'
   `
 }
 
@@ -3765,6 +3782,7 @@ async function queryVenditeCrossNettoAggregato(
         ${sqlWhereTipoOperazioneMovimentoVendita("M")}
       INNER JOIN [${viewCfg.view}] V ON V.[${viewCfg.colJoin}] = R.IDIscrizione
       WHERE UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+        ${whereExcludeDanzaEOperatoreArte("V")}
         ${whereExcludeAbbonamentoDurataTesseramentoGare("V")}
         ${whereExcludeAbbonamentiSpecificiIds("V")}
         ${consultantFilter}
@@ -4088,6 +4106,7 @@ async function queryVenditeTotaleComeAndamento(
   const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
   const whereAndamentoEsclusioniView = `
     AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+    ${whereExcludeDanzaEOperatoreArte("R")}
     ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
     ${whereExcludeAbbonamentiSpecificiIds("R")}
   `
@@ -4793,6 +4812,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         : `
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
+      ${whereExcludeDanzaEOperatoreArte("R")}
       ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
       ${whereExcludeAbbonamentiSpecificiIds("R")}
       ${whereAndamentoAmbito("R", ambito)}
@@ -4987,19 +5007,19 @@ export async function getVenditeMovimentiCategoriaDurata(
     const baseEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
     let crossEuro = 0
     let totalEuro = baseEuro
+    const totalCountFromRows = rows.reduce((s, r) => s + r.count, 0)
     if (ambito === "adulti") {
       try {
         if (idConsultant) {
           const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
           crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
         }
-        totalEuro = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
       } catch {
         /* cross opzionale */
       }
     }
 
-    return { totalCount, totalEuro, crossEuro, rows, byAbbonamento }
+    return { totalCount: totalCountFromRows || totalCount, totalEuro, crossEuro, rows, byAbbonamento }
   } catch (e) {
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.

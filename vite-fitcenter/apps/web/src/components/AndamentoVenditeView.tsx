@@ -263,8 +263,8 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <h1 className="text-2xl font-semibold text-zinc-100">{titolo}</h1>
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
-              ? "Per tipo di abbonamento (scuola nuoto, acquaticità, gestanti, private, ASI). Agonismo: rate incassate in cassa."
-              : "Distribuzione vendite adulti per categoria e durata"}
+              ? "Scuola nuoto include ASI e bracciali (non Carmen/Serena/Ombretta). Agonismo: rate in cassa."
+              : "Distribuzione vendite adulti per categoria e durata — esclusi danza e Centro Arte Danza"}
           </p>
         </div>
         <div className="flex gap-2">
