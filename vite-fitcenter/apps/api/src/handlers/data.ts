@@ -2660,7 +2660,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-no-gestanti-v1" : "adulti-gestanti-v1",
+      venditori: ambito === "bambini" ? "bambini-no-gestanti-v1" : "adulti-dash-cross-v1",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,

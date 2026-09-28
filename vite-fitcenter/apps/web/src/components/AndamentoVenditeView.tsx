@@ -400,7 +400,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
 
             {computed.crossEuro > 0 ? (
               <p className="mb-4 text-xs text-zinc-500">
-                Cross €{fmtEuro(computed.crossEuro)} già nel venduto se c’è movimento: non sommarli all’analisi
+                Cross €{fmtEuro(computed.crossEuro)} nel totale, come in dashboard (solo senza movimento di vendita nel mese)
               </p>
             ) : null}
 

@@ -4966,7 +4966,6 @@ export async function getVenditeMovimentiCategoriaDurata(
       ${whereExcludeDanzaEOperatoreArte("R")}
       ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
       ${whereExcludeAbbonamentiSpecificiIds("R")}
-      ${whereAndamentoAmbito("R", ambito)}
     `
     const consultantFilter =
       ids.length > 0
@@ -5044,8 +5043,7 @@ export async function getVenditeMovimentiCategoriaDurata(
          INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
          WHERE 1=1
            ${consultantFilter}
-          ${whereExcludeAbbonamentiSpecificiIds("R")}
-          ${whereAndamentoAmbito("R", ambito)}
+          ${whereAndamentoEsclusioniView}
        ),
        PerIscrizione AS (
          SELECT
@@ -5155,20 +5153,37 @@ export async function getVenditeMovimentiCategoriaDurata(
       totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
     }))
 
-    const baseEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
     let crossEuro = 0
-    let totalEuro = baseEuro
-    const totalCountFromRows = rows.reduce((s, r) => s + r.count, 0)
     if (ambito === "adulti") {
       try {
         if (idConsultant) {
           const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-          crossEuro = crossRows.reduce((s, r) => s + r.totale, 0)
+          if (crossRows.length) {
+            const inBase = await queryIscrizioniConVenditaNelPeriodo(
+              p,
+              from,
+              to,
+              crossRows.map((r) => r.idIscrizione)
+            )
+            const extra = crossRows.filter((r) => !inBase.has(r.idIscrizione))
+            const extraEuro = extra.reduce((s, r) => s + r.totale, 0)
+            crossEuro = extraEuro
+            if (extraEuro > 0.005) {
+              rows.push({
+                categoria: "Cross",
+                durataMesi: null,
+                count: extra.length,
+                totalEuro: extraEuro,
+              })
+            }
+          }
         }
       } catch {
         /* cross opzionale */
       }
     }
+    const totalEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
+    const totalCountFromRows = rows.reduce((s, r) => s + r.count, 0)
 
     return { totalCount: totalCountFromRows || totalCount, totalEuro, crossEuro, rows, byAbbonamento }
   } catch (e) {
