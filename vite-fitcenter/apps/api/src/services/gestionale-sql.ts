@@ -4216,6 +4216,96 @@ async function queryVenditeTotaleComeAndamento(
   return Number(row?.Totale ?? row?.totale) || 0
 }
 
+/** Stessa logica di queryVenditeTotaleComeAndamento, raggruppata per mese (una query, non N round-trip). */
+async function queryVenditeTotaleComeAndamentoPerMesi(
+  p: sql.ConnectionPool,
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<{ mese: number; totale: number }[]> {
+  await resolveDanzaOpExcludeSpec()
+  const tblM = defaultTables.movimentiVenduto
+  const viewCfg = getViewVenditeGestionale()
+  const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+  const req = poolRequestWithTimeout(p, getVenditeCrossRequestTimeoutMs())
+    .input("from", sql.VarChar(10), from)
+    .input("to", sql.VarChar(10), to)
+  ids.forEach((id, i) => {
+    req.input(`id${i}`, sql.Int, id)
+  })
+
+  const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
+  const dateExpr = (col: string) =>
+    dateShiftH
+      ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
+      : `CAST(${col} AS DATE)`
+  const meseExpr = `MONTH(${dateExpr(`M.[${COL_DATA}]`)})`
+
+  const whereBase = `
+    WHERE M.[${COL_IMPORTO}] <> 0
+      AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
+      AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+      ${sqlWhereTipoOperazioneMovimentoVendita("M")}
+  `
+
+  const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
+  const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
+  const durataCol = "Durata"
+  const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
+  const whereAndamentoEsclusioniView = `
+    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+    ${whereExcludeDanzaEOperatoreArte("R")}
+    ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+    ${whereExcludeAbbonamentiSpecificiIds("R")}
+  `
+  const consultantFilter =
+    idConsultant && ids.length > 0
+      ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
+      : ""
+
+  const r = await req.query(
+    `;WITH Temp_Stampe AS (
+       SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID, ${meseExpr} AS Mese
+       FROM [${tblM}] M
+       ${whereBase}
+     ),
+     RigheView AS (
+       SELECT
+         R.[${viewCfg.colJoin}] AS ID,
+         T.Mese,
+         ${categoriaExpr} AS Categoria,
+         R.[${durataCol}] AS DurataMesi,
+         TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
+       FROM [${viewCfg.view}] R
+       INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
+       WHERE 1=1
+         ${consultantFilter}
+        ${whereAndamentoEsclusioniView}
+     ),
+     PerIscrizione AS (
+       SELECT
+         ID,
+         Mese,
+         Categoria,
+         DurataMesi,
+         MAX(TotaleEuro) AS TotaleEuro
+       FROM RigheView
+       WHERE 1=1
+         ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
+       GROUP BY ID, Mese, Categoria, DurataMesi
+     )
+     SELECT Mese, COALESCE(SUM(TotaleEuro), 0) AS Totale
+     FROM PerIscrizione
+     GROUP BY Mese`
+  )
+  return (r.recordset ?? [])
+    .map((row) => ({
+      mese: Number(row.Mese ?? row.mese) || 0,
+      totale: Number(row.Totale ?? row.totale) || 0,
+    }))
+    .filter((x) => x.mese >= 1 && x.mese <= 12)
+}
+
 /**
  * Vendite cross (solo cambio tipologia abbonamento): escluse dal venduto base.
  * Valore = movimenti U (±5 min dal log) oppure piano rate del cliente:
@@ -4715,22 +4805,19 @@ export async function getVenditePerMeseAnno(
   idConsultant?: string,
   opts?: { throughMonth?: number }
 ): Promise<{ mese: number; totale: number }[]> {
-  if (!(await getPool())) return []
+  const p = await getPool()
+  if (!p) return []
   try {
     const through = Math.min(12, Math.max(1, opts?.throughMonth ?? 12))
-    const monthNums = Array.from({ length: through }, (_, i) => i + 1)
-    const fetched = await Promise.all(
-      monthNums.map(async (mese) => {
-        const ultimo = new Date(anno, mese, 0).getDate()
-        const from = `${anno}-${String(mese).padStart(2, "0")}-01`
-        const to = `${anno}-${String(mese).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
-        const totale = await getVenditeTotaleEuroPeriodo(from, to, idConsultant)
-        return { mese, totale }
-      })
-    )
-    const out = [...fetched]
-    for (let m = through + 1; m <= 12; m++) out.push({ mese: m, totale: 0 })
-    return out.sort((a, b) => a.mese - b.mese)
+    const from = `${anno}-01-01`
+    const ultimo = new Date(anno, through, 0).getDate()
+    const to = `${anno}-${String(through).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
+    const fetched = await queryVenditeTotaleComeAndamentoPerMesi(p, from, to, idConsultant)
+    const map = new Map(fetched.map((r) => [r.mese, r.totale]))
+    return Array.from({ length: 12 }, (_, i) => {
+      const mese = i + 1
+      return { mese, totale: mese <= through ? map.get(mese) ?? 0 : 0 }
+    })
   } catch {
     return []
   }

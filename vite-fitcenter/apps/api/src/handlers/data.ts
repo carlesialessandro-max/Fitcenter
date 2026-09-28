@@ -516,7 +516,7 @@ function shareInflight<T>(key: string, fn: () => Promise<T>): Promise<T> {
 }
 
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
-const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 45_000)
+const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 180_000)
 function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
