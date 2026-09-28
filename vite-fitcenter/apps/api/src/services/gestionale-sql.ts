@@ -3266,14 +3266,15 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
   const abbDesc = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
   const abbDur = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
+  const like = (needle: string) =>
+    `(${cat} LIKE N'%${needle}%' OR ${abbDesc} LIKE N'%${needle}%' OR ${abbDur} LIKE N'%${needle}%')`
   const notAdultMaster = `(
     ${cat} NOT LIKE N'%ADULT%' AND ${abbDesc} NOT LIKE N'%ADULT%'
     AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'
     AND ${cat} NOT LIKE N'%SENIOR%' AND ${abbDesc} NOT LIKE N'%SENIOR%'
   )`
-  const like = (needle: string) =>
-    `(${cat} LIKE N'%${needle}%' OR ${abbDesc} LIKE N'%${needle}%' OR ${abbDur} LIKE N'%${needle}%')`
-  const isBambini = `(
+  // Pagina adulti: esclusione larga (invariata).
+  const isBambiniBroad = `(
     ${like("GESTANTI")}
     OR ${like("ACQUATIC")}
     OR ${like("BAMBIN")}
@@ -3285,8 +3286,35 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     OR (${like("PRIVATE")} AND ${notAdultMaster})
     OR ${like("ASI")}
   )`
-  if (ambito === "bambini") return `\n      AND ${isBambini}`
-  return `\n      AND NOT ${isBambini}`
+  // Listino gestionale bambini: Acquaticità, Agonismo categorie (no Master), Gestanti,
+  // Pacchetto private bambini (no adulti), Scuola nuoto, ASI+iscrizione legate a Sc/AQ/Rin.
+  const isAsiBambini = `(
+    ((${abbDesc} LIKE N'%ASI%' AND ${abbDesc} LIKE N'%ISCRIZIONE%')
+      OR (${cat} LIKE N'%ASI%' AND ${cat} LIKE N'%ISCRIZIONE%'))
+    AND (
+      ${abbDesc} LIKE N'% SC%' OR ${abbDesc} LIKE N'%SC'
+      OR ${abbDesc} LIKE N'% AQ%' OR ${abbDesc} LIKE N'%AQ%'
+      OR ${abbDesc} LIKE N'%RIN%'
+      OR ${like("BAMBIN")} OR ${like("SCUOLA")} OR ${like("ACQUATIC")} OR ${like("GESTANT")}
+    )
+  )`
+  const isBambiniListino = `(
+    ${like("GESTANTI")}
+    OR ${like("ACQUATIC")}
+    OR ${like("BAMBIN")}
+    OR (${like("AGONISM")} AND ${notAdultMaster} AND ${abbDur} NOT LIKE N'%MASTER%' AND ${cat} NOT LIKE N'%MASTER%')
+    OR (
+      ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abbDesc} LIKE N'%SCUOLA%' AND ${abbDesc} LIKE N'%NUOT%'))
+      AND ${notAdultMaster}
+    )
+    OR (${like("PRIVATE")} AND ${notAdultMaster} AND NOT ${like("ADULT")})
+    OR ${isAsiBambini}
+  )
+  AND ${cat} NOT LIKE N'%JUJITSU%' AND ${abbDesc} NOT LIKE N'%JUJITSU%'
+  AND ${cat} NOT LIKE N'%CAMPUS%' AND ${abbDesc} NOT LIKE N'%CAMPUS%'
+  AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'`
+  if (ambito === "bambini") return `\n      AND ${isBambiniListino}`
+  return `\n      AND NOT ${isBambiniBroad}`
 }
 
 function whereEsclusioniVenditeView(alias = "R"): string {

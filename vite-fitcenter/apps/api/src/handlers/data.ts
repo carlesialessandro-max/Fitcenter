@@ -2623,7 +2623,8 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
   }
   if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
-  if (/\bASI\b/.test(blob) && /\bSC\b/.test(blob)) return "Scuola nuoto"
+  if (/\bASI\b/.test(blob) && (/\bSC\b/.test(blob) || /SCUOLA/.test(blob))) return "Scuola nuoto"
+  if (/\bASI\b/.test(blob) && (/\bAQ\b/.test(blob) || /ACQUATIC/.test(blob))) return "Acquaticità"
   if (/\bASI\b/.test(blob)) return "ASI"
   return "Altro"
 }
@@ -2664,7 +2665,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-ex3-asi" : "adulti-3",
+      venditori: ambito === "bambini" ? "bambini-listino-v2" : "adulti-3",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
