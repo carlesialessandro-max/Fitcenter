@@ -121,14 +121,20 @@ const CONSULENTE_NOME_TO_ID: Record<string, string> = {
   "ombretta zenoni": process.env.CONSULENTE_ID_OMBRETTA ?? "312,352,73",
 }
 
-/** Consulenti pagina andamento bambini (non Carmen/Serena/Ombretta). Override: CONSULENTI_BAMBINI. */
-function consulentiBambiniLabels(): string[] {
+/** Consulenti pagina andamento bambini (tutti tranne Carmen/Serena/Ombretta). Override: CONSULENTI_BAMBINI. */
+async function consulentiBambiniLabels(): Promise<string[]> {
   const raw = (process.env.CONSULENTI_BAMBINI ?? "").trim()
   const fromEnv = raw
     ? raw.split(",").map((s) => s.trim()).filter(Boolean)
     : []
-  const fallback = ["Irene Carlesi", "Elisa Garisi", "Victoria", "Alba Salata", "Tommaso", "Simona Chiti"]
-  return fromEnv.length ? fromEnv : fallback
+  if (fromEnv.length) return fromEnv
+  try {
+    const fromDb = await gestionaleSql.getConsulentiNomiBambini()
+    if (fromDb.length) return fromDb
+  } catch {
+    /* fallback */
+  }
+  return ["Irene Carlesi", "Elisa Garisi", "Victoria", "Alba Salata", "Tommaso", "Simona Chiti"]
 }
 
 /** Converte stringa data (YYYY-MM-DD o DD/MM/YYYY) in timestamp per confronti. */
@@ -2604,17 +2610,22 @@ export async function getVenditeStorico(req: Request, res: Response) {
 
 /** Distribuzione vendite (movimenti) per categoria e durata (abbonamenti venduti).
  *  Periodo: mese scelto. Giorni chiusi in cache permanente; solo il mese in corso si ricalcola. */
-function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string): string | null {
+function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string): string {
   const blob = `${categoria} ${abbonamento ?? ""}`
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
   if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
-  if (/ACQUATIC/.test(blob)) return "Acquaticità"
-  if (/AGONIST/.test(blob) && !/\bBAMBIN/.test(blob)) return "Squadra agonistica"
+  if (/ACQUATIC/.test(blob) || /\bAQ\b/.test(blob) || /12\s*M\s*AQ/.test(blob)) return "Acquaticità"
+  if (/PRIVATE/.test(blob) && !/ADULT/.test(blob)) return "Lezioni private bambini"
+  if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob)) {
+    return "Agonismo categorie"
+  }
   if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
-  return null
+  if (/\bASI\b/.test(blob) && /\bSC\b/.test(blob)) return "Scuola nuoto"
+  if (/\bASI\b/.test(blob)) return "ASI"
+  return "Altro"
 }
 
 export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Response) {
@@ -2643,12 +2654,18 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
       idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
     }
-    // Bambini: senza consulente scelto non si usano Carmen/Serena/Ombretta — tutti i venditori (Irene, Elisa, Victoria, Alba, …).
+    // Bambini «Tutte»: tutti i venditori tranne Carmen/Serena/Ombretta (esclusione in SQL).
 
     const scope = cacheScope(req)
     const cacheAsOf = isCurrentMonth ? todayHourCacheKey(getTodayKey()) : to
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheParams = { from, to, ambito, consulente: consulente ?? null, venditori: ambito === "bambini" ? "bambini-all" : "adulti-3" }
+    const cacheParams = {
+      from,
+      to,
+      ambito,
+      consulente: consulente ?? null,
+      venditori: ambito === "bambini" ? "bambini-ex3-asi" : "adulti-3",
+    }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
       scope,
@@ -2717,30 +2734,47 @@ async function computeAndamentoPayload(args: {
       args.ambito
     )
   let mappedRows = rows
+  let mappedAbb = byAbbonamento
   if (args.ambito === "bambini") {
     const agg = new Map<string, { categoria: string; durataMesi: number | null; count: number; totalEuro: number }>()
     for (const r of rows) {
-      const tipo = classifyBambiniTipoAbbonamento(r.categoria, r.categoria) ?? "Altro"
-      const key = `${tipo}|${r.durataMesi ?? "x"}`
-      const prev = agg.get(key)
-      if (!prev) agg.set(key, { categoria: tipo, durataMesi: r.durataMesi, count: r.count, totalEuro: r.totalEuro })
+      const tipo = classifyBambiniTipoAbbonamento(r.categoria, r.categoria)
+      const prev = agg.get(tipo)
+      if (!prev) agg.set(tipo, { categoria: tipo, durataMesi: null, count: r.count, totalEuro: r.totalEuro })
       else {
         prev.count += r.count
         prev.totalEuro += r.totalEuro
       }
     }
-    mappedRows = Array.from(agg.values())
+    const order = [
+      "Scuola nuoto",
+      "Acquaticità",
+      "Gestanti",
+      "Agonismo categorie",
+      "Lezioni private bambini",
+      "ASI",
+      "Altro",
+    ]
+    mappedRows = order.filter((k) => agg.has(k)).map((k) => agg.get(k)!)
+    for (const [k, v] of agg) {
+      if (!order.includes(k)) mappedRows.push(v)
+    }
+    mappedAbb = mappedRows.map((r) => ({
+      abbonamento: r.categoria,
+      count: r.count,
+      totalEuro: r.totalEuro,
+    }))
   }
   return {
     from: args.from,
     to: args.to,
     ambito: args.ambito,
-    consulenti: args.ambito === "bambini" ? consulentiBambiniLabels() : undefined,
+    consulenti: args.ambito === "bambini" ? await consulentiBambiniLabels() : undefined,
     totalCount,
     totalEuro: args.ambito === "bambini" ? mappedRows.reduce((s, r) => s + r.totalEuro, 0) : totalEuro,
     crossEuro: args.ambito === "bambini" ? 0 : crossEuro,
     rows: mappedRows,
-    byAbbonamento,
+    byAbbonamento: mappedAbb,
   }
 }
 

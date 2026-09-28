@@ -149,13 +149,15 @@ function exportAndamentoPdf(args: {
     headStyles: { fillColor: [59, 130, 246] },
   })
   const y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : 90
-  autoTable(doc, {
-    startY: y,
-    head: [["Durata", "Movimenti", "%", "Totale €"]],
-    body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`, fmtEuro(r.euro)]),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [16, 185, 129] },
-  })
+  if (args.byDurata.length > 0) {
+    autoTable(doc, {
+      startY: y,
+      head: [["Durata", "Movimenti", "%", "Totale €"]],
+      body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`, fmtEuro(r.euro)]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [16, 185, 129] },
+    })
+  }
   const y2 = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 60
   if (args.byAbbonamento?.length) {
     autoTable(doc, {
@@ -261,7 +263,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <h1 className="text-2xl font-semibold text-zinc-100">{titolo}</h1>
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
-              ? "Per tipo di abbonamento (scuola nuoto, acquaticità, gestanti, squadra agonistica) — non per età"
+              ? "Per tipo di abbonamento (scuola nuoto, acquaticità, gestanti, agonismo categorie, lezioni private) — con ASI, senza Carmen/Serena/Ombretta"
               : "Distribuzione vendite adulti per categoria e durata"}
           </p>
         </div>
@@ -307,7 +309,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <label className="flex flex-col gap-1 text-sm text-zinc-400">
             Consulente
             <select value={adminConsulente} onChange={(e) => setAdminConsulente(e.target.value)} className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100">
-              <option value="">{ambito === "bambini" ? "Tutte (Irene, Elisa, Victoria, Alba, …)" : "Tutte le consulenti"}</option>
+              <option value="">{ambito === "bambini" ? "Tutte (escluse Carmen, Serena, Ombretta)" : "Tutte le consulenti"}</option>
               {consulentiList.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
@@ -379,12 +381,15 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                     from: data?.from,
                     to: data?.to,
                     byCategoria: computed.byCategoria,
-                    byDurata: computed.byDurata,
-                    byAbbonamento: data?.byAbbonamento?.map((r) => ({
-                      name: String(r.abbonamento ?? "—"),
-                      count: Number(r.count ?? 0) || 0,
-                      euro: Number(r.totalEuro ?? 0) || 0,
-                    })) ?? [],
+                    byDurata: ambito === "bambini" ? [] : computed.byDurata,
+                    byAbbonamento:
+                      ambito === "bambini"
+                        ? []
+                        : data?.byAbbonamento?.map((r) => ({
+                            name: String(r.abbonamento ?? "—"),
+                            count: Number(r.count ?? 0) || 0,
+                            euro: Number(r.totalEuro ?? 0) || 0,
+                          })) ?? [],
                   })
                 }
                 className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
@@ -438,6 +443,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 </ResponsiveContainer>
               </div>
 
+              {ambito === "adulti" ? (
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
                 <p className="mb-2 text-sm text-zinc-300">Distribuzione per durata</p>
                 <ResponsiveContainer width="100%" height={520}>
@@ -473,9 +479,10 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
+              ) : null}
             </div>
 
-            <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <div className={`mt-6 grid gap-6 ${ambito === "bambini" ? "lg:grid-cols-1" : "lg:grid-cols-2"}`}>
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
                 <p className="mb-2 text-sm text-zinc-300">{ambito === "bambini" ? "Totali per tipo abbonamento" : "Totali per categoria"}</p>
                 <table className="w-full text-left text-sm">
@@ -504,6 +511,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                   </tbody>
                 </table>
               </div>
+              {ambito === "adulti" ? (
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
                 <p className="mb-2 text-sm text-zinc-300">Totali per durata</p>
                 <table className="w-full text-left text-sm">
@@ -532,9 +540,10 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                   </tbody>
                 </table>
               </div>
+              ) : null}
             </div>
 
-            {data?.byAbbonamento && data.byAbbonamento.length > 0 ? (
+            {ambito === "adulti" && data?.byAbbonamento && data.byAbbonamento.length > 0 ? (
               <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
                 <p className="mb-2 text-sm text-zinc-300">Dettaglio abbonamenti</p>
                 <div className="max-h-80 overflow-auto">

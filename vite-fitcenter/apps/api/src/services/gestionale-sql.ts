@@ -598,34 +598,69 @@ export async function getConsultantIdUtente(consulenteNome: string): Promise<str
   return getVenditoreIdByNome(trimmed)
 }
 
-let cacheVenditoriNomeToId: Map<string, string> | null = null
+const ADULTI_VENDITORI_NORM = new Set([
+  "carmen",
+  "serena",
+  "ombretta",
+  "carmen severino",
+  "serena del prete",
+  "ombretta zenoni",
+])
+
+type VenditoreNomeId = { nome: string; id: string }
+let cacheVenditoriList: VenditoreNomeId[] | null = null
 
 /** Qualsiasi venditore in vista (Irene, Elisa, Victoria, Alba, …), non solo Carmen/Serena/Ombretta. */
 export async function getVenditoreIdByNome(consulenteNome: string): Promise<string | null> {
   const wanted = norm(consulenteNome)
   if (!wanted) return null
-  const map = await getAllVenditoriNomeToId()
-  const exact = map.get(wanted)
-  if (exact) return exact
+  const list = await getAllVenditoriList()
+  const idsFor = (pred: (n: string) => boolean) =>
+    [...new Set(list.filter((v) => pred(norm(v.nome))).map((v) => v.id).filter(Boolean))]
+  const exact = idsFor((n) => n === wanted)
+  if (exact.length) return exact.join(",")
   const first = wanted.split(" ")[0] ?? ""
   if (first.length < 3) return null
-  const ids = [
-    ...new Set(
-      [...map.entries()]
-        .filter(([k]) => k === first || k.startsWith(`${first} `))
-        .map(([, id]) => id)
-    ),
-  ]
-  if (ids.length === 0) return null
-  return ids.join(",")
+  const fuzzy = idsFor((n) => n === first || n.startsWith(`${first} `))
+  return fuzzy.length ? fuzzy.join(",") : null
 }
 
-async function getAllVenditoriNomeToId(): Promise<Map<string, string>> {
-  if (cacheVenditoriNomeToId) return cacheVenditoriNomeToId
-  const result = new Map<string, string>()
+/** Nomi venditori pagina bambini: tutti tranne Carmen, Serena, Ombretta. */
+export async function getConsulentiNomiBambini(): Promise<string[]> {
+  const list = await getAllVenditoriList()
+  const names: string[] = []
+  const seen = new Set<string>()
+  for (const v of list) {
+    const n = norm(v.nome)
+    const first = n.split(" ")[0] ?? ""
+    if (ADULTI_VENDITORI_NORM.has(n) || ADULTI_VENDITORI_NORM.has(first)) continue
+    if (!n || seen.has(n)) continue
+    seen.add(n)
+    names.push(v.nome.trim())
+  }
+  names.sort((a, b) => a.localeCompare(b, "it"))
+  return names
+}
+
+async function getIdVenditoriAdulti(): Promise<number[]> {
+  const map = await getConsultantIdUtenteMap()
+  const merged = mergeConsultantIdStrings([
+    map.get("Carmen Severino") ?? map.get("carmen severino"),
+    map.get("Serena Del Prete") ?? map.get("serena del prete"),
+    map.get("Ombretta Zenoni") ?? map.get("ombretta zenoni"),
+    process.env.CONSULENTE_ID_CARMEN ?? "336",
+    process.env.CONSULENTE_ID_SERENA ?? "348",
+    process.env.CONSULENTE_ID_OMBRETTA ?? "312,352,73",
+  ])
+  return merged ? parseConsultantIds(merged) : []
+}
+
+async function getAllVenditoriList(): Promise<VenditoreNomeId[]> {
+  if (cacheVenditoriList) return cacheVenditoriList
+  const result: VenditoreNomeId[] = []
   const p = await getPool()
   if (!p) {
-    cacheVenditoriNomeToId = result
+    cacheVenditoriList = result
     return result
   }
   const viewCfg = getViewVenditeGestionale()
@@ -637,15 +672,14 @@ async function getAllVenditoriNomeToId(): Promise<Map<string, string>> {
     )
     for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
       const id = String(row.IdVend ?? "").trim()
-      const nome = norm(String(row.NomeVend ?? ""))
+      const nome = String(row.NomeVend ?? "").trim()
       if (!id || !nome) continue
-      const prev = result.get(nome)
-      result.set(nome, prev ? [...new Set([...prev.split(","), id])].join(",") : id)
+      result.push({ nome, id })
     }
   } catch {
     /* view assente o colonne diverse */
   }
-  cacheVenditoriNomeToId = result
+  cacheVenditoriList = result
   return result
 }
 
@@ -3230,17 +3264,26 @@ export type AndamentoAmbito = "adulti" | "bambini"
 
 function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
   const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
-  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDurataDescrizione], ${alias}.[AbbonamentoDescrizione], N''))))`
+  const abbDesc = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
+  const abbDur = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
+  const notAdultMaster = `(
+    ${cat} NOT LIKE N'%ADULT%' AND ${abbDesc} NOT LIKE N'%ADULT%'
+    AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'
+    AND ${cat} NOT LIKE N'%SENIOR%' AND ${abbDesc} NOT LIKE N'%SENIOR%'
+  )`
+  const like = (needle: string) =>
+    `(${cat} LIKE N'%${needle}%' OR ${abbDesc} LIKE N'%${needle}%' OR ${abbDur} LIKE N'%${needle}%')`
   const isBambini = `(
-    ${cat} LIKE N'%GESTANTI%' OR ${abb} LIKE N'%GESTANTI%'
-    OR ${cat} LIKE N'%ACQUATIC%' OR ${abb} LIKE N'%ACQUATIC%'
-    OR ${cat} LIKE N'%AGONIST%' OR ${abb} LIKE N'%AGONIST%'
-    OR ${cat} LIKE N'%BAMBIN%' OR ${abb} LIKE N'%BAMBIN%'
+    ${like("GESTANTI")}
+    OR ${like("ACQUATIC")}
+    OR ${like("BAMBIN")}
+    OR (${like("AGONISM")} AND ${notAdultMaster})
     OR (
-      ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%'))
-      AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
-      AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%'
+      ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abbDesc} LIKE N'%SCUOLA%' AND ${abbDesc} LIKE N'%NUOT%'))
+      AND ${notAdultMaster}
     )
+    OR (${like("PRIVATE")} AND ${notAdultMaster})
+    OR ${like("ASI")}
   )`
   if (ambito === "bambini") return `\n      AND ${isBambini}`
   return `\n      AND NOT ${isBambini}`
@@ -4584,9 +4627,12 @@ export async function getVenditeMovimentiCategoriaDurata(
   const strict = (process.env.MOVIMENTI_AGG_STRICT ?? "true").toLowerCase() !== "false"
   try {
     const ids = idConsultant ? parseConsultantIds(idConsultant) : []
+    const excludeIds =
+      ambito === "bambini" && ids.length === 0 ? await getIdVenditoriAdulti() : []
 
     const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
     ids.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+    excludeIds.forEach((id, i) => req.input(`ex${i}`, sql.Int, id))
 
     const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
     const dateExpr = (col: string) =>
@@ -4595,7 +4641,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         : `CAST(${col} AS DATE)`
 
     const whereBase = `
-      WHERE M.[${COL_IMPORTO}] <> 0
+      WHERE ${ambito === "bambini" ? "1=1" : `M.[${COL_IMPORTO}] <> 0`}
         AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
         AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
         ${sqlWhereTipoOperazioneMovimentoVendita("M")}
@@ -4608,9 +4654,17 @@ export async function getVenditeMovimentiCategoriaDurata(
     const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
     const categoriaOrAbbExpr =
       ambito === "bambini"
-        ? `COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr})`
+        ? `COALESCE(NULLIF(LTRIM(RTRIM(R.[AbbonamentoDescrizione])), N''), ${categoriaExpr}, R.[AbbonamentoDurataDescrizione])`
         : categoriaExpr
-    const whereAndamentoEsclusioniView = `
+    const whereAndamentoEsclusioniView =
+      ambito === "bambini"
+        ? `
+      AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+      AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
+      ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
+      ${whereAndamentoAmbito("R", ambito)}
+    `
+        : `
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
       ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
@@ -4618,9 +4672,11 @@ export async function getVenditeMovimentiCategoriaDurata(
       ${whereAndamentoAmbito("R", ambito)}
     `
     const consultantFilter =
-      idConsultant && ids.length > 0
+      ids.length > 0
         ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
-        : ""
+        : excludeIds.length > 0
+          ? ` AND R.[${viewCfg.colId}] NOT IN (${excludeIds.map((_, i) => `@ex${i}`).join(", ")})`
+          : ""
 
     if (ambito === "bambini") {
       const r = await req.query(
@@ -4637,7 +4693,6 @@ export async function getVenditeMovimentiCategoriaDurata(
            SELECT
              R.[${viewCfg.colJoin}] AS ID,
              ${categoriaOrAbbExpr} AS Categoria,
-             R.[${durataCol}] AS DurataMesi,
              ROW_NUMBER() OVER (PARTITION BY R.[${viewCfg.colJoin}] ORDER BY (SELECT 1)) AS rn
            FROM [${viewCfg.view}] R
            WHERE 1=1
@@ -4646,66 +4701,22 @@ export async function getVenditeMovimentiCategoriaDurata(
          )
          SELECT
            V.Categoria,
-           V.DurataMesi,
            SUM(M.nMov) AS count,
            SUM(COALESCE(M.TotaleEuro, 0)) AS totalEuro
          FROM MovAgg M
          INNER JOIN ViewFiltro V ON V.ID = M.ID AND V.rn = 1
-         WHERE 1=1
-           ${whereExcludeUispTesseramenti("V", "V.Categoria")}
-         GROUP BY V.Categoria, V.DurataMesi
+         GROUP BY V.Categoria
          ORDER BY count DESC;`
       )
-      const rAbb = await req.query(
-        `;WITH MovAgg AS (
-           SELECT
-             M.[${COL_ISCRIZIONE}] AS ID,
-             COUNT(*) AS nMov,
-             SUM(COALESCE(TRY_CONVERT(float, M.[${COL_IMPORTO}]), 0)) AS TotaleEuro
-           FROM [${tblM}] M
-           ${whereBase}
-           GROUP BY M.[${COL_ISCRIZIONE}]
-         ),
-         ViewFiltro AS (
-           SELECT
-             R.[${viewCfg.colJoin}] AS ID,
-             COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr}) AS Abbonamento,
-             ROW_NUMBER() OVER (PARTITION BY R.[${viewCfg.colJoin}] ORDER BY (SELECT 1)) AS rn
-           FROM [${viewCfg.view}] R
-           WHERE 1=1
-             ${consultantFilter}
-             ${whereAndamentoEsclusioniView}
-         )
-         SELECT
-           V.Abbonamento,
-           SUM(M.nMov) AS count,
-           SUM(COALESCE(M.TotaleEuro, 0)) AS totalEuro
-         FROM MovAgg M
-         INNER JOIN ViewFiltro V ON V.ID = M.ID AND V.rn = 1
-         WHERE 1=1
-           ${whereExcludeUispTesseramenti("V", "V.Abbonamento")}
-         GROUP BY V.Abbonamento
-         ORDER BY totalEuro DESC;`
-      )
-      const rows = (r.recordset ?? []).map((row) => {
-        const durataRaw = row.DurataMesi == null ? null : Number(row.DurataMesi)
-        const durataMesi =
-          durataRaw == null || Number.isNaN(durataRaw) || durataRaw === -1 ? null : durataRaw
-        return {
-          categoria: String(row.Categoria ?? "").toLowerCase().trim() || "palestra",
-          durataMesi,
-          count: Number(row.count ?? row.Count ?? 0) || 0,
-          totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
-        }
-      })
-      const byAbbonamento = (rAbb.recordset ?? []).map((row) => ({
-        abbonamento: String(row.Abbonamento ?? "").trim() || "—",
+      const rows = (r.recordset ?? []).map((row) => ({
+        categoria: String(row.Categoria ?? "").trim() || "palestra",
+        durataMesi: null as number | null,
         count: Number(row.count ?? row.Count ?? 0) || 0,
         totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
       }))
       const totalCount = rows.reduce((s, row) => s + row.count, 0)
       const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)
-      return { totalCount, totalEuro, crossEuro: 0, rows, byAbbonamento }
+      return { totalCount, totalEuro, crossEuro: 0, rows, byAbbonamento: [] }
     }
 
     const rTotal = await req.query(
