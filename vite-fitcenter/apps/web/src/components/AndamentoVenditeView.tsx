@@ -263,7 +263,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <h1 className="text-2xl font-semibold text-zinc-100">{titolo}</h1>
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
-              ? "Per tipo di abbonamento (scuola nuoto, acquaticità, gestanti, agonismo categorie, lezioni private) — con ASI, senza Carmen/Serena/Ombretta"
+              ? "Per tipo di abbonamento (scuola nuoto, acquaticità, gestanti, private, ASI). Agonismo: rate incassate in cassa."
               : "Distribuzione vendite adulti per categoria e durata"}
           </p>
         </div>
@@ -496,7 +496,12 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                   <tbody className="text-zinc-200">
                     {computed.byCategoria.map((r) => (
                       <tr key={r.name} className="border-b border-zinc-800/70">
-                        <td className="py-2 pr-2">{r.name}</td>
+                        <td className="py-2 pr-2">
+                          {r.name}
+                          {ambito === "bambini" && r.name === "Agonismo categorie" ? (
+                            <span className="ml-2 text-xs font-normal text-zinc-500">rate cassa</span>
+                          ) : null}
+                        </td>
                         <td className="py-2 pr-2 text-right tabular-nums">{r.count}</td>
                         <td className="py-2 text-right tabular-nums">€{fmtEuro(r.euro)}</td>
                       </tr>
@@ -510,6 +515,9 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                     </tr>
                   </tbody>
                 </table>
+                {ambito === "bambini" && data?.noteAgonismo ? (
+                  <p className="mt-3 text-xs text-zinc-500">{data.noteAgonismo}</p>
+                ) : null}
               </div>
               {ambito === "adulti" ? (
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">

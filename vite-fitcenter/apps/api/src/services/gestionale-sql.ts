@@ -1569,6 +1569,102 @@ export async function queryAbbonamentiPagamentiSumCassaCampusByIscrizione(
   }
 }
 
+/**
+ * Agonismo categorie: non è nel venduto (contratto a rate) ma nei pagamenti/cassa del mese.
+ * Replica la tab Pagamenti del gestionale (AGONISMO CATEGORIE, no Master / abbigliamento).
+ */
+export async function getAgonismoCategorieRateNelPeriodo(
+  from: string,
+  to: string,
+  opts: { includeIds?: number[]; excludeIds?: number[] } = {}
+): Promise<{ count: number; totalEuro: number }> {
+  const empty = { count: 0, totalEuro: 0 }
+  const p = await getPool()
+  if (!p) return empty
+  const view = getAbbonamentiPagamentiViewName()
+  const { query: vq } = qualifySqlObject(view)
+  try {
+    const colsLower = await prenGetCols(view)
+    const dateCol =
+      pickPaidDateColStrict(colsLower) ??
+      pickBestDateCol(colsLower, [
+        "DataPagamento",
+        "DataPagato",
+        "CassaMovimentiDataPagato",
+        "CassaMovimentiDataOperazione",
+        "DataRata",
+        "AbbonamentiPagamentiDataRata",
+        "DataOperazione",
+      ])
+    const importoCol =
+      pickBestNumberCol(colsLower, [
+        "CassaMovimentiImporto",
+        "Cassa Movimenti Importo",
+        "Pagamento",
+        "ImportoPagato",
+        "Importo",
+      ]) ?? pickBestTextCol(colsLower, ["CassaMovimentiImporto", "Pagamento", "Importo"])
+    const abbCol =
+      pickBestTextCol(colsLower, [
+        "AbbonamentoDescrizione",
+        "Abbonamento",
+        "DescrizioneAbbonamento",
+        "NomeAbbonamento",
+      ]) ?? null
+    const catCol =
+      pickBestTextCol(colsLower, ["CategoriaAbbonamentoDescrizione", "CategoriaDescrizione", "NomeCategoria"]) ?? null
+    if (!dateCol || !importoCol || (!abbCol && !catCol)) return empty
+
+    const abb = abbCol
+      ? `UPPER(LTRIM(RTRIM(COALESCE(CAST(${bracketCol(abbCol)} AS NVARCHAR(512)), N''))))`
+      : `N''`
+    const cat = catCol
+      ? `UPPER(LTRIM(RTRIM(COALESCE(CAST(${bracketCol(catCol)} AS NVARCHAR(256)), N''))))`
+      : `N''`
+    const isAgonismoCat = `(
+      (${abb} LIKE N'%AGONISM%' AND ${abb} LIKE N'%CATEGOR%')
+      OR (${cat} LIKE N'%AGONISM%' AND ${cat} LIKE N'%CATEGOR%')
+      OR ${cat} LIKE N'%AGONISMO CATEGOR%'
+    )
+    AND ${abb} NOT LIKE N'%MASTER%' AND ${cat} NOT LIKE N'%MASTER%'
+    AND ${abb} NOT LIKE N'%ABBIGLIAMENTO%' AND ${cat} NOT LIKE N'%ABBIGLIAMENTO%'`
+
+    const vendCol =
+      pickBestNumberCol(colsLower, ["IDVenditoreAbbonamento", "IDVenditore", "IdVenditore"]) ??
+      pickBestTextCol(colsLower, ["IDVenditoreAbbonamento", "IDVenditore", "IdVenditore"])
+    const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
+    let vendFilter = ""
+    const includeIds = opts.includeIds ?? []
+    const excludeIds = opts.excludeIds ?? []
+    if (vendCol && includeIds.length > 0) {
+      includeIds.forEach((id, i) => req.input(`id${i}`, sql.Int, id))
+      vendFilter = ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) IN (${includeIds.map((_, i) => `@id${i}`).join(", ")})`
+    } else if (vendCol && excludeIds.length > 0) {
+      excludeIds.forEach((id, i) => req.input(`ex${i}`, sql.Int, id))
+      vendFilter = ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) NOT IN (${excludeIds.map((_, i) => `@ex${i}`).join(", ")})`
+    }
+
+    const imp = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
+    const datePred = `CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) >= CAST(@from AS DATE)
+         AND CAST(TRY_CONVERT(datetime, ${bracketCol(dateCol)}) AS DATE) <= CAST(@to AS DATE)`
+    const r = await req.query(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(${imp}), 0) AS totale
+       FROM ${vq}
+       WHERE ${datePred}
+         AND COALESCE(${imp}, 0) <> 0
+         AND ${isAgonismoCat}
+         ${vendFilter}`
+    )
+    const row = r.recordset?.[0] as { n?: number; totale?: number } | undefined
+    return {
+      count: Number(row?.n ?? 0) || 0,
+      totalEuro: Number(row?.totale ?? 0) || 0,
+    }
+  } catch {
+    return empty
+  }
+}
+
 /** Somma incassi (Importo) per IDUtente/clienteId dalla view CassaMovimenti (range date). */
 export async function queryCassaMovimentiSumByClienteId(from: string, to: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()
@@ -3286,8 +3382,8 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     OR (${like("PRIVATE")} AND ${notAdultMaster})
     OR ${like("ASI")}
   )`
-  // Listino gestionale bambini: Acquaticità, Agonismo categorie (no Master), Gestanti,
-  // Pacchetto private bambini (no adulti), Scuola nuoto, ASI+iscrizione legate a Sc/AQ/Rin.
+  // Listino gestionale bambini: Acquaticità, Gestanti, private bambini, Scuola nuoto, ASI Sc/AQ/Rin.
+  // Agonismo categorie: NON dal venduto (pagano a rate → movimenti di cassa/pagamenti).
   const isAsiBambini = `(
     ((${abbDesc} LIKE N'%ASI%' AND ${abbDesc} LIKE N'%ISCRIZIONE%')
       OR (${cat} LIKE N'%ASI%' AND ${cat} LIKE N'%ISCRIZIONE%'))
@@ -3302,7 +3398,6 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
     ${like("GESTANTI")}
     OR ${like("ACQUATIC")}
     OR ${like("BAMBIN")}
-    OR (${like("AGONISM")} AND ${notAdultMaster} AND ${abbDur} NOT LIKE N'%MASTER%' AND ${cat} NOT LIKE N'%MASTER%')
     OR (
       ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abbDesc} LIKE N'%SCUOLA%' AND ${abbDesc} LIKE N'%NUOT%'))
       AND ${notAdultMaster}
@@ -3312,7 +3407,10 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
   )
   AND ${cat} NOT LIKE N'%JUJITSU%' AND ${abbDesc} NOT LIKE N'%JUJITSU%'
   AND ${cat} NOT LIKE N'%CAMPUS%' AND ${abbDesc} NOT LIKE N'%CAMPUS%'
-  AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'`
+  AND ${cat} NOT LIKE N'%MASTER%' AND ${abbDesc} NOT LIKE N'%MASTER%'
+  AND ${cat} NOT LIKE N'%BADGE%' AND ${abbDesc} NOT LIKE N'%BADGE%'
+  AND ${cat} NOT LIKE N'%MERCHAND%' AND ${abbDesc} NOT LIKE N'%MERCHAND%'
+  AND ${cat} NOT LIKE N'%ABBIGLIAMENTO%' AND ${abbDesc} NOT LIKE N'%ABBIGLIAMENTO%'`
   if (ambito === "bambini") return `\n      AND ${isBambiniListino}`
   return `\n      AND NOT ${isBambiniBroad}`
 }
@@ -4742,6 +4840,18 @@ export async function getVenditeMovimentiCategoriaDurata(
         count: Number(row.count ?? row.Count ?? 0) || 0,
         totalEuro: Number(row.totalEuro ?? row.totaleEuro ?? 0) || 0,
       }))
+      const rate = await getAgonismoCategorieRateNelPeriodo(from, to, {
+        includeIds: ids.length > 0 ? ids : undefined,
+        excludeIds: ids.length > 0 ? undefined : excludeIds,
+      })
+      if (rate.count > 0 || rate.totalEuro > 0) {
+        rows.push({
+          categoria: "AGONISMO CATEGORIE",
+          durataMesi: null,
+          count: rate.count,
+          totalEuro: rate.totalEuro,
+        })
+      }
       const totalCount = rows.reduce((s, row) => s + row.count, 0)
       const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)
       return { totalCount, totalEuro, crossEuro: 0, rows, byAbbonamento: [] }

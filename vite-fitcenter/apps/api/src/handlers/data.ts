@@ -2616,16 +2616,15 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
   if (/\bGESTANTI\b/.test(blob)) return "Gestanti"
-  if (/ACQUATIC/.test(blob) || /\bAQ\b/.test(blob) || /12\s*M\s*AQ/.test(blob)) return "Acquaticità"
+  if (/BADGE|MERCHAND|ABBIGLIAMENTO/.test(blob)) return "Altro"
+  if (/ACQUATIC/.test(blob) || (/\bAQ\b/.test(blob) && !/\bASI\b/.test(blob))) return "Acquaticità"
   if (/PRIVATE/.test(blob) && !/ADULT/.test(blob)) return "Lezioni private bambini"
-  if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob)) {
+  if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob) && !/ABBIGLIAMENTO/.test(blob)) {
     return "Agonismo categorie"
   }
+  if (/\bASI\b/.test(blob)) return "ASI"
   if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
-  if (/\bASI\b/.test(blob) && (/\bSC\b/.test(blob) || /SCUOLA/.test(blob))) return "Scuola nuoto"
-  if (/\bASI\b/.test(blob) && (/\bAQ\b/.test(blob) || /ACQUATIC/.test(blob))) return "Acquaticità"
-  if (/\bASI\b/.test(blob)) return "ASI"
   return "Altro"
 }
 
@@ -2665,7 +2664,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-listino-v2" : "adulti-3",
+      venditori: ambito === "bambini" ? "bambini-cassa-agonismo-v1" : "adulti-3",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -2771,6 +2770,10 @@ async function computeAndamentoPayload(args: {
     to: args.to,
     ambito: args.ambito,
     consulenti: args.ambito === "bambini" ? await consulentiBambiniLabels() : undefined,
+    noteAgonismo:
+      args.ambito === "bambini"
+        ? "Agonismo categorie: incassi cassa delle rate nel mese (non il listino venduto)."
+        : undefined,
     totalCount,
     totalEuro: args.ambito === "bambini" ? mappedRows.reduce((s, r) => s + r.totalEuro, 0) : totalEuro,
     crossEuro: args.ambito === "bambini" ? 0 : crossEuro,
