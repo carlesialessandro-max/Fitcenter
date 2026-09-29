@@ -2613,9 +2613,10 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
+  if (/DANZA/.test(blob) || /\bSTAFF\b/.test(blob)) return "Altro"
   if (/ACQUATIC/.test(blob) && !/\bASI\b/.test(blob)) return "Acquaticità"
   if (/PRIVATE/.test(blob) && !/ADULT/.test(blob)) return "Lezioni private bambini"
-  if (/AGONISM/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob) && !/ABBIGLIAMENTO/.test(blob)) {
+  if (/AGONISM/.test(blob) && /CATEGOR/.test(blob) && !/MASTER/.test(blob) && !/ADULT/.test(blob) && !/SENIOR/.test(blob) && !/ABBIGLIAMENTO/.test(blob)) {
     return "Agonismo categorie"
   }
   if (/\bASI\b/.test(blob) || /BADGE|MERCHAND|BRACCIALE/.test(blob)) return "Scuola nuoto"
@@ -2660,7 +2661,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-no-gestanti-v1" : "adulti-dash-cross-v1",
+      venditori: ambito === "bambini" ? "bambini-asi-nullvend-v1" : "adulti-dash-cross-v1",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,

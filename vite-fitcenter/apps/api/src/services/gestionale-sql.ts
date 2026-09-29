@@ -1641,7 +1641,10 @@ export async function getAgonismoCategorieRateNelPeriodo(
       vendFilter = ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) IN (${includeIds.map((_, i) => `@id${i}`).join(", ")})`
     } else if (vendCol && excludeIds.length > 0) {
       excludeIds.forEach((id, i) => req.input(`ex${i}`, sql.Int, id))
-      vendFilter = ` AND TRY_CONVERT(int, ${bracketCol(vendCol)}) NOT IN (${excludeIds.map((_, i) => `@ex${i}`).join(", ")})`
+      vendFilter = ` AND (
+        TRY_CONVERT(int, ${bracketCol(vendCol)}) IS NULL
+        OR TRY_CONVERT(int, ${bracketCol(vendCol)}) NOT IN (${excludeIds.map((_, i) => `@ex${i}`).join(", ")})
+      )`
     }
 
     const imp = `TRY_CONVERT(float, ${bracketCol(importoCol)})`
@@ -3383,15 +3386,11 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
   )`
   // Listino gestionale bambini: Acquaticità, private bambini, Scuola nuoto, ASI Sc/AQ/Rin.
   // Agonismo categorie: NON dal venduto (pagano a rate → movimenti di cassa/pagamenti).
-  const isAsiBambini = `(
+    const isAsiBambini = `(
     ((${abbDesc} LIKE N'%ASI%' AND ${abbDesc} LIKE N'%ISCRIZIONE%')
       OR (${cat} LIKE N'%ASI%' AND ${cat} LIKE N'%ISCRIZIONE%'))
-    AND (
-      ${abbDesc} LIKE N'% SC%' OR ${abbDesc} LIKE N'%SC'
-      OR ${abbDesc} LIKE N'% AQ%' OR ${abbDesc} LIKE N'%AQ%'
-      OR ${abbDesc} LIKE N'%RIN%'
-      OR ${like("BAMBIN")} OR ${like("SCUOLA")} OR ${like("ACQUATIC")}
-    )
+    AND ${cat} NOT LIKE N'%STAFF%' AND ${abbDesc} NOT LIKE N'%STAFF%'
+    AND ${cat} NOT LIKE N'%DANZA%' AND ${abbDesc} NOT LIKE N'%DANZA%'
   )`
   const isBambiniListino = `(
     ${like("ACQUATIC")}
@@ -4957,6 +4956,7 @@ export async function getVenditeMovimentiCategoriaDurata(
         ? `
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
+      ${whereExcludeDanzaEOperatoreArte("R")}
       ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
       ${whereAndamentoAmbito("R", ambito)}
     `
