@@ -5710,7 +5710,75 @@ function getIncassiViewName(): string {
   return raw
 }
 
-export async function queryIncassiRange(params: { from: string; to: string; segment: "all" | "adulti" | "bambini" | "danza" | "ticket" }): Promise<Record<string, unknown>[]> {
+export type IncassiSegment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+
+function isTicketingIncasso(row: Record<string, unknown>): boolean {
+  const caus = String(
+    firstNonEmpty(row, [
+      "CassaMovimentiCausale",
+      "Causale",
+      "Descrizione",
+      "CasseMovimentiCausale",
+      "CassaMovimentiCausa",
+      "CassaMovimentiDescrizione",
+    ]) ?? ""
+  )
+    .trim()
+    .toUpperCase()
+  if (caus.startsWith("TICKETING")) return true
+  const nomeSolo = String(
+    firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome", "Nome_Utente", "Nome utente", "RagioneSociale"]) ?? ""
+  )
+    .trim()
+    .toLowerCase()
+  if (nomeSolo === "ticketing") return true
+  const cognome = String(firstNonEmpty(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome"]) ?? "")
+    .trim()
+    .toLowerCase()
+  const nome = String(firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]) ?? "")
+    .trim()
+    .toLowerCase()
+  const full = [cognome, nome].filter(Boolean).join(" ").trim()
+  return full === "ticketing"
+}
+
+function isMerchandisingBraccialeIncasso(row: Record<string, unknown>): boolean {
+  const caus = String(
+    firstNonEmpty(row, [
+      "CassaMovimentiCausale",
+      "Causale",
+      "Descrizione",
+      "CasseMovimentiCausale",
+      "CassaMovimentiCausa",
+      "CassaMovimentiDescrizione",
+    ]) ?? ""
+  )
+    .trim()
+    .toUpperCase()
+  if (caus.includes("BRACCIALE")) return true
+  if (caus.includes("BADGE") && caus.includes("MERCHANDISING")) return true
+  return false
+}
+
+/** Classifica un movimento di cassa dopo la deduplica: ticket, categoria cliente, badge/bracciale, altrimenti altro. */
+export function classifyIncassiSegment(row: Record<string, unknown>): Exclude<IncassiSegment, "all"> {
+  if (isTicketingIncasso(row)) return "ticket"
+  const cat = String(row.CategoriaDescrizione ?? "")
+    .trim()
+    .toUpperCase()
+  if (cat === "CLIENTE") return "adulti"
+  if (cat === "KIDS") return "bambini"
+  if (cat === "DANZA") return "danza"
+  // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: restano negli adulti.
+  if (isMerchandisingBraccialeIncasso(row)) return "adulti"
+  return "altro"
+}
+
+export async function queryIncassiRange(params: {
+  from: string
+  to: string
+  segment?: IncassiSegment
+}): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
   const view = getIncassiViewName()
@@ -5730,78 +5798,9 @@ export async function queryIncassiRange(params: { from: string; to: string; segm
        ORDER BY ${bracketCol(dateCol)} DESC;`
     )
   const rows = (r.recordset ?? []) as Record<string, unknown>[]
-  if (params.segment === "all") return rows
-
-  const isTicketing = (row: any): boolean => {
-    const caus = String(
-      firstNonEmpty(row, [
-        "CassaMovimentiCausale",
-        "Causale",
-        "Descrizione",
-        "CasseMovimentiCausale",
-        "CassaMovimentiCausa",
-        "CassaMovimentiDescrizione",
-      ]) ?? ""
-    )
-      .trim()
-      .toUpperCase()
-    if (caus.startsWith("TICKETING")) return true
-    const nomeSolo = String(
-      firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome", "Nome_Utente", "Nome utente", "RagioneSociale"]) ?? ""
-    )
-      .trim()
-      .toLowerCase()
-    if (nomeSolo === "ticketing") return true
-    const cognome = String(firstNonEmpty(row, ["Cognome", "cognome", "CognomeUtente", "UtenteCognome"]) ?? "")
-      .trim()
-      .toLowerCase()
-    const nome = String(firstNonEmpty(row, ["Nome", "nome", "NomeUtente", "UtenteNome"]) ?? "")
-      .trim()
-      .toLowerCase()
-    const full = [cognome, nome].filter(Boolean).join(" ").trim()
-    if (full === "ticketing") return true
-    return false
-  }
-
-  const isMerchandisingBracciale = (row: Record<string, unknown>): boolean => {
-    const caus = String(
-      firstNonEmpty(row, [
-        "CassaMovimentiCausale",
-        "Causale",
-        "Descrizione",
-        "CasseMovimentiCausale",
-        "CassaMovimentiCausa",
-        "CassaMovimentiDescrizione",
-      ]) ?? ""
-    )
-      .trim()
-      .toUpperCase()
-    if (caus.includes("BRACCIALE")) return true
-    if (caus.includes("BADGE") && caus.includes("MERCHANDISING")) return true
-    return false
-  }
-
-  if (params.segment === "ticket") {
-    return rows.filter((row) => isTicketing(row as any))
-  }
-
-  const want =
-    params.segment === "adulti"
-      ? "CLIENTE"
-      : params.segment === "bambini"
-        ? "KIDS"
-        : "DANZA"
-
-  return rows.filter((row) => {
-    if (isTicketing(row as any)) return false
-    const cat = String((row as any).CategoriaDescrizione ?? "")
-      .trim()
-      .toUpperCase()
-    if (cat === want) return true
-    // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: non escludere dagli incassi adulti.
-    if (params.segment === "adulti" && isMerchandisingBracciale(row)) return true
-    return false
-  })
+  const seg = params.segment ?? "all"
+  if (seg === "all") return rows
+  return rows.filter((row) => classifyIncassiSegment(row) === seg)
 }
 
 /**

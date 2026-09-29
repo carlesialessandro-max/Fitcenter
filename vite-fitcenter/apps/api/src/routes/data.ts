@@ -16,7 +16,7 @@ import { getCorsiGestione, patchCorsiGestione, getCorsiClientiSearch } from "../
 import { getNuotoLibero, patchNuotoLibero } from "../handlers/nuotoLibero.js"
 import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
-import { getIncassi } from "../handlers/incassi.js"
+import { getIncassi, getIncassiRiepilogo } from "../handlers/incassi.js"
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } })
 
@@ -76,6 +76,7 @@ dataRouter.get("/report-consulenti", requireAuth, getReportConsulenti)
 dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
 dataRouter.get("/ricevute-utenti", getRicevuteUtenti)
 dataRouter.post("/ricevute-utenti/invia", postInviaScontrino)
+dataRouter.get("/incassi/riepilogo", requireAdmin, getIncassiRiepilogo)
 dataRouter.get("/incassi", requireAdmin, getIncassi)
 dataRouter.get("/campus", getCampus)
 dataRouter.patch("/campus/:clienteId", patchCampusCliente)
