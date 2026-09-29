@@ -164,17 +164,20 @@ export function Incassi() {
 
   const qNow = useQuery({
     queryKey: ["incassi-riepilogo", from, to],
-    queryFn: () =>
-      api.get<IncassiRiepilogo>(`/data/incassi/riepilogo?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+    queryFn: ({ signal }) =>
+      api.get<IncassiRiepilogo>(`/data/incassi/riepilogo?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {
+        signal,
+      }),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
     enabled: role === "admin",
   })
   const qPrev = useQuery({
     queryKey: ["incassi-riepilogo", fromPrev, toPrev],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.get<IncassiRiepilogo>(
-        `/data/incassi/riepilogo?from=${encodeURIComponent(fromPrev)}&to=${encodeURIComponent(toPrev)}`
+        `/data/incassi/riepilogo?from=${encodeURIComponent(fromPrev)}&to=${encodeURIComponent(toPrev)}`,
+        { signal }
       ),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
@@ -182,9 +185,10 @@ export function Incassi() {
   })
   const qDetail = useQuery({
     queryKey: ["incassi", from, to, expanded],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.get<IncassiResponse>(
-        `/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=${encodeURIComponent(expanded ?? "adulti")}`
+        `/data/incassi?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&segment=${encodeURIComponent(expanded ?? "adulti")}`,
+        { signal }
       ),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
@@ -485,9 +489,9 @@ export function Incassi() {
         </div>
         ) : null}
 
-        {qNow.isError || qPrev.isError ? (
+        {qNow.isError && !qNow.isFetching ? (
           <div className="mt-4 text-sm text-red-200">
-            Errore caricamento incassi: {String((qNow.error as Error)?.message ?? (qPrev.error as Error)?.message ?? "—")}
+            Errore caricamento incassi: {String((qNow.error as Error)?.message || "riprova tra qualche secondo")}
           </div>
         ) : null}
 
@@ -524,8 +528,9 @@ export function Incassi() {
 
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-zinc-200">
-            {isGiorno ? "Totale giorno" : "Totale periodo"}: <span className="font-semibold text-amber-300">{eur(totalNow)}</span>
-            {isGiorno && !qPrev.isLoading ? (
+            {isGiorno ? "Totale giorno" : "Totale periodo"}:{" "}
+            <span className="font-semibold text-amber-300">{qNow.isFetching ? "…" : eur(totalNow)}</span>
+            {isGiorno && !qPrev.isFetching ? (
               <span className="ml-2 text-xs text-zinc-500">
                 stesso giorno {annoConfronto}: {eur(totalPrev)}
               </span>
@@ -534,16 +539,16 @@ export function Incassi() {
           {groups.map((g) => {
             if (g.seg === "altro" && g.total === 0 && g.prevTotal === 0) return null
             const d = g.total - g.prevTotal
-            const pct = g.prevTotal > 0 ? (d / g.prevTotal) * 100 : null
+            const pct = !qNow.isFetching && g.prevTotal > 0 ? (d / g.prevTotal) * 100 : null
             const cardClass = `rounded-lg border px-3 py-2 text-left ${
               isGiorno && expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30"
             }${isGiorno ? " hover:bg-zinc-900/50" : ""}`
             const inner = (
               <>
                 <div className="text-xs text-zinc-500">{g.label}</div>
-                <div className="font-semibold text-zinc-100">{eur(g.total)}</div>
+                <div className="font-semibold text-zinc-100">{qNow.isFetching ? "…" : eur(g.total)}</div>
                 <div className="text-xs text-zinc-500">
-                  Movimenti: <span className="text-zinc-200">{g.count}</span>
+                  Movimenti: <span className="text-zinc-200">{qNow.isFetching ? "…" : g.count}</span>
                   {pct != null ? (
                     <span className={d >= 0 ? "ml-2 text-emerald-400" : "ml-2 text-red-400"}>
                       {fmtPct(pct)} vs {annoConfronto}

@@ -117,31 +117,9 @@ function dedupeIncassi(allRows: Record<string, unknown>[]): Record<string, unkno
   return Array.from(bestByKey.values())
 }
 
-function emptySegTotals(): Record<Exclude<IncassiSeg, "all">, { total: number; count: number }> {
-  return {
-    adulti: { total: 0, count: 0 },
-    bambini: { total: 0, count: 0 },
-    danza: { total: 0, count: 0 },
-    ticket: { total: 0, count: 0 },
-    altro: { total: 0, count: 0 },
-  }
-}
-
 async function loadDeduped(from: string, to: string): Promise<Record<string, unknown>[]> {
   const allRows = await gestionaleSql.queryIncassiRange({ from, to, segment: "all" })
   return dedupeIncassi(allRows)
-}
-
-function summarize(rows: Record<string, unknown>[]) {
-  const segments = emptySegTotals()
-  for (const r of rows) {
-    const seg = gestionaleSql.classifyIncassiSegment(r)
-    const euro = amountOf(r)
-    segments[seg].total += euro
-    segments[seg].count += 1
-  }
-  const total = rows.reduce((s, r) => s + amountOf(r), 0)
-  return { total, count: rows.length, segments }
 }
 
 export async function getIncassi(req: Request, res: Response) {
@@ -160,7 +138,7 @@ export async function getIncassi(req: Request, res: Response) {
     const total = rows.reduce((s, r) => s + amountOf(r as any), 0)
     res.json({ from, to, segment: seg, count: rows.length, total, rows })
   } catch (e) {
-    res.status(500).json({ message: (e as Error).message })
+    res.status(500).json({ message: (e as Error).message || "Errore lettura incassi" })
   }
 }
 
@@ -174,10 +152,9 @@ export async function getIncassiRiepilogo(req: Request, res: Response) {
   if (from > to) return res.status(400).json({ message: "Intervallo non valido (from > to)" })
 
   try {
-    const rows = await loadDeduped(from, to)
-    const { total, count, segments } = summarize(rows)
-    res.json({ from, to, total, count, segments, order: DETAIL_SEGS })
+    const agg = await gestionaleSql.queryIncassiRiepilogo({ from, to })
+    res.json({ from, to, total: agg.total, count: agg.count, segments: agg.segments, order: DETAIL_SEGS })
   } catch (e) {
-    res.status(500).json({ message: (e as Error).message })
+    res.status(500).json({ message: (e as Error).message || "Errore lettura riepilogo incassi" })
   }
 }

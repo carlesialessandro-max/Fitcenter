@@ -5710,7 +5710,177 @@ function getIncassiViewName(): string {
   return raw
 }
 
+function sqlDateRangeSargable(col: string, fromParam: string, toParam: string): string {
+  const c = bracketCol(col)
+  return `${c} >= CAST(${fromParam} AS datetime) AND ${c} < DATEADD(day, 1, CAST(${toParam} AS datetime))`
+}
+
+function pickExistingCol(colsLower: string[], candidates: string[]): string | null {
+  const set = new Set(colsLower)
+  for (const c of candidates) {
+    if (set.has(c.toLowerCase())) return c
+  }
+  return null
+}
+
+function selectExistingCols(colsLower: string[], wanted: string[]): string {
+  const have = wanted.filter((c) => colsLower.includes(c.toLowerCase()))
+  if (!have.length) return "*"
+  return have.map((c) => bracketCol(c)).join(", ")
+}
+
 export type IncassiSegment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+
+function emptyIncassiSegTotals(): Record<Exclude<IncassiSegment, "all">, { total: number; count: number }> {
+  return {
+    adulti: { total: 0, count: 0 },
+    bambini: { total: 0, count: 0 },
+    danza: { total: 0, count: 0 },
+    ticket: { total: 0, count: 0 },
+    altro: { total: 0, count: 0 },
+  }
+}
+
+function incassiDateCol(cols: string[]): string {
+  return (
+    pickExistingCol(cols, [
+      "CassaMovimentiDataOperazioneData",
+      "CassaMovimentiDataOperazione",
+      "CassaMovimentiData",
+      "DataOperazione",
+      "DataPagamento",
+      "Data",
+      "DataOra",
+    ]) ?? "CassaMovimentiDataOperazione"
+  )
+}
+
+export async function queryIncassiRange(params: {
+  from: string
+  to: string
+  segment?: IncassiSegment
+}): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getIncassiViewName()
+  const vq = qualifySqlObject(view).query
+  const cols = await prenGetCols(view)
+  const dateCol = incassiDateCol(cols)
+  const selectList = selectExistingCols(cols, [
+    "IdCassaMovimento",
+    "CassaMovimentiImporto",
+    "CassaMovimentiCausale",
+    "CassaMovimentiDataOperazione",
+    "CassaMovimentiDataOperazioneData",
+    "CategoriaDescrizione",
+    "Cognome",
+    "Nome",
+    "AbbonamentiDescrizione",
+    "AbbonamentiCategorieDescrizione",
+    "AbbonamentiDurataDescrizioneLunga",
+    "VenditoreAbbonamento",
+    "NomeVenditore",
+    "VenditoreNome",
+    "Venditore",
+    "Operatore",
+  ])
+
+  const r = await p
+    .request()
+    .input("from", sql.VarChar(10), params.from)
+    .input("to", sql.VarChar(10), params.to)
+    .query(
+      `SELECT ${selectList} FROM ${vq}
+       WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
+       ORDER BY ${bracketCol(dateCol)} DESC;`
+    )
+  const rows = (r.recordset ?? []) as Record<string, unknown>[]
+  const seg = params.segment ?? "all"
+  if (seg === "all") return rows
+  return rows.filter((row) => classifyIncassiSegment(row) === seg)
+}
+
+export async function queryIncassiRiepilogo(params: { from: string; to: string }): Promise<{
+  total: number
+  count: number
+  segments: Record<Exclude<IncassiSegment, "all">, { total: number; count: number }>
+}> {
+  const empty = { total: 0, count: 0, segments: emptyIncassiSegTotals() }
+  const p = await getPool()
+  if (!p) return empty
+  const view = getIncassiViewName()
+  const vq = qualifySqlObject(view).query
+  const cols = await prenGetCols(view)
+  const dateCol = incassiDateCol(cols)
+  const idCol = pickExistingCol(cols, ["IdCassaMovimento", "IDCassaMovimento", "idCassaMovimento"])
+  const importoCol = pickExistingCol(cols, ["CassaMovimentiImporto", "Importo"]) ?? "CassaMovimentiImporto"
+  const causaleCol = pickExistingCol(cols, ["CassaMovimentiCausale", "Causale"])
+  const catCol = pickExistingCol(cols, ["CategoriaDescrizione"])
+  const nomeCol = pickExistingCol(cols, ["Nome"])
+  const cognomeCol = pickExistingCol(cols, ["Cognome"])
+  const idExpr = idCol
+    ? bracketCol(idCol)
+    : `CONVERT(nvarchar(80), ${bracketCol(dateCol)}, 126) + N'|' + CONVERT(nvarchar(40), ${bracketCol(importoCol)})`
+  const causaleExpr = causaleCol ? `CONVERT(nvarchar(400), ${bracketCol(causaleCol)})` : "CAST(NULL AS nvarchar(400))"
+  const catExpr = catCol ? `CONVERT(nvarchar(200), ${bracketCol(catCol)})` : "CAST(NULL AS nvarchar(200))"
+  const nomeExpr = nomeCol ? `CONVERT(nvarchar(200), ${bracketCol(nomeCol)})` : "CAST(NULL AS nvarchar(200))"
+  const cognomeExpr = cognomeCol ? `CONVERT(nvarchar(200), ${bracketCol(cognomeCol)})` : "CAST(NULL AS nvarchar(200))"
+
+  const r = await p
+    .request()
+    .input("from", sql.VarChar(10), params.from)
+    .input("to", sql.VarChar(10), params.to)
+    .query(
+      `WITH d AS (
+         SELECT
+           ${idExpr} AS movId,
+           MAX(TRY_CONVERT(float, ${bracketCol(importoCol)})) AS euro,
+           MAX(${causaleExpr}) AS causale,
+           MAX(NULLIF(LTRIM(RTRIM(${catExpr})), N'')) AS cat,
+           MAX(${nomeExpr}) AS nome,
+           MAX(${cognomeExpr}) AS cognome
+         FROM ${vq}
+         WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
+           AND COALESCE(TRY_CONVERT(float, ${bracketCol(importoCol)}), 0) <> 0
+         GROUP BY ${idExpr}
+       ),
+       c AS (
+         SELECT
+           euro,
+           CASE
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'TICKETING%' THEN N'ticket'
+             WHEN LOWER(LTRIM(RTRIM(COALESCE(nome, N'')))) = N'ticketing' THEN N'ticket'
+             WHEN LOWER(LTRIM(RTRIM(COALESCE(cognome, N'') + N' ' + COALESCE(nome, N'')))) = N'ticketing' THEN N'ticket'
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'CLIENTE' THEN N'adulti'
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'KIDS' THEN N'bambini'
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'DANZA' THEN N'danza'
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%BRACCIALE%' THEN N'adulti'
+             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%BADGE%'
+               AND UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%MERCHANDISING%' THEN N'adulti'
+             ELSE N'altro'
+           END AS seg
+         FROM d
+       )
+       SELECT seg, COUNT_BIG(*) AS n, SUM(euro) AS euro
+       FROM c
+       GROUP BY seg;`
+    )
+
+  const segments = emptyIncassiSegTotals()
+  let total = 0
+  let count = 0
+  for (const row of r.recordset ?? []) {
+    const seg = String((row as any).seg ?? "altro").trim().toLowerCase()
+    const n = Number((row as any).n ?? 0) || 0
+    const euro = Number((row as any).euro ?? 0) || 0
+    const key = (seg === "adulti" || seg === "bambini" || seg === "danza" || seg === "ticket" || seg === "altro" ? seg : "altro") as Exclude<IncassiSegment, "all">
+    segments[key].count += n
+    segments[key].total += euro
+    count += n
+    total += euro
+  }
+  return { total, count, segments }
+}
 
 function isTicketingIncasso(row: Record<string, unknown>): boolean {
   const caus = String(
@@ -5772,35 +5942,6 @@ export function classifyIncassiSegment(row: Record<string, unknown>): Exclude<In
   // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: restano negli adulti.
   if (isMerchandisingBraccialeIncasso(row)) return "adulti"
   return "altro"
-}
-
-export async function queryIncassiRange(params: {
-  from: string
-  to: string
-  segment?: IncassiSegment
-}): Promise<Record<string, unknown>[]> {
-  const p = await getPool()
-  if (!p) return []
-  const view = getIncassiViewName()
-  const vq = qualifySqlObject(view).query
-  const cols = await prenGetCols(view)
-  const dateCol =
-    pickBestDateCol(cols, ["CassaMovimentiDataOperazione", "CassaMovimentiData", "DataOperazione", "DataPagamento", "Data", "DataOra"]) ??
-    "DataOperazione"
-
-  const r = await p
-    .request()
-    .input("from", sql.VarChar(10), params.from)
-    .input("to", sql.VarChar(10), params.to)
-    .query(
-      `SELECT * FROM ${vq}
-       WHERE (${sqlDateBetweenFastExpr(dateCol, "@from", "@to")} OR ${sqlDateBetweenExpr(dateCol, "@from", "@to")})
-       ORDER BY ${bracketCol(dateCol)} DESC;`
-    )
-  const rows = (r.recordset ?? []) as Record<string, unknown>[]
-  const seg = params.segment ?? "all"
-  if (seg === "all") return rows
-  return rows.filter((row) => classifyIncassiSegment(row) === seg)
 }
 
 /**
