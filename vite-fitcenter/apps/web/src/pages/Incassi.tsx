@@ -118,11 +118,12 @@ export function Incassi() {
   const now = new Date()
   const yearNow = now.getFullYear()
   const monthNow = now.getMonth() + 1
+  const [vista, setVista] = useState<"giorno" | "mese">("giorno")
   const [anno, setAnno] = useState(yearNow)
   const [mese, setMese] = useState(monthNow)
   const [annoConfronto, setAnnoConfronto] = useState(yearNow - 1)
   const isCurrent = anno === yearNow && mese === monthNow
-  const [from, setFrom] = useState<string>(() => firstOfMonth(yearNow, monthNow))
+  const [from, setFrom] = useState<string>(() => isoTodayLocal())
   const [to, setTo] = useState<string>(() => isoTodayLocal())
   const [expanded, setExpanded] = useState<DetailSeg | null>(null)
 
@@ -135,14 +136,29 @@ export function Incassi() {
   const fromPrev = withYear(from, annoConfronto)
   const toPrev = withYear(to, annoConfronto)
   const meseLabel = MESI[mese - 1] ?? ""
+  const isGiorno = vista === "giorno"
 
   function applyMeseAnno(nextAnno: number, nextMese: number) {
+    setVista("mese")
     setAnno(nextAnno)
     setMese(nextMese)
     setFrom(firstOfMonth(nextAnno, nextMese))
     const current = nextAnno === yearNow && nextMese === monthNow
     setTo(current ? isoTodayLocal() : lastDayOfMonth(nextAnno, nextMese))
     if (nextAnno === annoConfronto) setAnnoConfronto(nextAnno === yearNow ? nextAnno - 1 : yearNow)
+  }
+
+  function applyGiorno(iso: string) {
+    const d = iso.trim()
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return
+    setVista("giorno")
+    setFrom(d)
+    setTo(d)
+    const y = Number(d.slice(0, 4))
+    const m = Number(d.slice(5, 7))
+    if (y) setAnno(y)
+    if (m) setMese(m)
+    if (y === annoConfronto) setAnnoConfronto(y === yearNow ? y - 1 : yearNow)
   }
 
   const qNow = useQuery({
@@ -199,7 +215,9 @@ export function Incassi() {
     const pctN = countPrev > 0 ? (dN / countPrev) * 100 : null
     const lines: string[] = []
     lines.push(
-      `Dal ${from} al ${to} gli incassi sono € ${fmtEuro(totalNow)} (${countNow} movimenti), contro € ${fmtEuro(totalPrev)} (${countPrev} movimenti) nello stesso periodo del ${annoConfronto}.`
+      isGiorno
+        ? `Il ${from} gli incassi sono € ${fmtEuro(totalNow)} (${countNow} movimenti), contro € ${fmtEuro(totalPrev)} (${countPrev} movimenti) nello stesso giorno del ${annoConfronto}.`
+        : `Dal ${from} al ${to} gli incassi sono € ${fmtEuro(totalNow)} (${countNow} movimenti), contro € ${fmtEuro(totalPrev)} (${countPrev} movimenti) nello stesso periodo del ${annoConfronto}.`
     )
     if (pctEuro != null) {
       lines.push(
@@ -225,7 +243,7 @@ export function Incassi() {
     if (crescono.length) lines.push(`Crescono: ${crescono.join(", ")}.`)
     if (calano.length) lines.push(`Calano: ${calano.join(", ")}.`)
     return lines
-  }, [totalNow, totalPrev, countNow, countPrev, from, to, annoConfronto, groups])
+  }, [totalNow, totalPrev, countNow, countPrev, from, to, annoConfronto, groups, isGiorno])
 
   const barData = useMemo(
     () =>
@@ -303,36 +321,99 @@ export function Incassi() {
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Incassi</h2>
             <p className="text-sm text-zinc-500">Movimenti di cassa univoci, raggruppati per categoria cliente e ticket.</p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isGiorno) applyGiorno(isoTodayLocal())
+                }}
+                className={`rounded-md border px-3 py-1.5 text-sm ${
+                  isGiorno ? "border-amber-500 bg-amber-500/20 text-amber-300" : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900"
+                }`}
+              >
+                Giorno
+              </button>
+              <button
+                type="button"
+                onClick={() => applyMeseAnno(anno, mese)}
+                className={`rounded-md border px-3 py-1.5 text-sm ${
+                  !isGiorno ? "border-amber-500 bg-amber-500/20 text-amber-300" : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900"
+                }`}
+              >
+                Mese / anno
+              </button>
+            </div>
           </div>
           <div className="flex flex-wrap items-end gap-3">
-            <label className="text-xs text-zinc-500">
-              Mese
-              <select
-                value={mese}
-                onChange={(e) => applyMeseAnno(anno, Number(e.target.value))}
-                className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              >
-                {MESI.map((label, i) => (
-                  <option key={label} value={i + 1}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs text-zinc-500">
-              Anno
-              <select
-                value={anno}
-                onChange={(e) => applyMeseAnno(Number(e.target.value), mese)}
-                className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              >
-                {anniOpts.map((y) => (
-                  <option key={y} value={y}>
-                    {y}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isGiorno ? (
+              <>
+                <label className="text-xs text-zinc-500">
+                  Giorno
+                  <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => applyGiorno(e.target.value)}
+                    className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => applyGiorno(isoTodayLocal())}
+                  className="rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
+                >
+                  Oggi
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="text-xs text-zinc-500">
+                  Mese
+                  <select
+                    value={mese}
+                    onChange={(e) => applyMeseAnno(anno, Number(e.target.value))}
+                    className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                  >
+                    {MESI.map((label, i) => (
+                      <option key={label} value={i + 1}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs text-zinc-500">
+                  Anno
+                  <select
+                    value={anno}
+                    onChange={(e) => applyMeseAnno(Number(e.target.value), mese)}
+                    className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                  >
+                    {anniOpts.map((y) => (
+                      <option key={y} value={y}>
+                        {y}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs text-zinc-500">
+                  Da
+                  <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                  />
+                </label>
+                <label className="text-xs text-zinc-500">
+                  A
+                  <input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
+                  />
+                </label>
+              </>
+            )}
             <label className="text-xs text-zinc-500">
               Confronta con
               <select
@@ -344,38 +425,44 @@ export function Incassi() {
                   .filter((y) => y !== anno)
                   .map((y) => (
                     <option key={y} value={y}>
-                      {y} (stesso periodo)
+                      {y} {isGiorno ? "(stesso giorno)" : "(stesso periodo)"}
                     </option>
                   ))}
               </select>
             </label>
             <label className="text-xs text-zinc-500">
-              Da
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              />
-            </label>
-            <label className="text-xs text-zinc-500">
-              A
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="mt-1 block rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-200"
-              />
+              Dettaglio
+              <div className="mt-1 flex flex-wrap gap-2">
+                {groups.map((g) => {
+                  if (g.seg === "altro" && g.total === 0 && g.prevTotal === 0) return null
+                  const on = expanded === g.seg
+                  return (
+                    <button
+                      key={g.seg}
+                      type="button"
+                      onClick={() => setExpanded(on ? null : g.seg)}
+                      className={`rounded-md border px-3 py-2 text-sm ${
+                        on ? "border-amber-500 bg-amber-500/20 text-amber-300" : "border-zinc-700 bg-zinc-950 text-zinc-200 hover:bg-zinc-900"
+                      }`}
+                      title={on ? "Nascondi dettagli" : "Mostra dettagli"}
+                    >
+                      {g.seg === "ticket" ? "Ticket" : g.label}
+                    </button>
+                  )
+                })}
+              </div>
             </label>
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          {isCurrent
-            ? `Mese in corso: dal 1° ${meseLabel.toLowerCase()} fino a oggi. Il confronto usa lo stesso giorno del ${annoConfronto}.`
-            : `Periodo ${meseLabel} ${anno}. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}{" "}
-          Il report «centri di ricavo» del gestionale raggruppa per centro di costo (scuola nuoto, agonismo, quote…) e può includere altre sedi (NESSUNA): i totali non coincidono riga per riga.
+          {isGiorno
+            ? `Vista giorno: totali e dettaglio del ${from}. Il confronto usa lo stesso giorno del ${annoConfronto}.`
+            : isCurrent
+              ? `Mese in corso: dal 1° ${meseLabel.toLowerCase()} fino a oggi. Il confronto usa lo stesso giorno del ${annoConfronto}.`
+              : `Periodo ${meseLabel} ${anno}. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}
         </p>
 
+        {!isGiorno ? (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
             <p className="text-xs uppercase tracking-wider text-amber-300">
@@ -393,6 +480,7 @@ export function Incassi() {
             <p className="text-sm text-zinc-400">{countPrev} movimenti</p>
           </div>
         </div>
+        ) : null}
 
         {qNow.isError || qPrev.isError ? (
           <div className="mt-4 text-sm text-red-200">
@@ -400,7 +488,7 @@ export function Incassi() {
           </div>
         ) : null}
 
-        {analisi.length > 0 && !qNow.isLoading ? (
+        {analisi.length > 0 && !qNow.isLoading && !isGiorno ? (
           <div className="mt-4 rounded-lg border border-sky-800/60 bg-sky-950/30 p-4 text-sm text-sky-100/90 space-y-2">
             <p className="text-xs font-medium uppercase tracking-wider text-sky-400">Analisi confronto</p>
             {analisi.map((line) => (
@@ -409,6 +497,7 @@ export function Incassi() {
           </div>
         ) : null}
 
+        {!isGiorno ? (
         <div className="mt-4 h-64 rounded-lg border border-zinc-800 bg-zinc-900/20 p-3">
           <p className="mb-2 text-sm text-zinc-300">
             Confronto {anno} vs {annoConfronto}
@@ -428,8 +517,17 @@ export function Incassi() {
             </BarChart>
           </ResponsiveContainer>
         </div>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900/30 px-3 py-2 text-zinc-200">
+            {isGiorno ? "Totale giorno" : "Totale periodo"}: <span className="font-semibold text-amber-300">{eur(totalNow)}</span>
+            {isGiorno && !qPrev.isLoading ? (
+              <span className="ml-2 text-xs text-zinc-500">
+                stesso giorno {annoConfronto}: {eur(totalPrev)}
+              </span>
+            ) : null}
+          </div>
           {groups.map((g) => {
             if (g.seg === "altro" && g.total === 0 && g.prevTotal === 0) return null
             const d = g.total - g.prevTotal
@@ -513,7 +611,7 @@ export function Incassi() {
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket/Altro) per vedere il dettaglio righe.
+          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio righe del {isGiorno ? "giorno" : "periodo"}.
         </div>
       )}
     </div>
