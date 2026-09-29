@@ -145,6 +145,7 @@ export function Incassi() {
     setFrom(firstOfMonth(nextAnno, nextMese))
     const current = nextAnno === yearNow && nextMese === monthNow
     setTo(current ? isoTodayLocal() : lastDayOfMonth(nextAnno, nextMese))
+    setExpanded(null)
     if (nextAnno === annoConfronto) setAnnoConfronto(nextAnno === yearNow ? nextAnno - 1 : yearNow)
   }
 
@@ -187,7 +188,7 @@ export function Incassi() {
       ),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
-    enabled: role === "admin" && !!expanded,
+    enabled: role === "admin" && isGiorno && !!expanded,
   })
 
   const segsNow = qNow.data?.segments ?? emptySegs()
@@ -430,6 +431,7 @@ export function Incassi() {
                   ))}
               </select>
             </label>
+            {isGiorno ? (
             <label className="text-xs text-zinc-500">
               Dettaglio
               <div className="mt-1 flex flex-wrap gap-2">
@@ -452,14 +454,15 @@ export function Incassi() {
                 })}
               </div>
             </label>
+            ) : null}
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
           {isGiorno
             ? `Vista giorno: totali e dettaglio del ${from}. Il confronto usa lo stesso giorno del ${annoConfronto}.`
             : isCurrent
-              ? `Mese in corso: dal 1° ${meseLabel.toLowerCase()} fino a oggi. Il confronto usa lo stesso giorno del ${annoConfronto}.`
-              : `Periodo ${meseLabel} ${anno}. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}
+              ? `Mese in corso: riepilogo dal 1° ${meseLabel.toLowerCase()} fino a oggi, senza elenco dei singoli movimenti. Il confronto usa lo stesso giorno del ${annoConfronto}.`
+              : `Riepilogo ${meseLabel} ${anno}, senza elenco dei singoli movimenti. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}
         </p>
 
         {!isGiorno ? (
@@ -532,25 +535,38 @@ export function Incassi() {
             if (g.seg === "altro" && g.total === 0 && g.prevTotal === 0) return null
             const d = g.total - g.prevTotal
             const pct = g.prevTotal > 0 ? (d / g.prevTotal) * 100 : null
-            return (
-              <button
-                key={g.seg}
-                type="button"
-                onClick={() => setExpanded(expanded === g.seg ? null : g.seg)}
-                className={`rounded-lg border px-3 py-2 text-left ${
-                  expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-900/50"
-                }`}
-              >
+            const cardClass = `rounded-lg border px-3 py-2 text-left ${
+              isGiorno && expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30"
+            }${isGiorno ? " hover:bg-zinc-900/50" : ""}`
+            const inner = (
+              <>
                 <div className="text-xs text-zinc-500">{g.label}</div>
                 <div className="font-semibold text-zinc-100">{eur(g.total)}</div>
                 <div className="text-xs text-zinc-500">
-                  Righe: <span className="text-zinc-200">{g.count}</span>
+                  Movimenti: <span className="text-zinc-200">{g.count}</span>
                   {pct != null ? (
                     <span className={d >= 0 ? "ml-2 text-emerald-400" : "ml-2 text-red-400"}>
                       {fmtPct(pct)} vs {annoConfronto}
                     </span>
                   ) : null}
                 </div>
+              </>
+            )
+            if (!isGiorno) {
+              return (
+                <div key={g.seg} className={cardClass}>
+                  {inner}
+                </div>
+              )
+            }
+            return (
+              <button
+                key={g.seg}
+                type="button"
+                onClick={() => setExpanded(expanded === g.seg ? null : g.seg)}
+                className={cardClass}
+              >
+                {inner}
               </button>
             )
           })}
@@ -558,7 +574,8 @@ export function Incassi() {
         </div>
       </div>
 
-      {expanded ? (
+      {isGiorno ? (
+        expanded ? (
         <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
           <table className="min-w-[900px] w-full table-auto">
             <thead className="bg-zinc-950/40">
@@ -609,9 +626,68 @@ export function Incassi() {
             <div className="p-3 text-sm text-red-200">Errore caricamento incassi: {String((qDetail.error as Error)?.message ?? "—")}</div>
           ) : null}
         </div>
-      ) : (
+        ) : (
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio righe del {isGiorno ? "giorno" : "periodo"}.
+          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio righe del giorno.
+        </div>
+        )
+      ) : (
+        <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="border-b border-zinc-800 px-3 py-2 text-sm text-zinc-300">
+            Riepilogo {meseLabel} {anno} vs {annoConfronto}
+            {from && to ? ` (${from} → ${to})` : ""}
+          </div>
+          <table className="min-w-[720px] w-full table-auto">
+            <thead className="bg-zinc-950/40">
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="px-3 py-2">Gruppo</th>
+                <th className="px-3 py-2 text-right">Movimenti {anno}</th>
+                <th className="px-3 py-2 text-right">Totale {anno}</th>
+                <th className="px-3 py-2 text-right">Movimenti {annoConfronto}</th>
+                <th className="px-3 py-2 text-right">Totale {annoConfronto}</th>
+                <th className="px-3 py-2 text-right">Δ €</th>
+                <th className="px-3 py-2 text-right">Δ %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups
+                .filter((g) => g.seg !== "altro" || g.total !== 0 || g.prevTotal !== 0)
+                .map((g) => {
+                  const d = g.total - g.prevTotal
+                  const pct = g.prevTotal > 0 ? (d / g.prevTotal) * 100 : null
+                  return (
+                    <tr key={g.seg} className="border-t border-zinc-800 text-sm text-zinc-200">
+                      <td className="px-3 py-2">{g.label}</td>
+                      <td className="px-3 py-2 text-right">{g.count}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-amber-300">{eur(g.total)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">{g.prevCount}</td>
+                      <td className="px-3 py-2 text-right text-zinc-300">{eur(g.prevTotal)}</td>
+                      <td className={`px-3 py-2 text-right ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {d >= 0 ? "+" : ""}
+                        {eur(d)}
+                      </td>
+                      <td className={`px-3 py-2 text-right ${pct == null ? "text-zinc-500" : d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {pct == null ? "—" : fmtPct(pct)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              <tr className="border-t border-zinc-700 bg-zinc-950/40 text-sm text-zinc-100">
+                <td className="px-3 py-2 font-semibold">Totale</td>
+                <td className="px-3 py-2 text-right font-semibold">{countNow}</td>
+                <td className="px-3 py-2 text-right font-semibold text-amber-300">{eur(totalNow)}</td>
+                <td className="px-3 py-2 text-right">{countPrev}</td>
+                <td className="px-3 py-2 text-right">{eur(totalPrev)}</td>
+                <td className={`px-3 py-2 text-right font-semibold ${(totalNow - totalPrev) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {totalNow - totalPrev >= 0 ? "+" : ""}
+                  {eur(totalNow - totalPrev)}
+                </td>
+                <td className={`px-3 py-2 text-right font-semibold ${totalPrev <= 0 ? "text-zinc-500" : (totalNow - totalPrev) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                  {totalPrev > 0 ? fmtPct(((totalNow - totalPrev) / totalPrev) * 100) : "—"}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
     </div>
