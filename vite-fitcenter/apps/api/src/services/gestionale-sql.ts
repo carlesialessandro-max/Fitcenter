@@ -4514,6 +4514,8 @@ export type VenditeCrossRow = {
   movimentoU: number
   totale: number
   giaNelVenduto: boolean
+  /** Consulente di riferimento (IDVenditoreAbbonamento sulla iscrizione). */
+  idVenditore: number
 }
 
 export type VenditeCrossElenco = {
@@ -4533,6 +4535,24 @@ const EMPTY_CROSS_ELENCO: VenditeCrossElenco = {
 }
 
 const crossElencoCache = new Map<string, { exp: number; v: VenditeCrossElenco }>()
+
+/** Extra Cross da sommare al consuntivo della consulente (solo righe senza vendita I nel periodo). */
+export function crossExtraEuroForConsultant(
+  elenco: {
+    rows: { giaNelVenduto: boolean; dataCross: string; idVenditore: number; totale: number }[]
+  },
+  idConsultant?: string,
+  onDate?: string
+): number {
+  const ids = idConsultant ? new Set(parseConsultantIds(idConsultant)) : null
+  const extra = elenco.rows.reduce((s, r) => {
+    if (r.giaNelVenduto) return s
+    if (onDate && r.dataCross !== onDate) return s
+    if (ids && ids.size > 0 && (r.idVenditore <= 0 || !ids.has(r.idVenditore))) return s
+    return s + r.totale
+  }, 0)
+  return Math.round(extra * 100) / 100
+}
 
 function annotateCrossElenco(rows: VenditeCrossRow[], inBase: Set<number>): VenditeCrossElenco {
   const annotated = rows.map((r) => ({ ...r, giaNelVenduto: inBase.has(r.idIscrizione) }))
@@ -4579,7 +4599,8 @@ export async function getVenditeCrossElenco(
         R.[${viewCfg.colJoin}] AS IDIscrizione,
         MAX(LTRIM(RTRIM(ISNULL(R.[Cognome], N'')))) AS Cognome,
         MAX(LTRIM(RTRIM(ISNULL(R.[Nome], N'')))) AS Nome,
-        MAX(LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N'')))) AS Abbonamento
+        MAX(LTRIM(RTRIM(COALESCE(R.[AbbonamentoDescrizione], R.[AbbonamentoDurataDescrizione], N'')))) AS Abbonamento,
+        MAX(TRY_CONVERT(int, R.[${viewCfg.colId}])) AS IdVenditore
       FROM ${av} R
       INNER JOIN (SELECT DISTINCT IDIscrizione FROM CrossClassificati WHERE IsCorrezione = 0 AND Totale <> 0) X
         ON X.IDIscrizione = R.[${viewCfg.colJoin}]
@@ -4593,7 +4614,8 @@ export async function getVenditeCrossElenco(
       C.RatePagateMese,
       C.RateFuture,
       C.MovimentoU,
-      C.Totale
+      C.Totale,
+      COALESCE(A.IdVenditore, 0) AS IdVenditore
     FROM CrossClassificati C
     LEFT JOIN AbbOne A ON A.IDIscrizione = C.IDIscrizione
     WHERE C.IsCorrezione = 0
@@ -4625,6 +4647,7 @@ export async function getVenditeCrossElenco(
       movimentoU,
       totale,
       giaNelVenduto: false,
+      idVenditore: Number(row.IdVenditore ?? row.idvenditore) || 0,
     }
   })
   const inBase = await queryIscrizioniConVenditaNelPeriodo(
@@ -4802,6 +4825,21 @@ export async function getVenditeTotaleEuroPeriodo(
   )
 }
 
+/** Venduto base (senza extra Cross) nello stesso criterio di Andamento. */
+export async function getVenditeBaseEuroPeriodo(
+  from: string,
+  to: string,
+  idConsultant?: string
+): Promise<number> {
+  const p = await getPool()
+  if (!p) return 0
+  try {
+    return await queryVenditeTotaleComeAndamento(p, from, to, idConsultant)
+  } catch {
+    return 0
+  }
+}
+
 /** Consuntivo progressivo: vendite da inizio mese fino a giorno (incluso). Usare per "entrate mese" alla data di oggi. */
 export async function getVenditeProgressivoMese(
   anno: number,
@@ -4841,10 +4879,24 @@ export async function getVenditePerMeseAnno(
     const ultimo = new Date(anno, through, 0).getDate()
     const to = `${anno}-${String(through).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
     const fetched = await queryVenditeTotaleComeAndamentoPerMesi(p, from, to, idConsultant)
+    const extraByMese = new Map<number, number>()
+    try {
+      const cross = await getVenditeCrossElenco(from, to, idConsultant, p)
+      for (const row of cross.rows) {
+        if (row.giaNelVenduto) continue
+        const m = Number(String(row.dataCross).slice(5, 7))
+        if (!Number.isFinite(m) || m < 1 || m > 12) continue
+        extraByMese.set(m, (extraByMese.get(m) ?? 0) + row.totale)
+      }
+    } catch {
+      /* extra cross opzionale */
+    }
     const map = new Map(fetched.map((r) => [r.mese, r.totale]))
     return Array.from({ length: 12 }, (_, i) => {
       const mese = i + 1
-      return { mese, totale: mese <= through ? map.get(mese) ?? 0 : 0 }
+      const base = mese <= through ? map.get(mese) ?? 0 : 0
+      const extra = mese <= through ? extraByMese.get(mese) ?? 0 : 0
+      return { mese, totale: Math.round((base + extra) * 100) / 100 }
     })
   } catch {
     return []
