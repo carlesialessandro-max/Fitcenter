@@ -78,7 +78,29 @@ function aggregate(data: {
   return { rows, totalDistinct, byCategoria, byDurata, totalEuro, crossEuro, empty: false }
 }
 
-function analisiConfronto(args: {
+function mergeByName(curr: RowAgg[], prev: RowAgg[], sort: "euro" | "durata" = "euro"): { name: string; curr: RowAgg; prev: RowAgg }[] {
+  const names = new Set([...curr.map((r) => r.name), ...prev.map((r) => r.name)])
+  const empty: RowAgg = { name: "", count: 0, pct: 0, euro: 0 }
+  const out: { name: string; curr: RowAgg; prev: RowAgg }[] = []
+  for (const name of names) {
+    const c = curr.find((r) => r.name === name) ?? { ...empty, name }
+    const p = prev.find((r) => r.name === name) ?? { ...empty, name }
+    out.push({ name, curr: c, prev: p })
+  }
+  if (sort === "durata") {
+    return out.sort((a, b) => {
+      const na = Number(a.name.split(" ")[0])
+      const nb = Number(b.name.split(" ")[0])
+      const oka = !Number.isNaN(na) && na > 0
+      const okb = !Number.isNaN(nb) && nb > 0
+      if (oka && okb) return na - nb
+      if (oka) return -1
+      if (okb) return 1
+      return a.name.localeCompare(b.name)
+    })
+  }
+  return out.sort((a, b) => b.curr.euro - a.curr.euro || b.prev.euro - a.prev.euro)
+}
   meseLabel: string
   anno: number
   annoPrev: number
@@ -132,7 +154,6 @@ function exportAndamentoPdf(args: {
   to?: string
   byCategoria: RowAgg[]
   byDurata: RowAgg[]
-  byAbbonamento?: { name: string; count: number; euro: number }[]
 }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
   doc.setFontSize(14)
@@ -156,17 +177,6 @@ function exportAndamentoPdf(args: {
       body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`, fmtEuro(r.euro)]),
       styles: { fontSize: 9 },
       headStyles: { fillColor: [16, 185, 129] },
-    })
-  }
-  const y2 = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : y + 60
-  if (args.byAbbonamento?.length) {
-    autoTable(doc, {
-      startY: y2,
-      head: [["Abbonamento", "Movimenti", "Totale €"]],
-      body: args.byAbbonamento.map((r) => [r.name, String(r.count), fmtEuro(r.euro)]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [245, 158, 11] },
-      columnStyles: { 0: { cellWidth: 110 } },
     })
   }
   doc.save(`andamento-vendite-${new Date().toISOString().slice(0, 10)}.pdf`)
@@ -382,14 +392,6 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                     to: data?.to,
                     byCategoria: computed.byCategoria,
                     byDurata: ambito === "bambini" ? [] : computed.byDurata,
-                    byAbbonamento:
-                      ambito === "bambini"
-                        ? []
-                        : data?.byAbbonamento?.map((r) => ({
-                            name: String(r.abbonamento ?? "—"),
-                            count: Number(r.count ?? 0) || 0,
-                            euro: Number(r.totalEuro ?? 0) || 0,
-                          })) ?? [],
                   })
                 }
                 className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
@@ -482,37 +484,72 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
               ) : null}
             </div>
 
-            <div className={`mt-6 grid gap-6 ${ambito === "bambini" ? "lg:grid-cols-1" : "lg:grid-cols-2"}`}>
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
-                <p className="mb-2 text-sm text-zinc-300">{ambito === "bambini" ? "Totali per tipo abbonamento" : "Totali per categoria"}</p>
-                <table className="w-full text-left text-sm">
+            <div className="mt-6 grid gap-6">
+              <div className="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
+                <p className="mb-2 text-sm text-zinc-300">
+                  {ambito === "bambini" ? "Totali per tipo abbonamento" : "Totali per categoria"} — {anno} vs {annoConfronto}
+                  {loadingPrev ? "…" : ""}
+                </p>
+                <table className="min-w-[720px] w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-zinc-800 text-zinc-500">
                       <th className="py-2 pr-2 font-medium">Voce</th>
-                      <th className="py-2 pr-2 text-right font-medium">N</th>
-                      <th className="py-2 text-right font-medium">Totale €</th>
+                      <th className="py-2 pr-2 text-right font-medium">N {anno}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Totale {anno}</th>
+                      <th className="py-2 pr-2 text-right font-medium">N {annoConfronto}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Totale {annoConfronto}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Δ €</th>
+                      <th className="py-2 text-right font-medium">Δ %</th>
                     </tr>
                   </thead>
                   <tbody className="text-zinc-200">
-                    {computed.byCategoria.map((r) => (
-                      <tr key={r.name} className="border-b border-zinc-800/70">
+                    {mergeByName(computed.byCategoria, computedPrev.byCategoria).map(({ name, curr: r, prev: p }) => {
+                      const d = r.euro - p.euro
+                      const pct = p.euro > 0 ? (d / p.euro) * 100 : null
+                      return (
+                      <tr key={name} className="border-b border-zinc-800/70">
                         <td className="py-2 pr-2">
-                          {r.name}
-                          {ambito === "bambini" && r.name === "Agonismo categorie" ? (
+                          {name}
+                          {ambito === "bambini" && name === "Agonismo categorie" ? (
                             <span className="ml-2 text-xs font-normal text-zinc-500">rate cassa</span>
                           ) : null}
                         </td>
                         <td className="py-2 pr-2 text-right tabular-nums">{r.count}</td>
-                        <td className="py-2 text-right tabular-nums">€{fmtEuro(r.euro)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">€{fmtEuro(r.euro)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-zinc-400">{p.count}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-zinc-300">€{fmtEuro(p.euro)}</td>
+                        <td className={`py-2 pr-2 text-right tabular-nums ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d >= 0 ? "+" : ""}€{fmtEuro(d)}
+                        </td>
+                        <td className={`py-2 text-right tabular-nums ${pct == null ? "text-zinc-500" : d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {pct == null ? "—" : fmtPct(pct)}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
+                    {(() => {
+                      const nNow = computed.byCategoria.reduce((s, r) => s + r.count, 0)
+                      const eNow = computed.byCategoria.reduce((s, r) => s + r.euro, 0)
+                      const nPrev = computedPrev.byCategoria.reduce((s, r) => s + r.count, 0)
+                      const ePrev = computedPrev.byCategoria.reduce((s, r) => s + r.euro, 0)
+                      const d = eNow - ePrev
+                      const pct = ePrev > 0 ? (d / ePrev) * 100 : null
+                      return (
                     <tr className="bg-zinc-900/60 font-semibold text-zinc-100">
                       <td className="py-2 pr-2">TOTALE</td>
-                      <td className="py-2 pr-2 text-right tabular-nums">{computed.byCategoria.reduce((s, r) => s + r.count, 0)}</td>
-                      <td className="py-2 text-right tabular-nums text-amber-400">
-                        €{fmtEuro(computed.byCategoria.reduce((s, r) => s + r.euro, 0))}
+                      <td className="py-2 pr-2 text-right tabular-nums">{nNow}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums text-amber-400">€{fmtEuro(eNow)}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums">{nPrev}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums">€{fmtEuro(ePrev)}</td>
+                      <td className={`py-2 pr-2 text-right tabular-nums ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {d >= 0 ? "+" : ""}€{fmtEuro(d)}
+                      </td>
+                      <td className={`py-2 text-right tabular-nums ${pct == null ? "text-zinc-500" : d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {pct == null ? "—" : fmtPct(pct)}
                       </td>
                     </tr>
+                      )
+                    })()}
                   </tbody>
                 </table>
                 {ambito === "bambini" && data?.noteAgonismo ? (
@@ -520,62 +557,71 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 ) : null}
               </div>
               {ambito === "adulti" ? (
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
-                <p className="mb-2 text-sm text-zinc-300">Totali per durata</p>
-                <table className="w-full text-left text-sm">
+              <div className="overflow-auto rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
+                <p className="mb-2 text-sm text-zinc-300">
+                  Totali per durata — {anno} vs {annoConfronto}
+                  {loadingPrev ? "…" : ""}
+                </p>
+                <table className="min-w-[720px] w-full text-left text-sm">
                   <thead>
                     <tr className="border-b border-zinc-800 text-zinc-500">
                       <th className="py-2 pr-2 font-medium">Durata</th>
-                      <th className="py-2 pr-2 text-right font-medium">N</th>
-                      <th className="py-2 text-right font-medium">Totale €</th>
+                      <th className="py-2 pr-2 text-right font-medium">N {anno}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Totale {anno}</th>
+                      <th className="py-2 pr-2 text-right font-medium">N {annoConfronto}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Totale {annoConfronto}</th>
+                      <th className="py-2 pr-2 text-right font-medium">Δ €</th>
+                      <th className="py-2 text-right font-medium">Δ %</th>
                     </tr>
                   </thead>
                   <tbody className="text-zinc-200">
-                    {computed.byDurata.map((r) => (
-                      <tr key={r.name} className="border-b border-zinc-800/70">
-                        <td className="py-2 pr-2">{r.name}</td>
+                    {mergeByName(computed.byDurata, computedPrev.byDurata, "durata").map(({ name, curr: r, prev: p }) => {
+                      const d = r.euro - p.euro
+                      const pct = p.euro > 0 ? (d / p.euro) * 100 : null
+                      return (
+                      <tr key={name} className="border-b border-zinc-800/70">
+                        <td className="py-2 pr-2">{name}</td>
                         <td className="py-2 pr-2 text-right tabular-nums">{r.count}</td>
-                        <td className="py-2 text-right tabular-nums">€{fmtEuro(r.euro)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums">€{fmtEuro(r.euro)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-zinc-400">{p.count}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-zinc-300">€{fmtEuro(p.euro)}</td>
+                        <td className={`py-2 pr-2 text-right tabular-nums ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d >= 0 ? "+" : ""}€{fmtEuro(d)}
+                        </td>
+                        <td className={`py-2 text-right tabular-nums ${pct == null ? "text-zinc-500" : d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {pct == null ? "—" : fmtPct(pct)}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
+                    {(() => {
+                      const nNow = computed.byDurata.reduce((s, r) => s + r.count, 0)
+                      const eNow = computed.byDurata.reduce((s, r) => s + r.euro, 0)
+                      const nPrev = computedPrev.byDurata.reduce((s, r) => s + r.count, 0)
+                      const ePrev = computedPrev.byDurata.reduce((s, r) => s + r.euro, 0)
+                      const d = eNow - ePrev
+                      const pct = ePrev > 0 ? (d / ePrev) * 100 : null
+                      return (
                     <tr className="bg-zinc-900/60 font-semibold text-zinc-100">
                       <td className="py-2 pr-2">TOTALE</td>
-                      <td className="py-2 pr-2 text-right tabular-nums">{computed.byDurata.reduce((s, r) => s + r.count, 0)}</td>
-                      <td className="py-2 text-right tabular-nums text-amber-400">
-                        €{fmtEuro(computed.byDurata.reduce((s, r) => s + r.euro, 0))}
+                      <td className="py-2 pr-2 text-right tabular-nums">{nNow}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums text-amber-400">€{fmtEuro(eNow)}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums">{nPrev}</td>
+                      <td className="py-2 pr-2 text-right tabular-nums">€{fmtEuro(ePrev)}</td>
+                      <td className={`py-2 pr-2 text-right tabular-nums ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {d >= 0 ? "+" : ""}€{fmtEuro(d)}
+                      </td>
+                      <td className={`py-2 text-right tabular-nums ${pct == null ? "text-zinc-500" : d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {pct == null ? "—" : fmtPct(pct)}
                       </td>
                     </tr>
+                      )
+                    })()}
                   </tbody>
                 </table>
               </div>
               ) : null}
             </div>
-
-            {ambito === "adulti" && data?.byAbbonamento && data.byAbbonamento.length > 0 ? (
-              <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">
-                <p className="mb-2 text-sm text-zinc-300">Dettaglio abbonamenti</p>
-                <div className="max-h-80 overflow-auto">
-                  <table className="w-full text-left text-sm">
-                    <thead>
-                      <tr className="border-b border-zinc-800 text-zinc-500">
-                        <th className="py-2 pr-2 font-medium">Abbonamento</th>
-                        <th className="py-2 pr-2 text-right font-medium">N</th>
-                        <th className="py-2 text-right font-medium">Totale €</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-zinc-200">
-                      {data.byAbbonamento.map((r) => (
-                        <tr key={r.abbonamento} className="border-b border-zinc-800/70">
-                          <td className="py-2 pr-2">{r.abbonamento}</td>
-                          <td className="py-2 pr-2 text-right tabular-nums">{r.count}</td>
-                          <td className="py-2 text-right tabular-nums">€{fmtEuro(r.totalEuro)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : null}
           </>
         )}
       </div>
