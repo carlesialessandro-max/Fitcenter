@@ -224,6 +224,9 @@ export const dataApi = {
       totalCount: number
       totalEuro: number
       crossEuro?: number
+      crossElencoEuro?: number
+      crossGiaNelVendutoEuro?: number
+      crossCount?: number
       rows: { categoria: string; durataMesi: number | null; count: number; totalEuro?: number }[]
       byAbbonamento?: { abbonamento: string; count: number; totalEuro: number }[]
       consulenti?: string[]
@@ -237,6 +240,9 @@ export const dataApi = {
       from: string
       to: string
       totale: number
+      totaleExtra?: number
+      totaleGiaNelConsuntivo?: number
+      extraCount?: number
       consulente: string | null
       rows: {
         idIscrizione: number
@@ -247,6 +253,7 @@ export const dataApi = {
         rateFuture: number
         movimentoU: number
         totale: number
+        giaNelVenduto?: boolean
       }[]
     }>(`/data/vendite-cross?${q}`)
   },

@@ -62,9 +62,8 @@ export function VenditeCross() {
         <h1 className="text-2xl font-semibold text-zinc-100">Cross (cambio tipologia)</h1>
         <p className="mt-1 text-sm text-zinc-400">
           Solo cross reali (importo aumentato, movimento U, rate future o pagamento al/dopo il cambio tipo).
-          Escluse correzioni tipologia (pagamento stesso giorno prima del log, stesso importo, senza U).
-          Se c’è già un movimento vendita nel mese, l’importo è già nel consuntivo dashboard e nell’analisi
-          abbonamenti: non sommarlo di nuovo.
+          Escluse correzioni tipologia. Le righe già nel venduto del mese stanno in Andamento (OPEN, SMILE, gym…):
+          non si sommano di nuovo. Solo l’extra senza movimento di vendita entra nel totale.
         </p>
       </div>
 
@@ -128,12 +127,30 @@ export function VenditeCross() {
           <div className="py-6 text-center text-red-400">{(error as Error).message}</div>
         ) : (
           <>
-            <div className="mb-4 rounded-xl border border-violet-500/40 bg-violet-500/10 p-4">
-              <p className="text-xs uppercase tracking-wider text-violet-300">Totale cross</p>
-              <p className="mt-1 text-2xl font-semibold text-violet-200">{euro(data?.totale ?? 0)}</p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Periodo {data?.from} → {data?.to} · {rows.length} righe
-              </p>
+            <div className="mb-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-violet-500/40 bg-violet-500/10 p-4">
+                <p className="text-xs uppercase tracking-wider text-violet-300">Totale elenco</p>
+                <p className="mt-1 text-2xl font-semibold text-violet-200">{euro(data?.totale ?? 0)}</p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  Periodo {data?.from} → {data?.to} · {rows.length} righe
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
+                <p className="text-xs uppercase tracking-wider text-zinc-400">Già nel venduto</p>
+                <p className="mt-1 text-2xl font-semibold text-zinc-100">
+                  {euro(data?.totaleGiaNelConsuntivo ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">Nel consuntivo Andamento (categorie)</p>
+              </div>
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+                <p className="text-xs uppercase tracking-wider text-amber-300">Extra nel totale</p>
+                <p className="mt-1 text-2xl font-semibold text-amber-400">
+                  {euro(data?.totaleExtra ?? 0)}
+                </p>
+                <p className="mt-1 text-xs text-zinc-500">
+                  {data?.extraCount ?? 0} {(data?.extraCount ?? 0) === 1 ? "riga" : "righe"} senza vendita nel mese
+                </p>
+              </div>
             </div>
 
             {rows.length === 0 ? (
@@ -146,6 +163,7 @@ export function VenditeCross() {
                       <th className="py-2 pr-3 font-medium">Data</th>
                       <th className="py-2 pr-3 font-medium">Cliente</th>
                       <th className="py-2 pr-3 font-medium">Abbonamento</th>
+                      <th className="py-2 pr-3 font-medium">Consuntivo</th>
                       <th className="py-2 pr-3 text-right font-medium">Rate pagate (mese)</th>
                       <th className="py-2 pr-3 text-right font-medium">Rate future</th>
                       <th className="py-2 pr-3 text-right font-medium">Mov. U</th>
@@ -162,6 +180,13 @@ export function VenditeCross() {
                           title={r.abbonamento}
                         >
                           {r.abbonamento || "—"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {r.giaNelVenduto ? (
+                            <span className="rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">Già nel venduto</span>
+                          ) : (
+                            <span className="rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">Extra</span>
+                          )}
                         </td>
                         <td className="py-2 pr-3 text-right text-zinc-300">{euro(r.ratePagateMese)}</td>
                         <td className="py-2 pr-3 text-right text-zinc-300">{euro(r.rateFuture)}</td>

@@ -3941,7 +3941,7 @@ async function queryVenditeTotaleViewPerIscrizioni(
   return Number(row?.Totale ?? row?.totale) || 0
 }
 
-/** Iscrizioni con già un movimento I/U nel periodo (importo già nel venduto o nel cambio tipo). */
+/** Iscrizioni già nel venduto Andamento (stesso TipoOperazione vendita, default I — non la U del cambio tipo). */
 async function queryIscrizioniConVenditaNelPeriodo(
   p: sql.ConnectionPool,
   from: string,
@@ -3964,7 +3964,7 @@ async function queryIscrizioniConVenditaNelPeriodo(
      FROM [${defaultTables.movimentiVenduto}] M
      WHERE M.[${COL_ISCRIZIONE}] IN (${ids.map((_, i) => `@x${i}`).join(", ")})
        AND M.[${COL_IMPORTO}] <> 0
-       AND M.[TipoOperazione] IN ('I', 'U')
+       ${sqlWhereTipoOperazioneMovimentoVendita("M")}
        AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
        AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)`
   )
@@ -3998,16 +3998,8 @@ async function getVenditeTotaleConCrossNetto(
   }
   if (!idConsultant) return base
   try {
-    const { rows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-    if (!rows.length) return base
-    const inBase = await queryIscrizioniConVenditaNelPeriodo(
-      p,
-      from,
-      to,
-      rows.map((r) => r.idIscrizione)
-    )
-    const extra = rows.filter((r) => !inBase.has(r.idIscrizione)).reduce((s, r) => s + r.totale, 0)
-    return Math.round((base + extra) * 100) / 100
+    const { totaleExtra } = await getVenditeCrossElenco(from, to, idConsultant, p)
+    return Math.round((base + totaleExtra) * 100) / 100
   } catch {
     return base
   }
@@ -4521,9 +4513,40 @@ export type VenditeCrossRow = {
   rateFuture: number
   movimentoU: number
   totale: number
+  giaNelVenduto: boolean
 }
 
-const crossElencoCache = new Map<string, { exp: number; v: { rows: VenditeCrossRow[]; totale: number } }>()
+export type VenditeCrossElenco = {
+  rows: VenditeCrossRow[]
+  totale: number
+  totaleExtra: number
+  totaleGiaNelConsuntivo: number
+  extraCount: number
+}
+
+const EMPTY_CROSS_ELENCO: VenditeCrossElenco = {
+  rows: [],
+  totale: 0,
+  totaleExtra: 0,
+  totaleGiaNelConsuntivo: 0,
+  extraCount: 0,
+}
+
+const crossElencoCache = new Map<string, { exp: number; v: VenditeCrossElenco }>()
+
+function annotateCrossElenco(rows: VenditeCrossRow[], inBase: Set<number>): VenditeCrossElenco {
+  const annotated = rows.map((r) => ({ ...r, giaNelVenduto: inBase.has(r.idIscrizione) }))
+  const totale = annotated.reduce((s, r) => s + r.totale, 0)
+  const totaleGiaNelConsuntivo = annotated.filter((r) => r.giaNelVenduto).reduce((s, r) => s + r.totale, 0)
+  const totaleExtra = annotated.filter((r) => !r.giaNelVenduto).reduce((s, r) => s + r.totale, 0)
+  return {
+    rows: annotated,
+    totale,
+    totaleGiaNelConsuntivo,
+    totaleExtra,
+    extraCount: annotated.filter((r) => !r.giaNelVenduto).length,
+  }
+}
 
 /**
  * Elenco cross: log (Cross selling / cambio tipo) → IDIscrizione → SUM(AbbonamentiPagamentiImporto).
@@ -4533,16 +4556,16 @@ export async function getVenditeCrossElenco(
   to: string,
   idConsultant?: string,
   poolIn?: sql.ConnectionPool
-): Promise<{ rows: VenditeCrossRow[]; totale: number }> {
+): Promise<VenditeCrossElenco> {
   const cacheKey = crossCacheKey(from, to, idConsultant)
   const hit = crossElencoCache.get(cacheKey)
   if (hit && hit.exp > Date.now()) return hit.v
 
   const p = poolIn ?? (await getPool())
-  if (!p) return { rows: [], totale: 0 }
+  if (!p) return EMPTY_CROSS_ELENCO
 
   const parts = await buildCrossSqlParts("@from", "@to", idConsultant)
-  if (!parts) return { rows: [], totale: 0 }
+  if (!parts) return EMPTY_CROSS_ELENCO
 
   const viewCfg = getViewVenditeGestionale()
   const av = qualifySqlObject(viewCfg.view).query
@@ -4601,10 +4624,16 @@ export async function getVenditeCrossElenco(
       rateFuture,
       movimentoU,
       totale,
+      giaNelVenduto: false,
     }
   })
-  const totale = rows.reduce((s, x) => s + x.totale, 0)
-  const result = { rows, totale }
+  const inBase = await queryIscrizioniConVenditaNelPeriodo(
+    p,
+    from,
+    to,
+    rows.map((x) => x.idIscrizione)
+  )
+  const result = annotateCrossElenco(rows, inBase)
   crossElencoCache.set(cacheKey, { exp: Date.now() + CROSS_RESULT_CACHE_MS, v: result })
   return result
 }
@@ -4912,11 +4941,24 @@ export async function getVenditeMovimentiCategoriaDurata(
   totalCount: number
   totalEuro: number
   crossEuro: number
+  crossElencoEuro: number
+  crossGiaNelVendutoEuro: number
+  crossCount: number
   rows: { categoria: string; durataMesi: number | null; count: number; totalEuro: number }[]
   byAbbonamento: { abbonamento: string; count: number; totalEuro: number }[]
 }> {
+  const emptyAndamento = {
+    totalCount: 0,
+    totalEuro: 0,
+    crossEuro: 0,
+    crossElencoEuro: 0,
+    crossGiaNelVendutoEuro: 0,
+    crossCount: 0,
+    rows: [] as { categoria: string; durataMesi: number | null; count: number; totalEuro: number }[],
+    byAbbonamento: [] as { abbonamento: string; count: number; totalEuro: number }[],
+  }
   const p = await getPool()
-  if (!p) return { totalCount: 0, totalEuro: 0, crossEuro: 0, rows: [], byAbbonamento: [] }
+  if (!p) return emptyAndamento
   await resolveDanzaOpExcludeSpec()
 
   const tblM = defaultTables.movimentiVenduto
@@ -5030,7 +5072,16 @@ export async function getVenditeMovimentiCategoriaDurata(
       }
       const totalCount = rows.reduce((s, row) => s + row.count, 0)
       const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)
-      return { totalCount, totalEuro, crossEuro: 0, rows, byAbbonamento: [] }
+      return {
+        totalCount,
+        totalEuro,
+        crossEuro: 0,
+        crossElencoEuro: 0,
+        crossGiaNelVendutoEuro: 0,
+        crossCount: 0,
+        rows,
+        byAbbonamento: [],
+      }
     }
 
     const rTotal = await req.query(
@@ -5160,28 +5211,24 @@ export async function getVenditeMovimentiCategoriaDurata(
     }))
 
     let crossEuro = 0
+    let crossElencoEuro = 0
+    let crossGiaNelVendutoEuro = 0
+    let crossCount = 0
     if (ambito === "adulti") {
       try {
         if (idConsultant) {
-          const { rows: crossRows } = await getVenditeCrossElenco(from, to, idConsultant, p)
-          if (crossRows.length) {
-            const inBase = await queryIscrizioniConVenditaNelPeriodo(
-              p,
-              from,
-              to,
-              crossRows.map((r) => r.idIscrizione)
-            )
-            const extra = crossRows.filter((r) => !inBase.has(r.idIscrizione))
-            const extraEuro = extra.reduce((s, r) => s + r.totale, 0)
-            crossEuro = extraEuro
-            if (extraEuro > 0.005) {
-              rows.push({
-                categoria: "Cross",
-                durataMesi: null,
-                count: extra.length,
-                totalEuro: extraEuro,
-              })
-            }
+          const cross = await getVenditeCrossElenco(from, to, idConsultant, p)
+          crossElencoEuro = cross.totale
+          crossGiaNelVendutoEuro = cross.totaleGiaNelConsuntivo
+          crossCount = cross.rows.length
+          crossEuro = cross.totaleExtra
+          if (cross.totaleExtra > 0.005) {
+            rows.push({
+              categoria: "Cross",
+              durataMesi: null,
+              count: cross.extraCount,
+              totalEuro: cross.totaleExtra,
+            })
           }
         }
       } catch {
@@ -5191,11 +5238,20 @@ export async function getVenditeMovimentiCategoriaDurata(
     const totalEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
     const totalCountFromRows = rows.reduce((s, r) => s + r.count, 0)
 
-    return { totalCount: totalCountFromRows || totalCount, totalEuro, crossEuro, rows, byAbbonamento }
+    return {
+      totalCount: totalCountFromRows || totalCount,
+      totalEuro,
+      crossEuro,
+      crossElencoEuro,
+      crossGiaNelVendutoEuro,
+      crossCount,
+      rows,
+      byAbbonamento,
+    }
   } catch (e) {
     if (strict) throw e
     // Fallback: se il DB non ha Categoria/IDDurata con questi nomi, ritorniamo vuoto e usiamo mock lato UI.
-    return { totalCount: 0, totalEuro: 0, crossEuro: 0, rows: [], byAbbonamento: [] }
+    return emptyAndamento
   }
 }
 

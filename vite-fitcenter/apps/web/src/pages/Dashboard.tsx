@@ -422,6 +422,22 @@ export function Dashboard() {
             {kpiLoading ? "…" : `€${safeNum(data?.entrateMese).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">{kpiLoading ? "…" : `${data?.percentualeBudget ?? 0}% del budget mese`}</p>
+          {!kpiLoading && (data?.crossElencoEuro ?? 0) > 0 ? (
+            <p className="mt-1 text-xs text-violet-300">
+              Cross €{(data?.crossElencoEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+              {(data?.crossEuro ?? 0) > 0.005
+                ? ` · extra nel totale €${(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`
+                : ` · già nel venduto €${(data?.crossGiaNelVendutoEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
+              {" · "}
+              <Link to="/vendite-cross" className="underline decoration-violet-500/40 hover:text-violet-200">
+                dettaglio
+              </Link>
+            </p>
+          ) : !kpiLoading && (data?.crossEuro ?? 0) > 0.005 ? (
+            <p className="mt-1 text-xs text-violet-300">
+              incl. extra Cross €{(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+            </p>
+          ) : null}
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Budget mese / anno</p>

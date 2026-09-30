@@ -398,12 +398,12 @@ function dettaglioMeseCacheLookup(
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-1" },
+      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-3" },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-1" },
+    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-3" },
   }
 }
 
@@ -586,6 +586,30 @@ function mapVenditePerMeseWithProgressivo(
   }))
 }
 
+async function attachDashboardCross(
+  stats: DashboardStats,
+  anno: number,
+  mese: number,
+  giorno: number,
+  idConsultant?: string
+): Promise<DashboardStats> {
+  if (!idConsultant) return stats
+  const from = `${anno}-${pad2(mese)}-01`
+  const to = `${anno}-${pad2(mese)}-${pad2(giorno)}`
+  try {
+    const cross = await gestionaleSql.getVenditeCrossElenco(from, to, idConsultant)
+    return {
+      ...stats,
+      crossEuro: cross.totaleExtra,
+      crossElencoEuro: cross.totale,
+      crossGiaNelVendutoEuro: cross.totaleGiaNelConsuntivo,
+      crossCount: cross.rows.length,
+    }
+  } catch {
+    return stats
+  }
+}
+
 async function computeDashboardSqlStats(
   consulente: string | undefined,
   asOf: { key: string; date: Date }
@@ -622,18 +646,24 @@ async function computeDashboardSqlStats(
       const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
       const budgetList = getBudgetListForYear(anno)
       const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-      return buildDashboardFromData(
-        [],
-        abbonamenti,
-        budgetList,
-        leadTotali,
-        leadVinti,
-        leadPersi,
-        leadRowsForFonte,
-        undefined,
-        venditeMeseSql,
-        venditePerMeseSql,
-        asOf.date
+      return attachDashboardCross(
+        buildDashboardFromData(
+          [],
+          abbonamenti,
+          budgetList,
+          leadTotali,
+          leadVinti,
+          leadPersi,
+          leadRowsForFonte,
+          undefined,
+          venditeMeseSql,
+          venditePerMeseSql,
+          asOf.date
+        ),
+        anno,
+        mese,
+        oggi.day,
+        mergedIds
       )
     }
 
@@ -668,18 +698,26 @@ async function computeDashboardSqlStats(
     const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
     const budgetList = getBudgetListForYear(anno)
     const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-    return buildDashboardFromData(
-      [],
-      abbonamenti,
-      budgetList,
-      leadTotali,
-      leadVinti,
-      leadPersi,
-      leadRowsForFonte,
-      undefined,
-      venditeMeseSql,
-      venditePerMeseSql,
-      asOf.date
+    return attachDashboardCross(
+      buildDashboardFromData(
+        [],
+        abbonamenti,
+        budgetList,
+        leadTotali,
+        leadVinti,
+        leadPersi,
+        leadRowsForFonte,
+        undefined,
+        venditeMeseSql,
+        venditePerMeseSql,
+        asOf.date
+      ),
+      anno,
+      mese,
+      oggi.day,
+      gestionaleSql.mergeConsultantIdStrings(
+        await Promise.all(labels.map((label) => resolveConsultantId(label)))
+      )
     )
   }
 
@@ -700,18 +738,24 @@ async function computeDashboardSqlStats(
   const leadPersi = leads.filter((l) => l.stato === "chiuso_perso").length
   const budgetList = getBudgetListForYear(anno)
   const leadRowsForFonte = leads.map((l) => ({ Fonte: l.fonte, fonte: l.fonte }))
-  return buildDashboardFromData(
-    [],
-    abbonamenti,
-    budgetList,
-    leadTotali,
-    leadVinti,
-    leadPersi,
-    leadRowsForFonte,
-    undefined,
-    venditeMeseSql,
-    venditePerMeseSql,
-    asOf.date
+  return attachDashboardCross(
+    buildDashboardFromData(
+      [],
+      abbonamenti,
+      budgetList,
+      leadTotali,
+      leadVinti,
+      leadPersi,
+      leadRowsForFonte,
+      undefined,
+      venditeMeseSql,
+      venditePerMeseSql,
+      asOf.date
+    ),
+    anno,
+    mese,
+    oggi.day,
+    idUtente
   )
 }
 
@@ -797,7 +841,7 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-1" }
+    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-3" }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
     if (cachedHit) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
@@ -2663,7 +2707,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-iscr-totale-v2" : "adulti-dash-cross-v1",
+      venditori: ambito === "bambini" ? "bambini-iscr-totale-v2" : "adulti-dash-cross-v2",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -2725,7 +2769,7 @@ async function computeAndamentoPayload(args: {
   idUtente: string | undefined
   ambito: "adulti" | "bambini"
 }) {
-  const { rows, totalCount, byAbbonamento, totalEuro, crossEuro } =
+  const { rows, totalCount, byAbbonamento, totalEuro, crossEuro, crossElencoEuro, crossGiaNelVendutoEuro, crossCount } =
     await gestionaleSql.getVenditeMovimentiCategoriaDurata(
       args.from,
       args.to,
@@ -2774,6 +2818,9 @@ async function computeAndamentoPayload(args: {
     totalCount: mappedRows.reduce((s, r) => s + r.count, 0),
     totalEuro: mappedRows.reduce((s, r) => s + r.totalEuro, 0),
     crossEuro: args.ambito === "bambini" ? 0 : crossEuro,
+    crossElencoEuro: args.ambito === "bambini" ? 0 : crossElencoEuro,
+    crossGiaNelVendutoEuro: args.ambito === "bambini" ? 0 : crossGiaNelVendutoEuro,
+    crossCount: args.ambito === "bambini" ? 0 : crossCount,
     rows: mappedRows,
     byAbbonamento: mappedAbb,
   }
@@ -2813,10 +2860,19 @@ export async function getVenditeCross(req: Request, res: Response) {
       idUtente = gestionaleSql.mergeConsultantIdStrings(idParts)
     }
 
-    const { rows, totale } = await withVenditeCrossSqlTimeout(
+    const { rows, totale, totaleExtra, totaleGiaNelConsuntivo, extraCount } = await withVenditeCrossSqlTimeout(
       gestionaleSql.getVenditeCrossElenco(from, to, idUtente ?? undefined)
     )
-    res.json({ from, to, rows, totale, consulente: consulente ?? null })
+    res.json({
+      from,
+      to,
+      rows,
+      totale,
+      totaleExtra,
+      totaleGiaNelConsuntivo,
+      extraCount,
+      consulente: consulente ?? null,
+    })
   } catch (e) {
     const msg = (e as Error).message
     if (msg === "__FITCENTER_VENDITE_CROSS_SQL_TIMEOUT__") {

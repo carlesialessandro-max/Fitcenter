@@ -27,14 +27,31 @@ function aggregate(data: {
   totalCount?: number
   totalEuro?: number
   crossEuro?: number
+  crossElencoEuro?: number
+  crossGiaNelVendutoEuro?: number
+  crossCount?: number
 } | undefined) {
   const rows = data?.rows ?? []
   const totalDistinct = data?.totalCount ?? 0
   const totalForPct = rows.reduce((s, r) => s + (r.count ?? 0), 0)
   const crossEuro = data?.crossEuro ?? 0
+  const crossElencoEuro = data?.crossElencoEuro ?? 0
+  const crossGiaNelVendutoEuro = data?.crossGiaNelVendutoEuro ?? 0
+  const crossCount = data?.crossCount ?? 0
   const totalEuro = data?.totalEuro ?? rows.reduce((s, r) => s + Number(r.totalEuro ?? 0), 0)
   if (totalForPct <= 0 && totalEuro <= 0) {
-    return { rows, totalDistinct, byCategoria: [] as RowAgg[], byDurata: [] as RowAgg[], totalEuro, crossEuro, empty: true }
+    return {
+      rows,
+      totalDistinct,
+      byCategoria: [] as RowAgg[],
+      byDurata: [] as RowAgg[],
+      totalEuro,
+      crossEuro,
+      crossElencoEuro,
+      crossGiaNelVendutoEuro,
+      crossCount,
+      empty: true,
+    }
   }
   const byCategoriaMap: Record<string, { count: number; euro: number }> = {}
   const byDurataMap: Record<string, { count: number; euro: number }> = {}
@@ -44,6 +61,7 @@ function aggregate(data: {
       count: (byCategoriaMap[cat]?.count ?? 0) + (r.count ?? 0),
       euro: (byCategoriaMap[cat]?.euro ?? 0) + Number(r.totalEuro ?? 0),
     }
+    if (cat.toLowerCase() === "cross") return
     const durataLabel = r.durataMesi != null ? `${r.durataMesi} mesi` : "Sconosciuta"
     byDurataMap[durataLabel] = {
       count: (byDurataMap[durataLabel]?.count ?? 0) + (r.count ?? 0),
@@ -75,7 +93,18 @@ function aggregate(data: {
       if (okb) return 1
       return a.name.localeCompare(b.name)
     })
-  return { rows, totalDistinct, byCategoria, byDurata, totalEuro, crossEuro, empty: false }
+  return {
+    rows,
+    totalDistinct,
+    byCategoria,
+    byDurata,
+    totalEuro,
+    crossEuro,
+    crossElencoEuro,
+    crossGiaNelVendutoEuro,
+    crossCount,
+    empty: false,
+  }
 }
 
 function mergeByName(curr: RowAgg[], prev: RowAgg[], sort: "euro" | "durata" = "euro"): { name: string; curr: RowAgg; prev: RowAgg }[] {
@@ -101,6 +130,8 @@ function mergeByName(curr: RowAgg[], prev: RowAgg[], sort: "euro" | "durata" = "
   }
   return out.sort((a, b) => b.curr.euro - a.curr.euro || b.prev.euro - a.prev.euro)
 }
+
+function analisiConfronto(args: {
   meseLabel: string
   anno: number
   annoPrev: number
@@ -274,7 +305,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
               ? "Scuola nuoto = BAMBINI + ASI iscrizione + bracciali. Agonismo = tab Pagamenti (cassa), non il venduto. Escluse Carmen/Serena/Ombretta."
-              : "Distribuzione vendite adulti per categoria e durata — incluse gestanti; esclusi danza e Centro Arte Danza"}
+              : "Distribuzione vendite adulti per categoria e durata — incluse gestanti; esclusi danza e Centro Arte Danza. I cross con vendita nel mese sono già nelle categorie; l’extra senza vendita si somma a parte."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -345,6 +376,11 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 <p className="text-xs uppercase tracking-wider text-amber-300">{meseLabel} {anno}</p>
                 <p className="mt-1 text-2xl font-semibold text-amber-400">€ {fmtEuro(computed.totalEuro)}</p>
                 <p className="text-sm text-zinc-400">{computed.totalDistinct} movimenti</p>
+                {ambito === "adulti" && computed.crossEuro > 0.005 ? (
+                  <p className="mt-1 text-xs text-violet-300">
+                    incl. extra Cross €{fmtEuro(computed.crossEuro)}
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">{meseLabel} {annoConfronto}{loadingPrev ? "…" : ""}</p>
@@ -352,6 +388,34 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 <p className="text-sm text-zinc-400">{computedPrev.totalDistinct} movimenti</p>
               </div>
             </div>
+
+            {ambito === "adulti" && computed.crossElencoEuro > 0 ? (
+              <div className="mb-4 rounded-xl border border-violet-500/40 bg-violet-500/10 p-4 text-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-wider text-violet-300">Cross (cambio tipologia)</p>
+                    <p className="mt-1 text-lg font-semibold text-violet-200">
+                      €{fmtEuro(computed.crossElencoEuro)}
+                      <span className="ml-2 text-sm font-normal text-zinc-400">
+                        {computed.crossCount} {computed.crossCount === 1 ? "riga" : "righe"}
+                      </span>
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Già nel venduto €{fmtEuro(computed.crossGiaNelVendutoEuro)} (OPEN, SMILE, gym… — non sommati di nuovo)
+                      {computed.crossEuro > 0.005
+                        ? ` · extra nel totale €${fmtEuro(computed.crossEuro)}`
+                        : " · nessun extra da sommare"}
+                    </p>
+                  </div>
+                  <Link
+                    to="/vendite-cross"
+                    className="rounded border border-violet-500/40 px-3 py-1.5 text-xs text-violet-200 hover:bg-violet-500/10"
+                  >
+                    Apri pagina Cross
+                  </Link>
+                </div>
+              </div>
+            ) : null}
 
             {analisi.length > 0 && (
               <div className="mb-6 rounded-lg border border-sky-800/60 bg-sky-950/30 p-4 text-sm text-sky-100/90 space-y-2">
@@ -399,12 +463,6 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 Scarica PDF
               </button>
             </div>
-
-            {computed.crossEuro > 0 ? (
-              <p className="mb-4 text-xs text-zinc-500">
-                Cross €{fmtEuro(computed.crossEuro)} nel totale, come in dashboard (solo senza movimento di vendita nel mese)
-              </p>
-            ) : null}
 
             <div className="grid gap-6 lg:grid-cols-1">
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/20 p-4">

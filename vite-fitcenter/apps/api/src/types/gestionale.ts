@@ -68,6 +68,11 @@ export interface DashboardStats {
   abbonamentiInScadenza: number
   abbonamentiInScadenza60: number
   entrateMese: number
+  /** Extra Cross senza vendita nel mese, già incluso in entrateMese. */
+  crossEuro?: number
+  crossElencoEuro?: number
+  crossGiaNelVendutoEuro?: number
+  crossCount?: number
   percentualeBudget: number
   budgetMese: number
   budgetAnno: number
