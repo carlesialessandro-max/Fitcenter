@@ -398,12 +398,12 @@ function dettaglioMeseCacheLookup(
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-      cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-4" },
+        cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-6" },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-    cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-4" },
+      cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-6" },
   }
 }
 
@@ -841,7 +841,7 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-4" }
+    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-6" }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
     if (cachedHit) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
@@ -2707,7 +2707,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-iscr-totale-v2" : "adulti-dash-cross-v2",
+      venditori: ambito === "bambini" ? "bambini-iscr-totale-v2" : "adulti-analisi-totale-v4",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -3452,20 +3452,6 @@ async function computeAndCacheDettaglioMese(args: {
               const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
               const fromMese = `${anno}-${pad2(mese)}-01`
               const toGiorno = `${anno}-${pad2(mese)}-${pad2(giorno)}`
-              let crossElenco: {
-                rows: { giaNelVenduto: boolean; dataCross: string; idVenditore: number; totale: number }[]
-                totale: number
-                totaleExtra: number
-                totaleGiaNelConsuntivo: number
-                extraCount: number
-              } = { rows: [], totale: 0, totaleExtra: 0, totaleGiaNelConsuntivo: 0, extraCount: 0 }
-              try {
-                if (mergedIds) {
-                  crossElenco = await gestionaleSql.getVenditeCrossElenco(fromMese, toGiorno, mergedIds)
-                }
-              } catch {
-                /* extra cross opzionale sulle righe consulente */
-              }
               const consulentiRows = await Promise.all(
                 labels.map(async (label, i) => {
                   const id = idParts[i]
@@ -3476,10 +3462,8 @@ async function computeAndCacheDettaglioMese(args: {
                     gestionaleSql.getVenditeBaseEuroPeriodo(toGiorno, toGiorno, id),
                     gestionaleSql.getVenditeBaseEuroPeriodo(fromMese, toGiorno, id),
                   ])
-                  const extraGiorno = gestionaleSql.crossExtraEuroForConsultant(crossElenco, id, toGiorno)
-                  const extraMese = gestionaleSql.crossExtraEuroForConsultant(crossElenco, id)
-                  const venditeGiorno = Math.round((baseGiorno + extraGiorno) * 100) / 100
-                  const venditeMese = Math.round((baseMese + extraMese) * 100) / 100
+                  const venditeGiorno = Math.round(baseGiorno * 100) / 100
+                  const venditeMese = Math.round(baseMese * 100) / 100
                   const scostG = venditeGiorno - budgetGiornoCons
                   const scostM = venditeMese - budgetProgressivoMeseCons
                   const trendG = budgetGiornoCons > 0 ? Math.round((venditeGiorno / budgetGiornoCons) * 10000) / 100 : 0
@@ -3764,7 +3748,7 @@ export async function getDettaglioAnno(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dettaglioAnnoCacheAsOf(anno, asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { anno, v: "cross-cons-1" }
+    const cacheKeyParams = { anno, v: "cross-cons-2" }
     const cacheArgs = {
       name: "data.dettaglio-anno" as const,
       scope,

@@ -3510,6 +3510,42 @@ function whereExcludeDanzaEOperatoreArte(alias = "R"): string {
   return parts.length ? `\n    ${parts.join("\n    ")}` : ""
 }
 
+/** Agonismo squadre/categorie (non Master/Adulti/Senior): l’Analisi adulti delle consulenti non lo include. */
+function whereExcludeAgonismoCategorieNonMaster(alias: string): string {
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
+  return `
+    AND NOT (
+      (${cat} LIKE N'%AGONISM%' OR ${abb} LIKE N'%AGONISM%')
+      AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
+      AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%'
+      AND ${cat} NOT LIKE N'%SENIOR%' AND ${abb} NOT LIKE N'%SENIOR%'
+    )
+  `
+}
+
+/** Filtri Analisi abbonamenti adulti. Non usare CategoriaDescrizione (tipo cliente): un badge a un allievo danza resta nel venduto consulente. */
+function whereAndamentoAdultiAnalisiView(alias: string, categoriaExpr: string): string {
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
+  const dur = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
+  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
+  const op = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[NomeOperatoreAbbonamento], N''))))`
+  const catAbb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], N''))))`
+  return `
+    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
+    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
+    AND ${catAbb} NOT LIKE N'%DANZA%'
+    AND ${macro} NOT LIKE N'%DANZA%'
+    AND ${abb} NOT LIKE N'%DANZA%'
+    AND ${dur} NOT LIKE N'%DANZA%'
+    AND ${op} NOT LIKE N'%ARTE DANZA%'
+    AND ${op} NOT LIKE N'%CENTRO ARTE%'
+    ${whereExcludeAbbonamentoDurataTesseramentoGare(alias)}
+    ${whereExcludeAbbonamentiSpecificiIds(alias)}
+    ${whereExcludeAgonismoCategorieNonMaster(alias)}
+  `
+}
+
 function whereExcludeUispTesseramenti(alias = "R", categoriaExpr?: string): string {
   const cat = categoriaExpr
     ? `UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, ''))))`
@@ -3941,15 +3977,16 @@ async function queryVenditeTotaleViewPerIscrizioni(
   return Number(row?.Totale ?? row?.totale) || 0
 }
 
-/** Iscrizioni già nel venduto Andamento (stesso TipoOperazione vendita, default I — non la U del cambio tipo). */
-async function queryIscrizioniConVenditaNelPeriodo(
+/** Movimenti I/U sulle iscrizioni cross nel periodo: vendita I = già nel consuntivo; netto U = importo extra del cambio tipo. */
+async function queryMovimentiCrossNelPeriodo(
   p: sql.ConnectionPool,
   from: string,
   to: string,
   idIscrizioni: number[]
-): Promise<Set<number>> {
+): Promise<Map<number, { hasI: boolean; netU: number }>> {
   const ids = [...new Set(idIscrizioni.filter((id) => Number.isFinite(id) && id > 0))]
-  if (!ids.length) return new Set()
+  const out = new Map<number, { hasI: boolean; netU: number }>()
+  if (!ids.length) return out
   const dateShiftH = Number(process.env.GESTIONALE_DATE_SHIFT_HOURS ?? "0") || 0
   const dateExpr = (col: string) =>
     dateShiftH
@@ -3960,29 +3997,38 @@ async function queryIscrizioniConVenditaNelPeriodo(
     req = req.input(`x${i}`, sql.Int, id)
   })
   const r = await req.query(
-    `SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
+    `SELECT
+       M.[${COL_ISCRIZIONE}] AS ID,
+       SUM(CASE WHEN M.[TipoOperazione] = 'I' THEN 1 ELSE 0 END) AS nI,
+       COALESCE(SUM(CASE WHEN M.[TipoOperazione] = 'U' THEN M.[${COL_IMPORTO}] ELSE 0 END), 0) AS netU
      FROM [${defaultTables.movimentiVenduto}] M
      WHERE M.[${COL_ISCRIZIONE}] IN (${ids.map((_, i) => `@x${i}`).join(", ")})
        AND M.[${COL_IMPORTO}] <> 0
-       ${sqlWhereTipoOperazioneMovimentoVendita("M")}
        AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
-       AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)`
+       AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
+     GROUP BY M.[${COL_ISCRIZIONE}]`
   )
-  return new Set(
-    (r.recordset ?? []).map((row) => Number((row as Record<string, unknown>).ID ?? 0)).filter((id) => id > 0)
-  )
+  for (const row of r.recordset ?? []) {
+    const rec = row as Record<string, unknown>
+    const id = Number(rec.ID ?? 0)
+    if (id <= 0) continue
+    out.set(id, {
+      hasI: (Number(rec.nI ?? rec.NI) || 0) > 0,
+      netU: Number(rec.netU ?? rec.NetU) || 0,
+    })
+  }
+  return out
 }
 
 /**
- * Consuntivo = venduto base (movimenti / Totale iscrizione).
- * I cross si sommano SOLO se quell'iscrizione non ha già un movimento vendita nel periodo
- * (altrimenti Altare/Baldi/Pisaneschi finiscono due volte: analisi + pagina Cross).
+ * Consuntivo = Analisi abbonamenti (Totale view, data inserimento).
+ * Extra Cross fuori Analisi non si somma: restano nel riquadro/pagina Cross.
  */
 async function getVenditeTotaleConCrossNetto(
-  p: sql.ConnectionPool,
+  _p: sql.ConnectionPool,
   from: string,
   to: string,
-  idConsultant: string | undefined,
+  _idConsultant: string | undefined,
   baseLoader: () => Promise<number>
 ): Promise<number> {
   let base = 0
@@ -3993,16 +4039,7 @@ async function getVenditeTotaleConCrossNetto(
     console.error(`[gestionale] vendite totale base fallito ${from}..${to}: ${msg}`)
     throw e
   }
-  if ((process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() === "false") {
-    return base
-  }
-  if (!idConsultant) return base
-  try {
-    const { totaleExtra } = await getVenditeCrossElenco(from, to, idConsultant, p)
-    return Math.round((base + totaleExtra) * 100) / 100
-  } catch {
-    return base
-  }
+  return base
 }
 
 async function getPagamentiCrossSqlParts(): Promise<PagamentiCrossSqlParts | null> {
@@ -4125,7 +4162,8 @@ function sqlMovimentoAttribuitoConsulente(
 }
 
 /**
- * Totale vendite = stessa logica di «Andamento vendite» (Temp_Stampe + RVW_AbbonamentiUtenti.Totale).
+ * Totale vendite adulti = Analisi abbonamenti del gestionale:
+ * righe view (DataOperazione = inserito dal/al) e colonna Totale.
  * Usata da dashboard, dettaglio mese e pagina Andamento vendite.
  */
 async function queryVenditeTotaleComeAndamento(
@@ -4135,7 +4173,6 @@ async function queryVenditeTotaleComeAndamento(
   idConsultant?: string
 ): Promise<number> {
   await resolveDanzaOpExcludeSpec()
-  const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
   const ids = idConsultant ? parseConsultantIds(idConsultant) : []
   const req = p.request().input("from", sql.VarChar(10), from).input("to", sql.VarChar(10), to)
@@ -4149,59 +4186,22 @@ async function queryVenditeTotaleComeAndamento(
       ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
       : `CAST(${col} AS DATE)`
 
-  const whereBase = `
-    WHERE M.[${COL_IMPORTO}] <> 0
-      AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
-      AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
-      ${sqlWhereTipoOperazioneMovimentoVendita("M")}
-  `
-
   const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
   const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-  const durataCol = "Durata"
   const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
-  const whereAndamentoEsclusioniView = `
-    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
-    ${whereExcludeDanzaEOperatoreArte("R")}
-    ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
-    ${whereExcludeAbbonamentiSpecificiIds("R")}
-  `
   const consultantFilter =
     idConsultant && ids.length > 0
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
 
   const r = await req.query(
-    `;WITH Temp_Stampe AS (
-       SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-       FROM [${tblM}] M
-       ${whereBase}
-     ),
-     RigheView AS (
-       SELECT
-         R.[${viewCfg.colJoin}] AS ID,
-         ${categoriaExpr} AS Categoria,
-         R.[${durataCol}] AS DurataMesi,
-         TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
-       FROM [${viewCfg.view}] R
-       INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
-       WHERE 1=1
-         ${consultantFilter}
-        ${whereAndamentoEsclusioniView}
-     ),
-     PerIscrizione AS (
-       SELECT
-         ID,
-         Categoria,
-         DurataMesi,
-         MAX(TotaleEuro) AS TotaleEuro
-       FROM RigheView
-       WHERE 1=1
-         ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
-       GROUP BY ID, Categoria, DurataMesi
-     )
-     SELECT COALESCE(SUM(TotaleEuro), 0) AS Totale
-     FROM PerIscrizione`
+    `SELECT COALESCE(SUM(TRY_CONVERT(float, R.[${colTotale}])), 0) AS Totale
+     FROM [${viewCfg.view}] R
+     WHERE ${dateExpr("R.[DataOperazione]")} >= CAST(@from AS DATE)
+       AND ${dateExpr("R.[DataOperazione]")} <= CAST(@to AS DATE)
+       ${consultantFilter}
+       ${whereAndamentoAdultiAnalisiView("R", categoriaExpr)}
+       ${whereExcludeUispTesseramenti("R", categoriaExpr)}`
   )
   const row = (r.recordset ?? [])[0] as Record<string, unknown> | undefined
   return Number(row?.Totale ?? row?.totale) || 0
@@ -4215,7 +4215,6 @@ async function queryVenditeTotaleComeAndamentoPerMesi(
   idConsultant?: string
 ): Promise<{ mese: number; totale: number }[]> {
   await resolveDanzaOpExcludeSpec()
-  const tblM = defaultTables.movimentiVenduto
   const viewCfg = getViewVenditeGestionale()
   const ids = idConsultant ? parseConsultantIds(idConsultant) : []
   const req = poolRequestWithTimeout(p, getVenditeCrossRequestTimeoutMs())
@@ -4230,64 +4229,25 @@ async function queryVenditeTotaleComeAndamentoPerMesi(
     dateShiftH
       ? `CAST(DATEADD(hour, ${Math.trunc(dateShiftH)}, ${col}) AS DATE)`
       : `CAST(${col} AS DATE)`
-  const meseExpr = `MONTH(${dateExpr(`M.[${COL_DATA}]`)})`
-
-  const whereBase = `
-    WHERE M.[${COL_IMPORTO}] <> 0
-      AND ${dateExpr(`M.[${COL_DATA}]`)} >= CAST(@from AS DATE)
-      AND ${dateExpr(`M.[${COL_DATA}]`)} <= CAST(@to AS DATE)
-      ${sqlWhereTipoOperazioneMovimentoVendita("M")}
-  `
+  const meseExpr = `MONTH(${dateExpr("R.[DataOperazione]")})`
 
   const rawTot = process.env.GESTIONALE_VIEW_COL_TOTALE?.trim()
   const colTotale = rawTot && /^[A-Za-z_][A-Za-z0-9_]*$/.test(rawTot) ? rawTot : "Totale"
-  const durataCol = "Durata"
   const categoriaExpr = "COALESCE(R.[CategoriaAbbonamentoDescrizione], R.[CategoriaDescrizione])"
-  const whereAndamentoEsclusioniView = `
-    AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
-    ${whereExcludeDanzaEOperatoreArte("R")}
-    ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
-    ${whereExcludeAbbonamentiSpecificiIds("R")}
-  `
   const consultantFilter =
     idConsultant && ids.length > 0
       ? ` AND R.[${viewCfg.colId}] IN (${ids.map((_, i) => `@id${i}`).join(", ")})`
       : ""
 
   const r = await req.query(
-    `;WITH Temp_Stampe AS (
-       SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID, ${meseExpr} AS Mese
-       FROM [${tblM}] M
-       ${whereBase}
-     ),
-     RigheView AS (
-       SELECT
-         R.[${viewCfg.colJoin}] AS ID,
-         T.Mese,
-         ${categoriaExpr} AS Categoria,
-         R.[${durataCol}] AS DurataMesi,
-         TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
-       FROM [${viewCfg.view}] R
-       INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
-       WHERE 1=1
-         ${consultantFilter}
-        ${whereAndamentoEsclusioniView}
-     ),
-     PerIscrizione AS (
-       SELECT
-         ID,
-         Mese,
-         Categoria,
-         DurataMesi,
-         MAX(TotaleEuro) AS TotaleEuro
-       FROM RigheView
-       WHERE 1=1
-         ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
-       GROUP BY ID, Mese, Categoria, DurataMesi
-     )
-     SELECT Mese, COALESCE(SUM(TotaleEuro), 0) AS Totale
-     FROM PerIscrizione
-     GROUP BY Mese`
+    `SELECT ${meseExpr} AS Mese, COALESCE(SUM(TRY_CONVERT(float, R.[${colTotale}])), 0) AS Totale
+     FROM [${viewCfg.view}] R
+     WHERE ${dateExpr("R.[DataOperazione]")} >= CAST(@from AS DATE)
+       AND ${dateExpr("R.[DataOperazione]")} <= CAST(@to AS DATE)
+       ${consultantFilter}
+       ${whereAndamentoAdultiAnalisiView("R", categoriaExpr)}
+       ${whereExcludeUispTesseramenti("R", categoriaExpr)}
+     GROUP BY ${meseExpr}`
   )
   return (r.recordset ?? [])
     .map((row) => ({
@@ -4554,8 +4514,26 @@ export function crossExtraEuroForConsultant(
   return Math.round(extra * 100) / 100
 }
 
-function annotateCrossElenco(rows: VenditeCrossRow[], inBase: Set<number>): VenditeCrossElenco {
-  const annotated = rows.map((r) => ({ ...r, giaNelVenduto: inBase.has(r.idIscrizione) }))
+function annotateCrossElenco(
+  rows: VenditeCrossRow[],
+  mov: Map<number, { hasI: boolean; netU: number }>
+): VenditeCrossElenco {
+  const byId = new Map<number, VenditeCrossRow>()
+  const ordered = [...rows].sort((a, b) => a.dataCross.localeCompare(b.dataCross))
+  for (const r of ordered) {
+    if (r.idIscrizione <= 0) continue
+    const prev = byId.get(r.idIscrizione)
+    if (!prev || r.dataCross >= prev.dataCross) byId.set(r.idIscrizione, r)
+  }
+  const annotated = [...byId.values()]
+    .map((r) => {
+      const st = mov.get(r.idIscrizione)
+      const hasI = st?.hasI ?? false
+      const netU = st?.netU ?? 0
+      const totale = !hasI && Math.abs(netU) >= 0.005 ? netU : r.totale
+      return { ...r, totale, giaNelVenduto: hasI }
+    })
+    .sort((a, b) => b.dataCross.localeCompare(a.dataCross) || b.idIscrizione - a.idIscrizione)
   const totale = annotated.reduce((s, r) => s + r.totale, 0)
   const totaleGiaNelConsuntivo = annotated.filter((r) => r.giaNelVenduto).reduce((s, r) => s + r.totale, 0)
   const totaleExtra = annotated.filter((r) => !r.giaNelVenduto).reduce((s, r) => s + r.totale, 0)
@@ -4650,13 +4628,13 @@ export async function getVenditeCrossElenco(
       idVenditore: Number(row.IdVenditore ?? row.idvenditore) || 0,
     }
   })
-  const inBase = await queryIscrizioniConVenditaNelPeriodo(
+  const mov = await queryMovimentiCrossNelPeriodo(
     p,
     from,
     to,
     rows.map((x) => x.idIscrizione)
   )
-  const result = annotateCrossElenco(rows, inBase)
+  const result = annotateCrossElenco(rows, mov)
   crossElencoCache.set(cacheKey, { exp: Date.now() + CROSS_RESULT_CACHE_MS, v: result })
   return result
 }
@@ -4812,7 +4790,7 @@ async function queryVenditeCrossEuroRange(
   }
 }
 
-/** Totale € periodo [from,to]: base «Andamento vendite» + cross netti (stessa formula ovunque). */
+/** Totale € periodo [from,to]: stessa formula Analisi abbonamenti (Totale view). */
 export async function getVenditeTotaleEuroPeriodo(
   from: string,
   to: string,
@@ -4879,24 +4857,11 @@ export async function getVenditePerMeseAnno(
     const ultimo = new Date(anno, through, 0).getDate()
     const to = `${anno}-${String(through).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
     const fetched = await queryVenditeTotaleComeAndamentoPerMesi(p, from, to, idConsultant)
-    const extraByMese = new Map<number, number>()
-    try {
-      const cross = await getVenditeCrossElenco(from, to, idConsultant, p)
-      for (const row of cross.rows) {
-        if (row.giaNelVenduto) continue
-        const m = Number(String(row.dataCross).slice(5, 7))
-        if (!Number.isFinite(m) || m < 1 || m > 12) continue
-        extraByMese.set(m, (extraByMese.get(m) ?? 0) + row.totale)
-      }
-    } catch {
-      /* extra cross opzionale */
-    }
     const map = new Map(fetched.map((r) => [r.mese, r.totale]))
     return Array.from({ length: 12 }, (_, i) => {
       const mese = i + 1
       const base = mese <= through ? map.get(mese) ?? 0 : 0
-      const extra = mese <= through ? extraByMese.get(mese) ?? 0 : 0
-      return { mese, totale: Math.round((base + extra) * 100) / 100 }
+      return { mese, totale: Math.round(base * 100) / 100 }
     })
   } catch {
     return []
@@ -4981,9 +4946,8 @@ export async function getVenditeTotaliPerAnno(
   return []
 }
 
-/** Distribuzione vendite (movimenti Importo>0) per categoria e durata.
- *  Replica il gestionale: **conteggio movimenti** e **somma importo** nel periodo [from,to],
- *  includendo anche i tesseramenti (che generano importo). */
+/** Distribuzione vendite adulti = Analisi abbonamenti (DataOperazione + Totale).
+ *  Bambini: iscrizioni con vendita nel periodo e colonna Totale. */
 export async function getVenditeMovimentiCategoriaDurata(
   from: string,
   to: string,
@@ -5137,109 +5101,43 @@ export async function getVenditeMovimentiCategoriaDurata(
     }
 
     const rTotal = await req.query(
-      `;WITH Temp_Stampe AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-         FROM [${tblM}] M
-         ${whereBase}
-       ),
-       RigheView AS (
-         SELECT
-           R.[${viewCfg.colJoin}] AS ID,
-           ${categoriaOrAbbExpr} AS Categoria,
-           R.[${durataCol}] AS DurataMesi,
-           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
-         FROM [${viewCfg.view}] R
-         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
-         WHERE 1=1
-           ${consultantFilter}
-          ${whereAndamentoEsclusioniView}
-       ),
-       PerIscrizione AS (
-         SELECT
-           ID,
-           Categoria,
-           DurataMesi,
-           MAX(TotaleEuro) AS TotaleEuro
-         FROM RigheView
-         WHERE 1=1
-           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
-         GROUP BY ID, Categoria, DurataMesi
-       )
-       SELECT COUNT(*) AS totalCount FROM PerIscrizione;`
+      `SELECT COUNT(*) AS totalCount
+       FROM [${viewCfg.view}] R
+       WHERE ${dateExpr("R.[DataOperazione]")} >= CAST(@from AS DATE)
+         AND ${dateExpr("R.[DataOperazione]")} <= CAST(@to AS DATE)
+         ${consultantFilter}
+         ${whereAndamentoAdultiAnalisiView("R", categoriaExpr)}
+         ${whereExcludeUispTesseramenti("R", categoriaExpr)}`
     )
 
     const r = await req.query(
-      `;WITH Temp_Stampe AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-         FROM [${tblM}] M
-         ${whereBase}
-       ),
-       RigheView AS (
-         SELECT
-           R.[${viewCfg.colJoin}] AS ID,
-           ${categoriaOrAbbExpr} AS Categoria,
-           R.[${durataCol}] AS DurataMesi,
-           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
-         FROM [${viewCfg.view}] R
-         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
-         WHERE 1=1
-           ${consultantFilter}
-          ${whereAndamentoEsclusioniView}
-       ),
-       PerIscrizione AS (
-         SELECT
-           ID,
-           Categoria,
-           DurataMesi,
-           MAX(TotaleEuro) AS TotaleEuro
-         FROM RigheView
-         WHERE 1=1
-           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Categoria")}
-         GROUP BY ID, Categoria, DurataMesi
-       )
-       SELECT
-         Categoria,
-         DurataMesi,
+      `SELECT
+         ${categoriaOrAbbExpr} AS Categoria,
+         R.[${durataCol}] AS DurataMesi,
          COUNT(*) AS count,
-         SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
-       FROM PerIscrizione
-       GROUP BY Categoria, DurataMesi
+         COALESCE(SUM(TRY_CONVERT(float, R.[${colTotale}])), 0) AS totalEuro
+       FROM [${viewCfg.view}] R
+       WHERE ${dateExpr("R.[DataOperazione]")} >= CAST(@from AS DATE)
+         AND ${dateExpr("R.[DataOperazione]")} <= CAST(@to AS DATE)
+         ${consultantFilter}
+         ${whereAndamentoAdultiAnalisiView("R", categoriaExpr)}
+         ${whereExcludeUispTesseramenti("R", categoriaExpr)}
+       GROUP BY ${categoriaOrAbbExpr}, R.[${durataCol}]
        ORDER BY count DESC;`
     )
 
     const rAbb = await req.query(
-      `;WITH Temp_Stampe AS (
-         SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
-         FROM [${tblM}] M
-         ${whereBase}
-       ),
-       RigheView AS (
-         SELECT
-           R.[${viewCfg.colJoin}] AS ID,
-           COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr}) AS Abbonamento,
-           TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
-         FROM [${viewCfg.view}] R
-         INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
-         WHERE 1=1
-           ${consultantFilter}
-          ${whereAndamentoEsclusioniView}
-       ),
-       PerIscrizione AS (
-         SELECT
-           ID,
-           Abbonamento,
-           MAX(TotaleEuro) AS TotaleEuro
-         FROM RigheView
-         WHERE 1=1
-           ${whereExcludeUispTesseramenti("RigheView", "RigheView.Abbonamento")}
-         GROUP BY ID, Abbonamento
-       )
-       SELECT
-         Abbonamento,
+      `SELECT
+         COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr}) AS Abbonamento,
          COUNT(*) AS count,
-         SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
-       FROM PerIscrizione
-       GROUP BY Abbonamento
+         COALESCE(SUM(TRY_CONVERT(float, R.[${colTotale}])), 0) AS totalEuro
+       FROM [${viewCfg.view}] R
+       WHERE ${dateExpr("R.[DataOperazione]")} >= CAST(@from AS DATE)
+         AND ${dateExpr("R.[DataOperazione]")} <= CAST(@to AS DATE)
+         ${consultantFilter}
+         ${whereAndamentoAdultiAnalisiView("R", categoriaExpr)}
+         ${whereExcludeUispTesseramenti("R", categoriaExpr)}
+       GROUP BY COALESCE(R.[AbbonamentoDurataDescrizione], R.[AbbonamentoDescrizione], ${categoriaExpr})
        ORDER BY totalEuro DESC;`
     )
 
@@ -5274,21 +5172,13 @@ export async function getVenditeMovimentiCategoriaDurata(
           crossGiaNelVendutoEuro = cross.totaleGiaNelConsuntivo
           crossCount = cross.rows.length
           crossEuro = cross.totaleExtra
-          if (cross.totaleExtra > 0.005) {
-            rows.push({
-              categoria: "Cross",
-              durataMesi: null,
-              count: cross.extraCount,
-              totalEuro: cross.totaleExtra,
-            })
-          }
         }
       } catch {
-        /* cross opzionale */
+        /* cross opzionale: il totale Andamento resta allineato all'Analisi */
       }
     }
-    const totalEuro = rows.reduce((s, r) => s + r.totalEuro, 0)
-    const totalCountFromRows = rows.reduce((s, r) => s + r.count, 0)
+    const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)
+    const totalCountFromRows = rows.reduce((s, row) => s + row.count, 0)
 
     return {
       totalCount: totalCountFromRows || totalCount,

@@ -305,7 +305,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
               ? "Scuola nuoto = BAMBINI + ASI iscrizione + bracciali. Agonismo = tab Pagamenti (cassa), non il venduto. Escluse Carmen/Serena/Ombretta."
-              : "Distribuzione vendite adulti per categoria e durata — incluse gestanti; esclusi danza e Centro Arte Danza. I cross con vendita nel mese sono già nelle categorie; l’extra senza vendita si somma a parte."}
+              : "Come Analisi abbonamenti del gestionale (inserito nel mese, colonna Totale). Incluse gestanti; esclusi danza, Centro Arte Danza e agonismo categorie. I cross già venduti nel mese sono nel totale; l’extra senza nuova iscrizione resta nel riquadro Cross."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -376,11 +376,6 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 <p className="text-xs uppercase tracking-wider text-amber-300">{meseLabel} {anno}</p>
                 <p className="mt-1 text-2xl font-semibold text-amber-400">€ {fmtEuro(computed.totalEuro)}</p>
                 <p className="text-sm text-zinc-400">{computed.totalDistinct} movimenti</p>
-                {ambito === "adulti" && computed.crossEuro > 0.005 ? (
-                  <p className="mt-1 text-xs text-violet-300">
-                    incl. extra Cross €{fmtEuro(computed.crossEuro)}
-                  </p>
-                ) : null}
               </div>
               <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">{meseLabel} {annoConfronto}{loadingPrev ? "…" : ""}</p>
@@ -401,10 +396,10 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                       </span>
                     </p>
                     <p className="mt-2 text-xs text-zinc-400">
-                      Già nel venduto €{fmtEuro(computed.crossGiaNelVendutoEuro)} (OPEN, SMILE, gym… — non sommati di nuovo)
+                      Già nel venduto €{fmtEuro(computed.crossGiaNelVendutoEuro)} (OPEN, SMILE, gym… — già nel totale Analisi)
                       {computed.crossEuro > 0.005
-                        ? ` · extra nel totale €${fmtEuro(computed.crossEuro)}`
-                        : " · nessun extra da sommare"}
+                        ? ` · extra non nel totale €${fmtEuro(computed.crossEuro)} (cambio tipo senza iscrizione nel mese)`
+                        : " · nessun extra fuori Analisi"}
                     </p>
                   </div>
                   <Link

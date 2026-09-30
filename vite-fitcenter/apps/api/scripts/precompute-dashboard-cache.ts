@@ -21,8 +21,8 @@ if (!process.env.REPORT_CONSULENTI_SQL_TIMEOUT_MS) process.env.REPORT_CONSULENTI
 const { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } = await import("../src/handlers/data.js")
 const { cacheGet, getBudgetDepSig, purgeCacheEntries } = await import("../src/services/persistent-cache.js")
 
-const DASH_CACHE_V = "gestanti-adulti-4"
-const ANNO_CACHE_V = "cross-cons-1"
+const DASH_CACHE_V = "gestanti-adulti-6"
+const ANNO_CACHE_V = "cross-cons-2"
 
 type AdminUser = { username: string; nome: string; role: "admin" }
 
