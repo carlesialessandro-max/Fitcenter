@@ -107,6 +107,54 @@ function aggregate(data: {
   }
 }
 
+type AndamentoAgg = ReturnType<typeof aggregate>
+
+function hasCross(c: AndamentoAgg) {
+  return c.crossElencoEuro > 0.005 || c.crossEuro > 0.005
+}
+
+function CrossHint({ c }: { c: AndamentoAgg }) {
+  if (c.crossEuro > 0.005) {
+    return <p className="mt-1 text-xs text-violet-300">incl. extra Cross €{fmtEuro(c.crossEuro)}</p>
+  }
+  if (c.crossElencoEuro > 0.005) {
+    return (
+      <p className="mt-1 text-xs text-violet-300">
+        Cross già nel venduto €{fmtEuro(c.crossGiaNelVendutoEuro)}
+      </p>
+    )
+  }
+  return null
+}
+
+function CrossAnnoCol({ titolo, c }: { titolo: string; c: AndamentoAgg }) {
+  if (!hasCross(c)) {
+    return (
+      <div>
+        <p className="text-xs uppercase tracking-wider text-violet-300">{titolo}</p>
+        <p className="mt-1 text-sm text-zinc-500">Nessun Cross</p>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-wider text-violet-300">{titolo}</p>
+      <p className="mt-1 text-lg font-semibold text-violet-200">
+        €{fmtEuro(c.crossElencoEuro)}
+        <span className="ml-2 text-sm font-normal text-zinc-400">
+          {c.crossCount} {c.crossCount === 1 ? "riga" : "righe"}
+        </span>
+      </p>
+      <p className="mt-2 text-xs text-zinc-400">
+        Già nel venduto €{fmtEuro(c.crossGiaNelVendutoEuro)}
+        {c.crossEuro > 0.005
+          ? ` · extra nel totale €${fmtEuro(c.crossEuro)}`
+          : " · nessun extra da sommare"}
+      </p>
+    </div>
+  )
+}
+
 function mergeByName(curr: RowAgg[], prev: RowAgg[], sort: "euro" | "durata" = "euro"): { name: string; curr: RowAgg; prev: RowAgg }[] {
   const names = new Set([...curr.map((r) => r.name), ...prev.map((r) => r.name)])
   const empty: RowAgg = { name: "", count: 0, pct: 0, euro: 0 }
@@ -305,7 +353,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           <p className="text-sm text-zinc-400">
             {ambito === "bambini"
               ? "Scuola nuoto = BAMBINI + ASI iscrizione + bracciali. Agonismo = tab Pagamenti (cassa), non il venduto. Escluse Carmen/Serena/Ombretta."
-              : "Come Analisi abbonamenti del gestionale (inserito nel mese, colonna Totale). Incluse gestanti; esclusi danza, Centro Arte Danza e agonismo categorie. I cross già venduti nel mese sono nel totale; l’extra senza nuova iscrizione resta nel riquadro Cross."}
+              : "Come Analisi abbonamenti (inserito nel mese, colonna Totale). Incluse gestanti; esclusi danza e Centro Arte Danza. I cross già venduti nel mese sono nelle categorie; l’extra senza vendita si somma al totale e alle consulenti."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -376,38 +424,32 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
                 <p className="text-xs uppercase tracking-wider text-amber-300">{meseLabel} {anno}</p>
                 <p className="mt-1 text-2xl font-semibold text-amber-400">€ {fmtEuro(computed.totalEuro)}</p>
                 <p className="text-sm text-zinc-400">{computed.totalDistinct} movimenti</p>
+                {ambito === "adulti" ? <CrossHint c={computed} /> : null}
               </div>
               <div className="rounded-xl border border-zinc-700 bg-zinc-900/50 p-4">
                 <p className="text-xs uppercase tracking-wider text-zinc-500">{meseLabel} {annoConfronto}{loadingPrev ? "…" : ""}</p>
                 <p className="mt-1 text-2xl font-semibold text-zinc-100">€ {fmtEuro(computedPrev.totalEuro)}</p>
                 <p className="text-sm text-zinc-400">{computedPrev.totalDistinct} movimenti</p>
+                {ambito === "adulti" && !loadingPrev ? <CrossHint c={computedPrev} /> : null}
               </div>
             </div>
 
-            {ambito === "adulti" && computed.crossElencoEuro > 0 ? (
+            {ambito === "adulti" && (hasCross(computed) || hasCross(computedPrev)) ? (
               <div className="mb-4 rounded-xl border border-violet-500/40 bg-violet-500/10 p-4 text-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs uppercase tracking-wider text-violet-300">Cross (cambio tipologia)</p>
-                    <p className="mt-1 text-lg font-semibold text-violet-200">
-                      €{fmtEuro(computed.crossElencoEuro)}
-                      <span className="ml-2 text-sm font-normal text-zinc-400">
-                        {computed.crossCount} {computed.crossCount === 1 ? "riga" : "righe"}
-                      </span>
-                    </p>
-                    <p className="mt-2 text-xs text-zinc-400">
-                      Già nel venduto €{fmtEuro(computed.crossGiaNelVendutoEuro)} (OPEN, SMILE, gym… — già nel totale Analisi)
-                      {computed.crossEuro > 0.005
-                        ? ` · extra non nel totale €${fmtEuro(computed.crossEuro)} (cambio tipo senza iscrizione nel mese)`
-                        : " · nessun extra fuori Analisi"}
-                    </p>
-                  </div>
+                  <p className="text-xs uppercase tracking-wider text-violet-300">Cross (cambio tipologia)</p>
                   <Link
                     to="/vendite-cross"
                     className="rounded border border-violet-500/40 px-3 py-1.5 text-xs text-violet-200 hover:bg-violet-500/10"
                   >
                     Apri pagina Cross
                   </Link>
+                </div>
+                <div className={`mt-3 grid gap-4 ${annoConfronto !== anno ? "lg:grid-cols-2" : ""}`}>
+                  <CrossAnnoCol titolo={`${meseLabel} ${anno}`} c={computed} />
+                  {annoConfronto !== anno && !loadingPrev ? (
+                    <CrossAnnoCol titolo={`${meseLabel} ${annoConfronto}`} c={computedPrev} />
+                  ) : null}
                 </div>
               </div>
             ) : null}

@@ -3524,22 +3524,12 @@ function whereExcludeAgonismoCategorieNonMaster(alias: string): string {
   `
 }
 
-/** Filtri Analisi abbonamenti adulti. Non usare CategoriaDescrizione (tipo cliente): un badge a un allievo danza resta nel venduto consulente. */
+/** Filtri Analisi abbonamenti adulti (danza prodotti/clienti/arte, campus, tess. gare, agonismo categorie). */
 function whereAndamentoAdultiAnalisiView(alias: string, categoriaExpr: string): string {
-  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
-  const dur = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[${colAbbonamentoDurataDescrizione()}], N''))))`
-  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
-  const op = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[NomeOperatoreAbbonamento], N''))))`
-  const catAbb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], N''))))`
   return `
     AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
     AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
-    AND ${catAbb} NOT LIKE N'%DANZA%'
-    AND ${macro} NOT LIKE N'%DANZA%'
-    AND ${abb} NOT LIKE N'%DANZA%'
-    AND ${dur} NOT LIKE N'%DANZA%'
-    AND ${op} NOT LIKE N'%ARTE DANZA%'
-    AND ${op} NOT LIKE N'%CENTRO ARTE%'
+    ${whereExcludeDanzaEOperatoreArte(alias)}
     ${whereExcludeAbbonamentoDurataTesseramentoGare(alias)}
     ${whereExcludeAbbonamentiSpecificiIds(alias)}
     ${whereExcludeAgonismoCategorieNonMaster(alias)}
@@ -4021,14 +4011,14 @@ async function queryMovimentiCrossNelPeriodo(
 }
 
 /**
- * Consuntivo = Analisi abbonamenti (Totale view, data inserimento).
- * Extra Cross fuori Analisi non si somma: restano nel riquadro/pagina Cross.
+ * Consuntivo = base Analisi (Totale view) + extra Cross solo se non già nel venduto del periodo.
+ * Extra va su totale generale e su ogni consulente, qualsiasi anno.
  */
 async function getVenditeTotaleConCrossNetto(
-  _p: sql.ConnectionPool,
+  p: sql.ConnectionPool,
   from: string,
   to: string,
-  _idConsultant: string | undefined,
+  idConsultant: string | undefined,
   baseLoader: () => Promise<number>
 ): Promise<number> {
   let base = 0
@@ -4039,7 +4029,16 @@ async function getVenditeTotaleConCrossNetto(
     console.error(`[gestionale] vendite totale base fallito ${from}..${to}: ${msg}`)
     throw e
   }
-  return base
+  if ((process.env.GESTIONALE_VENDITE_DASHBOARD_INCLUDE_CROSS ?? "true").toLowerCase() === "false") {
+    return base
+  }
+  if (!idConsultant) return base
+  try {
+    const { totaleExtra } = await getVenditeCrossElenco(from, to, idConsultant, p)
+    return Math.round((base + totaleExtra) * 100) / 100
+  } catch {
+    return base
+  }
 }
 
 async function getPagamentiCrossSqlParts(): Promise<PagamentiCrossSqlParts | null> {
@@ -4790,7 +4789,7 @@ async function queryVenditeCrossEuroRange(
   }
 }
 
-/** Totale € periodo [from,to]: stessa formula Analisi abbonamenti (Totale view). */
+/** Totale € periodo [from,to]: Analisi (Totale view) + extra Cross non già nel venduto. */
 export async function getVenditeTotaleEuroPeriodo(
   from: string,
   to: string,
@@ -4857,11 +4856,24 @@ export async function getVenditePerMeseAnno(
     const ultimo = new Date(anno, through, 0).getDate()
     const to = `${anno}-${String(through).padStart(2, "0")}-${String(ultimo).padStart(2, "0")}`
     const fetched = await queryVenditeTotaleComeAndamentoPerMesi(p, from, to, idConsultant)
+    const extraByMese = new Map<number, number>()
+    try {
+      const cross = await getVenditeCrossElenco(from, to, idConsultant, p)
+      for (const row of cross.rows) {
+        if (row.giaNelVenduto) continue
+        const m = Number(String(row.dataCross).slice(5, 7))
+        if (!Number.isFinite(m) || m < 1 || m > 12) continue
+        extraByMese.set(m, (extraByMese.get(m) ?? 0) + row.totale)
+      }
+    } catch {
+      /* extra cross opzionale */
+    }
     const map = new Map(fetched.map((r) => [r.mese, r.totale]))
     return Array.from({ length: 12 }, (_, i) => {
       const mese = i + 1
       const base = mese <= through ? map.get(mese) ?? 0 : 0
-      return { mese, totale: Math.round(base * 100) / 100 }
+      const extra = mese <= through ? extraByMese.get(mese) ?? 0 : 0
+      return { mese, totale: Math.round((base + extra) * 100) / 100 }
     })
   } catch {
     return []
@@ -5172,9 +5184,17 @@ export async function getVenditeMovimentiCategoriaDurata(
           crossGiaNelVendutoEuro = cross.totaleGiaNelConsuntivo
           crossCount = cross.rows.length
           crossEuro = cross.totaleExtra
+          if (cross.totaleExtra > 0.005) {
+            rows.push({
+              categoria: "Cross",
+              durataMesi: null,
+              count: cross.extraCount,
+              totalEuro: cross.totaleExtra,
+            })
+          }
         }
       } catch {
-        /* cross opzionale: il totale Andamento resta allineato all'Analisi */
+        /* extra Cross opzionale */
       }
     }
     const totalEuro = rows.reduce((s, row) => s + row.totalEuro, 0)

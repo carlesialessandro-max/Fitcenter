@@ -426,7 +426,7 @@ export function Dashboard() {
             <p className="mt-1 text-xs text-violet-300">
               Cross €{(data?.crossElencoEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
               {(data?.crossEuro ?? 0) > 0.005
-                ? ` · extra non nel totale €${(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`
+                ? ` · extra nel totale €${(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`
                 : ` · già nel venduto €${(data?.crossGiaNelVendutoEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
               {" · "}
               <Link to="/vendite-cross" className="underline decoration-violet-500/40 hover:text-violet-200">
@@ -435,7 +435,7 @@ export function Dashboard() {
             </p>
           ) : !kpiLoading && (data?.crossEuro ?? 0) > 0.005 ? (
             <p className="mt-1 text-xs text-violet-300">
-              extra Cross (non nel totale) €{(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+              incl. extra Cross €{(data?.crossEuro ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
             </p>
           ) : null}
         </div>
