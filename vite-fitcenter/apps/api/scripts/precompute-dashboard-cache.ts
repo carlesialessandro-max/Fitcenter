@@ -21,6 +21,9 @@ if (!process.env.REPORT_CONSULENTI_SQL_TIMEOUT_MS) process.env.REPORT_CONSULENTI
 const { getDashboard, getDettaglioAnno, getDettaglioMese, getReportConsulenti } = await import("../src/handlers/data.js")
 const { cacheGet, getBudgetDepSig, purgeCacheEntries } = await import("../src/services/persistent-cache.js")
 
+const DASH_CACHE_V = "gestanti-adulti-4"
+const ANNO_CACHE_V = "cross-cons-1"
+
 type AdminUser = { username: string; nome: string; role: "admin" }
 
 const ADMIN: AdminUser = { username: "admin", nome: "Amministratore", role: "admin" }
@@ -152,7 +155,7 @@ async function sealClosedDaysOfCurrentMonth(args: {
   force: boolean
   depSig: string
   scope: string
-  consulenteParams: { consulente: null }
+  consulenteParams: { consulente: null; v: string }
 }) {
   const nowParts = toDateParts(args.now)
   if (nowParts.day <= 1) return
@@ -175,7 +178,7 @@ async function sealClosedDaysOfCurrentMonth(args: {
     const meseCached = await cacheGet({
       name: "data.dettaglio-mese",
       scope: args.scope,
-      params: { anno: nowParts.year, mese: nowParts.month, giorno: d, consulente: null },
+      params: { anno: nowParts.year, mese: nowParts.month, giorno: d, consulente: null, v: DASH_CACHE_V },
       asOf,
       depSig: args.depSig,
     })
@@ -197,7 +200,7 @@ async function main() {
   const strictSql = (process.env.PRECOMPUTE_STRICT_SQL ?? "false").toLowerCase() === "true"
   const depSig = await getBudgetDepSig()
   const scope = "admin"
-  const consulenteParams = { consulente: null }
+  const consulenteParams = { consulente: null, v: DASH_CACHE_V }
 
   const { start, end } = computeMonthRange(now, yearsBack, yearsOverride, includeCurrentMonth)
 
@@ -274,7 +277,7 @@ async function main() {
       const meseAfter = await cacheGet({
         name: "data.dettaglio-mese",
         scope,
-        params: { anno: y, mese: m, giorno: lastDay, consulente: null },
+        params: { anno: y, mese: m, giorno: lastDay, consulente: null, v: DASH_CACHE_V },
         asOf,
         depSig,
       })
@@ -288,7 +291,7 @@ async function main() {
       const repCached = await cacheGet({
         name: "data.report-consulenti",
         scope,
-        params: { from: fromIso, to: toIso, consulenti: null },
+        params: { v: 3, from: fromIso, to: toIso, consulenti: null },
         asOf: toIso,
         depSig,
       })
@@ -307,7 +310,7 @@ async function main() {
     const yearCached = await cacheGet({
       name: "data.dettaglio-anno",
       scope,
-      params: { anno: y },
+      params: { anno: y, v: ANNO_CACHE_V },
       asOf,
       depSig,
     })
@@ -321,7 +324,7 @@ async function main() {
     const annoAfter = await cacheGet({
       name: "data.dettaglio-anno",
       scope,
-      params: { anno: y },
+      params: { anno: y, v: ANNO_CACHE_V },
       asOf,
       depSig,
     })
