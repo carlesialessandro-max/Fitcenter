@@ -3387,10 +3387,12 @@ function whereAndamentoAmbito(alias: string, ambito: AndamentoAmbito): string {
   // Listino gestionale bambini: Acquaticità, private bambini, Scuola nuoto, ASI Sc/AQ/Rin.
   // Agonismo categorie: NON dal venduto (pagano a rate → movimenti di cassa/pagamenti).
     const isAsiBambini = `(
-    ((${abbDesc} LIKE N'%ASI%' AND ${abbDesc} LIKE N'%ISCRIZIONE%')
-      OR (${cat} LIKE N'%ASI%' AND ${cat} LIKE N'%ISCRIZIONE%'))
-    AND ${cat} NOT LIKE N'%STAFF%' AND ${abbDesc} NOT LIKE N'%STAFF%'
-    AND ${cat} NOT LIKE N'%DANZA%' AND ${abbDesc} NOT LIKE N'%DANZA%'
+    ((${abbDesc} LIKE N'%ASI%' AND ${cat} NOT LIKE N'%STAFF%' AND ${abbDesc} NOT LIKE N'%STAFF%'
+      AND ${cat} NOT LIKE N'%DANZA%' AND ${abbDesc} NOT LIKE N'%DANZA%')
+      OR (${abbDesc} LIKE N'%FIN%' AND ${abbDesc} LIKE N'%ISCRIZIONE%'
+        AND ${cat} NOT LIKE N'%STAFF%' AND ${abbDesc} NOT LIKE N'%STAFF%'
+        AND ${cat} NOT LIKE N'%DANZA%' AND ${abbDesc} NOT LIKE N'%DANZA%')
+      OR ${abbDesc} LIKE N'%QUOTA ASSOCIATIVA%')
   )`
   const isBambiniListino = `(
     ${like("ACQUATIC")}
@@ -4957,7 +4959,6 @@ export async function getVenditeMovimentiCategoriaDurata(
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) <> 'DANZA ADULTI'
       AND UPPER(LTRIM(RTRIM(COALESCE(${categoriaExpr}, '')))) NOT LIKE N'%CAMPUS%'
       ${whereExcludeDanzaEOperatoreArte("R")}
-      ${whereExcludeAbbonamentoDurataTesseramentoGare("R")}
       ${whereAndamentoAmbito("R", ambito)}
     `
         : `
@@ -4975,33 +4976,38 @@ export async function getVenditeMovimentiCategoriaDurata(
           : ""
 
     if (ambito === "bambini") {
+      // Come il gestionale «Analisi abbonamenti»: 1 riga = 1 iscrizione, euro = Totale (non somma movimenti).
       const r = await req.query(
-        `;WITH MovAgg AS (
-           SELECT
-             M.[${COL_ISCRIZIONE}] AS ID,
-             COUNT(*) AS nMov,
-             SUM(COALESCE(TRY_CONVERT(float, M.[${COL_IMPORTO}]), 0)) AS TotaleEuro
+        `;WITH Temp_Stampe AS (
+           SELECT DISTINCT M.[${COL_ISCRIZIONE}] AS ID
            FROM [${tblM}] M
            ${whereBase}
-           GROUP BY M.[${COL_ISCRIZIONE}]
          ),
-         ViewFiltro AS (
+         RigheView AS (
            SELECT
              R.[${viewCfg.colJoin}] AS ID,
              ${categoriaOrAbbExpr} AS Categoria,
-             ROW_NUMBER() OVER (PARTITION BY R.[${viewCfg.colJoin}] ORDER BY (SELECT 1)) AS rn
+             TRY_CONVERT(float, R.[${colTotale}]) AS TotaleEuro
            FROM [${viewCfg.view}] R
+           INNER JOIN Temp_Stampe T ON T.ID = R.[${viewCfg.colJoin}]
            WHERE 1=1
              ${consultantFilter}
              ${whereAndamentoEsclusioniView}
+         ),
+         PerIscrizione AS (
+           SELECT
+             ID,
+             Categoria,
+             MAX(TotaleEuro) AS TotaleEuro
+           FROM RigheView
+           GROUP BY ID, Categoria
          )
          SELECT
-           V.Categoria,
-           SUM(M.nMov) AS count,
-           SUM(COALESCE(M.TotaleEuro, 0)) AS totalEuro
-         FROM MovAgg M
-         INNER JOIN ViewFiltro V ON V.ID = M.ID AND V.rn = 1
-         GROUP BY V.Categoria
+           Categoria,
+           COUNT(*) AS count,
+           SUM(COALESCE(TotaleEuro, 0)) AS totalEuro
+         FROM PerIscrizione
+         GROUP BY Categoria
          ORDER BY count DESC;`
       )
       const rows = (r.recordset ?? []).map((row) => ({

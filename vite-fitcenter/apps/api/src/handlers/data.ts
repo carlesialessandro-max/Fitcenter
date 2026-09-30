@@ -2620,6 +2620,8 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
     return "Agonismo categorie"
   }
   if (/\bASI\b/.test(blob) || /BADGE|MERCHAND|BRACCIALE/.test(blob)) return "Scuola nuoto"
+  if (/\bFIN\b/.test(blob) && /ISCRIZIONE/.test(blob)) return "Scuola nuoto"
+  if (/QUOTA ASSOCIATIVA/.test(blob)) return "Scuola nuoto"
   if (/\bBAMBIN/.test(blob)) return "Scuola nuoto"
   if (/SCUOLA/.test(blob) && /NUOT/.test(blob) && !/ADULT/.test(blob) && !/MASTER/.test(blob)) return "Scuola nuoto"
   return "Altro"
@@ -2661,7 +2663,7 @@ export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Resp
       to,
       ambito,
       consulente: consulente ?? null,
-      venditori: ambito === "bambini" ? "bambini-asi-nullvend-v1" : "adulti-dash-cross-v1",
+      venditori: ambito === "bambini" ? "bambini-iscr-totale-v2" : "adulti-dash-cross-v1",
     }
     const cacheArgs = {
       name: "data.andamento-vendite" as const,
@@ -2767,7 +2769,7 @@ async function computeAndamentoPayload(args: {
     consulenti: args.ambito === "bambini" ? await consulentiBambiniLabels() : undefined,
     noteAgonismo:
       args.ambito === "bambini"
-        ? "Agonismo categorie: incassi cassa delle rate nel mese (non il listino venduto)."
+        ? "Scuola nuoto, acquaticità e private: numero abbonamenti e colonna Totale (come Analisi abbonamenti). Agonismo categorie: incassi cassa delle rate nel mese."
         : undefined,
     totalCount: mappedRows.reduce((s, r) => s + r.count, 0),
     totalEuro: mappedRows.reduce((s, r) => s + r.totalEuro, 0),
