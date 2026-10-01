@@ -226,39 +226,111 @@ function analisiConfronto(args: {
   return lines
 }
 
+function pdfLastY(doc: jsPDF, fallback: number): number {
+  return (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+    ? ((doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable!.finalY as number) + 8
+    : fallback
+}
+
 function exportAndamentoPdf(args: {
   titolo: string
-  totalDistinct: number
+  fileSlug: string
+  meseLabel: string
+  anno: number
+  annoPrev: number
+  mese: number
+  consulente?: string
   from?: string
   to?: string
-  byCategoria: RowAgg[]
-  byDurata: RowAgg[]
+  analisi: string[]
+  curr: ReturnType<typeof aggregate>
+  prev: ReturnType<typeof aggregate>
+  byCategoria: { name: string; curr: RowAgg; prev: RowAgg }[]
+  byDurata: { name: string; curr: RowAgg; prev: RowAgg }[]
 }) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const mx = 14
   doc.setFontSize(14)
-  doc.text(args.titolo, 14, 14)
+  doc.text(args.titolo, mx, 14)
   doc.setFontSize(10)
-  const periodo = args.from && args.to ? `${args.from} -> ${args.to}` : "Mese"
-  doc.text(`Periodo: ${periodo}`, 14, 20)
-  doc.text(`Totale movimenti: ${args.totalDistinct}`, 14, 25)
+  const periodo = args.from && args.to ? `${args.from} → ${args.to}` : `${args.meseLabel} ${args.anno}`
+  doc.text(`Periodo: ${periodo}   Confronto: ${args.meseLabel} ${args.annoPrev}`, mx, 21)
+  if (args.consulente) doc.text(`Consulente: ${args.consulente}`, mx, 26)
+  const y0 = args.consulente ? 32 : 27
+  doc.text(
+    `${args.meseLabel} ${args.anno}: € ${fmtEuro(args.curr.totalEuro)} (${args.curr.totalDistinct} mov.)` +
+      (args.curr.crossEuro > 0.005 ? `  extra Cross € ${fmtEuro(args.curr.crossEuro)}` : ""),
+    mx,
+    y0
+  )
+  doc.text(
+    `${args.meseLabel} ${args.annoPrev}: € ${fmtEuro(args.prev.totalEuro)} (${args.prev.totalDistinct} mov.)` +
+      (args.prev.crossEuro > 0.005 ? `  extra Cross € ${fmtEuro(args.prev.crossEuro)}` : ""),
+    mx,
+    y0 + 5
+  )
+  let y = y0 + 12
+  if (hasCross(args.curr) || hasCross(args.prev)) {
+    autoTable(doc, {
+      startY: y,
+      head: [["Cross (cambio tipologia)", String(args.anno), String(args.annoPrev)]],
+      body: [
+        ["Elenco", fmtEuro(args.curr.crossElencoEuro), fmtEuro(args.prev.crossElencoEuro)],
+        ["Già nel venduto", fmtEuro(args.curr.crossGiaNelVendutoEuro), fmtEuro(args.prev.crossGiaNelVendutoEuro)],
+        ["Extra nel totale", fmtEuro(args.curr.crossEuro), fmtEuro(args.prev.crossEuro)],
+        ["Righe", String(args.curr.crossCount), String(args.prev.crossCount)],
+      ],
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [139, 92, 246] },
+    })
+    y = pdfLastY(doc, y + 36)
+  }
+  if (args.analisi.length) {
+    doc.setFontSize(9)
+    for (const line of args.analisi) {
+      const wrapped = doc.splitTextToSize(line, 182) as string[]
+      if (y + wrapped.length * 4.2 > 280) {
+        doc.addPage()
+        y = 16
+      }
+      doc.text(wrapped, mx, y)
+      y += wrapped.length * 4.2 + 1
+    }
+    y += 3
+  }
+  const rowDelta = (c: RowAgg, p: RowAgg) => {
+    const d = c.euro - p.euro
+    const pct = p.euro > 0 ? `${fmtPct((d / p.euro) * 100)}` : "—"
+    return [
+      c.name || p.name,
+      String(c.count),
+      fmtEuro(c.euro),
+      String(p.count),
+      fmtEuro(p.euro),
+      `${d >= 0 ? "+" : ""}${fmtEuro(d)}`,
+      pct,
+    ]
+  }
   autoTable(doc, {
-    startY: 32,
-    head: [["Categoria", "Movimenti", "%", "Totale €"]],
-    body: args.byCategoria.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`, fmtEuro(r.euro)]),
-    styles: { fontSize: 9 },
-    headStyles: { fillColor: [59, 130, 246] },
+    startY: y,
+    head: [["Voce", `N ${args.anno}`, `€ ${args.anno}`, `N ${args.annoPrev}`, `€ ${args.annoPrev}`, "Δ €", "Δ %"]],
+    body: args.byCategoria.map(({ curr, prev }) => rowDelta(curr, prev)),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [70, 166, 217] },
   })
-  const y = (doc as any).lastAutoTable?.finalY ? (doc as any).lastAutoTable.finalY + 6 : 90
+  y = pdfLastY(doc, y + 40)
   if (args.byDurata.length > 0) {
     autoTable(doc, {
       startY: y,
-      head: [["Durata", "Movimenti", "%", "Totale €"]],
-      body: args.byDurata.map((r) => [r.name, String(r.count), `${r.pct.toLocaleString("it-IT")} %`, fmtEuro(r.euro)]),
-      styles: { fontSize: 9 },
+      head: [["Durata", `N ${args.anno}`, `€ ${args.anno}`, `N ${args.annoPrev}`, `€ ${args.annoPrev}`, "Δ €", "Δ %"]],
+      body: args.byDurata.map(({ curr, prev }) => rowDelta(curr, prev)),
+      styles: { fontSize: 8 },
       headStyles: { fillColor: [16, 185, 129] },
     })
   }
-  doc.save(`andamento-vendite-${new Date().toISOString().slice(0, 10)}.pdf`)
+  const slug = args.fileSlug.replace(/[^a-z0-9-]+/gi, "-").toLowerCase()
+  const mesePad = String(args.mese).padStart(2, "0")
+  doc.save(`${slug}-${args.anno}-${mesePad}.pdf`)
 }
 
 export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
@@ -344,6 +416,27 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
 
   const titolo = ambito === "bambini" ? "Andamento vendite bambini" : "Andamento vendite"
   const anniOpts = Array.from({ length: 6 }, (_, i) => now.getFullYear() - i)
+  const canPdf = !isLoading && !computed.empty
+
+  function scaricaPdf() {
+    if (!canPdf) return
+    exportAndamentoPdf({
+      titolo,
+      fileSlug: ambito === "bambini" ? "andamento-vendite-bambini" : "andamento-vendite-adulti",
+      meseLabel,
+      mese,
+      anno,
+      annoPrev: annoConfronto,
+      consulente: effectiveConsulenteFilter,
+      from: data?.from,
+      to: data?.to,
+      analisi,
+      curr: computed,
+      prev: computedPrev,
+      byCategoria: mergeByName(computed.byCategoria, computedPrev.byCategoria),
+      byDurata: ambito === "bambini" ? [] : mergeByName(computed.byDurata, computedPrev.byDurata, "durata"),
+    })
+  }
 
   return (
     <div className="p-6">
@@ -357,6 +450,14 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={scaricaPdf}
+            disabled={!canPdf}
+            className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Scarica PDF
+          </button>
           {ambito === "adulti" ? (
             <Link to="/andamento-vendite-bambini" className="rounded border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800">
               Pagina bambini
@@ -485,17 +586,8 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
               </h2>
               <button
                 type="button"
-                onClick={() =>
-                  exportAndamentoPdf({
-                    titolo,
-                    totalDistinct: computed.totalDistinct,
-                    from: data?.from,
-                    to: data?.to,
-                    byCategoria: computed.byCategoria,
-                    byDurata: ambito === "bambini" ? [] : computed.byDurata,
-                  })
-                }
-                className="rounded border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800"
+                onClick={scaricaPdf}
+                className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/20"
               >
                 Scarica PDF
               </button>

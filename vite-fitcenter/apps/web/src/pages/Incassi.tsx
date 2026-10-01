@@ -2,6 +2,8 @@ import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Navigate } from "react-router-dom"
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
@@ -89,6 +91,127 @@ function fmtEuro(n: number): string {
 function fmtPct(n: number): string {
   const sign = n > 0 ? "+" : ""
   return `${sign}${n.toLocaleString("it-IT", { maximumFractionDigits: 1 })}%`
+}
+
+function pdfLastY(doc: jsPDF, fallback: number): number {
+  return (doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+    ? ((doc as jsPDF & { lastAutoTable?: { finalY?: number } }).lastAutoTable!.finalY as number) + 8
+    : fallback
+}
+
+function formatIncassiCell(key: string, raw: unknown): string {
+  if (
+    key === "CassaMovimentiDataOperazione" ||
+    key === "CassaMovimentiData" ||
+    key === "DataOperazione" ||
+    key === "DataPagamento" ||
+    key === "Data" ||
+    key === "DataOra"
+  ) {
+    return fmtDateTimeIt(raw) ?? String(raw ?? "—")
+  }
+  if (raw == null) return "—"
+  return String(raw)
+}
+
+function exportIncassiPdf(args: {
+  vista: "giorno" | "mese"
+  from: string
+  to: string
+  meseLabel: string
+  anno: number
+  annoPrev: number
+  totalNow: number
+  totalPrev: number
+  countNow: number
+  countPrev: number
+  analisi: string[]
+  groups: { label: string; total: number; count: number; prevTotal: number; prevCount: number }[]
+  detailLabel?: string
+  detailCols?: string[]
+  detailRows?: Record<string, unknown>[]
+  rowAmount?: (r: Record<string, unknown>) => number
+}) {
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const mx = 14
+  const periodo = args.from === args.to ? args.from : `${args.from} → ${args.to}`
+  doc.setFontSize(14)
+  doc.text("Incassi", mx, 14)
+  doc.setFontSize(10)
+  doc.text(
+    `Vista ${args.vista === "giorno" ? "giorno" : "mese"} · Periodo: ${periodo} · Confronto: ${args.annoPrev}`,
+    mx,
+    21
+  )
+  doc.text(
+    `${args.meseLabel} ${args.anno}: € ${fmtEuro(args.totalNow)} (${args.countNow} mov.)`,
+    mx,
+    27
+  )
+  doc.text(
+    `${args.meseLabel} ${args.annoPrev}: € ${fmtEuro(args.totalPrev)} (${args.countPrev} mov.)`,
+    mx,
+    32
+  )
+  let y = 40
+  if (args.analisi.length) {
+    doc.setFontSize(9)
+    for (const line of args.analisi) {
+      const wrapped = doc.splitTextToSize(line, 182) as string[]
+      if (y + wrapped.length * 4.2 > 280) {
+        doc.addPage()
+        y = 16
+      }
+      doc.text(wrapped, mx, y)
+      y += wrapped.length * 4.2 + 1
+    }
+    y += 3
+  }
+  autoTable(doc, {
+    startY: y,
+    head: [["Categoria", `N ${args.anno}`, `€ ${args.anno}`, `N ${args.annoPrev}`, `€ ${args.annoPrev}`, "Δ €", "Δ %"]],
+    body: args.groups.map((g) => {
+      const d = g.total - g.prevTotal
+      const pct = g.prevTotal > 0 ? fmtPct((d / g.prevTotal) * 100) : "—"
+      return [
+        g.label,
+        String(g.count),
+        fmtEuro(g.total),
+        String(g.prevCount),
+        fmtEuro(g.prevTotal),
+        `${d >= 0 ? "+" : ""}${fmtEuro(d)}`,
+        pct,
+      ]
+    }),
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [70, 166, 217] },
+  })
+  y = pdfLastY(doc, y + 40)
+  const detailCols = (args.detailCols ?? []).slice(0, 5)
+  const detailRows = args.detailRows ?? []
+  if (args.detailLabel && args.rowAmount && detailRows.length > 0 && detailCols.length > 0) {
+    const cap = 80
+    const shown = detailRows.slice(0, cap)
+    if (y > 250) {
+      doc.addPage()
+      y = 16
+    }
+    doc.setFontSize(10)
+    doc.text(`Dettaglio ${args.detailLabel} (${shown.length}${detailRows.length > cap ? ` di ${detailRows.length}` : ""})`, mx, y)
+    y += 4
+    autoTable(doc, {
+      startY: y,
+      head: [["Importo", ...detailCols]],
+      body: shown.map((r) => [
+        fmtEuro(args.rowAmount!(r)),
+        ...detailCols.map((c) => formatIncassiCell(c, r[c])),
+      ]),
+      styles: { fontSize: 7, cellWidth: "wrap" },
+      headStyles: { fillColor: [245, 158, 11] },
+    })
+  }
+  const slug = args.vista === "giorno" ? `incassi-${args.from}` : `incassi-${args.anno}-${String(args.from.slice(5, 7) || "00")}`
+  doc.save(`${slug}.pdf`)
 }
 
 function fmtDateTimeIt(v: unknown): string | null {
@@ -319,6 +442,31 @@ export function Incassi() {
 
   if (role !== "admin") return <Navigate to="/" replace />
 
+  const canPdf = !qNow.isLoading && !qNow.isError
+  const groupsPdf = groups.filter((g) => g.seg !== "altro" || g.total > 0 || g.prevTotal > 0)
+
+  function scaricaPdf() {
+    if (!canPdf) return
+    exportIncassiPdf({
+      vista: vista,
+      from,
+      to,
+      meseLabel,
+      anno,
+      annoPrev: annoConfronto,
+      totalNow,
+      totalPrev,
+      countNow,
+      countPrev,
+      analisi,
+      groups: groupsPdf,
+      detailLabel: isGiorno && expanded ? SEG_LABEL[expanded] : undefined,
+      detailCols: isGiorno && expanded ? cols : undefined,
+      detailRows: isGiorno && expanded && !qDetail.isLoading ? rows : undefined,
+      rowAmount: isGiorno && expanded ? rowAmount : undefined,
+    })
+  }
+
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
@@ -346,6 +494,14 @@ export function Incassi() {
                 }`}
               >
                 Mese / anno
+              </button>
+              <button
+                type="button"
+                onClick={scaricaPdf}
+                disabled={!canPdf}
+                className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-1.5 text-sm text-amber-200 hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Scarica PDF
               </button>
             </div>
           </div>
