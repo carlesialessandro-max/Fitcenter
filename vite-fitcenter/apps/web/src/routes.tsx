@@ -37,9 +37,14 @@ import { AdminCalendario } from "@/pages/AdminCalendario"
 import { CalendarioHub } from "@/pages/CalendarioHub"
 import { CalendarioIstruttoriPage } from "@/pages/CalendarioIstruttoriPage"
 import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
+import { Utenti } from "@/pages/Utenti"
 
 function DashboardOrRedirect() {
-  const { leadFilter, role } = useAuth()
+  const { leadFilter, role, user } = useAuth()
+  if (role !== "admin" && user?.pages?.length) {
+    if (user.pages.includes("/")) return <Dashboard />
+    return <Navigate to={user.pages[0] ?? "/"} replace />
+  }
   if (leadFilter === "bambini" || role === "crm") return <Navigate to="/crm" replace />
   if (role === "corsi" || role === "istruttore") return <Navigate to="/corsi" replace />
   if (role === "campus") return <Navigate to="/campus" replace />
@@ -115,6 +120,7 @@ export const router = createBrowserRouter([
       { path: "vendite-cross", element: <VenditeCross /> },
       { path: "telefonate", element: <Telefonate /> },
       { path: "convalide-consulenti", element: <ConvalideConsulenti /> },
+      { path: "utenti", element: <Utenti /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },

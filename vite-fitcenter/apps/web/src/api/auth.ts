@@ -10,6 +10,9 @@ export interface User {
   consulenteNome?: string
   /** Se "bambini": vede solo CRM con lead BAMBINI; nav solo CRM Vendita. */
   leadFilter?: "bambini"
+  /** Sottoinsieme del menu del ruolo. Se assente, vede tutte le pagine del ruolo. */
+  pages?: string[]
+  email?: string
 }
 
 export interface LoginResponse {
@@ -24,6 +27,25 @@ export interface LoginNeedsOtp {
 }
 
 export type LoginStep1Response = LoginResponse | LoginNeedsOtp
+
+export type PageDef = { path: string; label: string; group: string }
+
+export type PagesCatalog = {
+  catalog: PageDef[]
+  roleDefaults: Record<Role, string[]>
+  roles: Role[]
+}
+
+export type UpsertUserBody = {
+  username?: string
+  password?: string
+  nome: string
+  role: Role
+  consulenteNome?: string | null
+  leadFilter?: "bambini" | "" | null
+  email?: string | null
+  pages?: string[] | null
+}
 
 export const authApi = {
   login: (username: string, password: string) =>
@@ -41,4 +63,20 @@ export const authApi = {
       setAuthToken(null)
     }
   },
+
+  listUsers: () => api.get<{ users: User[] }>("/auth/users"),
+
+  pagesCatalog: () => api.get<PagesCatalog>("/auth/pages"),
+
+  createUser: (body: UpsertUserBody & { username: string; password: string }) =>
+    api.post<{ user: User }>("/auth/users", body),
+
+  updateUser: (username: string, body: UpsertUserBody) =>
+    api.patch<{ user: User }>(`/auth/users/${encodeURIComponent(username)}`, body),
+
+  setPassword: (username: string, password: string) =>
+    api.put<{ ok: true }>(`/auth/users/${encodeURIComponent(username)}/password`, { password }),
+
+  deleteUser: (username: string) =>
+    api.delete<{ ok: true }>(`/auth/users/${encodeURIComponent(username)}`),
 }

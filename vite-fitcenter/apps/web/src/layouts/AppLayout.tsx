@@ -195,16 +195,65 @@ const navAdmin: NavItem[] = [
       { to: "/calendario/reception", label: "Calendario reception" },
       { to: "/campus", label: "Campus" },
       { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
+      { to: "/utenti", label: "Utenti e accessi" },
     ],
   },
 ] as const
+
+function isRealPath(to: string): boolean {
+  return !!to && !to.startsWith("__")
+}
+
+function isPathAllowed(pathname: string, pages: string[]): boolean {
+  for (const p of pages) {
+    if (pathname === p) return true
+    if (p !== "/" && pathname.startsWith(p + "/")) return true
+  }
+  return false
+}
+
+function filterNavByPages(items: NavItem[], pages: string[]): NavItem[] {
+  const allow = new Set(pages)
+  const out: NavItem[] = []
+  for (const item of items) {
+    if (item.group && item.children?.length) {
+      const children = filterNavByPages(item.children, pages)
+      if (children.length) out.push({ ...item, children })
+      continue
+    }
+    const selfOk = isRealPath(item.to) && allow.has(item.to)
+    const children = item.children?.length ? filterNavByPages(item.children, pages) : []
+    if (selfOk || children.length) {
+      out.push(children.length ? { ...item, children } : { ...item })
+    }
+  }
+  return out
+}
+
+function firstNavPath(items: NavItem[]): string {
+  for (const item of items) {
+    if (item.group && item.children?.length) {
+      const nested = firstNavPath(item.children)
+      if (nested) return nested
+      continue
+    }
+    if (isRealPath(item.to)) return item.to
+    if (item.children?.length) {
+      const nested = firstNavPath(item.children)
+      if (nested) return nested
+    }
+  }
+  return "/"
+}
 
 export function AppLayout() {
   const location = useLocation()
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true, piano: true, lp: true })
+  const customPages = role !== "admin" && (user?.pages?.length ?? 0) > 0
   const mustRedirectBagnini =
+    !customPages &&
     role === "bagnini" &&
     !location.pathname.startsWith("/piscina") &&
     location.pathname !== "/calendario/piscina" &&
@@ -212,12 +261,13 @@ export function AppLayout() {
     location.pathname !== "/calendario/istruttori" &&
     location.pathname !== "/corsi/nuoto-libero"
   const mustRedirectCrm =
+    !customPages &&
     role === "crm" &&
     location.pathname !== "/crm" &&
     !location.pathname.startsWith("/crm/lead/") &&
     location.pathname !== "/crm/whatsapp-log" &&
     location.pathname !== "/crm/nuovo"
-  const nav: NavItem[] =
+  const roleNav: NavItem[] =
     leadFilter === "bambini" || role === "crm"
       ? navCrm
       : role === "admin"
@@ -237,6 +287,9 @@ export function AppLayout() {
                     : role === "danza"
                       ? navDanza
               : navOperatore
+  const nav: NavItem[] = customPages ? filterNavByPages(roleNav, user!.pages!) : roleNav
+  const homePath = firstNavPath(nav)
+  const mustRedirectPages = customPages && !isPathAllowed(location.pathname, user!.pages!)
 
   const Sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900/95 sm:w-56 sm:bg-zinc-900/50">
@@ -392,6 +445,7 @@ export function AppLayout() {
   // Importante: redirect dopo gli hooks (evita crash React #310 in prod).
   if (mustRedirectBagnini) return <Navigate to="/piscina" replace />
   if (mustRedirectCrm) return <Navigate to="/crm" replace />
+  if (mustRedirectPages) return <Navigate to={homePath} replace />
 
   return (
     <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">

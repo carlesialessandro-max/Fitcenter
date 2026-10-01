@@ -22,5 +22,7 @@ export interface LoginResponse {
     nome: string
     role: Role
     consulenteNome?: string
+    leadFilter?: "bambini"
+    pages?: string[]
   }
 }

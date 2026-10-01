@@ -2,6 +2,7 @@ import bcrypt from "bcrypt"
 import type { Role } from "../types/auth.js"
 import { isEmailOtpEnabled, maskEmail, sendLoginOtpEmail } from "../services/mail-otp.js"
 import { readJson, writeJson } from "./persist.js"
+import { sanitizePages } from "./pages.js"
 import crypto from "crypto"
 
 export interface User {
@@ -10,9 +11,27 @@ export interface User {
   role: Role
   consulenteNome?: string
   leadFilter?: "bambini"
+  /** Sottoinsieme del menu del ruolo. Se assente, vede tutte le pagine del ruolo. */
+  pages?: string[]
+  email?: string
 }
 
-type UserRecord = User & { password: string; email?: string }
+type UserRecord = User & { password: string }
+
+export type AdminUserView = Omit<User, "email"> & { email?: string }
+
+export const VALID_ROLES: Role[] = [
+  "admin",
+  "operatore",
+  "firme",
+  "corsi",
+  "istruttore",
+  "campus",
+  "scuola_nuoto",
+  "bagnini",
+  "danza",
+  "crm",
+]
 
 /**
  * Utenti di default (solo se AUTH_USERS_JSON non è impostato).
@@ -34,19 +53,6 @@ type UserRecord = User & { password: string; email?: string }
  *   danza     → H2Fc.Danza.9!y
  *   meta_review → H2Fc.MetaRev.26!k  (solo CRM vendita, per review Meta)
  */
-const VALID_ROLES: Role[] = [
-  "admin",
-  "operatore",
-  "firme",
-  "corsi",
-  "istruttore",
-  "campus",
-  "scuola_nuoto",
-  "bagnini",
-  "danza",
-  "crm",
-]
-
 const DEFAULT_USERS: UserRecord[] = [
   {
     username: "admin",
@@ -162,6 +168,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
         consulenteNome: o.consulenteNome != null ? String(o.consulenteNome) : undefined,
         leadFilter: o.leadFilter === "bambini" ? "bambini" : undefined,
         email: o.email != null ? String(o.email).trim() : undefined,
+        pages: sanitizePages(o.pages, role),
       })
     }
     return out.length ? out : null
@@ -184,10 +191,93 @@ function mergeEmails(users: UserRecord[]): UserRecord[] {
   }
 }
 
+const USERS_FILE = "auth-users.json"
+const BCRYPT_ROUNDS = 12
+const USERNAME_RE = /^[a-zA-Z0-9._-]{2,40}$/
+
+let usersCache: UserRecord[] | null = null
+
+function parseStoredUser(row: unknown): UserRecord | null {
+  if (!row || typeof row !== "object") return null
+  const o = row as Record<string, unknown>
+  const username = String(o.username ?? "").trim()
+  const password = String(o.password ?? "")
+  const nome = String(o.nome ?? "").trim() || username
+  const role = o.role as Role
+  if (!username || !password || !VALID_ROLES.includes(role)) return null
+  return {
+    username,
+    password,
+    nome,
+    role,
+    consulenteNome: o.consulenteNome != null ? String(o.consulenteNome) : undefined,
+    leadFilter: o.leadFilter === "bambini" ? "bambini" : undefined,
+    email: o.email != null ? String(o.email).trim() || undefined : undefined,
+    pages: sanitizePages(o.pages, role),
+  }
+}
+
+function loadUsersFromFile(): UserRecord[] | null {
+  const rows = readJson<unknown>(USERS_FILE, null)
+  if (!Array.isArray(rows)) return null
+  const out: UserRecord[] = []
+  for (const row of rows) {
+    const u = parseStoredUser(row)
+    if (u) out.push(u)
+  }
+  return out.length ? out : null
+}
+
+function persistUsers(users: UserRecord[]): void {
+  usersCache = users
+  writeJson(USERS_FILE, users)
+}
+
 function getUsers(): UserRecord[] {
+  if (usersCache) return usersCache
+  const fromFile = loadUsersFromFile()
+  if (fromFile) {
+    usersCache = mergeEmails(fromFile)
+    return usersCache
+  }
   const fromEnv = loadUsersFromEnv()
-  const base = fromEnv ?? DEFAULT_USERS
-  return mergeEmails(base)
+  const seeded = mergeEmails(fromEnv ?? DEFAULT_USERS)
+  persistUsers(seeded)
+  return seeded
+}
+
+export class AuthHttpError extends Error {
+  constructor(
+    public status: number,
+    message: string
+  ) {
+    super(message)
+  }
+}
+
+function normalizeUsername(raw: string): string {
+  return raw.trim()
+}
+
+function findUserIndex(users: UserRecord[], username: string): number {
+  const key = username.toLowerCase()
+  return users.findIndex((x) => x.username.toLowerCase() === key)
+}
+
+function adminCount(users: UserRecord[]): number {
+  return users.filter((u) => u.role === "admin").length
+}
+
+function invalidateSessionsFor(username: string): void {
+  const key = username.toLowerCase()
+  let changed = false
+  for (const [tok, s] of sessions.entries()) {
+    if (s.user.username.toLowerCase() === key) {
+      sessions.delete(tok)
+      changed = true
+    }
+  }
+  if (changed) saveSessionsToDisk()
 }
 
 async function verifyPassword(plain: string, stored: string): Promise<boolean> {
@@ -246,7 +336,35 @@ function toPublicUser(u: UserRecord): User {
     role: u.role,
     consulenteNome: u.consulenteNome,
     leadFilter: u.leadFilter,
+    pages: u.pages,
   }
+}
+
+function toAdminUser(u: UserRecord): AdminUserView {
+  return {
+    ...toPublicUser(u),
+    email: u.email,
+  }
+}
+
+export type CreateUserInput = {
+  username: string
+  password: string
+  nome: string
+  role: Role
+  consulenteNome?: string
+  leadFilter?: "bambini" | ""
+  email?: string
+  pages?: string[]
+}
+
+export type UpdateUserInput = {
+  nome?: string
+  role?: Role
+  consulenteNome?: string | null
+  leadFilter?: "bambini" | "" | null
+  email?: string | null
+  pages?: string[] | null
 }
 
 function issueSession(user: User): { token: string; user: User } {
@@ -328,11 +446,137 @@ export const authStore = {
       saveSessionsToDisk()
       return null
     }
-    return s.user
+    const live = getUsers().find((x) => x.username.toLowerCase() === s.user.username.toLowerCase())
+    if (!live) {
+      sessions.delete(tokenValue)
+      saveSessionsToDisk()
+      return null
+    }
+    const user = toPublicUser(live)
+    s.user = user
+    return user
   },
 
   logout(tokenValue: string): void {
     sessions.delete(tokenValue)
     saveSessionsToDisk()
+  },
+
+  listUsers(): AdminUserView[] {
+    return getUsers().map(toAdminUser)
+  },
+
+  async createUser(input: CreateUserInput): Promise<AdminUserView> {
+    const username = normalizeUsername(input.username)
+    if (!USERNAME_RE.test(username)) {
+      throw new AuthHttpError(400, "Username non valido (2-40 caratteri: lettere, numeri, . _ -)")
+    }
+    const password = String(input.password ?? "")
+    if (password.length < 8) {
+      throw new AuthHttpError(400, "Password di almeno 8 caratteri")
+    }
+    const nome = String(input.nome ?? "").trim()
+    if (!nome) throw new AuthHttpError(400, "Nome obbligatorio")
+    if (!VALID_ROLES.includes(input.role)) throw new AuthHttpError(400, "Ruolo non valido")
+    if (input.role !== "admin" && Array.isArray(input.pages) && input.pages.length === 0) {
+      throw new AuthHttpError(400, "Seleziona almeno una pagina visibile")
+    }
+
+    const users = getUsers()
+    if (findUserIndex(users, username) >= 0) {
+      throw new AuthHttpError(409, "Username già esistente")
+    }
+
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+    const rec: UserRecord = {
+      username,
+      password: hash,
+      nome,
+      role: input.role,
+      consulenteNome: input.consulenteNome?.trim() || undefined,
+      leadFilter: input.leadFilter === "bambini" ? "bambini" : undefined,
+      email: input.email?.trim() || undefined,
+      pages: input.role === "admin" ? undefined : sanitizePages(input.pages, input.role),
+    }
+    persistUsers([...users, rec])
+    return toAdminUser(rec)
+  },
+
+  async updateUser(usernameRaw: string, input: UpdateUserInput): Promise<AdminUserView> {
+    const users = [...getUsers()]
+    const idx = findUserIndex(users, usernameRaw)
+    if (idx < 0) throw new AuthHttpError(404, "Utente non trovato")
+    const current = users[idx]!
+    const nextRole = input.role ?? current.role
+    if (input.role && !VALID_ROLES.includes(input.role)) throw new AuthHttpError(400, "Ruolo non valido")
+    if (nextRole !== "admin" && Array.isArray(input.pages) && input.pages.length === 0) {
+      throw new AuthHttpError(400, "Seleziona almeno una pagina visibile")
+    }
+
+    if (current.role === "admin" && nextRole !== "admin" && adminCount(users) <= 1) {
+      throw new AuthHttpError(400, "Non puoi togliere l'ultimo amministratore")
+    }
+
+    const nome = input.nome != null ? String(input.nome).trim() : current.nome
+    if (!nome) throw new AuthHttpError(400, "Nome obbligatorio")
+
+    const rec: UserRecord = {
+      ...current,
+      nome,
+      role: nextRole,
+      consulenteNome:
+        input.consulenteNome === null
+          ? undefined
+          : input.consulenteNome != null
+            ? input.consulenteNome.trim() || undefined
+            : current.consulenteNome,
+      leadFilter:
+        input.leadFilter === null || input.leadFilter === ""
+          ? undefined
+          : input.leadFilter === "bambini"
+            ? "bambini"
+            : current.leadFilter,
+      email:
+        input.email === null
+          ? undefined
+          : input.email != null
+            ? input.email.trim() || undefined
+            : current.email,
+      pages: nextRole === "admin" ? undefined : sanitizePages(input.pages ?? current.pages, nextRole),
+    }
+    if (input.pages === null) rec.pages = undefined
+
+    users[idx] = rec
+    persistUsers(users)
+    return toAdminUser(rec)
+  },
+
+  async setPassword(usernameRaw: string, password: string): Promise<void> {
+    if (String(password ?? "").length < 8) {
+      throw new AuthHttpError(400, "Password di almeno 8 caratteri")
+    }
+    const users = [...getUsers()]
+    const idx = findUserIndex(users, usernameRaw)
+    if (idx < 0) throw new AuthHttpError(404, "Utente non trovato")
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+    users[idx] = { ...users[idx]!, password: hash }
+    persistUsers(users)
+    invalidateSessionsFor(users[idx]!.username)
+  },
+
+  deleteUser(usernameRaw: string, actorUsername: string): void {
+    const username = normalizeUsername(usernameRaw)
+    if (username.toLowerCase() === actorUsername.toLowerCase()) {
+      throw new AuthHttpError(400, "Non puoi eliminare il tuo utente")
+    }
+    const users = getUsers()
+    const idx = findUserIndex(users, username)
+    if (idx < 0) throw new AuthHttpError(404, "Utente non trovato")
+    const target = users[idx]!
+    if (target.role === "admin" && adminCount(users) <= 1) {
+      throw new AuthHttpError(400, "Non puoi eliminare l'ultimo amministratore")
+    }
+    persistUsers(users.filter((_, i) => i !== idx))
+    invalidateSessionsFor(target.username)
   },
 }
