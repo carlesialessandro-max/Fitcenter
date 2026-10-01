@@ -14,7 +14,7 @@ import {
 } from "../handlers/calendario.js"
 import { getCorsiGestione, patchCorsiGestione, getCorsiClientiSearch } from "../handlers/corsiGestione.js"
 import { getNuotoLibero, patchNuotoLibero } from "../handlers/nuotoLibero.js"
-import { requireAdmin, requireAdminOrCampus, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
+import { requireAdmin, requireAdminOrCampus, requireAdminOrOperatore, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
 import multer from "multer"
 import { getIncassi, getIncassiRiepilogo } from "../handlers/incassi.js"
 
@@ -76,8 +76,8 @@ dataRouter.get("/report-consulenti", requireAuth, getReportConsulenti)
 dataRouter.get("/cassa-movimenti-utenti", getCassaMovimentiUtenti)
 dataRouter.get("/ricevute-utenti", getRicevuteUtenti)
 dataRouter.post("/ricevute-utenti/invia", postInviaScontrino)
-dataRouter.get("/incassi/riepilogo", requireAdmin, getIncassiRiepilogo)
-dataRouter.get("/incassi", requireAdmin, getIncassi)
+dataRouter.get("/incassi/riepilogo", requireAdminOrOperatore, getIncassiRiepilogo)
+dataRouter.get("/incassi", requireAdminOrOperatore, getIncassi)
 dataRouter.get("/campus", getCampus)
 dataRouter.patch("/campus/:clienteId", patchCampusCliente)
 dataRouter.patch("/campus/:clienteId/weeks/:weekKey", patchCampusWeekNote)

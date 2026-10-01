@@ -23,6 +23,7 @@ const navOperatore: NavItem[] = [
     { to: "/firme", label: "Firme" },
     { to: "/firma-cassa", label: "Firma Cassa" },
     { to: "/scontrini", label: "Scontrini" },
+    { to: "/incassi", label: "Incassi" },
     { to: "/calendario/reception", label: "Calendario reception" },
     { to: "/crm", label: "CRM Vendita" },
     { to: "/crm/whatsapp-log", label: "Log WhatsApp" },

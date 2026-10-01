@@ -24,6 +24,15 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next()
 }
 
+export function requireAdminOrOperatore(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (u.role !== "admin" && u.role !== "operatore") {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
+  next()
+}
+
 /** Admin, consulenti o ruolo CRM (review / vendita). */
 export function requireAdminOrOperatoreOrCrm(req: Request, res: Response, next: NextFunction) {
   const u = req.user

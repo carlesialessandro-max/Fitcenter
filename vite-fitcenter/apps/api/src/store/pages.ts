@@ -63,6 +63,7 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
     "/firme",
     "/firma-cassa",
     "/scontrini",
+    "/incassi",
     "/calendario/reception",
     "/crm",
     "/crm/whatsapp-log",

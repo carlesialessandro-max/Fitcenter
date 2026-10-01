@@ -238,6 +238,7 @@ function emptySegs(): Record<DetailSeg, SegTot> {
 
 export function Incassi() {
   const { role } = useAuth()
+  const canIncassi = role === "admin" || role === "operatore"
   const now = new Date()
   const yearNow = now.getFullYear()
   const monthNow = now.getMonth() + 1
@@ -293,7 +294,7 @@ export function Incassi() {
       }),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
-    enabled: role === "admin",
+    enabled: canIncassi,
   })
   const qPrev = useQuery({
     queryKey: ["incassi-riepilogo", fromPrev, toPrev],
@@ -304,7 +305,7 @@ export function Incassi() {
       ),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
-    enabled: role === "admin" && annoConfronto !== anno,
+    enabled: canIncassi && annoConfronto !== anno,
   })
   const qDetail = useQuery({
     queryKey: ["incassi", from, to, expanded],
@@ -315,7 +316,7 @@ export function Incassi() {
       ),
     refetchOnWindowFocus: false,
     staleTime: 10_000,
-    enabled: role === "admin" && isGiorno && !!expanded,
+    enabled: canIncassi && isGiorno && !!expanded,
   })
 
   const segsNow = qNow.data?.segments ?? emptySegs()
@@ -440,7 +441,7 @@ export function Incassi() {
     return typeof v0 === "number" ? (Number.isFinite(v0) ? v0 : 0) : 0
   }
 
-  if (role !== "admin") return <Navigate to="/" replace />
+  if (!canIncassi) return <Navigate to="/" replace />
 
   const canPdf = !qNow.isLoading && !qNow.isError
   const groupsPdf = groups.filter((g) => g.seg !== "altro" || g.total > 0 || g.prevTotal > 0)
