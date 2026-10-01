@@ -11,6 +11,8 @@ export interface User {
   role: Role
   consulenteNome?: string
   leadFilter?: "bambini"
+  /** Operatore speciale: Incassi e Andamento come l'admin (totali di tutto il centro). */
+  vedeTotaliCentro?: boolean
   /** Sottoinsieme del menu del ruolo. Se assente, vede tutte le pagine del ruolo. */
   pages?: string[]
   email?: string
@@ -167,6 +169,7 @@ function loadUsersFromEnv(): UserRecord[] | null {
         role,
         consulenteNome: o.consulenteNome != null ? String(o.consulenteNome) : undefined,
         leadFilter: o.leadFilter === "bambini" ? "bambini" : undefined,
+        vedeTotaliCentro: role === "operatore" && o.vedeTotaliCentro === true ? true : undefined,
         email: o.email != null ? String(o.email).trim() : undefined,
         pages: sanitizePages(o.pages, role),
       })
@@ -212,6 +215,7 @@ function parseStoredUser(row: unknown): UserRecord | null {
     role,
     consulenteNome: o.consulenteNome != null ? String(o.consulenteNome) : undefined,
     leadFilter: o.leadFilter === "bambini" ? "bambini" : undefined,
+    vedeTotaliCentro: role === "operatore" && o.vedeTotaliCentro === true ? true : undefined,
     email: o.email != null ? String(o.email).trim() || undefined : undefined,
     pages: sanitizePages(o.pages, role),
   }
@@ -336,6 +340,7 @@ function toPublicUser(u: UserRecord): User {
     role: u.role,
     consulenteNome: u.consulenteNome,
     leadFilter: u.leadFilter,
+    vedeTotaliCentro: u.vedeTotaliCentro,
     pages: u.pages,
   }
 }
@@ -354,6 +359,7 @@ export type CreateUserInput = {
   role: Role
   consulenteNome?: string
   leadFilter?: "bambini" | ""
+  vedeTotaliCentro?: boolean
   email?: string
   pages?: string[]
 }
@@ -363,6 +369,7 @@ export type UpdateUserInput = {
   role?: Role
   consulenteNome?: string | null
   leadFilter?: "bambini" | "" | null
+  vedeTotaliCentro?: boolean | null
   email?: string | null
   pages?: string[] | null
 }
@@ -495,6 +502,7 @@ export const authStore = {
       role: input.role,
       consulenteNome: input.consulenteNome?.trim() || undefined,
       leadFilter: input.leadFilter === "bambini" ? "bambini" : undefined,
+      vedeTotaliCentro: input.role === "operatore" && input.vedeTotaliCentro === true ? true : undefined,
       email: input.email?.trim() || undefined,
       pages: input.role === "admin" ? undefined : sanitizePages(input.pages, input.role),
     }
@@ -536,6 +544,14 @@ export const authStore = {
           : input.leadFilter === "bambini"
             ? "bambini"
             : current.leadFilter,
+      vedeTotaliCentro:
+        nextRole !== "operatore"
+          ? undefined
+          : input.vedeTotaliCentro === true
+            ? true
+            : input.vedeTotaliCentro === false || input.vedeTotaliCentro === null
+              ? undefined
+              : current.vedeTotaliCentro,
       email:
         input.email === null
           ? undefined

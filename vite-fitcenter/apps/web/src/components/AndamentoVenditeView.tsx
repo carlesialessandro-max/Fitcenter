@@ -334,15 +334,16 @@ function exportAndamentoPdf(args: {
 }
 
 export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
-  const { role, consulenteFilter, consulenti } = useAuth()
+  const { role, consulenteFilter, consulenti, user } = useAuth()
   const [adminConsulente, setAdminConsulente] = useState<string>("")
   const now = new Date()
   const [anno, setAnno] = useState(now.getFullYear())
   const [mese, setMese] = useState(now.getMonth() + 1)
   const [annoConfronto, setAnnoConfronto] = useState(now.getFullYear() - 1)
   const isCurrent = anno === now.getFullYear() && mese === now.getMonth() + 1
+  const seesAllVendite = role === "admin" || user?.vedeTotaliCentro === true
 
-  const effectiveConsulenteFilter = role === "admin"
+  const effectiveConsulenteFilter = seesAllVendite
     ? (adminConsulente.trim() ? adminConsulente.trim() : undefined)
     : consulenteFilter
 
@@ -384,7 +385,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
   const consulentiList =
     ambito === "bambini"
       ? (data?.consulenti?.length ? data.consulenti : ["Irene Carlesi", "Elisa Garisi", "Victoria", "Alba Salata", "Tommaso", "Simona Chiti"])
-      : role === "admin" && budgetData?.consulenti?.length
+      : seesAllVendite && budgetData?.consulenti?.length
         ? budgetData.consulenti
         : (consulenti ?? [])
 
@@ -495,7 +496,7 @@ export function AndamentoVenditeView({ ambito }: { ambito: Ambito }) {
             ))}
           </select>
         </label>
-        {role === "admin" && (
+        {seesAllVendite && (
           <label className="flex flex-col gap-1 text-sm text-zinc-400">
             Consulente
             <select value={adminConsulente} onChange={(e) => setAdminConsulente(e.target.value)} className="rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100">

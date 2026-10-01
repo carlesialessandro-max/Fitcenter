@@ -8,7 +8,7 @@ import { store as chiamateStore } from "../store/chiamate.js"
 import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
-import { getOperatoreConsulenteNome, getScopedUser } from "../middleware/auth.js"
+import { getOperatoreConsulenteNome, getScopedUser, canVedereTotaliCentro } from "../middleware/auth.js"
 import { syncCrmTelefonateToStore } from "../services/sync-crm-chiamate.js"
 import {
   bumpMetaVersion,
@@ -344,6 +344,16 @@ async function resolveConsultantId(consulente: string | undefined): Promise<stri
   const id = await gestionaleSql.getConsultantIdUtente(nome)
   if (id) return id
   return undefined
+}
+
+/** Solo admin e l'operatore con vedeTotaliCentro vedono i totali del centro. Gli altri restano sul proprio nominativo. */
+function getVenditeConsulenteScope(req: Request): string | undefined {
+  const u = getScopedUser(req)
+  if (canVedereTotaliCentro(u)) {
+    const q = String(req.query.consulente ?? "").trim()
+    return q || undefined
+  }
+  return getOperatoreConsulenteNome(req) ?? undefined
 }
 
 function cacheScope(req: Request): string {
@@ -2665,8 +2675,7 @@ export async function setBudget(req: Request, res: Response) {
 export async function getVenditeStorico(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno)
-    const operatoreNome = getOperatoreConsulenteNome(req)
-    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const consulente = getVenditeConsulenteScope(req)
     if (isNaN(anno) || anno < 2000 || anno > 2100) {
       return res.status(400).json({ message: "Parametro anno obbligatorio e valido (2000-2100)" })
     }
@@ -2742,8 +2751,7 @@ function classifyBambiniTipoAbbonamento(categoria: string, abbonamento?: string)
 
 export async function getVenditeMovimentiCategoriaDurata(req: Request, res: Response) {
   try {
-    const operatoreNome = getOperatoreConsulenteNome(req)
-    const consulente = operatoreNome ?? ((req.query.consulente as string) || undefined)
+    const consulente = getVenditeConsulenteScope(req)
     const ambito = String(req.query.ambito ?? "adulti").toLowerCase() === "bambini" ? "bambini" : "adulti"
 
     const oggi = toDateParts(new Date())

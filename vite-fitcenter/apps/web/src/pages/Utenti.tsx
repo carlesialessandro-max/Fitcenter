@@ -25,6 +25,7 @@ const emptyForm = {
   consulenteNome: "",
   email: "",
   leadFilter: false,
+  vedeTotaliCentro: false,
   pages: [] as string[],
 }
 
@@ -84,6 +85,7 @@ export function Utenti() {
         consulenteNome: form.consulenteNome.trim() || null,
         email: form.email.trim() || null,
         leadFilter: form.leadFilter ? "bambini" : "",
+        vedeTotaliCentro: form.role === "operatore" ? form.vedeTotaliCentro : false,
         pages: form.role === "admin" ? null : form.pages,
       }),
     onSuccess: () => {
@@ -103,6 +105,7 @@ export function Utenti() {
         consulenteNome: form.consulenteNome.trim() || null,
         email: form.email.trim() || null,
         leadFilter: form.leadFilter ? "bambini" : "",
+        vedeTotaliCentro: form.role === "operatore" ? form.vedeTotaliCentro : false,
         pages: form.role === "admin" ? null : form.pages,
       })
       if (form.password.trim()) {
@@ -152,6 +155,7 @@ export function Utenti() {
       consulenteNome: u.consulenteNome ?? "",
       email: u.email ?? "",
       leadFilter: u.leadFilter === "bambini",
+      vedeTotaliCentro: u.vedeTotaliCentro === true,
       pages: u.pages?.length ? [...u.pages] : [...defaults],
     })
   }
@@ -358,6 +362,23 @@ export function Utenti() {
               </label>
             ) : null}
           </div>
+
+          {form.role === "operatore" ? (
+            <label className="flex items-start gap-2 text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={form.vedeTotaliCentro}
+                onChange={(e) => setForm((p) => ({ ...p, vedeTotaliCentro: e.target.checked }))}
+              />
+              <span>
+                Vede Incassi e Andamento vendite di tutto il centro
+                <span className="mt-0.5 block text-xs text-zinc-500">
+                  Solo per questo login (non filtra per consulente). Carmen, Serena e Ombretta restano sul proprio nominativo.
+                </span>
+              </span>
+            </label>
+          ) : null}
 
           {form.role === "operatore" || form.role === "crm" ? (
             <label className="flex items-center gap-2 text-sm text-zinc-300">

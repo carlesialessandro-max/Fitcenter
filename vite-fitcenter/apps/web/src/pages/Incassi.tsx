@@ -237,8 +237,8 @@ function emptySegs(): Record<DetailSeg, SegTot> {
 }
 
 export function Incassi() {
-  const { role } = useAuth()
-  const canIncassi = role === "admin" || role === "operatore"
+  const { role, user } = useAuth()
+  const canIncassi = role === "admin" || user?.vedeTotaliCentro === true
   const now = new Date()
   const yearNow = now.getFullYear()
   const monthNow = now.getMonth() + 1

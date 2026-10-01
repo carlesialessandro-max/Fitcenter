@@ -1,6 +1,6 @@
 import { Request, Response } from "express"
 import * as gestionaleSql from "../services/gestionale-sql.js"
-import { getScopedUser } from "../middleware/auth.js"
+import { canVedereTotaliCentro, getScopedUser } from "../middleware/auth.js"
 
 type IncassiSeg = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
 const DETAIL_SEGS: Exclude<IncassiSeg, "all">[] = ["adulti", "bambini", "danza", "ticket", "altro"]
@@ -123,9 +123,9 @@ async function loadDeduped(from: string, to: string): Promise<Record<string, unk
 }
 
 export async function getIncassi(req: Request, res: Response) {
-  const u = getScopedUser(req)
-  if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
-
+  if (!canVedereTotaliCentro(getScopedUser(req))) {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
   const from = String(req.query.from ?? "").trim()
   const to = String(req.query.to ?? "").trim()
   if (!isIsoDate(from) || !isIsoDate(to)) return res.status(400).json({ message: "from/to obbligatori (YYYY-MM-DD)" })
@@ -143,9 +143,9 @@ export async function getIncassi(req: Request, res: Response) {
 }
 
 export async function getIncassiRiepilogo(req: Request, res: Response) {
-  const u = getScopedUser(req)
-  if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
-
+  if (!canVedereTotaliCentro(getScopedUser(req))) {
+    return res.status(403).json({ message: "Permessi insufficienti" })
+  }
   const from = String(req.query.from ?? "").trim()
   const to = String(req.query.to ?? "").trim()
   if (!isIsoDate(from) || !isIsoDate(to)) return res.status(400).json({ message: "from/to obbligatori (YYYY-MM-DD)" })

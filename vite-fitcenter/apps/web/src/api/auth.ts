@@ -10,6 +10,8 @@ export interface User {
   consulenteNome?: string
   /** Se "bambini": vede solo CRM con lead BAMBINI; nav solo CRM Vendita. */
   leadFilter?: "bambini"
+  /** Operatore speciale: Incassi e Andamento di tutto il centro. */
+  vedeTotaliCentro?: boolean
   /** Sottoinsieme del menu del ruolo. Se assente, vede tutte le pagine del ruolo. */
   pages?: string[]
   email?: string
@@ -43,6 +45,7 @@ export type UpsertUserBody = {
   role: Role
   consulenteNome?: string | null
   leadFilter?: "bambini" | "" | null
+  vedeTotaliCentro?: boolean | null
   email?: string | null
   pages?: string[] | null
 }

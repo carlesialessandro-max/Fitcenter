@@ -231,6 +231,24 @@ function filterNavByPages(items: NavItem[], pages: string[]): NavItem[] {
   return out
 }
 
+function excludeNavPath(items: NavItem[], path: string): NavItem[] {
+  const out: NavItem[] = []
+  for (const item of items) {
+    if (item.to === path) continue
+    if (item.children?.length) {
+      const children = excludeNavPath(item.children, path)
+      if (item.group) {
+        if (children.length) out.push({ ...item, children })
+        continue
+      }
+      out.push(children.length ? { ...item, children } : { ...item, children: undefined })
+      continue
+    }
+    out.push(item)
+  }
+  return out
+}
+
 function firstNavPath(items: NavItem[]): string {
   for (const item of items) {
     if (item.group && item.children?.length) {
@@ -288,7 +306,9 @@ export function AppLayout() {
                     : role === "danza"
                       ? navDanza
               : navOperatore
-  const nav: NavItem[] = customPages ? filterNavByPages(roleNav, user!.pages!) : roleNav
+  const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, user!.pages!) : roleNav
+  const nav: NavItem[] =
+    role !== "admin" && user?.vedeTotaliCentro !== true ? excludeNavPath(navBase, "/incassi") : navBase
   const homePath = firstNavPath(nav)
   const mustRedirectPages = customPages && !isPathAllowed(location.pathname, user!.pages!)
 

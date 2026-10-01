@@ -35,6 +35,7 @@ export async function createUser(req: Request, res: Response) {
       role?: Role
       consulenteNome?: string
       leadFilter?: "bambini" | ""
+      vedeTotaliCentro?: boolean
       email?: string
       pages?: string[]
     }
@@ -48,6 +49,7 @@ export async function createUser(req: Request, res: Response) {
       role: body.role,
       consulenteNome: body.consulenteNome,
       leadFilter: body.leadFilter,
+      vedeTotaliCentro: body.vedeTotaliCentro,
       email: body.email,
       pages: body.pages,
     })
@@ -65,6 +67,7 @@ export async function updateUser(req: Request, res: Response) {
       role?: Role
       consulenteNome?: string | null
       leadFilter?: "bambini" | "" | null
+      vedeTotaliCentro?: boolean | null
       email?: string | null
       pages?: string[] | null
     }

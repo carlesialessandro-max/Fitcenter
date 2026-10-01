@@ -33,6 +33,12 @@ export function requireAdminOrOperatore(req: Request, res: Response, next: NextF
   next()
 }
 
+export function canVedereTotaliCentro(u: { role?: string; vedeTotaliCentro?: boolean } | null | undefined): boolean {
+  if (!u) return false
+  if (u.role === "admin") return true
+  return u.role === "operatore" && u.vedeTotaliCentro === true
+}
+
 /** Admin, consulenti o ruolo CRM (review / vendita). */
 export function requireAdminOrOperatoreOrCrm(req: Request, res: Response, next: NextFunction) {
   const u = req.user
