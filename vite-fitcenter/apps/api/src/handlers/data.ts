@@ -381,6 +381,14 @@ function isPastCalendarMonth(anno: number, mese: number): boolean {
   return anno < t.year || (anno === t.year && mese < t.month)
 }
 
+/** Versione cache dashboard/dettaglio. Al cambio, si serve subito la versione precedente e si ricalcola in sottofondo. */
+const DASHBOARD_CACHE_V = "gestanti-adulti-8"
+const DASHBOARD_CACHE_V_PREV = ["gestanti-adulti-7"] as const
+
+function dashboardCacheParams(consulente: string | undefined, v: string = DASHBOARD_CACHE_V) {
+  return { consulente: consulente ?? null, v }
+}
+
 /** Per mesi già chiusi, i totali coincidono con l'ultimo giorno (allineato al precompute). */
 function cacheAsOfKeyForTotals(asOfKey: string): string {
   if (isAsOfToday(asOfKey)) return asOfKey
@@ -403,12 +411,12 @@ function dettaglioMeseCacheLookup(
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-        cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-8" },
+        cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: DASHBOARD_CACHE_V },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-      cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-8" },
+      cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: DASHBOARD_CACHE_V },
   }
 }
 
@@ -585,6 +593,31 @@ async function readDashboardCache(
   return null
 }
 
+async function readDashboardCacheAnyVersion(
+  scope: string,
+  consulente: string | undefined,
+  asOfKey: string,
+  depSig: string,
+  allowExpired: boolean
+): Promise<{ stats: DashboardStats; cacheAsOf: string; v: string } | null> {
+  for (const v of [DASHBOARD_CACHE_V, ...DASHBOARD_CACHE_V_PREV]) {
+    const hit = await readDashboardCache(scope, dashboardCacheParams(consulente, v), asOfKey, depSig, allowExpired)
+    if (hit) return { ...hit, v }
+  }
+  return null
+}
+
+function overlayAttiviFromPrevious(stats: DashboardStats, prev: DashboardStats | null | undefined): DashboardStats {
+  if (!prev || stats.abbonamentiAttivi > 0) return stats
+  return {
+    ...stats,
+    abbonamentiAttivi: prev.abbonamentiAttivi,
+    abbonamentiInScadenza: prev.abbonamentiInScadenza,
+    abbonamentiInScadenza60: prev.abbonamentiInScadenza60,
+    clientiAttivi: prev.clientiAttivi,
+  }
+}
+
 function mapVenditePerMeseWithProgressivo(
   perMeseRaw: { mese: number; totale: number }[],
   mese: number,
@@ -639,9 +672,7 @@ async function computeDashboardSqlStats(
     const labels = budgetPerConsulente.getConsulentiLabels()
     const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
     const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-    const abbonamentiPromise = isAsOfToday(asOf.key)
-      ? gestionaleSql.queryAbbonamenti(undefined)
-      : Promise.resolve([] as Record<string, unknown>[])
+    const abbonamentiPromise = Promise.resolve([] as Record<string, unknown>[])
 
     if (mergedIds) {
       const [abbonamentiRows, prog, perMeseRaw] = await Promise.all([
@@ -735,7 +766,7 @@ async function computeDashboardSqlStats(
   }
 
   const [abbonamentiRows, prog, perMeseSingle] = await Promise.all([
-    isAsOfToday(asOf.key) ? gestionaleSql.queryAbbonamenti(idUtente) : Promise.resolve([] as Record<string, unknown>[]),
+    Promise.resolve([] as Record<string, unknown>[]),
     gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
     gestionaleSql.getVenditePerMeseAnno(anno, idUtente, venditeOpts),
   ])
@@ -831,6 +862,10 @@ async function refreshDashboardCache(args: {
       `dashboard:${args.scope}:${String(args.consulente ?? "")}:${args.cacheAsOf}`,
       () => withDashboardSqlTimeout(computeDashboardSqlStats(args.consulente, args.asOf))
     )
+    const prevKpi =
+      (await readDashboardCacheAnyVersion(args.scope, args.consulente, args.asOf.key, args.depSig, true)) ??
+      (await readDashboardCacheAnyVersion(args.scope, args.consulente, previousDateKey(args.asOf.key), args.depSig, true))
+    const value = overlayAttiviFromPrevious(stats, prevKpi?.stats)
     await persistTotalsSnapshot({
       name: "data.dashboard",
       scope: args.scope,
@@ -839,7 +874,7 @@ async function refreshDashboardCache(args: {
       cacheAsOf: args.cacheAsOf,
       depSig: args.depSig,
       ttlMs: getCacheTtlMsForAsOf(args.cacheAsOf, 0),
-      value: stats,
+      value,
     })
   } catch {
     // best-effort refresh in background
@@ -854,9 +889,19 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-8" }
-    const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
+    const cacheKeyParams = dashboardCacheParams(consulente)
+    const cachedHit = await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, false)
     if (cachedHit) {
+      if (cachedHit.v !== DASHBOARD_CACHE_V) {
+        void refreshDashboardCache({
+          scope,
+          cacheKeyParams,
+          cacheAsOf: dashboardCacheAsOf(asOf.key),
+          depSig,
+          consulente,
+          asOf,
+        })
+      }
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
       return res.json(cachedHit.stats)
     }
@@ -864,19 +909,17 @@ export async function getDashboard(req: Request, res: Response) {
     const fromSql = gestionaleSql.isGestionaleConfigured()
     if (fromSql) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
-      const staleHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+      const staleHit = await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, true)
       if (staleHit) {
         res.json(staleHit.stats)
-        if (isAsOfToday(asOf.key)) {
-          void refreshDashboardCache({
-            scope,
-            cacheKeyParams,
-            cacheAsOf: dashboardCacheAsOf(asOf.key),
-            depSig,
-            consulente,
-            asOf,
-          })
-        }
+        void refreshDashboardCache({
+          scope,
+          cacheKeyParams,
+          cacheAsOf: dashboardCacheAsOf(asOf.key),
+          depSig,
+          consulente,
+          asOf,
+        })
         return
       }
       try {
@@ -884,6 +927,10 @@ export async function getDashboard(req: Request, res: Response) {
           `dashboard:${scope}:${String(consulente ?? "")}:${dashboardCacheAsOf(asOf.key)}`,
           () => withDashboardSqlTimeout(computeDashboardSqlStats(consulente, asOf))
         )
+        const prevKpi =
+          (await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, true)) ??
+          (await readDashboardCacheAnyVersion(scope, consulente, previousDateKey(asOf.key), depSig, true))
+        const withAttivi = overlayAttiviFromPrevious(stats, prevKpi?.stats)
         await persistTotalsSnapshot({
           name: "data.dashboard",
           scope,
@@ -892,12 +939,12 @@ export async function getDashboard(req: Request, res: Response) {
           cacheAsOf: dashboardCacheAsOf(asOf.key),
           depSig,
           ttlMs: getCacheTtlMsForAsOf(dashboardCacheAsOf(asOf.key), 0),
-          value: stats,
+          value: withAttivi,
         })
-        return res.json(stats)
+        return res.json(withAttivi)
       } catch (e) {
         if ((e as Error).message !== "__FITCENTER_DASHBOARD_SQL_TIMEOUT__") throw e
-        const staleAfter = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, true)
+        const staleAfter = await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, true)
         if (staleAfter) return res.json(staleAfter.stats)
         return res.status(504).json({ message: `Timeout SQL dashboard dopo ${DASHBOARD_SQL_TIMEOUT_MS} ms` })
       }
@@ -3348,21 +3395,25 @@ async function readDettaglioMeseCache(
 ): Promise<{
   result: DettaglioMeseResponse
   cacheAsOf: string
-  cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null }
+  cacheParams: { anno: number; mese: number; giorno: number; consulente: string | null; v?: string }
 } | null> {
   const { cacheParams } = dettaglioMeseCacheLookup(asOfKey, anno, mese, giorno, consulente)
-  for (const cacheAsOf of dettaglioMeseCacheLookupKeys(asOfKey, anno, mese)) {
-    const args = {
-      name: "data.dettaglio-mese" as const,
-      scope,
-      params: cacheParams,
-      asOf: cacheAsOf,
-      depSig,
+  const versions = [cacheParams.v ?? DASHBOARD_CACHE_V, ...DASHBOARD_CACHE_V_PREV.filter((v) => v !== cacheParams.v)]
+  for (const v of versions) {
+    const params = { ...cacheParams, v }
+    for (const cacheAsOf of dettaglioMeseCacheLookupKeys(asOfKey, anno, mese)) {
+      const args = {
+        name: "data.dettaglio-mese" as const,
+        scope,
+        params,
+        asOf: cacheAsOf,
+        depSig,
+      }
+      const hit = allowExpired
+        ? await cacheGetAllowExpired<DettaglioMeseResponse>(args)
+        : await cacheGet<DettaglioMeseResponse>(args)
+      if (hit) return { result: hit, cacheAsOf, cacheParams: params }
     }
-    const hit = allowExpired
-      ? await cacheGetAllowExpired<DettaglioMeseResponse>(args)
-      : await cacheGet<DettaglioMeseResponse>(args)
-    if (hit) return { result: hit, cacheAsOf, cacheParams }
   }
   return null
 }
@@ -3675,9 +3726,7 @@ export async function getDettaglioMese(req: Request, res: Response) {
     const stale = await readDettaglioMeseCache(scope, asOf.key, anno, mese, giorno, consulente, depSig, true)
     if (stale) {
       res.json(stale.result)
-      if (isAsOfToday(asOf.key)) {
-        void shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs)).catch(() => {})
-      }
+      void shareInflight(inflightKey, () => computeAndCacheDettaglioMese(computeArgs)).catch(() => {})
       return
     }
 
