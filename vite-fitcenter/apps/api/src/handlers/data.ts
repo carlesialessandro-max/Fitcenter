@@ -471,6 +471,12 @@ function previousDateKey(dateKey: string): string {
   return `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
 }
 
+function isSameCalendarMonth(a: string, b: string): boolean {
+  const pa = parseYmdKey(baseAsOfDateKey(a))
+  const pb = parseYmdKey(baseAsOfDateKey(b))
+  return !!pa && !!pb && pa.year === pb.year && pa.month === pb.month
+}
+
 async function persistTotalsSnapshot(args: {
   name: "data.dashboard" | "data.dettaglio-mese" | "data.dettaglio-anno" | "data.andamento-vendite"
   scope: string
@@ -560,14 +566,16 @@ async function readDashboardCache(
   }
   if (allowExpired && isAsOfToday(asOfKey)) {
     const yesterday = previousDateKey(asOfKey)
-    const hit = await cacheGetAllowExpired<DashboardStats>({
-      name: "data.dashboard",
-      scope,
-      params: cacheKeyParams,
-      asOf: yesterday,
-      depSig,
-    })
-    if (hit) return { stats: hit, cacheAsOf: yesterday }
+    if (isSameCalendarMonth(asOfKey, yesterday)) {
+      const hit = await cacheGetAllowExpired<DashboardStats>({
+        name: "data.dashboard",
+        scope,
+        params: cacheKeyParams,
+        asOf: yesterday,
+        depSig,
+      })
+      if (hit) return { stats: hit, cacheAsOf: yesterday }
+    }
   }
   return null
 }
