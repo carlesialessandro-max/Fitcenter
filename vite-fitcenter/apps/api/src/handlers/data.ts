@@ -403,12 +403,12 @@ function dettaglioMeseCacheLookup(
     const last = new Date(anno, mese, 0).getDate()
     return {
       cacheAsOf: lastDayOfMonthKey(anno, mese),
-        cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-7" },
+        cacheParams: { anno, mese, giorno: last, consulente: consulente ?? null, v: "gestanti-adulti-8" },
     }
   }
   return {
     cacheAsOf: isAsOfToday(asOfKey) ? todayHourCacheKey(asOfKey) : cacheAsOfKeyForTotals(asOfKey),
-      cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-7" },
+      cacheParams: { anno, mese, giorno, consulente: consulente ?? null, v: "gestanti-adulti-8" },
   }
 }
 
@@ -854,7 +854,7 @@ export async function getDashboard(req: Request, res: Response) {
     const asOf = parseAsOf(req)
     const cacheAsOf = dashboardCacheAsOf(asOf.key)
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
-    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-7" }
+    const cacheKeyParams = { consulente: consulente ?? null, v: "gestanti-adulti-8" }
     const cachedHit = await readDashboardCache(scope, cacheKeyParams, asOf.key, depSig, false)
     if (cachedHit) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
