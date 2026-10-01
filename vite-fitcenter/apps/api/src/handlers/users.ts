@@ -71,7 +71,7 @@ export async function updateUser(req: Request, res: Response) {
       email?: string | null
       pages?: string[] | null
     }
-    const user = await authStore.updateUser(username, body)
+    const user = await authStore.updateUser(username, body, req.user?.username)
     res.json({ user })
   } catch (e) {
     handleError(res, e)

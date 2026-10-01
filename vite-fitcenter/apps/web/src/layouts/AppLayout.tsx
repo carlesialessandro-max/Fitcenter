@@ -270,7 +270,7 @@ export function AppLayout() {
   const { user, role, logout, leadFilter } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [groupOpen, setGroupOpen] = useState<Record<string, boolean>>({ vendite: true, admin: true, piano: true, lp: true })
-  const customPages = role !== "admin" && (user?.pages?.length ?? 0) > 0
+  const customPages = (user?.pages?.length ?? 0) > 0
   const mustRedirectBagnini =
     !customPages &&
     role === "bagnini" &&

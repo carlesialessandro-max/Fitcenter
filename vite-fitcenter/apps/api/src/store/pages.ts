@@ -42,6 +42,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/scuola-nuoto/note", label: "Archivio note scuola nuoto", group: "Altri" },
   { path: "/campus", label: "Campus", group: "Altri" },
   { path: "/danza", label: "Danza", group: "Altri" },
+  { path: "/utenti", label: "Utenti e accessi", group: "Altri" },
 ]
 
 const CATALOG_PATHS = new Set(PAGE_CATALOG.map((p) => p.path))
@@ -119,7 +120,7 @@ export function sanitizePages(pages: unknown, role: Role): string[] | undefined 
 }
 
 export function pagesForUser(role: Role, pages?: string[]): string[] {
-  if (role === "admin") return [...ALL_PAGE_PATHS]
   if (pages?.length) return pages
+  if (role === "admin") return [...ALL_PAGE_PATHS]
   return [...(ROLE_DEFAULT_PAGES[role] ?? [])]
 }

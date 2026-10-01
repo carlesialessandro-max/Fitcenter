@@ -485,7 +485,7 @@ export const authStore = {
     const nome = String(input.nome ?? "").trim()
     if (!nome) throw new AuthHttpError(400, "Nome obbligatorio")
     if (!VALID_ROLES.includes(input.role)) throw new AuthHttpError(400, "Ruolo non valido")
-    if (input.role !== "admin" && Array.isArray(input.pages) && input.pages.length === 0) {
+    if (Array.isArray(input.pages) && input.pages.length === 0) {
       throw new AuthHttpError(400, "Seleziona almeno una pagina visibile")
     }
 
@@ -504,20 +504,20 @@ export const authStore = {
       leadFilter: input.leadFilter === "bambini" ? "bambini" : undefined,
       vedeTotaliCentro: input.role === "operatore" && input.vedeTotaliCentro === true ? true : undefined,
       email: input.email?.trim() || undefined,
-      pages: input.role === "admin" ? undefined : sanitizePages(input.pages, input.role),
+      pages: sanitizePages(input.pages, input.role),
     }
     persistUsers([...users, rec])
     return toAdminUser(rec)
   },
 
-  async updateUser(usernameRaw: string, input: UpdateUserInput): Promise<AdminUserView> {
+  async updateUser(usernameRaw: string, input: UpdateUserInput, actorUsername?: string): Promise<AdminUserView> {
     const users = [...getUsers()]
     const idx = findUserIndex(users, usernameRaw)
     if (idx < 0) throw new AuthHttpError(404, "Utente non trovato")
     const current = users[idx]!
     const nextRole = input.role ?? current.role
     if (input.role && !VALID_ROLES.includes(input.role)) throw new AuthHttpError(400, "Ruolo non valido")
-    if (nextRole !== "admin" && Array.isArray(input.pages) && input.pages.length === 0) {
+    if (Array.isArray(input.pages) && input.pages.length === 0) {
       throw new AuthHttpError(400, "Seleziona almeno una pagina visibile")
     }
 
@@ -558,9 +558,20 @@ export const authStore = {
           : input.email != null
             ? input.email.trim() || undefined
             : current.email,
-      pages: nextRole === "admin" ? undefined : sanitizePages(input.pages ?? current.pages, nextRole),
+      pages: sanitizePages(input.pages ?? current.pages, nextRole),
     }
     if (input.pages === null) rec.pages = undefined
+
+    const actor = (actorUsername ?? "").trim().toLowerCase()
+    if (
+      actor &&
+      actor === rec.username.toLowerCase() &&
+      rec.role === "admin" &&
+      rec.pages?.length &&
+      !rec.pages.includes("/utenti")
+    ) {
+      throw new AuthHttpError(400, "Non puoi toglierti la pagina Utenti e accessi")
+    }
 
     users[idx] = rec
     persistUsers(users)

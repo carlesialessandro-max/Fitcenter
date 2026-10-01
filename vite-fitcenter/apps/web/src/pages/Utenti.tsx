@@ -86,7 +86,7 @@ export function Utenti() {
         email: form.email.trim() || null,
         leadFilter: form.leadFilter ? "bambini" : "",
         vedeTotaliCentro: form.role === "operatore" ? form.vedeTotaliCentro : false,
-        pages: form.role === "admin" ? null : form.pages,
+        pages: form.pages,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auth-users"] })
@@ -106,7 +106,7 @@ export function Utenti() {
         email: form.email.trim() || null,
         leadFilter: form.leadFilter ? "bambini" : "",
         vedeTotaliCentro: form.role === "operatore" ? form.vedeTotaliCentro : false,
-        pages: form.role === "admin" ? null : form.pages,
+        pages: form.pages,
       })
       if (form.password.trim()) {
         await authApi.setPassword(editing!, form.password)
@@ -391,8 +391,7 @@ export function Utenti() {
             </label>
           ) : null}
 
-          {form.role !== "admin" ? (
-            <div>
+          <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium text-zinc-200">Pagine visibili</p>
                 <div className="flex gap-2 text-xs">
@@ -413,8 +412,8 @@ export function Utenti() {
                 </div>
               </div>
               <p className="mb-3 text-xs text-zinc-500">
-                Togli la spunta per nascondere una voce dal menu. Non puoi dare pagine fuori dal ruolo:
-                cambia ruolo se servono altri permessi.
+                Togli la spunta per nascondere una voce dal menu. Se il ruolo è amministratore, Incassi e Andamento
+                restano i totali di tutto il centro.
               </p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {groupedPages.map(([group, items]) => (
@@ -438,14 +437,11 @@ export function Utenti() {
                 ))}
               </div>
             </div>
-          ) : (
-            <p className="text-sm text-zinc-500">L&apos;amministratore vede tutte le pagine, inclusa questa.</p>
-          )}
 
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={busy || (form.role !== "admin" && form.pages.length === 0)}
+              disabled={busy || form.pages.length === 0}
               className="rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
             >
               {busy ? "Salvataggio…" : "Salva"}

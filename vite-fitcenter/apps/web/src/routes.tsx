@@ -41,7 +41,7 @@ import { Utenti } from "@/pages/Utenti"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
-  if (role !== "admin" && user?.pages?.length) {
+  if (user?.pages?.length) {
     if (user.pages.includes("/")) return <Dashboard />
     return <Navigate to={user.pages[0] ?? "/"} replace />
   }
