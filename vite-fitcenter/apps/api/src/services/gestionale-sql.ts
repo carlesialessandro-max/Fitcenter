@@ -1036,11 +1036,11 @@ function sqlReferralAbbDescrSelectDynamic(alias: string, cols: Set<string>): str
   return `CAST(N'' AS NVARCHAR(400))`
 }
 
-function firstOfPrevMonthIso(fromIso: string): string {
+function firstOfMonthsAgoIso(fromIso: string, monthsAgo: number): string {
   const y = Number(fromIso.slice(0, 4))
   const m = Number(fromIso.slice(5, 7))
   if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1) return fromIso
-  const d = new Date(Date.UTC(y, m - 2, 1))
+  const d = new Date(Date.UTC(y, m - 1 - monthsAgo, 1))
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`
 }
 
@@ -1072,8 +1072,8 @@ function sqlExistsInvito7gg(tblA: string, userIdExpr: string, abbCols: Set<strin
 }
 
 /**
- * Referral: invito 7 giorni (anche mese precedente) che diventa abbonamento pagato nel mese,
- * oppure iscrizione immediata (Presentato da recente, non rinnovo).
+ * Referral: invito 7 giorni (anche mesi prima) che diventa abbonamento pagato nel mese,
+ * oppure chi ha «Presentato da» e si attiva nel mese (non un rinnovo).
  * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore.
  */
 function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
@@ -1110,18 +1110,18 @@ export async function queryReferralPresentati(
   const presDateSql = presDateActual ? bracketSqlAliasColumn("u", presDateActual) : null
   const refDataPresSelect =
     presDateSql != null ? `CAST(${presDateSql} AS DATE) AS ReferralDataPresentazione` : `CAST(NULL AS DATE) AS ReferralDataPresentazione`
-  const prevFrom = firstOfPrevMonthIso(fromIso)
+  const prevFrom = firstOfMonthsAgoIso(fromIso, 6)
   const existsInvito = sqlExistsInvito7gg(tblA, "u.[IDUtente]", abbCols)
   const macroCol = pickAbbColumnActual(abbCols, "MacroCategoriaAbbonamentoDescrizione")
   const macroSel = macroCol
     ? `CAST(${bracketSqlAliasColumn("x", macroCol)} AS NVARCHAR(200))`
     : `CAST(NULL AS NVARCHAR(200))`
   const notRinnovi = `UPPER(ISNULL(a.[ReferralMacro], N'')) NOT LIKE N'%RINNOVI%'`
-  const presRecent =
+  const presOk =
     presDateSql != null
-      ? `(${presDateSql} IS NULL OR (CAST(${presDateSql} AS DATE) >= CAST(@prevFrom AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE)))`
+      ? `(${presDateSql} IS NULL OR CAST(${presDateSql} AS DATE) < CAST(@to AS DATE))`
       : `1 = 1`
-  const pathImmediato = `(u.[${colPres}] IS NOT NULL AND ${notRinnovi} AND ${presRecent})`
+  const pathImmediato = `(u.[${colPres}] IS NOT NULL AND ${notRinnovi} AND ${presOk})`
   const qualifyReferral = `(${existsInvito} OR ${pathImmediato})`
 
   const mkReq = () => {
