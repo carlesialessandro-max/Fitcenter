@@ -72,9 +72,9 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Clienti con socio presentatore: il periodo filtra sulla{" "}
-          <span className="text-zinc-400">data registrazione vendita</span> dell&apos;abbonamento (es. 04/06 anche se inizio
-          abbonamento 01/07), non sulla data presentazione. Esclusi tesseramenti/attivazioni, solo importo pagato positivo.
+          Invito 7 giorni (anche nel mese precedente) che diventa abbonamento pagato nel mese, dal 1 all&apos;ultimo
+          giorno. I rinnovi non contano, anche se hanno un presentatore vecchio. Iscrizione immediata: solo se in Extra /
+          Altro c&apos;è «Presentato da» recente (mese o mese prima).
           {role === "admin" ? (
             <> Admin: scegli «Tutti i venditori» o una consulente per filtrare le vendite attribuite.</>
           ) : (
@@ -151,8 +151,8 @@ export function Referral() {
         <p className="text-sm text-red-400">{(query.error as Error).message}</p>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-zinc-500">
-          Nessun referral nel mese con questi criteri (presentatore, data presentazione o inizio abbonamento nel mese, importo pagato positivo
-          {role === "admin" && !adminTutti ? ", venditore selezionato" : ""}), oppure SQL non disponibile.
+          Nessun referral nel mese: serve invito 7 giorni (anche il mese prima) convertito in abbonamento, oppure iscrizione immediata con Presentato da recente, non un rinnovo
+          {role === "admin" && !adminTutti ? " (venditore selezionato)" : ""}. SQL non disponibile se la lista resta vuota dopo il deploy.
         </p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
@@ -160,6 +160,7 @@ export function Referral() {
             <thead>
               <tr className="border-b border-zinc-800 bg-zinc-900/80 text-xs uppercase tracking-wide text-zinc-500">
                 <th className="px-3 py-2 font-medium">Cliente</th>
+                <th className="px-3 py-2 font-medium">Origine</th>
                 <th className="px-3 py-2 font-medium">Data presentazione</th>
                 <th className="px-3 py-2 font-medium">Presentato da</th>
                 <th className="px-3 py-2 font-medium">Contatti</th>
@@ -177,6 +178,9 @@ export function Referral() {
                       {it.cognome} {it.nome}
                     </div>
                     <div className="text-xs text-zinc-600">ID {it.clienteId}</div>
+                  </td>
+                  <td className="px-3 py-2 text-zinc-300">
+                    {it.origine === "invito" ? "Invito 7 giorni" : "Iscrizione immediata"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-zinc-400 tabular-nums">
                     {it.dataPresentazione ? fmtDateIt(it.dataPresentazione) : <span className="text-zinc-600">—</span>}

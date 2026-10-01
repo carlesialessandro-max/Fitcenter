@@ -1160,13 +1160,19 @@ function byCategoriaDettaglio(rows: Abbonamento[], categoriaLabelFn: (a: Abbonam
 export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
   try {
     const { date, key } = parseAsOf(req)
+    const consulenteQ = typeof req.query.consulente === "string" ? req.query.consulente.trim() : ""
+    const idConsultant = consulenteQ ? await resolveConsultantId(consulenteQ) : undefined
     let list: Abbonamento[] = []
     if (gestionaleSql.isGestionaleConfigured()) {
-      const rows = await gestionaleSql.queryAbbonamenti(undefined)
+      const rows = await gestionaleSql.queryAbbonamenti(idConsultant)
       list = rows.map((r) => rowToAbbonamento(r))
     } else {
       const { mockAbbonamenti } = await import("../data/mock-gestionale.js")
       list = [...mockAbbonamenti]
+      if (consulenteQ) {
+        const want = consulenteQ.toLowerCase()
+        list = list.filter((a) => (a.consulenteNome ?? "").trim().toLowerCase() === want)
+      }
     }
     markRinnovato(list)
     let attivi = filterAbbonamentiAttiviForKpi(list, date)
@@ -1274,6 +1280,7 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
 
     res.json({
       asOf: key,
+      consulente: consulenteQ || null,
       sogliaEtaAdulti: soglia,
       attiviConEta: conEta,
       totaleAttivi: totaleAttiviSegmentati,
@@ -1349,15 +1356,15 @@ type AttiviContattiLoaded = { rows: AttiviContatto[]; categorie: string[]; piani
 
 let attiviContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
 
-async function loadAttiviContatti(date: Date): Promise<AttiviContattiLoaded> {
+async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<AttiviContattiLoaded> {
   const p = toDateParts(date)
-  const key = `v3-${p.year}-${pad2(p.month)}-${pad2(p.day)}`
+  const key = `v3-${p.year}-${pad2(p.month)}-${pad2(p.day)}-${idConsultant ?? "all"}`
   const now = Date.now()
   if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 8_000) {
     return attiviContattiCacheSlot.data
   }
   if (!gestionaleSql.isGestionaleConfigured()) return { rows: [], categorie: [], piani: [] }
-  const rawRows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
+  const rawRows = await gestionaleSql.queryAbbonamenti(idConsultant, { leftJoinVenditore: true })
   const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
   markRinnovato(pairs.map((p) => p.a))
   const attivi = filterAbbonamentiAttiviForKpi(
@@ -1542,7 +1549,9 @@ function parseCategorieParam(raw: unknown): string[] {
 export async function getAbbonamentiAttiviContatti(req: Request, res: Response) {
   try {
     const { date, key } = parseAsOf(req)
-    const loaded = await loadAttiviContatti(date)
+    const consulenteQ = typeof req.query.consulente === "string" ? req.query.consulente.trim() : ""
+    const idConsultant = consulenteQ ? await resolveConsultantId(consulenteQ) : undefined
+    const loaded = await loadAttiviContatti(date, idConsultant)
     const all = [...loaded.rows].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
     const tipologie = Array.from(
       new Set(
@@ -1585,6 +1594,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       subject?: string
       text?: string
       confirm?: boolean
+      consulente?: string
     }
     if (!body.confirm) {
       return res.status(400).json({ message: "Conferma obbligatoria (confirm: true)" })
@@ -1621,7 +1631,9 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     const asOfRaw = String(body.asOf ?? "").trim()
     const fakeReq = { query: { asOf: asOfRaw } } as unknown as Request
     const { date } = parseAsOf(fakeReq)
-    const loaded = await loadAttiviContatti(date)
+    const consulenteQ = String(body.consulente ?? "").trim()
+    const idConsultant = consulenteQ ? await resolveConsultantId(consulenteQ) : undefined
+    const loaded = await loadAttiviContatti(date, idConsultant)
     const all = loaded.rows
     const categorie = parseCategorieParam(body.categorie)
     const piani = parseCategorieParam(body.piani)
@@ -2488,6 +2500,7 @@ export async function getReferralPresentati(req: Request, res: Response) {
         dataFineAbb: sqlScalarDateToIso(row.ReferralDataFine),
         importoPagato: Number(row.ReferralImportoPagato ?? row.ReferralImportoAbb ?? 0) || 0,
         totaleMese: Number(row.ReferralTotaleMese ?? 0) || 0,
+        origine: Number(row.ReferralHasInvito ?? 0) === 1 ? "invito" : "immediato",
       }
     })
     const totaleEuro = Math.round(items.reduce((s, x) => s + x.totaleMese, 0) * 100) / 100

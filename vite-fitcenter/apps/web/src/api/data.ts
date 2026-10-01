@@ -32,6 +32,8 @@ export type ReferralPresentatiItem = {
   importoPagato: number
   /** Somma importi pagati nel mese per quel cliente (solo abbonamenti utili). */
   totaleMese: number
+  /** invito = settimana prova 7 giorni convertita; immediato = iscrizione diretta (Presentato da). */
+  origine?: "invito" | "immediato"
 }
 
 export type ReferralPresentatiResponse = {
@@ -73,21 +75,26 @@ export const dataApi = {
     return api.get<DashboardStats>(url)
   },
   getClienti: () => api.get<Cliente[]>("/data/clienti"),
-  getAbbonamentiAttiviAnalisi: (asOf?: string) => {
-    const q = asOf ? `?asOf=${encodeURIComponent(asOf)}` : ""
-    return api.get<AbbAttiviAnalisiResponse>(`/data/abbonamenti-attivi-analisi${q}`)
+  getAbbonamentiAttiviAnalisi: (asOf?: string, consulente?: string) => {
+    const params = new URLSearchParams()
+    if (asOf) params.set("asOf", asOf)
+    if (consulente) params.set("consulente", consulente)
+    const q = params.toString()
+    return api.get<AbbAttiviAnalisiResponse>(`/data/abbonamenti-attivi-analisi${q ? `?${q}` : ""}`)
   },
   getAbbonamentiAttiviContatti: (opts?: {
     asOf?: string
     segmento?: "tutti" | "adulti" | "bambini"
     categorie?: string[]
     q?: string
+    consulente?: string
   }) => {
     const params = new URLSearchParams()
     if (opts?.asOf) params.set("asOf", opts.asOf)
     if (opts?.segmento && opts.segmento !== "tutti") params.set("segmento", opts.segmento)
     if (opts?.categorie?.length) params.set("categorie", opts.categorie.join(","))
     if (opts?.q?.trim()) params.set("q", opts.q.trim())
+    if (opts?.consulente) params.set("consulente", opts.consulente)
     const q = params.toString()
     return api.get<AbbAttiviContattiResponse>(`/data/abbonamenti-attivi-contatti${q ? `?${q}` : ""}`)
   },
@@ -101,6 +108,7 @@ export const dataApi = {
     subject?: string
     text: string
     confirm: true
+    consulente?: string
   }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
   getAbbonamentiAttiviInvii: (limit = 40) =>
     api.get<AbbAttiviInviiResponse>(`/data/abbonamenti-attivi-invii?limit=${limit}`),

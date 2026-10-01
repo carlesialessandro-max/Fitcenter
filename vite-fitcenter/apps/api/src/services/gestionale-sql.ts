@@ -1036,9 +1036,45 @@ function sqlReferralAbbDescrSelectDynamic(alias: string, cols: Set<string>): str
   return `CAST(N'' AS NVARCHAR(400))`
 }
 
+function firstOfPrevMonthIso(fromIso: string): string {
+  const y = Number(fromIso.slice(0, 4))
+  const m = Number(fromIso.slice(5, 7))
+  if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1) return fromIso
+  const d = new Date(Date.UTC(y, m - 2, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
+/** INVITO + SETTIMANA PROVA INGRESSI (abbonamento invito 7 giorni). */
+function sqlInvito7ggPred(alias: string, cols: Set<string>): string {
+  const chunks: string[] = []
+  const cat = pickAbbColumnActual(cols, "CategoriaAbbonamentoDescrizione")
+  if (cat) {
+    const c = `REPLACE(REPLACE(UPPER(LTRIM(RTRIM(ISNULL(${bracketSqlAliasColumn(alias, cat)}, N'')))), N' ', N''), N'_', N'')`
+    chunks.push(`${c} = N'INVITO'`)
+  }
+  const dur = pickAbbColumnActual(cols, "AbbonamentoDurataDescrizione")
+  if (dur) {
+    chunks.push(`UPPER(ISNULL(${bracketSqlAliasColumn(alias, dur)}, N'')) LIKE N'%SETTIMANA PROVA%'`)
+  }
+  if (chunks.length === 0) return "1 = 0"
+  return chunks.join(" AND ")
+}
+
+function sqlExistsInvito7gg(tblA: string, userIdExpr: string, abbCols: Set<string>): string {
+  const dateExpr = sqlReferralAbbSaleDateExpr("p", abbCols)
+  return `EXISTS (
+    SELECT 1 FROM [${tblA}] p
+    WHERE p.[IDUtente] = ${userIdExpr}
+      AND ${dateExpr} >= CAST(@prevFrom AS DATE)
+      AND ${dateExpr} < CAST(@to AS DATE)
+      AND ${sqlInvito7ggPred("p", abbCols)}
+  )`
+}
+
 /**
- * Referral “porta un amico”: presentatore valorizzato, abbonamento utile nel mese, importo pagato > 0.
- * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore (come queryAbbonamenti).
+ * Referral: invito 7 giorni (anche mese precedente) che diventa abbonamento pagato nel mese,
+ * oppure iscrizione immediata (Presentato da recente, non rinnovo).
+ * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore.
  */
 function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
   const parts: string[] = []
@@ -1074,9 +1110,26 @@ export async function queryReferralPresentati(
   const presDateSql = presDateActual ? bracketSqlAliasColumn("u", presDateActual) : null
   const refDataPresSelect =
     presDateSql != null ? `CAST(${presDateSql} AS DATE) AS ReferralDataPresentazione` : `CAST(NULL AS DATE) AS ReferralDataPresentazione`
+  const prevFrom = firstOfPrevMonthIso(fromIso)
+  const existsInvito = sqlExistsInvito7gg(tblA, "u.[IDUtente]", abbCols)
+  const macroCol = pickAbbColumnActual(abbCols, "MacroCategoriaAbbonamentoDescrizione")
+  const macroSel = macroCol
+    ? `CAST(${bracketSqlAliasColumn("x", macroCol)} AS NVARCHAR(200))`
+    : `CAST(NULL AS NVARCHAR(200))`
+  const notRinnovi = `UPPER(ISNULL(a.[ReferralMacro], N'')) NOT LIKE N'%RINNOVI%'`
+  const presRecent =
+    presDateSql != null
+      ? `(${presDateSql} IS NULL OR (CAST(${presDateSql} AS DATE) >= CAST(@prevFrom AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE)))`
+      : `1 = 1`
+  const pathImmediato = `(u.[${colPres}] IS NOT NULL AND ${notRinnovi} AND ${presRecent})`
+  const qualifyReferral = `(${existsInvito} OR ${pathImmediato})`
 
   const mkReq = () => {
-    let req = p.request().input("from", sql.VarChar(10), fromIso).input("to", sql.VarChar(10), toIso)
+    let req = p
+      .request()
+      .input("from", sql.VarChar(10), fromIso)
+      .input("to", sql.VarChar(10), toIso)
+      .input("prevFrom", sql.VarChar(10), prevFrom)
     if (!noVendorFilter) {
       ids.forEach((id, i) => {
         req = req.input(`r${i}`, sql.Int, id)
@@ -1121,6 +1174,8 @@ SELECT
   a.[DataFine] AS ReferralDataFine,
   a.[PagatoEff] AS ReferralImportoPagato,
   a.[AbbDescrCombined] AS ReferralAbbDescrizione,
+  a.[ReferralMacro] AS ReferralMacro,
+  CASE WHEN ${existsInvito} THEN 1 ELSE 0 END AS ReferralHasInvito,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
@@ -1135,12 +1190,13 @@ CROSS APPLY (
     x.[DataInizio],
     x.[DataFine],
     ${pag("x")} AS PagatoEff,
-    (${abbDescrSel}) AS AbbDescrCombined
+    (${abbDescrSel}) AS AbbDescrCombined,
+    ${macroSel} AS ReferralMacro
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, ${sqlReferralAbbSaleDateExpr("x", abbCols)} DESC
 ) a
-WHERE u.[${colPres}] IS NOT NULL
+WHERE ${qualifyReferral}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const sqlMinimal = (vendCol: string | null, excludeSql: string) => `
@@ -1160,6 +1216,8 @@ SELECT
   a.[DataFine] AS ReferralDataFine,
   a.[PagatoEff] AS ReferralImportoPagato,
   a.[AbbDescrCombined] AS ReferralAbbDescrizione,
+  a.[ReferralMacro] AS ReferralMacro,
+  CASE WHEN ${existsInvito} THEN 1 ELSE 0 END AS ReferralHasInvito,
   t.TotaleMese AS ReferralTotaleMese
 FROM [${tblU}] u
 LEFT JOIN [${tblU}] pres ON pres.[IDUtente] = u.[${colPres}]
@@ -1174,12 +1232,13 @@ CROSS APPLY (
     x.[DataInizio],
     x.[DataFine],
     ${pag("x")} AS PagatoEff,
-    (${abbDescrSel}) AS AbbDescrCombined
+    (${abbDescrSel}) AS AbbDescrCombined,
+    ${macroSel} AS ReferralMacro
   FROM [${tblA}] x
   WHERE ${abbMonthWhere("x", vendCol, excludeSql)}
   ORDER BY ${pag("x")} DESC, ${sqlReferralAbbSaleDateExpr("x", abbCols)} DESC
 ) a
-WHERE u.[${colPres}] IS NOT NULL
+WHERE ${qualifyReferral}
 ORDER BY u.[Cognome], u.[Nome]`
 
   const variants: { sql: (v: string | null, ex: string) => string; exclude: string }[] = [

@@ -94,6 +94,7 @@ export interface AbbAttiviSegmentoAnalisi {
 /** Risposta GET /data/abbonamenti-attivi-analisi (admin) */
 export interface AbbAttiviAnalisiResponse {
   asOf: string
+  consulente?: string | null
   /** Anni: sotto questa età = segmento bambini (se clienteEta valorizzata) */
   sogliaEtaAdulti: number
   /** Quanti attivi hanno età dal gestionale */

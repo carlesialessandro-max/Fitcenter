@@ -174,10 +174,19 @@ export function AttiviAnalisi() {
   const [logOpen, setLogOpen] = useState(false)
   const asOfParam = searchParams.get("asOf")?.trim()
   const asOf = asOfParam && /^\d{4}-\d{2}-\d{2}$/.test(asOfParam) ? asOfParam : localIsoDate()
+  const [consulente, setConsulente] = useState("")
+
+  const { data: budgetData } = useQuery({
+    queryKey: ["budget"],
+    queryFn: () => dataApi.getBudget(),
+    enabled: role === "admin",
+  })
+  const consulentiAdulti =
+    budgetData?.consulenti?.length ? budgetData.consulenti : ["Carmen Severino", "Ombretta Zenoni", "Serena Del Prete"]
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["abbonamenti-attivi-analisi", asOf],
-    queryFn: () => dataApi.getAbbonamentiAttiviAnalisi(asOf),
+    queryKey: ["abbonamenti-attivi-analisi", asOf, consulente],
+    queryFn: () => dataApi.getAbbonamentiAttiviAnalisi(asOf, consulente || undefined),
     enabled: role === "admin",
     retry: false,
   })
@@ -253,7 +262,7 @@ export function AttiviAnalisi() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <AttiviInviaMessaggio asOf={asOf} />
+          <AttiviInviaMessaggio asOf={asOf} consulente={consulente || undefined} />
           <button
             type="button"
             onClick={() => setLogOpen((v) => !v)}
@@ -265,6 +274,21 @@ export function AttiviAnalisi() {
           >
             {logOpen ? "Chiudi log invii" : "Log invii"}
           </button>
+          <label className="flex items-center gap-2 text-sm text-zinc-400">
+            Consulente adulti
+            <select
+              value={consulente}
+              onChange={(e) => setConsulente(e.target.value)}
+              className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-zinc-100"
+            >
+              <option value="">Tutte</option>
+              {consulentiAdulti.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="flex items-center gap-2 text-sm text-zinc-400">
             Data riferimento
             <input

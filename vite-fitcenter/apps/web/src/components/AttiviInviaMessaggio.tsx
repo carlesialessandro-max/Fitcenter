@@ -8,6 +8,7 @@ type Channel = "email" | "sms"
 
 type Props = {
   asOf: string
+  consulente?: string
 }
 
 type Leaf = {
@@ -63,7 +64,7 @@ function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
   return false
 }
 
-export function AttiviInviaMessaggio({ asOf }: Props) {
+export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [segmento, setSegmento] = useState<SegmentoFiltro>("tutti")
@@ -78,8 +79,8 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
   const [resultMsg, setResultMsg] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["abbonamenti-attivi-contatti", asOf],
-    queryFn: () => dataApi.getAbbonamentiAttiviContatti({ asOf }),
+    queryKey: ["abbonamenti-attivi-contatti", asOf, consulente ?? ""],
+    queryFn: () => dataApi.getAbbonamentiAttiviContatti({ asOf, consulente }),
     enabled: open,
     staleTime: 60_000,
   })
@@ -173,6 +174,7 @@ export function AttiviInviaMessaggio({ asOf }: Props) {
     mutationFn: () =>
       dataApi.postAbbonamentiAttiviInvia({
         asOf,
+        consulente: consulente || undefined,
         segmento,
         piani: pianoSel ? [pianoSel] : undefined,
         clienteIds: Array.from(selected),
