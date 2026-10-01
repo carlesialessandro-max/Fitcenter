@@ -258,7 +258,7 @@ export function AttiviAnalisi() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Abbonamenti attivi — ripartizione</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Solo KPI attivi: abbonamento valido alla data scelta, esclusi tesseramenti e staff. Nella ripartizione adulti/bambini, per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
+            Solo KPI attivi: abbonamento valido alla data scelta, esclusi tesseramenti e staff. Adulti / bambini dal tipo di abbonamento, non dall&apos;età: scuola nuoto e corsi bambini nel segmento bambini; GYM, SMILE, OPEN restano adulti anche se il cliente è minorenne. Per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -381,20 +381,12 @@ export function AttiviAnalisi() {
           </div>
 
           <p className="mt-4 rounded-lg border border-zinc-800/80 bg-zinc-900/30 p-3 text-xs text-zinc-500">
-            <span className="font-medium text-zinc-400">
-              Età: {data.attiviConEta}/{data.totaleAttivi} attivi con dato — soglia {data.sogliaEtaAdulti} anni.{" "}
-            </span>
             {data.notaClassificazione}
           </p>
 
           {pieData.length > 0 && (
             <section className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
-              <h2 className="text-lg font-semibold text-zinc-100">
-                Adulti vs bambini
-                {data.attiviConEta < data.totaleAttivi && data.totaleAttivi > 0 && (
-                  <span className="ml-2 text-xs font-normal text-zinc-500">(età parziale: vedi nota)</span>
-                )}
-              </h2>
+              <h2 className="text-lg font-semibold text-zinc-100">Adulti vs bambini</h2>
               <div className="mt-4 h-[280px] w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -525,7 +517,7 @@ export function AttiviAnalisi() {
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Adulti — categorie</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Clicca una riga per le sottocategorie (piano raggruppato: GYM, SMILE H2O, SMILE FIT). Rossi / Verdi = fascia oraria dell&apos;abbonamento, non l&apos;età. Bambini = età sotto soglia ({data.sogliaEtaAdulti} anni). R / V / A = rossi, verdi, altro.
+                Clicca una riga per le sottocategorie (piano raggruppato: GYM, SMILE H2O, SMILE FIT). Rossi / Verdi = fascia oraria dell&apos;abbonamento, non l&apos;età. Bambini = scuola nuoto e corsi bambini. R / V / A = rossi, verdi, altro.
               </p>
               {data.adulti.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.adulti.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable
@@ -539,7 +531,7 @@ export function AttiviAnalisi() {
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Bambini — categorie</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Stessa logica: espandi per sottocategoria. Rossi / Verdi qui indica il tipo di abbonamento (orario libero / ridotto), non che il bambino abbia un&apos;età diversa da chi è in SCUOLA NUOTO o AGONISMO.
+                Stessa logica: espandi per sottocategoria. Rossi / Verdi = fascia oraria (orario libero / ridotto), non l&apos;età. Qui trovi scuola nuoto, acquaticità e agonismo giovanile.
               </p>
               {data.bambini.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.bambini.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable

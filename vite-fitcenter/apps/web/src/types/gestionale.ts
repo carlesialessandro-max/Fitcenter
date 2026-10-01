@@ -95,9 +95,9 @@ export interface AbbAttiviSegmentoAnalisi {
 export interface AbbAttiviAnalisiResponse {
   asOf: string
   consulente?: string | null
-  /** Anni: sotto questa età = segmento bambini (se clienteEta valorizzata) */
+  /** Non più usata: la ripartizione è sul tipo di abbonamento, non sull’età. */
   sogliaEtaAdulti: number
-  /** Quanti attivi hanno età dal gestionale */
+  /** Non più usata: la ripartizione è sul tipo di abbonamento, non sull’età. */
   attiviConEta: number
   totaleAttivi: number
   /** Somma durate inferite (mesi) adulti + bambini (con dedupe bambini). */

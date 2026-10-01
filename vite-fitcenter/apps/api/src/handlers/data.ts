@@ -290,17 +290,27 @@ function bucketDurataLabel(m: number | null): string {
   return "Oltre 12 mesi"
 }
 
-/**
- * Stima «bambini» da testi gestionale (macro, categoria, piano).
- * Non c’è data di nascita nel payload abbonamento lato API.
- */
-function isAbbonamentoBambiniEuristico(a: Abbonamento): boolean {
-  const text = `${a.macroCategoriaDescrizione ?? ""} ${a.categoriaAbbonamentoDescrizione ?? ""} ${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`
+function attiviClassificazioneBlob(a: Abbonamento): string {
+  return `${a.macroCategoriaDescrizione ?? ""} ${a.categoriaAbbonamentoDescrizione ?? ""} ${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
+}
+
+/**
+ * Adulti vs bambini dal tipo di abbonamento, non dall’età.
+ * Scuola nuoto / acquaticità / corsi bambini = bambini; GYM, SMILE, OPEN, ecc. restano adulti anche se il cliente è minorenne.
+ */
+function isAbbonamentoBambini(a: Abbonamento): boolean {
+  const text = attiviClassificazioneBlob(a)
+  if (/\bNUOTO ADULTI\b/.test(text)) return false
+  if (/\bAGONISMO\b/.test(text) && /\b(MASTER|SENIOR)\b/.test(text)) return false
   return (
+    /SCUOLA\s*NUOTO/.test(text) ||
+    /ACQUATICIT/.test(text) ||
     /\bBAMBIN[IO]\b/.test(text) ||
+    /\bBIMB[IO]\b/.test(text) ||
+    /\bKIDS\b/.test(text) ||
     /\bMINI\b/.test(text) ||
     /GIOVANISSIM/.test(text) ||
     /ESORDIEN/.test(text) ||
@@ -310,21 +320,8 @@ function isAbbonamentoBambiniEuristico(a: Abbonamento): boolean {
     /\bU(6|8|10|12|14)\b/.test(text) ||
     /PICCOLI/.test(text) ||
     /TEATRO/.test(text) ||
-    (/\bAGONISMO\b/.test(text) && !/\bSENIOR\b/.test(text))
+    (/\bAGONISMO\b/.test(text) && !/\b(MASTER|SENIOR)\b/.test(text))
   )
-}
-
-/** Soglia anni: sotto = segmento «bambini» nei grafici attivi. Env ATTIVI_SOGLIA_ETA_ADULTI (default 18). */
-function getSogliaEtaAdultiAnno(): number {
-  const n = Number(process.env.ATTIVI_SOGLIA_ETA_ADULTI ?? 18)
-  return Number.isFinite(n) && n > 0 && n <= 30 ? Math.floor(n) : 18
-}
-
-/** Preferisce età dal gestionale (clienteEta); se assente, stima da testi abbonamento. */
-function isAbbonamentoBambini(a: Abbonamento): boolean {
-  const eta = a.clienteEta
-  if (eta != null && eta >= 0 && eta <= 120) return eta < getSogliaEtaAdultiAnno()
-  return isAbbonamentoBambiniEuristico(a)
 }
 
 /** Se consulente (nome) è passato, risolve ID venditore (da DB o fallback env). */
@@ -1177,8 +1174,6 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     markRinnovato(list)
     let attivi = filterAbbonamentiAttiviForKpi(list, date)
 
-    const soglia = getSogliaEtaAdultiAnno()
-
     // Dedupe bambini: lo stesso cliente iscritto a più corsi va contato una sola volta.
     // Regola scelta: tiene la durata inferita più alta (se esiste un valore).
     const dedupBambiniByClienteId = (rows: Abbonamento[]): Abbonamento[] => {
@@ -1260,7 +1255,6 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a))
     const bambini = dedupBambiniByClienteId(bambiniRaw)
     const attiviSegmentati = [...adulti, ...bambini]
-    const conEta = attiviSegmentati.filter((a) => a.clienteEta != null).length
 
     const durataMesiForTotal = (a: Abbonamento) => inferDurataMesiAbb(a) ?? 0
     const sumDurataMesi = (rows: Abbonamento[]) => rows.reduce((s, a) => s + durataMesiForTotal(a), 0)
@@ -1272,17 +1266,13 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     const notaClassificazione =
       totaleAttiviSegmentati === 0
         ? "Nessun abbonamento attivo nel periodo."
-        : conEta === totaleAttiviSegmentati
-          ? `Adulti / bambini: età dal gestionale (colonna Eta / join utenti). Minori di ${soglia} anni = bambini. Fasce durata: DurataMesi o parole chiave nel nome abbonamento.`
-          : conEta > 0
-            ? `Adulti / bambini: dove c’è l’età (${conEta} su ${totaleAttiviSegmentati} attivi) si usa il gestionale (< ${soglia} anni = bambini); per gli altri resta la stima da macro/categorie. Durata: campi DurataMesi/Durata o testo (annuale, mensile, …).`
-            : `Nessuna età nelle righe: classificazione adulti/bambini solo da testi (macro, categoria, piano). Se l'età è nella view abbonamenti (a.*), verifica il nome colonna nel mapping. Se è solo su Utenti, imposta in .env GESTIONALE_UTENTI_COL_ETA=<nome_esatto_colonna>. Soglia anni: ATTIVI_SOGLIA_ETA_ADULTI=${soglia}. Esclusi tesseramenti e abbonamenti staff. Validità: data inizio–fine comprende oggi (o la data scelta).`
+        : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo giovanile e altri corsi bambini. Abbonamenti adulti (GYM, SMILE, OPEN, …) restano adulti anche se il cliente è minorenne. Esclusi tesseramenti e staff. Validità: data inizio–fine comprende la data di riferimento."
 
     res.json({
       asOf: key,
       consulente: consulenteQ || null,
-      sogliaEtaAdulti: soglia,
-      attiviConEta: conEta,
+      sogliaEtaAdulti: 0,
+      attiviConEta: 0,
       totaleAttivi: totaleAttiviSegmentati,
       totaleDurataMesi,
       adulti: {
