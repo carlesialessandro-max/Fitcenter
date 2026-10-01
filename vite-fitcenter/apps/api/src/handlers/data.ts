@@ -247,6 +247,12 @@ function isAbbonamentoStaff(a: Abbonamento): boolean {
   return blob.includes("ABBONAMENTI STAFF") || /\bSTAFF\b/.test(blob)
 }
 
+/** Pacchetti personal trainer: non sono abbonamenti palestra/piscina, esclusi dal KPI attivi. */
+function isAbbonamentoPersonalTrainer(a: Abbonamento): boolean {
+  const blob = attiviAbbBlob(a)
+  return blob.includes("PERSONAL TRAINER") || blob.includes("PERSONAL TRAINING")
+}
+
 function abbonamentoGiornoKey(raw: string | undefined): string | null {
   const s = String(raw ?? "").trim()
   const iso = s.slice(0, 10)
@@ -256,12 +262,12 @@ function abbonamentoGiornoKey(raw: string | undefined): string | null {
   return `${it[3]}-${String(Number(it[2])).padStart(2, "0")}-${String(Number(it[1])).padStart(2, "0")}`
 }
 
-/** Abbonamenti attivi: validi alla data di riferimento (calendario, senza timezone), senza tesseramenti né staff. */
+/** Abbonamenti attivi: validi alla data di riferimento (calendario, senza timezone), senza tesseramenti, staff né personal trainer. */
 function filterAbbonamentiAttiviForKpi(abbonamenti: Abbonamento[], referenceDate: Date): Abbonamento[] {
   const oggi = toDateParts(referenceDate)
   const asOfKey = `${oggi.year}-${pad2(oggi.month)}-${pad2(oggi.day)}`
   return abbonamenti.filter((a) => {
-    if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a)) return false
+    if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a)) return false
     const ini = abbonamentoGiornoKey(a.dataInizio)
     const fine = abbonamentoGiornoKey(a.dataFine)
     if (!ini || !fine) return false
@@ -304,9 +310,11 @@ function attiviClassificazioneBlob(a: Abbonamento): string {
 function isAbbonamentoBambini(a: Abbonamento): boolean {
   const text = attiviClassificazioneBlob(a)
   if (/\bNUOTO ADULTI\b/.test(text)) return false
+  // Agonismo master/senior = nuoto adulti, non scuola nuoto.
   if (/\bAGONISMO\b/.test(text) && /\b(MASTER|SENIOR)\b/.test(text)) return false
   return (
     /SCUOLA\s*NUOTO/.test(text) ||
+    /AGONISMO\s*CATEGORIE/.test(text) ||
     /ACQUATICIT/.test(text) ||
     /\bBAMBIN[IO]\b/.test(text) ||
     /\bBIMB[IO]\b/.test(text) ||
@@ -1252,8 +1260,9 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a))
     // Regole business applicate in modo unico a TUTTI i blocchi (card/grafici/liste),
     // così i totali tornano sempre con la somma per categoria.
-    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a))
-    const bambini = dedupBambiniByClienteId(bambiniRaw)
+    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a) && !isAbbonamentoPersonalTrainer(a))
+    // Filtro consulente adulti: solo abbonamenti adulti (scuola nuoto / agonismo categorie restano fuori).
+    const bambini = consulenteQ ? [] : dedupBambiniByClienteId(bambiniRaw)
     const attiviSegmentati = [...adulti, ...bambini]
 
     const durataMesiForTotal = (a: Abbonamento) => inferDurataMesiAbb(a) ?? 0
@@ -1266,7 +1275,9 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     const notaClassificazione =
       totaleAttiviSegmentati === 0
         ? "Nessun abbonamento attivo nel periodo."
-        : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo giovanile e altri corsi bambini. Abbonamenti adulti (GYM, SMILE, OPEN, …) restano adulti anche se il cliente è minorenne. Esclusi tesseramenti e staff. Validità: data inizio–fine comprende la data di riferimento."
+        : consulenteQ
+          ? "Filtro consulente adulti: solo abbonamenti adulti. Scuola nuoto, agonismo categorie e altri corsi bambini non contano. Esclusi tesseramenti, staff e personal trainer."
+          : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo categorie e altri corsi bambini. Agonismo master resta adulti. Esclusi tesseramenti, staff e personal trainer. Validità: data inizio–fine comprende la data di riferimento."
 
     res.json({
       asOf: key,
@@ -1348,7 +1359,7 @@ let attiviContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoad
 
 async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<AttiviContattiLoaded> {
   const p = toDateParts(date)
-  const key = `v3-${p.year}-${pad2(p.month)}-${pad2(p.day)}-${idConsultant ?? "all"}`
+  const key = `v4-${p.year}-${pad2(p.month)}-${pad2(p.day)}-${idConsultant ?? "all"}`
   const now = Date.now()
   if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 8_000) {
     return attiviContattiCacheSlot.data
@@ -1386,8 +1397,8 @@ async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<At
 
   const adultiRaw = attiviPairs.filter((p) => !isAbbonamentoBambini(p.a))
   const bambiniRaw = attiviPairs.filter((p) => isAbbonamentoBambini(p.a))
-  const adulti = adultiRaw.filter((p) => !isAdultiCategoriaEsclusa(p.a))
-  const bambiniMerged = [...bambiniRaw]
+  const adulti = adultiRaw.filter((p) => !isAdultiCategoriaEsclusa(p.a) && !isAbbonamentoPersonalTrainer(p.a))
+  const bambiniMerged = idConsultant ? [] : [...bambiniRaw]
 
   const toContact = (p: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
     const c = pickEmailTelFromAbbRow(p.row)

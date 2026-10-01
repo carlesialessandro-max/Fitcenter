@@ -258,7 +258,7 @@ export function AttiviAnalisi() {
           </div>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Abbonamenti attivi — ripartizione</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Solo KPI attivi: abbonamento valido alla data scelta, esclusi tesseramenti e staff. Adulti / bambini dal tipo di abbonamento, non dall&apos;età: scuola nuoto e corsi bambini nel segmento bambini; GYM, SMILE, OPEN restano adulti anche se il cliente è minorenne. Per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
+            Solo KPI attivi: abbonamento valido alla data scelta, esclusi tesseramenti, staff e personal trainer. Adulti / bambini dal tipo di abbonamento, non dall&apos;età: scuola nuoto e agonismo categorie nel segmento bambini. Con una consulente adulti selezionata si vedono solo gli abbonamenti adulti. Per i bambini sono esclusi `DANZA` e `CAMPUS`. Bambini deduplicati per cliente (stesso bambino su più corsi contato una volta).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
