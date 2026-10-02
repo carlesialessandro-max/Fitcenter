@@ -1112,8 +1112,8 @@ function sqlExistsInvito7gg(tblA: string, userIdExpr: string, abbCols: Set<strin
 }
 
 /**
- * Referral: invito 7 giorni (anche mesi prima) che diventa abbonamento pagato nel mese,
- * oppure chi ha «Presentato da» e si attiva nel mese (non un rinnovo).
+ * Referral: invito 7 giorni (max 3 mesi prima) che diventa abbonamento con inizio nel mese,
+ * oppure «Presentato da» negli ultimi 3 mesi (non un rinnovo, non danza).
  * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore.
  */
 function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
@@ -1123,6 +1123,17 @@ function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
     if (ac) parts.push(`CAST(${bracketSqlAliasColumn(alias, ac)} AS DATE)`)
   }
   if (parts.length === 0) return `CAST(NULL AS DATE)`
+  return parts.length === 1 ? parts[0]! : `COALESCE(${parts.join(", ")})`
+}
+
+/** Periodo referral = data inizio abbonamento (ottobre non entra in settembre). */
+function sqlReferralAbbInizioExpr(alias: string, cols: Set<string>): string {
+  const parts: string[] = []
+  for (const logical of ["DataInizio", "DataOperazione"] as const) {
+    const ac = pickAbbColumnActual(cols, logical)
+    if (ac) parts.push(`CAST(${bracketSqlAliasColumn(alias, ac)} AS DATE)`)
+  }
+  if (parts.length === 0) return sqlReferralAbbSaleDateExpr(alias, cols)
   return parts.length === 1 ? parts[0]! : `COALESCE(${parts.join(", ")})`
 }
 
@@ -1150,7 +1161,7 @@ export async function queryReferralPresentati(
   const presDateSql = presDateActual ? bracketSqlAliasColumn("u", presDateActual) : null
   const refDataPresSelect =
     presDateSql != null ? `CAST(${presDateSql} AS DATE) AS ReferralDataPresentazione` : `CAST(NULL AS DATE) AS ReferralDataPresentazione`
-  const prevFrom = firstOfMonthsAgoIso(fromIso, 6)
+  const prevFrom = firstOfMonthsAgoIso(fromIso, 3)
   const existsInvito = sqlExistsInvito7gg(tblA, "u.[IDUtente]", abbCols)
   const macroCol = pickAbbColumnActual(abbCols, "MacroCategoriaAbbonamentoDescrizione")
   const macroSel = macroCol
@@ -1159,7 +1170,7 @@ export async function queryReferralPresentati(
   const notRinnovi = `UPPER(ISNULL(a.[ReferralMacro], N'')) NOT LIKE N'%RINNOVI%'`
   const presOk =
     presDateSql != null
-      ? `(${presDateSql} IS NULL OR CAST(${presDateSql} AS DATE) < CAST(@to AS DATE))`
+      ? `(${presDateSql} IS NOT NULL AND CAST(${presDateSql} AS DATE) >= CAST(@prevFrom AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE))`
       : `1 = 1`
   const pathImmediato = `(u.[${colPres}] IS NOT NULL AND ${notRinnovi} AND ${presOk})`
   const qualifyReferral = `(${existsInvito} OR ${pathImmediato})`
@@ -1186,10 +1197,10 @@ export async function queryReferralPresentati(
     const x = alias
     const vendLine =
       vendCol != null && !noVendorFilter ? `${x}.[${vendCol}] IN (${params}) AND ` : ""
-    const saleDate = sqlReferralAbbSaleDateExpr(x, abbCols)
-    // Periodo = data vendita/registrazione (DataOperazione), non DataInizio abbonamento.
-    const abbInPeriod = `${saleDate} >= CAST(@from AS DATE)
-    AND ${saleDate} < CAST(@to AS DATE)
+    const startDate = sqlReferralAbbInizioExpr(x, abbCols)
+    // Periodo = DataInizio abbonamento (un OPEN di ottobre non entra in settembre).
+    const abbInPeriod = `${startDate} >= CAST(@from AS DATE)
+    AND ${startDate} < CAST(@to AS DATE)
     AND `
     return `
     ${x}.[IDUtente] = u.[IDUtente]

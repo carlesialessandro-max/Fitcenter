@@ -32,7 +32,7 @@ export type ReferralPresentatiItem = {
   importoPagato: number
   /** Somma importi pagati nel mese per quel cliente (solo abbonamenti utili). */
   totaleMese: number
-  /** invito = settimana prova 7 giorni convertita; immediato = Presentato da e attivazione nel mese. */
+  /** invito = settimana prova 7 giorni convertita; immediato = Presentato da negli ultimi 3 mesi. */
   origine?: "invito" | "immediato"
 }
 
