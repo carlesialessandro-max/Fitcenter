@@ -2534,7 +2534,12 @@ export async function getReferralPresentati(req: Request, res: Response) {
 
     const { fromIso, toIsoExclusive, year, month, rangeToInclusive } = rangeEarly
     const rows = await gestionaleSql.queryReferralPresentati(venditoreIdsResolved, fromIso, toIsoExclusive)
-    const items = rows.map((row) => {
+    const items = rows
+      .filter((row) => {
+        const blob = `${row.ReferralAbbDescrizione ?? ""} ${row.ReferralMacro ?? ""}`.toUpperCase()
+        return !blob.includes("DANZA")
+      })
+      .map((row) => {
       const pc = String(row.SocioPresentatoreCognome ?? "").trim()
       const pn = String(row.SocioPresentatoreNome ?? "").trim()
       const pid =

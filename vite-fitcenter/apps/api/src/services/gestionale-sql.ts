@@ -971,10 +971,50 @@ function referralAbbDescPredActual(cols: Set<string>): string | null {
   )
 }
 
+function sqlReferralExcludeDanza(alias: string, cols: Set<string>): string[] {
+  const chunks: string[] = []
+  const seen = new Set<string>()
+  const textCols = [
+    "MacroCategoriaAbbonamentoDescrizione",
+    "MacroCategoriaDescrizione",
+    "CategoriaAbbonamentoDescrizione",
+    "CategoriaDescrizione",
+    "AbbonamentoDescrizione",
+    "DescrizioneAbbonamento",
+    "Descrizione",
+    "AbbonamentoDurataDescrizione",
+  ]
+  for (const logical of textCols) {
+    const ac = pickAbbColumnActual(cols, logical)
+    if (!ac || seen.has(ac)) continue
+    seen.add(ac)
+    const p = `UPPER(ISNULL(CAST(${bracketSqlAliasColumn(alias, ac)} AS NVARCHAR(400)), N''))`
+    chunks.push(`${p} NOT LIKE N'%DANZA%'`)
+  }
+  const opCols = [
+    "NomeOperatoreAbbonamento",
+    "NomeOperatore",
+    "OperatoreNome",
+    "NomeOperatoreIscrizione",
+    "AbbonamentiNomeOperatore",
+    "Operatore",
+  ]
+  for (const logical of opCols) {
+    const ac = pickAbbColumnActual(cols, logical)
+    if (!ac || seen.has(ac)) continue
+    seen.add(ac)
+    const p = `UPPER(ISNULL(CAST(${bracketSqlAliasColumn(alias, ac)} AS NVARCHAR(400)), N''))`
+    chunks.push(`${p} NOT LIKE N'%ARTE DANZA%'`)
+    chunks.push(`${p} NOT LIKE N'%CENTRO ARTE%'`)
+    break
+  }
+  return chunks
+}
+
 /** Esclusioni «full»: solo predicati sulle colonne che esistono (allineato a referral-debug-mese.sql). */
 function sqlReferralExcludeFullDynamic(alias: string, cols: Set<string>): string {
   const x = alias
-  const chunks: string[] = ["1 = 1"]
+  const chunks: string[] = ["1 = 1", ...sqlReferralExcludeDanza(x, cols)]
   const cat = pickAbbColumnActual(cols, "IDCategoria")
   if (cat) chunks.push(`ISNULL(${bracketSqlAliasColumn(x, cat)}, 0) <> 19`)
   const dur = pickAbbColumnActual(cols, "AbbonamentoDurataDescrizione")
@@ -1007,7 +1047,7 @@ function sqlReferralExcludeFullDynamic(alias: string, cols: Set<string>): string
 /** Esclusioni ridotte (IDCategoria + descrizione piano se c’è). */
 function sqlReferralExcludeMinDynamic(alias: string, cols: Set<string>): string {
   const x = alias
-  const chunks: string[] = ["1 = 1"]
+  const chunks: string[] = ["1 = 1", ...sqlReferralExcludeDanza(x, cols)]
   const cat = pickAbbColumnActual(cols, "IDCategoria")
   if (cat) chunks.push(`ISNULL(${bracketSqlAliasColumn(x, cat)}, 0) <> 19`)
   const pred = referralAbbDescPredActual(cols)
