@@ -6,37 +6,62 @@ import { getDataDir } from "../store/persist.js"
 
 export type MysqlRow = Record<string, string | null>
 
+function parseCreateColumns(sql: string, table: string): string[] {
+  const needle = `CREATE TABLE \`${table}\``
+  const idx = sql.indexOf(needle)
+  if (idx < 0) return []
+  const chunk = sql.slice(idx, idx + 12000)
+  const end = chunk.search(/\)\s*ENGINE=/i)
+  const body = end > 0 ? chunk.slice(0, end) : chunk
+  const cols: string[] = []
+  const re = /^\s*`([^`]+)`\s+/gm
+  let m: RegExpExecArray | null
+  while ((m = re.exec(body))) cols.push(m[1]!)
+  return cols
+}
+
+function skipWs(sql: string, i: number): number {
+  while (i < sql.length && /\s/.test(sql[i]!)) i++
+  return i
+}
+
 function findAllInsertBlocks(sql: string, table: string): { columns: string[]; valuesSql: string }[] {
   const out: { columns: string[]; valuesSql: string }[] = []
+  const createCols = parseCreateColumns(sql, table)
   const needle = `INSERT INTO \`${table}\``
   let from = 0
   while (from < sql.length) {
     const idx = sql.indexOf(needle, from)
     if (idx < 0) break
-    const rest = sql.slice(idx + needle.length)
-    const paren = rest.indexOf("(")
-    const close = rest.indexOf(")")
-    if (paren < 0 || close < 0 || close < paren) break
-    const columns = rest
-      .slice(paren + 1, close)
-      .split(",")
-      .map((c) => c.replace(/[`\s]/g, ""))
-      .filter(Boolean)
-    const valuesKw = rest.slice(close + 1).search(/VALUES/i)
-    if (valuesKw < 0) break
-    let i = close + 1 + valuesKw + 6
-    while (i < rest.length && /\s/.test(rest[i]!)) i++
+    let i = skipWs(sql, idx + needle.length)
+    let columns = createCols
+    if (sql[i] === "(") {
+      const close = sql.indexOf(")", i)
+      if (close < 0) break
+      const listed = sql
+        .slice(i + 1, close)
+        .split(",")
+        .map((c) => c.replace(/[`\s]/g, ""))
+        .filter(Boolean)
+      if (listed.length) columns = listed
+      i = skipWs(sql, close + 1)
+    }
+    if (sql.slice(i, i + 6).toUpperCase() !== "VALUES") {
+      from = idx + needle.length
+      continue
+    }
+    i = skipWs(sql, i + 6)
     const start = i
     let inStr = false
-    let end = rest.length
-    for (; i < rest.length; i++) {
-      const ch = rest[i]!
+    let end = sql.length
+    for (; i < sql.length; i++) {
+      const ch = sql[i]!
       if (inStr) {
-        if (ch === "\\" && rest[i + 1] === "'") {
+        if (ch === "\\" && sql[i + 1] === "'") {
           i++
           continue
         }
-        if (ch === "'" && rest[i + 1] === "'") {
+        if (ch === "'" && sql[i + 1] === "'") {
           i++
           continue
         }
@@ -49,8 +74,8 @@ function findAllInsertBlocks(sql: string, table: string): { columns: string[]; v
         break
       }
     }
-    out.push({ columns, valuesSql: rest.slice(start, end) })
-    from = idx + needle.length + end + 1
+    if (columns.length) out.push({ columns, valuesSql: sql.slice(start, end) })
+    from = end + 1
   }
   return out
 }
