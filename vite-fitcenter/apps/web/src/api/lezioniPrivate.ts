@@ -41,6 +41,8 @@ export type LpLezioneFlat = {
 }
 export type LpRegole = Record<string, { v25: number; ludica: number }>
 
+export type LpSlot = { giorno: string; ora: string; vasca: VascaId; corsia: number }
+
 export type LpAbbCheckEsito = "ok" | "incongruente" | "mancante" | "non_anagrafato" | "prova_senza_abb"
 
 export type LpAbbCheckRow = {

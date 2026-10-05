@@ -518,7 +518,7 @@ function RichiesteTab({
                     ) : null}
                     {r.status === "assegnata" ? (
                       <button type="button" className="text-sm text-amber-300 underline" onClick={() => setPackId(r.id)}>
-                        Pacchetto 5/10
+                        Aggiungi lezione / pacchetto
                       </button>
                     ) : null}
                     {lezioni.some((l) => l.richiestaId === r.id && l.stato === "prenotata") ? (
@@ -608,7 +608,7 @@ function PrendiModal({
   const [vasca, setVasca] = useState<VascaId>("ludica")
   const [corsia, setCorsia] = useState(1)
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
-  const [ripeti, setRipeti] = useState(true)
+  const [ripeti, setRipeti] = useState(false)
   const m = useMutation({
     mutationFn: () =>
       lezioniPrivateApi.prendi(richiesta.id, {
@@ -627,14 +627,19 @@ function PrendiModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
         <h3 className="font-semibold text-zinc-100">Prenota in vasca · {richiesta.clienteNome}</h3>
-        <p className="mt-1 text-xs text-zinc-500">Scegli prova o pacchetto e una corsia libera. La richiesta non viene cancellata.</p>
+        <p className="mt-1 text-xs text-zinc-500">
+          Puoi caricare una data alla volta (pacchetti già iniziati) oppure ripetere ogni settimana per chiudere il
+          pacchetto. La richiesta non viene cancellata.
+        </p>
         <div className="mt-3">
           <TipoButtons value={tipo} onChange={setTipo} />
         </div>
         {tipo !== "prova" ? (
-          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
-            <input type="checkbox" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
-            Ripeti ogni settimana ({tipo} date)
+          <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
+            <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+            <span>
+              Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione.
+            </span>
           </label>
         ) : null}
         <label className="mt-3 grid gap-1 text-sm text-zinc-400">
@@ -671,7 +676,7 @@ function PrendiModal({
             Annulla
           </button>
           <button type="button" disabled={m.isPending} onClick={() => m.mutate()} className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200">
-            Conferma
+            {tipo !== "prova" && !ripeti ? "Aggiungi questa data" : "Conferma"}
           </button>
         </div>
       </div>
@@ -691,11 +696,12 @@ function PackModal({
   onDone: () => void
 }) {
   const [tipo, setTipo] = useState<"5" | "10">("5")
+  const [soloUna, setSoloUna] = useState(true)
   const [start, setStart] = useState(prova ? addDaysIso(prova.giorno, 7) : isoToday())
   const [ora, setOra] = useState(prova?.ora ?? "18:30")
   const [vasca, setVasca] = useState<VascaId>(prova?.vasca ?? "ludica")
   const [corsia, setCorsia] = useState(prova?.corsia ?? 1)
-  const n = tipo === "10" ? 10 : 5
+  const n = soloUna ? 1 : tipo === "10" ? 10 : 5
   const lezioni = useMemo(() => {
     const out: Array<{ giorno: string; ora: string; vasca: VascaId; corsia: number }> = []
     for (let i = 0; i < n; i++) out.push({ giorno: addDaysIso(start, i * 7), ora, vasca, corsia })
@@ -709,6 +715,10 @@ function PackModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-lg rounded-2xl border border-zinc-700 bg-zinc-950 p-4">
         <h3 className="font-semibold text-zinc-100">Pacchetto · {richiesta.clienteNome}</h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Per un pacchetto già iniziato aggiungi una lezione alla volta. Puoi anche generare tutte le date rimanenti ogni
+          7 giorni.
+        </p>
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={() => setTipo("5")} className={`rounded-md px-3 py-1.5 text-sm ${tipo === "5" ? "bg-amber-500/20 text-amber-200" : "text-zinc-400"}`}>
             5 lezioni
@@ -717,9 +727,13 @@ function PackModal({
             10 lezioni
           </button>
         </div>
+        <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
+          <input type="checkbox" className="mt-1" checked={!soloUna} onChange={(e) => setSoloUna(!e.target.checked)} />
+          <span>Genera tutte le date ogni 7 giorni. Lascia spento per caricare solo questa lezione.</span>
+        </label>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="grid gap-1 text-xs text-zinc-500">
-            Prima data (poi ogni 7 giorni)
+            {soloUna ? "Data" : "Prima data (poi ogni 7 giorni)"}
             <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
           </label>
           <label className="grid gap-1 text-xs text-zinc-500">
@@ -748,7 +762,7 @@ function PackModal({
             Chiudi
           </button>
           <button type="button" disabled={m.isPending} onClick={() => m.mutate()} className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200">
-            Prenota pacchetto
+            {soloUna ? "Aggiungi questa data" : "Prenota pacchetto"}
           </button>
         </div>
       </div>
@@ -782,7 +796,7 @@ function BookSlotModal({
   const [telefono, setTelefono] = useState("")
   const [eta, setEta] = useState("")
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
-  const [ripeti, setRipeti] = useState(true)
+  const [ripeti, setRipeti] = useState(false)
   const [richiestaId, setRichiestaId] = useState("")
   const m = useMutation({
     mutationFn: () =>
@@ -820,9 +834,12 @@ function BookSlotModal({
           <TipoButtons value={tipo} onChange={setTipo} />
         </div>
         {tipo !== "prova" ? (
-          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
-            <input type="checkbox" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
-            Ripeti ogni settimana ({tipo} date)
+          <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
+            <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+            <span>
+              Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione (pacchetti già
+              iniziati).
+            </span>
           </label>
         ) : null}
         {richieste.length ? (
@@ -896,7 +913,7 @@ function BookSlotModal({
             onClick={() => m.mutate()}
             className="rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-200"
           >
-            Prenota
+            {tipo !== "prova" && !ripeti ? "Aggiungi questa data" : "Prenota"}
           </button>
         </div>
       </div>
