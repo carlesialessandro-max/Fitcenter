@@ -44,6 +44,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/campus", label: "Campus", group: "Altri" },
   { path: "/danza", label: "Danza", group: "Altri" },
   { path: "/utenti", label: "Utenti e accessi", group: "Altri" },
+  { path: "/libro-paga", label: "Libro paga", group: "Altri" },
 ]
 
 const CATALOG_PATHS = new Set(PAGE_CATALOG.map((p) => p.path))

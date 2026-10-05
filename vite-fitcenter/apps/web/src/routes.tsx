@@ -38,6 +38,7 @@ import { CalendarioHub } from "@/pages/CalendarioHub"
 import { CalendarioIstruttoriPage } from "@/pages/CalendarioIstruttoriPage"
 import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
 import { Utenti } from "@/pages/Utenti"
+import { LibroPaga } from "@/pages/LibroPaga"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
@@ -122,6 +123,7 @@ export const router = createBrowserRouter([
       { path: "telefonate", element: <Telefonate /> },
       { path: "convalide-consulenti", element: <ConvalideConsulenti /> },
       { path: "utenti", element: <Utenti /> },
+      { path: "libro-paga", element: <LibroPaga /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },

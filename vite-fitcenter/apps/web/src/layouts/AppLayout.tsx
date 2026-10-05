@@ -198,6 +198,7 @@ const navAdmin: NavItem[] = [
       { to: "/campus", label: "Campus" },
       { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
       { to: "/utenti", label: "Utenti e accessi" },
+      { to: "/libro-paga", label: "Libro paga" },
     ],
   },
 ] as const
@@ -307,11 +308,14 @@ export function AppLayout() {
                     : role === "danza"
                       ? navDanza
               : navOperatore
-  const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, user!.pages!) : roleNav
+  const pagesForNav =
+    customPages && role === "admin" ? [...(user!.pages ?? []), "/libro-paga"] : user?.pages
+  const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, pagesForNav!) : roleNav
   const nav: NavItem[] =
     role !== "admin" && user?.vedeTotaliCentro !== true ? excludeNavPath(navBase, "/incassi") : navBase
   const homePath = firstNavPath(nav)
-  const mustRedirectPages = customPages && !isPathAllowed(location.pathname, user!.pages!)
+  const mustRedirectPages =
+    customPages && !isPathAllowed(location.pathname, pagesForNav ?? user!.pages!)
 
   const Sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900/95 sm:w-56 sm:bg-zinc-900/50">
