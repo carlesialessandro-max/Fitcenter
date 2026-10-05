@@ -960,7 +960,7 @@ export async function getLezioniPrivateAbbonamentiCheck(req: Request, res: Respo
           : privates[0]
             ? `${privates[0].cognome} ${privates[0].nome}`.trim()
             : ""
-      let esito: "ok" | "incongruente" | "mancante" | "non_anagrafato" | "prova_senza_abb"
+      let esito: "ok" | "mancante" | "non_anagrafato" | "prova_senza_abb"
       let nota = ""
       const best =
         covering.find((a) => tipoDaAbbLp(a) === l.tipo) ??
@@ -995,7 +995,6 @@ export async function getLezioniPrivateAbbonamentiCheck(req: Request, res: Respo
             : `Abbonamento private valido (${tipoAbb === "prova" ? "prova" : `pacchetto ${tipoAbb}`})`
       }
       if (esito === "ok") ok += 1
-      else if (esito === "incongruente") incongruente += 1
       else if (esito === "mancante") mancante += 1
       else if (esito === "non_anagrafato") nonAnagrafato += 1
       else provaSenzaAbb += 1
