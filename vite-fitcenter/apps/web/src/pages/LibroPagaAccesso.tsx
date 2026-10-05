@@ -214,7 +214,17 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             }}
           />
         )}
-        {data && tab === "personale" && canTeam && <Personale data={data} />}
+        {data && tab === "personale" && canTeam && (
+          <Personale
+            data={data}
+            me={me}
+            onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+            }}
+          />
+        )}
         {data && tab === "mensilita" && (
           <Mensilita
             data={data}
@@ -387,29 +397,153 @@ function Turni({
   )
 }
 
-function Personale({ data }: { data: LpagaPortalSnapshot }) {
+function Personale({
+  data,
+  me,
+  onError,
+  onDone,
+}: {
+  data: LpagaPortalSnapshot
+  me?: LpagaMe
+  onError: (s: string) => void
+  onDone: () => void
+}) {
+  const [nome, setNome] = useState("")
+  const [cognome, setCognome] = useState("")
+  const [username, setUsername] = useState("")
+  const [password, setPassword] = useState("")
+  const [ruolo, setRuolo] = useState<"user" | "manager">("user")
+  const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
+  const [pwdId, setPwdId] = useState<string | null>(null)
+  const [pwdNew, setPwdNew] = useState("")
+  const createMut = useMutation({
+    mutationFn: () =>
+      lpagaApi.createPersonale({ nome, cognome, username, password, ruolo, livelloId }),
+    onSuccess: () => {
+      setNome("")
+      setCognome("")
+      setUsername("")
+      setPassword("")
+      onDone()
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const pwdMut = useMutation({
+    mutationFn: () => lpagaApi.setPersonalePassword(pwdId!, pwdNew),
+    onSuccess: () => {
+      setPwdId(null)
+      setPwdNew("")
+      onDone()
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const reparti = data.livelli.filter((l) => !l.retribuibile)
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
-          <tr>
-            <th className="px-3 py-2">Cognome</th>
-            <th className="px-3 py-2">Nome</th>
-            <th className="px-3 py-2">Ruolo</th>
-            <th className="px-3 py-2">Reparto</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.personale.map((p) => (
-            <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
-              <td className="px-3 py-2">{p.cognome ?? "—"}</td>
-              <td className="px-3 py-2">{p.nome}</td>
-              <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
-              <td className="px-3 py-2">{p.repartoNome}</td>
-            </tr>
+    <div className="mt-4 space-y-4">
+      <form
+        className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          createMut.mutate()
+        }}
+      >
+        <input value={cognome} onChange={(e) => setCognome(e.target.value)} placeholder="Cognome" className={inputCls} required />
+        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome" className={inputCls} required />
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className={inputCls} required />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password accesso"
+          autoComplete="new-password"
+          className={inputCls}
+          required
+          minLength={6}
+        />
+        <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
+          <option value="user">Istruttore</option>
+          {me?.ruolo === "admin" && <option value="manager">Responsabile</option>}
+        </select>
+        <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls}>
+          <option value="">Reparto</option>
+          {reparti.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.nome}
+            </option>
           ))}
-        </tbody>
-      </table>
+        </select>
+        <button type="submit" className={btnAmber} disabled={createMut.isPending}>
+          Aggiungi utente
+        </button>
+      </form>
+      {pwdId && (
+        <form
+          className="flex flex-wrap items-end gap-3 rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            pwdMut.mutate()
+          }}
+        >
+          <p className="w-full text-sm text-amber-200/90">
+            Nuova password per {data.personale.find((p) => p.id === pwdId)?.nominativo ?? pwdId}
+          </p>
+          <input
+            type="password"
+            value={pwdNew}
+            onChange={(e) => setPwdNew(e.target.value)}
+            placeholder="Nuova password"
+            autoComplete="new-password"
+            className={inputCls}
+            required
+            minLength={6}
+          />
+          <button type="submit" className={btnAmber} disabled={pwdMut.isPending}>
+            Salva password
+          </button>
+          <button type="button" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300" onClick={() => setPwdId(null)}>
+            Annulla
+          </button>
+        </form>
+      )}
+      <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Cognome</th>
+              <th className="px-3 py-2">Nome</th>
+              <th className="px-3 py-2">Username</th>
+              <th className="px-3 py-2">Ruolo</th>
+              <th className="px-3 py-2">Reparto</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {data.personale.map((p) => (
+              <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
+                <td className="px-3 py-2">{p.cognome ?? "—"}</td>
+                <td className="px-3 py-2">{p.nome}</td>
+                <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
+                <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
+                <td className="px-3 py-2">{p.repartoNome}</td>
+                <td className="px-3 py-2 text-right">
+                  {p.username && (
+                    <button
+                      type="button"
+                      className="text-xs text-amber-300 hover:underline"
+                      onClick={() => {
+                        setPwdId(p.id)
+                        setPwdNew("")
+                      }}
+                    >
+                      Password
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

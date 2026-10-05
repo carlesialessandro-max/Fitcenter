@@ -140,3 +140,23 @@ export function bearerLpaga(req: { headers: { authorization?: string } }): strin
   if (!h?.startsWith("Bearer ")) return null
   return h.slice(7).trim() || null
 }
+
+export function validateLpagaPassword(password: string): string | null {
+  const p = String(password ?? "")
+  if (p.length < 6) return "Password di almeno 6 caratteri"
+  return null
+}
+
+export async function setPersonalePassword(personaleId: string, username: string, password: string): Promise<void> {
+  const err = validateLpagaPassword(password)
+  if (err) throw Object.assign(new Error(err), { status: 400 })
+  const user = username.trim().toLowerCase()
+  if (!personaleId || !user) throw Object.assign(new Error("Username obbligatorio per la password"), { status: 400 })
+  const hash = await bcrypt.hash(password, BCRYPT_ROUNDS)
+  const all = readJson<SecretRow[]>(SECRETS_FILE, [])
+  const row: SecretRow = { id: personaleId, username: user, hash, algo: "bcrypt" }
+  const i = all.findIndex((s) => s.id === personaleId)
+  if (i >= 0) all[i] = row
+  else all.push(row)
+  writeJson(SECRETS_FILE, all)
+}

@@ -9,6 +9,7 @@ import {
   postPersonale,
   postTurno,
   putMensilita,
+  putPersonalePassword,
   putPresenza,
   removeLivello,
   removePersonale,
@@ -25,6 +26,7 @@ libroPagaRouter.patch("/livelli/:id", patchLivello)
 libroPagaRouter.delete("/livelli/:id", removeLivello)
 libroPagaRouter.post("/personale", postPersonale)
 libroPagaRouter.patch("/personale/:id", patchPersonale)
+libroPagaRouter.put("/personale/:id/password", putPersonalePassword)
 libroPagaRouter.delete("/personale/:id", removePersonale)
 libroPagaRouter.post("/turni", postTurno)
 libroPagaRouter.delete("/turni/:id", removeTurno)

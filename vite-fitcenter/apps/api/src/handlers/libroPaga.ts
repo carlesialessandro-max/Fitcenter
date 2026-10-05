@@ -13,6 +13,7 @@ import {
 } from "../store/libro-paga-db.js"
 import { importLibroPagaDump } from "../services/libro-paga-import.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
+import { setPersonalePassword } from "../store/libro-paga-auth.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
 function statusOf(e: unknown): number {
@@ -122,18 +123,28 @@ export async function postPersonale(req: Request, res: Response) {
   try {
     const nome = String(req.body?.nome ?? "").trim()
     if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
+    const username = String(req.body?.username ?? "").trim().toLowerCase()
+    const password = String(req.body?.password ?? "")
+    if (username) {
+      const all = await listPersonale()
+      if (all.some((p) => (p.username ?? "").toLowerCase() === username)) {
+        return res.status(409).json({ message: "Username già in uso" })
+      }
+      if (!password) return res.status(400).json({ message: "Password obbligatoria per l'accesso a Libro paga" })
+    }
     const ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
     const row = await upsertPersonale({
       nome,
       cognome: String(req.body?.cognome ?? "").trim(),
-      username: String(req.body?.username ?? "").trim(),
+      username,
       ruolo,
       livelloId: String(req.body?.livelloId ?? "").trim(),
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
       attivo: req.body?.attivo !== false,
     })
+    if (username && password) await setPersonalePassword(row.id, username, password)
     res.status(201).json({ personale: row })
   } catch (e) {
     fail(res, e)
@@ -150,18 +161,45 @@ export async function patchPersonale(req: Request, res: Response) {
     if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
     const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const username =
+      req.body?.username != null ? String(req.body.username).trim().toLowerCase() : cur.username ?? ""
+    const password = req.body?.password != null ? String(req.body.password) : ""
+    if (username && username !== (cur.username ?? "").toLowerCase()) {
+      if (all.some((p) => p.id !== id && (p.username ?? "").toLowerCase() === username)) {
+        return res.status(409).json({ message: "Username già in uso" })
+      }
+    }
     const row = await upsertPersonale({
       id,
       nome,
       cognome: req.body?.cognome != null ? String(req.body.cognome).trim() : cur.cognome,
-      username: req.body?.username != null ? String(req.body.username).trim() : cur.username,
+      username,
       ruolo,
       livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
       attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
     })
+    if (password) {
+      if (!row.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
+      await setPersonalePassword(row.id, row.username, password)
+    }
     res.json({ personale: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putPersonalePassword(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    const password = String(req.body?.password ?? "")
+    const all = await listPersonale()
+    const cur = all.find((x) => x.id === id)
+    if (!cur) return res.status(404).json({ message: "Persona non trovata" })
+    if (!cur.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
+    await setPersonalePassword(cur.id, cur.username, password)
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }

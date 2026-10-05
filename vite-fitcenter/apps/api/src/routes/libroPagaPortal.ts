@@ -5,8 +5,10 @@ import {
   getLpagaSnapshot,
   postLpagaLogin,
   postLpagaLogout,
+  postLpagaPersonale,
   postLpagaTurno,
   putLpagaMensilita,
+  putLpagaPersonalePassword,
   removeLpagaTurno,
   requireLpaga,
 } from "../handlers/libroPagaPortal.js"
@@ -26,3 +28,5 @@ libroPagaPortalRouter.get("/", requireLpaga, getLpagaSnapshot)
 libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
 libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)
+libroPagaPortalRouter.post("/personale", requireLpaga, postLpagaPersonale)
+libroPagaPortalRouter.put("/personale/:id/password", requireLpaga, putLpagaPersonalePassword)

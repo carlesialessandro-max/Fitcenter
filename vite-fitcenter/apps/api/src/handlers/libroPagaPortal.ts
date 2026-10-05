@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita } from "../store/libro-paga-db.js"
-import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, type LpagaSessionUser } from "../store/libro-paga-auth.js"
-import { livelliInseribili, personaleVisibile } from "../services/libro-paga-scope.js"
+import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale } from "../store/libro-paga-db.js"
+import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
+import { livelloSottoAlbero, livelliInseribili, personaleVisibile } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
+import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
 function statusOf(e: unknown): number {
   const n = (e as { status?: number })?.status
@@ -160,6 +161,77 @@ export async function putLpagaMensilita(req: Request, res: Response) {
       chiuso: Boolean(req.body?.chiuso),
     })
     res.json({ mensilita: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+function assertGestionePersonale(me: LpagaSessionUser) {
+  if (me.ruolo !== "admin" && me.ruolo !== "manager") {
+    const err = new Error("Solo amministratore o responsabile può gestire gli utenti")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
+  }
+}
+
+export async function postLpagaPersonale(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    assertGestionePersonale(me)
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const nome = String(req.body?.nome ?? "").trim()
+    if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
+    const username = String(req.body?.username ?? "").trim().toLowerCase()
+    const password = String(req.body?.password ?? "")
+    if (!username) return res.status(400).json({ message: "Username obbligatorio" })
+    if (!password) return res.status(400).json({ message: "Password obbligatoria per l'accesso" })
+    if (personale.some((p) => (p.username ?? "").toLowerCase() === username)) {
+      return res.status(409).json({ message: "Username già in uso" })
+    }
+    let ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
+    if (me.ruolo === "manager" && ruoloRaw === "admin") ruoloRaw = "user"
+    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const livelloId = String(req.body?.livelloId ?? "").trim()
+    if (me.ruolo === "manager") {
+      const tree = me.livelloId ? livelloSottoAlbero(livelli, me.livelloId) : new Set<string>([me.id])
+      if (livelloId && !tree.has(livelloId)) {
+        return res.status(403).json({ message: "Reparto fuori dal tuo ambito" })
+      }
+    }
+    const row = await upsertPersonale({
+      nome,
+      cognome: String(req.body?.cognome ?? "").trim(),
+      username,
+      ruolo,
+      livelloId: livelloId || me.livelloId,
+      contratto: String(req.body?.contratto ?? "").trim(),
+      iban: String(req.body?.iban ?? "").trim(),
+      attivo: true,
+    })
+    await setPersonalePassword(row.id, username, password)
+    res.status(201).json({ personale: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLpagaPersonalePassword(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    assertGestionePersonale(me)
+    const id = String(req.params.id ?? "").trim()
+    const password = String(req.body?.password ?? "")
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const vis = personaleVisibile(me, personale, livelli)
+    if (!vis.has(id)) return res.status(403).json({ message: "Utente non visibile" })
+    const cur = personale.find((p) => p.id === id)
+    if (!cur) return res.status(404).json({ message: "Persona non trovata" })
+    if (me.ruolo === "manager" && cur.ruolo === "admin") {
+      return res.status(403).json({ message: "Non puoi cambiare la password di un amministratore" })
+    }
+    if (!cur.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
+    await setPersonalePassword(cur.id, cur.username, password)
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }

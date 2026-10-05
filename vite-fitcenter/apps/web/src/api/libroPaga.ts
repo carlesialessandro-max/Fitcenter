@@ -130,12 +130,15 @@ export const libroPagaApi = {
     nome: string
     cognome?: string
     username?: string
+    password?: string
     ruolo?: LpagaRuolo
     livelloId?: string
     contratto?: string
     iban?: string
     attivo?: boolean
   }) => api.post<{ personale: LpagaPersonale }>("/libro-paga/personale", body),
+  setPersonalePassword: (id: string, password: string) =>
+    api.put<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}/password`, { password }),
   patchPersonale: (id: string, body: Partial<LpagaPersonale>) =>
     api.patch<{ personale: LpagaPersonale }>(`/libro-paga/personale/${encodeURIComponent(id)}`, body),
   deletePersonale: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}`),

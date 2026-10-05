@@ -84,4 +84,19 @@ export const lpagaApi = {
   deleteTurno: (id: string) => lpagaRequest<{ ok: boolean }>(`/lpaga/turni/${encodeURIComponent(id)}`, { method: "DELETE" }),
   putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
     lpagaRequest<{ mensilita: unknown }>("/lpaga/mensilita", { method: "PUT", body: JSON.stringify(body) }),
+  createPersonale: (body: {
+    nome: string
+    cognome?: string
+    username: string
+    password: string
+    ruolo?: LpagaRuolo
+    livelloId?: string
+    contratto?: string
+    iban?: string
+  }) => lpagaRequest<{ personale: unknown }>("/lpaga/personale", { method: "POST", body: JSON.stringify(body) }),
+  setPersonalePassword: (id: string, password: string) =>
+    lpagaRequest<{ ok: boolean }>(`/lpaga/personale/${encodeURIComponent(id)}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ password }),
+    }),
 }

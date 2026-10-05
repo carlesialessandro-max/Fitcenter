@@ -430,6 +430,9 @@ function PersonaleTab({
   const [livelloId, setLivelloId] = useState("")
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
+  const [password, setPassword] = useState("")
+  const [pwdId, setPwdId] = useState<string | null>(null)
+  const [pwdNew, setPwdNew] = useState("")
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
@@ -438,11 +441,31 @@ function PersonaleTab({
   const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p))
   const createMut = useMutation({
     mutationFn: () =>
-      libroPagaApi.createPersonale({ nome, cognome, username, ruolo, livelloId, contratto, iban, attivo: true }),
+      libroPagaApi.createPersonale({
+        nome,
+        cognome,
+        username,
+        password,
+        ruolo,
+        livelloId,
+        contratto,
+        iban,
+        attivo: true,
+      }),
     onSuccess: () => {
       setNome("")
       setCognome("")
       setUsername("")
+      setPassword("")
+      onDone()
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const pwdMut = useMutation({
+    mutationFn: () => libroPagaApi.setPersonalePassword(pwdId!, pwdNew),
+    onSuccess: () => {
+      setPwdId(null)
+      setPwdNew("")
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -475,7 +498,17 @@ function PersonaleTab({
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{r.username ?? "—"}</td>
                 {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
                 <td className="px-3 py-2">{fmtDateIt(r.contratto)}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <button
+                    type="button"
+                    className="mr-2 text-xs text-amber-300 hover:underline"
+                    onClick={() => {
+                      setPwdId(r.id)
+                      setPwdNew("")
+                    }}
+                  >
+                    Password
+                  </button>
                   <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(r.id)}>
                     Elimina
                   </button>
@@ -500,7 +533,17 @@ function PersonaleTab({
       >
         <input value={cognome} onChange={(e) => setCognome(e.target.value)} placeholder="Cognome" className={inputCls} required />
         <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome" className={inputCls} required />
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className={inputCls} />
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className={inputCls} required />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password accesso"
+          autoComplete="new-password"
+          className={inputCls}
+          required
+          minLength={6}
+        />
         <select value={ruolo} onChange={(e) => setRuolo(e.target.value as LpagaRuolo)} className={inputCls}>
           <option value="user">User</option>
           <option value="manager">Manager</option>
@@ -520,6 +563,35 @@ function PersonaleTab({
           Aggiungi utente
         </button>
       </form>
+      {pwdId && (
+        <form
+          className="flex flex-wrap items-end gap-3 rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            pwdMut.mutate()
+          }}
+        >
+          <p className="w-full text-sm text-amber-200/90">
+            Nuova password per {data.personale.find((p) => p.id === pwdId)?.nominativo ?? pwdId}
+          </p>
+          <input
+            type="password"
+            value={pwdNew}
+            onChange={(e) => setPwdNew(e.target.value)}
+            placeholder="Nuova password"
+            autoComplete="new-password"
+            className={inputCls}
+            required
+            minLength={6}
+          />
+          <button type="submit" className={btnAmber} disabled={pwdMut.isPending}>
+            Salva password
+          </button>
+          <button type="button" className={btnGhost} onClick={() => setPwdId(null)}>
+            Annulla
+          </button>
+        </form>
+      )}
       <Table title={`Dipendenti (user) · ${users.length}`} rows={users} />
       <Table title={`Responsabili (manager) · ${managers.length}`} rows={managers} showReparto />
       <Table title={`Amministratori (admin) · ${admins.length}`} rows={admins} />
