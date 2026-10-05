@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, Link } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { authApi, type LoginResponse } from "@/api/auth"
 import { BrandLogo } from "@/components/BrandLogo"
@@ -103,6 +103,12 @@ export function Login() {
             >
               {loading ? "Accesso in corso..." : "Accedi"}
             </button>
+            <p className="text-center text-xs text-zinc-500">
+              Istruttore o responsabile?{" "}
+              <Link to="/lpaga" className="text-amber-400/90 hover:underline">
+                Entra in Libro paga
+              </Link>
+            </p>
           </form>
         ) : (
           <form onSubmit={handleOtp} className="space-y-4">

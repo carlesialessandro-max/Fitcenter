@@ -119,7 +119,8 @@ export function LibroPaga() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Libro paga</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Payroll FitCenter: livelli, ruoli, turni, convalide e mensilità. Per ora visibile solo ad admin.
+            Payroll FitCenter: livelli, ruoli, turni, convalide e mensilità. Vista completa admin. Istruttori e
+            responsabili entrano da <span className="font-mono text-zinc-400">/lpaga</span> senza login FitCenter.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">

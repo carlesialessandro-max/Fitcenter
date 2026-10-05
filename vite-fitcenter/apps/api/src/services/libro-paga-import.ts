@@ -1,4 +1,5 @@
 import { findDumpFile, parseMysqlTable, readDumpSql } from "./libro-paga-dump.js"
+import { saveDumpPasswords } from "../store/libro-paga-auth.js"
 import type {
   FileDb,
   LpagaLivello,
@@ -168,6 +169,13 @@ export async function importLibroPagaDump(): Promise<{
   const sql = readDumpSql(dump)
   const db = dumpSqlToDb(sql)
   if (!db.livelli.length) throw Object.assign(new Error("Dump senza livelli"), { status: 400 })
+  saveDumpPasswords(
+    parseMysqlTable(sql, "users").map((r) => ({
+      id: String(r.id ?? ""),
+      username: String(r.username ?? ""),
+      hash: String(r.password ?? ""),
+    }))
+  )
   const storage = await replaceImportedDb(db)
   return {
     dump,

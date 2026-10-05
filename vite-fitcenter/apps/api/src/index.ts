@@ -24,6 +24,7 @@ import { prenotazioniRouter } from "./routes/prenotazioni.js"
 import { scuolaNuotoRouter } from "./routes/scuolaNuoto.js"
 import { lezioniPrivateRouter } from "./routes/lezioniPrivate.js"
 import { libroPagaRouter } from "./routes/libroPaga.js"
+import { libroPagaPortalRouter } from "./routes/libroPagaPortal.js"
 import { piscinaRouter } from "./routes/piscina.js"
 import { whatsappRouter } from "./routes/whatsapp.js"
 import { whatsappWebhookReceive, whatsappWebhookVerify } from "./handlers/whatsapp.js"
@@ -129,6 +130,7 @@ app.use("/api/signatures", signaturesRouter)
 app.use("/api/scuola-nuoto", scuolaNuotoRouter)
 app.use("/api/lezioni-private", lezioniPrivateRouter)
 app.use("/api/libro-paga", libroPagaRouter)
+app.use("/api/lpaga", libroPagaPortalRouter)
 app.use("/api/piscina", piscinaRouter)
 
 app.get("/api/health", (_req, res) => {

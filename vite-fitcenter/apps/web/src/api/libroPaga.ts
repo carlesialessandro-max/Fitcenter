@@ -103,8 +103,11 @@ export type LibroPagaSnapshot = {
     }[]
     donut: { label: string; value: number }[]
     miscDonut: { label: string; value: number }[]
+    mioOre?: number
+    mioImporto?: number
+    mioTurni?: number
   }
-}
+  me?: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string } | null
 
 export const libroPagaApi = {
   get: (mese: string) => api.get<LibroPagaSnapshot>(`/libro-paga?mese=${encodeURIComponent(mese)}`),

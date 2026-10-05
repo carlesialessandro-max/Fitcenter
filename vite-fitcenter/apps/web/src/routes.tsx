@@ -39,6 +39,7 @@ import { CalendarioIstruttoriPage } from "@/pages/CalendarioIstruttoriPage"
 import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
 import { Utenti } from "@/pages/Utenti"
 import { LibroPaga } from "@/pages/LibroPaga"
+import { LibroPagaAccesso } from "@/pages/LibroPagaAccesso"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
@@ -75,6 +76,10 @@ export const router = createBrowserRouter([
   {
     path: "/informativa",
     element: <InformativaPrivacy />,
+  },
+  {
+    path: "/lpaga",
+    element: <LibroPagaAccesso />,
   },
   {
     path: "/login",
