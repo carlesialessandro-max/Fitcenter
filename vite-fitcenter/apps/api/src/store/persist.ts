@@ -21,6 +21,11 @@ function resolveDataDir(): string {
   return dir
 }
 
+/** Stessa cartella di auth-users.json / libro-paga.json. */
+export function getDataDir(): string {
+  return resolveDataDir()
+}
+
 export function readJson<T>(filename: string, fallback: T): T {
   try {
     const primaryDir = resolveDataDir()

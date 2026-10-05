@@ -160,7 +160,7 @@ export async function importLibroPagaDump(): Promise<{
   if (!dump) {
     throw Object.assign(
       new Error(
-        "Dump Payroll non trovato. Esporta Sql1272546_1 da phpMyAdmin (SQL) e copia il file come apps/api/data/libropaga-dump.sql sul server FitCenter."
+        "Dump Payroll non trovato nella cartella dati FitCenter (stessa di auth-users.json). Copia libropaga-dump.sql o Sql1272546_1_Mon.gz in C:\\FitCenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data e riavvia FitCenterAPI."
       ),
       { status: 404 }
     )

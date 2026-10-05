@@ -1,6 +1,8 @@
 import fs from "fs"
 import path from "path"
+import zlib from "zlib"
 import { fileURLToPath } from "url"
+import { getDataDir } from "../store/persist.js"
 
 export type MysqlRow = Record<string, string | null>
 
@@ -132,32 +134,67 @@ export function parseMysqlTable(sql: string, table: string): MysqlRow[] {
 }
 
 export function readDumpSql(filePath: string): string {
-  return fs.readFileSync(filePath, "utf8")
+  const buf = fs.readFileSync(filePath)
+  const gz = filePath.toLowerCase().endsWith(".gz") || (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b)
+  return (gz ? zlib.gunzipSync(buf) : buf).toString("utf8")
+}
+
+function isDumpFilename(name: string): boolean {
+  const n = name.toLowerCase()
+  const okExt = n.endsWith(".sql") || n.endsWith(".gz") || !path.extname(name)
+  if (!okExt) return false
+  return n.startsWith("libropaga-dump") || n.startsWith("sql1272546") || n.startsWith("89_46_111_76")
+}
+
+function dumpDirs(): string[] {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  return [
+    getDataDir(),
+    path.resolve(here, "../../data"),
+    path.resolve(here, "../data"),
+    path.resolve(process.cwd(), "data"),
+    path.resolve(process.cwd(), "apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/vite-fitcenter/apps/api/data"),
+    "C:\\FitCenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\fitcenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\FitCenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\fitcenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\Users\\aless\\OneDrive\\Documenti\\libropaga.it\\sql",
+    "C:\\Users\\aless\\OneDrive\\Documenti\\FitCenter\\libropaga.it\\sql",
+  ]
 }
 
 export function dumpCandidates(): string[] {
   const env = process.env.LIBROPAGA_DUMP?.trim()
-  const here = path.dirname(fileURLToPath(import.meta.url))
-  const names = ["libropaga-dump.sql", "89_46_111_76.sql"]
-  const dirs = [
-    path.resolve(here, "../../data"),
-    path.resolve(process.cwd(), "data"),
-    path.resolve(process.cwd(), "apps/api/data"),
-    path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
-    "C:\\fitcenter\\vite-fitcenter\\apps\\api\\data",
-    "C:\\fitcenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data",
-    "C:\\Users\\aless\\OneDrive\\Documenti\\libropaga.it\\sql",
-    "C:\\Users\\aless\\OneDrive\\Documenti\\FitCenter\\libropaga.it\\sql",
-  ]
+  const names = ["libropaga-dump.sql", "libropaga-dump.sql.gz", "89_46_111_76.sql", "Sql1272546_1_Mon.gz"]
   const out: string[] = []
   if (env) out.push(env)
-  for (const dir of dirs) {
+  for (const dir of dumpDirs()) {
     for (const name of names) out.push(path.join(dir, name))
   }
   return out
 }
 
 export function findDumpFile(): string | null {
+  const env = process.env.LIBROPAGA_DUMP?.trim()
+  if (env && fs.existsSync(env)) return env
+  const seen = new Set<string>()
+  for (const dir of dumpDirs()) {
+    const key = dir.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    try {
+      if (!fs.existsSync(dir)) continue
+      for (const name of fs.readdirSync(dir)) {
+        if (!isDumpFilename(name)) continue
+        const p = path.join(dir, name)
+        if (fs.statSync(p).isFile()) return p
+      }
+    } catch {
+      // ignore
+    }
+  }
   for (const p of dumpCandidates()) {
     try {
       if (p && fs.existsSync(p)) return p
