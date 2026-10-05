@@ -90,6 +90,16 @@ export function slotAperto(
   return f
 }
 
+export function lpOreSlotsTutti(): string[] {
+  const out: string[] = []
+  for (let m = 7 * 60 + 30; m < 22 * 60; m += 30) {
+    const h = Math.floor(m / 60)
+    const min = m % 60
+    out.push(`${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`)
+  }
+  return out
+}
+
 export const LP_VASCHE_LEGENDA = [
   { giorni: "Lun–Ven", vasca: "25 m", orari: "08:00–14:30 e 18:30–22:00", posti: "1 persona" },
   { giorni: "Sabato", vasca: "25 m", orari: "chiusa", posti: "—" },

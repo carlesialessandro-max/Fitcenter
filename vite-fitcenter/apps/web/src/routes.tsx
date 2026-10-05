@@ -106,6 +106,7 @@ export const router = createBrowserRouter([
       { path: "lezioni-private/richieste", element: <LezioniPrivate /> },
       { path: "lezioni-private/calendario", element: <LezioniPrivate /> },
       { path: "lezioni-private/istruttori", element: <LezioniPrivate /> },
+      { path: "lezioni-private/abbonamenti", element: <LezioniPrivate /> },
       { path: "scuola-nuoto/lezioni-private", element: <Navigate to="/lezioni-private/richieste" replace /> },
       { path: "piscina", element: <PiscinaMappa /> },
       { path: "incassi", element: <Incassi /> },

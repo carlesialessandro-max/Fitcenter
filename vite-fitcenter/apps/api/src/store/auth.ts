@@ -49,6 +49,7 @@ export const VALID_ROLES: Role[] = [
  *   reception → H2Fc.Firme.9!u
  *   corsi     → H2Fc.Corsi.9!r
  *   istruttore→ H2Fc.Istruttore.9!s
+ *   camilla   → H2Fc.Camilla.9!c
  *   campus    → H2Fc.Campus.9!t
  *   scuola_nuoto → H2Fc.ScuolaNuoto.9!v
  *   bagnini   → H2Fc.Bagnini.9!w
@@ -107,6 +108,12 @@ const DEFAULT_USERS: UserRecord[] = [
     username: "istruttore",
     password: "$2b$12$TS74XYRwEV7wYCFdol8miuJY//CfFpgOdVamG.eH4tOlRYnwfpMEa",
     nome: "Istruttore",
+    role: "istruttore",
+  },
+  {
+    username: "camilla",
+    password: "$2b$12$aToGDblW/9buNASmf.9HQu/oOOS4v3u.nTrLqiEOqkKFmcu7t49A2",
+    nome: "Camilla Nardi",
     role: "istruttore",
   },
   {
@@ -237,15 +244,24 @@ function persistUsers(users: UserRecord[]): void {
   writeJson(USERS_FILE, users)
 }
 
+function ensureCamillaUser(users: UserRecord[]): UserRecord[] {
+  if (users.some((u) => u.username.toLowerCase() === "camilla")) return users
+  const seed = DEFAULT_USERS.find((u) => u.username === "camilla")
+  if (!seed) return users
+  const next = [...users, { ...seed }]
+  persistUsers(next)
+  return next
+}
+
 function getUsers(): UserRecord[] {
   if (usersCache) return usersCache
   const fromFile = loadUsersFromFile()
   if (fromFile) {
-    usersCache = mergeEmails(fromFile)
+    usersCache = ensureCamillaUser(mergeEmails(fromFile))
     return usersCache
   }
   const fromEnv = loadUsersFromEnv()
-  const seeded = mergeEmails(fromEnv ?? DEFAULT_USERS)
+  const seeded = ensureCamillaUser(mergeEmails(fromEnv ?? DEFAULT_USERS))
   persistUsers(seeded)
   return seeded
 }

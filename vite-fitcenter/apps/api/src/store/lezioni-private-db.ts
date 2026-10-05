@@ -128,7 +128,7 @@ export function minToHm(n: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-export { LP_SLOT_START, LP_SLOT_END, LP_SLOT_STEP, lpOreSlotsAperti, lpOreSlotsSettimanaTipo, postiGiorno }
+export { LP_SLOT_START, LP_SLOT_END, LP_SLOT_STEP, lpOreSlotsAperti, lpOreSlotsSettimanaTipo, lpOreSlotsTutti, postiGiorno }
 
 export function lpOreSlots(): string[] {
   return lpOreSlotsTutti()
@@ -203,13 +203,21 @@ export function assertSlotLibero(
   corsia: number,
   durataMin: number,
   exceptLezioneIds?: string | string[],
+  allowClosed?: boolean,
 ): string | null {
   const v = asVasca(vasca)
   if (!v) return "Vasca non valida"
   const fascia = slotAperto(giorno, ora, vasca, corsia, durataMin)
   if (!fascia) {
-    if (corsieAperteGiorno(giorno, vasca) <= 0) return "Quel giorno la vasca non è disponibile per le private"
-    return "Orario non disponibile in questa vasca"
+    if (!allowClosed) {
+      if (corsieAperteGiorno(giorno, vasca) <= 0) return "Quel giorno la vasca non è disponibile per le private"
+      return "Orario non disponibile in questa vasca"
+    }
+    if (vasca === "v25" && corsia !== 1) return "Corsia non valida"
+    if (vasca === "ludica" && (corsia < 1 || corsia > 2)) return "Corsia non valida"
+    const usatiClosed = slotOccupanti(db, giorno, ora, vasca, corsia, exceptLezioneIds, durataMin)
+    if (usatiClosed >= 1) return `Corsia occupata alle ${ora}`
+    return null
   }
   const usati = slotOccupanti(db, giorno, ora, vasca, corsia, exceptLezioneIds, durataMin)
   if (usati >= fascia.capCorsia) {

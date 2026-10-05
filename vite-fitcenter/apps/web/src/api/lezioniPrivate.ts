@@ -41,7 +41,28 @@ export type LpLezioneFlat = {
 }
 export type LpRegole = Record<string, { v25: number; ludica: number }>
 
-export type LpSlot = { giorno: string; ora: string; vasca: VascaId; corsia: number }
+export type LpAbbCheckEsito = "ok" | "incongruente" | "mancante" | "non_anagrafato" | "prova_senza_abb"
+
+export type LpAbbCheckRow = {
+  lezioneId: string
+  giorno: string
+  ora: string
+  clienteNome: string
+  telefono: string
+  istruttoreNome: string
+  tipo: "prova" | "5" | "10"
+  stato: LpLezioneStato
+  esito: LpAbbCheckEsito
+  nota: string
+  clienteGestionale?: string
+  abbonamento?: {
+    descrizione: string
+    categoria: string
+    dataInizio: string
+    dataFine: string
+    tipoRiconosciuto: "prova" | "5" | "10" | "altro"
+  }
+}
 
 export const lezioniPrivateApi = {
   getAll: () =>
@@ -55,10 +76,23 @@ export const lezioniPrivateApi = {
   occupazione: (from: string, to: string) =>
     api.get<{
       ore: string[]
+      prenotaFuoriOrario?: boolean
       regole: LpRegole
       byDay: Record<string, { totali: number; occupati: number; v25: number; ludica: number }>
       booked: LpLezioneFlat[]
     }>(`/lezioni-private/occupazione?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
+  abbonamentiCheck: (from: string, to: string) =>
+    api.get<{
+      from: string
+      to: string
+      totale: number
+      ok: number
+      incongruente: number
+      mancante: number
+      nonAnagrafato: number
+      provaSenzaAbb: number
+      rows: LpAbbCheckRow[]
+    }>(`/lezioni-private/abbonamenti-check?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`),
   createRichiesta: (body: {
     clienteNome: string
     eta?: string

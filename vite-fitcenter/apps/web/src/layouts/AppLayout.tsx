@@ -15,6 +15,7 @@ const navLezioniPrivateGroup: NavItem = {
     { to: "/lezioni-private/richieste", label: "Richieste" },
     { to: "/lezioni-private/calendario", label: "Calendario vasche" },
     { to: "/lezioni-private/istruttori", label: "Istruttori / regole" },
+    { to: "/lezioni-private/abbonamenti", label: "Controllo abbonamenti" },
   ],
 }
 

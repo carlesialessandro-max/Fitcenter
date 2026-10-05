@@ -16,6 +16,7 @@ import {
   assertSlotLibero,
   lpOreSlotsAperti,
   lpOreSlotsSettimanaTipo,
+  lpOreSlotsTutti,
   newLpId,
   oreCoperteLezioneLp,
   postiGiorno,
@@ -27,7 +28,9 @@ import {
   type LpRichiesta,
   type VascaId,
 } from "../store/lezioni-private-db.js"
-import { fasciaPerInizio } from "../services/lp-vasche-orari.js"
+import { fasciaPerInizio, slotAperto } from "../services/lp-vasche-orari.js"
+import { allowClosedSlots } from "../services/lp-camilla.js"
+import * as gestionaleSql from "../services/gestionale-sql.js"
 
 function isYmd(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -97,6 +100,26 @@ function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
   return out
 }
 
+function lezioniFuoriOrario(
+  lezioni: Array<{ giorno: string; ora: string; vasca: VascaId; corsia: number; durataMin: number }>,
+): boolean {
+  return lezioni.some((l) => !slotAperto(l.giorno, l.ora, l.vasca, l.corsia, l.durataMin))
+}
+
+function assertLiberiCamilla(
+  db: ReturnType<typeof readLezioniPrivateDb>,
+  lezioni: LpLezione[],
+  u: User,
+  istrNome: string,
+  except?: string[],
+): string | null {
+  const closed = lezioniFuoriOrario(lezioni)
+  if (closed && !allowClosedSlots(u, istrNome)) {
+    return "Fuori orario: solo Camilla Nardi può prenotare le vasche chiuse"
+  }
+  return assertAllLiberi(db, lezioni, except, closed && allowClosedSlots(u, istrNome))
+}
+
 function weeklyDateCount(tipo: "prova" | "5" | "10"): number {
   if (tipo === "10") return 10
   if (tipo === "5") return 5
@@ -150,10 +173,11 @@ function assertAllLiberi(
   db: ReturnType<typeof readLezioniPrivateDb>,
   lezioni: LpLezione[],
   exceptLezioneIds?: string[],
+  allowClosed?: boolean,
 ): string | null {
   for (let i = 0; i < lezioni.length; i++) {
     const l = lezioni[i]!
-    const busy = assertSlotLibero(db, l.giorno, l.ora, l.vasca, l.corsia, l.durataMin, exceptLezioneIds)
+    const busy = assertSlotLibero(db, l.giorno, l.ora, l.vasca, l.corsia, l.durataMin, exceptLezioneIds, allowClosed)
     if (busy) return `${l.giorno} ${l.ora}: ${busy}`
     for (let j = 0; j < i; j++) {
       const p = lezioni[j]!
@@ -528,7 +552,7 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
     tipo,
     ripetiSettimanale: b.ripetiSettimanale,
   })
-  const busy = assertAllLiberi(db, lezioni)
+  const busy = assertLiberiCamilla(db, lezioni, u, istr.nome)
   if (busy) return res.status(409).json({ message: busy })
 
   const pac = attachLezioniToRichiesta({ db, r, istr, tipo, lezioni })
@@ -580,7 +604,7 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
     tipo,
     ripetiSettimanale: b.ripetiSettimanale,
   })
-  const busy = assertAllLiberi(db, lezioni)
+  const busy = assertLiberiCamilla(db, lezioni, u, istr.nome)
   if (busy) return res.status(409).json({ message: busy })
 
   const richiestaId = String(b.richiestaId ?? "").trim()
@@ -617,7 +641,7 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
 }
 
 export function postLezioniPrivatePacchetto(req: Request, res: Response) {
-  void req.user
+  const u = req.user!
   const b = req.body as {
     richiestaId?: string
     tipo?: "prova" | "5" | "10"
@@ -646,7 +670,7 @@ export function postLezioniPrivatePacchetto(req: Request, res: Response) {
     if (!vasca || !isYmd(giorno) || !isHm(ora)) return res.status(400).json({ message: "Ogni lezione serve giorno, ora, vasca" })
     lezioni.push(newLezioneRow({ giorno, ora, vasca, corsia, durataMin }))
   }
-  const busy = assertAllLiberi(db, lezioni)
+  const busy = assertLiberiCamilla(db, lezioni, u, istr?.nome || r.istruttoreNome || "")
   if (busy) return res.status(409).json({ message: busy })
   const pac = attachLezioniToRichiesta({
     db,
@@ -687,7 +711,13 @@ export async function patchLezioniPrivateLezione(req: Request, res: Response) {
     const moving =
       nextGiorno !== l.giorno || nextOra !== l.ora || nextVasca !== l.vasca || nextCorsia !== l.corsia || nextDurata !== l.durataMin
     if (moving) {
-      const busy = assertSlotLibero(db, nextGiorno, nextOra, nextVasca, nextCorsia, nextDurata, l.id)
+      const busy = assertLiberiCamilla(
+        db,
+        [newLezioneRow({ giorno: nextGiorno, ora: nextOra, vasca: nextVasca, corsia: nextCorsia, durataMin: nextDurata })],
+        u,
+        p.istruttoreNome,
+        [l.id],
+      )
       if (busy) return res.status(409).json({ message: busy })
       l.giorno = nextGiorno
       l.ora = nextOra
@@ -787,7 +817,7 @@ export function postLezioniPrivateSpostaPacchetto(req: Request, res: Response) {
       durataMin: l.durataMin,
     }),
   )
-  const busy = assertAllLiberi(db, planned, except)
+  const busy = assertLiberiCamilla(db, planned, req.user!, pac.istruttoreNome, except)
   if (busy) return res.status(409).json({ message: busy })
   selected.forEach((l, i) => {
     const n = planned[i]!
@@ -801,6 +831,7 @@ export function postLezioniPrivateSpostaPacchetto(req: Request, res: Response) {
 }
 
 export function getLezioniPrivateOccupazione(req: Request, res: Response) {
+  const u = req.user!
   const from = String(req.query.from ?? "").trim()
   const to = String(req.query.to ?? "").trim()
   if (!isYmd(from) || !isYmd(to) || from > to) return res.status(400).json({ message: "from/to YYYY-MM-DD" })
@@ -815,7 +846,8 @@ export function getLezioniPrivateOccupazione(req: Request, res: Response) {
     days.push(`${y}-${mo}-${dd}`)
     cur.setDate(cur.getDate() + 1)
   }
-  const ore = lpOreSlotsAperti(days)
+  const prenotaFuoriOrario = allowClosedSlots(u) || canDesk(u)
+  const ore = prenotaFuoriOrario ? lpOreSlotsTutti() : lpOreSlotsAperti(days)
   const booked = flattenLezioni(db).filter((l) => l.stato === "prenotata" || l.stato === "svolta")
   const byDay: Record<string, { totali: number; occupati: number; v25: number; ludica: number }> = {}
   for (const giorno of days) {
@@ -839,5 +871,177 @@ export function getLezioniPrivateOccupazione(req: Request, res: Response) {
     }
     byDay[giorno] = { totali: cap.totali, occupati: Math.min(occupati, cap.totali), v25: cap.v25, ludica: cap.ludica }
   }
-  res.json({ from, to, ore, regole: db.regole, byDay, booked: booked.filter((l) => l.giorno >= from && l.giorno <= to) })
+  res.json({
+    from,
+    to,
+    ore,
+    prenotaFuoriOrario,
+    regole: db.regole,
+    byDay,
+    booked: booked.filter((l) => l.giorno >= from && l.giorno <= to),
+  })
+}
+
+function blobAbbLp(a: gestionaleSql.LpAbbonamentoHit): string {
+  return `${a.descrizione} ${a.categoria} ${a.macro}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+}
+
+function isPrivateAbbLp(a: gestionaleSql.LpAbbonamentoHit): boolean {
+  const b = blobAbbLp(a)
+  if (/TESSERAMENT|QUOTA ASSOCIATIVA|\bASI\b|BADGE|MERCHAND/.test(b)) return false
+  return /PRIVATE|LEZIONI PRIV/.test(b)
+}
+
+function tipoDaAbbLp(a: gestionaleSql.LpAbbonamentoHit): "prova" | "5" | "10" | "altro" {
+  const b = blobAbbLp(a)
+  if (/PROVA/.test(b)) return "prova"
+  if (/\b10\b|PACCHETTO\s*10|DIECI/.test(b)) return "10"
+  if (/\b5\b|PACCHETTO\s*5|CINQUE/.test(b)) return "5"
+  return "altro"
+}
+
+function abbCopreGiorno(a: gestionaleSql.LpAbbonamentoHit, giorno: string): boolean {
+  const from = (a.dataInizio || "").slice(0, 10)
+  const to = (a.dataFine || "").slice(0, 10)
+  if (from && from > giorno) return false
+  if (to && to < giorno) return false
+  return !!(from || to)
+}
+
+function monthBoundsIso(d = new Date()): { from: string; to: string } {
+  const y = d.getFullYear()
+  const m = d.getMonth()
+  const from = `${y}-${String(m + 1).padStart(2, "0")}-01`
+  const last = new Date(y, m + 1, 0).getDate()
+  const to = `${y}-${String(m + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`
+  return { from, to }
+}
+
+export async function getLezioniPrivateAbbonamentiCheck(req: Request, res: Response) {
+  try {
+    const bounds = monthBoundsIso()
+    const from = isYmd(String(req.query.from ?? "").trim()) ? String(req.query.from).trim() : bounds.from
+    const to = isYmd(String(req.query.to ?? "").trim()) ? String(req.query.to).trim() : bounds.to
+    if (from > to) return res.status(400).json({ message: "from/to non validi" })
+    const db = readLezioniPrivateDb()
+    const lezioni = flattenLezioni(db).filter(
+      (l) =>
+        l.giorno >= from &&
+        l.giorno <= to &&
+        (l.stato === "prenotata" || l.stato === "svolta"),
+    )
+    const cache = new Map<string, gestionaleSql.LpAbbonamentoHit[]>()
+    const rows = []
+    let ok = 0
+    let incongruente = 0
+    let mancante = 0
+    let nonAnagrafato = 0
+    let provaSenzaAbb = 0
+    for (const l of lezioni) {
+      const key = `${l.telefono}|${l.clienteNome}`.toLowerCase()
+      if (!cache.has(key)) {
+        cache.set(
+          key,
+          await gestionaleSql.queryAbbonamentiPerClienteLp({
+            telefono: l.telefono,
+            nome: l.clienteNome,
+          }),
+        )
+      }
+      const hits = cache.get(key) ?? []
+      const privates = hits.filter(isPrivateAbbLp)
+      const covering = privates.filter((a) => abbCopreGiorno(a, l.giorno))
+      const cliente =
+        hits[0] != null
+          ? `${hits[0].cognome} ${hits[0].nome}`.trim()
+          : privates[0]
+            ? `${privates[0].cognome} ${privates[0].nome}`.trim()
+            : ""
+      let esito: "ok" | "incongruente" | "mancante" | "non_anagrafato" | "prova_senza_abb"
+      let nota = ""
+      const best = covering[0]
+      if (!hits.length) {
+        if (l.tipo === "prova") {
+          esito = "prova_senza_abb"
+          nota = "Prova: cliente non trovato in anagrafica"
+        } else {
+          esito = "non_anagrafato"
+          nota = "Cliente non trovato in anagrafica (telefono o nominativo)"
+        }
+      } else if (!covering.length) {
+        if (l.tipo === "prova") {
+          esito = "prova_senza_abb"
+          nota = privates.length
+            ? "Prova senza abbonamento private valido in quella data"
+            : "Prova: nessun abbonamento private in gestionale"
+        } else {
+          esito = "mancante"
+          nota = privates.length
+            ? "Abbonamento private presente ma non copre la data della lezione"
+            : "Nessun abbonamento lezioni private in gestionale"
+        }
+      } else {
+        const tipoAbb = tipoDaAbbLp(best!)
+        if (tipoAbb !== "altro" && tipoAbb !== l.tipo) {
+          esito = "incongruente"
+          nota = `Prenotato ${l.tipo === "prova" ? "prova" : `pacchetto ${l.tipo}`}, abbonamento ${tipoAbb === "prova" ? "prova" : tipoAbb}`
+        } else {
+          esito = "ok"
+          nota = tipoAbb === "altro" ? "Private in corso (tipo non distinto 5/10)" : "Abbonamento valido e congruente"
+        }
+      }
+      if (esito === "ok") ok += 1
+      else if (esito === "incongruente") incongruente += 1
+      else if (esito === "mancante") mancante += 1
+      else if (esito === "non_anagrafato") nonAnagrafato += 1
+      else provaSenzaAbb += 1
+      rows.push({
+        lezioneId: l.lezioneId,
+        giorno: l.giorno,
+        ora: l.ora,
+        clienteNome: l.clienteNome,
+        telefono: l.telefono,
+        istruttoreNome: l.istruttoreNome,
+        tipo: l.tipo,
+        stato: l.stato,
+        esito,
+        nota,
+        clienteGestionale: cliente || undefined,
+        abbonamento: best
+          ? {
+              descrizione: best.descrizione,
+              categoria: best.categoria,
+              dataInizio: best.dataInizio,
+              dataFine: best.dataFine,
+              tipoRiconosciuto: tipoDaAbbLp(best),
+            }
+          : privates[0]
+            ? {
+                descrizione: privates[0].descrizione,
+                categoria: privates[0].categoria,
+                dataInizio: privates[0].dataInizio,
+                dataFine: privates[0].dataFine,
+                tipoRiconosciuto: tipoDaAbbLp(privates[0]),
+              }
+            : undefined,
+      })
+    }
+    rows.sort((a, b) => `${a.giorno}${a.ora}`.localeCompare(`${b.giorno}${b.ora}`))
+    res.json({
+      from,
+      to,
+      totale: rows.length,
+      ok,
+      incongruente,
+      mancante,
+      nonAnagrafato,
+      provaSenzaAbb,
+      rows,
+    })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
 }

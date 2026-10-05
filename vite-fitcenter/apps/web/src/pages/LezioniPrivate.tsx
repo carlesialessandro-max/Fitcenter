@@ -6,9 +6,11 @@ import { lezioniPrivateApi, type LpIstruttore, type LpLezioneFlat, type LpRichie
 import { useAuth } from "@/contexts/AuthContext"
 import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
-import { LP_VASCHE_LEGENDA, slotAperto } from "@/lib/lp-vasche-orari"
+import { LP_VASCHE_LEGENDA, lpOreSlotsTutti, slotAperto } from "@/lib/lp-vasche-orari"
+import { isCamillaNome, isCamillaUser } from "@/lib/lp-camilla"
+import { LezioniPrivateAbbonamentiTab } from "@/pages/LezioniPrivateAbbonamentiTab"
 
-type Tab = "richieste" | "calendario" | "istruttori"
+type Tab = "richieste" | "calendario" | "istruttori" | "abbonamenti"
 type Periodo = "giorno" | "settimana" | "mese"
 
 const DOW_IT = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"]
@@ -35,6 +37,7 @@ function addDaysIso(iso: string, n: number): string {
 function tabFromPath(pathname: string): Tab {
   if (pathname.includes("/calendario")) return "calendario"
   if (pathname.includes("/istruttori")) return "istruttori"
+  if (pathname.includes("/abbonamenti")) return "abbonamenti"
   return "richieste"
 }
 
@@ -108,7 +111,8 @@ export function LezioniPrivate() {
   const instructors = q.data?.instructors ?? []
   const richieste = q.data?.richieste ?? []
   const lezioni = q.data?.lezioni ?? []
-  const ore = occQ.data?.ore ?? q.data?.ore ?? []
+  const canBookClosed = isCamillaUser(user) || canDesk
+  const ore = canBookClosed ? (occQ.data?.ore?.length ? occQ.data.ore : lpOreSlotsTutti()) : (occQ.data?.ore ?? q.data?.ore ?? [])
   const booked = occQ.data?.booked ?? []
 
   return (
@@ -127,6 +131,7 @@ export function LezioniPrivate() {
               ["richieste", "Richieste"],
               ["calendario", "Calendario vasche"],
               ["istruttori", "Istruttori / regole"],
+              ["abbonamenti", "Controllo abbonamenti"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -204,7 +209,8 @@ export function LezioniPrivate() {
           <p className="mt-2 text-sm text-zinc-500">
             Ogni lezione dura 30 minuti (uno slot, senza intervalli da 15). 25 m: 1 persona, lun–ven 8:00–14:30 e
             18:30–22:00 (sabato chiusa). Ludica: lun/mer/gio 11:15–13:30, 15:15–16:15, 18:30–22:00 (4 posti); mar/ven
-            7:30–8:15 solo 2 (1 per corsia).
+            7:30–8:15 solo 2 (1 per corsia). Camilla Nardi (utente CAMILLA o istruttore) può prenotare anche gli orari
+            chiusi.
           </p>
           <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
             <table className="min-w-full text-left text-xs text-zinc-400">
@@ -235,6 +241,7 @@ export function LezioniPrivate() {
               days={periodo === "giorno" ? [day] : week.days}
               ore={ore}
               booked={booked}
+              allowClosed={canBookClosed}
               onBook={setBookSlot}
               onOpen={setDetailLezione}
               onTogli={(id) => {
@@ -248,6 +255,7 @@ export function LezioniPrivate() {
               instructors={instructors}
               richieste={richieste.filter((r) => r.status !== "annullata")}
               userNome={user?.nome ?? ""}
+              slotChiuso={!slotAperto(bookSlot.giorno, bookSlot.ora, bookSlot.vasca, bookSlot.corsia)}
               onClose={() => setBookSlot(null)}
               onDone={() => {
                 setBookSlot(null)
@@ -261,6 +269,8 @@ export function LezioniPrivate() {
       {tab === "istruttori" ? (
         <IstruttoriTab canRoster={canRoster} instructors={instructors} onDone={invalidate} />
       ) : null}
+
+      {tab === "abbonamenti" ? <LezioniPrivateAbbonamentiTab /> : null}
 
       {detailLezione ? (
         <LezioneDetailModal
@@ -652,6 +662,9 @@ function PrendiModal({
             {vasca === "ludica" ? <option value={2}>Corsia 2</option> : null}
           </select>
         </div>
+        {!slotAperto(giorno, ora, vasca, corsia) ? (
+          <p className="mt-2 text-xs text-amber-300">Orario fuori fascia ufficiale: solo Camilla Nardi (utente o istruttore).</p>
+        ) : null}
         {m.isError ? <p className="mt-2 text-sm text-red-400">{String((m.error as Error).message)}</p> : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-zinc-400">
@@ -748,6 +761,7 @@ function BookSlotModal({
   instructors,
   richieste,
   userNome,
+  slotChiuso,
   onClose,
   onDone,
 }: {
@@ -755,11 +769,15 @@ function BookSlotModal({
   instructors: LpIstruttore[]
   richieste: LpRichiesta[]
   userNome: string
+  slotChiuso: boolean
   onClose: () => void
   onDone: () => void
 }) {
   const match = instructors.find((i) => i.attivo && i.nome.trim().toLowerCase() === userNome.trim().toLowerCase())
-  const [istruttoreId, setIstruttoreId] = useState(match?.id ?? instructors.find((i) => i.attivo)?.id ?? "")
+  const camillaIstr = instructors.find((i) => i.attivo && isCamillaNome(i.nome))
+  const [istruttoreId, setIstruttoreId] = useState(
+    slotChiuso ? (camillaIstr?.id ?? match?.id ?? "") : (match?.id ?? instructors.find((i) => i.attivo)?.id ?? ""),
+  )
   const [clienteNome, setClienteNome] = useState("")
   const [telefono, setTelefono] = useState("")
   const [eta, setEta] = useState("")
@@ -793,6 +811,11 @@ function BookSlotModal({
         <p className="mt-1 text-xs text-zinc-500">
           {fmtDateIt(slot.giorno)} {slot.ora} · {VASCA_LABEL[slot.vasca]} · corsia {slot.corsia}
         </p>
+        {slotChiuso ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Orario fuori fascia ufficiale: solo Camilla Nardi (utente CAMILLA o istruttore).
+          </p>
+        ) : null}
         <div className="mt-3">
           <TipoButtons value={tipo} onChange={setTipo} />
         </div>
@@ -1045,6 +1068,7 @@ function DayWeekGrid({
   days,
   ore,
   booked,
+  allowClosed,
   onBook,
   onOpen,
   onTogli,
@@ -1052,6 +1076,7 @@ function DayWeekGrid({
   days: string[]
   ore: string[]
   booked: LpLezioneFlat[]
+  allowClosed: boolean
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
   onTogli: (id: string) => void
@@ -1102,8 +1127,9 @@ function DayWeekGrid({
                     <LaneCell
                       key={`${d}-${ln.vasca}-${ln.corsia}`}
                       hits={hits(d, ora, ln.vasca, ln.corsia)}
-                      cap={fascia?.capCorsia ?? 0}
+                      cap={fascia?.capCorsia ?? (allowClosed ? 1 : 0)}
                       aperto={!!fascia}
+                      allowClosed={allowClosed}
                       slot={{ giorno: d, ora, vasca: ln.vasca, corsia: ln.corsia }}
                       onBook={onBook}
                       onOpen={onOpen}
@@ -1130,6 +1156,7 @@ function LaneCell({
   hits,
   cap,
   aperto,
+  allowClosed,
   slot,
   onBook,
   onOpen,
@@ -1138,12 +1165,13 @@ function LaneCell({
   hits: LpLezioneFlat[]
   cap: number
   aperto: boolean
+  allowClosed: boolean
   slot: LpSlot
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
   onTogli: (id: string) => void
 }) {
-  if (!aperto) {
+  if (!aperto && !allowClosed) {
     return (
       <td className="bg-zinc-950/50 px-1 py-1 text-[10px] text-zinc-600">chiuso</td>
     )
@@ -1182,7 +1210,7 @@ function LaneCell({
           onClick={() => onBook(slot)}
           className="w-full rounded px-1 py-1 text-emerald-600/90 hover:bg-emerald-500/10"
         >
-          {hits.length === 0 ? `libero${cap > 1 ? ` ${cap}` : ""}` : `+${liberi} posto`}
+          {hits.length === 0 ? (!aperto ? "chiuso · prenota" : `libero${cap > 1 ? ` ${cap}` : ""}`) : `+${liberi} posto`}
         </button>
       ) : hits.length === 0 ? (
         <span className="text-zinc-600">—</span>

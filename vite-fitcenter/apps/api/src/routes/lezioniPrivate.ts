@@ -4,6 +4,7 @@ import {
   deleteLezioniPrivateIstruttore,
   deleteLezioniPrivateRichiesta,
   getLezioniPrivate,
+  getLezioniPrivateAbbonamentiCheck,
   getLezioniPrivateOccupazione,
   patchLezioniPrivateIstruttore,
   patchLezioniPrivateLezione,
@@ -22,6 +23,7 @@ lezioniPrivateRouter.use(requireAuth, requireLezioniPrivate)
 
 lezioniPrivateRouter.get("/", getLezioniPrivate)
 lezioniPrivateRouter.get("/occupazione", getLezioniPrivateOccupazione)
+lezioniPrivateRouter.get("/abbonamenti-check", getLezioniPrivateAbbonamentiCheck)
 lezioniPrivateRouter.put("/regole", putLezioniPrivateRegole)
 lezioniPrivateRouter.post("/istruttori", postLezioniPrivateIstruttore)
 lezioniPrivateRouter.patch("/istruttori/:id", patchLezioniPrivateIstruttore)

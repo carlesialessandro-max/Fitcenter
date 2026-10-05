@@ -19,6 +19,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/lezioni-private/richieste", label: "Richieste lezioni private", group: "Lezioni private" },
   { path: "/lezioni-private/calendario", label: "Calendario vasche", group: "Lezioni private" },
   { path: "/lezioni-private/istruttori", label: "Istruttori / regole", group: "Lezioni private" },
+  { path: "/lezioni-private/abbonamenti", label: "Controllo abbonamenti", group: "Lezioni private" },
   { path: "/calendario", label: "Piano operativo", group: "Piano operativo" },
   { path: "/calendario/corsi", label: "Calendario corsi", group: "Piano operativo" },
   { path: "/calendario/personale", label: "Personale", group: "Piano operativo" },
@@ -53,6 +54,7 @@ const LP = [
   "/lezioni-private/richieste",
   "/lezioni-private/calendario",
   "/lezioni-private/istruttori",
+  "/lezioni-private/abbonamenti",
 ] as const
 
 /** Pagine di default per ruolo (come il menu attuale). */

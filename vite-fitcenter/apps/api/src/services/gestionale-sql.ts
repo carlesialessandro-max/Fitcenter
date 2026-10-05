@@ -888,6 +888,108 @@ export async function queryClientiSearch(qRaw: string): Promise<ClienteSearchHit
   }
 }
 
+export type LpAbbonamentoHit = {
+  idUtente: string
+  cognome: string
+  nome: string
+  telefono?: string
+  idIscrizione: string
+  descrizione: string
+  categoria: string
+  macro: string
+  dataInizio: string
+  dataFine: string
+}
+
+function digitsLast9(raw: string): string {
+  const d = String(raw ?? "").replace(/\D/g, "")
+  if (d.startsWith("39") && d.length >= 11) return d.slice(-9)
+  return d.length >= 9 ? d.slice(-9) : d
+}
+
+/** Abbonamenti del cliente (telefono o nominativo) per controllo lezioni private. */
+export async function queryAbbonamentiPerClienteLp(args: {
+  telefono?: string
+  nome?: string
+}): Promise<LpAbbonamentoHit[]> {
+  const p = await getPool()
+  if (!p) return []
+  const tblU = defaultTables.clienti
+  const tblA = getAbbonamentiTableName()
+  if (!isSafeSqlIdentifierLoose(tblU) || !isSafeSqlIdentifierLoose(tblA)) return []
+  const tel9 = digitsLast9(args.telefono ?? "")
+  const nome = String(args.nome ?? "").replace(/[%_\[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)
+  if (tel9.length < 8 && nome.length < 3) return []
+  const uObj = qualifySqlObject(tblU).query
+  const aObj = qualifySqlObject(tblA).query
+  const telExpr = `RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(ISNULL({col}, N''), N' ', N''), N'-', N''), N'+', N''), N'.', N''), N'/','') , 9)`
+  const mapRows = (recordset: Record<string, unknown>[] | undefined): LpAbbonamentoHit[] => {
+    const out: LpAbbonamentoHit[] = []
+    for (const row of recordset ?? []) {
+      const get = (...keys: string[]) => {
+        for (const k of keys) {
+          const v = row[k]
+          if (v != null && String(v).trim() !== "") return String(v).trim()
+        }
+        return ""
+      }
+      out.push({
+        idUtente: get("idUtente", "IDUtente"),
+        cognome: get("cognome", "Cognome"),
+        nome: get("nome", "Nome"),
+        telefono: get("telefono", "SMS") || undefined,
+        idIscrizione: get("IDIscrizione", "IdIscrizione"),
+        descrizione: get("AbbonamentoDescrizione", "DescrizioneAbbonamento", "Descrizione"),
+        categoria: get("CategoriaAbbonamentoDescrizione", "CategoriaDescrizione"),
+        macro: get("MacroCategoriaAbbonamentoDescrizione", "MacroCategoriaDescrizione"),
+        dataInizio: get("DataInizio", "DataOperazione").slice(0, 10),
+        dataFine: get("DataFine").slice(0, 10),
+      })
+    }
+    return out
+  }
+  const run = async (mode: "tel" | "nome"): Promise<LpAbbonamentoHit[]> => {
+    const req = p.request()
+    const where: string[] = []
+    if (mode === "tel") {
+      req.input("tel9", sql.NVarChar(16), tel9)
+      where.push(
+        `(${telExpr.replace("{col}", "u.[SMS]")} = @tel9 OR ${telExpr.replace("{col}", "u.[Telefono_1]")} = @tel9)`,
+      )
+    } else {
+      req.input("nome", sql.NVarChar(120), `%${nome}%`)
+      where.push(
+        `(LTRIM(RTRIM(COALESCE(u.[Cognome], N'') + N' ' + COALESCE(u.[Nome], N''))) LIKE @nome
+          OR LTRIM(RTRIM(COALESCE(u.[Nome], N'') + N' ' + COALESCE(u.[Cognome], N''))) LIKE @nome)`,
+      )
+    }
+    const r = await req.query(`
+      SELECT TOP 80
+        u.[IDUtente] AS idUtente,
+        u.[Cognome] AS cognome,
+        u.[Nome] AS nome,
+        COALESCE(u.[SMS], u.[Telefono_1]) AS telefono,
+        a.*
+      FROM ${uObj} u
+      INNER JOIN ${aObj} a ON a.[IDUtente] = u.[IDUtente]
+      WHERE (${where.join(" OR ")})
+      ORDER BY a.[IDIscrizione] DESC
+    `)
+    return mapRows((r.recordset ?? []) as Record<string, unknown>[])
+  }
+  try {
+    if (tel9.length >= 8) {
+      const byTel = await run("tel")
+      if (byTel.length) return byTel
+    }
+    if (nome.length >= 3) return await run("nome")
+    return []
+  } catch (e) {
+    console.warn("[lp] abbonamenti cliente:", (e as Error)?.message ?? e)
+    return []
+  }
+}
+
 /** Colonna FK sul cliente verso chi ha presentato (default IDPresentatore). Override: GESTIONALE_UTENTI_COL_ID_PRESENTATORE. */
 function referralPresenterColumn(): string {
   const raw = process.env.GESTIONALE_UTENTI_COL_ID_PRESENTATORE?.trim()
