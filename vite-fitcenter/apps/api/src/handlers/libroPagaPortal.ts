@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni } from "../store/libro-paga-db.js"
+import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita } from "../store/libro-paga-db.js"
 import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import { livelliInseribili, personaleVisibile } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
@@ -130,6 +130,36 @@ export async function removeLpagaTurno(req: Request, res: Response) {
     if (!vis.has(t.personaleId)) return res.status(403).json({ message: "Non puoi eliminare questo turno" })
     await deleteTurno(id)
     res.json({ ok: true })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLpagaMensilita(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const vis = personaleVisibile(me, personale, livelli)
+    const personaleId = String(req.body?.personaleId ?? "").trim()
+    if (me.ruolo === "user" && personaleId !== me.id) {
+      return res.status(403).json({ message: "Puoi modificare solo la tua mensilità" })
+    }
+    if (!vis.has(personaleId)) return res.status(403).json({ message: "Mensilità non visibile" })
+    const mese = String(req.body?.mese ?? "").trim()
+    const bonifico = Number(req.body?.bonifico)
+    if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
+    if (!isYmLpaga(mese)) return res.status(400).json({ message: "Mese non valido" })
+    if (!Number.isFinite(bonifico) || bonifico < 0) {
+      return res.status(400).json({ message: "Importo bonifico non valido" })
+    }
+    const row = await upsertMensilita({
+      personaleId,
+      mese,
+      bonifico,
+      nota: String(req.body?.nota ?? "").trim(),
+      chiuso: Boolean(req.body?.chiuso),
+    })
+    res.json({ mensilita: row })
   } catch (e) {
     fail(res, e)
   }

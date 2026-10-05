@@ -36,10 +36,10 @@ export async function buildLibroPagaSnapshot(opts?: {
 }) {
   const mese = opts?.mese && isYmLpaga(opts.mese) ? opts.mese : defaultMeseLpaga()
   const storage = await ensureLibroPagaStorage()
-  const [livelli, personaleAll, turniAll, savedMens, validazioni, totaliReparto, macroQuote] = await Promise.all([
+  const [livelli, personaleAll, turniTutti, savedMens, validazioni, totaliReparto, macroQuote] = await Promise.all([
     listLivelli(),
     listPersonale(),
-    listTurni(mese),
+    listTurni(),
     listMensilita(mese),
     listValidazioni(),
     listTotaliReparto(),
@@ -47,7 +47,14 @@ export async function buildLibroPagaSnapshot(opts?: {
   ])
   const vis = opts?.visibleIds
   const personale = vis ? personaleAll.filter((p) => vis.has(p.id)) : personaleAll
-  const turni = vis ? turniAll.filter((t) => vis.has(t.personaleId)) : turniAll
+  const scopedTurni = vis ? turniTutti.filter((t) => vis.has(t.personaleId)) : turniTutti
+  const year = mese.slice(0, 4)
+  const totAnnoBy = new Map<string, number>()
+  for (const t of scopedTurni) {
+    if (!t.giorno.startsWith(year)) continue
+    totAnnoBy.set(t.personaleId, Math.round(((totAnnoBy.get(t.personaleId) ?? 0) + t.importo) * 100) / 100)
+  }
+  const turni = scopedTurni.filter((t) => t.giorno.slice(0, 7) === mese)
   const presenze = await listPresenze(turni.map((t) => t.id))
   const presenzaByTurno = new Map(presenze.map((p) => [p.turnoId, p]))
   const livById = new Map(livelli.map((l) => [l.id, l]))
@@ -128,6 +135,7 @@ export async function buildLibroPagaSnapshot(opts?: {
         bonifico: saved?.bonifico ?? Math.round(agg.importo * 100) / 100,
         nota: saved?.nota ?? "",
         chiuso: saved?.chiuso ?? false,
+        totAnno: totAnnoBy.get(personaleId) ?? Math.round(agg.importo * 100) / 100,
       }
     })
     .sort((a, b) => a.personaleNome.localeCompare(b.personaleNome, "it"))

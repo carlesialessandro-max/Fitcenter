@@ -6,6 +6,7 @@ import {
   postLpagaLogin,
   postLpagaLogout,
   postLpagaTurno,
+  putLpagaMensilita,
   removeLpagaTurno,
   requireLpaga,
 } from "../handlers/libroPagaPortal.js"
@@ -24,3 +25,4 @@ libroPagaPortalRouter.get("/me", requireLpaga, getLpagaMe)
 libroPagaPortalRouter.get("/", requireLpaga, getLpagaSnapshot)
 libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
 libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
+libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)

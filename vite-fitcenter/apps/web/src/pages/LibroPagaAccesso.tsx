@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
+import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -160,7 +161,8 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const tabs: { id: typeof tab; label: string }[] = [
     { id: "home", label: "Home" },
     { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
-    ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }, { id: "mensilita" as const, label: "Mensilità" }] as const) : []),
+    { id: "mensilita", label: "Mensilità" },
+    ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
   ]
 
   return (
@@ -213,7 +215,18 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           />
         )}
         {data && tab === "personale" && canTeam && <Personale data={data} />}
-        {data && tab === "mensilita" && canTeam && <Mensilita data={data} />}
+        {data && tab === "mensilita" && (
+          <Mensilita
+            data={data}
+            mese={mese}
+            me={me}
+            onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+            }}
+          />
+        )}
       </main>
     </div>
   )
@@ -401,29 +414,28 @@ function Personale({ data }: { data: LpagaPortalSnapshot }) {
   )
 }
 
-function Mensilita({ data }: { data: LpagaPortalSnapshot }) {
+function Mensilita({
+  data,
+  mese,
+  me,
+  onError,
+  onDone,
+}: {
+  data: LpagaPortalSnapshot
+  mese: string
+  me?: LpagaMe
+  onError: (s: string) => void
+  onDone: () => void
+}) {
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
-          <tr>
-            <th className="px-3 py-2">Nominativo</th>
-            <th className="px-3 py-2 text-right">Ore</th>
-            <th className="px-3 py-2 text-right">Importo</th>
-            <th className="px-3 py-2 text-right">Turni</th>
-          </tr>
-        </thead>
-        <tbody>
-          {data.mensilita.map((r) => (
-            <tr key={r.personaleId} className="border-t border-zinc-800 text-zinc-200">
-              <td className="px-3 py-2">{r.personaleNome}</td>
-              <td className="px-3 py-2 text-right">{r.ore}</td>
-              <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
-              <td className="px-3 py-2 text-right">{r.nTurni}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <LibroPagaMensilitaTab
+      data={data}
+      mese={mese}
+      canEdit={(id) => me?.ruolo === "admin" || me?.ruolo === "manager" || me?.id === id}
+      hideIban={false}
+      onSave={(body) => lpagaApi.putMensilita(body)}
+      onError={onError}
+      onDone={onDone}
+    />
   )
 }

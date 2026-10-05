@@ -60,6 +60,7 @@ export type LpagaMensilitaRow = {
   bonifico: number
   nota: string
   chiuso: boolean
+  totAnno?: number
 }
 
 export type LpagaConvalida = {
@@ -108,6 +109,7 @@ export type LibroPagaSnapshot = {
     mioTurni?: number
   }
   me?: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string } | null
+}
 
 export const libroPagaApi = {
   get: (mese: string) => api.get<LibroPagaSnapshot>(`/libro-paga?mese=${encodeURIComponent(mese)}`),

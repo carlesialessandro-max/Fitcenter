@@ -21,6 +21,7 @@ import {
   type LpagaTreeNode,
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
+import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "admin"
 
@@ -712,70 +713,15 @@ function MensilitaTab({
   onError: (s: string) => void
   onDone: () => void
 }) {
-  const [draft, setDraft] = useState<Record<string, { bonifico: string; nota: string }>>({})
-  const mut = useMutation({
-    mutationFn: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
-      libroPagaApi.putMensilita(body),
-    onSuccess: onDone,
-    onError: (e: Error) => onError(e.message),
-  })
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
-          <tr>
-            <th className="px-3 py-2">Nominativo</th>
-            <th className="px-3 py-2 text-right">Importo totale</th>
-            <th className="px-3 py-2">Note correzione</th>
-            <th className="px-3 py-2 text-right">Importo bonifico</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {data.mensilita.map((r) => {
-            const d = draft[r.personaleId] ?? { bonifico: String(r.bonifico), nota: r.nota }
-            return (
-              <tr key={r.personaleId} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.personaleNome}</td>
-                <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
-                <td className="px-3 py-2">
-                  <input
-                    value={d.nota}
-                    onChange={(e) => setDraft((x) => ({ ...x, [r.personaleId]: { ...d, nota: e.target.value } }))}
-                    className={`${inputCls} w-48`}
-                  />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <input
-                    value={d.bonifico}
-                    onChange={(e) => setDraft((x) => ({ ...x, [r.personaleId]: { ...d, bonifico: e.target.value } }))}
-                    className={`${inputCls} w-28 text-right`}
-                  />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <button
-                    type="button"
-                    className={btnGhost}
-                    disabled={mut.isPending}
-                    onClick={() =>
-                      mut.mutate({
-                        personaleId: r.personaleId,
-                        mese,
-                        bonifico: Number(d.bonifico.replace(",", ".")),
-                        nota: d.nota,
-                        chiuso: r.chiuso,
-                      })
-                    }
-                  >
-                    Salva
-                  </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
+    <LibroPagaMensilitaTab
+      data={data}
+      mese={mese}
+      canEdit={() => true}
+      onSave={(body) => libroPagaApi.putMensilita(body)}
+      onError={onError}
+      onDone={onDone}
+    />
   )
 }
 
