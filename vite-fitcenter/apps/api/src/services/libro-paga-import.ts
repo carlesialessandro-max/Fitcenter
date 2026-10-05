@@ -157,7 +157,14 @@ export async function importLibroPagaDump(): Promise<{
   validazioni: number
 }> {
   const dump = findDumpFile()
-  if (!dump) throw Object.assign(new Error("Dump libropaga non trovato sul server"), { status: 404 })
+  if (!dump) {
+    throw Object.assign(
+      new Error(
+        "Dump Payroll non trovato. Esporta Sql1272546_1 da phpMyAdmin (SQL) e copia il file come apps/api/data/libropaga-dump.sql sul server FitCenter."
+      ),
+      { status: 404 }
+    )
+  }
   const sql = readDumpSql(dump)
   const db = dumpSqlToDb(sql)
   if (!db.livelli.length) throw Object.assign(new Error("Dump senza livelli"), { status: 400 })

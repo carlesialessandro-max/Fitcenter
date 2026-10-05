@@ -1,4 +1,6 @@
 import fs from "fs"
+import path from "path"
+import { fileURLToPath } from "url"
 
 export type MysqlRow = Record<string, string | null>
 
@@ -135,11 +137,24 @@ export function readDumpSql(filePath: string): string {
 
 export function dumpCandidates(): string[] {
   const env = process.env.LIBROPAGA_DUMP?.trim()
-  return [
-    ...(env ? [env] : []),
-    "C:\\Users\\aless\\OneDrive\\Documenti\\libropaga.it\\sql\\89_46_111_76.sql",
-    "C:\\Users\\aless\\OneDrive\\Documenti\\FitCenter\\libropaga.it\\sql\\89_46_111_76.sql",
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const names = ["libropaga-dump.sql", "89_46_111_76.sql"]
+  const dirs = [
+    path.resolve(here, "../../data"),
+    path.resolve(process.cwd(), "data"),
+    path.resolve(process.cwd(), "apps/api/data"),
+    path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
+    "C:\\fitcenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\fitcenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data",
+    "C:\\Users\\aless\\OneDrive\\Documenti\\libropaga.it\\sql",
+    "C:\\Users\\aless\\OneDrive\\Documenti\\FitCenter\\libropaga.it\\sql",
   ]
+  const out: string[] = []
+  if (env) out.push(env)
+  for (const dir of dirs) {
+    for (const name of names) out.push(path.join(dir, name))
+  }
+  return out
 }
 
 export function findDumpFile(): string | null {
