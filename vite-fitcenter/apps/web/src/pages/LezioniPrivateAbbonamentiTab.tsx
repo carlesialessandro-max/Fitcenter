@@ -24,13 +24,40 @@ export function LezioniPrivateAbbonamentiTab() {
   const [from, setFrom] = useState(month.from)
   const [to, setTo] = useState(month.to)
   const [filtro, setFiltro] = useState<"tutti" | LpAbbCheckEsito>("tutti")
+  const [giorno, setGiorno] = useState("")
+  const [istruttore, setIstruttore] = useState("")
+  const [nominativo, setNominativo] = useState("")
   const q = useQuery({
     queryKey: ["lezioni-private-abb-check", from, to],
     queryFn: () => lezioniPrivateApi.abbonamentiCheck(from, to),
     enabled: !!from && !!to && from <= to,
     staleTime: 15_000,
   })
-  const rows = (q.data?.rows ?? []).filter((r) => (filtro === "tutti" ? true : r.esito === filtro))
+  const istruttori = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of q.data?.rows ?? []) {
+      const n = r.istruttoreNome.trim()
+      if (n) set.add(n)
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "it"))
+  }, [q.data?.rows])
+  const rows = useMemo(() => {
+    const nomeQ = nominativo.trim().toLowerCase()
+    const istrQ = istruttore.trim().toLowerCase()
+    return (q.data?.rows ?? []).filter((r) => {
+      if (filtro !== "tutti" && r.esito !== filtro) return false
+      if (giorno && r.giorno !== giorno) return false
+      if (istrQ && !r.istruttoreNome.toLowerCase().includes(istrQ)) return false
+      if (
+        nomeQ &&
+        !r.clienteNome.toLowerCase().includes(nomeQ) &&
+        !(r.clienteGestionale ?? "").toLowerCase().includes(nomeQ)
+      ) {
+        return false
+      }
+      return true
+    })
+  }, [q.data?.rows, filtro, giorno, istruttore, nominativo])
   return (
     <div className="mt-5 grid gap-4">
       <p className="text-sm text-zinc-400">
@@ -57,6 +84,52 @@ export function LezioniPrivateAbbonamentiTab() {
             className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
           />
         </label>
+        <label className="grid gap-1 text-sm text-zinc-400">
+          Data lezione
+          <input
+            type="date"
+            value={giorno}
+            onChange={(e) => setGiorno(e.target.value)}
+            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+          />
+        </label>
+        <label className="grid gap-1 text-sm text-zinc-400">
+          Istruttore
+          <input
+            list="lp-abb-istr"
+            value={istruttore}
+            onChange={(e) => setIstruttore(e.target.value)}
+            placeholder="Nome istruttore"
+            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+          />
+          <datalist id="lp-abb-istr">
+            {istruttori.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        </label>
+        <label className="grid gap-1 text-sm text-zinc-400">
+          Nominativo
+          <input
+            value={nominativo}
+            onChange={(e) => setNominativo(e.target.value)}
+            placeholder="Cognome o nome"
+            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+          />
+        </label>
+        {giorno || istruttore || nominativo ? (
+          <button
+            type="button"
+            onClick={() => {
+              setGiorno("")
+              setIstruttore("")
+              setNominativo("")
+            }}
+            className="rounded-lg px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200"
+          >
+            Pulisci ricerca
+          </button>
+        ) : null}
       </div>
       {q.isError ? <p className="text-sm text-red-400">{String((q.error as Error).message)}</p> : null}
       {q.data ? (
@@ -105,7 +178,7 @@ export function LezioniPrivateAbbonamentiTab() {
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-3 py-6 text-zinc-500">
-                  Nessuna lezione nel periodo.
+                  Nessuna lezione con questi filtri.
                 </td>
               </tr>
             ) : (
