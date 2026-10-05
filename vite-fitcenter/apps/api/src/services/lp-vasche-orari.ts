@@ -31,7 +31,14 @@ function fasceDow(dow: number, vasca: VascaId): LpFasciaVasca[] {
     }
     return []
   }
-  if (dow === 1 || dow === 3 || dow === 4) {
+  if (dow === 1) {
+    return [
+      { from: hm(11, 15), to: hm(13, 30), corsie: 2, capCorsia: 2 },
+      { from: hm(15, 30), to: hm(16), corsie: 1, capCorsia: 1 },
+      { from: hm(18, 30), to: hm(22), corsie: 2, capCorsia: 2 },
+    ]
+  }
+  if (dow === 3 || dow === 4) {
     return [
       { from: hm(11, 15), to: hm(13, 30), corsie: 2, capCorsia: 2 },
       { from: hm(15, 15), to: hm(16, 15), corsie: 2, capCorsia: 2 },

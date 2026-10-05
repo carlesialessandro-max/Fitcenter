@@ -208,9 +208,9 @@ export function LezioniPrivate() {
           </div>
           <p className="mt-2 text-sm text-zinc-500">
             Ogni lezione dura 30 minuti (uno slot, senza intervalli da 15). 25 m: 1 persona, lun–ven 8:00–14:30 e
-            18:30–22:00 (sabato chiusa). Ludica: lun/mer/gio 11:15–13:30, 15:15–16:15, 18:30–22:00 (4 posti); mar/ven
-            7:30–8:15 solo 2 (1 per corsia). Camilla Nardi (utente CAMILLA o istruttore) può prenotare anche gli orari
-            chiusi.
+            18:30–22:00 (sabato chiusa). Ludica lunedì: 11:15–13:30, 15:30–16:00 (1 corsia), 18:30–22:00. Mer/gio:
+            11:15–13:30, 15:15–16:15, 18:30–22:00. Mar/ven 7:30–8:15 solo 2 (1 per corsia). Camilla Nardi (utente CAMILLA
+            o istruttore) può prenotare anche gli orari chiusi.
           </p>
           <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
             <table className="min-w-full text-left text-xs text-zinc-400">
@@ -1388,7 +1388,7 @@ function IstruttoriTab({
       <div className="rounded-2xl border border-zinc-800 p-4">
         <h2 className="font-semibold text-zinc-100">Orari vasche (ufficiali)</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Lun/mer/gio in ludica come da tabella.
+          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Lunedì ludica 15:30–16:00 una corsia.
           Mar/ven in ludica solo 7:30–8:15, 1 persona per corsia.
         </p>
         <table className="mt-3 w-full text-sm">

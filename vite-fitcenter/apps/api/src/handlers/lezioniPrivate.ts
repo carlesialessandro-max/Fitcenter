@@ -883,7 +883,7 @@ export function getLezioniPrivateOccupazione(req: Request, res: Response) {
 }
 
 function blobAbbLp(a: gestionaleSql.LpAbbonamentoHit): string {
-  return `${a.descrizione} ${a.categoria} ${a.macro}`
+  return `${a.descrizione} ${a.categoria} ${a.macro} ${a.durata ?? ""}`
     .toUpperCase()
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -962,7 +962,10 @@ export async function getLezioniPrivateAbbonamentiCheck(req: Request, res: Respo
             : ""
       let esito: "ok" | "incongruente" | "mancante" | "non_anagrafato" | "prova_senza_abb"
       let nota = ""
-      const best = covering[0]
+      const best =
+        covering.find((a) => tipoDaAbbLp(a) === l.tipo) ??
+        covering.find((a) => tipoDaAbbLp(a) === "altro") ??
+        covering[0]
       if (!hits.length) {
         if (l.tipo === "prova") {
           esito = "prova_senza_abb"

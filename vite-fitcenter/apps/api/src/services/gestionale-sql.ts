@@ -897,6 +897,7 @@ export type LpAbbonamentoHit = {
   descrizione: string
   categoria: string
   macro: string
+  durata: string
   dataInizio: string
   dataFine: string
 }
@@ -905,6 +906,27 @@ function digitsLast9(raw: string): string {
   const d = String(raw ?? "").replace(/\D/g, "")
   if (d.startsWith("39") && d.length >= 11) return d.slice(-9)
   return d.length >= 9 ? d.slice(-9) : d
+}
+
+/** Date gestionale in YYYY-MM-DD (niente toString() tipo "Thu Oct 02"). */
+function sqlValueToYmd(v: unknown): string {
+  if (v == null || v === "") return ""
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const y = v.getFullYear()
+    const mo = String(v.getMonth() + 1).padStart(2, "0")
+    const dd = String(v.getDate()).padStart(2, "0")
+    return `${y}-${mo}-${dd}`
+  }
+  const s = String(v).trim()
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(s)
+  if (iso) return iso[1]!
+  const it = /^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/.exec(s)
+  if (it) return `${it[3]}-${it[2]!.padStart(2, "0")}-${it[1]!.padStart(2, "0")}`
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const d = new Date(v)
+    if (!Number.isNaN(d.getTime())) return sqlValueToYmd(d)
+  }
+  return ""
 }
 
 /** Abbonamenti del cliente (telefono o nominativo) per controllo lezioni private. */
@@ -926,12 +948,21 @@ export async function queryAbbonamentiPerClienteLp(args: {
   const mapRows = (recordset: Record<string, unknown>[] | undefined): LpAbbonamentoHit[] => {
     const out: LpAbbonamentoHit[] = []
     for (const row of recordset ?? []) {
-      const get = (...keys: string[]) => {
+      const raw = (...keys: string[]) => {
         for (const k of keys) {
-          const v = row[k]
-          if (v != null && String(v).trim() !== "") return String(v).trim()
+          if (Object.prototype.hasOwnProperty.call(row, k) && row[k] != null && row[k] !== "") return row[k]
         }
-        return ""
+        const low = new Map(Object.keys(row).map((k) => [k.toLowerCase(), k]))
+        for (const k of keys) {
+          const actual = low.get(k.toLowerCase())
+          if (actual && row[actual] != null && row[actual] !== "") return row[actual]
+        }
+        return undefined
+      }
+      const get = (...keys: string[]) => {
+        const v = raw(...keys)
+        if (v == null) return ""
+        return String(v).trim()
       }
       out.push({
         idUtente: get("idUtente", "IDUtente"),
@@ -942,8 +973,9 @@ export async function queryAbbonamentiPerClienteLp(args: {
         descrizione: get("AbbonamentoDescrizione", "DescrizioneAbbonamento", "Descrizione"),
         categoria: get("CategoriaAbbonamentoDescrizione", "CategoriaDescrizione"),
         macro: get("MacroCategoriaAbbonamentoDescrizione", "MacroCategoriaDescrizione"),
-        dataInizio: get("DataInizio", "DataOperazione").slice(0, 10),
-        dataFine: get("DataFine").slice(0, 10),
+        durata: get("AbbonamentoDurataDescrizione", "DurataDescrizione", "Durata"),
+        dataInizio: sqlValueToYmd(raw("LpDataInizio", "DataInizio", "DataOperazione")),
+        dataFine: sqlValueToYmd(raw("LpDataFine", "DataFine", "DataScadenza", "FineValidita", "DataA")),
       })
     }
     return out
@@ -969,6 +1001,8 @@ export async function queryAbbonamentiPerClienteLp(args: {
         u.[Cognome] AS cognome,
         u.[Nome] AS nome,
         COALESCE(u.[SMS], u.[Telefono_1]) AS telefono,
+        CONVERT(varchar(10), a.[DataInizio], 23) AS LpDataInizio,
+        CONVERT(varchar(10), a.[DataFine], 23) AS LpDataFine,
         a.*
       FROM ${uObj} u
       INNER JOIN ${aObj} a ON a.[IDUtente] = u.[IDUtente]
