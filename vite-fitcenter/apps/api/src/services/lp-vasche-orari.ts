@@ -1,7 +1,7 @@
 /**
  * Orari ufficiali prenotazioni vasche (lezioni private).
  * 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00; sabato no.
- * Ludica: fino a 4 persone (2 per corsia), fasce per giorno.
+ * Ludica lun–ven / sabato: capienza = lezioni contemporanee (2 / 4 / 6).
  */
 import type { VascaId } from "../store/lezioni-private-db.js"
 
@@ -31,27 +31,20 @@ function fasceDow(dow: number, vasca: VascaId): LpFasciaVasca[] {
     }
     return []
   }
-  if (dow === 1) {
+  if (dow >= 1 && dow <= 5) {
     return [
-      { from: hm(11, 15), to: hm(13, 30), corsie: 2, capCorsia: 2 },
-      { from: hm(15, 30), to: hm(16), corsie: 1, capCorsia: 1 },
-      { from: hm(18, 30), to: hm(22), corsie: 2, capCorsia: 2 },
+      { from: hm(8), to: hm(15, 15), corsie: 2, capCorsia: 1 },
+      { from: hm(15, 15), to: hm(16, 15), corsie: 2, capCorsia: 3 },
+      { from: hm(18, 30), to: hm(20, 15), corsie: 2, capCorsia: 2 },
     ]
-  }
-  if (dow === 3 || dow === 4) {
-    return [
-      { from: hm(11, 15), to: hm(13, 30), corsie: 2, capCorsia: 2 },
-      { from: hm(15, 15), to: hm(16, 15), corsie: 2, capCorsia: 2 },
-      { from: hm(18, 30), to: hm(22), corsie: 2, capCorsia: 2 },
-    ]
-  }
-  if (dow === 2 || dow === 5) {
-    return [{ from: hm(7, 30), to: hm(8, 15), corsie: 2, capCorsia: 1 }]
   }
   if (dow === 6) {
     return [
-      { from: hm(9), to: hm(13, 15), corsie: 2, capCorsia: 2 },
-      { from: hm(17, 45), to: hm(19), corsie: 2, capCorsia: 2 },
+      { from: hm(9), to: hm(9, 45), corsie: 2, capCorsia: 3 },
+      { from: hm(12), to: hm(13, 30), corsie: 2, capCorsia: 3 },
+      { from: hm(13, 30), to: hm(14, 15), corsie: 2, capCorsia: 1 },
+      { from: hm(14, 15), to: hm(15, 30), corsie: 2, capCorsia: 3 },
+      { from: hm(17, 45), to: hm(19, 30), corsie: 2, capCorsia: 3 },
     ]
   }
   return []

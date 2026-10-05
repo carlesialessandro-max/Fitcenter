@@ -987,14 +987,12 @@ export async function getLezioniPrivateAbbonamentiCheck(req: Request, res: Respo
             : "Nessun abbonamento lezioni private in gestionale"
         }
       } else {
+        esito = "ok"
         const tipoAbb = tipoDaAbbLp(best!)
-        if (tipoAbb !== "altro" && tipoAbb !== l.tipo) {
-          esito = "incongruente"
-          nota = `Prenotato ${l.tipo === "prova" ? "prova" : `pacchetto ${l.tipo}`}, abbonamento ${tipoAbb === "prova" ? "prova" : tipoAbb}`
-        } else {
-          esito = "ok"
-          nota = tipoAbb === "altro" ? "Private in corso (tipo non distinto 5/10)" : "Abbonamento valido e congruente"
-        }
+        nota =
+          tipoAbb === "altro"
+            ? "Abbonamento private valido"
+            : `Abbonamento private valido (${tipoAbb === "prova" ? "prova" : `pacchetto ${tipoAbb}`})`
       }
       if (esito === "ok") ok += 1
       else if (esito === "incongruente") incongruente += 1

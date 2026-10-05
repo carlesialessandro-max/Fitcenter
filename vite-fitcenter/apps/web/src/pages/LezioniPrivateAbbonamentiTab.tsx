@@ -35,7 +35,8 @@ export function LezioniPrivateAbbonamentiTab() {
     <div className="mt-5 grid gap-4">
       <p className="text-sm text-zinc-400">
         Confronta le lezioni prenotate o svolte con gli abbonamenti private del gestionale (telefono, altrimenti
-        nominativo). Congruenza: prova / pacchetto 5 / pacchetto 10.
+        nominativo). Basta un abbonamento private valido in quella data: prova o pacchetto 5/10 sono entrambi ok, anche
+        se il pacchetto in gestionale è più grande.
       </p>
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-sm text-zinc-400">
