@@ -82,6 +82,7 @@ export function LezioniPrivate() {
   const [packId, setPackId] = useState<string | null>(null)
   const [bookSlot, setBookSlot] = useState<LpSlot | null>(null)
   const [detailLezione, setDetailLezione] = useState<LpLezioneFlat | null>(null)
+  const [showOrari, setShowOrari] = useState(false)
 
   const q = useQuery({
     queryKey: ["lezioni-private"],
@@ -206,33 +207,44 @@ export function LezioniPrivate() {
               />
             )}
           </div>
-          <p className="mt-2 text-sm text-zinc-500">
-            Ogni lezione dura 30 minuti. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa). Ludica
-            lun–ven: 8:00–15:15 (2 lez.), 15:15–16:15 (6), chiusa 16:15–18:30, 18:30–20:15 (4). Sabato come da tabella.
-            Camilla Nardi (utente CAMILLA o istruttore) può prenotare anche gli orari chiusi.
-          </p>
-          <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
-            <table className="min-w-full text-left text-xs text-zinc-400">
-              <thead>
-                <tr className="border-b border-zinc-800 text-zinc-500">
-                  <th className="px-3 py-1.5 font-medium">Giorni</th>
-                  <th className="px-3 py-1.5 font-medium">Vasca</th>
-                  <th className="px-3 py-1.5 font-medium">Orari</th>
-                  <th className="px-3 py-1.5 font-medium">Posti</th>
-                </tr>
-              </thead>
-              <tbody>
-                {LP_VASCHE_LEGENDA.map((r) => (
-                  <tr key={`${r.giorni}-${r.vasca}-${r.orari}`} className="border-b border-zinc-800/50">
-                    <td className="px-3 py-1.5 text-zinc-300">{r.giorni}</td>
-                    <td className="px-3 py-1.5">{r.vasca}</td>
-                    <td className="px-3 py-1.5">{r.orari}</td>
-                    <td className="px-3 py-1.5">{r.posti}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowOrari((v) => !v)}
+            className="mt-3 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+          >
+            {showOrari ? "Nascondi orari vasche" : "Mostra orari vasche"}
+          </button>
+          {showOrari ? (
+            <>
+              <p className="mt-2 text-sm text-zinc-500">
+                Ogni lezione dura 30 minuti. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa). Ludica
+                lun–ven: 8:00–15:15 (2 lez.), 15:15–16:15 (6), chiusa 16:15–18:30, 18:30–20:15 (4). Sabato come da tabella.
+                Camilla Nardi può prenotare anche gli orari chiusi.
+              </p>
+              <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
+                <table className="min-w-full text-left text-xs text-zinc-400">
+                  <thead>
+                    <tr className="border-b border-zinc-800 text-zinc-500">
+                      <th className="px-3 py-1.5 font-medium">Giorni</th>
+                      <th className="px-3 py-1.5 font-medium">Vasca</th>
+                      <th className="px-3 py-1.5 font-medium">Orari</th>
+                      <th className="px-3 py-1.5 font-medium">Posti</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {LP_VASCHE_LEGENDA.map((r) => (
+                      <tr key={`${r.giorni}-${r.vasca}-${r.orari}`} className="border-b border-zinc-800/50">
+                        <td className="px-3 py-1.5 text-zinc-300">{r.giorni}</td>
+                        <td className="px-3 py-1.5">{r.vasca}</td>
+                        <td className="px-3 py-1.5">{r.orari}</td>
+                        <td className="px-3 py-1.5">{r.posti}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
           {periodo === "mese" ? (
             <MeseGrid byDay={occQ.data?.byDay ?? {}} from={month.from} to={month.to} />
           ) : (
@@ -284,6 +296,30 @@ export function LezioniPrivate() {
           }}
         />
       ) : null}
+    </div>
+  )
+}
+
+function WaListaDest({ destinations, skipped }: { destinations?: string[]; skipped?: string }) {
+  const [open, setOpen] = useState(false)
+  if (!destinations?.length && !skipped) return null
+  return (
+    <div className="mt-0.5">
+      {destinations?.length ? (
+        <>
+          <button type="button" className="text-[11px] text-zinc-500 underline" onClick={() => setOpen((v) => !v)}>
+            {open ? "Nascondi lista" : `Vedi lista WhatsApp (${destinations.length})`}
+          </button>
+          {open ? (
+            <ul className="mt-1 max-w-xs list-disc pl-4 text-[11px] text-zinc-500">
+              {destinations.map((d) => (
+                <li key={d}>{d}</li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : null}
+      {skipped ? <div className="text-[11px] text-amber-400/80">{skipped}</div> : null}
     </div>
   )
 }
@@ -350,6 +386,20 @@ function RichiesteTab({
     mutationFn: (id: string) => lezioniPrivateApi.riavvisa(id),
     onSuccess: onDone,
   })
+  const giorniRichieste = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const r of richieste) {
+      const d = r.createdAt.slice(0, 10)
+      map.set(d, (map.get(d) ?? 0) + 1)
+    }
+    return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  }, [richieste])
+  const [giornoSel, setGiornoSel] = useState(() => isoToday())
+  useEffect(() => {
+    if (!giorniRichieste.length) return
+    if (!giorniRichieste.some(([d]) => d === giornoSel)) setGiornoSel(giorniRichieste[0]![0])
+  }, [giorniRichieste, giornoSel])
+  const richiesteGiorno = richieste.filter((r) => r.createdAt.slice(0, 10) === giornoSel)
 
   return (
     <div className="mt-5 grid gap-6">
@@ -431,8 +481,7 @@ function RichiesteTab({
           ) : null}
           {createM.isSuccess && !createM.data.wa.skipped && createM.data.wa.sent > 0 ? (
             <p className="mt-2 text-sm text-emerald-300">
-              WhatsApp inviato a {createM.data.wa.sent} numeri
-              {createM.data.wa.destinations?.length ? `: ${createM.data.wa.destinations.join(", ")}` : "."}
+              WhatsApp inviato a {createM.data.wa.sent} istruttori.
             </p>
           ) : null}
           {createM.data?.wa.errors?.length ? (
@@ -448,10 +497,7 @@ function RichiesteTab({
       {waM.isError ? <p className="text-sm text-red-400">{String((waM.error as Error).message)}</p> : null}
       {waM.isSuccess && waM.data.wa.skipped ? <p className="text-sm text-amber-300">{waM.data.wa.skipped}</p> : null}
       {waM.isSuccess && !waM.data.wa.skipped ? (
-        <p className="text-sm text-emerald-300">
-          WhatsApp reinviato a {waM.data.wa.sent} numeri
-          {waM.data.wa.destinations?.length ? `: ${waM.data.wa.destinations.join(", ")}` : "."}
-        </p>
+        <p className="text-sm text-emerald-300">WhatsApp reinviato a {waM.data.wa.sent} istruttori.</p>
       ) : null}
       {waM.data?.wa.errors?.length ? (
         <ul className="list-disc pl-5 text-sm text-red-400">
@@ -461,11 +507,37 @@ function RichiesteTab({
         </ul>
       ) : null}
 
+      <div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={giornoSel}
+            onChange={(e) => e.target.value && setGiornoSel(e.target.value)}
+            className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
+          />
+          <span className="text-sm text-zinc-500">
+            {fmtDateIt(giornoSel)} · {richiesteGiorno.length} richiest{richiesteGiorno.length === 1 ? "a" : "e"}
+          </span>
+        </div>
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {giorniRichieste.map(([d, n]) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setGiornoSel(d)}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                giornoSel === d ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+              }`}
+            >
+              {fmtDateIt(d)} ({n})
+            </button>
+          ))}
+        </div>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-950/50 text-zinc-400">
-              <th className="px-3 py-2 font-medium">Data</th>
+              <th className="px-3 py-2 font-medium">Ora reg.</th>
               <th className="px-3 py-2 font-medium">Chi registra</th>
               <th className="px-3 py-2 font-medium">Cognome e nome</th>
               <th className="px-3 py-2 font-medium">Età</th>
@@ -479,16 +551,16 @@ function RichiesteTab({
             </tr>
           </thead>
           <tbody>
-            {richieste.length === 0 ? (
+            {richiesteGiorno.length === 0 ? (
               <tr>
                 <td colSpan={11} className="px-3 py-6 text-zinc-500">
-                  Nessuna richiesta.
+                  Nessuna richiesta in questa data.
                 </td>
               </tr>
             ) : null}
-            {richieste.map((r) => (
+            {richiesteGiorno.map((r) => (
               <tr key={r.id} className="border-b border-zinc-800/60 align-top">
-                <td className="px-3 py-2 text-zinc-300">{fmtDateIt(r.createdAt.slice(0, 10))}</td>
+                <td className="px-3 py-2 text-zinc-300">{(r.createdAt.slice(11, 16) || "—")}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.createdBy}</td>
                 <td className="px-3 py-2 font-medium text-zinc-100">{r.clienteNome}</td>
                 <td className="px-3 py-2 text-zinc-300">{r.eta ?? ""}</td>
@@ -548,16 +620,14 @@ function RichiesteTab({
                         </button>
                       </>
                     ) : null}
-                    {r.waDestinations?.length ? (
-                      <div className="text-[11px] text-zinc-500">WA: {r.waDestinations.join(", ")}</div>
-                    ) : null}
-                    {r.waSkipped ? <div className="text-[11px] text-amber-400/80">{r.waSkipped}</div> : null}
+                    <WaListaDest destinations={r.waDestinations} skipped={r.waSkipped} />
                   </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {prendiId && richieste.find((x) => x.id === prendiId) ? (
@@ -1087,7 +1157,6 @@ function DayWeekGrid({
   allowClosed,
   onBook,
   onOpen,
-  onTogli,
 }: {
   days: string[]
   ore: string[]
@@ -1102,29 +1171,30 @@ function DayWeekGrid({
       (l) => l.giorno === giorno && l.vasca === vasca && l.corsia === corsia && l.ora <= ora && ora < addMin(l.ora, l.durataMin),
     )
   }
-  const lanes: Array<{ vasca: VascaId; corsia: number; label: string }> = [
-    { vasca: "v25", corsia: 1, label: "25m C1" },
-    { vasca: "ludica", corsia: 1, label: "Lud C1" },
-    { vasca: "ludica", corsia: 2, label: "Lud C2" },
+  const lanes: Array<{ vasca: VascaId; corsia: number; label: string; tone: string }> = [
+    { vasca: "v25", corsia: 1, label: "25 m", tone: "text-sky-300" },
+    { vasca: "ludica", corsia: 1, label: "Ludica 1", tone: "text-teal-300" },
+    { vasca: "ludica", corsia: 2, label: "Ludica 2", tone: "text-teal-300" },
   ]
+  const dayView = days.length === 1
   return (
-    <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800">
+    <div className="mt-4 max-h-[72vh] overflow-auto rounded-2xl border border-zinc-800 bg-zinc-950/50">
       <table className="min-w-full border-collapse text-center text-xs">
-        <thead>
-          <tr className="border-b border-zinc-800 bg-zinc-950/50">
-            <th className="px-2 py-2 text-left text-zinc-400">Ora</th>
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-zinc-800 bg-zinc-950">
+            <th className="sticky left-0 z-20 bg-zinc-950 px-3 py-2.5 text-left text-zinc-500">Ora</th>
             {days.map((d) => (
-              <th key={d} colSpan={3} className="px-2 py-2 text-zinc-200">
+              <th key={d} colSpan={3} className="px-2 py-2.5 text-sm font-semibold text-zinc-100">
                 {DOW_IT[new Date(`${d}T12:00:00`).getDay()]} {fmtDateIt(d)}
               </th>
             ))}
           </tr>
-          <tr className="border-b border-zinc-800 text-zinc-500">
-            <th />
+          <tr className="border-b border-zinc-800 bg-zinc-950/95 text-[11px]">
+            <th className="sticky left-0 z-20 bg-zinc-950" />
             {days.map((d) => (
               <Fragment key={`${d}-h`}>
                 {lanes.map((ln) => (
-                  <th key={`${d}-${ln.label}`} className="px-1 py-1">
+                  <th key={`${d}-${ln.label}`} className={`px-1 py-1.5 font-medium ${ln.tone}`}>
                     {ln.label}
                   </th>
                 ))}
@@ -1134,8 +1204,10 @@ function DayWeekGrid({
         </thead>
         <tbody>
           {ore.map((ora) => (
-            <tr key={ora} className="border-b border-zinc-800/40">
-              <td className="whitespace-nowrap px-2 py-1 text-left text-zinc-400">{ora}</td>
+            <tr key={ora} className="border-b border-zinc-800/30">
+              <td className="sticky left-0 z-10 whitespace-nowrap bg-zinc-950 px-3 py-1.5 text-left font-medium text-zinc-300">
+                {ora}
+              </td>
               {days.flatMap((d) =>
                 lanes.map((ln) => {
                   const fascia = slotAperto(d, ora, ln.vasca, ln.corsia)
@@ -1146,10 +1218,11 @@ function DayWeekGrid({
                       cap={fascia?.capCorsia ?? (allowClosed ? 1 : 0)}
                       aperto={!!fascia}
                       allowClosed={allowClosed}
+                      wide={dayView}
+                      vasca={ln.vasca}
                       slot={{ giorno: d, ora, vasca: ln.vasca, corsia: ln.corsia }}
                       onBook={onBook}
                       onOpen={onOpen}
-                      onTogli={onTogli}
                     />
                   )
                 }),
@@ -1168,68 +1241,66 @@ function addMin(ora: string, min: number): string {
   return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`
 }
 
+function tipoTone(tipo: LpLezioneFlat["tipo"]): string {
+  if (tipo === "prova") return "bg-sky-500/20 text-sky-100 ring-1 ring-sky-500/30"
+  if (tipo === "10") return "bg-violet-500/20 text-violet-100 ring-1 ring-violet-500/30"
+  return "bg-amber-500/20 text-amber-100 ring-1 ring-amber-500/30"
+}
+
 function LaneCell({
   hits,
   cap,
   aperto,
   allowClosed,
+  wide,
+  vasca,
   slot,
   onBook,
   onOpen,
-  onTogli,
 }: {
   hits: LpLezioneFlat[]
   cap: number
   aperto: boolean
   allowClosed: boolean
+  wide: boolean
+  vasca: VascaId
   slot: LpSlot
   onBook: (slot: LpSlot) => void
   onOpen: (lezione: LpLezioneFlat) => void
-  onTogli: (id: string) => void
 }) {
+  const w = wide ? "min-w-[160px]" : "min-w-[112px]"
+  const laneBg = vasca === "v25" ? "bg-sky-950/20" : "bg-teal-950/15"
   if (!aperto && !allowClosed) {
-    return (
-      <td className="bg-zinc-950/50 px-1 py-1 text-[10px] text-zinc-600">chiuso</td>
-    )
+    return <td className={`${w} bg-zinc-950/80 px-1 py-1`} />
   }
   const liberi = Math.max(0, cap - hits.length)
   return (
-    <td className="px-1 py-1 align-top">
+    <td className={`${w} ${laneBg} px-1.5 py-1 align-top`}>
       {hits.map((hit) => (
-        <div key={hit.lezioneId} className="mb-0.5">
-          <button
-            type="button"
-            onClick={() => onOpen(hit)}
-            className="w-full rounded bg-amber-500/15 px-1 py-0.5 text-left text-[11px] text-amber-100 hover:bg-amber-500/25"
-          >
-            <div className="font-medium">{hit.clienteNome}</div>
-            <div className="text-[10px] text-zinc-400">
-              {hit.istruttoreNome} · {hit.tipo === "prova" ? "prova" : `pacc. ${hit.tipo}`}
-            </div>
-          </button>
-          <button
-            type="button"
-            className="mt-0.5 text-[10px] text-red-300"
-            onClick={(e) => {
-              e.stopPropagation()
-              if (!window.confirm("Togliere questa data dal calendario? La richiesta resta.")) return
-              onTogli(hit.lezioneId)
-            }}
-          >
-            togli data
-          </button>
-        </div>
+        <button
+          key={hit.lezioneId}
+          type="button"
+          onClick={() => onOpen(hit)}
+          className={`mb-1 w-full rounded-lg px-1.5 py-1 text-left hover:brightness-110 ${tipoTone(hit.tipo)}`}
+        >
+          <div className="truncate text-[11px] font-semibold">{hit.clienteNome}</div>
+          <div className="truncate text-[10px] opacity-80">
+            {hit.istruttoreNome.split(" ")[0]} · {hit.tipo === "prova" ? "prova" : hit.tipo}
+          </div>
+        </button>
       ))}
       {liberi > 0 ? (
         <button
           type="button"
           onClick={() => onBook(slot)}
-          className="w-full rounded px-1 py-1 text-emerald-600/90 hover:bg-emerald-500/10"
+          className={`w-full rounded-lg border border-dashed px-1 py-1.5 text-[11px] ${
+            aperto
+              ? "border-emerald-700/60 text-emerald-400/90 hover:bg-emerald-500/10"
+              : "border-zinc-700 text-zinc-500 hover:bg-zinc-800/60"
+          }`}
         >
-          {hits.length === 0 ? (!aperto ? "chiuso · prenota" : `libero${cap > 1 ? ` ${cap}` : ""}`) : `+${liberi} posto`}
+          {hits.length === 0 ? (aperto ? (cap > 1 ? `libero ${cap}` : "libero") : "fuori orario") : `+${liberi}`}
         </button>
-      ) : hits.length === 0 ? (
-        <span className="text-zinc-600">—</span>
       ) : null}
     </td>
   )
