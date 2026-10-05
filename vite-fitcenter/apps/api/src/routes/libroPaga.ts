@@ -4,6 +4,7 @@ import {
   getLibroPaga,
   patchLivello,
   patchPersonale,
+  postImportDump,
   postLivello,
   postPersonale,
   postTurno,
@@ -18,6 +19,7 @@ export const libroPagaRouter = Router()
 libroPagaRouter.use(requireAuth, requireAdmin)
 
 libroPagaRouter.get("/", getLibroPaga)
+libroPagaRouter.post("/import-dump", postImportDump)
 libroPagaRouter.post("/livelli", postLivello)
 libroPagaRouter.patch("/livelli/:id", patchLivello)
 libroPagaRouter.delete("/livelli/:id", removeLivello)

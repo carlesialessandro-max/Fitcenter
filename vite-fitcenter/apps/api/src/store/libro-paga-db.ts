@@ -5,19 +5,55 @@ import { readJson, writeJson } from "./persist.js"
 
 const FILE = "libro-paga.json"
 
+export type LpagaRuolo = "admin" | "manager" | "user"
+
 export type LpagaLivello = {
   id: string
   nome: string
+  parentId?: string
   retribuzione: number
   fissa: boolean
+  retribuibile: boolean
+  statistica: boolean
+  speciale: boolean
+  specialeId?: string
   attivo: boolean
 }
 
 export type LpagaPersonale = {
   id: string
   nome: string
+  cognome?: string
+  username?: string
+  ruolo: LpagaRuolo
+  livelloId?: string
+  contratto?: string
   iban?: string
   attivo: boolean
+}
+
+export type LpagaValidazione = {
+  id: string
+  personaleId: string
+  giorno: string
+  stamp: string
+}
+
+export type LpagaTotaleReparto = {
+  mese: string
+  piscina: number
+  palestra: number
+  ristorante: number
+  miscellanea: number
+  totale: number
+}
+
+export type LpagaMacroQuota = {
+  livelloId: string
+  nome: string
+  piscina: number
+  palestra: number
+  ristorante: number
 }
 
 export type LpagaTurno = {
@@ -49,15 +85,27 @@ export type LpagaMensilita = {
   chiuso: boolean
 }
 
-type FileDb = {
+export type FileDb = {
   livelli: LpagaLivello[]
   personale: LpagaPersonale[]
   turni: LpagaTurno[]
   presenze: LpagaPresenza[]
   mensilita: LpagaMensilita[]
+  validazioni: LpagaValidazione[]
+  totaliReparto: LpagaTotaleReparto[]
+  macroQuote: LpagaMacroQuota[]
 }
 
-const EMPTY: FileDb = { livelli: [], personale: [], turni: [], presenze: [], mensilita: [] }
+const EMPTY: FileDb = {
+  livelli: [],
+  personale: [],
+  turni: [],
+  presenze: [],
+  mensilita: [],
+  validazioni: [],
+  totaliReparto: [],
+  macroQuote: [],
+}
 
 let sqlReady: boolean | null = null
 
@@ -108,12 +156,31 @@ function monthBounds(mese: string): { from: string; to: string } {
 function readFile(): FileDb {
   const raw = readJson<Partial<FileDb>>(FILE, EMPTY)
   return {
-    livelli: Array.isArray(raw.livelli) ? raw.livelli : [],
-    personale: Array.isArray(raw.personale) ? raw.personale : [],
+    livelli: Array.isArray(raw.livelli) ? raw.livelli.map(normalizeLivello) : [],
+    personale: Array.isArray(raw.personale) ? raw.personale.map(normalizePersonale) : [],
     turni: Array.isArray(raw.turni) ? raw.turni : [],
     presenze: Array.isArray(raw.presenze) ? raw.presenze : [],
     mensilita: Array.isArray(raw.mensilita) ? raw.mensilita : [],
+    validazioni: Array.isArray(raw.validazioni) ? raw.validazioni : [],
+    totaliReparto: Array.isArray(raw.totaliReparto) ? raw.totaliReparto : [],
+    macroQuote: Array.isArray(raw.macroQuote) ? raw.macroQuote : [],
   }
+}
+
+function normalizeLivello(r: LpagaLivello): LpagaLivello {
+  return {
+    ...r,
+    parentId: r.parentId || undefined,
+    retribuibile: r.retribuibile !== false,
+    statistica: Boolean(r.statistica),
+    speciale: Boolean(r.speciale),
+    attivo: r.attivo !== false,
+  }
+}
+
+function normalizePersonale(r: LpagaPersonale): LpagaPersonale {
+  const ruolo: LpagaRuolo = r.ruolo === "manager" || r.ruolo === "admin" ? r.ruolo : "user"
+  return { ...r, ruolo, attivo: r.attivo !== false }
 }
 
 function writeFile(db: FileDb): void {
@@ -129,17 +196,37 @@ IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaLivelli (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
   Nome NVARCHAR(200) NOT NULL,
+  ParentId NVARCHAR(64) NULL,
   Retribuzione DECIMAL(10,2) NOT NULL,
   Fissa BIT NOT NULL CONSTRAINT DF_FcLpLiv_Fissa DEFAULT 0,
+  Retribuibile BIT NOT NULL CONSTRAINT DF_FcLpLiv_Ret DEFAULT 1,
+  Statistica BIT NOT NULL CONSTRAINT DF_FcLpLiv_Stat DEFAULT 0,
+  Speciale BIT NOT NULL CONSTRAINT DF_FcLpLiv_Spec DEFAULT 0,
+  SpecialeId NVARCHAR(64) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpLiv_Attivo DEFAULT 1
 );
+IF COL_LENGTH('dbo.FcLibroPagaLivelli','ParentId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD ParentId NVARCHAR(64) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaLivelli','Retribuibile') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Retribuibile BIT NULL;
+IF COL_LENGTH('dbo.FcLibroPagaLivelli','Statistica') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Statistica BIT NULL;
+IF COL_LENGTH('dbo.FcLibroPagaLivelli','Speciale') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Speciale BIT NULL;
+IF COL_LENGTH('dbo.FcLibroPagaLivelli','SpecialeId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD SpecialeId NVARCHAR(64) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaPersonale (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
   Nome NVARCHAR(200) NOT NULL,
+  Cognome NVARCHAR(200) NULL,
+  Username NVARCHAR(120) NULL,
+  Ruolo NVARCHAR(20) NOT NULL CONSTRAINT DF_FcLpPer_Ruolo DEFAULT 'user',
+  LivelloId NVARCHAR(64) NULL,
+  Contratto DATE NULL,
   Iban NVARCHAR(34) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpPer_Attivo DEFAULT 1
 );
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Cognome') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Cognome NVARCHAR(200) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Username') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Username NVARCHAR(120) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Ruolo') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Ruolo NVARCHAR(20) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloId') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloId NVARCHAR(64) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Contratto') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Contratto DATE NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -175,6 +262,30 @@ BEGIN
   );
   CREATE UNIQUE INDEX UX_FcLibroPagaMensilita ON dbo.FcLibroPagaMensilita(PersonaleId, Mese);
 END
+IF OBJECT_ID(N'dbo.FcLibroPagaValidazioni', N'U') IS NULL
+CREATE TABLE dbo.FcLibroPagaValidazioni (
+  Id NVARCHAR(64) NOT NULL PRIMARY KEY,
+  PersonaleId NVARCHAR(64) NOT NULL,
+  Giorno DATE NOT NULL,
+  Stamp DATETIME2 NOT NULL
+);
+IF OBJECT_ID(N'dbo.FcLibroPagaTotaliReparto', N'U') IS NULL
+CREATE TABLE dbo.FcLibroPagaTotaliReparto (
+  Mese CHAR(7) NOT NULL PRIMARY KEY,
+  Piscina DECIMAL(12,2) NOT NULL,
+  Palestra DECIMAL(12,2) NOT NULL,
+  Ristorante DECIMAL(12,2) NOT NULL,
+  Miscellanea DECIMAL(12,2) NOT NULL,
+  Totale DECIMAL(12,2) NOT NULL
+);
+IF OBJECT_ID(N'dbo.FcLibroPagaMacroQuote', N'U') IS NULL
+CREATE TABLE dbo.FcLibroPagaMacroQuote (
+  LivelloId NVARCHAR(64) NOT NULL PRIMARY KEY,
+  Nome NVARCHAR(120) NOT NULL,
+  Piscina DECIMAL(6,4) NOT NULL,
+  Palestra DECIMAL(6,4) NOT NULL,
+  Ristorante DECIMAL(6,4) NOT NULL
+);
 `
 
 export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
@@ -187,6 +298,15 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
       return "json"
     }
     await p.request().query(DDL)
+    const file = readFile()
+    if (file.turni.length > 0) {
+      const cnt = await p.request().query("SELECT COUNT(*) AS n FROM dbo.FcLibroPagaTurni")
+      const n = Number((cnt.recordset[0] as { n?: number })?.n ?? 0)
+      if (n < file.turni.length) {
+        sqlReady = false
+        return "json"
+      }
+    }
     sqlReady = true
     return "sql"
   } catch (e) {
@@ -198,22 +318,41 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
 }
 
 function mapLivello(r: Record<string, unknown>): LpagaLivello {
+  const parentId = String(r.ParentId ?? r.parentId ?? "").trim()
+  const specialeId = String(r.SpecialeId ?? r.specialeId ?? "").trim()
   return {
     id: String(r.Id ?? r.id ?? ""),
     nome: String(r.Nome ?? r.nome ?? ""),
+    ...(parentId ? { parentId } : {}),
     retribuzione: num(r.Retribuzione ?? r.retribuzione),
     fissa: bit(r.Fissa ?? r.fissa),
-    attivo: bit(r.Attivo ?? r.attivo),
+    retribuibile: r.Retribuibile == null && r.retribuibile == null ? true : bit(r.Retribuibile ?? r.retribuibile),
+    statistica: bit(r.Statistica ?? r.statistica),
+    speciale: bit(r.Speciale ?? r.speciale),
+    ...(specialeId ? { specialeId } : {}),
+    attivo: r.Attivo == null && r.attivo == null ? true : bit(r.Attivo ?? r.attivo),
   }
 }
 
 function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
-  const iban = String(r.Iban ?? r.iban ?? "").trim()
+  const ibanRaw = String(r.Iban ?? r.iban ?? "").trim()
+  const iban = ibanRaw && ibanRaw.toUpperCase() !== "NULL" ? ibanRaw : ""
+  const cognome = String(r.Cognome ?? r.cognome ?? "").trim()
+  const username = String(r.Username ?? r.username ?? "").trim()
+  const livelloId = String(r.LivelloId ?? r.livelloId ?? "").trim()
+  const contratto = ymd(r.Contratto ?? r.contratto)
+  const ruoloRaw = String(r.Ruolo ?? r.ruolo ?? "user").toLowerCase()
+  const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
   return {
     id: String(r.Id ?? r.id ?? ""),
     nome: String(r.Nome ?? r.nome ?? ""),
+    ...(cognome ? { cognome } : {}),
+    ...(username ? { username } : {}),
+    ruolo,
+    ...(livelloId ? { livelloId } : {}),
+    ...(contratto && /^\d{4}-\d{2}-\d{2}$/.test(contratto) ? { contratto } : {}),
     ...(iban ? { iban } : {}),
-    attivo: bit(r.Attivo ?? r.attivo),
+    attivo: r.Attivo == null && r.attivo == null ? true : bit(r.Attivo ?? r.attivo),
   }
 }
 
@@ -258,7 +397,9 @@ export async function listLivelli(): Promise<LpagaLivello[]> {
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
     if (!p) return readFile().livelli
-    const r = await p.request().query("SELECT Id, Nome, Retribuzione, Fissa, Attivo FROM dbo.FcLibroPagaLivelli ORDER BY Nome")
+    const r = await p.request().query(
+      "SELECT Id, Nome, ParentId, Retribuzione, Fissa, Retribuibile, Statistica, Speciale, SpecialeId, Attivo FROM dbo.FcLibroPagaLivelli ORDER BY Nome"
+    )
     return (r.recordset as Record<string, unknown>[]).map(mapLivello)
   }
   return [...readFile().livelli].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
@@ -267,15 +408,25 @@ export async function listLivelli(): Promise<LpagaLivello[]> {
 export async function upsertLivello(input: {
   id?: string
   nome: string
+  parentId?: string
   retribuzione: number
   fissa: boolean
+  retribuibile?: boolean
+  statistica?: boolean
+  speciale?: boolean
+  specialeId?: string
   attivo: boolean
 }): Promise<LpagaLivello> {
   const row: LpagaLivello = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
+    ...(input.parentId?.trim() ? { parentId: input.parentId.trim() } : {}),
     retribuzione: round2(input.retribuzione),
     fissa: Boolean(input.fissa),
+    retribuibile: input.retribuibile !== false,
+    statistica: Boolean(input.statistica),
+    speciale: Boolean(input.speciale),
+    ...(input.specialeId?.trim() ? { specialeId: input.specialeId.trim() } : {}),
     attivo: input.attivo !== false,
   }
   if ((await ensureLibroPagaStorage()) === "sql") {
@@ -284,15 +435,21 @@ export async function upsertLivello(input: {
     const req = p.request()
     req.input("Id", sql.NVarChar(64), row.id)
     req.input("Nome", sql.NVarChar(200), row.nome)
+    req.input("ParentId", sql.NVarChar(64), row.parentId ?? null)
     req.input("Retribuzione", sql.Decimal(10, 2), row.retribuzione)
     req.input("Fissa", sql.Bit, row.fissa)
+    req.input("Retribuibile", sql.Bit, row.retribuibile)
+    req.input("Statistica", sql.Bit, row.statistica)
+    req.input("Speciale", sql.Bit, row.speciale)
+    req.input("SpecialeId", sql.NVarChar(64), row.specialeId ?? null)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaLivelli AS t
       USING (SELECT @Id AS Id) AS s ON t.Id = s.Id
-      WHEN MATCHED THEN UPDATE SET Nome=@Nome, Retribuzione=@Retribuzione, Fissa=@Fissa, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Retribuzione, Fissa, Attivo)
-      VALUES (@Id, @Nome, @Retribuzione, @Fissa, @Attivo);
+      WHEN MATCHED THEN UPDATE SET Nome=@Nome, ParentId=@ParentId, Retribuzione=@Retribuzione, Fissa=@Fissa,
+        Retribuibile=@Retribuibile, Statistica=@Statistica, Speciale=@Speciale, SpecialeId=@SpecialeId, Attivo=@Attivo
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, ParentId, Retribuzione, Fissa, Retribuibile, Statistica, Speciale, SpecialeId, Attivo)
+      VALUES (@Id, @Nome, @ParentId, @Retribuzione, @Fissa, @Retribuibile, @Statistica, @Speciale, @SpecialeId, @Attivo);
     `)
     return row
   }
@@ -326,7 +483,9 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
     if (!p) return readFile().personale
-    const r = await p.request().query("SELECT Id, Nome, Iban, Attivo FROM dbo.FcLibroPagaPersonale ORDER BY Nome")
+    const r = await p.request().query(
+      "SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Attivo FROM dbo.FcLibroPagaPersonale ORDER BY Cognome, Nome"
+    )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
   }
   return [...readFile().personale].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
@@ -335,13 +494,24 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
 export async function upsertPersonale(input: {
   id?: string
   nome: string
+  cognome?: string
+  username?: string
+  ruolo?: LpagaRuolo
+  livelloId?: string
+  contratto?: string
   iban?: string
   attivo: boolean
 }): Promise<LpagaPersonale> {
   const iban = (input.iban ?? "").trim()
+  const ruolo: LpagaRuolo = input.ruolo === "admin" || input.ruolo === "manager" ? input.ruolo : "user"
   const row: LpagaPersonale = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
+    ...(input.cognome?.trim() ? { cognome: input.cognome.trim() } : {}),
+    ...(input.username?.trim() ? { username: input.username.trim().toLowerCase() } : {}),
+    ruolo,
+    ...(input.livelloId?.trim() ? { livelloId: input.livelloId.trim() } : {}),
+    ...(input.contratto?.trim() ? { contratto: input.contratto.trim() } : {}),
     ...(iban ? { iban } : {}),
     attivo: input.attivo !== false,
   }
@@ -351,13 +521,20 @@ export async function upsertPersonale(input: {
     const req = p.request()
     req.input("Id", sql.NVarChar(64), row.id)
     req.input("Nome", sql.NVarChar(200), row.nome)
+    req.input("Cognome", sql.NVarChar(200), row.cognome ?? null)
+    req.input("Username", sql.NVarChar(120), row.username ?? null)
+    req.input("Ruolo", sql.NVarChar(20), row.ruolo)
+    req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
+    req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaPersonale AS t
       USING (SELECT @Id AS Id) AS s ON t.Id = s.Id
-      WHEN MATCHED THEN UPDATE SET Nome=@Nome, Iban=@Iban, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Iban, Attivo) VALUES (@Id, @Nome, @Iban, @Attivo);
+      WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
+        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Attivo=@Attivo
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Attivo);
     `)
     return row
   }
@@ -611,4 +788,194 @@ export async function upsertMensilita(input: {
   else db.mensilita.push(row)
   writeFile(db)
   return i >= 0 ? db.mensilita[i]! : row
+}
+
+export function nominativo(p: LpagaPersonale): string {
+  const c = (p.cognome ?? "").trim()
+  const n = (p.nome ?? "").trim()
+  if (c && n) return `${c} ${n}`
+  return n || c || p.username || p.id
+}
+
+export function dominioLivello(livelli: LpagaLivello[], id: string): string {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  let cur = byId.get(id)
+  let guard = 0
+  while (cur && guard++ < 20) {
+    const pid = (cur.parentId ?? "").trim()
+    if (!pid || pid === "0") return cur.nome
+    const parent = byId.get(pid)
+    if (!parent) return cur.nome
+    cur = parent
+  }
+  return "—"
+}
+
+export async function listValidazioni(): Promise<LpagaValidazione[]> {
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (p) {
+      const r = await p.request().query(
+        "SELECT Id, PersonaleId, CONVERT(varchar(10), Giorno, 23) AS Giorno, Stamp FROM dbo.FcLibroPagaValidazioni"
+      )
+      return (r.recordset as Record<string, unknown>[]).map((row) => ({
+        id: String(row.Id ?? ""),
+        personaleId: String(row.PersonaleId ?? ""),
+        giorno: ymd(row.Giorno),
+        stamp: iso(row.Stamp),
+      }))
+    }
+  }
+  return readFile().validazioni
+}
+
+export async function listTotaliReparto(): Promise<LpagaTotaleReparto[]> {
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (p) {
+      const r = await p.request().query(
+        "SELECT Mese, Piscina, Palestra, Ristorante, Miscellanea, Totale FROM dbo.FcLibroPagaTotaliReparto ORDER BY Mese"
+      )
+      return (r.recordset as Record<string, unknown>[]).map((row) => ({
+        mese: String(row.Mese ?? "").trim(),
+        piscina: num(row.Piscina),
+        palestra: num(row.Palestra),
+        ristorante: num(row.Ristorante),
+        miscellanea: num(row.Miscellanea),
+        totale: num(row.Totale),
+      }))
+    }
+  }
+  return readFile().totaliReparto
+}
+
+export async function listMacroQuote(): Promise<LpagaMacroQuota[]> {
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (p) {
+      const r = await p.request().query(
+        "SELECT LivelloId, Nome, Piscina, Palestra, Ristorante FROM dbo.FcLibroPagaMacroQuote"
+      )
+      return (r.recordset as Record<string, unknown>[]).map((row) => ({
+        livelloId: String(row.LivelloId ?? ""),
+        nome: String(row.Nome ?? ""),
+        piscina: num(row.Piscina),
+        palestra: num(row.Palestra),
+        ristorante: num(row.Ristorante),
+      }))
+    }
+  }
+  return readFile().macroQuote
+}
+
+export function getLibroPagaFileDb() {
+  const db = readFile()
+  return {
+    livelli: db.livelli.length,
+    personale: db.personale.length,
+    turni: db.turni.length,
+    presenze: db.presenze.length,
+    mensilita: db.mensilita.length,
+    validazioni: db.validazioni.length,
+  }
+}
+
+export async function replaceImportedDb(next: FileDb): Promise<"sql" | "json"> {
+  writeFile(next)
+  if (next.turni.length > 3000) {
+    sqlReady = false
+    return "json"
+  }
+  try {
+    const mode = await ensureLibroPagaStorage()
+    if (mode !== "sql") return "json"
+    const p = await pool()
+    if (!p) return "json"
+    await p.request().query(`
+      DELETE FROM dbo.FcLibroPagaPresenze;
+      DELETE FROM dbo.FcLibroPagaTurni;
+      DELETE FROM dbo.FcLibroPagaMensilita;
+      DELETE FROM dbo.FcLibroPagaValidazioni;
+      DELETE FROM dbo.FcLibroPagaTotaliReparto;
+      DELETE FROM dbo.FcLibroPagaMacroQuote;
+      DELETE FROM dbo.FcLibroPagaPersonale;
+      DELETE FROM dbo.FcLibroPagaLivelli;
+    `)
+    for (const l of next.livelli) {
+      await upsertLivello({ ...l, id: l.id, attivo: l.attivo !== false })
+    }
+    for (const pe of next.personale) {
+      await upsertPersonale({ ...pe, id: pe.id, attivo: pe.attivo !== false })
+    }
+    sqlReady = true
+    const p2 = await pool()
+    if (!p2) return "json"
+    for (let i = 0; i < next.turni.length; i += 40) {
+      const batch = next.turni.slice(i, i + 40)
+      const req = p2.request()
+      const values: string[] = []
+      batch.forEach((t, j) => {
+        req.input(`Id${j}`, sql.NVarChar(64), t.id)
+        req.input(`P${j}`, sql.NVarChar(64), t.personaleId)
+        req.input(`L${j}`, sql.NVarChar(64), t.livelloId)
+        req.input(`G${j}`, sql.Date, t.giorno)
+        req.input(`Q${j}`, sql.Decimal(10, 2), t.quantita)
+        req.input(`I${j}`, sql.Decimal(10, 2), t.importo)
+        req.input(`N${j}`, sql.NVarChar(500), t.note ?? null)
+        req.input(`C${j}`, sql.NVarChar(120), t.creatoDa)
+        req.input(`A${j}`, sql.DateTime2, new Date(t.createdAt))
+        values.push(`(@Id${j}, @P${j}, @L${j}, @G${j}, @Q${j}, @I${j}, @N${j}, @C${j}, @A${j})`)
+      })
+      await req.query(
+        `INSERT INTO dbo.FcLibroPagaTurni (Id, PersonaleId, LivelloId, Giorno, Quantita, Importo, Note, CreatoDa, CreatedAt) VALUES ${values.join(",")}`
+      )
+    }
+    for (const m of next.mensilita) {
+      await upsertMensilita({
+        personaleId: m.personaleId,
+        mese: m.mese,
+        bonifico: m.bonifico,
+        nota: m.nota,
+        chiuso: m.chiuso,
+      })
+    }
+    for (const v of next.validazioni) {
+      const req = p2.request()
+      req.input("Id", sql.NVarChar(64), v.id)
+      req.input("PersonaleId", sql.NVarChar(64), v.personaleId)
+      req.input("Giorno", sql.Date, v.giorno)
+      req.input("Stamp", sql.DateTime2, new Date(v.stamp))
+      await req.query(
+        "INSERT INTO dbo.FcLibroPagaValidazioni (Id, PersonaleId, Giorno, Stamp) VALUES (@Id, @PersonaleId, @Giorno, @Stamp)"
+      )
+    }
+    for (const t of next.totaliReparto) {
+      const req = p2.request()
+      req.input("Mese", sql.Char(7), t.mese)
+      req.input("Piscina", sql.Decimal(12, 2), t.piscina)
+      req.input("Palestra", sql.Decimal(12, 2), t.palestra)
+      req.input("Ristorante", sql.Decimal(12, 2), t.ristorante)
+      req.input("Miscellanea", sql.Decimal(12, 2), t.miscellanea)
+      req.input("Totale", sql.Decimal(12, 2), t.totale)
+      await req.query(
+        "INSERT INTO dbo.FcLibroPagaTotaliReparto (Mese, Piscina, Palestra, Ristorante, Miscellanea, Totale) VALUES (@Mese, @Piscina, @Palestra, @Ristorante, @Miscellanea, @Totale)"
+      )
+    }
+    for (const q of next.macroQuote) {
+      const req = p2.request()
+      req.input("LivelloId", sql.NVarChar(64), q.livelloId)
+      req.input("Nome", sql.NVarChar(120), q.nome)
+      req.input("Piscina", sql.Decimal(6, 4), q.piscina)
+      req.input("Palestra", sql.Decimal(6, 4), q.palestra)
+      req.input("Ristorante", sql.Decimal(6, 4), q.ristorante)
+      await req.query(
+        "INSERT INTO dbo.FcLibroPagaMacroQuote (LivelloId, Nome, Piscina, Palestra, Ristorante) VALUES (@LivelloId, @Nome, @Piscina, @Palestra, @Ristorante)"
+      )
+    }
+    return "sql"
+  } catch (e) {
+    sqlReady = false
+    console.warn("[libro-paga] import SQL fallito, resto su JSON:", (e as Error)?.message)
+    return "json"
+  }
 }

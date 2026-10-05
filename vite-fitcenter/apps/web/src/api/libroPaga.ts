@@ -1,18 +1,33 @@
 import { api } from "./client"
 
+export type LpagaRuolo = "admin" | "manager" | "user"
+
 export type LpagaLivello = {
   id: string
   nome: string
+  parentId?: string
+  parentNome?: string
+  dominio?: string
   retribuzione: number
   fissa: boolean
+  retribuibile: boolean
+  statistica: boolean
+  speciale: boolean
   attivo: boolean
 }
 
 export type LpagaPersonale = {
   id: string
   nome: string
+  cognome?: string
+  username?: string
+  ruolo: LpagaRuolo
+  livelloId?: string
+  contratto?: string
   iban?: string
   attivo: boolean
+  nominativo?: string
+  repartoNome?: string
 }
 
 export type LpagaTurnoRow = {
@@ -47,6 +62,21 @@ export type LpagaMensilitaRow = {
   chiuso: boolean
 }
 
+export type LpagaConvalida = {
+  personaleId: string
+  nominativo: string
+  reparto: string
+  ultima: string | null
+  okIeri: boolean
+}
+
+export type LpagaTreeNode = {
+  id: string
+  nome: string
+  retribuibile?: boolean
+  children?: LpagaTreeNode[]
+}
+
 export type LibroPagaSnapshot = {
   storage: "sql" | "json"
   mese: string
@@ -54,18 +84,54 @@ export type LibroPagaSnapshot = {
   personale: LpagaPersonale[]
   turni: LpagaTurnoRow[]
   mensilita: LpagaMensilitaRow[]
+  convalide: LpagaConvalida[]
+  tree: LpagaTreeNode[]
+  home: {
+    admin: number
+    manager: number
+    user: number
+    livelli: number
+    turniOggi: number
+    convalideOggi: number
+    costiMesi: {
+      mese: string
+      totale: number
+      piscina: number
+      palestra: number
+      ristorante: number
+      miscellanea: number
+    }[]
+    donut: { label: string; value: number }[]
+    miscDonut: { label: string; value: number }[]
+  }
 }
 
 export const libroPagaApi = {
   get: (mese: string) => api.get<LibroPagaSnapshot>(`/libro-paga?mese=${encodeURIComponent(mese)}`),
-  createLivello: (body: { nome: string; retribuzione: number; fissa: boolean; attivo?: boolean }) =>
-    api.post<{ livello: LpagaLivello }>("/libro-paga/livelli", body),
-  patchLivello: (id: string, body: Partial<Pick<LpagaLivello, "nome" | "retribuzione" | "fissa" | "attivo">>) =>
+  importDump: () => api.post<Record<string, unknown>>("/libro-paga/import-dump", {}),
+  createLivello: (body: {
+    nome: string
+    parentId?: string
+    retribuzione: number
+    fissa: boolean
+    retribuibile?: boolean
+    statistica?: boolean
+    attivo?: boolean
+  }) => api.post<{ livello: LpagaLivello }>("/libro-paga/livelli", body),
+  patchLivello: (id: string, body: Partial<LpagaLivello>) =>
     api.patch<{ livello: LpagaLivello }>(`/libro-paga/livelli/${encodeURIComponent(id)}`, body),
   deleteLivello: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/livelli/${encodeURIComponent(id)}`),
-  createPersonale: (body: { nome: string; iban?: string; attivo?: boolean }) =>
-    api.post<{ personale: LpagaPersonale }>("/libro-paga/personale", body),
-  patchPersonale: (id: string, body: Partial<Pick<LpagaPersonale, "nome" | "iban" | "attivo">>) =>
+  createPersonale: (body: {
+    nome: string
+    cognome?: string
+    username?: string
+    ruolo?: LpagaRuolo
+    livelloId?: string
+    contratto?: string
+    iban?: string
+    attivo?: boolean
+  }) => api.post<{ personale: LpagaPersonale }>("/libro-paga/personale", body),
+  patchPersonale: (id: string, body: Partial<LpagaPersonale>) =>
     api.patch<{ personale: LpagaPersonale }>(`/libro-paga/personale/${encodeURIComponent(id)}`, body),
   deletePersonale: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}`),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
