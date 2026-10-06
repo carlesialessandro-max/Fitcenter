@@ -50,13 +50,23 @@ export function AdminMenu() {
       <div className="space-y-8">
         {groups.map((g) => (
           <section key={g.title}>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-500">{g.title}</h2>
+            <h2
+              className={`mb-3 text-xs font-semibold uppercase tracking-wide ${
+                g.tone === "other" ? "text-zinc-500" : "text-amber-400"
+              }`}
+            >
+              {g.title}
+            </h2>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {g.items.map((i) => (
                 <Link
                   key={i.to}
                   to={i.to}
-                  className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-4 text-sm font-medium text-zinc-100 transition-colors hover:border-amber-500/40 hover:bg-zinc-900 hover:text-amber-200"
+                  className={
+                    g.tone === "other"
+                      ? "rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-4 text-sm font-medium text-zinc-100 transition-colors hover:border-zinc-600 hover:bg-zinc-900"
+                      : "rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-4 text-sm font-medium text-amber-100 transition-colors hover:border-amber-400/60 hover:bg-amber-500/20 hover:text-amber-50"
+                  }
                 >
                   {i.label}
                 </Link>
