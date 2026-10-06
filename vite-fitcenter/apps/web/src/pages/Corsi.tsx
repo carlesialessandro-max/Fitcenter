@@ -116,12 +116,23 @@ function normalizeCorsoText(s: string): string {
     .trim()
 }
 
-/** Solo fuori da FITNESS/H2O (tesseramenti, appuntamenti, scuola nuoto). I corsi attivi restano anche a 0 iscritti. */
+/** Solo fuori da FITNESS/H2O (tesseramenti, appuntamenti, scuola nuoto, spa, danza). */
 function isCorsoTitoloNonAttivo(servizio: string): boolean {
   const t = normalizeCorsoText(servizio)
   if (!t) return false
   if (/\bUISP\b/.test(t) || /\bAPPUNTAMENTI?\b/.test(t)) return true
   if (/\bESORDIENTI\b/.test(t)) return true
+  if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return true
+  if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
+  if (/\b(LUN|MART?|MER|GIOV?|VEN|SAB|DOM)\.?\s*\d/.test(t)) return true
+  if (/\d{1,2}[.,:]\d{2}.*\b(LUN|MART?|MER|GIOV?|VEN|SAB|DOM)\b/.test(t)) return true
+  if (/\bSPA\b/.test(t) && !/\bSPARTAN\b/.test(t)) return true
+  if (/\bCOUNTRY\s*DANCE\b/.test(t)) return true
+  if (/\bDANZA\b/.test(t) && !/\bZUMBA\b/.test(t)) return true
+  if (/\bDANCE\b/.test(t) && !/\bPOLE\b/.test(t)) return true
+  const water = /\b(ACQUA|AQUA|H2O|H20|NUOTO ADULTI|GESTANTI)\b/.test(t)
+  if (!water && /\bLIV\b/.test(t)) return true
+  if (!water && /\b(LATINO|MODERN JAZZ)\b/.test(t)) return true
   return false
 }
 

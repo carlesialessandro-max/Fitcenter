@@ -7045,24 +7045,28 @@ function corsoPrenotazioneTitoloRaw(raw: Record<string, unknown>): string {
   ).trim()
 }
 
-/** Titoli fuori da FITNESS/H2O: scuola nuoto, danza, tesseramenti, prove. Non escludere corsi acqua/terra attivi. */
+/** Titoli fuori da FITNESS/H2O: scuola nuoto, danza, spa, tesseramenti, prove. Non escludere corsi acqua/terra attivi. */
 function isCorsoPaginaCorsiTitleExcluded(t: string): boolean {
   if (!t) return false
   if (t.includes("SCUOLA NUOTO") || t.includes("SCUOLANUOTO")) return true
   if (t.includes("AGONISMO")) return true
   if (t.includes("BISETTIMANALE") || t.includes("TRISETTIMANALE")) return true
   if (/\b(LUNEDI|MARTEDI|MERCOLEDI|GIOVEDI|VENERDI|SABATO|DOMENICA)\b/.test(t)) return true
-  if (/\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\.?\s+\d/.test(t)) return true
-  if (/\d{1,2}[.:]\d{2}.*\b(LUN|MAR|MER|GIO|VEN|SAB|DOM)\b/.test(t)) return true
+  // MART. 17.45 LIV. D (scuola nuoto): MART non è MAR.
+  if (/\b(LUN|MART?|MER|GIOV?|VEN|SAB|DOM)\.?\s*\d/.test(t)) return true
+  if (/\d{1,2}[.,:]\d{2}.*\b(LUN|MART?|MER|GIOV?|VEN|SAB|DOM)\b/.test(t)) return true
   if (/\b(BIMBI|BAMBINI|PROPEDEUTICA|KIDS|ESORDIENTI|7-10 ANNI|5-7 ANNI|3-5 ANNI)\b/.test(t)) return true
   if (/\b(JU-?JITSU|JU\s*-?\s*JITSU|SQUADRA|APP\.?\s*TO|APPUNTAMENTI?)\b/.test(t)) return true
   if (/\bUISP\b/.test(t)) return true
   if (/\bPROVA\b/.test(t) || t === "PROVE") return true
+  if (/\bSPA\b/.test(t) && !/\bSPARTAN\b/.test(t)) return true
+  if (/\bCOUNTRY\s*DANCE\b/.test(t)) return true
   if (/\bDANZA\b/.test(t) && !/\bZUMBA\b/.test(t)) return true
+  if (/\bDANCE\b/.test(t) && !/\bPOLE\b/.test(t)) return true
   const water = /\b(ACQUA|AQUA|H2O|H20|NUOTO ADULTI|GESTANTI)\b/.test(t)
   if (!water) {
     if (/\bLIV\b/.test(t)) return true
-    if (/\b(CLASSICO|PROFESSIONALE|GRADO|MUSICAL|CAPOEIRA|CAPOERIRA|KIZOMBA|HIP HOP|HIP-HOP)\b/.test(t)) return true
+    if (/\b(CLASSICO|PROFESSIONALE|GRADO|MUSICAL|CAPOEIRA|CAPOERIRA|KIZOMBA|HIP HOP|HIP-HOP|LATINO|MODERN JAZZ)\b/.test(t)) return true
     if (/PERSONAL/.test(t)) return true
     if (/\bPERCORSO\b/.test(t)) return true
     if (/^(BABY|CATEGORIA|CORSO ADULTI)$/.test(t)) return true
@@ -7262,6 +7266,9 @@ function buildPrenotazioniLezioniVuoteSql(
     `${n} NOT LIKE N'%UISP%'`,
     `${n} NOT LIKE N'%APPUNTAMENT%'`,
     `${n} NOT LIKE N'%ESORDIENTI%'`,
+    `${n} NOT LIKE N'%COUNTRY DANCE%'`,
+    `${n} NOT LIKE N'MART.%'`,
+    `${n} NOT LIKE N'SPA %'`,
   ]
 }
 
@@ -7469,6 +7476,13 @@ async function queryLezioniCorsiSenzaIscritti(
       const of = String(row.oraFine ?? "").trim()
       if (oi && of && oi === of) continue
       const titolo = String(row.servizio ?? "").trim()
+      const titoloU = titolo
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/\s+/g, " ")
+        .trim()
+      if (titoloU && isCorsoPaginaCorsiTitleExcluded(titoloU)) continue
       if (titolo && emptyLessonFitsPlanning(titolo, giorno, oi || undefined) === false) continue
       seenLez.add(idLez)
       out.push(row)

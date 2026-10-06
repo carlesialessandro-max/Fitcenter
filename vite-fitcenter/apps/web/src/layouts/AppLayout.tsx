@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, Navigate } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import { BrandLogo } from "@/components/BrandLogo"
+import { PwaInstallHint } from "@/components/PwaInstallHint"
 
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
 
@@ -415,7 +416,7 @@ export function AppLayout() {
   if (mustRedirectPages) return <Navigate to={homePath} replace />
 
   return (
-    <div className="flex min-h-svh flex-col bg-zinc-950 text-zinc-100 sm:flex-row">
+    <div className="flex min-h-svh flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 sm:flex-row">
       {/* Sidebar desktop: colonna fissa */}
       <div className="hidden shrink-0 sm:block">{Sidebar}</div>
 
@@ -445,6 +446,8 @@ export function AppLayout() {
       </div>
 
       {/* Drawer mobile (fixed, non nel flusso flex) */}
+      <PwaInstallHint />
+
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 sm:hidden">
           <button

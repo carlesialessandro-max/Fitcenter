@@ -69,7 +69,8 @@ function hhmmToMinutes(t: string | undefined): number | null {
  * Lezione vuota: se il corso è nel planning, deve esserci uno slot quel giorno (±35 min).
  * 35 min copre scarti gestionale/Excel (es. Pilates 18:30 vs 19:00) e tiene fuori
  * i fantasmi lontani (es. Acqua Gym 09:00 vs 09:45).
- * `null` = planning assente o corso sconosciuto → non filtrare.
+ * `null` = planning assente o corso non in orario Excel → non filtrare da qui
+ * (spa / scuola nuoto / danza si escludono per titolo).
  */
 export function emptyLessonFitsPlanning(titolo: string, giornoIso: string, oraInizio?: string): boolean | null {
   const events = loadPlanningEvents()

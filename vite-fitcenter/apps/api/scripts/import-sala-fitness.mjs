@@ -2,7 +2,7 @@
  * Importa ORARIO SALA 2026.xlsx nel calendario FitCenter (comparto sala_fitness).
  * Ogni foglio = una settimana; il colore della cella orario è l'istruttore (leggenda a destra).
  *
- * Uso (da apps/api):
+ * Uso (root del monorepo oppure apps/api):
  *   pnpm run import:sala-fitness
  *   pnpm run import:sala-fitness -- --replace
  */

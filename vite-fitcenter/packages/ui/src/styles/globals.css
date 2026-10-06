@@ -2,3 +2,13 @@
 @source "../../../apps/**/*.{ts,tsx}";
 @source "../../../components/**/*.{ts,tsx}";
 @source "../**/*.{ts,tsx}";
+
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #09090b;
+}
+body {
+  margin: 0;
+}

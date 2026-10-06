@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
+import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
@@ -120,6 +121,7 @@ export function LibroPagaAccesso() {
             </button>
           </form>
         </div>
+        <PwaInstallHint />
       </div>
     )
   }
@@ -172,7 +174,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   ]
 
   return (
-    <div className="min-h-svh bg-zinc-950 text-zinc-100">
+    <div className="min-h-svh bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100">
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-3">
           <BrandLogo variant="compact" />
@@ -256,6 +258,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
         )}
         {data && tab === "report" && canTeam && <LibroPagaReport data={data} />}
       </main>
+      <PwaInstallHint />
     </div>
   )
 }

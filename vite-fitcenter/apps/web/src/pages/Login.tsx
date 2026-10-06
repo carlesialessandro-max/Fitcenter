@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { authApi, type LoginResponse } from "@/api/auth"
 import { BrandLogo } from "@/components/BrandLogo"
+import { PwaInstallHint } from "@/components/PwaInstallHint"
 
 export function Login() {
   const navigate = useNavigate()
@@ -157,6 +158,7 @@ export function Login() {
           </form>
         )}
       </div>
+      <PwaInstallHint />
     </div>
   )
 }
