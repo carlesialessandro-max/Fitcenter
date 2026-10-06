@@ -8,7 +8,6 @@ import {
   listPersonale,
   listTurni,
   nominativo,
-  dominioLivello,
   upsertLivello,
   upsertMensilita,
   upsertPersonale,
@@ -17,7 +16,17 @@ import {
 import { importLibroPagaDump } from "../services/libro-paga-import.js"
 import { livelloSottoAlbero, personaleVisibile } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
-import { proponeConvalidaMese, upsertTurnoConvalida, getDeleghe, setDeleghe, type TurnoConvalidaStato } from "../services/libro-paga-convalida.js"
+import {
+  applicaAutoOkConvalida,
+  FOGLI_ORARI_CONVALIDA,
+  payloadConvalidaMese,
+  proponeConvalidaMese,
+  turniNelMesePerConvalida,
+  upsertTurnoConvalida,
+  getDeleghe,
+  setDeleghe,
+  type TurnoConvalidaStato,
+} from "../services/libro-paga-convalida.js"
 import { setPersonalePassword } from "../store/libro-paga-auth.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
@@ -307,27 +316,59 @@ export async function getLibroPagaConvalida(req: Request, res: Response) {
     const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const pe = personale.find((p) => p.id === personaleId)
     if (!pe) return res.status(404).json({ message: "Persona non trovata" })
-    const livBy = new Map(livelli.map((l) => [l.id, l]))
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const turni = turniTutti
-      .filter((t) => t.personaleId === personaleId && t.giorno.slice(0, 7) === mese)
-      .map((t) => ({
-        ...t,
-        personaleNome: nominativo(perBy.get(t.personaleId) ?? pe),
-        livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
-        dominio: t.livelloId ? dominioLivello(livelli, t.livelloId) : "",
-      }))
+    const repartoId = String(req.query.reparto ?? "").trim()
+    const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
+    const turni = turniNelMesePerConvalida({
+      mese,
+      turni: turniTutti,
+      personale,
+      livelli,
+      tree,
+      personaleId,
+    })
     const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
     res.json({
       mese,
       personaleId,
       personaleNome: nominativo(pe),
       rows,
-      fogli: {
-        bagnini: "https://docs.google.com/spreadsheets/d/1v6UXzuiJAjcdG1kcp9Yr9Y4ZHuZa721i/edit?gid=298645103#gid=298645103",
-        desk: "https://docs.google.com/spreadsheets/d/1-2ar1zRVlxJRjLL97SFMt5WJgLAS96iIv4g0lGf3LgU/edit?gid=0#gid=0",
-      },
+      fogli: FOGLI_ORARI_CONVALIDA,
     })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLibroPagaConvalidaMese(req: Request, res: Response) {
+  try {
+    const meseRaw = String(req.query.mese ?? "").trim()
+    const mese = isYm(meseRaw) ? meseRaw : defaultMese()
+    const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+    const perBy = new Map(personale.map((p) => [p.id, p]))
+    const repartoId = String(req.query.reparto ?? "").trim()
+    const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
+    const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
+    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    res.json(payloadConvalidaMese(mese, rows))
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
+  try {
+    const meseRaw = String(req.body?.mese ?? req.query.mese ?? "").trim()
+    const mese = isYm(meseRaw) ? meseRaw : defaultMese()
+    const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+    const perBy = new Map(personale.map((p) => [p.id, p]))
+    const repartoId = String(req.body?.reparto ?? req.query.reparto ?? "").trim()
+    const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
+    const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
+    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const confermatiOra = applicaAutoOkConvalida(rows, String(req.user?.nome || req.user?.username || "admin"))
+    const aggiornate = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
   } catch (e) {
     fail(res, e)
   }

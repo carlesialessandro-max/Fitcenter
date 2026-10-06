@@ -1,17 +1,21 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, dominioLivello } from "../store/libro-paga-db.js"
+import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo } from "../store/libro-paga-db.js"
 import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
-  managerIdsCheDelegatoA,
   alberoDaDeleghe,
+  alberoConvalidaViewer,
+  applicaAutoOkConvalida,
+  FOGLI_ORARI_CONVALIDA,
+  payloadConvalidaMese,
   proponeConvalidaMese,
   setDeleghe,
+  turniNelMesePerConvalida,
   upsertTurnoConvalida,
   viewerPuoConvalidare,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { livelloSottoAlbero, livelliInseribili, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { livelloSottoAlbero, livelliInseribili, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
@@ -169,25 +173,18 @@ export async function removeLpagaTurno(req: Request, res: Response) {
 export async function putLpagaMensilita(req: Request, res: Response) {
   try {
     const me = viewer(req)
-    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
-    const vis = personaleVisibile(me, personale, livelli)
+    const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const personaleId = String(req.body?.personaleId ?? "").trim()
     const canValidate = viewerPuoConvalidare(me, personale)
     if (me.ruolo === "user" && !canValidate) {
       return res.status(403).json({ message: "Gli istruttori possono solo visualizzare le mensilità" })
     }
-    if (me.ruolo === "user" && canValidate) {
-      const managers = managerIdsCheDelegatoA(me.id, personale)
-      const inDelega = managers.some((id) => {
-        const mgr = personale.find((p) => p.id === id)
-        if (!mgr?.livelloId) return false
-        const tree = livelloSottoAlbero(livelli, mgr.livelloId)
-        const pe = personale.find((p) => p.id === personaleId)
-        return pe?.livelloId ? tree.has(pe.livelloId) : false
+    const tree = alberoConvalidaViewer(me, personale, livelli)
+    const ids = personaleRaggiungibile(me, personale, livelli, turni, tree)
+    if (!ids.has(personaleId)) {
+      return res.status(403).json({
+        message: me.ruolo === "user" ? "Fuori dalla delega di convalida" : "Mensilità non visibile",
       })
-      if (!inDelega) return res.status(403).json({ message: "Fuori dalla delega di convalida" })
-    } else if (!vis.has(personaleId)) {
-      return res.status(403).json({ message: "Mensilità non visibile" })
     }
     const mese = String(req.body?.mese ?? "").trim()
     const bonifico = Number(req.body?.bonifico)
@@ -280,37 +277,26 @@ export async function putLpagaPersonalePassword(req: Request, res: Response) {
   }
 }
 
-async function assertConvalidaTarget(me: LpagaSessionUser, targetId: string) {
-  const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+async function loadConvalidaScope(me: LpagaSessionUser) {
+  const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
   if (!viewerPuoConvalidare(me, personale)) {
     const err = new Error("Non puoi convalidare le mensilità")
     ;(err as Error & { status?: number }).status = 403
     throw err
   }
-  if (me.ruolo === "admin") return { personale, livelli }
-  if (me.ruolo === "manager") {
-    const vis = personaleVisibile(me, personale, livelli)
-    if (!vis.has(targetId)) {
-      const err = new Error("Persona fuori dal tuo reparto")
-      ;(err as Error & { status?: number }).status = 403
-      throw err
-    }
-    return { personale, livelli }
-  }
-  const managers = managerIdsCheDelegatoA(me.id, personale)
-  const ok = managers.some((id) => {
-    const mgr = personale.find((p) => p.id === id)
-    if (!mgr?.livelloId) return false
-    const tree = livelloSottoAlbero(livelli, mgr.livelloId)
-    const pe = personale.find((p) => p.id === targetId)
-    return pe?.livelloId ? tree.has(pe.livelloId) : pe?.id === targetId
-  })
-  if (!ok) {
-    const err = new Error("Fuori dalla delega di convalida")
+  const tree = alberoConvalidaViewer(me, personale, livelli)
+  const ids = personaleRaggiungibile(me, personale, livelli, turni, tree)
+  return { personale, livelli, turni, tree, ids }
+}
+
+async function assertConvalidaTarget(me: LpagaSessionUser, targetId: string) {
+  const scope = await loadConvalidaScope(me)
+  if (!scope.ids.has(targetId)) {
+    const err = new Error(me.ruolo === "user" ? "Fuori dalla delega di convalida" : "Persona fuori dal tuo reparto")
     ;(err as Error & { status?: number }).status = 403
     throw err
   }
-  return { personale, livelli }
+  return scope
 }
 
 export async function getLpagaConvalida(req: Request, res: Response) {
@@ -320,31 +306,58 @@ export async function getLpagaConvalida(req: Request, res: Response) {
     const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
     const personaleId = String(req.query.personaleId ?? "").trim()
     if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
-    const { personale } = await assertConvalidaTarget(me, personaleId)
-    const [livelli, turniTutti] = await Promise.all([listLivelli(), listTurni()])
+    const { personale, livelli, turni, tree } = await assertConvalidaTarget(me, personaleId)
     const pe = personale.find((p) => p.id === personaleId)
     if (!pe) return res.status(404).json({ message: "Persona non trovata" })
-    const livBy = new Map(livelli.map((l) => [l.id, l]))
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const turni = turniTutti
-      .filter((t) => t.personaleId === personaleId && t.giorno.slice(0, 7) === mese)
-      .map((t) => ({
-        ...t,
-        personaleNome: nominativo(perBy.get(t.personaleId) ?? pe),
-        livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
-        dominio: t.livelloId ? dominioLivello(livelli, t.livelloId) : "",
-      }))
-    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const scoped = turniNelMesePerConvalida({
+      mese,
+      turni,
+      personale,
+      livelli,
+      tree,
+      personaleId,
+    })
+    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
     res.json({
       mese,
       personaleId,
       personaleNome: nominativo(pe),
       rows,
-      fogli: {
-        bagnini: "https://docs.google.com/spreadsheets/d/1v6UXzuiJAjcdG1kcp9Yr9Y4ZHuZa721i/edit?gid=298645103#gid=298645103",
-        desk: "https://docs.google.com/spreadsheets/d/1-2ar1zRVlxJRjLL97SFMt5WJgLAS96iIv4g0lGf3LgU/edit?gid=0#gid=0",
-      },
+      fogli: FOGLI_ORARI_CONVALIDA,
     })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLpagaConvalidaMese(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    const meseRaw = String(req.query.mese ?? "").trim()
+    const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
+    const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
+    const perBy = new Map(personale.map((p) => [p.id, p]))
+    const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
+    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    res.json(payloadConvalidaMese(mese, rows))
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLpagaConvalidaMese(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    const meseRaw = String(req.body?.mese ?? req.query.mese ?? "").trim()
+    const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
+    const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
+    const perBy = new Map(personale.map((p) => [p.id, p]))
+    const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
+    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    const confermatiOra = applicaAutoOkConvalida(rows, me.username || me.id)
+    const aggiornate = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
   } catch (e) {
     fail(res, e)
   }
@@ -362,7 +375,10 @@ export async function putLpagaConvalidaTurno(req: Request, res: Response) {
     const turni = await listTurni()
     const t = turni.find((x) => x.id === turnoId)
     if (!t) return res.status(404).json({ message: "Turno non trovato" })
-    await assertConvalidaTarget(me, t.personaleId)
+    const { tree } = await assertConvalidaTarget(me, t.personaleId)
+    if (tree && !tree.has(t.livelloId)) {
+      return res.status(403).json({ message: "Turno fuori dal tuo reparto" })
+    }
     const row = upsertTurnoConvalida({
       turnoId,
       stato,

@@ -154,10 +154,21 @@ export const libroPagaApi = {
     api.put<{ presenza: unknown }>(`/libro-paga/turni/${encodeURIComponent(turnoId)}/presenza`, { valore }),
   putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
     api.put<{ mensilita: unknown }>("/libro-paga/mensilita", body),
-  getConvalida: (mese: string, personaleId: string) =>
-    api.get<import("@/api/lpaga").LpagaConvalidaPayload>(
-      `/libro-paga/convalida?mese=${encodeURIComponent(mese)}&personaleId=${encodeURIComponent(personaleId)}`
-    ),
+  getConvalida: (mese: string, personaleId: string, reparto?: string) => {
+    const q = new URLSearchParams({ mese, personaleId })
+    if (reparto) q.set("reparto", reparto)
+    return api.get<import("@/api/lpaga").LpagaConvalidaPayload>(`/libro-paga/convalida?${q.toString()}`)
+  },
+  getConvalidaMese: (mese: string, reparto?: string) => {
+    const q = new URLSearchParams({ mese })
+    if (reparto) q.set("reparto", reparto)
+    return api.get<import("@/api/lpaga").LpagaConvalidaMesePayload>(`/libro-paga/convalida-mese?${q.toString()}`)
+  },
+  postConvalidaMese: (mese: string, reparto?: string) =>
+    api.post<import("@/api/lpaga").LpagaConvalidaMesePayload>("/libro-paga/convalida-mese", {
+      mese,
+      ...(reparto ? { reparto } : {}),
+    }),
   putConvalidaTurno: (body: {
     turnoId: string
     stato: import("@/api/lpaga").TurnoConvalidaStato

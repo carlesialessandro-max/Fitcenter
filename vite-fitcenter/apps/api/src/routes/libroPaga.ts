@@ -12,6 +12,8 @@ import {
   putPersonalePassword,
   putPresenza,
   getLibroPagaConvalida,
+  getLibroPagaConvalidaMese,
+  postLibroPagaConvalidaMese,
   putLibroPagaConvalidaTurno,
   getLibroPagaDeleghe,
   putLibroPagaDeleghe,
@@ -37,6 +39,8 @@ libroPagaRouter.delete("/turni/:id", removeTurno)
 libroPagaRouter.put("/turni/:id/presenza", putPresenza)
 libroPagaRouter.put("/mensilita", putMensilita)
 libroPagaRouter.get("/convalida", getLibroPagaConvalida)
+libroPagaRouter.get("/convalida-mese", getLibroPagaConvalidaMese)
+libroPagaRouter.post("/convalida-mese", postLibroPagaConvalidaMese)
 libroPagaRouter.put("/convalida/turno", putLibroPagaConvalidaTurno)
 libroPagaRouter.get("/deleghe", getLibroPagaDeleghe)
 libroPagaRouter.put("/deleghe", putLibroPagaDeleghe)

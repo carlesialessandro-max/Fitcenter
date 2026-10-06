@@ -43,6 +43,7 @@ export function LibroPagaMensilitaTab({
   onError,
   onDone,
   onConvalida,
+  onConvalidaMese,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -52,6 +53,7 @@ export function LibroPagaMensilitaTab({
   onError: (s: string) => void
   onDone: () => void
   onConvalida?: (personaleId: string) => void
+  onConvalidaMese?: () => void
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -91,7 +93,19 @@ export function LibroPagaMensilitaTab({
           onClose={() => setPannello(null)}
         />
       )}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca nominativo…" className={inputCls} />
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cerca nominativo…"
+          className={`${inputCls} min-w-[12rem] flex-1`}
+        />
+        {onConvalidaMese && (
+          <button type="button" className={btnAmber} onClick={onConvalidaMese}>
+            Convalida tutto il mese
+          </button>
+        )}
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">

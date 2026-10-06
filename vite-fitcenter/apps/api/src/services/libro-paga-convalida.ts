@@ -1,7 +1,7 @@
 import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
-import { nominativo } from "../store/libro-paga-db.js"
+import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
 import { livelloSottoAlbero } from "./libro-paga-scope.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -126,6 +126,7 @@ export type MatchCalendario = {
 
 export type TurnoConvalidaProposta = {
   turnoId: string
+  personaleId: string
   giorno: string
   livelloNome: string
   personaleNome: string
@@ -137,6 +138,55 @@ export type TurnoConvalidaProposta = {
   match?: MatchCalendario
   sostitutiPossibili: MatchCalendario[]
   salvato?: TurnoConvalida
+}
+
+export const FOGLI_ORARI_CONVALIDA = {
+  bagnini: "https://docs.google.com/spreadsheets/d/1v6UXzuiJAjcdG1kcp9Yr9Y4ZHuZa721i/edit?gid=298645103#gid=298645103",
+  desk: "https://docs.google.com/spreadsheets/d/1-2ar1zRVlxJRjLL97SFMt5WJgLAS96iIv4g0lGf3LgU/edit?gid=0#gid=0",
+} as const
+
+/** Mansioni visibili in convalida: admin = tutte; responsabile = sottoalbero; delegato = albero dei manager. */
+export function alberoConvalidaViewer(
+  me: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId">,
+  personale: LpagaPersonale[],
+  livelli: LpagaLivello[]
+): Set<string> | undefined {
+  if (me.ruolo === "admin") return undefined
+  if (me.ruolo === "manager") {
+    return me.livelloId ? livelloSottoAlbero(livelli, me.livelloId) : undefined
+  }
+  const de = alberoDaDeleghe(me.id, personale, livelli)
+  return de.size ? de : undefined
+}
+
+export function turniNelMesePerConvalida(opts: {
+  mese: string
+  turni: LpagaTurno[]
+  personale: LpagaPersonale[]
+  livelli: LpagaLivello[]
+  tree?: Set<string>
+  personaleId?: string
+  personaleIds?: Set<string>
+}): (LpagaTurno & { personaleNome: string; livelloNome: string; dominio?: string })[] {
+  const livBy = new Map(opts.livelli.map((l) => [l.id, l]))
+  const perBy = new Map(opts.personale.map((p) => [p.id, p]))
+  return opts.turni
+    .filter((t) => {
+      if (t.giorno.slice(0, 7) !== opts.mese) return false
+      if (opts.personaleId && t.personaleId !== opts.personaleId) return false
+      if (opts.personaleIds && !opts.personaleIds.has(t.personaleId)) return false
+      if (opts.tree && !opts.tree.has(t.livelloId)) return false
+      return true
+    })
+    .map((t) => {
+      const pe = perBy.get(t.personaleId)
+      return {
+        ...t,
+        personaleNome: pe ? nominativo(pe) : "—",
+        livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
+        dominio: t.livelloId ? dominioLivello(opts.livelli, t.livelloId) : "",
+      }
+    })
 }
 
 export function getDeleghe(managerId: string): string[] {
@@ -259,6 +309,7 @@ export function proponeConvalidaMese(opts: {
     const salvato = db.turni[t.id]
     return {
       turnoId: t.id,
+      personaleId: t.personaleId,
       giorno: t.giorno,
       livelloNome: t.livelloNome,
       personaleNome: t.personaleNome,
@@ -274,6 +325,40 @@ export function proponeConvalidaMese(opts: {
   })
 }
 
-export function labelNominativo(p: LpagaPersonale): string {
-  return nominativo(p)
+export function isAnomaliaConvalida(row: TurnoConvalidaProposta): boolean {
+  const stato = row.salvato?.stato ?? row.proposto
+  return stato !== "ok"
+}
+
+export function applicaAutoOkConvalida(rows: TurnoConvalidaProposta[], da: string): number {
+  let n = 0
+  for (const r of rows) {
+    if (r.salvato && r.salvato.stato !== "da_verificare") continue
+    if (r.proposto !== "ok") continue
+    upsertTurnoConvalida({ turnoId: r.turnoId, stato: "ok", da })
+    n += 1
+  }
+  return n
+}
+
+export function payloadConvalidaMese(
+  mese: string,
+  rows: TurnoConvalidaProposta[],
+  extra?: { confermatiOra?: number }
+) {
+  const anomalie = rows
+    .filter(isAnomaliaConvalida)
+    .sort((a, b) => a.personaleNome.localeCompare(b.personaleNome, "it") || a.giorno.localeCompare(b.giorno))
+  const confermabili = rows.filter((r) => r.proposto === "ok" && (!r.salvato || r.salvato.stato === "da_verificare"))
+  const confermati = rows.filter((r) => r.salvato?.stato === "ok" || r.salvato?.stato === "sostituzione")
+  return {
+    mese,
+    nTurni: rows.length,
+    nConfermabili: confermabili.length,
+    nAnomalie: anomalie.length,
+    nConfermati: confermati.length,
+    anomalie,
+    fogli: FOGLI_ORARI_CONVALIDA,
+    ...(extra?.confermatiOra != null ? { confermatiOra: extra.confermatiOra } : {}),
+  }
 }

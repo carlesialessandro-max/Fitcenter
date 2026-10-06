@@ -23,7 +23,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report"
@@ -194,7 +194,7 @@ export function LibroPaga() {
         )}
       {data && tab === "convalide" && <ConvalideTab data={data} />}
       {data && tab === "mensilita" && (
-        <MensilitaTab data={data} mese={mese} onError={setError} onDone={() => { setError(""); invalidate() }} />
+        <MensilitaTab data={data} mese={mese} reparto={reparto} onError={setError} onDone={() => { setError(""); invalidate() }} />
       )}
       {data && tab === "report" && <LibroPagaReport data={data} />}
     </div>
@@ -925,19 +925,34 @@ function ConvalideTab({ data }: { data: LibroPagaSnapshot }) {
 function MensilitaTab({
   data,
   mese,
+  reparto,
   onError,
   onDone,
 }: {
   data: LibroPagaSnapshot
   mese: string
+  reparto: string
   onError: (s: string) => void
   onDone: () => void
 }) {
   const [convId, setConvId] = useState<string | null>(null)
-  const conv = useLibroPagaConvalida(mese, convId, libroPagaApi.getConvalida)
+  const [meseOpen, setMeseOpen] = useState(false)
+  const conv = useLibroPagaConvalida(mese, convId, (m, id) => libroPagaApi.getConvalida(m, id, reparto || undefined))
+  const convMese = useLibroPagaConvalidaMese(mese, meseOpen, (m) => libroPagaApi.getConvalidaMese(m, reparto || undefined), reparto)
   const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
     <div className="mt-4 space-y-4">
+      {meseOpen && convMese.isLoading && <p className="text-sm text-zinc-500">Controllo turni del mese…</p>}
+      {meseOpen && convMese.isError && <p className="text-sm text-red-400">{(convMese.error as Error).message}</p>}
+      {meseOpen && convMese.data && (
+        <LibroPagaConvalidaMesePanel
+          data={convMese.data}
+          showCalendariFitCenter
+          onClose={() => setMeseOpen(false)}
+          onSaveTurno={(body) => libroPagaApi.putConvalidaTurno(body)}
+          onConfermaAllineati={() => libroPagaApi.postConvalidaMese(mese, reparto || undefined)}
+        />
+      )}
       {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}
       {convId && conv.isError && <p className="text-sm text-red-400">{(conv.error as Error).message}</p>}
       {conv.data && (
@@ -969,7 +984,14 @@ function MensilitaTab({
         onSave={(body) => libroPagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}
-        onConvalida={(id) => setConvId(id)}
+        onConvalida={(id) => {
+          setMeseOpen(false)
+          setConvId(id)
+        }}
+        onConvalidaMese={() => {
+          setConvId(null)
+          setMeseOpen(true)
+        }}
       />
     </div>
   )

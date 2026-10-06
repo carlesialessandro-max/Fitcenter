@@ -5,7 +5,7 @@ import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 const inputCls =
@@ -721,10 +721,22 @@ function Mensilita({
 }) {
   const canValidate = Boolean(data.canValidate) || me?.ruolo === "admin" || me?.ruolo === "manager"
   const [convId, setConvId] = useState<string | null>(null)
+  const [meseOpen, setMeseOpen] = useState(false)
   const conv = useLibroPagaConvalida(mese, canValidate ? convId : null, lpagaApi.getConvalida)
+  const convMese = useLibroPagaConvalidaMese(mese, meseOpen && canValidate, lpagaApi.getConvalidaMese)
   const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
     <div className="mt-4 space-y-4">
+      {meseOpen && convMese.isLoading && <p className="text-sm text-zinc-500">Controllo turni del mese…</p>}
+      {meseOpen && convMese.isError && <p className="text-sm text-red-400">{(convMese.error as Error).message}</p>}
+      {meseOpen && convMese.data && (
+        <LibroPagaConvalidaMesePanel
+          data={convMese.data}
+          onClose={() => setMeseOpen(false)}
+          onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body)}
+          onConfermaAllineati={() => lpagaApi.postConvalidaMese(mese)}
+        />
+      )}
       {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}
       {convId && conv.isError && <p className="text-sm text-red-400">{(conv.error as Error).message}</p>}
       {conv.data && (
@@ -754,7 +766,22 @@ function Mensilita({
         onSave={(body) => lpagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}
-        onConvalida={canValidate ? (id) => setConvId(id) : undefined}
+        onConvalida={
+          canValidate
+            ? (id) => {
+                setMeseOpen(false)
+                setConvId(id)
+              }
+            : undefined
+        }
+        onConvalidaMese={
+          canValidate
+            ? () => {
+                setConvId(null)
+                setMeseOpen(true)
+              }
+            : undefined
+        }
       />
     </div>
   )

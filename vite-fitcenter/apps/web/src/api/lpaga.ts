@@ -38,6 +38,7 @@ export type LpagaConvalidaPayload = {
   personaleNome: string
   rows: {
     turnoId: string
+    personaleId?: string
     giorno: string
     livelloNome: string
     personaleNome: string
@@ -50,6 +51,17 @@ export type LpagaConvalidaPayload = {
     sostitutiPossibili: LpagaConvalidaMatch[]
     salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }
   }[]
+  fogli: { bagnini: string; desk: string }
+}
+
+export type LpagaConvalidaMesePayload = {
+  mese: string
+  nTurni: number
+  nConfermabili: number
+  nAnomalie: number
+  nConfermati: number
+  confermatiOra?: number
+  anomalie: LpagaConvalidaPayload["rows"]
   fogli: { bagnini: string; desk: string }
 }
 
@@ -140,6 +152,13 @@ export const lpagaApi = {
     lpagaRequest<LpagaConvalidaPayload>(
       `/lpaga/convalida?mese=${encodeURIComponent(mese)}&personaleId=${encodeURIComponent(personaleId)}`
     ),
+  getConvalidaMese: (mese: string) =>
+    lpagaRequest<LpagaConvalidaMesePayload>(`/lpaga/convalida-mese?mese=${encodeURIComponent(mese)}`),
+  postConvalidaMese: (mese: string) =>
+    lpagaRequest<LpagaConvalidaMesePayload>("/lpaga/convalida-mese", {
+      method: "POST",
+      body: JSON.stringify({ mese }),
+    }),
   putConvalidaTurno: (body: { turnoId: string; stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }) =>
     lpagaRequest<{ convalida: unknown }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),
   getDeleghe: (managerId?: string) => {

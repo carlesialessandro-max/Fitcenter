@@ -63,6 +63,33 @@ export function personaleVisibile(
   return ids
 }
 
+/**
+ * Chi può essere convalidato: anagrafica nel sottoalbero + chi ha turni
+ * sulla mansione del responsabile (es. Baldi in palestra ma anagrafato altrove).
+ */
+export function personaleRaggiungibile(
+  viewer: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId">,
+  personale: LpagaPersonale[],
+  livelli: LpagaLivello[],
+  turni: { personaleId: string; livelloId: string }[],
+  extraTree?: Set<string>
+): Set<string> {
+  if (viewer.ruolo === "admin") return new Set(personale.map((p) => p.id))
+  const vis = personaleVisibile(viewer, personale, livelli)
+  const tree =
+    extraTree ??
+    (viewer.ruolo === "manager" && viewer.livelloId ? livelloSottoAlbero(livelli, viewer.livelloId) : undefined)
+  if (!tree?.size) return vis
+  const ids = new Set(vis)
+  for (const p of personale) {
+    if (p.livelloId && tree.has(p.livelloId)) ids.add(p.id)
+  }
+  for (const t of turni) {
+    if (tree.has(t.livelloId)) ids.add(t.personaleId)
+  }
+  return ids
+}
+
 export function livelliInseribili(
   viewer: Pick<LpagaPersonale, "ruolo" | "livelloId">,
   livelli: LpagaLivello[],
