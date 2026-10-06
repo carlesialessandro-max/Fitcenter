@@ -1186,6 +1186,16 @@ export function CalendarioRepartoPage() {
                   <strong className="font-medium text-zinc-400">PISCINAORARIO</strong>, foglio S.N. Bambini): modifica, aggiungi o
                   nascondi lezioni online.
                 </>
+              ) : apiComparto === "piscina" ? (
+                <>
+                  Orario bagnini da Excel invernale (settimane datate). Puoi aggiungere o modificare un turno{" "}
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>. Zone: invernale, interna, esterna.
+                </>
+              ) : apiComparto === "reception" ? (
+                <>
+                  Orario desk da Excel. Puoi aggiungere o modificare un turno{" "}
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                </>
               ) : apiComparto === "sala_fitness" ? (
                 <>
                   Orario sala pesi da Excel. Il file arriva ad aprile 2026: i mesi successivi ripetono l&apos;anno prima

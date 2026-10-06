@@ -13,6 +13,7 @@
     "import:istruttori": "node scripts/import-istruttori-calendario.mjs",
     "import:scuola-nuoto": "node scripts/import-calendario-comparto.mjs scuola_nuoto",
     "import:sala-fitness": "node scripts/import-sala-fitness.mjs",
+    "import:desk-bagnini": "node scripts/import-desk-bagnini.mjs",
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",

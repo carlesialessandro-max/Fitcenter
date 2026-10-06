@@ -8,6 +8,7 @@
     "dev": "turbo dev",
     "precompute:dashboard-cache": "pnpm --filter api run precompute:dashboard-cache",
     "import:sala-fitness": "pnpm --filter api run import:sala-fitness",
+    "import:desk-bagnini": "pnpm --filter api run import:desk-bagnini",
     "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",
     "format": "turbo format",

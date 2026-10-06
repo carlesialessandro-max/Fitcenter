@@ -287,12 +287,11 @@ function seedCompartoFromPlanning(comparto: CalendarioComparto, db: CalendarioDb
   return next
 }
 
-/** Turni solo da calendario web (nessun Excel in build). */
+/** Turni da JSON server (import Excel desk/bagnini o inserimento web). */
 function mergeManualOnlyFromDb(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   const out: CalendarioMergedEvent[] = []
   for (const r of db.revisions) {
     if (r.comparto !== comparto) continue
-    if (!r.stableKey.startsWith("manual-")) continue
     if (r.removed) continue
     out.push({
       id: r.stableKey,
