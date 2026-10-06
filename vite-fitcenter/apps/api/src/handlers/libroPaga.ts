@@ -6,14 +6,17 @@ import {
   insertTurno,
   listLivelli,
   listPersonale,
+  listTurni,
+  nominativo,
   upsertLivello,
   upsertMensilita,
   upsertPersonale,
   upsertPresenza,
 } from "../store/libro-paga-db.js"
 import { importLibroPagaDump } from "../services/libro-paga-import.js"
-import { livelloSottoAlbero } from "../services/libro-paga-scope.js"
+import { livelloSottoAlbero, personaleVisibile } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
+import { proponeConvalidaMese, upsertTurnoConvalida, getDeleghe, setDeleghe, type TurnoConvalidaStato } from "../services/libro-paga-convalida.js"
 import { setPersonalePassword } from "../store/libro-paga-auth.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
@@ -289,6 +292,93 @@ export async function putMensilita(req: Request, res: Response) {
       chiuso: Boolean(req.body?.chiuso),
     })
     res.json({ mensilita: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLibroPagaConvalida(req: Request, res: Response) {
+  try {
+    const meseRaw = String(req.query.mese ?? "").trim()
+    const mese = isYm(meseRaw) ? meseRaw : defaultMese()
+    const personaleId = String(req.query.personaleId ?? "").trim()
+    if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
+    const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+    const pe = personale.find((p) => p.id === personaleId)
+    if (!pe) return res.status(404).json({ message: "Persona non trovata" })
+    const livBy = new Map(livelli.map((l) => [l.id, l]))
+    const perBy = new Map(personale.map((p) => [p.id, p]))
+    const turni = turniTutti
+      .filter((t) => t.personaleId === personaleId && t.giorno.slice(0, 7) === mese)
+      .map((t) => ({
+        ...t,
+        personaleNome: nominativo(perBy.get(t.personaleId) ?? pe),
+        livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
+      }))
+    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    res.json({
+      mese,
+      personaleId,
+      personaleNome: nominativo(pe),
+      rows,
+      fogli: {
+        bagnini: "https://docs.google.com/spreadsheets/d/1v6UXzuiJAjcdG1kcp9Yr9Y4ZHuZa721i/edit?gid=298645103#gid=298645103",
+        desk: "https://docs.google.com/spreadsheets/d/1-2ar1zRVlxJRjLL97SFMt5WJgLAS96iIv4g0lGf3LgU/edit?gid=0#gid=0",
+      },
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLibroPagaConvalidaTurno(req: Request, res: Response) {
+  try {
+    const turnoId = String(req.body?.turnoId ?? "").trim()
+    const statoRaw = String(req.body?.stato ?? "").trim()
+    const stato = (["ok", "sostituzione", "non_svolta", "da_verificare"].includes(statoRaw)
+      ? statoRaw
+      : "") as TurnoConvalidaStato | ""
+    if (!turnoId || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
+    const turni = await listTurni()
+    if (!turni.some((x) => x.id === turnoId)) return res.status(404).json({ message: "Turno non trovato" })
+    const row = upsertTurnoConvalida({
+      turnoId,
+      stato,
+      nota: String(req.body?.nota ?? "").trim(),
+      sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
+      da: String(req.user?.nome || req.user?.username || "admin"),
+    })
+    res.json({ convalida: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLibroPagaDeleghe(req: Request, res: Response) {
+  try {
+    const managerId = String(req.query.managerId ?? "").trim()
+    if (!managerId) return res.status(400).json({ message: "Responsabile obbligatorio" })
+    res.json({ managerId, deleghe: getDeleghe(managerId) })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLibroPagaDeleghe(req: Request, res: Response) {
+  try {
+    const managerId = String(req.body?.managerId ?? "").trim()
+    if (!managerId) return res.status(400).json({ message: "Responsabile obbligatorio" })
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const mgr = personale.find((p) => p.id === managerId)
+    if (!mgr || (mgr.ruolo !== "manager" && mgr.ruolo !== "admin")) {
+      return res.status(400).json({ message: "Responsabile non valido" })
+    }
+    const vis = personaleVisibile(mgr, personale, livelli)
+    const ids = (Array.isArray(req.body?.ids) ? req.body.ids.map((x: unknown) => String(x)) : []).filter(
+      (id: string) => id && id !== managerId && vis.has(id)
+    )
+    const deleghe = setDeleghe(managerId, ids)
+    res.json({ managerId, deleghe })
   } catch (e) {
     fail(res, e)
   }

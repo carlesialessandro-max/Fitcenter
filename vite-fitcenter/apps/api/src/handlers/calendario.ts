@@ -349,6 +349,31 @@ function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttor
   return e.staff.trim() || "—"
 }
 
+const CONVALIDA_COMPARTI: CalendarioComparto[] = [
+  "corsi",
+  "scuola_nuoto",
+  "sala_fitness",
+  "piscina",
+  "reception",
+  "acquaticita",
+  "campus",
+]
+
+/** Eventi calendario (orari + istruttore) per confrontare i turni Libro paga. */
+export function listCalendarioPerConvalida(): {
+  instructors: CalendarioIstruttore[]
+  events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[]
+} {
+  const db = readCalendarioDb()
+  const events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[] = []
+  for (const comparto of CONVALIDA_COMPARTI) {
+    for (const e of mergeForComparto(comparto, db)) {
+      events.push({ ...e, comparto, staffDisplay: displayStaff(e, db.instructors) })
+    }
+  }
+  return { instructors: db.instructors, events }
+}
+
 export function getCalendarioPianoOperativo(req: Request, res: Response) {
   const u = req.user!
   if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })

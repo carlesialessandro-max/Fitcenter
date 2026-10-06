@@ -15,8 +15,41 @@ export type LpagaMe = {
 }
 
 export type LpagaPortalSnapshot = LibroPagaSnapshot & {
-  me: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string } | null
+  me: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string; livelloId?: string } | null
   livelliInseribili: LpagaLivello[]
+  canValidate?: boolean
+  deleghe?: string[]
+}
+
+export type TurnoConvalidaStato = "ok" | "sostituzione" | "non_svolta" | "da_verificare"
+
+export type LpagaConvalidaMatch = {
+  comparto: string
+  date: string
+  start: string
+  title: string
+  staff: string
+  note?: string
+}
+
+export type LpagaConvalidaPayload = {
+  mese: string
+  personaleId: string
+  personaleNome: string
+  rows: {
+    turnoId: string
+    giorno: string
+    livelloNome: string
+    personaleNome: string
+    quantita: number
+    importo: number
+    note?: string
+    proposto: TurnoConvalidaStato
+    match?: LpagaConvalidaMatch
+    sostitutiPossibili: LpagaConvalidaMatch[]
+    salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }
+  }[]
+  fogli: { bagnini: string; desk: string }
 }
 
 function getToken(): string | null {
@@ -101,5 +134,20 @@ export const lpagaApi = {
     lpagaRequest<{ ok: boolean }>(`/lpaga/personale/${encodeURIComponent(id)}/password`, {
       method: "PUT",
       body: JSON.stringify({ password }),
+    }),
+  getConvalida: (mese: string, personaleId: string) =>
+    lpagaRequest<LpagaConvalidaPayload>(
+      `/lpaga/convalida?mese=${encodeURIComponent(mese)}&personaleId=${encodeURIComponent(personaleId)}`
+    ),
+  putConvalidaTurno: (body: { turnoId: string; stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }) =>
+    lpagaRequest<{ convalida: unknown }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),
+  getDeleghe: (managerId?: string) => {
+    const q = managerId ? `?managerId=${encodeURIComponent(managerId)}` : ""
+    return lpagaRequest<{ managerId: string; deleghe: string[] }>(`/lpaga/deleghe${q}`)
+  },
+  putDeleghe: (ids: string[], managerId?: string) =>
+    lpagaRequest<{ managerId: string; deleghe: string[] }>("/lpaga/deleghe", {
+      method: "PUT",
+      body: JSON.stringify({ ids, managerId }),
     }),
 }

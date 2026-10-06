@@ -3,10 +3,14 @@ import rateLimit from "express-rate-limit"
 import {
   getLpagaMe,
   getLpagaSnapshot,
+  getLpagaConvalida,
+  getLpagaDeleghe,
   postLpagaLogin,
   postLpagaLogout,
   postLpagaPersonale,
   postLpagaTurno,
+  putLpagaConvalidaTurno,
+  putLpagaDeleghe,
   putLpagaMensilita,
   putLpagaPersonalePassword,
   removeLpagaTurno,
@@ -30,3 +34,7 @@ libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)
 libroPagaPortalRouter.post("/personale", requireLpaga, postLpagaPersonale)
 libroPagaPortalRouter.put("/personale/:id/password", requireLpaga, putLpagaPersonalePassword)
+libroPagaPortalRouter.get("/convalida", requireLpaga, getLpagaConvalida)
+libroPagaPortalRouter.put("/convalida/turno", requireLpaga, putLpagaConvalidaTurno)
+libroPagaPortalRouter.get("/deleghe", requireLpaga, getLpagaDeleghe)
+libroPagaPortalRouter.put("/deleghe", requireLpaga, putLpagaDeleghe)

@@ -154,4 +154,18 @@ export const libroPagaApi = {
     api.put<{ presenza: unknown }>(`/libro-paga/turni/${encodeURIComponent(turnoId)}/presenza`, { valore }),
   putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
     api.put<{ mensilita: unknown }>("/libro-paga/mensilita", body),
+  getConvalida: (mese: string, personaleId: string) =>
+    api.get<import("@/api/lpaga").LpagaConvalidaPayload>(
+      `/libro-paga/convalida?mese=${encodeURIComponent(mese)}&personaleId=${encodeURIComponent(personaleId)}`
+    ),
+  putConvalidaTurno: (body: {
+    turnoId: string
+    stato: import("@/api/lpaga").TurnoConvalidaStato
+    nota?: string
+    sostitutoNome?: string
+  }) => api.put<{ convalida: unknown }>("/libro-paga/convalida/turno", body),
+  getDeleghe: (managerId: string) =>
+    api.get<{ managerId: string; deleghe: string[] }>(`/libro-paga/deleghe?managerId=${encodeURIComponent(managerId)}`),
+  putDeleghe: (managerId: string, ids: string[]) =>
+    api.put<{ managerId: string; deleghe: string[] }>("/libro-paga/deleghe", { managerId, ids }),
 }

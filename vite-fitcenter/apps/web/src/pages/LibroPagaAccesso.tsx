@@ -4,6 +4,7 @@ import { BrandLogo } from "@/components/BrandLogo"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 const inputCls =
@@ -272,7 +273,13 @@ function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
   const h = data.home as typeof data.home & { mioOre?: number; mioImporto?: number; mioTurni?: number }
   const isUser = me?.ruolo === "user"
   return (
-    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+    <div className="mt-4 space-y-4">
+      {isUser && data.canValidate && (
+        <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-200/90">
+          Hai la delega per convalidare le mensilità del reparto: apri Mensilità e premi Convalida.
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
       <Card title={isUser ? "Le mie ore" : "Ore del mese"}>
         <p className="text-2xl font-semibold">{isUser ? h.mioOre ?? 0 : data.mensilita.reduce((s, r) => s + r.ore, 0)}</p>
       </Card>
@@ -287,6 +294,7 @@ function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
           {isUser ? "Solo i tuoi turni" : `${data.personale.length} persone nel reparto`}
         </p>
       </Card>
+    </div>
     </div>
   )
 }
@@ -350,6 +358,7 @@ function Turni({
     const n = cercaTurni.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     return [...data.turni]
       .filter((t) => {
+        if (isUser && t.personaleId !== me?.id) return false
         if (cercaData && t.giorno !== cercaData) return false
         if (!n) return true
         const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
@@ -358,7 +367,7 @@ function Turni({
         return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || dataIt.includes(cercaTurni.trim())
       })
       .sort((a, b) => b.giorno.localeCompare(a.giorno))
-  }, [data.turni, cercaTurni, cercaData])
+  }, [data.turni, cercaTurni, cercaData, isUser, me?.id])
 
   return (
     <div className="mt-4 space-y-4">
@@ -548,8 +557,20 @@ function Personale({
   const detTurni = dettaglioId
     ? data.turni.filter((t) => t.personaleId === dettaglioId).sort((a, b) => b.giorno.localeCompare(a.giorno))
     : []
+  const istruttoriDelega = data.personale
+    .filter((p) => p.ruolo === "user" && p.id !== me?.id)
+    .map((p) => ({ id: p.id, label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim() }))
+    .sort((a, b) => a.label.localeCompare(b.label, "it"))
   return (
     <div className="mt-4 space-y-4">
+      {(me?.ruolo === "manager" || me?.ruolo === "admin") && (
+        <LibroPagaDelegheForm
+          persone={istruttoriDelega}
+          selected={data.deleghe ?? []}
+          onSave={(ids) => lpagaApi.putDeleghe(ids)}
+          onError={onError}
+        />
+      )}
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
       {detPersona && (
         <LibroPagaPersonaleDettaglio
@@ -695,15 +716,43 @@ function Mensilita({
   onError: (s: string) => void
   onDone: () => void
 }) {
+  const canValidate = Boolean(data.canValidate) || me?.ruolo === "admin" || me?.ruolo === "manager"
+  const [convId, setConvId] = useState<string | null>(null)
+  const conv = useLibroPagaConvalida(mese, canValidate ? convId : null, lpagaApi.getConvalida)
+  const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
-    <LibroPagaMensilitaTab
-      data={data}
-      mese={mese}
-      canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager"}
-      hideIban={false}
-      onSave={(body) => lpagaApi.putMensilita(body)}
-      onError={onError}
-      onDone={onDone}
-    />
+    <div className="mt-4 space-y-4">
+      {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}
+      {convId && conv.isError && <p className="text-sm text-red-400">{(conv.error as Error).message}</p>}
+      {conv.data && (
+        <LibroPagaConvalidaPanel
+          data={conv.data}
+          onClose={() => setConvId(null)}
+          onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body)}
+          onChiudiMese={
+            row
+              ? () =>
+                  lpagaApi.putMensilita({
+                    personaleId: row.personaleId,
+                    mese,
+                    bonifico: row.bonifico,
+                    nota: row.nota,
+                    chiuso: true,
+                  }).then(onDone)
+              : undefined
+          }
+        />
+      )}
+      <LibroPagaMensilitaTab
+        data={data}
+        mese={mese}
+        canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager" || Boolean(data.canValidate)}
+        hideIban={me?.ruolo === "user"}
+        onSave={(body) => lpagaApi.putMensilita(body)}
+        onError={onError}
+        onDone={onDone}
+        onConvalida={canValidate ? (id) => setConvId(id) : undefined}
+      />
+    </div>
   )
 }

@@ -42,6 +42,7 @@ export function LibroPagaMensilitaTab({
   onSave,
   onError,
   onDone,
+  onConvalida,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -50,6 +51,7 @@ export function LibroPagaMensilitaTab({
   onSave: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) => Promise<unknown>
   onError: (s: string) => void
   onDone: () => void
+  onConvalida?: (personaleId: string) => void
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -104,11 +106,28 @@ export function LibroPagaMensilitaTab({
           <tbody>
             {rows.map((r) => (
               <tr key={r.personaleId} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.personaleNome}</td>
+                <td className="px-3 py-2">
+                  {r.personaleNome}
+                  {r.chiuso && (
+                    <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] uppercase text-emerald-300">
+                      Chiuso
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.nota || "—"}</td>
                 <td className="px-3 py-2 text-right">{eur(r.bonifico)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {onConvalida && (
+                    <button
+                      type="button"
+                      className={`${btnGhost} mr-1`}
+                      title="Convalida"
+                      onClick={() => onConvalida(r.personaleId)}
+                    >
+                      Convalida
+                    </button>
+                  )}
                   {canEdit(r.personaleId) && (
                     <button
                       type="button"

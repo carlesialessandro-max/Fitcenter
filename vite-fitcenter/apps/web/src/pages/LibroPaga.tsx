@@ -23,6 +23,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report"
@@ -545,6 +546,7 @@ function PersonaleTab({
 
   return (
     <div className="mt-4 space-y-4">
+      <PersonaleDelegheAdmin data={data} onError={onError} />
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
       {dettaglioId && (() => {
         const persona = data.personale.find((p) => p.id === dettaglioId)
@@ -794,6 +796,71 @@ function TurniTab({
   )
 }
 
+function PersonaleDelegheAdmin({
+  data,
+  onError,
+}: {
+  data: LibroPagaSnapshot
+  onError: (s: string) => void
+}) {
+  const managers = data.personale.filter((p) => p.ruolo === "manager" && p.attivo)
+  const [managerId, setManagerId] = useState(managers[0]?.id ?? "")
+  const q = useQuery({
+    queryKey: ["lpaga-deleghe", managerId],
+    queryFn: () => libroPagaApi.getDeleghe(managerId),
+    enabled: Boolean(managerId),
+  })
+  const persone = data.personale
+    .filter((p) => {
+      if (p.ruolo !== "user") return false
+      const mgr = data.personale.find((x) => x.id === managerId)
+      if (!mgr?.livelloId) return true
+      const ids = new Set<string>([mgr.livelloId])
+      let added = true
+      while (added) {
+        added = false
+        for (const l of data.livelli) {
+          if (l.parentId && ids.has(l.parentId) && !ids.has(l.id)) {
+            ids.add(l.id)
+            added = true
+          }
+        }
+      }
+      return Boolean(p.livelloId && ids.has(p.livelloId))
+    })
+    .map((p) => ({
+      id: p.id,
+      label: `${p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "it"))
+  if (!managers.length) return null
+  return (
+    <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+      <label className="grid max-w-sm gap-1 text-xs text-zinc-400">
+        <span>Responsabile da delegare</span>
+        <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className={inputCls}>
+          {managers.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nominativo ?? `${m.cognome ?? ""} ${m.nome}`.trim()}
+              {m.repartoNome ? ` · ${m.repartoNome}` : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      {q.isLoading && <p className="text-xs text-zinc-500">Caricamento deleghe…</p>}
+      {q.data && (
+        <LibroPagaDelegheForm
+          key={managerId}
+          persone={persone}
+          selected={q.data.deleghe}
+          onSave={(ids) => libroPagaApi.putDeleghe(managerId, ids)}
+          onError={onError}
+        />
+      )}
+    </div>
+  )
+}
+
 function ConvalideTab({ data }: { data: LibroPagaSnapshot }) {
   return (
     <div className="mt-4 space-y-4">
@@ -866,14 +933,44 @@ function MensilitaTab({
   onError: (s: string) => void
   onDone: () => void
 }) {
+  const [convId, setConvId] = useState<string | null>(null)
+  const conv = useLibroPagaConvalida(mese, convId, libroPagaApi.getConvalida)
+  const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
-    <LibroPagaMensilitaTab
-      data={data}
-      mese={mese}
-      canEdit={() => true}
-      onSave={(body) => libroPagaApi.putMensilita(body)}
-      onError={onError}
-      onDone={onDone}
-    />
+    <div className="mt-4 space-y-4">
+      {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}
+      {convId && conv.isError && <p className="text-sm text-red-400">{(conv.error as Error).message}</p>}
+      {conv.data && (
+        <LibroPagaConvalidaPanel
+          data={conv.data}
+          showCalendariFitCenter
+          onClose={() => setConvId(null)}
+          onSaveTurno={(body) => libroPagaApi.putConvalidaTurno(body)}
+          onChiudiMese={
+            row
+              ? () =>
+                  libroPagaApi
+                    .putMensilita({
+                      personaleId: row.personaleId,
+                      mese,
+                      bonifico: row.bonifico,
+                      nota: row.nota,
+                      chiuso: true,
+                    })
+                    .then(onDone)
+              : undefined
+          }
+        />
+      )}
+      <LibroPagaMensilitaTab
+        data={data}
+        mese={mese}
+        canEdit={() => true}
+        onSave={(body) => libroPagaApi.putMensilita(body)}
+        onError={onError}
+        onDone={onDone}
+        onConvalida={(id) => setConvId(id)}
+      />
+    </div>
   )
 }

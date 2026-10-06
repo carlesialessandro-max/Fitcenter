@@ -61,11 +61,14 @@ export async function buildLibroPagaSnapshot(opts?: {
   ])
   const vis = opts?.visibleIds
   const livelloTree = opts?.livelloTree
-  const scopedTurni = livelloTree
-    ? turniTutti.filter((t) => livelloTree.has(t.livelloId))
-    : vis
-      ? turniTutti.filter((t) => vis.has(t.personaleId))
-      : turniTutti
+  const scopedTurni =
+    livelloTree && vis
+      ? turniTutti.filter((t) => livelloTree.has(t.livelloId) || vis.has(t.personaleId))
+      : livelloTree
+        ? turniTutti.filter((t) => livelloTree.has(t.livelloId))
+        : vis
+          ? turniTutti.filter((t) => vis.has(t.personaleId))
+          : turniTutti
   const year = mese.slice(0, 4)
   const monthTurniPreview = scopedTurni.filter((t) => t.giorno.slice(0, 7) === mese)
   let personale = personaleAll
@@ -78,6 +81,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     }
     for (const t of monthTurniPreview) ids.add(t.personaleId)
     if (opts?.viewerId) ids.add(opts.viewerId)
+    if (vis) for (const id of vis) ids.add(id)
     personale = personaleAll.filter((p) => ids.has(p.id))
   }
   const totAnnoBy = new Map<string, number>()
@@ -253,6 +257,7 @@ export async function buildLibroPagaSnapshot(opts?: {
           id: viewer.id,
           nominativo: nominativo(viewer),
           ruolo: viewer.ruolo,
+          livelloId: viewer.livelloId,
           repartoNome: viewer.livelloId ? livById.get(viewer.livelloId)?.nome ?? "—" : "—",
         }
       : null,
