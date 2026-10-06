@@ -2,6 +2,7 @@
  * Importa gli orari settimanali di acquaticità e spogliatoi nel calendario FitCenter.
  *
  *   pnpm run import:acquaticita-spogliatoi -- --replace
+ *   File in apps/api/data/planning-import/
  *   ACQUATICITA_XLSX=... SPOGLIATOI_XLSX=...
  */
 import fs from "node:fs"
@@ -33,7 +34,8 @@ function loadXlsx() {
 }
 
 const XLSX = loadXlsx()
-const importDir = path.join(webRoot, "data", "planning-import")
+const apiImportDir = path.join(apiRoot, "data", "planning-import")
+const webImportDir = path.join(webRoot, "data", "planning-import")
 const downloads = "C:\\Users\\aless\\Downloads"
 
 function pad2(n) {
@@ -271,15 +273,18 @@ function summarize(events) {
 
 function main() {
   const replace = process.argv.includes("--replace")
+  fs.mkdirSync(apiImportDir, { recursive: true })
   const acqPath = firstExisting([
     process.env.ACQUATICITA_XLSX,
+    path.join(apiImportDir, "ORARIO 2026-27 acquaticità.xlsx"),
     findDownload("ORARIO 2026-27 acquatic"),
-    path.join(importDir, "ORARIO 2026-27 acquaticità.xlsx"),
+    path.join(webImportDir, "ORARIO 2026-27 acquaticità.xlsx"),
   ])
   const spoPath = firstExisting([
     process.env.SPOGLIATOI_XLSX,
+    path.join(apiImportDir, "ORARIO 2026-27 spogliatoi.xlsx"),
     findDownload("ORARIO 2026-27 spogliatoi"),
-    path.join(importDir, "ORARIO 2026-27 spogliatoi.xlsx"),
+    path.join(webImportDir, "ORARIO 2026-27 spogliatoi.xlsx"),
   ])
 
   const dataDir = resolveDataDir()
