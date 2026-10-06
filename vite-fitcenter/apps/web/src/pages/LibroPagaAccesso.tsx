@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
-import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
-import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
+import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -129,7 +130,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
-  const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita">("home")
+  const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita" | "report">("home")
   const [error, setError] = useState("")
   const meQ = useQuery({ queryKey: ["lpaga-me"], queryFn: () => lpagaApi.me() })
   const me = meQ.data?.user
@@ -166,6 +167,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
+    ...(canTeam ? ([{ id: "report" as const, label: "Report" }] as const) : []),
   ]
 
   return (
@@ -231,6 +233,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           <Personale
             data={data}
             me={me}
+            mese={mese}
             onError={setError}
             onDone={() => {
               setError("")
@@ -250,6 +253,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             }}
           />
         )}
+        {data && tab === "report" && canTeam && <LibroPagaReport data={data} />}
       </main>
     </div>
   )
@@ -310,9 +314,21 @@ function Turni({
   const [giorno, setGiorno] = useState(oggi)
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
+  const [cercaTurni, setCercaTurni] = useState("")
+  const [cercaData, setCercaData] = useState("")
   useEffect(() => {
     if (!canChangeDay) setGiorno(todayIso())
   }, [canChangeDay, mese])
+  const personeItems = useMemo(
+    () =>
+      persone
+        .map((p) => ({
+          id: p.id,
+          label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim(),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "it")),
+    [persone]
+  )
   const createMut = useMutation({
     mutationFn: () =>
       lpagaApi.createTurno({
@@ -330,7 +346,19 @@ function Turni({
     onSuccess: onDone,
     onError: (e: Error) => onError(e.message),
   })
-  const rows = useMemo(() => [...data.turni].sort((a, b) => b.giorno.localeCompare(a.giorno)), [data.turni])
+  const rows = useMemo(() => {
+    const n = cercaTurni.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    return [...data.turni]
+      .filter((t) => {
+        if (cercaData && t.giorno !== cercaData) return false
+        if (!n) return true
+        const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+        const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+        const dataIt = fmtDateIt(t.giorno)
+        return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || dataIt.includes(cercaTurni.trim())
+      })
+      .sort((a, b) => b.giorno.localeCompare(a.giorno))
+  }, [data.turni, cercaTurni, cercaData])
 
   return (
     <div className="mt-4 space-y-4">
@@ -344,13 +372,13 @@ function Turni({
         {!isUser && (
           <label className="grid gap-1 text-xs text-zinc-400">
             <span>Dipendente</span>
-            <select value={personaleId} onChange={(e) => setPersonaleId(e.target.value)} className={inputCls} required>
-              {persone.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}
-                </option>
-              ))}
-            </select>
+            <LpagaSearchSelect
+              items={personeItems}
+              value={personaleId}
+              onChange={setPersonaleId}
+              placeholder="Cerca dipendente…"
+              required
+            />
           </label>
         )}
         <label className="grid gap-1 text-xs text-zinc-400">
@@ -390,6 +418,33 @@ function Turni({
           </p>
         )}
       </form>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid min-w-[16rem] flex-1 gap-1 text-xs text-zinc-400">
+          <span>Cerca turnazioni</span>
+          <input
+            value={cercaTurni}
+            onChange={(e) => setCercaTurni(e.target.value)}
+            placeholder="Dipendente, mansione o data…"
+            className={inputCls}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Filtra data</span>
+          <input type="date" value={cercaData} onChange={(e) => setCercaData(e.target.value)} className={inputCls} />
+        </label>
+        {(cercaTurni || cercaData) && (
+          <button
+            type="button"
+            className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300"
+            onClick={() => {
+              setCercaTurni("")
+              setCercaData("")
+            }}
+          >
+            Pulisci
+          </button>
+        )}
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
@@ -438,11 +493,13 @@ function Turni({
 function Personale({
   data,
   me,
+  mese,
   onError,
   onDone,
 }: {
   data: LpagaPortalSnapshot
   me?: LpagaMe
+  mese: string
   onError: (s: string) => void
   onDone: () => void
 }) {
@@ -454,6 +511,8 @@ function Personale({
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
+  const [q, setQ] = useState("")
+  const [dettaglioId, setDettaglioId] = useState<string | null>(null)
   const createMut = useMutation({
     mutationFn: () =>
       lpagaApi.createPersonale({ nome, cognome, username, password, ruolo, livelloId }),
@@ -476,8 +535,31 @@ function Personale({
     onError: (e: Error) => onError(e.message),
   })
   const reparti = data.livelli.filter((l) => !l.retribuibile)
+  const n = q.trim().toLowerCase()
+  const personeFiltrate = data.personale.filter(
+    (p) =>
+      !n ||
+      `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""}`
+        .toLowerCase()
+        .includes(n)
+  )
+  const detPersona = dettaglioId ? data.personale.find((p) => p.id === dettaglioId) : undefined
+  const detMens = dettaglioId ? data.mensilita.find((m) => m.personaleId === dettaglioId) : undefined
+  const detTurni = dettaglioId
+    ? data.turni.filter((t) => t.personaleId === dettaglioId).sort((a, b) => b.giorno.localeCompare(a.giorno))
+    : []
   return (
     <div className="mt-4 space-y-4">
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
+      {detPersona && (
+        <LibroPagaPersonaleDettaglio
+          persona={detPersona}
+          mese={mese}
+          mensilita={detMens}
+          lezioni={detTurni}
+          onClose={() => setDettaglioId(null)}
+        />
+      )}
       <form
         className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
         onSubmit={(e) => {
@@ -556,14 +638,21 @@ function Personale({
             </tr>
           </thead>
           <tbody>
-            {data.personale.map((p) => (
+            {personeFiltrate.map((p) => (
               <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
                 <td className="px-3 py-2">{p.cognome ?? "—"}</td>
                 <td className="px-3 py-2">{p.nome}</td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
                 <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
                 <td className="px-3 py-2">{p.repartoNome}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <button
+                    type="button"
+                    className="mr-2 text-xs text-zinc-300 hover:underline"
+                    onClick={() => setDettaglioId(p.id)}
+                  >
+                    Dettaglio
+                  </button>
                   {p.username && (
                     <button
                       type="button"
@@ -579,6 +668,13 @@ function Personale({
                 </td>
               </tr>
             ))}
+            {!personeFiltrate.length && (
+              <tr>
+                <td className="px-3 py-6 text-zinc-500" colSpan={6}>
+                  Nessuna persona trovata.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

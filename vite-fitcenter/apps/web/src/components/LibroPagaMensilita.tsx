@@ -144,6 +144,46 @@ export function LibroPagaMensilitaTab({
   )
 }
 
+export function LibroPagaPersonaleDettaglio({
+  persona,
+  mese,
+  mensilita,
+  lezioni,
+  onClose,
+}: {
+  persona: LpagaPersonale
+  mese: string
+  mensilita?: LpagaMensilitaRow
+  lezioni: LpagaTurnoRow[]
+  onClose: () => void
+}) {
+  const nominativo = persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()
+  return (
+    <DettaglioMese
+      row={
+        mensilita ?? {
+          personaleId: persona.id,
+          personaleNome: nominativo,
+          iban: persona.iban ?? "",
+          mese,
+          ore: lezioni.reduce((s, t) => s + t.quantita, 0),
+          importo: lezioni.reduce((s, t) => s + t.importo, 0),
+          presenzaOre: 0,
+          nTurni: lezioni.length,
+          nControllati: 0,
+          bonifico: 0,
+          nota: "",
+          chiuso: false,
+        }
+      }
+      persona={persona}
+      mese={mese}
+      lezioni={lezioni}
+      onClose={onClose}
+    />
+  )
+}
+
 function DettaglioMese({
   row,
   persona,

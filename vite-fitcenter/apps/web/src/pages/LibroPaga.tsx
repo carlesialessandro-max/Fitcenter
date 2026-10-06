@@ -21,10 +21,11 @@ import {
   type LpagaTreeNode,
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
-import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
-import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
+import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
-type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "admin"
+type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report"
 
 function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
@@ -113,7 +114,7 @@ export function LibroPaga() {
     { id: "turni", label: "Turnazioni" },
     { id: "convalide", label: "Convalide" },
     { id: "mensilita", label: "Mensilità" },
-    { id: "admin", label: "Amministrazione" },
+    { id: "report", label: "Report" },
   ]
 
   return (
@@ -194,7 +195,7 @@ export function LibroPaga() {
       {data && tab === "mensilita" && (
         <MensilitaTab data={data} mese={mese} onError={setError} onDone={() => { setError(""); invalidate() }} />
       )}
-      {data && tab === "admin" && <AdminTab data={data} />}
+      {data && tab === "report" && <LibroPagaReport data={data} />}
     </div>
   )
 }
@@ -446,6 +447,7 @@ function PersonaleTab({
   const [password, setPassword] = useState("")
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
+  const [dettaglioId, setDettaglioId] = useState<string | null>(null)
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
@@ -514,6 +516,13 @@ function PersonaleTab({
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button
                     type="button"
+                    className="mr-2 text-xs text-zinc-300 hover:underline"
+                    onClick={() => setDettaglioId(r.id)}
+                  >
+                    Dettaglio
+                  </button>
+                  <button
+                    type="button"
                     className="mr-2 text-xs text-amber-300 hover:underline"
                     onClick={() => {
                       setPwdId(r.id)
@@ -536,7 +545,20 @@ function PersonaleTab({
 
   return (
     <div className="mt-4 space-y-4">
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca persona…" className={inputCls} />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
+      {dettaglioId && (() => {
+        const persona = data.personale.find((p) => p.id === dettaglioId)
+        if (!persona) return null
+        return (
+          <LibroPagaPersonaleDettaglio
+            persona={persona}
+            mese={data.mese}
+            mensilita={data.mensilita.find((m) => m.personaleId === dettaglioId)}
+            lezioni={data.turni.filter((t) => t.personaleId === dettaglioId).sort((a, b) => b.giorno.localeCompare(a.giorno))}
+            onClose={() => setDettaglioId(null)}
+          />
+        )
+      })()}
       <form
         className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
         onSubmit={(e) => {
@@ -646,6 +668,16 @@ function TurniTab({
     return ids
   }, [data.livelli, reparto])
   const attiviL = data.livelli.filter((l) => l.attivo && l.retribuibile && (!treeIds || treeIds.has(l.id)))
+  const personeItems = useMemo(
+    () =>
+      attiviP
+        .map((p) => ({
+          id: p.id,
+          label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim(),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "it")),
+    [attiviP]
+  )
   const [personaleId, setPersonaleId] = useState(attiviP[0]?.id ?? "")
   const [livelloId, setLivelloId] = useState(attiviL[0]?.id ?? "")
   const [giorno, setGiorno] = useState(() => {
@@ -654,10 +686,15 @@ function TurniTab({
   })
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
-  const n = q.trim().toLowerCase()
-  const rows = data.turni.filter(
-    (t) => !n || `${t.personaleNome} ${t.livelloNome} ${t.note}`.toLowerCase().includes(n)
-  )
+  const [cercaData, setCercaData] = useState("")
+  const n = q.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+  const rows = data.turni.filter((t) => {
+    if (cercaData && t.giorno !== cercaData) return false
+    if (!n) return true
+    const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || fmtDateIt(t.giorno).includes(q.trim())
+  })
   const createMut = useMutation({
     mutationFn: () =>
       libroPagaApi.createTurno({
@@ -685,13 +722,16 @@ function TurniTab({
           createMut.mutate()
         }}
       >
-        <select value={personaleId} onChange={(e) => setPersonaleId(e.target.value)} className={inputCls} required>
-          {attiviP.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}
-            </option>
-          ))}
-        </select>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Dipendente</span>
+          <LpagaSearchSelect
+            items={personeItems}
+            value={personaleId}
+            onChange={setPersonaleId}
+            placeholder="Cerca dipendente…"
+            required
+          />
+        </label>
         <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2 lg:col-span-1">
           <span>Mansione</span>
           <MansioneSearchSelect items={attiviL} value={livelloId} onChange={setLivelloId} required />
@@ -709,7 +749,15 @@ function TurniTab({
         </button>
         <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note" className={`${inputCls} lg:col-span-5`} />
       </form>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca turno…" className={inputCls} />
+      <div className="flex flex-wrap items-end gap-3">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cerca turnazioni: dipendente, mansione o data…"
+          className={`${inputCls} min-w-[16rem] flex-1`}
+        />
+        <input type="date" value={cercaData} onChange={(e) => setCercaData(e.target.value)} className={inputCls} />
+      </div>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
@@ -827,44 +875,5 @@ function MensilitaTab({
       onError={onError}
       onDone={onDone}
     />
-  )
-}
-
-function AdminTab({ data }: { data: LibroPagaSnapshot }) {
-  const mesi = data.home.costiMesi.map((c) => ({
-    ...c,
-    label: c.mese.slice(5) + "/" + c.mese.slice(2, 4),
-  }))
-  return (
-    <div className="mt-4 grid gap-4 lg:grid-cols-2">
-      <Card title="Costo miscellanea">
-        <div className="h-56">
-          <ResponsiveContainer>
-            <LineChart data={mesi}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-              <XAxis dataKey="label" stroke="#71717a" fontSize={11} />
-              <YAxis stroke="#71717a" fontSize={11} />
-              <Tooltip formatter={(v: number) => eur(v)} />
-              <Line type="monotone" dataKey="miscellanea" stroke="#46A6D9" dot={false} name="miscellanea" />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-      <Card title="Costo mese corrente per miscellanea">
-        <div className="h-56">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie data={data.home.miscDonut} dataKey="value" nameKey="label" innerRadius={50} outerRadius={80}>
-                {data.home.miscDonut.map((d, i) => (
-                  <Cell key={d.label} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v: number) => eur(v)} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
-    </div>
   )
 }
