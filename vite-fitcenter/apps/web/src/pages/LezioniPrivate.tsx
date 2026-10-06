@@ -7,6 +7,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
 import { LP_VASCHE_LEGENDA, lpOreSlotsTutti, slotAperto } from "@/lib/lp-vasche-orari"
+import { addDaysIso, buildWeeklyLessonDates, isoDow, LP_DOW_LABELS } from "@/lib/lp-pacchetto-date"
 import { isCamillaNome, isCamillaUser } from "@/lib/lp-camilla"
 import { LezioniPrivateAbbonamentiTab } from "@/pages/LezioniPrivateAbbonamentiTab"
 
@@ -23,15 +24,6 @@ function fmtPrefIstr(p?: string): string {
   if (/femmin|donna|istruttrice/.test(t)) return "donna"
   if (/maschi|uomo/.test(t) && !/femmin/.test(t)) return "uomo"
   return p ?? ""
-}
-
-function addDaysIso(iso: string, n: number): string {
-  const d = new Date(`${iso}T12:00:00`)
-  d.setDate(d.getDate() + n)
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, "0")
-  const day = String(d.getDate()).padStart(2, "0")
-  return `${y}-${m}-${day}`
 }
 
 function tabFromPath(pathname: string): Tab {
@@ -63,6 +55,57 @@ function TipoButtons({ value, onChange }: { value: LpTipoPrenota; onChange: (v: 
         </button>
       ))}
     </div>
+  )
+}
+
+function SecondoGiornoSelect({
+  startIso,
+  value,
+  onChange,
+}: {
+  startIso: string
+  value: number | ""
+  onChange: (v: number | "") => void
+}) {
+  const first = isoDow(startIso)
+  const selected = value === first ? "" : value
+  return (
+    <label className="mt-2 grid gap-1 text-sm text-zinc-400">
+      Secondo giorno della settimana
+      <select
+        value={selected === "" ? "" : String(selected)}
+        onChange={(e) => {
+          const v = e.target.value
+          onChange(v === "" ? "" : Number(v))
+        }}
+        className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100"
+      >
+        <option value="">Solo {LP_DOW_LABELS[first]} ogni settimana</option>
+        {LP_DOW_LABELS.map((label, i) =>
+          i === first ? null : (
+            <option key={i} value={i}>
+              Anche {label} (stesso orario)
+            </option>
+          ),
+        )}
+      </select>
+      <span className="text-xs text-zinc-500">
+        Esempio: {LP_DOW_LABELS[first]} e mercoledì, fino a chiudere il pacchetto.
+      </span>
+    </label>
+  )
+}
+
+function DatePacchettoPreview({ giorni, ora }: { giorni: string[]; ora: string }) {
+  if (giorni.length <= 1) return null
+  return (
+    <ul className="mt-3 max-h-40 overflow-auto text-sm text-zinc-400">
+      {giorni.map((g) => (
+        <li key={g}>
+          {LP_DOW_LABELS[isoDow(g)]} {fmtDateIt(g)} {ora}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -678,6 +721,12 @@ function PrendiModal({
   const [corsia, setCorsia] = useState(1)
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
   const [ripeti, setRipeti] = useState(false)
+  const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
+  const nDate = tipo === "prova" || !ripeti ? 1 : tipo === "10" ? 10 : 5
+  const previewGiorni = useMemo(
+    () => buildWeeklyLessonDates(giorno, nDate, ripeti && tipo !== "prova" ? secondoGiorno || null : null),
+    [giorno, nDate, ripeti, tipo, secondoGiorno],
+  )
   const m = useMutation({
     mutationFn: () =>
       lezioniPrivateApi.prendi(richiesta.id, {
@@ -689,6 +738,7 @@ function PrendiModal({
         durataMin: 30,
         tipo,
         ripetiSettimanale: tipo === "prova" ? false : ripeti,
+        secondoGiornoSettimana: tipo !== "prova" && ripeti && secondoGiorno !== "" ? secondoGiorno : undefined,
       }),
     onSuccess: onDone,
   })
@@ -704,12 +754,15 @@ function PrendiModal({
           <TipoButtons value={tipo} onChange={setTipo} />
         </div>
         {tipo !== "prova" ? (
-          <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
-            <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
-            <span>
-              Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione.
-            </span>
-          </label>
+          <>
+            <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
+              <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+              <span>
+                Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione.
+              </span>
+            </label>
+            {ripeti ? <SecondoGiornoSelect startIso={giorno} value={secondoGiorno} onChange={setSecondoGiorno} /> : null}
+          </>
         ) : null}
         <label className="mt-3 grid gap-1 text-sm text-zinc-400">
           Istruttore
@@ -739,6 +792,7 @@ function PrendiModal({
         {!slotAperto(giorno, ora, vasca, corsia) ? (
           <p className="mt-2 text-xs text-amber-300">Orario fuori fascia ufficiale: solo Camilla Nardi (utente o istruttore).</p>
         ) : null}
+        <DatePacchettoPreview giorni={previewGiorni} ora={ora} />
         {m.isError ? <p className="mt-2 text-sm text-red-400">{String((m.error as Error).message)}</p> : null}
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="rounded-lg px-3 py-2 text-sm text-zinc-400">
@@ -770,12 +824,12 @@ function PackModal({
   const [ora, setOra] = useState(prova?.ora ?? "18:30")
   const [vasca, setVasca] = useState<VascaId>(prova?.vasca ?? "ludica")
   const [corsia, setCorsia] = useState(prova?.corsia ?? 1)
+  const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
   const n = soloUna ? 1 : tipo === "10" ? 10 : 5
   const lezioni = useMemo(() => {
-    const out: Array<{ giorno: string; ora: string; vasca: VascaId; corsia: number }> = []
-    for (let i = 0; i < n; i++) out.push({ giorno: addDaysIso(start, i * 7), ora, vasca, corsia })
-    return out
-  }, [n, start, ora, vasca, corsia])
+    const giorni = buildWeeklyLessonDates(start, n, soloUna ? null : secondoGiorno || null)
+    return giorni.map((giorno) => ({ giorno, ora, vasca, corsia }))
+  }, [n, start, ora, vasca, corsia, soloUna, secondoGiorno])
   const m = useMutation({
     mutationFn: () => lezioniPrivateApi.pacchetto({ richiestaId: richiesta.id, tipo, lezioni }),
     onSuccess: onDone,
@@ -786,7 +840,7 @@ function PackModal({
         <h3 className="font-semibold text-zinc-100">Pacchetto · {richiesta.clienteNome}</h3>
         <p className="mt-1 text-xs text-zinc-500">
           Per un pacchetto già iniziato aggiungi una lezione alla volta. Puoi anche generare tutte le date rimanenti ogni
-          7 giorni.
+          settimana, su uno o due giorni (es. lunedì e mercoledì).
         </p>
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={() => setTipo("5")} className={`rounded-md px-3 py-1.5 text-sm ${tipo === "5" ? "bg-amber-500/20 text-amber-200" : "text-zinc-400"}`}>
@@ -798,11 +852,12 @@ function PackModal({
         </div>
         <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
           <input type="checkbox" className="mt-1" checked={!soloUna} onChange={(e) => setSoloUna(!e.target.checked)} />
-          <span>Genera tutte le date ogni 7 giorni. Lascia spento per caricare solo questa lezione.</span>
+          <span>Genera tutte le date del pacchetto. Lascia spento per caricare solo questa lezione.</span>
         </label>
+        {!soloUna ? <SecondoGiornoSelect startIso={start} value={secondoGiorno} onChange={setSecondoGiorno} /> : null}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <label className="grid gap-1 text-xs text-zinc-500">
-            {soloUna ? "Data" : "Prima data (poi ogni 7 giorni)"}
+            {soloUna ? "Data" : "Prima data"}
             <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100" />
           </label>
           <label className="grid gap-1 text-xs text-zinc-500">
@@ -821,7 +876,7 @@ function PackModal({
         <ul className="mt-3 max-h-40 overflow-auto text-sm text-zinc-400">
           {lezioni.map((l) => (
             <li key={l.giorno}>
-              {fmtDateIt(l.giorno)} {l.ora} · {VASCA_LABEL[l.vasca]} corsia {l.corsia}
+              {LP_DOW_LABELS[isoDow(l.giorno)]} {fmtDateIt(l.giorno)} {l.ora} · {VASCA_LABEL[l.vasca]} corsia {l.corsia}
             </li>
           ))}
         </ul>
@@ -866,7 +921,13 @@ function BookSlotModal({
   const [eta, setEta] = useState("")
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
   const [ripeti, setRipeti] = useState(false)
+  const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
   const [richiestaId, setRichiestaId] = useState("")
+  const nDate = tipo === "prova" || !ripeti ? 1 : tipo === "10" ? 10 : 5
+  const previewGiorni = useMemo(
+    () => buildWeeklyLessonDates(slot.giorno, nDate, ripeti && tipo !== "prova" ? secondoGiorno || null : null),
+    [slot.giorno, nDate, ripeti, tipo, secondoGiorno],
+  )
   const m = useMutation({
     mutationFn: () =>
       lezioniPrivateApi.prenota({
@@ -882,6 +943,7 @@ function BookSlotModal({
         createdBy: userNome,
         tipo,
         ripetiSettimanale: tipo === "prova" ? false : ripeti,
+        secondoGiornoSettimana: tipo !== "prova" && ripeti && secondoGiorno !== "" ? secondoGiorno : undefined,
         richiestaId: richiestaId || undefined,
       }),
     onSuccess: onDone,
@@ -903,13 +965,19 @@ function BookSlotModal({
           <TipoButtons value={tipo} onChange={setTipo} />
         </div>
         {tipo !== "prova" ? (
-          <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
-            <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
-            <span>
-              Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione (pacchetti già
-              iniziati).
-            </span>
-          </label>
+          <>
+            <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
+              <input type="checkbox" className="mt-1" checked={ripeti} onChange={(e) => setRipeti(e.target.checked)} />
+              <span>
+                Ripeti ogni settimana ({tipo} date). Lascia spento per aggiungere solo questa lezione (pacchetti già
+                iniziati).
+              </span>
+            </label>
+            {ripeti ? (
+              <SecondoGiornoSelect startIso={slot.giorno} value={secondoGiorno} onChange={setSecondoGiorno} />
+            ) : null}
+            <DatePacchettoPreview giorni={previewGiorni} ora={slot.ora} />
+          </>
         ) : null}
         {richieste.length ? (
           <label className="mt-3 grid gap-1 text-sm text-zinc-400">

@@ -30,6 +30,7 @@ import {
 } from "../store/lezioni-private-db.js"
 import { fasciaPerInizio, slotAperto } from "../services/lp-vasche-orari.js"
 import { allowClosedSlots } from "../services/lp-camilla.js"
+import { addDaysIso, buildWeeklyLessonDates, parseSecondoGiornoSettimana } from "../services/lp-pacchetto-date.js"
 import * as gestionaleSql from "../services/gestionale-sql.js"
 
 function isYmd(s: string): boolean {
@@ -44,15 +45,6 @@ function asVasca(v: unknown): VascaId | null {
 function asTipo(v: unknown): "prova" | "5" | "10" | null {
   return v === "prova" || v === "5" || v === "10" ? v : null
 }
-function addDaysIso(iso: string, n: number): string {
-  const d = new Date(`${iso}T12:00:00`)
-  d.setDate(d.getDate() + n)
-  const y = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, "0")
-  const dd = String(d.getDate()).padStart(2, "0")
-  return `${y}-${mo}-${dd}`
-}
-
 function canDesk(u: User): boolean {
   return u.role === "admin" || u.role === "scuola_nuoto" || u.role === "operatore" || u.role === "firme"
 }
@@ -152,21 +144,19 @@ function buildLezioniSlots(params: {
   durataMin: number
   tipo: "prova" | "5" | "10"
   ripetiSettimanale?: boolean
+  secondoGiornoSettimana?: number | null
 }): LpLezione[] {
   const n = params.ripetiSettimanale === false ? 1 : weeklyDateCount(params.tipo)
-  const out: LpLezione[] = []
-  for (let i = 0; i < n; i++) {
-    out.push(
-      newLezioneRow({
-        giorno: addDaysIso(params.giorno, i * 7),
-        ora: params.ora,
-        vasca: params.vasca,
-        corsia: params.corsia,
-        durataMin: params.durataMin,
-      }),
-    )
-  }
-  return out
+  const giorni = buildWeeklyLessonDates(params.giorno, n, n > 1 ? params.secondoGiornoSettimana : null)
+  return giorni.map((giorno) =>
+    newLezioneRow({
+      giorno,
+      ora: params.ora,
+      vasca: params.vasca,
+      corsia: params.corsia,
+      durataMin: params.durataMin,
+    }),
+  )
 }
 
 function assertAllLiberi(
@@ -520,6 +510,7 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
     corsia?: number
     tipo?: "prova" | "5" | "10"
     ripetiSettimanale?: boolean
+    secondoGiornoSettimana?: number
   }
   const vasca = asVasca(b.vasca)
   const giorno = String(b.giorno ?? "").trim()
@@ -551,6 +542,7 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
     durataMin,
     tipo,
     ripetiSettimanale: b.ripetiSettimanale,
+    secondoGiornoSettimana: parseSecondoGiornoSettimana(b.secondoGiornoSettimana),
   })
   const busy = assertLiberiCamilla(db, lezioni, u, istr.nome)
   if (busy) return res.status(409).json({ message: busy })
@@ -576,6 +568,7 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
     tipo?: "prova" | "5" | "10"
     ripetiSettimanale?: boolean
     richiestaId?: string
+    secondoGiornoSettimana?: number
   }
   const vasca = asVasca(b.vasca)
   const giorno = String(b.giorno ?? "").trim()
@@ -603,6 +596,7 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
     durataMin,
     tipo,
     ripetiSettimanale: b.ripetiSettimanale,
+    secondoGiornoSettimana: parseSecondoGiornoSettimana(b.secondoGiornoSettimana),
   })
   const busy = assertLiberiCamilla(db, lezioni, u, istr.nome)
   if (busy) return res.status(409).json({ message: busy })

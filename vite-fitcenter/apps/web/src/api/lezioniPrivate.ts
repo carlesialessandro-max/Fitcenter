@@ -129,6 +129,7 @@ export const lezioniPrivateApi = {
     createdBy?: string
     tipo?: "prova" | "5" | "10"
     ripetiSettimanale?: boolean
+    secondoGiornoSettimana?: number
     richiestaId?: string
   }) => api.post<{ ok: boolean }>("/lezioni-private/prenota", body),
   prendi: (
@@ -142,6 +143,7 @@ export const lezioniPrivateApi = {
       durataMin?: number
       tipo?: "prova" | "5" | "10"
       ripetiSettimanale?: boolean
+      secondoGiornoSettimana?: number
     },
   ) => api.post<{ ok: boolean }>(`/lezioni-private/richieste/${encodeURIComponent(id)}/prendi`, body),
   pacchetto: (body: {
