@@ -87,6 +87,7 @@ export type LibroPagaSnapshot = {
   mensilita: LpagaMensilitaRow[]
   convalide: LpagaConvalida[]
   tree: LpagaTreeNode[]
+  reparti?: { id: string; nome: string }[]
   home: {
     admin: number
     manager: number
@@ -112,7 +113,11 @@ export type LibroPagaSnapshot = {
 }
 
 export const libroPagaApi = {
-  get: (mese: string) => api.get<LibroPagaSnapshot>(`/libro-paga?mese=${encodeURIComponent(mese)}`),
+  get: (mese: string, reparto?: string) => {
+    const q = new URLSearchParams({ mese })
+    if (reparto) q.set("reparto", reparto)
+    return api.get<LibroPagaSnapshot>(`/libro-paga?${q.toString()}`)
+  },
   importDump: () => api.post<Record<string, unknown>>("/libro-paga/import-dump", {}),
   createLivello: (body: {
     nome: string

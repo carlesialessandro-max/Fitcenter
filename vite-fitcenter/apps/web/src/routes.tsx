@@ -40,11 +40,12 @@ import { CalendarioRepartoPage } from "@/pages/CalendarioReparto"
 import { Utenti } from "@/pages/Utenti"
 import { LibroPaga } from "@/pages/LibroPaga"
 import { LibroPagaAccesso } from "@/pages/LibroPagaAccesso"
+import { AdminMenu } from "@/pages/AdminMenu"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
   if (user?.pages?.length) {
-    if (user.pages.includes("/")) return <Dashboard />
+    if (user.pages.includes("/")) return role === "admin" ? <AdminMenu /> : <Dashboard />
     return <Navigate to={user.pages[0] ?? "/"} replace />
   }
   if (leadFilter === "bambini" || role === "crm") return <Navigate to="/crm" replace />
@@ -54,6 +55,7 @@ function DashboardOrRedirect() {
   if (role === "scuola_nuoto") return <Navigate to="/scuola-nuoto" replace />
   if (role === "bagnini") return <Navigate to="/piscina" replace />
   if (role === "danza") return <Navigate to="/danza" replace />
+  if (role === "admin") return <AdminMenu />
   return <Dashboard />
 }
 
@@ -98,6 +100,7 @@ export const router = createBrowserRouter([
     ),
     children: [
       { index: true, element: <DashboardOrRedirect /> },
+      { path: "dashboard", element: <Dashboard /> },
       { path: "corsi", element: <Corsi /> },
       { path: "corsi/presenze", element: <CorsiPresenze /> },
       { path: "corsi/nuoto-libero", element: <NuotoLiberoPresenze /> },

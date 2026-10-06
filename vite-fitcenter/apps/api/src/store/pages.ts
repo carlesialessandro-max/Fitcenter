@@ -4,7 +4,8 @@ export type PageDef = { path: string; label: string; group: string }
 
 /** Pagine selezionabili in gestione utenti (menu). */
 export const PAGE_CATALOG: PageDef[] = [
-  { path: "/", label: "Dashboard", group: "Vendite" },
+  { path: "/", label: "Menu", group: "Vendite" },
+  { path: "/dashboard", label: "Dashboard vendite", group: "Vendite" },
   { path: "/stampa-report", label: "Stampa report", group: "Vendite" },
   { path: "/referral", label: "Referral", group: "Vendite" },
   { path: "/convalide-consulenti", label: "Convalide", group: "Vendite" },

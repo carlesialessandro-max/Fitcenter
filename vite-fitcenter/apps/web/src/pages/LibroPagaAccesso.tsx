@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
+import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -127,14 +128,16 @@ export function LibroPagaAccesso() {
 function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
+  const [reparto, setReparto] = useState("")
   const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita">("home")
   const [error, setError] = useState("")
   const meQ = useQuery({ queryKey: ["lpaga-me"], queryFn: () => lpagaApi.me() })
-  const snap = useQuery({
-    queryKey: ["lpaga", mese],
-    queryFn: () => lpagaApi.get(mese),
-  })
   const me = meQ.data?.user
+  const snap = useQuery({
+    queryKey: ["lpaga", mese, me?.ruolo === "admin" ? reparto : ""],
+    queryFn: () => lpagaApi.get(mese, me?.ruolo === "admin" && reparto ? reparto : undefined),
+    enabled: meQ.isSuccess,
+  })
   const data = snap.data
   const isUser = me?.ruolo === "user"
   const canTeam = me?.ruolo === "manager" || me?.ruolo === "admin"
@@ -179,6 +182,16 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {me?.ruolo === "admin" && (
+            <select value={reparto} onChange={(e) => setReparto(e.target.value)} className={inputCls} aria-label="Reparto">
+              <option value="">Tutti i reparti</option>
+              {(data?.reparti ?? []).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.nome}
+                </option>
+              ))}
+            </select>
+          )}
           <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
           <button type="button" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300" onClick={() => void logout()}>
             Esci
@@ -288,22 +301,24 @@ function Turni({
   onDone: () => void
 }) {
   const isUser = me?.ruolo === "user"
+  const canChangeDay = me?.ruolo === "admin" || me?.ruolo === "manager"
+  const oggi = todayIso()
   const persone = data.personale.filter((p) => p.attivo)
   const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
   const [personaleId, setPersonaleId] = useState(isUser ? me?.id ?? "" : persone[0]?.id ?? "")
   const [livelloId, setLivelloId] = useState(livelli[0]?.id ?? "")
-  const [giorno, setGiorno] = useState(() => {
-    const t = todayIso()
-    return t.startsWith(mese) ? t : `${mese}-01`
-  })
+  const [giorno, setGiorno] = useState(oggi)
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
+  useEffect(() => {
+    if (!canChangeDay) setGiorno(todayIso())
+  }, [canChangeDay, mese])
   const createMut = useMutation({
     mutationFn: () =>
       lpagaApi.createTurno({
         personaleId: isUser ? me!.id : personaleId,
         livelloId,
-        giorno,
+        giorno: canChangeDay ? giorno : todayIso(),
         quantita: Number(quantita.replace(",", ".")),
         note,
       }),
@@ -327,32 +342,53 @@ function Turni({
         }}
       >
         {!isUser && (
-          <select value={personaleId} onChange={(e) => setPersonaleId(e.target.value)} className={inputCls} required>
-            {persone.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}
-              </option>
-            ))}
-          </select>
+          <label className="grid gap-1 text-xs text-zinc-400">
+            <span>Dipendente</span>
+            <select value={personaleId} onChange={(e) => setPersonaleId(e.target.value)} className={inputCls} required>
+              {persone.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
-        <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls} required>
-          {livelli.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.nome}
-            </option>
-          ))}
-        </select>
-        <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className={inputCls} />
-        <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} />
-        <button type="submit" className={btnAmber} disabled={createMut.isPending}>
-          Aggiungi turno
-        </button>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Mansione</span>
+          <MansioneSearchSelect items={livelli} value={livelloId} onChange={setLivelloId} required />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Data</span>
+          <input
+            type="date"
+            value={canChangeDay ? giorno : oggi}
+            onChange={(e) => canChangeDay && setGiorno(e.target.value)}
+            className={inputCls}
+            disabled={!canChangeDay}
+            min={canChangeDay ? undefined : oggi}
+            max={canChangeDay ? undefined : oggi}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Valore</span>
+          <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} required />
+        </label>
+        <div className="flex items-end">
+          <button type="submit" className={`${btnAmber} w-full`} disabled={createMut.isPending}>
+            Aggiungi turno
+          </button>
+        </div>
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="Note"
           className={`${inputCls} ${isUser ? "lg:col-span-4" : "lg:col-span-5"}`}
         />
+        {isUser && (
+          <p className="text-xs text-zinc-500 lg:col-span-5">
+            Puoi inserire turni solo per oggi ({fmtDateIt(oggi)}), entro mezzanotte.
+          </p>
+        )}
       </form>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
@@ -377,9 +413,11 @@ function Turni({
                 <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 <td className="px-3 py-2 text-right">
-                  <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
-                    Elimina
-                  </button>
+                  {(!isUser || t.giorno === oggi) && (
+                    <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
+                      Elimina
+                    </button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -565,7 +603,7 @@ function Mensilita({
     <LibroPagaMensilitaTab
       data={data}
       mese={mese}
-      canEdit={(id) => me?.ruolo === "admin" || me?.ruolo === "manager" || me?.id === id}
+      canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager"}
       hideIban={false}
       onSave={(body) => lpagaApi.putMensilita(body)}
       onError={onError}

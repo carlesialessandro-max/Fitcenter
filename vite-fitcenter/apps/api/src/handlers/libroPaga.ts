@@ -12,6 +12,7 @@ import {
   upsertPresenza,
 } from "../store/libro-paga-db.js"
 import { importLibroPagaDump } from "../services/libro-paga-import.js"
+import { livelloSottoAlbero } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
 import { setPersonalePassword } from "../store/libro-paga-auth.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
@@ -42,7 +43,10 @@ export async function getLibroPaga(req: Request, res: Response) {
   try {
     const meseRaw = String(req.query.mese ?? "").trim()
     const mese = isYm(meseRaw) ? meseRaw : defaultMese()
-    res.json(await buildLibroPagaSnapshot({ mese }))
+    const repartoId = String(req.query.reparto ?? "").trim()
+    const livelli = await listLivelli()
+    const livelloTree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
+    res.json(await buildLibroPagaSnapshot({ mese, livelloTree }))
   } catch (e) {
     fail(res, e)
   }

@@ -140,68 +140,7 @@ const navCrm: NavItem[] = [
   { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
 ]
 
-const navAdmin: NavItem[] = [
-  {
-    to: "__vendite_group__",
-    label: "Vendite",
-    group: true,
-    groupKey: "vendite",
-    children: [
-      { to: "/", label: "Dashboard" },
-      { to: "/stampa-report", label: "Stampa report" },
-      { to: "/referral", label: "Referral" },
-      { to: "/convalide-consulenti", label: "Convalide" },
-      { to: "/attivi-analisi", label: "Attivi" },
-      { to: "/crm", label: "CRM vendita" },
-      { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
-      { to: "/telefonate", label: "Telefonate" },
-      { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
-      { to: "/andamento-vendite", label: "Andamento vendite" },
-      { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
-      { to: "/vendite-cross", label: "Cross" },
-    ],
-  },
-  navLezioniPrivateGroup,
-  {
-    to: "__piano_group__",
-    label: "Piano operativo",
-    group: true,
-    groupKey: "piano",
-    children: [
-      { to: "/calendario", label: "Piano operativo" },
-      { to: "/calendario/corsi", label: "Calendario corsi" },
-      { to: "/calendario/personale", label: "Personale" },
-    ],
-  },
-  { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
-  {
-    to: "__admin_group__",
-    label: "Altri",
-    group: true,
-    groupKey: "admin",
-    children: [
-      { to: "/incassi", label: "Incassi" },
-      { to: "/firme", label: "Firme" },
-      { to: "/firma-cassa", label: "Firma cassa" },
-      { to: "/scontrini", label: "Scontrini" },
-      { to: "/piscina", label: "Mappa piscina" },
-      {
-        to: "/scuola-nuoto",
-        label: "Scuola nuoto",
-        children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
-      },
-      { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto (S.N. bambini)" },
-      { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
-      { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
-      { to: "/calendario/piscina", label: "Calendario bagnini" },
-      { to: "/calendario/reception", label: "Calendario reception" },
-      { to: "/campus", label: "Campus" },
-      { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
-      { to: "/utenti", label: "Utenti e accessi" },
-      { to: "/libro-paga", label: "Libro paga" },
-    ],
-  },
-] as const
+const navAdmin: NavItem[] = [{ to: "/", label: "Menu" }]
 
 function isRealPath(to: string): boolean {
   return !!to && !to.startsWith("__")
@@ -309,7 +248,9 @@ export function AppLayout() {
                       ? navDanza
               : navOperatore
   const pagesForNav =
-    customPages && role === "admin" ? [...(user!.pages ?? []), "/libro-paga"] : user?.pages
+    customPages && role === "admin"
+      ? [...new Set(["/", "/dashboard", "/libro-paga", ...(user!.pages ?? [])])]
+      : user?.pages
   const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, pagesForNav!) : roleNav
   const nav: NavItem[] =
     role !== "admin" && user?.vedeTotaliCentro !== true ? excludeNavPath(navBase, "/incassi") : navBase

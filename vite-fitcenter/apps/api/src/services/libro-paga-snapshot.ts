@@ -27,9 +27,23 @@ export function isYmLpaga(s: string): boolean {
   return /^\d{4}-\d{2}$/.test(s)
 }
 
+export function oggiRomaYmd(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date())
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
+}
+
 export async function buildLibroPagaSnapshot(opts?: {
   mese?: string
   visibleIds?: Set<string>
+  livelloTree?: Set<string>
   hideGlobalStats?: boolean
   hideIban?: boolean
   viewerId?: string
@@ -46,9 +60,26 @@ export async function buildLibroPagaSnapshot(opts?: {
     listMacroQuote(),
   ])
   const vis = opts?.visibleIds
-  const personale = vis ? personaleAll.filter((p) => vis.has(p.id)) : personaleAll
-  const scopedTurni = vis ? turniTutti.filter((t) => vis.has(t.personaleId)) : turniTutti
+  const livelloTree = opts?.livelloTree
+  const scopedTurni = livelloTree
+    ? turniTutti.filter((t) => livelloTree.has(t.livelloId))
+    : vis
+      ? turniTutti.filter((t) => vis.has(t.personaleId))
+      : turniTutti
   const year = mese.slice(0, 4)
+  const monthTurniPreview = scopedTurni.filter((t) => t.giorno.slice(0, 7) === mese)
+  let personale = personaleAll
+  if (vis && !livelloTree) {
+    personale = personaleAll.filter((p) => vis.has(p.id))
+  } else if (livelloTree) {
+    const ids = new Set<string>()
+    for (const p of personaleAll) {
+      if (p.livelloId && livelloTree.has(p.livelloId)) ids.add(p.id)
+    }
+    for (const t of monthTurniPreview) ids.add(t.personaleId)
+    if (opts?.viewerId) ids.add(opts.viewerId)
+    personale = personaleAll.filter((p) => ids.has(p.id))
+  }
   const totAnnoBy = new Map<string, number>()
   for (const t of scopedTurni) {
     if (!t.giorno.startsWith(year)) continue
@@ -59,18 +90,7 @@ export async function buildLibroPagaSnapshot(opts?: {
   const presenzaByTurno = new Map(presenze.map((p) => [p.turnoId, p]))
   const livById = new Map(livelli.map((l) => [l.id, l]))
   const perById = new Map(personaleAll.map((p) => [p.id, p]))
-  const todayYmd = (() => {
-    try {
-      return new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Europe/Rome",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).format(new Date())
-    } catch {
-      return new Date().toISOString().slice(0, 10)
-    }
-  })()
+  const todayYmd = oggiRomaYmd()
   const yesterday = (() => {
     const d = new Date(`${todayYmd}T12:00:00`)
     d.setDate(d.getDate() - 1)
@@ -222,6 +242,10 @@ export async function buildLibroPagaSnapshot(opts?: {
     turni: turniOut,
     mensilita,
     convalide,
+    reparti: livelli
+      .filter((l) => !l.parentId)
+      .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+      .map((l) => ({ id: l.id, nome: l.nome })),
     tree,
     macroQuote: opts?.hideGlobalStats ? [] : macroQuote,
     me: viewer

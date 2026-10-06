@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from "express"
 import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale } from "../store/libro-paga-db.js"
 import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
-import { livelloSottoAlbero, livelliInseribili, personaleVisibile } from "../services/libro-paga-scope.js"
-import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
+import { livelloSottoAlbero, livelliInseribili, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
 function statusOf(e: unknown): number {
@@ -68,17 +68,20 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
     const me = viewer(req)
     const meseRaw = String(req.query.mese ?? "").trim()
     const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
-    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
-    const visibleIds = personaleVisibile(me, personale, livelli)
+    const livelli = await listLivelli()
+    const repartoId = String(req.query.reparto ?? "").trim()
+    const livelloTree = resolveLivelloTree(me, livelli, me.ruolo === "admin" ? repartoId : undefined)
+    const visibleIds = me.ruolo === "user" ? new Set([me.id]) : undefined
     const hideGlobal = me.ruolo !== "admin"
     const data = await buildLibroPagaSnapshot({
       mese,
       visibleIds,
+      livelloTree,
       hideGlobalStats: hideGlobal,
       hideIban: me.ruolo === "user",
       viewerId: me.id,
     })
-    const inseribili = livelliInseribili(me, livelli)
+    const inseribili = livelliInseribili(me, livelli, livelloTree)
     res.json({
       ...data,
       livelliInseribili: data.livelli.filter((l) => inseribili.some((x) => x.id === l.id)),
@@ -92,14 +95,20 @@ export async function postLpagaTurno(req: Request, res: Response) {
   try {
     const me = viewer(req)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
-    const vis = personaleVisibile(me, personale, livelli)
+    const tree = resolveLivelloTree(me, livelli)
     let personaleId = String(req.body?.personaleId ?? "").trim()
     if (me.ruolo === "user") personaleId = me.id
-    if (!vis.has(personaleId)) return res.status(403).json({ message: "Non puoi inserire turni per questa persona" })
+    const pe = personale.find((p) => p.id === personaleId)
+    if (!pe) return res.status(400).json({ message: "Persona non trovata" })
     const livelloId = String(req.body?.livelloId ?? "").trim()
-    const consentiti = new Set(livelliInseribili(me, livelli).map((l) => l.id))
+    const consentiti = new Set(livelliInseribili(me, livelli, tree).map((l) => l.id))
     if (!consentiti.has(livelloId)) return res.status(400).json({ message: "Mansione non consentita" })
-    const giorno = String(req.body?.giorno ?? "").trim()
+    const giornoRaw = String(req.body?.giorno ?? "").trim()
+    const oggi = oggiRomaYmd()
+    const giorno = me.ruolo === "user" ? oggi : giornoRaw
+    if (me.ruolo === "user" && isYmd(giornoRaw) && giornoRaw !== oggi) {
+      return res.status(403).json({ message: "Puoi inserire turni solo per la data odierna (entro mezzanotte)" })
+    }
     const quantita = Number(req.body?.quantita)
     if (!isYmd(giorno)) return res.status(400).json({ message: "Data non valida" })
     if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) {
@@ -123,12 +132,17 @@ export async function removeLpagaTurno(req: Request, res: Response) {
   try {
     const me = viewer(req)
     const id = String(req.params.id ?? "").trim()
-    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
-    const vis = personaleVisibile(me, personale, livelli)
+    const livelli = await listLivelli()
+    const tree = resolveLivelloTree(me, livelli)
     const turni = await listTurni()
     const t = turni.find((x) => x.id === id)
     if (!t) return res.status(404).json({ message: "Turno non trovato" })
-    if (!vis.has(t.personaleId)) return res.status(403).json({ message: "Non puoi eliminare questo turno" })
+    if (!turnoNelScope(t, { viewerId: me.id, ruolo: me.ruolo, tree })) {
+      return res.status(403).json({ message: "Non puoi eliminare questo turno" })
+    }
+    if (me.ruolo === "user" && t.giorno !== oggiRomaYmd()) {
+      return res.status(403).json({ message: "Puoi eliminare solo i turni di oggi" })
+    }
     await deleteTurno(id)
     res.json({ ok: true })
   } catch (e) {
@@ -140,11 +154,11 @@ export async function putLpagaMensilita(req: Request, res: Response) {
   try {
     const me = viewer(req)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    if (me.ruolo === "user") {
+      return res.status(403).json({ message: "Gli istruttori possono solo visualizzare le mensilità" })
+    }
     const vis = personaleVisibile(me, personale, livelli)
     const personaleId = String(req.body?.personaleId ?? "").trim()
-    if (me.ruolo === "user" && personaleId !== me.id) {
-      return res.status(403).json({ message: "Puoi modificare solo la tua mensilità" })
-    }
     if (!vis.has(personaleId)) return res.status(403).json({ message: "Mensilità non visibile" })
     const mese = String(req.body?.mese ?? "").trim()
     const bonifico = Number(req.body?.bonifico)

@@ -22,6 +22,7 @@ import {
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab } from "@/components/LibroPagaMensilita"
+import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "admin"
 
@@ -70,12 +71,13 @@ export function LibroPaga() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>("home")
   const [mese, setMese] = useState(currentMese)
+  const [reparto, setReparto] = useState("")
   const [error, setError] = useState("")
   const [q, setQ] = useState("")
 
   const snap = useQuery({
-    queryKey: ["libro-paga", mese],
-    queryFn: () => libroPagaApi.get(mese),
+    queryKey: ["libro-paga", mese, reparto],
+    queryFn: () => libroPagaApi.get(mese, reparto || undefined),
     enabled: role === "admin",
   })
 
@@ -126,6 +128,17 @@ export function LibroPaga() {
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1 text-sm text-zinc-400">
+            <span className="text-xs">Reparto</span>
+            <select value={reparto} onChange={(e) => setReparto(e.target.value)} className={inputCls}>
+              <option value="">Tutti i reparti</option>
+              {(data?.reparti ?? []).map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm text-zinc-400">
             <span className="text-xs">Mese</span>
             <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
           </label>
@@ -174,9 +187,9 @@ export function LibroPaga() {
       {data && tab === "personale" && (
         <PersonaleTab data={data} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />
       )}
-      {data && tab === "turni" && (
-        <TurniTab data={data} mese={mese} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />
-      )}
+        {data && tab === "turni" && (
+          <TurniTab data={data} mese={mese} q={q} setQ={setQ} reparto={reparto} onError={setError} onDone={() => { setError(""); invalidate() }} />
+        )}
       {data && tab === "convalide" && <ConvalideTab data={data} />}
       {data && tab === "mensilita" && (
         <MensilitaTab data={data} mese={mese} onError={setError} onDone={() => { setError(""); invalidate() }} />
@@ -604,6 +617,7 @@ function TurniTab({
   mese,
   q,
   setQ,
+  reparto,
   onError,
   onDone,
 }: {
@@ -611,11 +625,27 @@ function TurniTab({
   mese: string
   q: string
   setQ: (s: string) => void
+  reparto: string
   onError: (s: string) => void
   onDone: () => void
 }) {
   const attiviP = data.personale.filter((p) => p.attivo)
-  const attiviL = data.livelli.filter((l) => l.attivo && l.retribuibile)
+  const treeIds = useMemo(() => {
+    if (!reparto) return null
+    const ids = new Set<string>([reparto])
+    let added = true
+    while (added) {
+      added = false
+      for (const l of data.livelli) {
+        if (l.parentId && ids.has(l.parentId) && !ids.has(l.id)) {
+          ids.add(l.id)
+          added = true
+        }
+      }
+    }
+    return ids
+  }, [data.livelli, reparto])
+  const attiviL = data.livelli.filter((l) => l.attivo && l.retribuibile && (!treeIds || treeIds.has(l.id)))
   const [personaleId, setPersonaleId] = useState(attiviP[0]?.id ?? "")
   const [livelloId, setLivelloId] = useState(attiviL[0]?.id ?? "")
   const [giorno, setGiorno] = useState(() => {
@@ -662,15 +692,18 @@ function TurniTab({
             </option>
           ))}
         </select>
-        <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls} required>
-          {attiviL.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.nome}
-            </option>
-          ))}
-        </select>
-        <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className={inputCls} />
-        <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} />
+        <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2 lg:col-span-1">
+          <span>Mansione</span>
+          <MansioneSearchSelect items={attiviL} value={livelloId} onChange={setLivelloId} required />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Data</span>
+          <input type="date" value={giorno} onChange={(e) => setGiorno(e.target.value)} className={inputCls} />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Valore</span>
+          <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} />
+        </label>
         <button type="submit" className={btnAmber} disabled={createMut.isPending}>
           Aggiungi turno
         </button>

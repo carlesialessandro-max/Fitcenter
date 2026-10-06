@@ -15,7 +15,39 @@ export function livelloSottoAlbero(livelli: LpagaLivello[], rootId: string): Set
   return ids
 }
 
-/** Istruttore: solo sé. Responsabile: persone del sottoalbero del suo livello (es. Desk, piscina). Admin: tutti. */
+export function radiciReparto(livelli: LpagaLivello[]): { id: string; nome: string }[] {
+  return livelli
+    .filter((l) => !l.parentId)
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+    .map((l) => ({ id: l.id, nome: l.nome }))
+}
+
+/** Albero mansioni del viewer (responsabile) o del reparto scelto (admin). */
+export function resolveLivelloTree(
+  viewer: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId">,
+  livelli: LpagaLivello[],
+  repartoId?: string
+): Set<string> | undefined {
+  if (viewer.ruolo === "manager") {
+    return viewer.livelloId ? livelloSottoAlbero(livelli, viewer.livelloId) : new Set()
+  }
+  if (viewer.ruolo === "admin" && repartoId) {
+    return livelloSottoAlbero(livelli, repartoId)
+  }
+  return undefined
+}
+
+/** Turni visibili: istruttore = propri; responsabile/admin-reparto = mansione nel sottoalbero. */
+export function turnoNelScope(
+  t: { personaleId: string; livelloId: string },
+  opts: { viewerId: string; ruolo: LpagaPersonale["ruolo"]; tree?: Set<string> }
+): boolean {
+  if (opts.ruolo === "user") return t.personaleId === opts.viewerId
+  if (opts.tree) return opts.tree.has(t.livelloId)
+  return true
+}
+
+/** Istruttore: solo sé. Responsabile: persone assegnate al sottoalbero. Admin: tutti. */
 export function personaleVisibile(
   viewer: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId">,
   personale: LpagaPersonale[],
@@ -33,11 +65,12 @@ export function personaleVisibile(
 
 export function livelliInseribili(
   viewer: Pick<LpagaPersonale, "ruolo" | "livelloId">,
-  livelli: LpagaLivello[]
+  livelli: LpagaLivello[],
+  tree?: Set<string>
 ): LpagaLivello[] {
   const retribuibili = livelli.filter((l) => l.attivo && l.retribuibile)
-  if (viewer.ruolo === "admin" || !viewer.livelloId) return retribuibili
-  const tree = livelloSottoAlbero(livelli, viewer.livelloId)
-  const scoped = retribuibili.filter((l) => tree.has(l.id))
-  return scoped.length ? scoped : retribuibili
+  const scope = tree ?? (viewer.ruolo === "admin" || !viewer.livelloId ? undefined : livelloSottoAlbero(livelli, viewer.livelloId))
+  if (!scope) return retribuibili
+  const scoped = retribuibili.filter((l) => scope.has(l.id))
+  return scoped
 }

@@ -77,8 +77,11 @@ export const lpagaApi = {
     }),
   logout: () => lpagaRequest<{ ok: boolean }>("/lpaga/logout", { method: "POST", body: "{}" }),
   me: () => lpagaRequest<{ user: LpagaMe }>("/lpaga/me"),
-  get: (mese: string) =>
-    lpagaRequest<LpagaPortalSnapshot>(`/lpaga?mese=${encodeURIComponent(mese)}`, { method: "GET", cache: "no-store" }),
+  get: (mese: string, reparto?: string) => {
+    const q = new URLSearchParams({ mese })
+    if (reparto) q.set("reparto", reparto)
+    return lpagaRequest<LpagaPortalSnapshot>(`/lpaga?${q.toString()}`, { method: "GET", cache: "no-store" })
+  },
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     lpagaRequest<{ turno: unknown }>("/lpaga/turni", { method: "POST", body: JSON.stringify(body) }),
   deleteTurno: (id: string) => lpagaRequest<{ ok: boolean }>(`/lpaga/turni/${encodeURIComponent(id)}`, { method: "DELETE" }),
