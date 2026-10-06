@@ -236,7 +236,6 @@ export function LibroPagaConvalidaPanel({
                 </tr>
               )
             })}
-            })}
             {!data.rows.length && (
               <tr>
                 <td className="px-3 py-6 text-zinc-500" colSpan={5}>
