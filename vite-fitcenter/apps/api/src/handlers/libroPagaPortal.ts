@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo } from "../store/libro-paga-db.js"
+import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, dominioLivello } from "../store/libro-paga-db.js"
 import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
@@ -332,6 +332,7 @@ export async function getLpagaConvalida(req: Request, res: Response) {
         ...t,
         personaleNome: nominativo(perBy.get(t.personaleId) ?? pe),
         livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
+        dominio: t.livelloId ? dominioLivello(livelli, t.livelloId) : "",
       }))
     const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
     res.json({

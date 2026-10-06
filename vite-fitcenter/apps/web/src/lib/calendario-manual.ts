@@ -10,8 +10,8 @@ export const MANUAL_SERVER_COMPARTI: CalendarioComparto[] = [
   "spogliatoi",
 ]
 
-/** Scuola nuoto (PISCINAORARIO): import una volta, poi solo DB. */
-export const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto"]
+/** Import una volta (Excel/orario), poi solo DB. */
+export const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto", "sala_fitness"]
 
 export function compartoIsManualServer(comparto: CalendarioComparto | null | undefined): boolean {
   return comparto != null && MANUAL_SERVER_COMPARTI.includes(comparto)

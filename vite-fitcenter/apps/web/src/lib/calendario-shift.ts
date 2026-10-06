@@ -20,7 +20,7 @@ export function defaultZonaForShiftComparto(comparto: CalendarioComparto): strin
 
 export function defaultActivityForShiftComparto(comparto: CalendarioComparto): string {
   if (comparto === "reception") return "Sportello"
-  if (comparto === "sala_fitness") return "Turno sala"
+  if (comparto === "sala_fitness") return "Sala pesi"
   if (comparto === "acquaticita") return "Acquaticità"
   if (comparto === "spogliatoi") return "Spogliatoi"
   if (comparto === "scuola_nuoto") return "Lezione"

@@ -12,6 +12,7 @@
     "abbonamenti:attivi-xls": "tsx scripts/abbonamenti-attivi-reconcile.ts --layout attivi-xls",
     "import:istruttori": "node scripts/import-istruttori-calendario.mjs",
     "import:scuola-nuoto": "node scripts/import-calendario-comparto.mjs scuola_nuoto",
+    "import:sala-fitness": "node scripts/import-sala-fitness.mjs",
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",

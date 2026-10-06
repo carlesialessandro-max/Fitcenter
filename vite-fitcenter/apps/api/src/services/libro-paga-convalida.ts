@@ -48,25 +48,58 @@ function norm(s: string): string {
 
 function namesMatch(person: Pick<LpagaPersonale, "nome" | "cognome">, staff: string): boolean {
   const staffN = norm(staff)
-  if (!staffN || staffN === "-") return false
+  if (!staffN || staffN === "-" || staffN === "corso") return false
   const cognome = norm(person.cognome ?? "")
   const nome = norm(person.nome ?? "")
-  if (cognome && staffN.includes(cognome)) {
+  const tokens = staffN.split(" ").filter(Boolean)
+  if (cognome.length >= 3) {
+    const cognomeHit = tokens.some((t) => t === cognome || (cognome.length >= 4 && t.startsWith(cognome.slice(0, 4))))
+    if (!cognomeHit && !staffN.includes(cognome)) return false
+    if (tokens.length === 1) return true
     if (!nome || nome.length < 2) return true
-    if (staffN.includes(nome) || staffN.includes(nome.slice(0, 3))) return true
+    return staffN.includes(nome) || tokens.some((t) => t[0] === nome[0])
   }
-  const full = `${cognome} ${nome}`.trim()
-  return Boolean(full && (staffN.includes(full) || full.includes(staffN)))
+  return Boolean(nome.length >= 4 && (staffN === nome || tokens.includes(nome)))
 }
 
-function titleMatchesMansione(title: string, mansione: string): boolean {
-  const t = norm(title)
-  const m = norm(mansione)
-  if (!t || !m) return false
-  if (t.includes(m) || m.includes(t)) return true
-  const words = m.split(" ").filter((w) => w.length > 3)
-  const hit = words.filter((w) => t.includes(w)).length
-  return words.length > 0 && hit >= Math.min(2, words.length)
+const COMPARTO_LABEL: Record<string, string> = {
+  corsi: "Corsi fitness",
+  scuola_nuoto: "Scuola nuoto",
+  sala_fitness: "Sala pesi",
+  piscina: "Bagnini",
+  reception: "Desk",
+  acquaticita: "Acquaticità",
+  campus: "Campus",
+  danza: "Danza",
+}
+
+/** Mansione Libro paga → calendari FitCenter da usare (mai tutti insieme). */
+export function compartiPerMansione(mansione: string, dominio?: string): string[] {
+  const t = norm(`${mansione} ${dominio ?? ""}`)
+  if (!t) return []
+  if (/\bsala pesi\b|\bsala fitness\b|\bpalestr/.test(t) && !/\bcorsi\b|\bscuola nuoto\b/.test(t)) {
+    return ["sala_fitness"]
+  }
+  if (/\bbagnin/.test(t)) return ["piscina"]
+  if (/\bdesk\b|\breception\b|\bsegreteri|\baccoglienza/.test(t)) return ["reception"]
+  if (/\bscuola nuoto\b|\bs n\b|\bsn bambini\b|\bistruttore nuoto/.test(t)) return ["scuola_nuoto"]
+  if (/\bdanza\b/.test(t)) return ["danza"]
+  if (/\bcampus\b/.test(t)) return ["campus"]
+  if (/\bacquatic/.test(t)) return ["acquaticita"]
+  if (
+    /\bcorsi\b|\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba|\bgap\b|\bfunctional|\btrx\b|\btotem|\bstretch|\bstep\b/.test(
+      t
+    )
+  ) {
+    return ["corsi"]
+  }
+  if (/\bfitness\b|\bpalestr/.test(t)) return ["sala_fitness"]
+  if (/\bnuoto\b|\bvasca|\bpiscina/.test(t)) return ["scuola_nuoto"]
+  return []
+}
+
+export function labelCompartoConvalida(comparto: string): string {
+  return COMPARTO_LABEL[comparto] ?? comparto
 }
 
 function daysInMonth(mese: string): string[] {
@@ -100,6 +133,7 @@ export type TurnoConvalidaProposta = {
   importo: number
   note?: string
   proposto: TurnoConvalidaStato
+  calendariAttesi: string[]
   match?: MatchCalendario
   sostitutiPossibili: MatchCalendario[]
   salvato?: TurnoConvalida
@@ -181,7 +215,7 @@ export function conteggioConvalide(turnoIds: string[]): { n: number; ok: number 
 
 export function proponeConvalidaMese(opts: {
   mese: string
-  turni: (LpagaTurno & { personaleNome: string; livelloNome: string })[]
+  turni: (LpagaTurno & { personaleNome: string; livelloNome: string; dominio?: string })[]
   personaleById: Map<string, LpagaPersonale>
 }): TurnoConvalidaProposta[] {
   const cal = listCalendarioPerConvalida()
@@ -213,12 +247,12 @@ export function proponeConvalidaMese(opts: {
   const db = readDb()
   return opts.turni.map((t) => {
     const pe = opts.personaleById.get(t.personaleId)
-    const daySlots = byDay.get(t.giorno) ?? []
+    const calendariAttesi = compartiPerMansione(t.livelloNome, t.dominio)
+    const allowed = new Set(calendariAttesi)
+    const daySlots = (byDay.get(t.giorno) ?? []).filter((s) => !allowed.size || allowed.has(s.comparto))
     const samePerson = pe ? daySlots.filter((s) => namesMatch(pe, s.staff)) : []
-    const sameMansione = daySlots.filter((s) => titleMatchesMansione(s.title, t.livelloNome))
-    const matchPersonaMansione = samePerson.find((s) => titleMatchesMansione(s.title, t.livelloNome))
-    const match = matchPersonaMansione ?? samePerson[0]
-    const sostitutiPossibili = sameMansione.filter((s) => !pe || !namesMatch(pe, s.staff))
+    const match = samePerson[0]
+    const sostitutiPossibili = daySlots.filter((s) => !pe || !namesMatch(pe, s.staff))
     let proposto: TurnoConvalidaStato = "da_verificare"
     if (match) proposto = "ok"
     else if (sostitutiPossibili.length) proposto = "sostituzione"
@@ -232,6 +266,7 @@ export function proponeConvalidaMese(opts: {
       importo: t.importo,
       ...(t.note ? { note: t.note } : {}),
       proposto,
+      calendariAttesi,
       match,
       sostitutiPossibili,
       salvato,

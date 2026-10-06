@@ -45,6 +45,7 @@ export type LpagaConvalidaPayload = {
     importo: number
     note?: string
     proposto: TurnoConvalidaStato
+    calendariAttesi?: string[]
     match?: LpagaConvalidaMatch
     sostitutiPossibili: LpagaConvalidaMatch[]
     salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }

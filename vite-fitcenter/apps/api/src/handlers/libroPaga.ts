@@ -8,6 +8,7 @@ import {
   listPersonale,
   listTurni,
   nominativo,
+  dominioLivello,
   upsertLivello,
   upsertMensilita,
   upsertPersonale,
@@ -314,6 +315,7 @@ export async function getLibroPagaConvalida(req: Request, res: Response) {
         ...t,
         personaleNome: nominativo(perBy.get(t.personaleId) ?? pe),
         livelloNome: livBy.get(t.livelloId)?.nome ?? "—",
+        dominio: t.livelloId ? dominioLivello(livelli, t.livelloId) : "",
       }))
     const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
     res.json({

@@ -114,10 +114,10 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return j.eventsByComparto?.[comparto] ?? []
 }
 
-const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "sala_fitness", "acquaticita", "spogliatoi"]
+const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi"]
 
 /** PISCINAORARIO (S.N. Bambini): import una tantum, poi solo calendario-reparti.json. */
-const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto"]
+const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto", "sala_fitness"]
 
 function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -476,7 +476,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
         : raw === "reception"
           ? "Sportello"
           : raw === "sala_fitness"
-            ? "Turno sala"
+            ? "Sala pesi"
             : raw === "acquaticita"
               ? "Acquaticità"
               : raw === "spogliatoi"
@@ -490,14 +490,16 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     const hasIns = body.istruttoreId != null && String(body.istruttoreId).trim() !== ""
     if (!staffOverride && !hasIns) return res.status(400).json({ message: "Inserire istruttore da anagrafica o nome testuale" })
     const stableKey =
-      SERVER_SEEDED_COMPARTI.includes(raw) && raw === "scuola_nuoto"
+      raw === "scuola_nuoto"
         ? stableKeyFromParts(zona, dow, start, title)
-        : `manual-${crypto.randomUUID()}`
+        : raw === "sala_fitness"
+          ? stableKeyFromParts(zona, dateIso ? 0 : dow, start, `${title}|${dateIso ?? ""}|${staffOverride}`)
+          : `manual-${crypto.randomUUID()}`
     const rev: CalendarioSlotRevision = {
       comparto: raw,
       stableKey,
       dow,
-      dateIso: MANUAL_ONLY_COMPARTI.includes(raw) ? dateIso : null,
+      dateIso: dateIso,
       start,
       title,
       zona,

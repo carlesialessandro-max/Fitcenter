@@ -36,6 +36,7 @@ export type ConvalidaRow = {
   note?: string
   proposto: TurnoConvalidaStato
   match?: { comparto: string; date: string; start: string; title: string; staff: string; note?: string }
+  calendariAttesi?: string[]
   sostitutiPossibili: { comparto: string; date: string; start: string; title: string; staff: string }[]
   salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }
 }
@@ -112,12 +113,16 @@ export function LibroPagaConvalidaPanel({
               Corsi fitness
             </a>
             {" · "}
-            <a className="text-amber-300 underline" href="/calendario/scuola_nuoto">
+            <a className="text-amber-300 underline" href="/calendario/scuola-nuoto">
               Scuola nuoto
             </a>
             {" · "}
+            <a className="text-amber-300 underline" href="/calendario/sala-fitness">
+              Sala pesi
+            </a>
+            {" · "}
             <a className="text-amber-300 underline" href="/calendario/piscina">
-              Piscina
+              Bagnini
             </a>
             {" · "}
             <a className="text-amber-300 underline" href="/calendario/reception">
@@ -154,14 +159,44 @@ export function LibroPagaConvalidaPanel({
                   <td className="px-3 py-2 text-xs text-zinc-400">
                     {r.match ? (
                       <span>
-                        {r.match.title} · {r.match.start} · {r.match.staff} ({r.match.comparto})
+                        {r.match.title} · {r.match.start} · {r.match.staff} (
+                        {r.match.comparto === "sala_fitness"
+                          ? "sala pesi"
+                          : r.match.comparto === "scuola_nuoto"
+                            ? "scuola nuoto"
+                            : r.match.comparto === "corsi"
+                              ? "corsi"
+                              : r.match.comparto === "piscina"
+                                ? "bagnini"
+                                : r.match.comparto === "reception"
+                                  ? "desk"
+                                  : r.match.comparto}
+                        )
                       </span>
                     ) : sub ? (
                       <span className="text-amber-300">
                         Possibile sostituzione: {sub.staff} — {sub.title} {sub.start}
                       </span>
                     ) : (
-                      <span>Nessuna lezione in calendario per questa data</span>
+                      <span>
+                        Nessuna copertura in{" "}
+                        {(r.calendariAttesi ?? [])
+                          .map((c) =>
+                            c === "sala_fitness"
+                              ? "Sala pesi"
+                              : c === "scuola_nuoto"
+                                ? "Scuola nuoto"
+                                : c === "corsi"
+                                  ? "Corsi fitness"
+                                  : c === "piscina"
+                                    ? "Bagnini"
+                                    : c === "reception"
+                                      ? "Desk"
+                                      : c
+                          )
+                          .join(", ") || "calendario FitCenter"}{" "}
+                        per questa data
+                      </span>
                     )}
                   </td>
                   <td className={`px-3 py-2 text-xs ${statoCls(stato)}`}>{statoLabel(stato)}</td>
