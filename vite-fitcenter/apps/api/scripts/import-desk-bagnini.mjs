@@ -71,26 +71,33 @@ function normHeader(cell) {
     .trim()
     .toUpperCase()
     .normalize("NFD")
-    .replace(/\p{M}/gu, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/['’`]/g, "")
     .replace(/\s+/g, " ")
 }
 
-const DOW = {
-  LUNEDI: 1,
-  MARTEDI: 2,
-  MERCOLEDI: 3,
-  GIOVEDI: 4,
-  VENERDI: 5,
-  SABATO: 6,
-  DOMENICA: 0,
-}
+const DOW_HEADERS = [
+  ["DOMENICA", 0],
+  ["DOM", 0],
+  ["LUNEDI", 1],
+  ["LUN", 1],
+  ["MARTEDI", 2],
+  ["MAR", 2],
+  ["MERCOLEDI", 3],
+  ["MER", 3],
+  ["GIOVEDI", 4],
+  ["GIO", 4],
+  ["VENERDI", 5],
+  ["VEN", 5],
+  ["SABATO", 6],
+  ["SAB", 6],
+]
 
 function headerToDow(cell) {
-  const h = normHeader(cell)
+  const h = normHeader(cell).replace(/[^A-Z]/g, "")
   if (!h) return null
-  for (const [k, v] of Object.entries(DOW)) {
-    if (h === k || h.startsWith(k + " ")) return v
+  for (const [k, v] of DOW_HEADERS) {
+    if (h === k || h.startsWith(k)) return v
   }
   return null
 }
@@ -271,32 +278,44 @@ function parseBagniniDayBlock(rows, timeCol, staffCol, timeRightCol, startRow) {
   let curStart = null
   let lastTime = null
   let emptyRun = 0
+  let emptyStaffStreak = 0
+  const dayText = (row) =>
+    [row[timeCol], row[staffCol], row[timeRightCol]].map((c) => String(c ?? "").toUpperCase()).join(" ")
+  const closeShift = (end) => {
+    if (curStaff && curStart) out.push({ start: curStart, end: end || addMin(lastTime || curStart, 30), staff: curStaff })
+    curStaff = null
+    curStart = null
+    lastTime = null
+    emptyStaffStreak = 0
+  }
   for (let ri = startRow; ri < rows.length; ri++) {
     const row = rows[ri] || []
-    const joined = row.map((c) => String(c ?? "").toUpperCase()).join(" ")
-    if (ri > startRow + 6 && /SETTIMANA|TOT SETT|TOTALE ORE/.test(joined)) break
+    if (ri > startRow + 6 && /SETTIMANA|TOT SETT|TOTALE ORE/.test(dayText(row))) break
     const t = rowSlotStart(row, timeCol, timeRightCol)
     const staffRaw = String(row[staffCol] ?? "").trim()
     const staff = looksLikeStaffAbbrev(staffRaw) ? staffRaw.toUpperCase() : ""
     if (staff) {
+      if (!t && emptyRun > 2) break
       if (curStaff && curStaff !== staff && curStart) {
-        out.push({ start: curStart, end: t || addMin(lastTime || curStart, 30), staff: curStaff })
+        closeShift(t || addMin(lastTime || curStart, 30))
       }
-      if (curStaff !== staff) {
+      if (!curStaff) {
+        if (!t && !lastTime) continue
         curStaff = staff
-        curStart = t ?? lastTime ?? "07:00"
+        curStart = t ?? lastTime
       }
       if (t) lastTime = t
       emptyRun = 0
+      emptyStaffStreak = 0
     } else if (t && curStaff) {
-      lastTime = t
-      emptyRun = 0
+      emptyStaffStreak++
+      if (emptyStaffStreak >= 2) closeShift(addMin(lastTime || curStart, 30))
     } else {
       emptyRun++
       if (emptyRun > 20) break
     }
   }
-  if (curStaff && curStart) out.push({ start: curStart, end: addMin(lastTime || curStart, 30), staff: curStaff })
+  closeShift()
   return out
 }
 
@@ -334,38 +353,72 @@ function parseBagniniWorkbook(xlsxPath) {
     }
     const sh = wb.Sheets[name]
     const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false })
-    let headerRow = -1
-    const hits = []
+    const byDow = new Map()
     for (let r = 0; r < Math.min(8, rows.length); r++) {
       const row = rows[r] || []
-      const found = []
       for (let c = 0; c < row.length; c++) {
         const dow = headerToDow(row[c])
-        if (dow != null) found.push({ c, dow })
-      }
-      if (found.length > hits.length) {
-        hits.length = 0
-        hits.push(...found)
-        headerRow = r
+        if (dow == null || byDow.has(dow)) continue
+        byDow.set(dow, { c, dow, headerRow: r })
       }
     }
-    if (headerRow < 0 || hits.length < 5) continue
-    hits.sort((a, b) => a.c - b.c)
+    const hits = [...byDow.values()].sort((a, b) => a.c - b.c)
+    if (!hits.length) continue
+    if (hits.length < 7) {
+      const missing = [1, 2, 3, 4, 5, 6, 0].filter((d) => !byDow.has(d))
+      console.warn("[bagnini]", name, "giorni mancanti in testata", missing.join(","))
+    }
     const daySlots = []
+    const perDay = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
     for (const h of hits) {
       const offset = h.dow === 0 ? 6 : h.dow - 1
       const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset)
-      const parsed = parseBagniniDayBlock(rows, h.c, h.c + 1, h.c + 2, headerRow + 1)
+      const startRow = (h.headerRow ?? 1) + 1
+      const parsed = parseBagniniDayBlock(rows, h.c, h.c + 1, h.c + 2, startRow)
+      perDay[date.getDay()] += parsed.length
       for (const s of parsed) {
         daySlots.push({ dateIso: ymd(date), dow: date.getDay(), start: s.start, end: s.end, staff: s.staff })
       }
     }
     if (daySlots.length) {
-      console.log("[bagnini]", name, "→", daySlots.length, "slot", ymd(monday))
+      const label = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"].map((k, i) => `${k}:${perDay[i]}`).join(" ")
+      console.log("[bagnini]", name, "→", daySlots.length, "slot", ymd(monday), "|", label)
       all.push(...daySlots)
     }
   }
   return all
+}
+
+function matchIstruttore(instructors, abbrev) {
+  const a = String(abbrev ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+  if (a.length < 3) return null
+  const hits = []
+  for (const i of instructors) {
+    const cog = String(i.cognome ?? "")
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+    const nom = String(i.nome ?? "")
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+    const full = `${cog} ${nom}`.trim()
+    let score = 0
+    if (cog === a || nom === a) score = 100
+    else if (cog.startsWith(a)) score = 40 + a.length
+    else if (nom.startsWith(a)) score = 30 + a.length
+    else if (full.startsWith(a)) score = 20 + a.length
+    if (score) hits.push({ i, score })
+  }
+  hits.sort((x, y) => y.score - x.score)
+  if (!hits.length) return null
+  if (hits.length > 1 && hits[0].score === hits[1].score) return null
+  if (hits[0].score < 33) return null
+  return hits[0].i
 }
 
 function upsertComparto(db, comparto, zona, titlePrefix, events, replace, now) {
@@ -379,6 +432,7 @@ function upsertComparto(db, comparto, zona, titlePrefix, events, replace, now) {
   for (const e of events) {
     const stableKey = `${comparto}|${e.dateIso}|${e.start}|${e.staff}`
     if (existing.has(stableKey)) continue
+    const ins = matchIstruttore(db.instructors, e.staff)
     next.push({
       comparto,
       stableKey,
@@ -387,8 +441,8 @@ function upsertComparto(db, comparto, zona, titlePrefix, events, replace, now) {
       start: e.start,
       title: `${titlePrefix} · ${e.start}–${e.end}`,
       zona,
-      staffOverride: e.staff,
-      istruttoreId: null,
+      staffOverride: ins ? `${ins.cognome} ${ins.nome}`.trim() : e.staff,
+      istruttoreId: ins?.id ?? null,
       note: null,
       updatedAt: now,
       updatedBy: "import-desk-bagnini",
