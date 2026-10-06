@@ -1186,6 +1186,12 @@ export function CalendarioRepartoPage() {
                   <strong className="font-medium text-zinc-400">PISCINAORARIO</strong>, foglio S.N. Bambini): modifica, aggiungi o
                   nascondi lezioni online.
                 </>
+              ) : apiComparto === "sala_fitness" ? (
+                <>
+                  Orario sala pesi da Excel. Il file arriva ad aprile 2026: i mesi successivi ripetono l&apos;anno prima
+                  (stesso giorno della settimana). Puoi aggiungere o modificare un turno{" "}
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                </>
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
                   Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}

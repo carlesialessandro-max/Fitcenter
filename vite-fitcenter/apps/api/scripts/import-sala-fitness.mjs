@@ -248,6 +248,36 @@ function main() {
     monday = addDays(monday, 7)
   }
 
+  const datesExcel = all.map((e) => e.dateIso).sort()
+  const lastIso = datesExcel[datesExcel.length - 1]
+  const today = new Date()
+  const horizon = ymdFromDate(new Date(today.getFullYear(), today.getMonth() + 18, 1))
+  if (lastIso && lastIso < horizon) {
+    const minSource = (() => {
+      const d = new Date(Number(lastIso.slice(0, 4)), Number(lastIso.slice(5, 7)) - 1, Number(lastIso.slice(8, 10)))
+      d.setDate(d.getDate() - 52 * 7)
+      return ymdFromDate(d)
+    })()
+    const seen = new Set(all.map((e) => `${e.dateIso}|${e.start}|${e.staff}`))
+    const projected = []
+    for (const e of all) {
+      if (e.dateIso < minSource) continue
+      const d0 = new Date(Number(e.dateIso.slice(0, 4)), Number(e.dateIso.slice(5, 7)) - 1, Number(e.dateIso.slice(8, 10)))
+      for (let n = 0; n < 4; n++) {
+        d0.setDate(d0.getDate() + 52 * 7)
+        const next = ymdFromDate(d0)
+        if (next <= lastIso) continue
+        if (next > horizon) break
+        const k = `${next}|${e.start}|${e.staff}`
+        if (seen.has(k)) continue
+        seen.add(k)
+        projected.push({ dateIso: next, dow: d0.getDay(), start: e.start, staff: e.staff })
+      }
+    }
+    console.log("[sala] Ripetuti oltre", lastIso, "(da", minSource, ") →", projected.length, "slot fino a", horizon)
+    all.push(...projected)
+  }
+
   const dataDir = resolveDataDir()
   const dbPath = path.join(dataDir, "calendario-reparti.json")
   const db = fs.existsSync(dbPath) ? JSON.parse(fs.readFileSync(dbPath, "utf8")) : { instructors: [], revisions: [] }

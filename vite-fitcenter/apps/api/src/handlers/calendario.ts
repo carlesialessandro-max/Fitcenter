@@ -199,6 +199,54 @@ function revisionToMergedEvent(comparto: CalendarioComparto, r: CalendarioSlotRe
   }
 }
 
+function addDaysIso(iso: string, days: number): string | null {
+  const d = parseIsoLocal(iso)
+  if (!d) return null
+  d.setDate(d.getDate() + days)
+  return isoYmdFromDate(d)
+}
+
+/** L'Excel sala pesi termina ad aprile 2026: ripete solo l'ultimo anno (52 settimane) in avanti. */
+function projectDatedEventsForward(events: CalendarioMergedEvent[]): CalendarioMergedEvent[] {
+  const dated = events.filter((e) => isIsoDate(String(e.dateIso ?? "")))
+  if (!dated.length) return events
+  const maxIso = dated.map((e) => String(e.dateIso)).sort()[dated.length - 1]!
+  const now = new Date()
+  const horizonIso = isoYmdFromDate(new Date(now.getFullYear(), now.getMonth() + 18, 1))
+  if (maxIso >= horizonIso) return events
+  const minSourceIso = addDaysIso(maxIso, -52 * 7) ?? maxIso
+  const existing = new Set(
+    dated.map((e) => `${e.dateIso}|${e.start}|${String(e.staffOverride ?? e.staff ?? "").trim()}`)
+  )
+  const extra: CalendarioMergedEvent[] = []
+  for (const e of dated) {
+    const src = String(e.dateIso)
+    if (src < minSourceIso) continue
+    let iso = src
+    for (let n = 0; n < 4; n++) {
+      const next = addDaysIso(iso, 52 * 7)
+      if (!next) break
+      iso = next
+      if (next <= maxIso) continue
+      if (next > horizonIso) break
+      const staff = String(e.staffOverride ?? e.staff ?? "").trim()
+      const key = `${next}|${e.start}|${staff}`
+      if (existing.has(key)) continue
+      existing.add(key)
+      const day = parseIsoLocal(next)
+      extra.push({
+        ...e,
+        id: `sala_fitness|${next}|${e.start}|${staff}`,
+        stableKey: `sala_fitness|${next}|${e.start}|${staff}`,
+        dateIso: next,
+        dow: day ? day.getDay() : e.dow,
+        sheet: "Orario (ripetuto)",
+      })
+    }
+  }
+  return extra.length ? [...events, ...extra] : events
+}
+
 /** Tutte le revisioni del comparto (scuola nuoto dopo import una tantum). */
 function mergeServerSeededFromDb(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   const out: CalendarioMergedEvent[] = []
@@ -280,6 +328,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
       events = mergeServerSeededFromDb(comparto, seededDb)
       if (events.length > 0) writeCalendarioDb(seededDb)
     }
+    if (comparto === "sala_fitness") events = projectDatedEventsForward(events)
     return events
   }
 
