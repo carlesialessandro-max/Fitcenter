@@ -1207,13 +1207,6 @@ export function CalendarioRepartoPage() {
                   Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}
                   <strong className="font-medium text-zinc-400">Aggiungi slot</strong> e scegli il giorno nel modulo (fascia oraria + istruttore). Le modifiche valgono{" "}
                   <strong className="font-medium text-zinc-400">solo per quel giorno</strong>, non per tutte le settimane. Tutto salvato sul server.
-                  {apiComparto === "piscina" ? (
-                    <>
-                      {" "}
-                      Zone: <code className="text-xs text-zinc-400">invernale</code>, <code className="text-xs text-zinc-400">interna</code>,{" "}
-                      <code className="text-xs text-zinc-400">esterna</code>.
-                    </>
-                  ) : null}
                 </>
               ) : (
                 <>Calendario reparto: quando importeremo il planning per questo settore, gli slot appariranno qui.</>
