@@ -527,7 +527,14 @@ function Personale({
   const [dettaglioId, setDettaglioId] = useState<string | null>(null)
   const createMut = useMutation({
     mutationFn: () =>
-      lpagaApi.createPersonale({ nome, cognome, username, password, ruolo, livelloId }),
+      lpagaApi.createPersonale({
+        nome,
+        cognome,
+        username,
+        password,
+        ruolo: me?.ruolo === "manager" ? "user" : ruolo,
+        livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
+      }),
     onSuccess: () => {
       setNome("")
       setCognome("")
@@ -546,7 +553,12 @@ function Personale({
     },
     onError: (e: Error) => onError(e.message),
   })
-  const reparti = data.livelli.filter((l) => !l.retribuibile)
+  const reparti =
+    data.livelliAssegnabili?.length
+      ? data.livelliAssegnabili
+      : me?.ruolo === "admin"
+        ? data.livelli.filter((l) => !l.retribuibile)
+        : data.livelli.filter((l) => !l.retribuibile && l.id === me?.livelloId)
   const n = q.trim().toLowerCase()
   const personeFiltrate = data.personale.filter(
     (p) =>
@@ -604,15 +616,23 @@ function Personale({
           required
           minLength={6}
         />
-        <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
-          <option value="user">Istruttore</option>
-          {me?.ruolo === "admin" && <option value="manager">Responsabile</option>}
-        </select>
-        <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls}>
-          <option value="">Reparto</option>
+        {me?.ruolo === "admin" && (
+          <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
+            <option value="user">Istruttore</option>
+            <option value="manager">Responsabile</option>
+          </select>
+        )}
+        <select
+          value={livelloId || (me?.ruolo === "manager" ? (reparti[0]?.id ?? "") : "")}
+          onChange={(e) => setLivelloId(e.target.value)}
+          className={inputCls}
+          required={me?.ruolo === "admin"}
+          disabled={me?.ruolo === "manager" && reparti.length <= 1}
+        >
+          {me?.ruolo === "admin" && <option value="">Reparto</option>}
           {reparti.map((l) => (
             <option key={l.id} value={l.id}>
-              {l.nome}
+              {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
             </option>
           ))}
         </select>

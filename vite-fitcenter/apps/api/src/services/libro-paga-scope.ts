@@ -101,3 +101,18 @@ export function livelliInseribili(
   const scoped = retribuibili.filter((l) => scope.has(l.id))
   return scoped
 }
+
+/** Reparti (nodi non retribuiti) in cui il viewer può creare anagrafiche. */
+export function livelliAssegnabiliAnagrafica(
+  viewer: Pick<LpagaPersonale, "ruolo" | "livelloId">,
+  livelli: LpagaLivello[]
+): LpagaLivello[] {
+  const attivi = livelli.filter((l) => l.attivo !== false)
+  if (viewer.ruolo === "admin") return attivi.filter((l) => !l.retribuibile)
+  if (!viewer.livelloId) return []
+  const tree = livelloSottoAlbero(livelli, viewer.livelloId)
+  const inTree = attivi.filter((l) => tree.has(l.id) && !l.retribuibile)
+  if (inTree.length) return inTree
+  const self = attivi.find((l) => l.id === viewer.livelloId)
+  return self ? [self] : []
+}

@@ -17,6 +17,7 @@ export type LpagaMe = {
 export type LpagaPortalSnapshot = LibroPagaSnapshot & {
   me: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string; livelloId?: string } | null
   livelliInseribili: LpagaLivello[]
+  livelliAssegnabili?: LpagaLivello[]
   canValidate?: boolean
   deleghe?: string[]
 }

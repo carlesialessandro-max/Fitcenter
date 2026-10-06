@@ -15,7 +15,7 @@ import {
   viewerPuoConvalidare,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { livelloSottoAlbero, livelliInseribili, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 
@@ -100,9 +100,11 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
       viewerId: me.id,
     })
     const inseribili = livelliInseribili(me, livelli, me.ruolo === "user" ? undefined : livelloTree)
+    const assegnabili = livelliAssegnabiliAnagrafica(me, livelli)
     res.json({
       ...data,
       livelliInseribili: data.livelli.filter((l) => inseribili.some((x) => x.id === l.id)),
+      livelliAssegnabili: data.livelli.filter((l) => assegnabili.some((x) => x.id === l.id)),
       canValidate: viewerPuoConvalidare(me, personaleAll),
       deleghe: me.ruolo === "manager" || me.ruolo === "admin" ? getDeleghe(me.id) : [],
     })
@@ -229,13 +231,14 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       return res.status(409).json({ message: "Username già in uso" })
     }
     let ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
-    if (me.ruolo === "manager" && ruoloRaw === "admin") ruoloRaw = "user"
+    if (me.ruolo === "manager") ruoloRaw = "user"
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
-    const livelloId = String(req.body?.livelloId ?? "").trim()
+    let livelloId = String(req.body?.livelloId ?? "").trim()
     if (me.ruolo === "manager") {
-      const tree = me.livelloId ? livelloSottoAlbero(livelli, me.livelloId) : new Set<string>([me.id])
-      if (livelloId && !tree.has(livelloId)) {
-        return res.status(403).json({ message: "Reparto fuori dal tuo ambito" })
+      const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
+      if (!livelloId) livelloId = me.livelloId ?? ""
+      if (!livelloId || !consentiti.has(livelloId)) {
+        return res.status(403).json({ message: "Puoi aggiungere utenti solo nel tuo reparto" })
       }
     }
     const row = await upsertPersonale({
