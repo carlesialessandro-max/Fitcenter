@@ -227,8 +227,10 @@ export function CalendarioIstruttoriPage() {
     role === "bagnini" ||
     role === "danza" ||
     role === "campus" ||
+    role === "operatore" ||
+    role === "firme" ||
     role === "calendari"
-  const canManage = role === "admin" || role === "corsi" || role === "operatore" || role === "firme" || role === "bagnini"
+  const canManage = role === "admin" || role === "calendari"
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -264,7 +266,7 @@ export function CalendarioIstruttoriPage() {
     )
   }
 
-  const hub = role === "admin" ? "/calendario" : "/"
+  const hub = role === "admin" || role === "calendari" ? "/calendario" : "/"
 
   return (
     <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
@@ -278,7 +280,7 @@ export function CalendarioIstruttoriPage() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to={hub} className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-              {role === "admin" ? "Piano operativo" : "Home"}
+              {role === "admin" || role === "calendari" ? "Piano operativo" : "Home"}
             </Link>
             {role === "admin" ? (
               <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">

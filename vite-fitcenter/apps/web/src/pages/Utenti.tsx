@@ -15,7 +15,7 @@ const ROLE_LABEL: Record<Role, string> = {
   bagnini: "Bagnini",
   danza: "Danza",
   crm: "CRM vendita",
-  calendari: "Calendari (solo lettura)",
+  calendari: "Calendari (responsabili)",
 }
 
 const emptyForm = {
@@ -416,7 +416,7 @@ export function Utenti() {
                 Togli la spunta per nascondere una voce dal menu. Se il ruolo è amministratore, Incassi e Andamento
                 restano i totali di tutto il centro.
                 {form.role === "calendari"
-                  ? " Per un solo calendario (es. solo reception) lascia spuntata solo quella pagina."
+                  ? " Questo ruolo può modificare gli orari. Bagnini, reception, corsi e istruttore vedono i calendari in sola lettura. Per un solo calendario lascia spuntata solo quella pagina."
                   : ""}
               </p>
               <div className="grid gap-4 sm:grid-cols-2">

@@ -165,7 +165,7 @@ const navCalendari: NavItem[] = [
     group: true,
     groupKey: "piano",
     children: [
-      { to: "/calendario", label: "Tutti i calendari" },
+      { to: "/calendario", label: "Piano operativo" },
       { to: "/calendario/reception", label: "Reception" },
       { to: "/calendario/piscina", label: "Bagnini" },
       { to: "/calendario/sala-fitness", label: "Sala fitness" },
@@ -334,7 +334,7 @@ export function AppLayout() {
                 : role === "crm"
                   ? "CRM Vendita"
                   : role === "calendari"
-                    ? "Calendari"
+                    ? "Responsabile calendari"
                     : "Operatore"}
         </p>
         <button

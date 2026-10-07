@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
+import { useAuth } from "@/contexts/AuthContext"
 import { eventTimeRange } from "@/lib/reception-shift"
 import { compartoUsesShiftRange } from "@/lib/calendario-shift"
 import { apiToSegmento, calendarioPath } from "@/pages/calendario-routes"
@@ -145,6 +146,7 @@ function WeekDayPicker({ valueIso, onChange }: { valueIso: string; onChange: (is
 }
 
 export function PianoOperativoAdmin() {
+  const { role } = useAuth()
   const [dateIso, setDateIso] = useState(() => isoYmd(new Date()))
   const [reparti, setReparti] = useState<{ comparto: CalendarioComparto; label: string; events: CalendarioMergedEventDto[] }[]>([])
   const [loading, setLoading] = useState(true)
@@ -180,16 +182,20 @@ export function PianoOperativoAdmin() {
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Piano operativo</h1>
-            <p className="mt-1 text-sm text-zinc-500">Turni e corsi di tutti i reparti per il giorno selezionato.</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Turni e corsi di tutti i reparti. Apri un calendario per modificare gli orari.
+            </p>
             {err ? <p className="mt-2 text-xs text-red-400">{err}</p> : null}
           </div>
           <div className="flex flex-wrap gap-2">
             <Link to="/calendario/personale" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
               Personale
             </Link>
-            <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-              Dashboard vendite
-            </Link>
+            {role === "admin" ? (
+              <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Dashboard vendite
+              </Link>
+            ) : null}
           </div>
         </header>
 

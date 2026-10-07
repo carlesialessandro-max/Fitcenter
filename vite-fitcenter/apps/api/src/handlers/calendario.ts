@@ -56,27 +56,12 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
 
 function canWriteComparto(u: User, comparto: CalendarioComparto): boolean {
   if (u.role === "admin") return true
-  if (comparto === "corsi") return u.role === "corsi"
-  if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
-  if (comparto === "piscina") return u.role === "bagnini"
-  if (comparto === "acquaticita" || comparto === "spogliatoi") return false
-  if (comparto === "danza") return u.role === "danza"
-  if (comparto === "campus") return u.role === "campus"
-  if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
-  /** Admin già gestito sopra: qui restano solo non-admin → nessuna scrittura su questi comparti. */
-  if (comparto === "sala_fitness") return false
-  if (comparto === "consulenti") return false
+  if (u.role === "calendari") return comparto !== "consulenti"
   return false
 }
 
 function canManageInstructors(u: User): boolean {
-  return (
-    u.role === "admin" ||
-    u.role === "corsi" ||
-    u.role === "operatore" ||
-    u.role === "firme" ||
-    u.role === "bagnini"
-  )
+  return u.role === "admin" || u.role === "calendari"
 }
 
 function planningJsonCandidates(): string[] {
@@ -425,7 +410,7 @@ export function listCalendarioPerConvalida(): {
 
 export function getCalendarioPianoOperativo(req: Request, res: Response) {
   const u = req.user!
-  if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+  if (u.role !== "admin" && u.role !== "calendari") return res.status(403).json({ message: "Permessi insufficienti" })
 
   const dateRaw = String(req.query.date ?? "").trim()
   const date = dateRaw && isIsoDate(dateRaw) ? parseIsoLocal(dateRaw) : new Date()
