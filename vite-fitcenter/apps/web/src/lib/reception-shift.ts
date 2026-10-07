@@ -74,6 +74,25 @@ export function receptionEventInHour(e: { title: string; start: string }, hour: 
 
 export const shiftEventInHour = receptionEventInHour
 
+/** Slot visibile nella riga da slotStartMin (es. 7:30 → 450) per slotMinutes (30 o 60). */
+export function shiftEventInSlot(
+  e: { title: string; start: string },
+  slotStartMin: number,
+  slotMinutes = 30
+): boolean {
+  const { start, end } = eventTimeRange(e)
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  const slotEnd = slotStartMin + slotMinutes
+  if (sm == null || em == null) {
+    const s = parseHm(e.start) ?? 0
+    return s >= slotStartMin && s < slotEnd
+  }
+  let endMin = em
+  if (endMin <= sm) endMin += 24 * 60
+  return sm < slotEnd && endMin > slotStartMin
+}
+
 export function addHoursToHm(hm: string, hours: number): string {
   const m = parseHm(hm)
   if (m == null) return hm

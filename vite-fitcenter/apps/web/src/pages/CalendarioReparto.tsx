@@ -27,8 +27,10 @@ import {
   addHoursToHm,
   buildShiftTitle,
   eventTimeRange,
+  formatHm,
   formatShiftDurationLabel,
   shiftEventInHour,
+  shiftEventInSlot,
 } from "@/lib/reception-shift"
 import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
 import {
@@ -155,6 +157,23 @@ function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRan
     shiftRangeGrid ? shiftEventInHour(e, hour) : hourBucket(e.start) === hour
   )
 }
+function eventsForDayAndSlot(events: CalEvent[], d: Date, slotStartMin: number, slotMinutes: number): CalEvent[] {
+  return eventsForDay(events, d).filter((e) => shiftEventInSlot(e, slotStartMin, slotMinutes))
+}
+function staffCellLabel(s: string): string {
+  const t = s.trim()
+  if (!t || t === "—") return "—"
+  const parts = t.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`
+  return parts[0] ?? t
+}
+
+const SHIFT_SLOT_MINUTES = 30
+const SHIFT_GRID_SLOTS: number[] = (() => {
+  const out: number[] = []
+  for (let m = 6 * 60; m <= 22 * 60 + 30; m += SHIFT_SLOT_MINUTES) out.push(m)
+  return out
+})()
 function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
 }
@@ -213,6 +232,7 @@ function EventPill({
   showShiftLine,
   overlapCompact,
   colorByStaff,
+  slotFill,
 }: {
   e: CalEvent
   staffLabel: string
@@ -224,8 +244,31 @@ function EventPill({
   /** Turni sovrapposti nella stessa ora: pillola compatta affiancata */
   overlapCompact?: boolean
   colorByStaff?: boolean
+  /** Cella griglia 30 min: solo nominativo, come in Excel */
+  slotFill?: boolean
 }) {
   const col = pillColClass(e, colorByStaff)
+  if (slotFill) {
+    const tip = `${shiftPillLine(e)} · ${staffLabel}`
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (canEdit) onOpen()
+        }}
+        disabled={!canEdit}
+        className={cn(
+          "flex h-full min-h-[1.35rem] items-center rounded-sm border px-0.5 text-left text-[10px] font-semibold leading-tight",
+          overlapCompact ? "min-w-0 flex-1" : "w-full",
+          col,
+          canEdit ? "cursor-pointer hover:brightness-110" : "cursor-default opacity-90"
+        )}
+        title={canEdit ? `${tip} — clic per modificare` : tip}
+      >
+        <span className="block w-full truncate">{staffCellLabel(staffLabel)}</span>
+      </button>
+    )
+  }
   if (overlapCompact) {
     return (
       <button
@@ -1449,25 +1492,28 @@ export function CalendarioRepartoPage() {
                   ) : null}
                 </div>
               ))}
-              {hours.map((h) => (
-                <Fragment key={h}>
-                  <div className="border-b border-zinc-800/80 py-1 pr-1 text-right text-[10px] text-zinc-500">
-                    {pad2(h)}:00
-                  </div>
-                  {weekDays.map((d) => {
-                    const evs = eventsForDayAndHour(events, d, h, shiftRangeGrid)
-                    const overlapHour = shiftRangeGrid && evs.length > 1
-                    return (
-                      <div
-                        key={`${isoYmd(d)}-${h}`}
-                        className={cn(
-                          "min-h-[3.25rem] border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top",
-                          overlapHour ? "flex gap-0.5" : "space-y-0.5"
-                        )}
-                      >
-                        {evs.map((e) => {
-                          const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
-                          return (
+              {(shiftRangeGrid ? SHIFT_GRID_SLOTS : hours.map((h) => h * 60)).map((slotMin) => {
+                const slotMinutes = shiftRangeGrid ? SHIFT_SLOT_MINUTES : 60
+                return (
+                  <Fragment key={slotMin}>
+                    <div className="border-b border-zinc-800/80 py-0.5 pr-1 text-right text-[10px] tabular-nums text-zinc-500">
+                      {formatHm(slotMin)}
+                    </div>
+                    {weekDays.map((d) => {
+                      const evs = shiftRangeGrid
+                        ? eventsForDayAndSlot(events, d, slotMin, slotMinutes)
+                        : eventsForDayAndHour(events, d, Math.floor(slotMin / 60), false)
+                      const overlapHour = shiftRangeGrid && evs.length > 1
+                      return (
+                        <div
+                          key={`${isoYmd(d)}-${slotMin}`}
+                          className={cn(
+                            "border-b border-l border-zinc-800/60 bg-zinc-950/30 align-top",
+                            shiftRangeGrid ? "min-h-[1.5rem] p-px" : "min-h-[3.25rem] p-0.5",
+                            overlapHour ? "flex gap-px" : "space-y-0.5"
+                          )}
+                        >
+                          {evs.map((e) => (
                             <EventPill
                               key={e.id}
                               e={e}
@@ -1481,15 +1527,15 @@ export function CalendarioRepartoPage() {
                               showShiftLine={shiftRangeGrid}
                               colorByStaff={shiftRangeGrid}
                               overlapCompact={overlapHour}
-                              receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
+                              slotFill={shiftRangeGrid}
                             />
-                          )
-                        })}
-                      </div>
-                    )
-                  })}
-                </Fragment>
-              ))}
+                          ))}
+                        </div>
+                      )
+                    })}
+                  </Fragment>
+                )
+              })}
             </div>
             {weekHours && weekHours.rows.length > 0 ? (
               <div className="border-t border-zinc-800 px-3 py-3">
@@ -1548,38 +1594,39 @@ export function CalendarioRepartoPage() {
               {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
             </div>
             <div className="max-h-[75vh] overflow-y-auto">
-              {hours.map((h) => {
-                const evs = eventsForDayAndHour(events, dayOnly, h, shiftRangeGrid)
+              {(shiftRangeGrid ? SHIFT_GRID_SLOTS : hours.map((h) => h * 60)).map((slotMin) => {
+                const slotMinutes = shiftRangeGrid ? SHIFT_SLOT_MINUTES : 60
+                const evs = shiftRangeGrid
+                  ? eventsForDayAndSlot(events, dayOnly, slotMin, slotMinutes)
+                  : eventsForDayAndHour(events, dayOnly, Math.floor(slotMin / 60), false)
                 const overlapHour = shiftRangeGrid && evs.length > 1
                 return (
-                  <div key={h} className="flex border-b border-zinc-800/70">
-                    <div className="w-14 shrink-0 py-2 pr-2 text-right text-xs text-zinc-500">{pad2(h)}:00</div>
+                  <div key={slotMin} className="flex border-b border-zinc-800/70">
+                    <div className="w-14 shrink-0 py-1 pr-2 text-right text-[11px] tabular-nums text-zinc-500">{formatHm(slotMin)}</div>
                     <div
                       className={cn(
-                        "min-h-[3.25rem] flex-1 border-l border-zinc-800/60 bg-zinc-900/20 p-1",
-                        overlapHour ? "flex gap-0.5" : "space-y-0.5"
+                        "flex-1 border-l border-zinc-800/60 bg-zinc-900/20",
+                        shiftRangeGrid ? "min-h-[1.5rem] p-px" : "min-h-[3.25rem] p-1",
+                        overlapHour ? "flex gap-px" : "space-y-0.5"
                       )}
                     >
-                      {evs.map((e) => {
-                        const shiftStart = shiftRangeGrid ? hourBucket(eventTimeRange(e).start) === h : true
-                        return (
-                          <EventPill
-                            key={e.id}
-                            e={e}
-                            staffLabel={e.staffDisplay}
-                            note={noteFor(e)}
-                            onOpen={() => {
-                              setEditCalendarDate(isoYmd(dayOnly))
-                              setEditEvent(e)
-                            }}
-                            canEdit={canWrite}
-                            showShiftLine={shiftRangeGrid}
-                            colorByStaff={shiftRangeGrid}
-                            overlapCompact={overlapHour}
-                            receptionContinuation={shiftRangeGrid && !overlapHour && !shiftStart}
-                          />
-                        )
-                      })}
+                      {evs.map((e) => (
+                        <EventPill
+                          key={e.id}
+                          e={e}
+                          staffLabel={e.staffDisplay}
+                          note={noteFor(e)}
+                          onOpen={() => {
+                            setEditCalendarDate(isoYmd(dayOnly))
+                            setEditEvent(e)
+                          }}
+                          canEdit={canWrite}
+                          showShiftLine={shiftRangeGrid}
+                          colorByStaff={shiftRangeGrid}
+                          overlapCompact={overlapHour}
+                          slotFill={shiftRangeGrid}
+                        />
+                      ))}
                     </div>
                   </div>
                 )
