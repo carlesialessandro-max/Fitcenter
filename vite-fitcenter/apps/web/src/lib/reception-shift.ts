@@ -18,8 +18,8 @@ export function formatHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-/** Prima fascia utile desk/piscina: niente mezzanotte. */
-export const SHIFT_DAY_START_MIN = 6 * 60
+/** Prima fascia utile (pulizie alle 5; niente mezzanotte). */
+export const SHIFT_DAY_START_MIN = 5 * 60
 const DESK_OPEN_MIN = 8 * 60
 
 const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g

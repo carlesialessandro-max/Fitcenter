@@ -118,6 +118,10 @@ function norm(s) {
     .replace(/\s+/g, " ")
 }
 
+const STAFF_ALIASES = {
+  VERIONICA: "VERONICA",
+}
+
 const HEADER_TO_DOW = [
   ["DOMENICA", 0],
   ["DOM", 0],
@@ -162,15 +166,19 @@ function cellToStart(v) {
   if (v instanceof Date && !Number.isNaN(v.getTime())) {
     return `${pad2(v.getHours())}:${pad2(v.getMinutes())}`
   }
-  const t = String(v ?? "")
+  let t = String(v ?? "")
     .trim()
+    .replace(/\s+/g, "")
+    .replace(/\.-/g, ".")
+    .replace(/-\./g, ".")
     .replace(",", ".")
   if (!t || t === "." || t === "-" || t === "/") return null
-  const m = t.match(/(\d{1,2})[.:](\d{2})(?::\d{2})?/)
-  if (m) {
-    const h = Number(m[1])
-    if (h > 23) return null
-    return `${pad2(h)}:${m[2]}`
+  const withMin = t.match(/^(\d{1,2})[.:](\d{1,2})$/)
+  if (withMin) {
+    const h = Number(withMin[1])
+    const min = Number(withMin[2].padEnd(2, "0").slice(0, 2))
+    if (h > 23 || min > 59) return null
+    return `${pad2(h)}:${pad2(min)}`
   }
   const m2 = t.match(/^(\d{1,2})$/)
   if (m2) {
@@ -200,19 +208,21 @@ function parseRange(v) {
     if (!start) return null
     return { start, end: minToHm(hmToMin(start) + 30) }
   }
-  const raw = String(v ?? "")
-    .trim()
-    .replace(",", ".")
+  let raw = String(v ?? "").trim()
   if (!raw) return null
-  const parts = raw.split(/\s*[–\-−—/]\s*/)
+  if (/^(MATTINA|POM|POMERIGGIO|SERA)$/i.test(norm(raw))) return null
+  raw = raw.replace(/\.-/g, ".").replace(/-\./g, ".")
+  const parts = raw.split(/\s*(?:--+|[–−—]|\/)\s*/)
+  if (parts.length === 1 && /^\d/.test(raw) && raw.includes("-")) {
+    const alt = raw.split(/\s*-\s*/).filter(Boolean)
+    if (alt.length >= 2) parts.splice(0, 1, ...alt)
+  }
   if (parts.length >= 2) {
     const start = cellToStart(parts[0])
-    const end = cellToStart(parts[1])
+    const end = cellToStart(parts[parts.length - 1])
     if (start && end && hmToMin(end) > hmToMin(start)) return { start, end }
   }
-  const start = cellToStart(raw)
-  if (!start) return null
-  return { start, end: minToHm(hmToMin(start) + 30) }
+  return null
 }
 
 function isSkipToken(s) {
@@ -245,6 +255,7 @@ function splitStaff(raw) {
     .split(/[/+;,\n]+/)
     .map((s) => s.trim())
     .filter((s) => looksLikePerson(s) && !isSkipToken(s))
+    .map((s) => STAFF_ALIASES[norm(s)] || s)
 }
 
 function findDayHeader(rows) {
@@ -406,7 +417,7 @@ function dumpSheet(name, rows) {
 }
 
 function matchIstruttore(instructors, abbrev) {
-  const a = norm(abbrev)
+  const a = STAFF_ALIASES[norm(abbrev)] || norm(abbrev)
   if (a.length < 3) return null
   const hits = []
   for (const i of instructors) {
@@ -479,7 +490,6 @@ function main() {
   const wb = XLSX.readFile(xlsxPath, { cellDates: true, raw: false })
   const all = []
   for (const name of wb.SheetNames) {
-    if (/^foglio\s*\d+$/i.test(name) && wb.SheetNames.length > 1) continue
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: false })
     dumpSheet(name, rows)
     const events = parseSheet(rows)

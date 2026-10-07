@@ -180,7 +180,7 @@ type ShiftGrid = {
 
 function buildShiftGrid(startMin: number, endMin: number, slotPx: number): ShiftGrid {
   const slotMin = SHIFT_SLOT_MINUTES
-  const start = Math.max(6 * 60, Math.floor(startMin / slotMin) * slotMin)
+  const start = Math.max(5 * 60, Math.floor(startMin / slotMin) * slotMin)
   const end = Math.min(23 * 60, Math.max(start + slotMin, Math.ceil(endMin / slotMin) * slotMin))
   const slots: number[] = []
   for (let m = start; m <= end; m += slotMin) slots.push(m)
