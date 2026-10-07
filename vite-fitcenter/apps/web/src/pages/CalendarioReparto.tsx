@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
 import { Link, Navigate, useParams } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
@@ -188,11 +188,198 @@ function shiftSlotEdge(e: CalEvent, slotMin: number, slotMinutes: number): "star
 }
 
 const SHIFT_SLOT_MINUTES = 30
+const SHIFT_SLOT_PX = 28
+const SHIFT_LANE_PX = 96
 const SHIFT_GRID_SLOTS: number[] = (() => {
   const out: number[] = []
   for (let m = 6 * 60; m <= 22 * 60 + 30; m += SHIFT_SLOT_MINUTES) out.push(m)
   return out
 })()
+const SHIFT_GRID_START = SHIFT_GRID_SLOTS[0]!
+const SHIFT_GRID_H = SHIFT_GRID_SLOTS.length * SHIFT_SLOT_PX
+
+function eventRangeMin(e: CalEvent): { sm: number; em: number } {
+  const { start, end } = eventTimeRange(e)
+  const sm = parseHm(start) ?? 0
+  let em = parseHm(end) ?? sm + 30
+  if (em <= sm) em += 24 * 60
+  return { sm, em }
+}
+
+function dayStaffLanes(dayEvents: CalEvent[]): { key: string; label: string }[] {
+  const order: { key: string; label: string }[] = []
+  const seen = new Set<string>()
+  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
+  for (const e of sorted) {
+    const key = staffColorKey(e)
+    if (seen.has(key)) continue
+    seen.add(key)
+    order.push({ key, label: staffCellLabel(e.staffDisplay) })
+  }
+  return order
+}
+
+function ShiftBlock({
+  e,
+  top,
+  height,
+  canEdit,
+  onOpen,
+}: {
+  e: CalEvent
+  top: number
+  height: number
+  canEdit: boolean
+  onOpen: () => void
+}) {
+  const { start, end } = eventTimeRange(e)
+  const dur = formatShiftDurationLabel(start, end)
+  const label = staffCellLabel(e.staffDisplay)
+  const tip = `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (canEdit) onOpen()
+      }}
+      disabled={!canEdit}
+      className={cn(
+        "absolute inset-x-0.5 z-10 overflow-hidden rounded-md border px-1 py-0.5 text-left shadow-sm",
+        pillColClass(e, true),
+        canEdit ? "cursor-pointer hover:brightness-110" : "cursor-default"
+      )}
+      style={{ top, height }}
+      title={canEdit ? `${tip} — clic per modificare` : tip}
+    >
+      <span className="block truncate text-[11px] font-semibold leading-tight">{label}</span>
+      {height >= 40 ? (
+        <span className="mt-0.5 block truncate text-[10px] tabular-nums opacity-80">
+          {start}–{end}
+        </span>
+      ) : null}
+      {height >= 56 && dur ? <span className="block truncate text-[10px] opacity-70">{dur}</span> : null}
+    </button>
+  )
+}
+
+function ShiftTimeGutter({ header }: { header: ReactNode }) {
+  return (
+    <div className="sticky left-0 z-20 flex w-12 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 sm:w-14">
+      <div className="sticky top-0 z-30 bg-zinc-950">{header}</div>
+      <div className="relative" style={{ height: SHIFT_GRID_H }}>
+        {SHIFT_GRID_SLOTS.map((m, i) => (
+          <div
+            key={m}
+            className={cn(
+              "absolute inset-x-0 flex items-start justify-end pr-1 text-[10px] tabular-nums leading-none",
+              m % 60 === 0 ? "text-zinc-400" : "text-zinc-600"
+            )}
+            style={{ top: i * SHIFT_SLOT_PX, height: SHIFT_SLOT_PX }}
+          >
+            {m % 60 === 0 ? formatHm(m) : ""}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function nowLineTop(): number | null {
+  const n = new Date()
+  const m = n.getHours() * 60 + n.getMinutes()
+  const last = SHIFT_GRID_SLOTS[SHIFT_GRID_SLOTS.length - 1]!
+  if (m < SHIFT_GRID_START || m > last + SHIFT_SLOT_MINUTES) return null
+  return ((m - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
+}
+
+function ShiftDayTrack({
+  date,
+  events,
+  canWrite,
+  onOpen,
+  isToday,
+  title,
+  subtitle,
+  lanePx,
+  grow,
+}: {
+  date: Date
+  events: CalEvent[]
+  canWrite: boolean
+  onOpen: (e: CalEvent, date: Date) => void
+  isToday: boolean
+  title: ReactNode
+  subtitle?: ReactNode
+  lanePx: number
+  grow?: boolean
+}) {
+  const dayEv = eventsForDay(events, date)
+  const lanes = dayStaffLanes(dayEv)
+  const n = Math.max(1, lanes.length)
+  const nowY = isToday ? nowLineTop() : null
+  return (
+    <div
+      className={cn("flex shrink-0 flex-col border-l border-zinc-800", isToday && "bg-[#46A6D9]/5", grow && "min-w-0 flex-1")}
+      style={grow ? { minWidth: n * lanePx } : { width: n * lanePx }}
+    >
+      <div className="sticky top-0 z-10">
+        <div className="flex h-14 flex-col items-center justify-center border-b border-zinc-800 bg-zinc-900 px-1 text-center">
+          {title}
+          {subtitle}
+        </div>
+        <div className="flex h-7 border-b border-zinc-800 bg-zinc-950">
+          {(lanes.length ? lanes : [{ key: "empty", label: "—" }]).map((lane) => (
+            <div
+              key={lane.key}
+              className="min-w-0 flex-1 truncate border-l border-zinc-800/40 px-0.5 text-center text-[10px] font-medium leading-7 text-zinc-400 first:border-l-0"
+              title={lane.label}
+            >
+              {lane.label}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="relative" style={{ height: SHIFT_GRID_H }}>
+        {SHIFT_GRID_SLOTS.map((m, i) => (
+          <div
+            key={m}
+            className={cn("absolute inset-x-0 border-b", m % 60 === 0 ? "border-zinc-700/80" : "border-zinc-800/45")}
+            style={{ top: i * SHIFT_SLOT_PX, height: SHIFT_SLOT_PX }}
+          />
+        ))}
+        <div className="absolute inset-0 flex">
+          {(lanes.length ? lanes : [{ key: "empty", label: "—" }]).map((lane) => (
+            <div key={lane.key} className="relative min-w-0 flex-1 border-l border-zinc-800/30 first:border-l-0">
+              {dayEv
+                .filter((e) => staffColorKey(e) === lane.key)
+                .map((e) => {
+                  const { sm, em } = eventRangeMin(e)
+                  if (em <= SHIFT_GRID_START || sm >= SHIFT_GRID_START + SHIFT_GRID_SLOTS.length * SHIFT_SLOT_MINUTES) return null
+                  const topPx = ((sm - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
+                  const botPx = ((em - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
+                  const top = Math.max(0, topPx) + 1
+                  const height = Math.max(SHIFT_SLOT_PX - 4, Math.min(SHIFT_GRID_H, botPx) - top)
+                  return (
+                    <ShiftBlock
+                      key={e.id}
+                      e={e}
+                      top={top}
+                      height={height}
+                      canEdit={canWrite}
+                      onOpen={() => onOpen(e, date)}
+                    />
+                  )
+                })}
+            </div>
+          ))}
+        </div>
+        {nowY != null ? (
+          <div className="pointer-events-none absolute inset-x-0 z-20 h-0.5 bg-[#46A6D9]" style={{ top: nowY }} title="Adesso" />
+        ) : null}
+      </div>
+    </div>
+  )
+}
 function noteFor(e: CalEvent): string {
   return String(e.note ?? "").trim()
 }
@@ -1504,67 +1691,90 @@ export function CalendarioRepartoPage() {
         ) : null}
 
         {view === "week" && hasPlanningGrid(apiComparto) ? (
-          <div className="overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
-            <div className="grid min-w-[780px]" style={{ gridTemplateColumns: "52px repeat(7, minmax(0,1fr))" }}>
-              <div className="border-b border-zinc-800 bg-zinc-900/80" />
-              {weekDays.map((d, i) => (
-                <div
-                  key={isoYmd(d)}
-                  className={cn("border-b border-l border-zinc-800 bg-zinc-900/80 px-2 py-2 text-center text-xs font-medium", isTodayCell(d) && "text-[#46A6D9]")}
-                >
-                  <div className="uppercase text-zinc-500">{IT_DOW_SHORT[i]}</div>
-                  <div className="text-sm text-zinc-200">{d.getDate()}</div>
-                  {weekHours && (weekHours.dayTotals[i] ?? 0) > 0 ? (
-                    <div className="mt-0.5 text-[10px] tabular-nums text-zinc-400">{formatHoursShort(weekHours.dayTotals[i]!)} h</div>
-                  ) : null}
+          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
+            {shiftRangeGrid ? (
+              <div className="max-h-[78vh] overflow-auto">
+                <div className="flex min-w-max">
+                  <ShiftTimeGutter
+                    header={
+                      <>
+                        <div className="h-14 border-b border-zinc-800 bg-zinc-900/80" />
+                        <div className="h-7 border-b border-zinc-800 bg-zinc-950/80" />
+                      </>
+                    }
+                  />
+                  {weekDays.map((d, i) => (
+                    <ShiftDayTrack
+                      key={isoYmd(d)}
+                      date={d}
+                      events={events}
+                      canWrite={canWrite}
+                      onOpen={(e, day) => {
+                        setEditCalendarDate(isoYmd(day))
+                        setEditEvent(e)
+                      }}
+                      isToday={isTodayCell(d)}
+                      lanePx={SHIFT_LANE_PX}
+                      title={
+                        <>
+                          <div className={cn("text-[10px] uppercase tracking-wide", isTodayCell(d) ? "text-[#46A6D9]" : "text-zinc-500")}>
+                            {IT_DOW_SHORT[i]}
+                          </div>
+                          <div className={cn("text-sm font-medium", isTodayCell(d) ? "text-[#46A6D9]" : "text-zinc-200")}>{d.getDate()}</div>
+                        </>
+                      }
+                      subtitle={
+                        weekHours && (weekHours.dayTotals[i] ?? 0) > 0 ? (
+                          <div className="text-[10px] tabular-nums text-zinc-400">{formatHoursShort(weekHours.dayTotals[i]!)} h</div>
+                        ) : null
+                      }
+                    />
+                  ))}
                 </div>
-              ))}
-              {(shiftRangeGrid ? SHIFT_GRID_SLOTS : hours.map((h) => h * 60)).map((slotMin) => {
-                const slotMinutes = shiftRangeGrid ? SHIFT_SLOT_MINUTES : 60
-                return (
-                  <Fragment key={slotMin}>
-                    <div className="border-b border-zinc-800/80 py-0.5 pr-1 text-right text-[10px] tabular-nums text-zinc-500">
-                      {formatHm(slotMin)}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="grid min-w-[780px]" style={{ gridTemplateColumns: "52px repeat(7, minmax(0,1fr))" }}>
+                  <div className="border-b border-zinc-800 bg-zinc-900/80" />
+                  {weekDays.map((d, i) => (
+                    <div
+                      key={isoYmd(d)}
+                      className={cn("border-b border-l border-zinc-800 bg-zinc-900/80 px-2 py-2 text-center text-xs font-medium", isTodayCell(d) && "text-[#46A6D9]")}
+                    >
+                      <div className="uppercase text-zinc-500">{IT_DOW_SHORT[i]}</div>
+                      <div className="text-sm text-zinc-200">{d.getDate()}</div>
                     </div>
-                    {weekDays.map((d) => {
-                      const evs = shiftRangeGrid
-                        ? eventsForDayAndSlot(events, d, slotMin, slotMinutes)
-                        : eventsForDayAndHour(events, d, Math.floor(slotMin / 60), false)
-                      const overlapHour = shiftRangeGrid && evs.length > 1
-                      return (
-                        <div
-                          key={`${isoYmd(d)}-${slotMin}`}
-                          className={cn(
-                            "border-b border-l border-zinc-800/60 bg-zinc-950/30 align-top",
-                            shiftRangeGrid ? "min-h-[1.5rem] p-px" : "min-h-[3.25rem] p-0.5",
-                            overlapHour ? "flex gap-px" : "space-y-0.5"
-                          )}
-                        >
-                          {evs.map((e) => (
-                            <EventPill
-                              key={e.id}
-                              e={e}
-                              staffLabel={e.staffDisplay}
-                              note={noteFor(e)}
-                              onOpen={() => {
-                                setEditCalendarDate(isoYmd(d))
-                                setEditEvent(e)
-                              }}
-                              canEdit={canWrite}
-                              showShiftLine={shiftRangeGrid}
-                              colorByStaff={shiftRangeGrid}
-                              overlapCompact={overlapHour}
-                              slotFill={shiftRangeGrid}
-                              slotEdge={shiftRangeGrid ? shiftSlotEdge(e, slotMin, slotMinutes) ?? "only" : undefined}
-                            />
-                          ))}
-                        </div>
-                      )
-                    })}
-                  </Fragment>
-                )
-              })}
-            </div>
+                  ))}
+                  {hours.map((h) => (
+                    <Fragment key={h}>
+                      <div className="border-b border-zinc-800/80 py-0.5 pr-1 text-right text-[10px] tabular-nums text-zinc-500">
+                        {formatHm(h * 60)}
+                      </div>
+                      {weekDays.map((d) => {
+                        const evs = eventsForDayAndHour(events, d, h, false)
+                        return (
+                          <div key={`${isoYmd(d)}-${h}`} className="min-h-[3.25rem] space-y-0.5 border-b border-l border-zinc-800/60 bg-zinc-950/30 p-0.5 align-top">
+                            {evs.map((e) => (
+                              <EventPill
+                                key={e.id}
+                                e={e}
+                                staffLabel={e.staffDisplay}
+                                note={noteFor(e)}
+                                onOpen={() => {
+                                  setEditCalendarDate(isoYmd(d))
+                                  setEditEvent(e)
+                                }}
+                                canEdit={canWrite}
+                              />
+                            ))}
+                          </div>
+                        )
+                      })}
+                    </Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
             {weekHours && weekHours.rows.length > 0 ? (
               <div className="border-t border-zinc-800 px-3 py-3">
                 <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">Ore settimana</p>
@@ -1617,51 +1827,70 @@ export function CalendarioRepartoPage() {
         ) : null}
 
         {view === "day" && hasPlanningGrid(apiComparto) ? (
-          <div className="mx-auto max-w-lg overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
-            <div className={cn("border-b border-zinc-800 bg-zinc-900/80 px-4 py-3 text-center text-sm font-medium", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
-              {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
+          shiftRangeGrid ? (
+            <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
+              <div className="max-h-[78vh] overflow-auto">
+                <div className="flex min-w-max">
+                  <ShiftTimeGutter
+                    header={
+                      <>
+                        <div className="h-14 border-b border-zinc-800 bg-zinc-900/80" />
+                        <div className="h-7 border-b border-zinc-800 bg-zinc-950/80" />
+                      </>
+                    }
+                  />
+                  <ShiftDayTrack
+                    date={dayOnly}
+                    events={events}
+                    canWrite={canWrite}
+                    onOpen={(e, day) => {
+                      setEditCalendarDate(isoYmd(day))
+                      setEditEvent(e)
+                    }}
+                    isToday={isTodayCell(dayOnly)}
+                    lanePx={140}
+                    grow
+                    title={
+                      <div className={cn("text-sm font-medium capitalize", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
+                        {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
+                      </div>
+                    }
+                  />
+                </div>
+              </div>
             </div>
-            <div className="max-h-[75vh] overflow-y-auto">
-              {(shiftRangeGrid ? SHIFT_GRID_SLOTS : hours.map((h) => h * 60)).map((slotMin) => {
-                const slotMinutes = shiftRangeGrid ? SHIFT_SLOT_MINUTES : 60
-                const evs = shiftRangeGrid
-                  ? eventsForDayAndSlot(events, dayOnly, slotMin, slotMinutes)
-                  : eventsForDayAndHour(events, dayOnly, Math.floor(slotMin / 60), false)
-                const overlapHour = shiftRangeGrid && evs.length > 1
-                return (
-                  <div key={slotMin} className="flex border-b border-zinc-800/70">
-                    <div className="w-14 shrink-0 py-1 pr-2 text-right text-[11px] tabular-nums text-zinc-500">{formatHm(slotMin)}</div>
-                    <div
-                      className={cn(
-                        "flex-1 border-l border-zinc-800/60 bg-zinc-900/20",
-                        shiftRangeGrid ? "min-h-[1.5rem] p-px" : "min-h-[3.25rem] p-1",
-                        overlapHour ? "flex gap-px" : "space-y-0.5"
-                      )}
-                    >
-                      {evs.map((e) => (
-                        <EventPill
-                          key={e.id}
-                          e={e}
-                          staffLabel={e.staffDisplay}
-                          note={noteFor(e)}
-                          onOpen={() => {
-                            setEditCalendarDate(isoYmd(dayOnly))
-                            setEditEvent(e)
-                          }}
-                          canEdit={canWrite}
-                          showShiftLine={shiftRangeGrid}
-                          colorByStaff={shiftRangeGrid}
-                          overlapCompact={overlapHour}
-                          slotFill={shiftRangeGrid}
-                          slotEdge={shiftRangeGrid ? shiftSlotEdge(e, slotMin, slotMinutes) ?? "only" : undefined}
-                        />
-                      ))}
+          ) : (
+            <div className="mx-auto max-w-lg overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
+              <div className={cn("border-b border-zinc-800 bg-zinc-900/80 px-4 py-3 text-center text-sm font-medium", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
+                {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
+              </div>
+              <div className="max-h-[75vh] overflow-y-auto">
+                {hours.map((h) => {
+                  const evs = eventsForDayAndHour(events, dayOnly, h, false)
+                  return (
+                    <div key={h} className="flex border-b border-zinc-800/70">
+                      <div className="w-14 shrink-0 py-1 pr-2 text-right text-[11px] tabular-nums text-zinc-500">{formatHm(h * 60)}</div>
+                      <div className="min-h-[3.25rem] flex-1 space-y-0.5 border-l border-zinc-800/60 bg-zinc-900/20 p-1">
+                        {evs.map((e) => (
+                          <EventPill
+                            key={e.id}
+                            e={e}
+                            staffLabel={e.staffDisplay}
+                            note={noteFor(e)}
+                            onOpen={() => {
+                              setEditCalendarDate(isoYmd(dayOnly))
+                              setEditEvent(e)
+                            }}
+                            canEdit={canWrite}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )
         ) : null}
 
         {apiComparto === "piscina" && canWrite ? (
