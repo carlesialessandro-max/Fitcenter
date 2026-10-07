@@ -47,6 +47,7 @@ export function Dashboard() {
   const queryClient = useQueryClient()
   const { role, consulenteFilter, consulenteNome } = useAuth()
   if (role === "istruttore") return <Navigate to="/corsi" replace />
+  if (role === "calendari") return <Navigate to="/calendario" replace />
   const [budgetModal, setBudgetModal] = useState(false)
   const annoInCorso = new Date().getFullYear()
   const [asOf, setAsOf] = useState(() => localIsoDate())

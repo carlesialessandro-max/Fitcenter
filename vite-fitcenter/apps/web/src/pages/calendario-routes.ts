@@ -40,6 +40,7 @@ export function calendarioPath(segmento: CalendarioSegmento): string {
 
 export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioComparto): boolean {
   if (role === "admin") return true
+  if (role === "calendari") return comparto !== "consulenti"
   if (comparto === "corsi") return role === "corsi" || role === "istruttore"
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"

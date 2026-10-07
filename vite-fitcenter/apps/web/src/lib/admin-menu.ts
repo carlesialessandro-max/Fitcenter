@@ -68,6 +68,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/calendario/scuola-nuoto", label: "Calendario scuola nuoto" },
       { to: "/calendario/piscina", label: "Calendario bagnini" },
       { to: "/calendario/reception", label: "Calendario reception" },
+      { to: "/calendario/campus", label: "Calendario campus" },
       { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
       { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
       { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
@@ -86,3 +87,22 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     ],
   },
 ]
+
+/** Sezione del menu admin che contiene la pagina corrente (match più specifico). */
+export function adminMenuGroupForPath(pathname: string): AdminMenuGroup | null {
+  const path = pathname.replace(/\/+$/, "") || "/"
+  if (path === "/") return null
+  let best: AdminMenuGroup | null = null
+  let bestLen = -1
+  for (const g of ADMIN_MENU_GROUPS) {
+    for (const item of g.items) {
+      const to = item.to
+      const match = path === to || (to !== "/" && path.startsWith(`${to}/`))
+      if (match && to.length > bestLen) {
+        best = g
+        bestLen = to.length
+      }
+    }
+  }
+  return best
+}

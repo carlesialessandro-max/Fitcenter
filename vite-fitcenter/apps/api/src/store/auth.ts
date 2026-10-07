@@ -33,6 +33,7 @@ export const VALID_ROLES: Role[] = [
   "bagnini",
   "danza",
   "crm",
+  "calendari",
 ]
 
 /**

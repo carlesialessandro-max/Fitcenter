@@ -37,7 +37,7 @@ export function AdminMenu() {
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Menu</h1>
-          <p className="mt-1 text-sm text-zinc-500">Scegli una pagina. Il menu a sinistra resta ridotto a Home.</p>
+          <p className="mt-1 text-sm text-zinc-500">Scegli una sezione: nella barra a sinistra trovi i sottomenù.</p>
         </div>
         <input
           type="search"

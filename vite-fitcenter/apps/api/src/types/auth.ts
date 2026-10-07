@@ -9,6 +9,7 @@ export type Role =
   | "bagnini"
   | "danza"
   | "crm"
+  | "calendari"
 
 export interface LoginBody {
   username: string

@@ -1334,7 +1334,8 @@ export function CalendarioRepartoPage() {
     role === "scuola_nuoto" ||
     role === "bagnini" ||
     role === "danza" ||
-    role === "campus"
+    role === "campus" ||
+    role === "calendari"
   const shiftRangeGrid = compartoUsesShiftRange(apiComparto)
 
   const reload = useCallback(async () => {
@@ -1489,7 +1490,7 @@ export function CalendarioRepartoPage() {
 
   const today = new Date()
   const isTodayCell = (d: Date) => isoYmd(d) === isoYmd(today)
-  const hubBack = role === "admin" ? "/calendario" : "/"
+  const hubBack = role === "admin" || role === "calendari" ? "/calendario" : "/"
 
   return (
     <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
@@ -1498,7 +1499,9 @@ export function CalendarioRepartoPage() {
           <div>
             <h1 className="text-lg font-semibold tracking-tight text-zinc-100">Piano operativo · {compartoLabel}</h1>
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
-              {apiComparto === "corsi" ? (
+              {!canWrite ? (
+                <>Visualizzazione orari. Solo i responsabili possono modificare i turni.</>
+              ) : apiComparto === "corsi" ? (
                 <>
                   Base orari da planning; puoi <strong className="font-medium text-zinc-400">spostare</strong>,{" "}
                   <strong className="font-medium text-zinc-400">rinominare</strong>, <strong className="font-medium text-zinc-400">nascondere</strong> o{" "}
@@ -1548,11 +1551,13 @@ export function CalendarioRepartoPage() {
               </>
             ) : null}
             <Link to={hubBack} className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-              {role === "admin" ? "Piano operativo" : "Home"}
+              {role === "admin" || role === "calendari" ? "Piano operativo" : "Home"}
             </Link>
-            <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
-              Dashboard
-            </Link>
+            {role !== "calendari" ? (
+              <Link to="/" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+                Dashboard
+              </Link>
+            ) : null}
             {canOpenInstructors ? (
               <Link to="/calendario/personale" className="rounded-lg border border-zinc-600 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
                 Personale

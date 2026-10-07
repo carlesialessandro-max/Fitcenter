@@ -42,6 +42,7 @@ function isComparto(s: string): s is CalendarioComparto {
 
 function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (u.role === "admin") return true
+  if (u.role === "calendari") return comparto !== "consulenti"
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
@@ -672,7 +673,8 @@ export function listCalendarioInstructors(req: Request, res: Response) {
     u.role === "danza" ||
     u.role === "campus" ||
     u.role === "operatore" ||
-    u.role === "firme"
+    u.role === "firme" ||
+    u.role === "calendari"
   if (!allow) return res.status(403).json({ message: "Permessi insufficienti" })
   const db = readCalendarioDb()
   res.json({ rows: db.instructors })

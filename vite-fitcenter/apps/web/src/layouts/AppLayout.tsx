@@ -4,6 +4,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import { BrandLogo } from "@/components/BrandLogo"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
+import { adminMenuGroupForPath } from "@/lib/admin-menu"
 
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
 
@@ -141,7 +142,42 @@ const navCrm: NavItem[] = [
   { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
 ]
 
-const navAdmin: NavItem[] = [{ to: "/", label: "Menu" }]
+function navAdminForPath(pathname: string): NavItem[] {
+  const menu: NavItem = { to: "/", label: "Menu" }
+  const group = adminMenuGroupForPath(pathname)
+  if (!group) return [menu]
+  return [
+    menu,
+    {
+      to: `__admin_${group.title}__`,
+      label: group.title,
+      group: true,
+      groupKey: "admin",
+      children: group.items.map((i) => ({ to: i.to, label: i.label })),
+    },
+  ]
+}
+
+const navCalendari: NavItem[] = [
+  {
+    to: "__piano_group__",
+    label: "Calendari",
+    group: true,
+    groupKey: "piano",
+    children: [
+      { to: "/calendario", label: "Tutti i calendari" },
+      { to: "/calendario/reception", label: "Reception" },
+      { to: "/calendario/piscina", label: "Bagnini" },
+      { to: "/calendario/sala-fitness", label: "Sala fitness" },
+      { to: "/calendario/acquaticita", label: "Acquaticità" },
+      { to: "/calendario/spogliatoi", label: "Spogliatoi" },
+      { to: "/calendario/corsi", label: "Corsi" },
+      { to: "/calendario/scuola-nuoto", label: "Scuola nuoto" },
+      { to: "/calendario/campus", label: "Campus" },
+      { to: "/calendario/personale", label: "Personale" },
+    ],
+  },
+]
 
 function isRealPath(to: string): boolean {
   return !!to && !to.startsWith("__")
@@ -228,11 +264,17 @@ export function AppLayout() {
     !location.pathname.startsWith("/crm/lead/") &&
     location.pathname !== "/crm/whatsapp-log" &&
     location.pathname !== "/crm/nuovo"
+  const mustRedirectCalendari =
+    !customPages &&
+    role === "calendari" &&
+    !location.pathname.startsWith("/calendario")
   const roleNav: NavItem[] =
     leadFilter === "bambini" || role === "crm"
       ? navCrm
       : role === "admin"
-        ? navAdmin
+        ? navAdminForPath(location.pathname)
+        : role === "calendari"
+          ? navCalendari
         : role === "corsi"
           ? navCorsi
           : role === "istruttore"
@@ -291,6 +333,8 @@ export function AppLayout() {
                 ? "Danza"
                 : role === "crm"
                   ? "CRM Vendita"
+                  : role === "calendari"
+                    ? "Calendari"
                     : "Operatore"}
         </p>
         <button
@@ -413,6 +457,7 @@ export function AppLayout() {
   // Importante: redirect dopo gli hooks (evita crash React #310 in prod).
   if (mustRedirectBagnini) return <Navigate to="/piscina" replace />
   if (mustRedirectCrm) return <Navigate to="/crm" replace />
+  if (mustRedirectCalendari) return <Navigate to="/calendario" replace />
   if (mustRedirectPages) return <Navigate to={homePath} replace />
 
   return (

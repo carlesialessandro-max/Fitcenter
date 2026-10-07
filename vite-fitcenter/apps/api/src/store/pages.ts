@@ -103,6 +103,18 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
   bagnini: ["/calendario/piscina", "/calendario/personale", "/piscina", "/corsi/nuoto-libero"],
   danza: ["/calendario/personale", "/danza"],
   crm: ["/crm", "/crm/whatsapp-log"],
+  calendari: [
+    "/calendario",
+    "/calendario/corsi",
+    "/calendario/personale",
+    "/calendario/campus",
+    "/calendario/scuola-nuoto",
+    "/calendario/acquaticita",
+    "/calendario/spogliatoi",
+    "/calendario/piscina",
+    "/calendario/reception",
+    "/calendario/sala-fitness",
+  ],
 }
 
 export function sanitizePages(pages: unknown, role: Role): string[] | undefined {

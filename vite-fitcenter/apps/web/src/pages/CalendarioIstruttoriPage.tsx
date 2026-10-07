@@ -226,7 +226,8 @@ export function CalendarioIstruttoriPage() {
     role === "scuola_nuoto" ||
     role === "bagnini" ||
     role === "danza" ||
-    role === "campus"
+    role === "campus" ||
+    role === "calendari"
   const canManage = role === "admin" || role === "corsi" || role === "operatore" || role === "firme" || role === "bagnini"
 
   const reload = useCallback(async () => {
