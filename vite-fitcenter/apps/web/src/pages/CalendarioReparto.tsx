@@ -31,7 +31,6 @@ import {
   formatShiftDurationLabel,
   parseHm,
   shiftEventInHour,
-  shiftEventInSlot,
 } from "@/lib/reception-shift"
 import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
 import {
@@ -158,33 +157,12 @@ function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRan
     shiftRangeGrid ? shiftEventInHour(e, hour) : hourBucket(e.start) === hour
   )
 }
-function eventsForDayAndSlot(events: CalEvent[], d: Date, slotStartMin: number, slotMinutes: number): CalEvent[] {
-  return eventsForDay(events, d).filter((e) => shiftEventInSlot(e, slotStartMin, slotMinutes))
-}
 function staffCellLabel(s: string): string {
   const t = s.trim()
   if (!t || t === "—") return "—"
   const parts = t.split(/\s+/).filter(Boolean)
   if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`
   return parts[0] ?? t
-}
-
-/** Inizio / metà / fine del turno nella riga da 30 min: il nome sta solo sulla prima cella. */
-function shiftSlotEdge(e: CalEvent, slotMin: number, slotMinutes: number): "start" | "middle" | "end" | "only" | null {
-  const { start, end } = eventTimeRange(e)
-  const sm = parseHm(start)
-  const em = parseHm(end)
-  if (sm == null || em == null) return "only"
-  let endMin = em
-  if (endMin <= sm) endMin += 24 * 60
-  const slotEnd = slotMin + slotMinutes
-  if (!(sm < slotEnd && endMin > slotMin)) return null
-  const isStart = sm >= slotMin && sm < slotEnd
-  const isEnd = endMin > slotMin && endMin <= slotEnd
-  if (isStart && isEnd) return "only"
-  if (isStart) return "start"
-  if (isEnd) return "end"
-  return "middle"
 }
 
 const SHIFT_SLOT_MINUTES = 30
