@@ -4,7 +4,9 @@
  *   - INVERNALE 2026-2027.xlsx (FLO/CADDEO/CED, griglia 30 min) → piscina
  * Il parser si sceglie dal contenuto del foglio; il reparto è quello sopra.
  *
+ *   pnpm run import:reception -- --replace
  *   pnpm run import:desk-bagnini -- --replace
+ *   pnpm run import:desk-bagnini -- --only reception --replace
  *   File in apps/api/data/planning-import/  (fallback Downloads)
  *   DESK_XLSX=... BAGNINI_XLSX=...
  */
@@ -601,8 +603,20 @@ function collectCandidates() {
   return [...byBase.values()]
 }
 
+function parseOnlyArg() {
+  const raw = process.argv.find((a) => a.startsWith("--only=")) || (process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : "")
+  const v = String(raw ?? "")
+    .replace(/^--only=?/, "")
+    .trim()
+    .toLowerCase()
+  if (v === "reception" || v === "desk") return "reception"
+  if (v === "piscina" || v === "bagnini") return "piscina"
+  return "all"
+}
+
 function main() {
   const replace = process.argv.includes("--replace")
+  const only = parseOnlyArg()
   const files = collectCandidates()
   const coverageFiles = []
   const deskFiles = []
@@ -615,24 +629,26 @@ function main() {
 
   const coverage = pickNewest(coverageFiles)
   const desk = pickNewest(deskFiles)
-  if (desk && /2025\s*[-–]\s*2026/i.test(path.basename(desk))) {
+  const wantReception = only === "all" || only === "reception"
+  const wantPiscina = only === "all" || only === "piscina"
+  if (wantPiscina && desk && /2025\s*[-–]\s*2026/i.test(path.basename(desk))) {
     console.error(
       "[piscina] Trovato solo INVERNALE 2025-2026 (maggio). Serve INVERNALE 2026-2027.xlsx — copialo in:\n  " +
         apiImportDir
     )
     process.exit(1)
   }
-  if (!coverage) {
+  if (wantReception && !coverage) {
     console.error("[reception] Manca ottobre 2026.xlsx — copialo in:\n  " + apiImportDir)
     process.exit(1)
   }
-  if (!desk) {
+  if (wantPiscina && !desk) {
     console.error("[piscina] Manca INVERNALE 2026-2027.xlsx — copialo in:\n  " + apiImportDir)
     process.exit(1)
   }
 
-  const coveragePath = copyIntoImportDir(coverage, path.basename(coverage))
-  const deskPath = copyIntoImportDir(desk, path.basename(desk))
+  const coveragePath = wantReception ? copyIntoImportDir(coverage, path.basename(coverage)) : null
+  const deskPath = wantPiscina ? copyIntoImportDir(desk, path.basename(desk)) : null
 
   const dataDir = resolveDataDir()
   const dbPath = path.join(dataDir, "calendario-reparti.json")
@@ -641,19 +657,25 @@ function main() {
   db.instructors = Array.isArray(db.instructors) ? db.instructors : []
   const now = new Date().toISOString()
 
-  console.log("[reception] File:", coveragePath, "→ reception (Victoria/Simona/ALE/Irene/Alba)")
-  const recEvents = parseCoverageWorkbook(coveragePath)
-  const recAdded = upsertComparto(db, "reception", "reception", "Sportello", recEvents, replace, now)
-  const recDates = recEvents.map((e) => e.dateIso).sort()
-  console.log("[reception] Aggiunti:", recAdded, "| periodo", recDates[0] ?? "—", "→", recDates[recDates.length - 1] ?? "—")
+  if (wantReception) {
+    console.log("[reception] File:", coveragePath, "→ reception / desk (Victoria/Simona/ALE/Irene/Alba)")
+    const recEvents = parseCoverageWorkbook(coveragePath)
+    const recAdded = upsertComparto(db, "reception", "reception", "Sportello", recEvents, replace, now)
+    const recDates = recEvents.map((e) => e.dateIso).sort()
+    const recWeekend = recEvents.filter((e) => e.dow === 0 || e.dow === 6).length
+    console.log("[reception] Aggiunti:", recAdded, "| periodo", recDates[0] ?? "—", "→", recDates[recDates.length - 1] ?? "—")
+    console.log("[reception] Turni sabato/domenica:", recWeekend)
+  }
 
-  console.log("[piscina] File:", deskPath, "→ piscina (Florenzi/Caddeo/Cedrola)")
-  const poolEvents = parseDeskTurniWorkbook(deskPath)
-  const poolAdded = upsertComparto(db, "piscina", "invernale", "Copertura", poolEvents, replace, now)
-  const poolDates = poolEvents.map((e) => e.dateIso).sort()
-  console.log("[piscina] Aggiunti:", poolAdded, "| periodo", poolDates[0] ?? "—", "→", poolDates[poolDates.length - 1] ?? "—")
-  const weekend = poolEvents.filter((e) => e.dow === 0 || e.dow === 6).length
-  console.log("[piscina] Turni sabato/domenica:", weekend)
+  if (wantPiscina) {
+    console.log("[piscina] File:", deskPath, "→ piscina (Florenzi/Caddeo/Cedrola)")
+    const poolEvents = parseDeskTurniWorkbook(deskPath)
+    const poolAdded = upsertComparto(db, "piscina", "invernale", "Copertura", poolEvents, replace, now)
+    const poolDates = poolEvents.map((e) => e.dateIso).sort()
+    console.log("[piscina] Aggiunti:", poolAdded, "| periodo", poolDates[0] ?? "—", "→", poolDates[poolDates.length - 1] ?? "—")
+    const weekend = poolEvents.filter((e) => e.dow === 0 || e.dow === 6).length
+    console.log("[piscina] Turni sabato/domenica:", weekend)
+  }
 
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")
   console.log("[desk-bagnini] Salvato:", dbPath)

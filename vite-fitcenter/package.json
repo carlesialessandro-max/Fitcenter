@@ -9,6 +9,7 @@
     "precompute:dashboard-cache": "pnpm --filter api run precompute:dashboard-cache",
     "import:sala-fitness": "pnpm --filter api run import:sala-fitness",
     "import:desk-bagnini": "pnpm --filter api run import:desk-bagnini",
+    "import:reception": "pnpm --filter api run import:reception",
     "import:acquaticita-spogliatoi": "pnpm --filter api run import:acquaticita-spogliatoi",
     "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",

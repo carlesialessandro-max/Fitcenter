@@ -14,6 +14,7 @@
     "import:scuola-nuoto": "node scripts/import-calendario-comparto.mjs scuola_nuoto",
     "import:sala-fitness": "node scripts/import-sala-fitness.mjs",
     "import:desk-bagnini": "node scripts/import-desk-bagnini.mjs",
+    "import:reception": "node scripts/import-desk-bagnini.mjs --only reception",
     "import:acquaticita-spogliatoi": "node scripts/import-acquaticita-spogliatoi.mjs",
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
