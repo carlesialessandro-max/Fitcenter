@@ -69,6 +69,7 @@ const COMPARTO_LABEL: Record<string, string> = {
   piscina: "Bagnini",
   reception: "Desk",
   acquaticita: "Acquaticità",
+  pulizie: "Pulizie",
   campus: "Campus",
   danza: "Danza",
 }
@@ -86,6 +87,7 @@ export function compartiPerMansione(mansione: string, dominio?: string): string[
   if (/\bdanza\b/.test(t)) return ["danza"]
   if (/\bcampus\b/.test(t)) return ["campus"]
   if (/\bacquatic/.test(t)) return ["acquaticita"]
+  if (/\bpuliz/.test(t)) return ["pulizie"]
   if (
     /\bcorsi\b|\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba|\bgap\b|\bfunctional|\btrx\b|\btotem|\bstretch|\bstep\b/.test(
       t

@@ -171,6 +171,7 @@ const navCalendari: NavItem[] = [
       { to: "/calendario/sala-fitness", label: "Sala fitness" },
       { to: "/calendario/acquaticita", label: "Acquaticità" },
       { to: "/calendario/spogliatoi", label: "Spogliatoi" },
+      { to: "/calendario/pulizie", label: "Pulizie" },
       { to: "/calendario/corsi", label: "Corsi" },
       { to: "/calendario/scuola-nuoto", label: "Scuola nuoto" },
       { to: "/calendario/campus", label: "Campus" },

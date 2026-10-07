@@ -14,6 +14,7 @@ export function defaultZonaForShiftComparto(comparto: CalendarioComparto): strin
   if (comparto === "sala_fitness") return "sala_fitness"
   if (comparto === "acquaticita") return "acquaticita"
   if (comparto === "spogliatoi") return "spogliatoi"
+  if (comparto === "pulizie") return "pulizie"
   if (comparto === "scuola_nuoto") return "acqua"
   return "invernale"
 }
@@ -23,6 +24,7 @@ export function defaultActivityForShiftComparto(comparto: CalendarioComparto): s
   if (comparto === "sala_fitness") return "Sala pesi"
   if (comparto === "acquaticita") return "Acquaticità"
   if (comparto === "spogliatoi") return "Spogliatoi"
+  if (comparto === "pulizie") return "Pulizie"
   if (comparto === "scuola_nuoto") return "Lezione"
   return "Copertura"
 }

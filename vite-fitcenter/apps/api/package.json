@@ -16,6 +16,7 @@
     "import:desk-bagnini": "node scripts/import-desk-bagnini.mjs",
     "import:reception": "node scripts/import-desk-bagnini.mjs --only reception",
     "import:acquaticita-spogliatoi": "node scripts/import-acquaticita-spogliatoi.mjs",
+    "import:pulizie": "node scripts/import-pulizie.mjs",
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",

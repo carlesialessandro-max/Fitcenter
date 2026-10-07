@@ -11,6 +11,7 @@
     "import:desk-bagnini": "pnpm --filter api run import:desk-bagnini",
     "import:reception": "pnpm --filter api run import:reception",
     "import:acquaticita-spogliatoi": "pnpm --filter api run import:acquaticita-spogliatoi",
+    "import:pulizie": "pnpm --filter api run import:pulizie",
     "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",
     "format": "turbo format",

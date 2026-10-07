@@ -50,10 +50,13 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
   const em = parseHm(end)
   if (sm != null && em != null && em > sm) {
     const d = em - sm
-    const max = comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" ? 14 * 60 : 8 * 60
+    const max =
+      comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" || comparto === "pulizie"
+        ? 14 * 60
+        : 8 * 60
     if (d > 0 && d <= max) return d
   }
-  if (comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness") return 6 * 60
+  if (comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" || comparto === "pulizie") return 6 * 60
   if (comparto === "scuola_nuoto" || comparto === "acquaticita" || comparto === "spogliatoi") return 45
   return 60
 }

@@ -139,6 +139,7 @@ const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = [
   "scuola_nuoto",
   "acquaticita",
   "spogliatoi",
+  "pulizie",
   "piscina",
   "reception",
   "sala_fitness",
@@ -481,6 +482,7 @@ function pillColClass(e: CalEvent, colorByStaff?: boolean): string {
   if (e.zona === "esterna") return "border-amber-400/50 bg-amber-950/40 text-amber-50"
   if (e.zona === "reception") return "border-emerald-500/35 bg-emerald-950/30 text-emerald-100"
   if (e.zona === "sala_fitness") return "border-orange-500/35 bg-orange-950/25 text-orange-100"
+  if (e.zona === "pulizie") return "border-stone-400/45 bg-stone-900/50 text-stone-100"
   return "border-cyan-500/35 bg-cyan-500/10 text-cyan-100"
 }
 
@@ -1530,6 +1532,11 @@ export function CalendarioRepartoPage() {
                   (stesso giorno della settimana). Puoi aggiungere o modificare un turno{" "}
                   <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
                 </>
+              ) : apiComparto === "pulizie" ? (
+                <>
+                  Orario pulizie da Excel settimanale. Puoi aggiungere o modificare un turno{" "}
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                </>
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
                   Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}
@@ -1577,6 +1584,11 @@ export function CalendarioRepartoPage() {
                 Nessuna lezione. Import PISCINAORARIO (una tantum):{" "}
                 <code className="text-xs">cd apps/api && pnpm run import:scuola-nuoto</code>
                 {" "}(opz. <code className="text-xs">--from-xlsx</code>).
+              </>
+            ) : apiComparto === "pulizie" ? (
+              <>
+                Nessuno slot. Import Excel:{" "}
+                <code className="text-xs">pnpm run import:pulizie -- --replace</code>
               </>
             ) : compartoIsManualServer(apiComparto) ? (
               <>

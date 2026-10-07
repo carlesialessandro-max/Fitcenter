@@ -33,6 +33,7 @@ const COMPARTI: CalendarioComparto[] = [
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
+  "pulizie",
   "consulenti",
 ]
 
@@ -46,7 +47,7 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
-  if (comparto === "acquaticita" || comparto === "spogliatoi") return false
+  if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "pulizie") return false
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
@@ -100,7 +101,7 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return j.eventsByComparto?.[comparto] ?? []
 }
 
-const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi"]
+const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi", "pulizie"]
 
 /** PISCINAORARIO (S.N. Bambini): import una tantum, poi solo calendario-reparti.json. */
 const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto", "sala_fitness"]
@@ -136,6 +137,7 @@ const COMPARTO_LABELS: Record<CalendarioComparto, string> = {
   sala_fitness: "Sala fitness",
   acquaticita: "Acquaticità",
   spogliatoi: "Spogliatoi",
+  pulizie: "Pulizie",
   consulenti: "Consulenti",
 }
 
@@ -146,6 +148,7 @@ const PIANO_OPERATIVO_COMPARTI: CalendarioComparto[] = [
   "piscina",
   "acquaticita",
   "spogliatoi",
+  "pulizie",
   "sala_fitness",
   "campus",
   "danza",
@@ -156,6 +159,7 @@ function defaultZonaManual(comparto: CalendarioComparto): string {
   if (comparto === "sala_fitness") return "sala_fitness"
   if (comparto === "acquaticita") return "acquaticita"
   if (comparto === "spogliatoi") return "spogliatoi"
+  if (comparto === "pulizie") return "pulizie"
   if (comparto === "scuola_nuoto") return "acqua"
   return "invernale"
 }
@@ -390,6 +394,7 @@ const CONVALIDA_COMPARTI: CalendarioComparto[] = [
   "piscina",
   "reception",
   "acquaticita",
+  "pulizie",
   "campus",
 ]
 
@@ -515,7 +520,9 @@ export function patchCalendarioSlot(req: Request, res: Response) {
               ? "Acquaticità"
               : raw === "spogliatoi"
                 ? "Spogliatoi"
-                : "Copertura")
+                : raw === "pulizie"
+                  ? "Pulizie"
+                  : "Copertura")
     const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })
@@ -614,12 +621,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
           : undefined,
     start,
     title,
-    zona: String(
-      body.zona ??
-        baseEv?.zona ??
-        prevRev?.zona ??
-        (raw === "piscina" ? "invernale" : raw === "reception" ? "reception" : "terra")
-    ),
+    zona: String(body.zona ?? baseEv?.zona ?? prevRev?.zona ?? defaultZonaManual(raw)),
     istruttoreId: body.istruttoreId === undefined ? prevRev?.istruttoreId ?? null : body.istruttoreId,
     staffOverride: body.staffOverride === undefined ? prevRev?.staffOverride : body.staffOverride,
     note: body.note === undefined ? prevRev?.note : body.note,

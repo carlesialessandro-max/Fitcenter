@@ -8,6 +8,7 @@ export const MANUAL_SERVER_COMPARTI: CalendarioComparto[] = [
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
+  "pulizie",
 ]
 
 /** Import una volta (Excel/orario), poi solo DB. */

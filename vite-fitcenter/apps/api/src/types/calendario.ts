@@ -9,6 +9,7 @@ export type CalendarioComparto =
   | "sala_fitness"
   | "acquaticita"
   | "spogliatoi"
+  | "pulizie"
   | "consulenti"
 
 export type CalendarioIstruttore = {
