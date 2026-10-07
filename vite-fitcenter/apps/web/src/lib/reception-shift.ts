@@ -26,6 +26,19 @@ export function parseRangeFromTitle(title: string): { start: string; end: string
   }
 }
 
+export function formatShiftDurationLabel(start: string, end: string): string {
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  if (sm == null || em == null) return ""
+  let d = em - sm
+  if (d <= 0) d += 24 * 60
+  const h = Math.floor(d / 60)
+  const m = d % 60
+  if (h > 0 && m > 0) return `${h}h${String(m).padStart(2, "0")}`
+  if (h > 0) return `${h}h`
+  return `${m}m`
+}
+
 export function eventTimeRange(e: { title: string; start: string }): { start: string; end: string } {
   const fromTitle = parseRangeFromTitle(e.title)
   if (fromTitle) return fromTitle

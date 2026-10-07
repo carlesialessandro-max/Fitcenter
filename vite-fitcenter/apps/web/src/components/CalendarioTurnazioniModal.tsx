@@ -113,7 +113,7 @@ export function CalendarioTurnazioniModal({
         <div className="border-b border-zinc-800 px-5 py-4">
           <h2 className="text-base font-semibold text-zinc-100">Turnazioni · {compartoLabel}</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Ore stimate dagli slot del planning (settimana tipo ripetuta sui giorni del periodo). Durata da fascia oraria nel titolo o default per reparto.
+            Ore calcolate dagli slot del planning nel periodo (data esatta o ripetizione settimanale). Durata dalla fascia oraria nel titolo o default per reparto.
           </p>
         </div>
         <div className="space-y-6 overflow-y-auto px-5 py-4">

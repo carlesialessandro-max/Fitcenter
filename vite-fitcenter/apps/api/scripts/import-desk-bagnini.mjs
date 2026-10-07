@@ -1,8 +1,11 @@
 /**
- * Importa orario desk (ottobre 2026.xlsx) e bagnini (INVERNALE 2026-2027.xlsx)
- * nel calendario FitCenter (reception + piscina), slot per giorno.
+ * Importa orari desk (reception) e bagnini (piscina) dal formato reale dei file:
+ *   - ottobre 2026.xlsx (LUNEDI|5 + 08:00/08:30) → piscina / bagnini
+ *   - INVERNALE 2026-2027.xlsx (griglia 30 min, 4 col/giorno) → reception / desk
+ * Il comparto si sceglie dal contenuto del foglio, non dal nome file.
  *
  *   pnpm run import:desk-bagnini -- --replace
+ *   File in apps/api/data/planning-import/  (fallback Downloads)
  *   DESK_XLSX=... BAGNINI_XLSX=...
  */
 import fs from "node:fs"
@@ -34,7 +37,9 @@ function loadXlsx() {
 }
 
 const XLSX = loadXlsx()
-const importDir = path.join(webRoot, "data", "planning-import")
+const apiImportDir = path.join(apiRoot, "data", "planning-import")
+const webImportDir = path.join(webRoot, "data", "planning-import")
+const downloads = "C:\\Users\\aless\\Downloads"
 
 function pad2(n) {
   return String(n).padStart(2, "0")
@@ -52,18 +57,6 @@ function resolveDataDir() {
   const dir = dataDirCandidates().find((d) => fs.existsSync(d)) ?? path.join(apiRoot, "data")
   fs.mkdirSync(dir, { recursive: true })
   return dir
-}
-
-function firstExisting(paths) {
-  for (const p of paths) {
-    if (!p) continue
-    try {
-      if (fs.existsSync(p)) return p
-    } catch {
-      /* next */
-    }
-  }
-  return null
 }
 
 function normHeader(cell) {
@@ -203,7 +196,43 @@ function deskYearMonthFromName(filePath) {
   return { year, month: 9 }
 }
 
-function parseDeskSheet(sh, year, month) {
+function looksLikeHoursTableRow(row) {
+  const first = String(row[0] ?? "").trim()
+  if (!first) return false
+  if (parseRange(first) || cellToStart(first)) return false
+  const u = first.toUpperCase()
+  if (/^TOTALE/.test(u)) return true
+  const nums = (row || []).filter((c) => /^\d+([.,]\d+)?$/.test(String(c).trim()))
+  return isStaffName(first) && nums.length >= 1
+}
+
+function rowsLookLikeCoverage(rows) {
+  const h = rows[0] || []
+  for (let c = 0; c < h.length; c++) {
+    if (headerToDow(h[c]) == null) continue
+    const n = Number(String(h[c + 1] ?? "").trim())
+    if (Number.isFinite(n) && n >= 1 && n <= 31) return true
+  }
+  return false
+}
+
+function rowsLookLikeDeskTurni(rows) {
+  const h0 = rows[0] || []
+  const h1 = rows[1] || []
+  const h = h0.some((c) => headerToDow(c) != null) ? h0 : h1
+  let n = 0
+  const seen = new Set()
+  for (let c = 0; c < h.length; c++) {
+    const d = headerToDow(h[c])
+    if (d == null || seen.has(d)) continue
+    seen.add(d)
+    n++
+  }
+  return n >= 5
+}
+
+/** Bagnini: 5 colonne/giorno, fascia 08:00/08:30, fino a 4 nominativi. */
+function parseCoverageSheet(sh, year, month) {
   const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false })
   if (!rows.length) return []
   const header = rows[0] || []
@@ -216,107 +245,132 @@ function parseDeskSheet(sh, year, month) {
     const date = new Date(year, month, dayNum)
     days.push({ col: c, dow, dateIso: ymd(date) })
   }
+  if (!days.length) return []
   const raw = []
-  for (let ri = 1; ri < rows.length; ri++) {
-    const row = rows[ri] || []
-    const first = String(row[0] ?? "").trim()
-    if (first && !parseRange(first) && !cellToStart(first) && isStaffName(first)) break
-    let any = false
-    for (const d of days) {
-      const rng = parseRange(row[d.col])
-      if (!rng) continue
-      any = true
-      for (let k = 1; k <= 3; k++) {
-        const staff = String(row[d.col + k] ?? "").trim()
-        if (!isStaffName(staff)) continue
-        raw.push({ dateIso: d.dateIso, dow: d.dow, start: rng.start, end: rng.end, staff: staff.toUpperCase() })
+  const lastEnd = new Map()
+  function staffLaterOnDay(fromRi, d, name) {
+    for (let rj = fromRi + 1; rj < rows.length; rj++) {
+      const later = rows[rj] || []
+      if (looksLikeHoursTableRow(later)) return false
+      if (!String(later[d.col] ?? "").trim()) continue
+      for (let k = 1; k <= 4; k++) {
+        if (String(later[d.col + k] ?? "").trim().toUpperCase() === name) return true
       }
     }
-    if (!any && ri > 8) {
-      const joined = row.map((c) => String(c).trim()).join("")
-      if (!joined) continue
+    return false
+  }
+  for (let ri = 1; ri < rows.length; ri++) {
+    const row = rows[ri] || []
+    if (looksLikeHoursTableRow(row)) break
+    for (const d of days) {
+      const timeCell = String(row[d.col] ?? "").trim()
+      const slash = timeCell.includes("/") ? parseRange(timeCell) : null
+      const bare = timeCell.includes("/") ? null : cellToStart(timeCell)
+      if (!slash && !bare) continue
+      for (let k = 1; k <= 4; k++) {
+        const staff = String(row[d.col + k] ?? "").trim()
+        if (!isStaffName(staff)) continue
+        const name = staff.toUpperCase()
+        const key = `${d.dateIso}|${name}`
+        const prevEnd = lastEnd.get(key)
+        let start
+        let end
+        if (slash) {
+          start = slash.start
+          end = slash.end
+        } else if (bare && prevEnd === bare && !staffLaterOnDay(ri, d, name)) {
+          continue
+        } else if (bare && prevEnd && hmToMin(bare) === hmToMin(prevEnd) + 30) {
+          start = prevEnd
+          end = bare
+        } else if (bare) {
+          start = bare
+          end = addMin(bare, 30)
+        } else {
+          continue
+        }
+        raw.push({ dateIso: d.dateIso, dow: d.dow, start, end, staff: name })
+        lastEnd.set(key, end)
+      }
     }
   }
   return mergeRuns(raw)
 }
 
-function parseDeskWorkbook(xlsxPath) {
+function parseCoverageWorkbook(xlsxPath) {
   const { year, month } = deskYearMonthFromName(xlsxPath)
   const wb = XLSX.readFile(xlsxPath, { raw: false })
   const all = []
   for (const name of wb.SheetNames) {
     const sh = wb.Sheets[name]
     if (!sh) continue
-    const events = parseDeskSheet(sh, year, month)
+    const events = parseCoverageSheet(sh, year, month)
     if (events.length) {
-      console.log("[desk]", name, "→", events.length, "slot")
+      console.log("[bagnini]", name, "→", events.length, "slot")
       all.push(...events)
     }
   }
   return all
 }
 
-function rowSlotStart(row, timeCol, timeRightCol) {
-  const tL = cellToStart(row[timeCol])
-  const tR = cellToStart(row[timeRightCol])
-  if (tL && tR) return hmToMin(tL) <= hmToMin(tR) ? tL : tR
-  return tL ?? tR
-}
-
 function looksLikeStaffAbbrev(s) {
   const t = String(s ?? "").trim()
   if (t.length < 2 || t.length > 24) return false
   if (/^\d+([.,]\d+)?$/.test(t)) return false
+  if (cellToStart(t)) return false
   if (headerToDow(t) != null) return false
   if (/SETTIMANA|TOTALE|TOT SETT/.test(t.toUpperCase())) return false
   return /^[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ0-9.'\s-]*$/u.test(t)
 }
 
-function parseBagniniDayBlock(rows, timeCol, staffCol, timeRightCol, startRow) {
-  const out = []
-  let curStaff = null
-  let curStart = null
-  let lastTime = null
-  let emptyRun = 0
-  let emptyStaffStreak = 0
-  const dayText = (row) =>
-    [row[timeCol], row[staffCol], row[timeRightCol]].map((c) => String(c ?? "").toUpperCase()).join(" ")
-  const closeShift = (end) => {
-    if (curStaff && curStart) out.push({ start: curStart, end: end || addMin(lastTime || curStart, 30), staff: curStaff })
-    curStaff = null
-    curStart = null
-    lastTime = null
-    emptyStaffStreak = 0
-  }
-  for (let ri = startRow; ri < rows.length; ri++) {
-    const row = rows[ri] || []
-    if (ri > startRow + 6 && /SETTIMANA|TOT SETT|TOTALE ORE/.test(dayText(row))) break
-    const t = rowSlotStart(row, timeCol, timeRightCol)
-    const staffRaw = String(row[staffCol] ?? "").trim()
-    const staff = looksLikeStaffAbbrev(staffRaw) ? staffRaw.toUpperCase() : ""
-    if (staff) {
-      if (!t && emptyRun > 2) break
-      if (curStaff && curStaff !== staff && curStart) {
-        closeShift(t || addMin(lastTime || curStart, 30))
-      }
-      if (!curStaff) {
-        if (!t && !lastTime) continue
-        curStaff = staff
-        curStart = t ?? lastTime
-      }
-      if (t) lastTime = t
-      emptyRun = 0
-      emptyStaffStreak = 0
-    } else if (t && curStaff) {
-      emptyStaffStreak++
-      if (emptyStaffStreak >= 2) closeShift(addMin(lastTime || curStart, 30))
-    } else {
-      emptyRun++
-      if (emptyRun > 20) break
+/** Desk invernale: 4 colonne/giorno, orario in col 0 o col 2, nominativo in col 1. */
+function parseDeskTurniSheet(sh, monday) {
+  const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false })
+  if (!rows.length) return []
+  let headerRow = -1
+  let hits = []
+  for (let r = 0; r < Math.min(6, rows.length); r++) {
+    const found = []
+    const seen = new Set()
+    const row = rows[r] || []
+    for (let c = 0; c < row.length; c++) {
+      const dow = headerToDow(row[c])
+      if (dow == null || seen.has(dow)) continue
+      seen.add(dow)
+      found.push({ c, dow })
+    }
+    if (found.length >= 5) {
+      headerRow = r
+      hits = found
+      break
     }
   }
-  closeShift()
-  return out
+  if (headerRow < 0) return []
+  const raw = []
+  for (const h of hits) {
+    const offset = h.dow === 0 ? 6 : h.dow - 1
+    const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset)
+    for (let ri = headerRow + 1; ri < rows.length; ri++) {
+      const row = rows[ri] || []
+      const block = [row[h.c], row[h.c + 1], row[h.c + 2], row[h.c + 3]]
+        .map((c) => String(c ?? "").trim())
+        .join(" ")
+        .toUpperCase()
+      if (ri > headerRow + 8 && /SETTIMANA|TOT SETT|TOTALE ORE/.test(block)) break
+      const staffRaw = String(row[h.c + 1] ?? "").trim()
+      if (!looksLikeStaffAbbrev(staffRaw)) continue
+      const t = cellToStart(row[h.c]) || cellToStart(row[h.c + 2])
+      if (!t) continue
+      raw.push({
+        dateIso: ymd(date),
+        dow: date.getDay(),
+        start: t,
+        end: addMin(t, 30),
+        staff: staffRaw.toUpperCase(),
+      })
+    }
+  }
+  return mergeRuns(raw)
 }
 
 function weekMondayFromSheet(name, seasonStartYear) {
@@ -340,7 +394,7 @@ function seasonYearFromName(filePath) {
   return y ? Number(y[1]) : 2026
 }
 
-function parseBagniniWorkbook(xlsxPath) {
+function parseDeskTurniWorkbook(xlsxPath) {
   const seasonStartYear = seasonYearFromName(xlsxPath)
   const wb = XLSX.readFile(xlsxPath, { raw: false })
   const all = []
@@ -348,45 +402,41 @@ function parseBagniniWorkbook(xlsxPath) {
     if (/TURNAZIONE|FOGLIO2|ROBOT|IDROPULITRICE/i.test(name)) continue
     const monday = weekMondayFromSheet(name, seasonStartYear)
     if (!monday) {
-      console.log("[bagnini] skip foglio", name)
+      console.log("[desk] skip foglio", name)
       continue
     }
     const sh = wb.Sheets[name]
-    const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false })
-    const byDow = new Map()
-    for (let r = 0; r < Math.min(8, rows.length); r++) {
-      const row = rows[r] || []
-      for (let c = 0; c < row.length; c++) {
-        const dow = headerToDow(row[c])
-        if (dow == null || byDow.has(dow)) continue
-        byDow.set(dow, { c, dow, headerRow: r })
-      }
-    }
-    const hits = [...byDow.values()].sort((a, b) => a.c - b.c)
-    if (!hits.length) continue
-    if (hits.length < 7) {
-      const missing = [1, 2, 3, 4, 5, 6, 0].filter((d) => !byDow.has(d))
-      console.warn("[bagnini]", name, "giorni mancanti in testata", missing.join(","))
-    }
-    const daySlots = []
-    const perDay = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
-    for (const h of hits) {
-      const offset = h.dow === 0 ? 6 : h.dow - 1
-      const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset)
-      const startRow = (h.headerRow ?? 1) + 1
-      const parsed = parseBagniniDayBlock(rows, h.c, h.c + 1, h.c + 2, startRow)
-      perDay[date.getDay()] += parsed.length
-      for (const s of parsed) {
-        daySlots.push({ dateIso: ymd(date), dow: date.getDay(), start: s.start, end: s.end, staff: s.staff })
-      }
-    }
-    if (daySlots.length) {
+    if (!sh) continue
+    const events = parseDeskTurniSheet(sh, monday)
+    if (events.length) {
+      const perDay = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
+      for (const e of events) perDay[e.dow]++
       const label = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"].map((k, i) => `${k}:${perDay[i]}`).join(" ")
-      console.log("[bagnini]", name, "→", daySlots.length, "slot", ymd(monday), "|", label)
-      all.push(...daySlots)
+      console.log("[desk]", name, "→", events.length, "fasce", ymd(monday), "|", label)
+      all.push(...events)
     }
   }
   return all
+}
+
+function detectWorkbookKind(xlsxPath) {
+  const wb = XLSX.readFile(xlsxPath, { raw: false })
+  for (const name of wb.SheetNames) {
+    if (/TURNAZIONE|FOGLIO2|ROBOT|IDROPULITRICE/i.test(name)) continue
+    const sh = wb.Sheets[name]
+    if (!sh) continue
+    const rows = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "", raw: false })
+    if (rowsLookLikeCoverage(rows)) return "coverage"
+    if (rowsLookLikeDeskTurni(rows)) return "desk"
+  }
+  return null
+}
+
+const STAFF_ALIASES = {
+  FLO: ["FIORETTI"],
+  REBE: ["REBECCA"],
+  NAD: ["NADIA"],
+  BERNA: ["BERNARDI", "BERNARDINI"],
 }
 
 function matchIstruttore(instructors, abbrev) {
@@ -396,6 +446,7 @@ function matchIstruttore(instructors, abbrev) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
   if (a.length < 3) return null
+  const aliases = STAFF_ALIASES[a] ?? []
   const hits = []
   for (const i of instructors) {
     const cog = String(i.cognome ?? "")
@@ -409,6 +460,7 @@ function matchIstruttore(instructors, abbrev) {
     const full = `${cog} ${nom}`.trim()
     let score = 0
     if (cog === a || nom === a) score = 100
+    else if (aliases.some((al) => cog === al || nom === al || cog.startsWith(al) || nom.startsWith(al))) score = 80
     else if (cog.startsWith(a)) score = 40 + a.length
     else if (nom.startsWith(a)) score = 30 + a.length
     else if (full.startsWith(a)) score = 20 + a.length
@@ -454,20 +506,56 @@ function upsertComparto(db, comparto, zona, titlePrefix, events, replace, now) {
   return added
 }
 
+function listXlsxIn(dir) {
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((n) => /\.xlsx$/i.test(n) && !n.startsWith("~$"))
+      .map((n) => path.join(dir, n))
+  } catch {
+    return []
+  }
+}
+
+function collectOrariFiles() {
+  const named = [
+    process.env.DESK_XLSX,
+    process.env.BAGNINI_XLSX,
+    path.join(apiImportDir, "ottobre 2026.xlsx"),
+    path.join(apiImportDir, "INVERNALE 2026-2027.xlsx"),
+    path.join(apiImportDir, "INVERNALE 2025-2026.xlsx"),
+    path.join(apiImportDir, "OrarioReception.xlsx"),
+    path.join(webImportDir, "ottobre 2026.xlsx"),
+    path.join(webImportDir, "INVERNALE 2026-2027.xlsx"),
+    path.join(webImportDir, "INVERNALE 2025-2026.xlsx"),
+    path.join(downloads, "ottobre 2026.xlsx"),
+    path.join(downloads, "INVERNALE 2026-2027.xlsx"),
+  ]
+  const scanned = [...listXlsxIn(apiImportDir), ...listXlsxIn(webImportDir)].filter((p) =>
+    /ottobre|invernale|orarioreception|bagnini|desk/i.test(path.basename(p))
+  )
+  const byBase = new Map()
+  for (const p of [...named, ...scanned]) {
+    if (!p || !fs.existsSync(p)) continue
+    const b = path.basename(p).toLowerCase()
+    const prev = byBase.get(b)
+    const preferApi = p.includes(`${path.sep}api${path.sep}`) && p.includes("planning-import")
+    if (!prev || preferApi) byBase.set(b, p)
+  }
+  return [...byBase.values()]
+}
+
 function main() {
   const replace = process.argv.includes("--replace")
-  const deskPath = firstExisting([
-    process.env.DESK_XLSX,
-    "C:\\Users\\aless\\Downloads\\ottobre 2026.xlsx",
-    path.join(importDir, "ottobre 2026.xlsx"),
-    path.join(importDir, "OrarioReception.xlsx"),
-  ])
-  const bagPath = firstExisting([
-    process.env.BAGNINI_XLSX,
-    "C:\\Users\\aless\\Downloads\\INVERNALE 2026-2027.xlsx",
-    path.join(importDir, "INVERNALE 2026-2027.xlsx"),
-    path.join(importDir, "INVERNALE 2025-2026.xlsx"),
-  ])
+  const files = collectOrariFiles()
+  const coverageFiles = []
+  const deskFiles = []
+  for (const f of files) {
+    const kind = detectWorkbookKind(f)
+    if (kind === "coverage") coverageFiles.push(f)
+    else if (kind === "desk") deskFiles.push(f)
+    else console.warn("[desk-bagnini] Formato non riconosciuto:", f)
+  }
 
   const dataDir = resolveDataDir()
   const dbPath = path.join(dataDir, "calendario-reparti.json")
@@ -476,24 +564,32 @@ function main() {
   db.instructors = Array.isArray(db.instructors) ? db.instructors : []
   const now = new Date().toISOString()
 
-  if (deskPath) {
-    console.log("[desk] File:", deskPath)
-    const events = parseDeskWorkbook(deskPath)
-    const added = upsertComparto(db, "reception", "reception", "Sportello", events, replace, now)
-    const dates = events.map((e) => e.dateIso).sort()
-    console.log("[desk] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+  if (coverageFiles.length) {
+    let doReplace = replace
+    for (const f of coverageFiles) {
+      console.log("[bagnini] File:", f, "→ piscina")
+      const events = parseCoverageWorkbook(f)
+      const added = upsertComparto(db, "piscina", "invernale", "Copertura", events, doReplace, now)
+      doReplace = false
+      const dates = events.map((e) => e.dateIso).sort()
+      console.log("[bagnini] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+    }
   } else {
-    console.warn("[desk] File non trovato (DESK_XLSX o ottobre 2026.xlsx).")
+    console.warn("[bagnini] Nessun file copertura (ottobre 2026.xlsx) in planning-import.")
   }
 
-  if (bagPath) {
-    console.log("[bagnini] File:", bagPath)
-    const events = parseBagniniWorkbook(bagPath)
-    const added = upsertComparto(db, "piscina", "invernale", "Copertura", events, replace, now)
-    const dates = events.map((e) => e.dateIso).sort()
-    console.log("[bagnini] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+  if (deskFiles.length) {
+    let doReplace = replace
+    for (const f of deskFiles) {
+      console.log("[desk] File:", f, "→ reception")
+      const events = parseDeskTurniWorkbook(f)
+      const added = upsertComparto(db, "reception", "reception", "Sportello", events, doReplace, now)
+      doReplace = false
+      const dates = events.map((e) => e.dateIso).sort()
+      console.log("[desk] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+    }
   } else {
-    console.warn("[bagnini] File non trovato (BAGNINI_XLSX o INVERNALE 2026-2027.xlsx).")
+    console.warn("[desk] Nessun file desk (INVERNALE 2026-2027.xlsx) in planning-import.")
   }
 
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")

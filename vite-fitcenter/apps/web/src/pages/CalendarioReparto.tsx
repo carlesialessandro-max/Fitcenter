@@ -27,8 +27,10 @@ import {
   addHoursToHm,
   buildShiftTitle,
   eventTimeRange,
+  formatShiftDurationLabel,
   shiftEventInHour,
 } from "@/lib/reception-shift"
+import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
 import {
   CALENDARIO_SEGMENTI,
   roleCanReadCalendarioComparto,
@@ -159,7 +161,8 @@ function noteFor(e: CalEvent): string {
 
 function shiftPillLine(e: CalEvent): string {
   const { start, end } = eventTimeRange(e)
-  return `${start}–${end}`
+  const dur = formatShiftDurationLabel(start, end)
+  return dur ? `${start}–${end} · ${dur}` : `${start}–${end}`
 }
 
 function DropdownNav({ label, links }: { label: string; links: { to: string; label: string }[] }) {
@@ -1138,6 +1141,10 @@ export function CalendarioRepartoPage() {
   const slotAnchorDate = useMemo(() => (view === "day" ? dayOnly : startOfDay(cursor)), [view, dayOnly, cursor])
   const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
   const cells = view === "month" ? monthMatrix(cursor) : []
+  const weekHours = useMemo(() => {
+    if (!apiComparto || !shiftRangeGrid) return null
+    return computeWeekHoursByStaff(weekDays, events, instructors, apiComparto)
+  }, [apiComparto, shiftRangeGrid, weekDays, events, instructors])
 
   if (!segmento || !apiComparto) return <Navigate to="/calendario" replace />
   const validSegment = CALENDARIO_SEGMENTI.some((x) => x.segmento === segmento)
@@ -1437,6 +1444,9 @@ export function CalendarioRepartoPage() {
                 >
                   <div className="uppercase text-zinc-500">{IT_DOW_SHORT[i]}</div>
                   <div className="text-sm text-zinc-200">{d.getDate()}</div>
+                  {weekHours && (weekHours.dayTotals[i] ?? 0) > 0 ? (
+                    <div className="mt-0.5 text-[10px] tabular-nums text-zinc-400">{formatHoursShort(weekHours.dayTotals[i]!)} h</div>
+                  ) : null}
                 </div>
               ))}
               {hours.map((h) => (
@@ -1481,6 +1491,54 @@ export function CalendarioRepartoPage() {
                 </Fragment>
               ))}
             </div>
+            {weekHours && weekHours.rows.length > 0 ? (
+              <div className="border-t border-zinc-800 px-3 py-3">
+                <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500">Ore settimana</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-left text-xs">
+                    <thead>
+                      <tr className="text-zinc-500">
+                        <th className="px-2 py-1 font-medium">Nominativo</th>
+                        {weekDays.map((d, i) => (
+                          <th key={isoYmd(d)} className="px-2 py-1 text-right font-medium uppercase">
+                            {IT_DOW_SHORT[i]}
+                          </th>
+                        ))}
+                        <th className="px-2 py-1 text-right font-medium">Totale</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {weekHours.rows.map((r) => (
+                        <tr key={r.key} className="border-t border-zinc-800/60">
+                          <td className="px-2 py-1 text-zinc-200">{r.label}</td>
+                          {r.days.map((m, di) => (
+                            <td key={di} className="px-2 py-1 text-right tabular-nums text-zinc-300">
+                              {m > 0 ? formatHoursShort(m) : ""}
+                            </td>
+                          ))}
+                          <td className="px-2 py-1 text-right tabular-nums font-medium text-zinc-100">
+                            {formatHoursShort(r.totalMinutes)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-zinc-700 bg-zinc-900/60 font-medium">
+                        <td className="px-2 py-1.5 text-zinc-300">Totale</td>
+                        {weekHours.dayTotals.map((m, di) => (
+                          <td key={di} className="px-2 py-1.5 text-right tabular-nums text-zinc-300">
+                            {m > 0 ? formatHoursShort(m) : ""}
+                          </td>
+                        ))}
+                        <td className="px-2 py-1.5 text-right tabular-nums text-[#46A6D9]">
+                          {formatHoursDecimal(weekHours.totalMinutes)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
 

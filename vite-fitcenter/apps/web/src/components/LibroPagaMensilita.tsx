@@ -57,10 +57,37 @@ export function LibroPagaMensilitaTab({
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
   const rows = useMemo(() => {
     const n = q.trim().toLowerCase()
     return data.mensilita.filter((r) => !n || r.personaleNome.toLowerCase().includes(n))
   }, [data.mensilita, q])
+  const visibleIds = useMemo(() => rows.map((r) => r.personaleId), [rows])
+  const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.personaleId)), [rows, selected])
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id))
+  const nSel = selectedRows.length
+  const only = nSel === 1 ? selectedRows[0] : undefined
+
+  function toggleId(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        for (const id of visibleIds) next.delete(id)
+      } else {
+        for (const id of visibleIds) next.add(id)
+      }
+      return next
+    })
+  }
 
   const sel = pannello ? data.mensilita.find((r) => r.personaleId === pannello.personaleId) : undefined
   const persona = pannello ? data.personale.find((p) => p.id === pannello.personaleId) : undefined
@@ -93,35 +120,101 @@ export function LibroPagaMensilitaTab({
           onClose={() => setPannello(null)}
         />
       )}
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Cerca nominativo…"
-          className={`${inputCls} min-w-[12rem] flex-1`}
-        />
-        {onConvalidaMese && (
-          <button type="button" className={btnAmber} onClick={onConvalidaMese}>
-            Convalida tutto il mese
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onConvalida && (
+            <button
+              type="button"
+              className={btnGhost}
+              disabled={nSel < 1 || (nSel > 1 && !onConvalidaMese)}
+              title={nSel > 1 ? "Apre il controllo del mese per i selezionati" : "Convalida il nominativo selezionato"}
+              onClick={() => {
+                if (nSel === 1 && only) onConvalida(only.personaleId)
+                else onConvalidaMese?.()
+              }}
+            >
+              Convalida
+            </button>
+          )}
+          <button
+            type="button"
+            className={btnGhost}
+            disabled={!only || !canEdit(only.personaleId)}
+            title={nSel === 1 ? "Modifica" : "Seleziona un solo nominativo"}
+            onClick={() => {
+              if (only && canEdit(only.personaleId)) setPannello({ kind: "modifica", personaleId: only.personaleId })
+            }}
+          >
+            Modifica
           </button>
-        )}
+          <button
+            type="button"
+            className={btnGhost}
+            disabled={!only}
+            title={nSel === 1 ? "Dettagli" : "Seleziona un solo nominativo"}
+            onClick={() => {
+              if (only) setPannello({ kind: "dettaglio", personaleId: only.personaleId })
+            }}
+          >
+            Dettagli
+          </button>
+          {onConvalidaMese && (
+            <button type="button" className={btnAmber} onClick={onConvalidaMese}>
+              Convalida tutto il mese
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-zinc-500">
+          Seleziona uno o più nominativi, poi usa i pulsanti in alto.
+          {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Cerca nominativo…"
+            className={`${inputCls} min-w-[12rem] flex-1`}
+          />
+        </div>
       </div>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
             <tr>
+              <th className="w-10 px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  aria-label="Seleziona tutti"
+                  className="accent-amber-500"
+                />
+              </th>
               <th className="px-3 py-2">Nominativo</th>
               <th className="px-3 py-2 text-right">Importo totale</th>
               <th className="px-3 py-2">Note correzione</th>
               <th className="px-3 py-2 text-right">Importo bonifico</th>
-              <th className="px-3 py-2 text-right">Azioni</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.personaleId} className="border-t border-zinc-800 text-zinc-200">
+              <tr
+                key={r.personaleId}
+                className={`border-t border-zinc-800 text-zinc-200 ${selected.has(r.personaleId) ? "bg-amber-500/5" : ""}`}
+              >
                 <td className="px-3 py-2">
-                  {r.personaleNome}
+                  <input
+                    type="checkbox"
+                    checked={selected.has(r.personaleId)}
+                    onChange={() => toggleId(r.personaleId)}
+                    aria-label={`Seleziona ${r.personaleNome}`}
+                    className="accent-amber-500"
+                  />
+                </td>
+                <td className="px-3 py-2">
+                  <button type="button" className="text-left hover:text-amber-200" onClick={() => toggleId(r.personaleId)}>
+                    {r.personaleNome}
+                  </button>
                   {r.chiuso && (
                     <span className="ml-2 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] uppercase text-emerald-300">
                       Chiuso
@@ -131,36 +224,6 @@ export function LibroPagaMensilitaTab({
                 <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.nota || "—"}</td>
                 <td className="px-3 py-2 text-right">{eur(r.bonifico)}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  {onConvalida && (
-                    <button
-                      type="button"
-                      className={`${btnGhost} mr-1`}
-                      title="Convalida"
-                      onClick={() => onConvalida(r.personaleId)}
-                    >
-                      Convalida
-                    </button>
-                  )}
-                  {canEdit(r.personaleId) && (
-                    <button
-                      type="button"
-                      className={`${btnGhost} mr-1`}
-                      title="Modifica"
-                      onClick={() => setPannello({ kind: "modifica", personaleId: r.personaleId })}
-                    >
-                      Modifica
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={btnGhost}
-                    title="Dettagli"
-                    onClick={() => setPannello({ kind: "dettaglio", personaleId: r.personaleId })}
-                  >
-                    Dettagli
-                  </button>
-                </td>
               </tr>
             ))}
             {!rows.length && (

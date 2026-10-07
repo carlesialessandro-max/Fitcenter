@@ -1,4 +1,5 @@
 import type { CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
+import { eventMatchesCalendarDay } from "@/lib/calendario-manual"
 
 function isoYmd(d: Date): string {
   const pad2 = (n: number) => String(n).padStart(2, "0")
@@ -51,7 +52,7 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
     let end = Number(range[3]) * 60 + Number(range[4])
     if (end <= start) end += 24 * 60
     const d = end - start
-    const max = comparto === "reception" ? 14 * 60 : 8 * 60
+    const max = comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" ? 14 * 60 : 8 * 60
     if (d > 0 && d <= max) return d
   }
   if (comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness") return 6 * 60
@@ -95,7 +96,7 @@ function countOccurrencesOnDates(events: CalendarioMergedEventDto[], dates: Date
     const sk = e.stableKey
     let n = 0
     for (const d of dates) {
-      if (d.getDay() === e.dow) n++
+      if (eventMatchesCalendarDay(e, d)) n++
     }
     counts.set(sk, n)
   }
@@ -185,4 +186,55 @@ export function formatHoursMinutes(totalMinutes: number): string {
 
 export function formatHoursDecimal(totalMinutes: number): string {
   return `${(totalMinutes / 60).toFixed(1).replace(".", ",")} h`
+}
+
+export function formatHoursShort(totalMinutes: number): string {
+  if (totalMinutes <= 0) return ""
+  const h = Math.round((totalMinutes / 60) * 10) / 10
+  if (Number.isInteger(h)) return String(h)
+  return h.toFixed(1).replace(".", ",")
+}
+
+export type StaffWeekHoursRow = {
+  key: string
+  label: string
+  days: number[]
+  totalMinutes: number
+}
+
+/** Ore per persona e per giorno della settimana visibile (come tabella in fondo all'Excel). */
+export function computeWeekHoursByStaff(
+  weekDays: Date[],
+  events: CalendarioMergedEventDto[],
+  instructors: CalendarioIstruttore[],
+  comparto?: string
+): { rows: StaffWeekHoursRow[]; dayTotals: number[]; totalMinutes: number } {
+  const byStaff = new Map<string, StaffWeekHoursRow>()
+  const dayTotals = Array.from({ length: weekDays.length }, () => 0)
+
+  for (let i = 0; i < weekDays.length; i++) {
+    const d = weekDays[i]!
+    for (const e of events) {
+      if (!eventMatchesCalendarDay(e, d)) continue
+      const dur = eventDurationMinutes(e, comparto)
+      const staffList = staffLabelsFromEvent(e, instructors)
+      const share = staffList.length > 0 ? dur / staffList.length : dur
+      dayTotals[i] += dur
+      for (const { key, label } of staffList) {
+        const prev = byStaff.get(key) ?? {
+          key,
+          label,
+          days: Array.from({ length: weekDays.length }, () => 0),
+          totalMinutes: 0,
+        }
+        prev.days[i] += share
+        prev.totalMinutes += share
+        byStaff.set(key, prev)
+      }
+    }
+  }
+
+  const rows = Array.from(byStaff.values()).sort((a, b) => b.totalMinutes - a.totalMinutes || a.label.localeCompare(b.label))
+  const totalMinutes = dayTotals.reduce((s, n) => s + n, 0)
+  return { rows, dayTotals, totalMinutes }
 }
