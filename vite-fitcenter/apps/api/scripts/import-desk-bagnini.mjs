@@ -1,8 +1,8 @@
 /**
- * Importa orari desk (reception) e bagnini (piscina) dal formato reale dei file:
- *   - ottobre 2026.xlsx (LUNEDI|5 + 08:00/08:30) → piscina / bagnini
- *   - INVERNALE 2026-2027.xlsx (griglia 30 min, 4 col/giorno) → reception / desk
- * Il comparto si sceglie dal contenuto del foglio, non dal nome file.
+ * Importa gli orari nel calendario FitCenter dal formato reale dei file:
+ *   - ottobre 2026.xlsx (VICTORIA/SIMO/ALE/IRE/ALBA, 08:00/08:30) → reception
+ *   - INVERNALE 2026-2027.xlsx (FLO/CADDEO/CED, griglia 30 min) → piscina
+ * Il parser si sceglie dal contenuto del foglio; il reparto è quello sopra.
  *
  *   pnpm run import:desk-bagnini -- --replace
  *   File in apps/api/data/planning-import/  (fallback Downloads)
@@ -306,7 +306,7 @@ function parseCoverageWorkbook(xlsxPath) {
     if (!sh) continue
     const events = parseCoverageSheet(sh, year, month)
     if (events.length) {
-      console.log("[bagnini]", name, "→", events.length, "slot")
+      console.log("[reception]", name, "→", events.length, "slot")
       all.push(...events)
     }
   }
@@ -402,7 +402,7 @@ function parseDeskTurniWorkbook(xlsxPath) {
     if (/TURNAZIONE|FOGLIO2|ROBOT|IDROPULITRICE/i.test(name)) continue
     const monday = weekMondayFromSheet(name, seasonStartYear)
     if (!monday) {
-      console.log("[desk] skip foglio", name)
+      console.log("[piscina] skip foglio", name)
       continue
     }
     const sh = wb.Sheets[name]
@@ -412,7 +412,7 @@ function parseDeskTurniWorkbook(xlsxPath) {
       const perDay = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 }
       for (const e of events) perDay[e.dow]++
       const label = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"].map((k, i) => `${k}:${perDay[i]}`).join(" ")
-      console.log("[desk]", name, "→", events.length, "fasce", ymd(monday), "|", label)
+      console.log("[piscina]", name, "→", events.length, "fasce", ymd(monday), "|", label)
       all.push(...events)
     }
   }
@@ -567,29 +567,29 @@ function main() {
   if (coverageFiles.length) {
     let doReplace = replace
     for (const f of coverageFiles) {
-      console.log("[bagnini] File:", f, "→ piscina")
+      console.log("[reception] File:", f, "→ reception (Victoria/Simona/ALE/Irene/Alba)")
       const events = parseCoverageWorkbook(f)
-      const added = upsertComparto(db, "piscina", "invernale", "Copertura", events, doReplace, now)
+      const added = upsertComparto(db, "reception", "reception", "Sportello", events, doReplace, now)
       doReplace = false
       const dates = events.map((e) => e.dateIso).sort()
-      console.log("[bagnini] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+      console.log("[reception] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
     }
   } else {
-    console.warn("[bagnini] Nessun file copertura (ottobre 2026.xlsx) in planning-import.")
+    console.warn("[reception] Nessun file ottobre 2026.xlsx in planning-import.")
   }
 
   if (deskFiles.length) {
     let doReplace = replace
     for (const f of deskFiles) {
-      console.log("[desk] File:", f, "→ reception")
+      console.log("[piscina] File:", f, "→ piscina (Florenzi/Caddeo/Cedrola)")
       const events = parseDeskTurniWorkbook(f)
-      const added = upsertComparto(db, "reception", "reception", "Sportello", events, doReplace, now)
+      const added = upsertComparto(db, "piscina", "invernale", "Copertura", events, doReplace, now)
       doReplace = false
       const dates = events.map((e) => e.dateIso).sort()
-      console.log("[desk] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
+      console.log("[piscina] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
     }
   } else {
-    console.warn("[desk] Nessun file desk (INVERNALE 2026-2027.xlsx) in planning-import.")
+    console.warn("[piscina] Nessun file INVERNALE 2026-2027.xlsx in planning-import.")
   }
 
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")
