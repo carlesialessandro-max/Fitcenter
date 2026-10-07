@@ -94,7 +94,9 @@ export function staffColorKey(e: {
   const alias = staffAliasKey(excel) ?? staffAliasKey(e.staffDisplay)
   if (alias) return alias
   const s = normStaffToken(excel && excel !== "—" ? excel : String(e.staffDisplay ?? ""))
-  return s && s !== "—" ? `name:${s}` : "unknown"
+  if (!s || s === "—") return "unknown"
+  const first = s.split(/\s+/).filter(Boolean)[0]
+  return first ? `name:${first}` : "unknown"
 }
 
 export function staffLaneLabel(e: {

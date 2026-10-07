@@ -213,17 +213,44 @@ function weekSlotPx(slotCount: number): number {
   return Math.max(12, Math.min(18, Math.floor(target / Math.max(slotCount, 1))))
 }
 
-function dedupeShiftEvents(dayEvents: CalEvent[]): CalEvent[] {
-  const seen = new Set<string>()
+function mergeOverlappingShifts(laneEvents: CalEvent[]): CalEvent[] {
+  const sorted = [...laneEvents].sort((a, b) => {
+    const ar = eventRangeMin(a)
+    const br = eventRangeMin(b)
+    return ar.sm - br.sm || br.em - ar.em || a.id.localeCompare(b.id)
+  })
   const out: CalEvent[] = []
-  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
   for (const e of sorted) {
-    const { sm, em } = eventRangeMin(e)
-    const k = `${staffColorKey(e)}|${sm}|${em}`
-    if (seen.has(k)) continue
-    seen.add(k)
+    const r = eventRangeMin(e)
+    const last = out[out.length - 1]
+    if (!last) {
+      out.push(e)
+      continue
+    }
+    const lr = eventRangeMin(last)
+    if (r.sm < lr.em) {
+      const lastDur = lr.em - lr.sm
+      const dur = r.em - r.sm
+      if (dur > lastDur || (dur === lastDur && r.sm < lr.sm)) out[out.length - 1] = e
+      continue
+    }
     out.push(e)
   }
+  return out
+}
+
+function dedupeShiftEvents(dayEvents: CalEvent[]): CalEvent[] {
+  const byLane = new Map<string, CalEvent[]>()
+  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
+  for (const e of sorted) {
+    const key = staffColorKey(e)
+    const list = byLane.get(key)
+    if (list) list.push(e)
+    else byLane.set(key, [e])
+  }
+  const out: CalEvent[] = []
+  for (const list of byLane.values()) out.push(...mergeOverlappingShifts(list))
+  out.sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
   return out
 }
 

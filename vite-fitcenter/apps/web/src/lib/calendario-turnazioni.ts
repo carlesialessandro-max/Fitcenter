@@ -58,6 +58,20 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
   return 60
 }
 
+function mergeMinuteRanges(ranges: { sm: number; em: number }[]): { sm: number; em: number }[] {
+  const sorted = [...ranges].sort((a, b) => a.sm - b.sm || b.em - a.em)
+  const out: { sm: number; em: number }[] = []
+  for (const r of sorted) {
+    const last = out[out.length - 1]
+    if (!last || r.sm >= last.em) {
+      out.push({ ...r })
+      continue
+    }
+    last.em = Math.max(last.em, r.em)
+  }
+  return out
+}
+
 function staffLabelsFromEvent(e: CalendarioMergedEventDto, _instructors: CalendarioIstruttore[]): { key: string; label: string }[] {
   const key = staffColorKey(e)
   const label = staffLaneLabel(e)
@@ -203,28 +217,34 @@ export function computeWeekHoursByStaff(
 
   for (let i = 0; i < weekDays.length; i++) {
     const d = weekDays[i]!
-    const seen = new Set<string>()
+    const intervals = new Map<string, { label: string; ranges: { sm: number; em: number }[] }>()
     for (const e of events) {
       if (!eventMatchesCalendarDay(e, d)) continue
-      const dur = eventDurationMinutes(e, comparto)
-      const staffList = staffLabelsFromEvent(e, instructors)
       const { start, end } = eventTimeRange(e)
-      const uniq = `${staffList.map((s) => s.key).join(",")}|${start}|${end}`
-      if (seen.has(uniq)) continue
-      seen.add(uniq)
-      const share = staffList.length > 0 ? dur / staffList.length : dur
-      dayTotals[i] += dur
-      for (const { key, label } of staffList) {
-        const prev = byStaff.get(key) ?? {
-          key,
-          label,
-          days: Array.from({ length: weekDays.length }, () => 0),
-          totalMinutes: 0,
-        }
-        prev.days[i] += share
-        prev.totalMinutes += share
-        byStaff.set(key, prev)
+      const sm = parseHm(start)
+      const em = parseHm(end)
+      if (sm == null || em == null || em <= sm) continue
+      for (const { key, label } of staffLabelsFromEvent(e, instructors)) {
+        const row = intervals.get(key) ?? { label, ranges: [] }
+        row.ranges.push({ sm, em })
+        intervals.set(key, row)
       }
+    }
+    for (const [key, { label, ranges }] of intervals) {
+      const merged = mergeMinuteRanges(ranges)
+      let minutes = 0
+      for (const r of merged) minutes += r.em - r.sm
+      if (minutes <= 0) continue
+      dayTotals[i] += minutes
+      const prev = byStaff.get(key) ?? {
+        key,
+        label,
+        days: Array.from({ length: weekDays.length }, () => 0),
+        totalMinutes: 0,
+      }
+      prev.days[i] += minutes
+      prev.totalMinutes += minutes
+      byStaff.set(key, prev)
     }
   }
 
