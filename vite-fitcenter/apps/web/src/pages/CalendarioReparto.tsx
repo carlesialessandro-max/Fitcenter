@@ -1180,7 +1180,7 @@ export function CalendarioRepartoPage() {
   const hideSlot = useCallback(
     async (e: CalEvent) => {
       if (!apiComparto || !canWrite) return
-      if (compartoIsManualServer(apiComparto) && e.stableKey.startsWith("manual-")) {
+      if (compartoIsManualServer(apiComparto)) {
         try {
           await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, clear: true })
           await reload()

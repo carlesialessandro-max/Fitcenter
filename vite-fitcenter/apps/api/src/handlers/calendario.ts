@@ -569,13 +569,10 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const prevRev = db.revisions.find((r) => r.comparto === raw && r.stableKey === stableKey)
 
   if (body.removed === true) {
-    if (stableKey.startsWith("manual-")) {
-      db = deleteRevision(db, raw, stableKey)
-      writeCalendarioDb(db)
-      return res.json({ ok: true })
-    }
-    if (SERVER_SEEDED_COMPARTI.includes(raw)) {
-      if (!prevRev) return res.status(404).json({ message: "Slot non trovato" })
+    const deleteFromDb =
+      stableKey.startsWith("manual-") || MANUAL_ONLY_COMPARTI.includes(raw) || SERVER_SEEDED_COMPARTI.includes(raw)
+    if (deleteFromDb) {
+      if (!prevRev && !stableKey.startsWith("manual-")) return res.status(404).json({ message: "Slot non trovato" })
       db = deleteRevision(db, raw, stableKey)
       writeCalendarioDb(db)
       return res.json({ ok: true })
@@ -597,7 +594,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     return res.json({ ok: true })
   }
 
-  if (!baseEv && !stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw)) {
+  if (!baseEv && !prevRev && !stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw)) {
     return res.status(404).json({ message: "Slot non trovato" })
   }
 
