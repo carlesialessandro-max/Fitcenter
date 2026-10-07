@@ -538,27 +538,58 @@ function listXlsxIn(dir) {
   }
 }
 
-function collectOrariFiles() {
-  const named = [
-    process.env.DESK_XLSX,
-    process.env.BAGNINI_XLSX,
-    path.join(apiImportDir, "ottobre 2026.xlsx"),
-    path.join(apiImportDir, "INVERNALE 2026-2027.xlsx"),
-    path.join(apiImportDir, "INVERNALE 2025-2026.xlsx"),
-    path.join(apiImportDir, "OrarioReception.xlsx"),
-    path.join(webImportDir, "ottobre 2026.xlsx"),
-    path.join(webImportDir, "INVERNALE 2026-2027.xlsx"),
-    path.join(webImportDir, "INVERNALE 2025-2026.xlsx"),
-    path.join(downloads, "ottobre 2026.xlsx"),
-    path.join(downloads, "INVERNALE 2026-2027.xlsx"),
+function searchDirs() {
+  const cwd = process.cwd()
+  return [
+    apiImportDir,
+    webImportDir,
+    path.join(cwd, "apps", "api", "data", "planning-import"),
+    path.join(cwd, "apps", "web", "data", "planning-import"),
+    path.join(cwd, "data", "planning-import"),
+    downloads,
+    "C:\\FitCenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data\\planning-import",
+    "C:\\FitCenter\\vite-fitcenter\\vite-fitcenter\\apps\\web\\data\\planning-import",
+    "C:\\Fitcenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data\\planning-import",
+    "C:\\Fitcenter\\vite-fitcenter\\vite-fitcenter\\apps\\web\\data\\planning-import",
   ]
-  const scanned = [...listXlsxIn(apiImportDir), ...listXlsxIn(webImportDir)].filter((p) =>
-    /ottobre|invernale|orarioreception|bagnini|desk/i.test(path.basename(p))
-  )
+}
+
+function copyIntoImportDir(src, destName) {
+  fs.mkdirSync(apiImportDir, { recursive: true })
+  const dest = path.join(apiImportDir, destName)
+  try {
+    if (path.resolve(src) !== path.resolve(dest)) fs.copyFileSync(src, dest)
+  } catch (err) {
+    console.warn("[desk-bagnini] Copia non riuscita:", dest, err.message)
+    return src
+  }
+  return dest
+}
+
+function seasonScore(filePath) {
+  const n = path.basename(filePath)
+  const range = n.match(/(20\d{2})\s*[-–]\s*(20\d{2})/)
+  if (range) return Number(range[1]) * 100 + Number(range[2])
+  const y = n.match(/(20\d{2})/)
+  return y ? Number(y[1]) * 100 : 0
+}
+
+function pickNewest(files) {
+  if (!files.length) return null
+  return [...files].sort((a, b) => seasonScore(b) - seasonScore(a) || a.localeCompare(b))[0]
+}
+
+function collectCandidates() {
+  const named = [process.env.DESK_XLSX, process.env.BAGNINI_XLSX]
+  const scanned = []
+  for (const dir of searchDirs()) {
+    scanned.push(...listXlsxIn(dir))
+  }
   const byBase = new Map()
   for (const p of [...named, ...scanned]) {
     if (!p || !fs.existsSync(p)) continue
     const b = path.basename(p).toLowerCase()
+    if (!/^(ottobre\s+20\d{2}|invernale\s+20\d{2})/i.test(b)) continue
     const prev = byBase.get(b)
     const preferApi = p.includes(`${path.sep}api${path.sep}`) && p.includes("planning-import")
     if (!prev || preferApi) byBase.set(b, p)
@@ -568,15 +599,36 @@ function collectOrariFiles() {
 
 function main() {
   const replace = process.argv.includes("--replace")
-  const files = collectOrariFiles()
+  const files = collectCandidates()
   const coverageFiles = []
   const deskFiles = []
   for (const f of files) {
     const kind = detectWorkbookKind(f)
     if (kind === "coverage") coverageFiles.push(f)
     else if (kind === "desk") deskFiles.push(f)
-    else console.warn("[desk-bagnini] Formato non riconosciuto:", f)
+    else console.warn("[desk-bagnini] Ignoro (formato diverso):", f)
   }
+
+  const coverage = pickNewest(coverageFiles)
+  const desk = pickNewest(deskFiles)
+  if (desk && /2025\s*[-–]\s*2026/i.test(path.basename(desk))) {
+    console.error(
+      "[piscina] Trovato solo INVERNALE 2025-2026 (maggio). Serve INVERNALE 2026-2027.xlsx — copialo in:\n  " +
+        apiImportDir
+    )
+    process.exit(1)
+  }
+  if (!coverage) {
+    console.error("[reception] Manca ottobre 2026.xlsx — copialo in:\n  " + apiImportDir)
+    process.exit(1)
+  }
+  if (!desk) {
+    console.error("[piscina] Manca INVERNALE 2026-2027.xlsx — copialo in:\n  " + apiImportDir)
+    process.exit(1)
+  }
+
+  const coveragePath = copyIntoImportDir(coverage, path.basename(coverage))
+  const deskPath = copyIntoImportDir(desk, path.basename(desk))
 
   const dataDir = resolveDataDir()
   const dbPath = path.join(dataDir, "calendario-reparti.json")
@@ -585,33 +637,19 @@ function main() {
   db.instructors = Array.isArray(db.instructors) ? db.instructors : []
   const now = new Date().toISOString()
 
-  if (coverageFiles.length) {
-    let doReplace = replace
-    for (const f of coverageFiles) {
-      console.log("[reception] File:", f, "→ reception (Victoria/Simona/ALE/Irene/Alba)")
-      const events = parseCoverageWorkbook(f)
-      const added = upsertComparto(db, "reception", "reception", "Sportello", events, doReplace, now)
-      doReplace = false
-      const dates = events.map((e) => e.dateIso).sort()
-      console.log("[reception] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
-    }
-  } else {
-    console.warn("[reception] Nessun file ottobre 2026.xlsx in planning-import.")
-  }
+  console.log("[reception] File:", coveragePath, "→ reception (Victoria/Simona/ALE/Irene/Alba)")
+  const recEvents = parseCoverageWorkbook(coveragePath)
+  const recAdded = upsertComparto(db, "reception", "reception", "Sportello", recEvents, replace, now)
+  const recDates = recEvents.map((e) => e.dateIso).sort()
+  console.log("[reception] Aggiunti:", recAdded, "| periodo", recDates[0] ?? "—", "→", recDates[recDates.length - 1] ?? "—")
 
-  if (deskFiles.length) {
-    let doReplace = replace
-    for (const f of deskFiles) {
-      console.log("[piscina] File:", f, "→ piscina (Florenzi/Caddeo/Cedrola)")
-      const events = parseDeskTurniWorkbook(f)
-      const added = upsertComparto(db, "piscina", "invernale", "Copertura", events, doReplace, now)
-      doReplace = false
-      const dates = events.map((e) => e.dateIso).sort()
-      console.log("[piscina] Aggiunti:", added, "| periodo", dates[0] ?? "—", "→", dates[dates.length - 1] ?? "—")
-    }
-  } else {
-    console.warn("[piscina] Nessun file INVERNALE 2026-2027.xlsx in planning-import.")
-  }
+  console.log("[piscina] File:", deskPath, "→ piscina (Florenzi/Caddeo/Cedrola)")
+  const poolEvents = parseDeskTurniWorkbook(deskPath)
+  const poolAdded = upsertComparto(db, "piscina", "invernale", "Copertura", poolEvents, replace, now)
+  const poolDates = poolEvents.map((e) => e.dateIso).sort()
+  console.log("[piscina] Aggiunti:", poolAdded, "| periodo", poolDates[0] ?? "—", "→", poolDates[poolDates.length - 1] ?? "—")
+  const weekend = poolEvents.filter((e) => e.dow === 0 || e.dow === 6).length
+  console.log("[piscina] Turni sabato/domenica:", weekend)
 
   fs.writeFileSync(dbPath, JSON.stringify(db, null, 2), "utf8")
   console.log("[desk-bagnini] Salvato:", dbPath)
