@@ -39,6 +39,13 @@ const STAFF_ALIAS: Record<string, string> = {
   alessandra: "ale",
 }
 
+/** Cognomi univoci (non "carlesi": Irene e Alessandra). */
+const STAFF_SURNAME_ALIAS: Record<string, string> = {
+  sallata: "alba",
+  boretti: "tommaso",
+  vittoria: "victoria",
+}
+
 function normStaffToken(s: string): string {
   return s
     .trim()
@@ -49,22 +56,58 @@ function normStaffToken(s: string): string {
     .trim()
 }
 
+function excelStaffName(e: {
+  staff?: string | null
+  staffOverride?: string | null
+  staffDisplay?: string | null
+}): string {
+  const override = String(e.staffOverride ?? "").trim()
+  if (override && override !== "—") return override
+  const staff = String(e.staff ?? "").trim()
+  if (staff && staff !== "—") return staff
+  return String(e.staffDisplay ?? "").trim()
+}
+
 export function staffAliasKey(display: string | null | undefined): string | null {
   const n = normStaffToken(String(display ?? ""))
   if (!n) return null
   if (STAFF_ALIAS[n]) return STAFF_ALIAS[n]
-  for (const part of n.split(/\s+/)) {
-    if (STAFF_ALIAS[part]) return STAFF_ALIAS[part]
-  }
+  if (STAFF_SURNAME_ALIAS[n]) return STAFF_SURNAME_ALIAS[n]
+  const parts = n.split(/\s+/).filter(Boolean)
+  const first = parts[0]
+  if (first && STAFF_ALIAS[first]) return STAFF_ALIAS[first]
+  if (first && STAFF_SURNAME_ALIAS[first]) return STAFF_SURNAME_ALIAS[first]
+  const last = parts.length > 1 ? parts[parts.length - 1] : undefined
+  if (last && STAFF_ALIAS[last]) return STAFF_ALIAS[last]
+  if (last && STAFF_SURNAME_ALIAS[last]) return STAFF_SURNAME_ALIAS[last]
   return null
 }
 
-export function staffColorKey(e: { istruttoreId?: string | null; staffDisplay?: string | null; staff?: string | null }): string {
-  const alias = staffAliasKey(e.staffDisplay) ?? staffAliasKey(e.staff)
+/** Corsia / colore: nome Excel prima dell'anagrafica, senza id istruttore (evita doppioni settimana). */
+export function staffColorKey(e: {
+  istruttoreId?: string | null
+  staffDisplay?: string | null
+  staff?: string | null
+  staffOverride?: string | null
+}): string {
+  const excel = excelStaffName(e)
+  const alias = staffAliasKey(excel) ?? staffAliasKey(e.staffDisplay)
   if (alias) return alias
-  if (e.istruttoreId) return `id:${e.istruttoreId}`
-  const s = normStaffToken(String(e.staffDisplay ?? e.staff ?? ""))
+  const s = normStaffToken(excel && excel !== "—" ? excel : String(e.staffDisplay ?? ""))
   return s && s !== "—" ? `name:${s}` : "unknown"
+}
+
+export function staffLaneLabel(e: {
+  staffDisplay?: string | null
+  staff?: string | null
+  staffOverride?: string | null
+}): string {
+  const raw = excelStaffName(e)
+  const t = (raw || String(e.staffDisplay ?? "")).trim()
+  if (!t || t === "—") return "—"
+  const parts = t.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`
+  return parts[0] ?? t
 }
 
 export function staffPillClasses(key: string): string {

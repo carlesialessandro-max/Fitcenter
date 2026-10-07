@@ -7,7 +7,7 @@ import { calendarioApi } from "@/api/calendario"
 import { CalendarioInviaTurniModal } from "@/components/CalendarioInviaTurniModal"
 import { CalendarioTurnazioniModal } from "@/components/CalendarioTurnazioniModal"
 import { InstructorSearchSelect } from "@/components/InstructorSearchSelect"
-import { staffColorKey, staffPillClasses } from "@/lib/staff-colors"
+import { staffColorKey, staffLaneLabel, staffPillClasses } from "@/lib/staff-colors"
 import {
   compartoIsManualServer,
   compartoIsServerSeeded,
@@ -166,15 +166,25 @@ function staffCellLabel(s: string): string {
 }
 
 const SHIFT_SLOT_MINUTES = 30
-const SHIFT_SLOT_PX = 28
-const SHIFT_LANE_PX = 96
-const SHIFT_GRID_SLOTS: number[] = (() => {
-  const out: number[] = []
-  for (let m = 6 * 60; m <= 22 * 60 + 30; m += SHIFT_SLOT_MINUTES) out.push(m)
-  return out
-})()
-const SHIFT_GRID_START = SHIFT_GRID_SLOTS[0]!
-const SHIFT_GRID_H = SHIFT_GRID_SLOTS.length * SHIFT_SLOT_PX
+const SHIFT_LANE_PX_WEEK = 88
+const SHIFT_LANE_PX_DAY = 132
+
+type ShiftGrid = {
+  startMin: number
+  slotMin: number
+  slotPx: number
+  slots: number[]
+  height: number
+}
+
+function buildShiftGrid(startMin: number, endMin: number, slotPx: number): ShiftGrid {
+  const slotMin = SHIFT_SLOT_MINUTES
+  const start = Math.max(6 * 60, Math.floor(startMin / slotMin) * slotMin)
+  const end = Math.min(23 * 60, Math.max(start + slotMin, Math.ceil(endMin / slotMin) * slotMin))
+  const slots: number[] = []
+  for (let m = start; m <= end; m += slotMin) slots.push(m)
+  return { startMin: start, slotMin, slotPx, slots, height: slots.length * slotPx }
+}
 
 function eventRangeMin(e: CalEvent): { sm: number; em: number } {
   const { start, end } = eventTimeRange(e)
@@ -185,15 +195,46 @@ function eventRangeMin(e: CalEvent): { sm: number; em: number } {
   return { sm, em }
 }
 
+function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number): ShiftGrid {
+  let minS = 8 * 60
+  let maxE = 21 * 60
+  for (const d of days) {
+    for (const e of eventsForDay(events, d)) {
+      const { sm, em } = eventRangeMin(e)
+      if (sm < minS) minS = sm
+      if (em > maxE) maxE = em
+    }
+  }
+  return buildShiftGrid(minS, maxE, slotPx)
+}
+
+function weekSlotPx(slotCount: number): number {
+  const target = 420
+  return Math.max(12, Math.min(18, Math.floor(target / Math.max(slotCount, 1))))
+}
+
+function dedupeShiftEvents(dayEvents: CalEvent[]): CalEvent[] {
+  const seen = new Set<string>()
+  const out: CalEvent[] = []
+  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
+  for (const e of sorted) {
+    const { sm, em } = eventRangeMin(e)
+    const k = `${staffColorKey(e)}|${sm}|${em}`
+    if (seen.has(k)) continue
+    seen.add(k)
+    out.push(e)
+  }
+  return out
+}
+
 function dayStaffLanes(dayEvents: CalEvent[]): { key: string; label: string }[] {
   const order: { key: string; label: string }[] = []
   const seen = new Set<string>()
-  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
-  for (const e of sorted) {
+  for (const e of dayEvents) {
     const key = staffColorKey(e)
     if (seen.has(key)) continue
     seen.add(key)
-    order.push({ key, label: staffCellLabel(e.staffDisplay) })
+    order.push({ key, label: staffLaneLabel(e) })
   }
   return order
 }
@@ -213,7 +254,7 @@ function ShiftBlock({
 }) {
   const { start, end } = eventTimeRange(e)
   const dur = formatShiftDurationLabel(start, end)
-  const label = staffCellLabel(e.staffDisplay)
+  const label = staffLaneLabel(e)
   const tip = `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
   return (
     <button
@@ -241,19 +282,19 @@ function ShiftBlock({
   )
 }
 
-function ShiftTimeGutter({ header }: { header: ReactNode }) {
+function ShiftTimeGutter({ header, grid }: { header: ReactNode; grid: ShiftGrid }) {
   return (
     <div className="sticky left-0 z-20 flex w-12 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 sm:w-14">
-      <div className="bg-zinc-950">{header}</div>
-      <div className="relative" style={{ height: SHIFT_GRID_H }}>
-        {SHIFT_GRID_SLOTS.map((m, i) => (
+      <div className="sticky top-0 z-30 bg-zinc-950">{header}</div>
+      <div className="relative" style={{ height: grid.height }}>
+        {grid.slots.map((m, i) => (
           <div
             key={m}
             className={cn(
               "absolute inset-x-0 flex items-start justify-end pr-1 text-[10px] tabular-nums leading-none",
               m % 60 === 0 ? "text-zinc-400" : "text-zinc-600"
             )}
-            style={{ top: i * SHIFT_SLOT_PX, height: SHIFT_SLOT_PX }}
+            style={{ top: i * grid.slotPx, height: grid.slotPx }}
           >
             {m % 60 === 0 ? formatHm(m) : ""}
           </div>
@@ -263,12 +304,12 @@ function ShiftTimeGutter({ header }: { header: ReactNode }) {
   )
 }
 
-function nowLineTop(): number | null {
+function nowLineTop(grid: ShiftGrid): number | null {
   const n = new Date()
   const m = n.getHours() * 60 + n.getMinutes()
-  const last = SHIFT_GRID_SLOTS[SHIFT_GRID_SLOTS.length - 1]!
-  if (m < SHIFT_GRID_START || m > last + SHIFT_SLOT_MINUTES) return null
-  return ((m - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
+  const last = grid.slots[grid.slots.length - 1]!
+  if (m < grid.startMin || m > last + grid.slotMin) return null
+  return ((m - grid.startMin) / grid.slotMin) * grid.slotPx
 }
 
 function ShiftDayTrack({
@@ -281,6 +322,8 @@ function ShiftDayTrack({
   subtitle,
   lanePx,
   grow,
+  grid,
+  compact,
 }: {
   date: Date
   events: CalEvent[]
@@ -291,27 +334,31 @@ function ShiftDayTrack({
   subtitle?: ReactNode
   lanePx: number
   grow?: boolean
+  grid: ShiftGrid
+  compact?: boolean
 }) {
-  const dayEv = eventsForDay(events, date)
+  const dayEv = dedupeShiftEvents(eventsForDay(events, date))
   const lanes = dayStaffLanes(dayEv)
   const n = Math.max(1, lanes.length)
-  const nowY = isToday ? nowLineTop() : null
+  const nowY = isToday ? nowLineTop(grid) : null
+  const minBlock = Math.max(compact ? 10 : 16, grid.slotPx - 3)
+  const gridEnd = grid.startMin + grid.slots.length * grid.slotMin
   return (
     <div
       className={cn("flex shrink-0 flex-col border-l border-zinc-800", isToday && "bg-[#46A6D9]/5", grow && "min-w-0 flex-1")}
       style={grow ? { minWidth: n * lanePx } : { width: n * lanePx }}
     >
-      <div>
-        <div className="flex h-14 flex-col items-center justify-center border-b border-zinc-800 bg-zinc-900 px-1 text-center">
+      <div className="sticky top-0 z-20">
+        <div className="flex h-11 flex-col items-center justify-center border-b border-zinc-800 bg-zinc-900 px-1 text-center sm:h-12">
           {title}
           {subtitle}
         </div>
-        <div className="flex h-7 border-b border-zinc-800 bg-zinc-950">
+        <div className="flex h-6 border-b border-zinc-800 bg-zinc-950 sm:h-7">
         {(lanes.length ? lanes : [{ key: "empty", label: "—" }]).map((lane) => (
           <div
             key={lane.key}
             className={cn(
-              "min-w-0 flex-1 truncate border-l px-0.5 text-center text-[10px] font-semibold leading-7 first:border-l-0",
+              "min-w-0 flex-1 truncate border-l px-0.5 text-center text-[10px] font-semibold leading-6 first:border-l-0 sm:leading-7",
               lane.key === "empty" ? "border-zinc-800/40 text-zinc-500" : staffPillClasses(lane.key)
             )}
             title={lane.label}
@@ -321,12 +368,12 @@ function ShiftDayTrack({
         ))}
         </div>
       </div>
-      <div className="relative" style={{ height: SHIFT_GRID_H }}>
-        {SHIFT_GRID_SLOTS.map((m, i) => (
+      <div className="relative" style={{ height: grid.height }}>
+        {grid.slots.map((m, i) => (
           <div
             key={m}
             className={cn("absolute inset-x-0 border-b", m % 60 === 0 ? "border-zinc-700/80" : "border-zinc-800/45")}
-            style={{ top: i * SHIFT_SLOT_PX, height: SHIFT_SLOT_PX }}
+            style={{ top: i * grid.slotPx, height: grid.slotPx }}
           />
         ))}
         <div className="absolute inset-0 flex">
@@ -336,11 +383,11 @@ function ShiftDayTrack({
                 .filter((e) => staffColorKey(e) === lane.key)
                 .map((e) => {
                   const { sm, em } = eventRangeMin(e)
-                  if (em <= SHIFT_GRID_START || sm >= SHIFT_GRID_START + SHIFT_GRID_SLOTS.length * SHIFT_SLOT_MINUTES) return null
-                  const topPx = ((sm - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
-                  const botPx = ((em - SHIFT_GRID_START) / SHIFT_SLOT_MINUTES) * SHIFT_SLOT_PX
+                  if (em <= grid.startMin || sm >= gridEnd) return null
+                  const topPx = ((sm - grid.startMin) / grid.slotMin) * grid.slotPx
+                  const botPx = ((em - grid.startMin) / grid.slotMin) * grid.slotPx
                   const top = Math.max(0, topPx) + 1
-                  const height = Math.max(SHIFT_SLOT_PX - 4, Math.min(SHIFT_GRID_H, botPx) - top)
+                  const height = Math.max(minBlock, Math.min(grid.height, botPx) - top)
                   return (
                     <ShiftBlock
                       key={e.id}
@@ -1380,6 +1427,11 @@ export function CalendarioRepartoPage() {
   const slotAnchorDate = useMemo(() => (view === "day" ? dayOnly : startOfDay(cursor)), [view, dayOnly, cursor])
   const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
   const cells = view === "month" ? monthMatrix(cursor) : []
+  const weekShiftGrid = useMemo(() => {
+    const probe = shiftGridCovering(weekDays, events, 16)
+    return shiftGridCovering(weekDays, events, weekSlotPx(probe.slots.length))
+  }, [weekDays, events])
+  const dayShiftGrid = useMemo(() => shiftGridCovering([dayOnly], events, 22), [dayOnly, events])
   const weekHours = useMemo(() => {
     if (!apiComparto || !shiftRangeGrid) return null
     return computeWeekHoursByStaff(weekDays, events, instructors, apiComparto)
@@ -1675,13 +1727,14 @@ export function CalendarioRepartoPage() {
         {view === "week" && hasPlanningGrid(apiComparto) ? (
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
             {shiftRangeGrid ? (
-              <div className="max-h-[78vh] overflow-auto">
+              <div className="overflow-x-auto">
                 <div className="flex min-w-max">
                   <ShiftTimeGutter
+                    grid={weekShiftGrid}
                     header={
                       <>
-                        <div className="h-14 border-b border-zinc-800 bg-zinc-900/80" />
-                        <div className="h-7 border-b border-zinc-800 bg-zinc-950/80" />
+                        <div className="h-11 border-b border-zinc-800 bg-zinc-900/80 sm:h-12" />
+                        <div className="h-6 border-b border-zinc-800 bg-zinc-950/80 sm:h-7" />
                       </>
                     }
                   />
@@ -1696,7 +1749,9 @@ export function CalendarioRepartoPage() {
                         setEditEvent(e)
                       }}
                       isToday={isTodayCell(d)}
-                      lanePx={SHIFT_LANE_PX}
+                      lanePx={SHIFT_LANE_PX_WEEK}
+                      grid={weekShiftGrid}
+                      compact
                       title={
                         <>
                           <div className={cn("text-[10px] uppercase tracking-wide", isTodayCell(d) ? "text-[#46A6D9]" : "text-zinc-500")}>
@@ -1811,13 +1866,14 @@ export function CalendarioRepartoPage() {
         {view === "day" && hasPlanningGrid(apiComparto) ? (
           shiftRangeGrid ? (
             <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
-              <div className="max-h-[78vh] overflow-auto">
+              <div className="overflow-x-auto">
                 <div className="flex min-w-max">
                   <ShiftTimeGutter
+                    grid={dayShiftGrid}
                     header={
                       <>
-                        <div className="h-14 border-b border-zinc-800 bg-zinc-900/80" />
-                        <div className="h-7 border-b border-zinc-800 bg-zinc-950/80" />
+                        <div className="h-11 border-b border-zinc-800 bg-zinc-900/80 sm:h-12" />
+                        <div className="h-6 border-b border-zinc-800 bg-zinc-950/80 sm:h-7" />
                       </>
                     }
                   />
@@ -1830,8 +1886,9 @@ export function CalendarioRepartoPage() {
                       setEditEvent(e)
                     }}
                     isToday={isTodayCell(dayOnly)}
-                    lanePx={140}
+                    lanePx={SHIFT_LANE_PX_DAY}
                     grow
+                    grid={dayShiftGrid}
                     title={
                       <div className={cn("text-sm font-medium capitalize", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
                         {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}

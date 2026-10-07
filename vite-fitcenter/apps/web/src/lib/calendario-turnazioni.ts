@@ -1,6 +1,7 @@
 import type { CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { eventMatchesCalendarDay } from "@/lib/calendario-manual"
 import { eventTimeRange, parseHm } from "@/lib/reception-shift"
+import { staffColorKey, staffLaneLabel } from "@/lib/staff-colors"
 
 function isoYmd(d: Date): string {
   const pad2 = (n: number) => String(n).padStart(2, "0")
@@ -57,20 +58,11 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
   return 60
 }
 
-function staffLabelsFromEvent(e: CalendarioMergedEventDto, instructors: CalendarioIstruttore[]): { key: string; label: string }[] {
-  if (e.istruttoreId) {
-    const ins = instructors.find((x) => x.id === e.istruttoreId)
-    const label = ins ? `${ins.cognome} ${ins.nome}`.trim() : e.staffDisplay.trim() || "—"
-    return [{ key: `id:${e.istruttoreId}`, label }]
-  }
-  const raw = (e.staffDisplay || e.staff || "").trim()
-  if (!raw || raw === "—") return [{ key: "unknown", label: "Non assegnato" }]
-  const parts = raw
-    .split(/\s*[·,;/]\s*/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  const uniq = [...new Set(parts)]
-  return uniq.map((label) => ({ key: `name:${label.toLowerCase()}`, label }))
+function staffLabelsFromEvent(e: CalendarioMergedEventDto, _instructors: CalendarioIstruttore[]): { key: string; label: string }[] {
+  const key = staffColorKey(e)
+  const label = staffLaneLabel(e)
+  if (key === "unknown" && (!label || label === "—")) return [{ key: "unknown", label: "Non assegnato" }]
+  return [{ key, label: label && label !== "—" ? label : "Non assegnato" }]
 }
 
 function datesForWeek(anchor: Date): Date[] {
@@ -211,10 +203,15 @@ export function computeWeekHoursByStaff(
 
   for (let i = 0; i < weekDays.length; i++) {
     const d = weekDays[i]!
+    const seen = new Set<string>()
     for (const e of events) {
       if (!eventMatchesCalendarDay(e, d)) continue
       const dur = eventDurationMinutes(e, comparto)
       const staffList = staffLabelsFromEvent(e, instructors)
+      const { start, end } = eventTimeRange(e)
+      const uniq = `${staffList.map((s) => s.key).join(",")}|${start}|${end}`
+      if (seen.has(uniq)) continue
+      seen.add(uniq)
       const share = staffList.length > 0 ? dur / staffList.length : dur
       dayTotals[i] += dur
       for (const { key, label } of staffList) {
