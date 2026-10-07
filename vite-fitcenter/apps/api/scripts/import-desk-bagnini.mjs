@@ -99,8 +99,12 @@ function cellToStart(v) {
   const t = String(v ?? "")
     .trim()
     .replace(",", ".")
-  const m = t.match(/(\d{1,2})[.:](\d{2})/)
-  if (m) return `${pad2(Math.min(23, Number(m[1])))}:${m[2]}`
+  const m = t.match(/(?:^|[\sT])(\d{1,2})[.:](\d{2})(?!\d)/) || t.match(/^(\d{1,2})[.:](\d{2})(?!\d)/)
+  if (m) {
+    const h = Number(m[1])
+    if (h < 6 || h > 23) return null
+    return `${pad2(h)}:${m[2]}`
+  }
   const m2 = t.match(/^(\d{1,2})$/)
   if (m2) {
     const h = Number(m2[1])

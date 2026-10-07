@@ -18,6 +18,10 @@ export function formatHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
+/** Prima fascia utile desk/piscina: niente mezzanotte. */
+export const SHIFT_DAY_START_MIN = 6 * 60
+const DESK_OPEN_MIN = 8 * 60
+
 const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
 
 function padRangeHm(h: string, min: string): string | null {
@@ -55,20 +59,25 @@ export function formatShiftDurationLabel(start: string, end: string): string {
   return `${m}m`
 }
 
+function usableShiftStart(titleStart: number, em: number, fieldStart: number | null): number {
+  if (fieldStart != null && fieldStart >= SHIFT_DAY_START_MIN && fieldStart < em) return fieldStart
+  if (titleStart >= SHIFT_DAY_START_MIN && titleStart < em) return titleStart
+  if (em > DESK_OPEN_MIN) return DESK_OPEN_MIN
+  return SHIFT_DAY_START_MIN
+}
+
 export function eventTimeRange(e: { title: string; start: string }): { start: string; end: string } {
   const fieldStart = parseHm(e.start)
   const fromTitle = parseRangeFromTitle(e.title)
   if (fromTitle) {
     const titleStart = parseHm(fromTitle.start)!
     const titleEnd = parseHm(fromTitle.end)!
-    if (fieldStart != null && titleEnd > fieldStart) {
-      const startMin = Math.abs(fieldStart - titleStart) <= 5 ? titleStart : fieldStart
-      if (titleEnd > startMin) return { start: formatHm(startMin), end: fromTitle.end }
-    }
-    return fromTitle
+    const sm = usableShiftStart(titleStart, titleEnd, fieldStart)
+    const em = titleEnd > sm ? titleEnd : sm + 30
+    return { start: formatHm(sm), end: formatHm(em) }
   }
-  if (fieldStart == null) return { start: e.start, end: e.start }
-  return { start: formatHm(fieldStart), end: formatHm(fieldStart + 30) }
+  const sm = fieldStart != null && fieldStart >= SHIFT_DAY_START_MIN ? fieldStart : DESK_OPEN_MIN
+  return { start: formatHm(sm), end: formatHm(sm + 30) }
 }
 
 export function buildReceptionTitle(activity: string, start: string, end: string): string {

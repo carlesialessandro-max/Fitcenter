@@ -178,7 +178,7 @@ const SHIFT_GRID_H = SHIFT_GRID_SLOTS.length * SHIFT_SLOT_PX
 
 function eventRangeMin(e: CalEvent): { sm: number; em: number } {
   const { start, end } = eventTimeRange(e)
-  const sm = parseHm(start) ?? parseHm(e.start)
+  const sm = parseHm(start)
   const em = parseHm(end)
   if (sm == null) return { sm: 8 * 60, em: 8 * 60 + 30 }
   if (em == null || em <= sm) return { sm, em: sm + 30 }
@@ -244,7 +244,7 @@ function ShiftBlock({
 function ShiftTimeGutter({ header }: { header: ReactNode }) {
   return (
     <div className="sticky left-0 z-20 flex w-12 shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 sm:w-14">
-      <div className="sticky top-0 z-30 bg-zinc-950">{header}</div>
+      <div className="bg-zinc-950">{header}</div>
       <div className="relative" style={{ height: SHIFT_GRID_H }}>
         {SHIFT_GRID_SLOTS.map((m, i) => (
           <div
@@ -301,7 +301,7 @@ function ShiftDayTrack({
       className={cn("flex shrink-0 flex-col border-l border-zinc-800", isToday && "bg-[#46A6D9]/5", grow && "min-w-0 flex-1")}
       style={grow ? { minWidth: n * lanePx } : { width: n * lanePx }}
     >
-      <div className="sticky top-0 z-10">
+      <div>
         <div className="flex h-14 flex-col items-center justify-center border-b border-zinc-800 bg-zinc-900 px-1 text-center">
           {title}
           {subtitle}
