@@ -1462,7 +1462,7 @@ export function CalendarioRepartoPage() {
   const dayShiftGrid = useMemo(() => shiftGridCovering([dayOnly], events, 22), [dayOnly, events])
   const weekHours = useMemo(() => {
     if (!apiComparto || !shiftRangeGrid) return null
-    return computeWeekHoursByStaff(weekDays, events, instructors, apiComparto)
+    return computeWeekHoursByStaff(weekDays, events, instructors)
   }, [apiComparto, shiftRangeGrid, weekDays, events, instructors])
 
   if (!segmento || !apiComparto) return <Navigate to="/calendario" replace />

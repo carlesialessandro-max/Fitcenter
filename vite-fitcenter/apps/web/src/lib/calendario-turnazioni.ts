@@ -210,7 +210,6 @@ export function computeWeekHoursByStaff(
   weekDays: Date[],
   events: CalendarioMergedEventDto[],
   instructors: CalendarioIstruttore[],
-  comparto?: string
 ): { rows: StaffWeekHoursRow[]; dayTotals: number[]; totalMinutes: number } {
   const byStaff = new Map<string, StaffWeekHoursRow>()
   const dayTotals = Array.from({ length: weekDays.length }, () => 0)
