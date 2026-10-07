@@ -1,5 +1,6 @@
 import type { CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
 import { eventMatchesCalendarDay } from "@/lib/calendario-manual"
+import { eventTimeRange, parseHm } from "@/lib/reception-shift"
 
 function isoYmd(d: Date): string {
   const pad2 = (n: number) => String(n).padStart(2, "0")
@@ -43,15 +44,11 @@ function pad2(n: number): string {
 
 /** Durata slot: intervallo nel titolo, altrimenti default per comparto. */
 export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: string): number {
-  const text = `${e.title} ${e.start}`
-  const range =
-    text.match(/(\d{1,2})[:.](\d{2})\s*[–\-/]\s*(\d{1,2})[:.](\d{2})/) ??
-    text.match(/(\d{1,2})[:.](\d{2})\s*-\s*(\d{1,2})[:.](\d{2})/)
-  if (range) {
-    const start = Number(range[1]) * 60 + Number(range[2])
-    let end = Number(range[3]) * 60 + Number(range[4])
-    if (end <= start) end += 24 * 60
-    const d = end - start
+  const { start, end } = eventTimeRange(e)
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  if (sm != null && em != null && em > sm) {
+    const d = em - sm
     const max = comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" ? 14 * 60 : 8 * 60
     if (d > 0 && d <= max) return d
   }

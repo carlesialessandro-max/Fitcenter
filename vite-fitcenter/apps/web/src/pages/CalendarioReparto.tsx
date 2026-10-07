@@ -178,9 +178,10 @@ const SHIFT_GRID_H = SHIFT_GRID_SLOTS.length * SHIFT_SLOT_PX
 
 function eventRangeMin(e: CalEvent): { sm: number; em: number } {
   const { start, end } = eventTimeRange(e)
-  const sm = parseHm(start) ?? 0
-  let em = parseHm(end) ?? sm + 30
-  if (em <= sm) em += 24 * 60
+  const sm = parseHm(start) ?? parseHm(e.start)
+  const em = parseHm(end)
+  if (sm == null) return { sm: 8 * 60, em: 8 * 60 + 30 }
+  if (em == null || em <= sm) return { sm, em: sm + 30 }
   return { sm, em }
 }
 
@@ -306,15 +307,18 @@ function ShiftDayTrack({
           {subtitle}
         </div>
         <div className="flex h-7 border-b border-zinc-800 bg-zinc-950">
-          {(lanes.length ? lanes : [{ key: "empty", label: "—" }]).map((lane) => (
-            <div
-              key={lane.key}
-              className="min-w-0 flex-1 truncate border-l border-zinc-800/40 px-0.5 text-center text-[10px] font-medium leading-7 text-zinc-400 first:border-l-0"
-              title={lane.label}
-            >
-              {lane.label}
-            </div>
-          ))}
+        {(lanes.length ? lanes : [{ key: "empty", label: "—" }]).map((lane) => (
+          <div
+            key={lane.key}
+            className={cn(
+              "min-w-0 flex-1 truncate border-l px-0.5 text-center text-[10px] font-semibold leading-7 first:border-l-0",
+              lane.key === "empty" ? "border-zinc-800/40 text-zinc-500" : staffPillClasses(lane.key)
+            )}
+            title={lane.label}
+          >
+            {lane.label}
+          </div>
+        ))}
         </div>
       </div>
       <div className="relative" style={{ height: SHIFT_GRID_H }}>

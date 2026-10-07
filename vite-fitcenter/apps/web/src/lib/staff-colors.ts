@@ -15,15 +15,61 @@ const STAFF_PALETTE = [
   "border-emerald-500/45 bg-emerald-950/35 text-emerald-100",
 ] as const
 
-export function staffColorKey(e: { istruttoreId?: string | null; staffDisplay?: string | null }): string {
-  if (e.istruttoreId) return `id:${e.istruttoreId}`
-  const s = String(e.staffDisplay ?? "")
+/** Reception: colori fissi chiesti in calendario. */
+const STAFF_FIXED_CLASSES: Record<string, string> = {
+  simo: "border-yellow-400/80 bg-yellow-500/35 text-yellow-50",
+  victoria: "border-green-500/70 bg-green-700/45 text-green-50",
+  irene: "border-orange-500/80 bg-orange-500/40 text-orange-50",
+  tommaso: "border-sky-400/80 bg-sky-400/35 text-sky-50",
+  alba: "border-blue-800/90 bg-blue-950/80 text-blue-100",
+  ale: "border-lime-400/80 bg-lime-400/30 text-lime-50",
+}
+
+const STAFF_ALIAS: Record<string, string> = {
+  victoria: "victoria",
+  vittoria: "victoria",
+  simo: "simo",
+  simona: "simo",
+  irene: "irene",
+  ire: "irene",
+  tommaso: "tommaso",
+  tommano: "tommaso",
+  alba: "alba",
+  ale: "ale",
+  alessandra: "ale",
+}
+
+function normStaffToken(s: string): string {
+  return s
     .trim()
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+export function staffAliasKey(display: string | null | undefined): string | null {
+  const n = normStaffToken(String(display ?? ""))
+  if (!n) return null
+  if (STAFF_ALIAS[n]) return STAFF_ALIAS[n]
+  for (const part of n.split(/\s+/)) {
+    if (STAFF_ALIAS[part]) return STAFF_ALIAS[part]
+  }
+  return null
+}
+
+export function staffColorKey(e: { istruttoreId?: string | null; staffDisplay?: string | null; staff?: string | null }): string {
+  const alias = staffAliasKey(e.staffDisplay) ?? staffAliasKey(e.staff)
+  if (alias) return alias
+  if (e.istruttoreId) return `id:${e.istruttoreId}`
+  const s = normStaffToken(String(e.staffDisplay ?? e.staff ?? ""))
   return s && s !== "—" ? `name:${s}` : "unknown"
 }
 
 export function staffPillClasses(key: string): string {
+  const fixed = STAFF_FIXED_CLASSES[key]
+  if (fixed) return fixed
   let h = 0
   for (let i = 0; i < key.length; i++) h = (Math.imul(31, h) + key.charCodeAt(i)) >>> 0
   return STAFF_PALETTE[h % STAFF_PALETTE.length]!

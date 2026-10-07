@@ -1,10 +1,13 @@
 /** Fascia oraria turni reception (es. 08:00–14:00, 6 ore). */
 
 export function parseHm(hm: string): number | null {
-  const m = String(hm ?? "").trim().match(/^(\d{1,2})[:.](\d{2})$/)
+  const m = String(hm ?? "")
+    .trim()
+    .match(/^(\d{1,2})[:.](\d{2})(?::\d{2})?/)
   if (!m) return null
-  const h = Math.min(23, Math.max(0, Number(m[1])))
-  const min = Math.min(59, Math.max(0, Number(m[2])))
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (!Number.isFinite(h) || h > 23 || !Number.isFinite(min) || min > 59) return null
   return h * 60 + min
 }
 
@@ -15,23 +18,36 @@ export function formatHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 }
 
-const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-]\s*(\d{1,2})[:.](\d{2})/
+const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
+
+function padRangeHm(h: string, min: string): string | null {
+  const hh = Number(h)
+  const mm = Number(min)
+  if (!Number.isFinite(hh) || hh > 23 || !Number.isFinite(mm) || mm > 59) return null
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`
+}
 
 export function parseRangeFromTitle(title: string): { start: string; end: string } | null {
-  const m = String(title ?? "").match(RANGE_RE)
-  if (!m) return null
-  return {
-    start: `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`,
-    end: `${String(Number(m[3])).padStart(2, "0")}:${m[4]}`,
+  const re = new RegExp(RANGE_RE.source, "g")
+  let last: { start: string; end: string } | null = null
+  let m: RegExpExecArray | null
+  while ((m = re.exec(String(title ?? "")))) {
+    const start = padRangeHm(m[1]!, m[2]!)
+    const end = padRangeHm(m[3]!, m[4]!)
+    if (!start || !end) continue
+    const sm = parseHm(start)
+    const em = parseHm(end)
+    if (sm == null || em == null || em <= sm) continue
+    last = { start, end }
   }
+  return last
 }
 
 export function formatShiftDurationLabel(start: string, end: string): string {
   const sm = parseHm(start)
   const em = parseHm(end)
-  if (sm == null || em == null) return ""
-  let d = em - sm
-  if (d <= 0) d += 24 * 60
+  if (sm == null || em == null || em <= sm) return ""
+  const d = em - sm
   const h = Math.floor(d / 60)
   const m = d % 60
   if (h > 0 && m > 0) return `${h}h${String(m).padStart(2, "0")}`
@@ -40,17 +56,27 @@ export function formatShiftDurationLabel(start: string, end: string): string {
 }
 
 export function eventTimeRange(e: { title: string; start: string }): { start: string; end: string } {
+  const fieldStart = parseHm(e.start)
   const fromTitle = parseRangeFromTitle(e.title)
-  if (fromTitle) return fromTitle
-  const s = parseHm(e.start)
-  if (s == null) return { start: e.start, end: e.start }
-  return { start: formatHm(s), end: formatHm(s + 30) }
+  if (fromTitle) {
+    const titleStart = parseHm(fromTitle.start)!
+    const titleEnd = parseHm(fromTitle.end)!
+    if (fieldStart != null && titleEnd > fieldStart) {
+      const startMin = Math.abs(fieldStart - titleStart) <= 5 ? titleStart : fieldStart
+      if (titleEnd > startMin) return { start: formatHm(startMin), end: fromTitle.end }
+    }
+    return fromTitle
+  }
+  if (fieldStart == null) return { start: e.start, end: e.start }
+  return { start: formatHm(fieldStart), end: formatHm(fieldStart + 30) }
 }
 
 export function buildReceptionTitle(activity: string, start: string, end: string): string {
   const label = String(activity ?? "").trim() || "Sportello"
-  const s = formatHm(parseHm(start) ?? 0)
-  const e = formatHm(parseHm(end) ?? 0)
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  const s = formatHm(sm ?? 8 * 60)
+  const e = formatHm(em != null && sm != null && em > sm ? em : (sm ?? 8 * 60) + 30)
   return `${label} · ${s}–${e}`
 }
 
@@ -64,12 +90,10 @@ export function receptionEventInHour(e: { title: string; start: string }, hour: 
   const { start, end } = eventTimeRange(e)
   const sm = parseHm(start)
   const em = parseHm(end)
-  if (sm == null || em == null) return Math.floor((parseHm(e.start) ?? 0) / 60) === hour
-  let endMin = em
-  if (endMin <= sm) endMin += 24 * 60
+  if (sm == null || em == null || em <= sm) return Math.floor((parseHm(e.start) ?? 8 * 60) / 60) === hour
   const hourStart = hour * 60
   const hourEnd = hourStart + 60
-  return sm < hourEnd && endMin > hourStart
+  return sm < hourEnd && em > hourStart
 }
 
 export const shiftEventInHour = receptionEventInHour
@@ -85,12 +109,12 @@ export function shiftEventInSlot(
   const em = parseHm(end)
   const slotEnd = slotStartMin + slotMinutes
   if (sm == null || em == null) {
-    const s = parseHm(e.start) ?? 0
+    const s = parseHm(e.start)
+    if (s == null) return false
     return s >= slotStartMin && s < slotEnd
   }
-  let endMin = em
-  if (endMin <= sm) endMin += 24 * 60
-  return sm < slotEnd && endMin > slotStartMin
+  if (em <= sm) return sm >= slotStartMin && sm < slotEnd
+  return sm < slotEnd && em > slotStartMin
 }
 
 export function addHoursToHm(hm: string, hours: number): string {
