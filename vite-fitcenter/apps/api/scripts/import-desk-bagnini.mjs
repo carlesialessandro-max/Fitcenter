@@ -346,6 +346,24 @@ function parseDeskTurniSheet(sh, monday) {
     }
   }
   if (headerRow < 0) return []
+  const have = new Set(hits.map((h) => h.dow))
+  for (let r = 0; r < Math.min(6, rows.length); r++) {
+    const row = rows[r] || []
+    for (let c = 0; c < row.length; c++) {
+      const dow = headerToDow(row[c])
+      if (dow == null || have.has(dow)) continue
+      have.add(dow)
+      hits.push({ c, dow })
+    }
+  }
+  const ven = hits.find((h) => h.dow === 5)
+  if (ven) {
+    if (!have.has(6)) {
+      hits.push({ c: ven.c + 4, dow: 6 })
+      have.add(6)
+    }
+    if (!have.has(0)) hits.push({ c: ven.c + 8, dow: 0 })
+  }
   const raw = []
   for (const h of hits) {
     const offset = h.dow === 0 ? 6 : h.dow - 1
@@ -413,6 +431,9 @@ function parseDeskTurniWorkbook(xlsxPath) {
       for (const e of events) perDay[e.dow]++
       const label = ["dom", "lun", "mar", "mer", "gio", "ven", "sab"].map((k, i) => `${k}:${perDay[i]}`).join(" ")
       console.log("[piscina]", name, "→", events.length, "fasce", ymd(monday), "|", label)
+      if (perDay[0] === 0 && perDay[6] === 0) {
+        console.warn("[piscina]", name, "nessun turno sabato/domenica (controlla colonne weekend nel foglio)")
+      }
       all.push(...events)
     }
   }

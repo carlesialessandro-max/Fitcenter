@@ -29,6 +29,7 @@ import {
   eventTimeRange,
   formatHm,
   formatShiftDurationLabel,
+  parseHm,
   shiftEventInHour,
   shiftEventInSlot,
 } from "@/lib/reception-shift"
@@ -168,6 +169,24 @@ function staffCellLabel(s: string): string {
   return parts[0] ?? t
 }
 
+/** Inizio / metà / fine del turno nella riga da 30 min: il nome sta solo sulla prima cella. */
+function shiftSlotEdge(e: CalEvent, slotMin: number, slotMinutes: number): "start" | "middle" | "end" | "only" | null {
+  const { start, end } = eventTimeRange(e)
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  if (sm == null || em == null) return "only"
+  let endMin = em
+  if (endMin <= sm) endMin += 24 * 60
+  const slotEnd = slotMin + slotMinutes
+  if (!(sm < slotEnd && endMin > slotMin)) return null
+  const isStart = sm >= slotMin && sm < slotEnd
+  const isEnd = endMin > slotMin && endMin <= slotEnd
+  if (isStart && isEnd) return "only"
+  if (isStart) return "start"
+  if (isEnd) return "end"
+  return "middle"
+}
+
 const SHIFT_SLOT_MINUTES = 30
 const SHIFT_GRID_SLOTS: number[] = (() => {
   const out: number[] = []
@@ -233,6 +252,7 @@ function EventPill({
   overlapCompact,
   colorByStaff,
   slotFill,
+  slotEdge,
 }: {
   e: CalEvent
   staffLabel: string
@@ -244,12 +264,14 @@ function EventPill({
   /** Turni sovrapposti nella stessa ora: pillola compatta affiancata */
   overlapCompact?: boolean
   colorByStaff?: boolean
-  /** Cella griglia 30 min: solo nominativo, come in Excel */
+  /** Cella griglia 30 min: nominativo solo all'inizio del turno */
   slotFill?: boolean
+  slotEdge?: "start" | "middle" | "end" | "only"
 }) {
   const col = pillColClass(e, colorByStaff)
   if (slotFill) {
     const tip = `${shiftPillLine(e)} · ${staffLabel}`
+    const showName = slotEdge === "start" || slotEdge === "only" || slotEdge == null
     return (
       <button
         type="button"
@@ -258,14 +280,19 @@ function EventPill({
         }}
         disabled={!canEdit}
         className={cn(
-          "flex h-full min-h-[1.35rem] items-center rounded-sm border px-0.5 text-left text-[10px] font-semibold leading-tight",
+          "flex h-full min-h-[1.35rem] items-center border px-0.5 text-left text-[10px] font-semibold leading-tight",
           overlapCompact ? "min-w-0 flex-1" : "w-full",
+          slotEdge === "start" && "rounded-t-sm rounded-b-none border-b-0",
+          slotEdge === "middle" && "rounded-none border-y-0",
+          slotEdge === "end" && "rounded-b-sm rounded-t-none border-t-0",
+          (slotEdge === "only" || slotEdge == null) && "rounded-sm",
           col,
           canEdit ? "cursor-pointer hover:brightness-110" : "cursor-default opacity-90"
         )}
         title={canEdit ? `${tip} — clic per modificare` : tip}
+        aria-label={tip}
       >
-        <span className="block w-full truncate">{staffCellLabel(staffLabel)}</span>
+        {showName ? <span className="block w-full truncate">{staffCellLabel(staffLabel)}</span> : <span className="sr-only">{staffCellLabel(staffLabel)}</span>}
       </button>
     )
   }
@@ -1528,6 +1555,7 @@ export function CalendarioRepartoPage() {
                               colorByStaff={shiftRangeGrid}
                               overlapCompact={overlapHour}
                               slotFill={shiftRangeGrid}
+                              slotEdge={shiftRangeGrid ? shiftSlotEdge(e, slotMin, slotMinutes) ?? "only" : undefined}
                             />
                           ))}
                         </div>
@@ -1625,6 +1653,7 @@ export function CalendarioRepartoPage() {
                           colorByStaff={shiftRangeGrid}
                           overlapCompact={overlapHour}
                           slotFill={shiftRangeGrid}
+                          slotEdge={shiftRangeGrid ? shiftSlotEdge(e, slotMin, slotMinutes) ?? "only" : undefined}
                         />
                       ))}
                     </div>
