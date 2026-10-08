@@ -511,12 +511,15 @@ export function LibroPagaDelegheForm({
   selected,
   onSave,
   onError,
+  extra,
 }: {
   persone: { id: string; label: string }[]
   selected: string[]
   onSave: (ids: string[]) => Promise<unknown>
   onError: (s: string) => void
+  extra?: ReactNode
 }) {
+  const [open, setOpen] = useState(false)
   const [ids, setIds] = useState(selected)
   useEffect(() => {
     setIds(selected)
@@ -530,13 +533,28 @@ export function LibroPagaDelegheForm({
     },
     onError: (e: Error) => onError(e.message),
   })
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="button" className={btnGhost} onClick={() => setOpen(true)}>
+          Assegna deleghe
+        </button>
+        {selected.length > 0 && (
+          <span className="text-xs text-zinc-500">
+            {selected.length} {selected.length === 1 ? "delega già assegnata" : "deleghe già assegnate"}
+          </span>
+        )}
+      </div>
+    )
+  }
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
-      <h2 className="text-sm font-medium text-zinc-200">Delega convalida mensilità</h2>
-      <p className="mt-1 text-xs text-zinc-500">
+    <div className="max-w-xl rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-xl">
+      <h2 className="mb-4 border-b border-zinc-800 pb-2 text-sm font-medium text-zinc-200">Assegna deleghe</h2>
+      <p className="text-xs text-zinc-500">
         Chi scegli può, a fine mese, convalidare le lezioni del tuo reparto (Ok / Sostituzione / Non svolta) al posto
         tuo.
       </p>
+      {extra ? <div className="mt-3">{extra}</div> : null}
       <div className="mt-3 grid max-h-56 gap-1 overflow-y-auto sm:grid-cols-2">
         {persone.map((p) => (
           <label key={p.id} className="flex items-center gap-2 text-sm text-zinc-200">
@@ -552,9 +570,21 @@ export function LibroPagaDelegheForm({
         ))}
         {!persone.length && <p className="text-xs text-zinc-500">Nessun istruttore nel reparto.</p>}
       </div>
-      <button type="button" className={`${btnAmber} mt-3`} disabled={mut.isPending} onClick={() => mut.mutate()}>
-        Salva deleghe
-      </button>
+      <div className="mt-4 flex justify-end gap-2">
+        <button
+          type="button"
+          className={btnGhost}
+          onClick={() => {
+            setIds(selected)
+            setOpen(false)
+          }}
+        >
+          Annulla
+        </button>
+        <button type="button" className={btnAmber} disabled={mut.isPending} onClick={() => mut.mutate()}>
+          {mut.isPending ? "Salvataggio…" : "Salva"}
+        </button>
+      </div>
     </div>
   )
 }

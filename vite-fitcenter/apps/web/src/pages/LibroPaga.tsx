@@ -950,29 +950,26 @@ function PersonaleDelegheAdmin({
     .sort((a, b) => a.label.localeCompare(b.label, "it"))
   if (!managers.length) return null
   return (
-    <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
-      <label className="grid max-w-sm gap-1 text-xs text-zinc-400">
-        <span>Responsabile da delegare</span>
-        <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className={inputCls}>
-          {managers.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.nominativo ?? `${m.cognome ?? ""} ${m.nome}`.trim()}
-              {m.repartoNome ? ` · ${m.repartoNome}` : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      {q.isLoading && <p className="text-xs text-zinc-500">Caricamento deleghe…</p>}
-      {q.data && (
-        <LibroPagaDelegheForm
-          key={managerId}
-          persone={persone}
-          selected={q.data.deleghe}
-          onSave={(ids) => libroPagaApi.putDeleghe(managerId, ids)}
-          onError={onError}
-        />
-      )}
-    </div>
+    <LibroPagaDelegheForm
+      persone={persone}
+      selected={q.data?.deleghe ?? []}
+      onSave={(ids) => libroPagaApi.putDeleghe(managerId, ids)}
+      onError={onError}
+      extra={
+        <label className="grid gap-1 text-xs text-zinc-400">
+          <span>Responsabile da delegare</span>
+          <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className={inputCls}>
+            {managers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.nominativo ?? `${m.cognome ?? ""} ${m.nome}`.trim()}
+                {m.repartoNome ? ` · ${m.repartoNome}` : ""}
+              </option>
+            ))}
+          </select>
+          {q.isLoading ? <span className="text-zinc-500">Caricamento deleghe…</span> : null}
+        </label>
+      }
+    />
   )
 }
 
