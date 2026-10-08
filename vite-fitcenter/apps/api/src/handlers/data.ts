@@ -198,10 +198,32 @@ function markRinnovato(list: Abbonamento[]): void {
   }
 }
 
-/** Allineato a KPI dashboard: esclusione tesseramenti. */
+/** Cartella VARIE del gestionale e tutte le sottocategorie (tesseramenti, GYMPAY, BeActive, …). */
+function isCartellaVarieAbb(a: Abbonamento): boolean {
+  const blob = `${a.macroCategoriaDescrizione ?? ""} ${a.categoriaAbbonamentoDescrizione ?? ""} ${a.abbonamentoDescrizione ?? ""} ${a.pianoNome ?? ""}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+  const compact = blob.replace(/[.\-_\s+]/g, "")
+  return (
+    blob.includes("VARIE") ||
+    blob.includes("GYMPAY") ||
+    compact.includes("BEACTIVE") ||
+    blob.includes("TESSERAMENT") ||
+    blob.includes("SOSPENSIONI AGGIUNT") ||
+    blob.includes("ATTIVAZIONE PHON") ||
+    blob.includes("QUOTA ASSOCIATIVA") ||
+    /\bFITRI\b/.test(blob)
+  )
+}
+
+/** Allineato a KPI dashboard: esclusione tesseramenti e tutta la cartella VARIE. */
 function isTesseramentoAbbForKpi(a: Abbonamento): boolean {
   return (
     a.isTesseramento === true ||
+    isCartellaVarieAbb(a) ||
     (a.prezzo != null && Number(a.prezzo) === 39) ||
     (a.pianoNome ?? "").toLowerCase().includes("tesserament") ||
     ((a.pianoNome ?? "").toLowerCase().includes("asi") && (a.pianoNome ?? "").toLowerCase().includes("isc"))
@@ -296,6 +318,10 @@ const ADULTI_CATEGORIA_ESCLUSE = new Set([
   "PROFESSIONALE",
   "INVITO",
   "ABBONAMENTI STAFF",
+  "TESSERAMENTI",
+  "GYMPAY",
+  "BEACTIVE",
+  "VARIE",
 ])
 
 function isAdultiCategoriaEsclusa(a: Abbonamento): boolean {
@@ -460,8 +486,8 @@ function isPastCalendarMonth(anno: number, mese: number): boolean {
 }
 
 /** Versione cache dashboard/dettaglio. Al cambio, si serve subito la versione precedente e si ricalcola in sottofondo. */
-const DASHBOARD_CACHE_V = "attivi-allinea-10"
-const DASHBOARD_CACHE_V_PREV = ["attivi-kpi-9", "gestanti-adulti-8", "gestanti-adulti-7"] as const
+const DASHBOARD_CACHE_V = "attivi-varie-11"
+const DASHBOARD_CACHE_V_PREV = ["attivi-allinea-10", "attivi-kpi-9", "gestanti-adulti-8"] as const
 
 function dashboardCacheParams(consulente: string | undefined, v: string = DASHBOARD_CACHE_V) {
   return { consulente: consulente ?? null, v }

@@ -94,10 +94,19 @@ function isTesseramentoRow(row: Record<string, unknown>): boolean {
   const blob = `${macroDesc} ${catDesc} ${abbonDesc}`.replace(/\s+/g, " ").trim()
   const blobNorm = blob.replace(/[.\-_\s+]/g, "") // rimuove separatori per match robusti
   if (durataDesc === "TESSERAMENTO GARE") return true
-  // IDCategoria = 19: VARIE/TESSERAMENTI da escludere
+  const idMacro = row.IDMacroCategoria != null ? num(row.IDMacroCategoria) : NaN
+  // Cartella gestionale VARIE (EasySystem): TESSERAMENTI, GYMPAY, BeActive, ecc.
+  const idMacroVarie = Number(process.env.GESTIONALE_ID_MACRO_VARIE ?? 5)
+  if (!Number.isNaN(idMacro) && Number.isFinite(idMacroVarie) && idMacro === idMacroVarie) return true
+  // IDCategoria = 19: TESSERAMENTI sotto VARIE
   if (!Number.isNaN(idCategoria) && idCategoria === 19) return true
-  if (catDesc === "TESSERAMENTI") return true
-  if (macroDesc === "VARIE") return true
+  if (macroDesc === "VARIE" || macroDesc.includes("VARIE")) return true
+  if (catDesc === "TESSERAMENTI" || catDesc.includes("TESSERAMENT")) return true
+  if (catDesc === "GYMPAY" || blob.includes("GYMPAY")) return true
+  if (catDesc === "BEACTIVE" || blobNorm.includes("BEACTIVE")) return true
+  if (blob.includes("SOSPENSIONI AGGIUNT")) return true
+  if (blob.includes("ATTIVAZIONE PHON") || blob.includes("QUOTA ASSOCIATIVA")) return true
+  if (/\bFITRI\b/.test(blob) || (blob.includes("FIN") && blob.includes("ISCRIZIONE") && blob.includes("TESSER"))) return true
   if (macroDesc.includes("ASI") && macroDesc.includes("ISCRIZIONE")) return true
   if (abbonDesc.includes("ASI") && abbonDesc.includes("ISCRIZIONE")) return true
 
