@@ -276,6 +276,73 @@ function filterAbbonamentiAttiviForKpi(abbonamenti: Abbonamento[], referenceDate
   })
 }
 
+function attiviCategoriaLabel(a: Abbonamento): string {
+  return (a.categoriaAbbonamentoDescrizione ?? a.macroCategoriaDescrizione ?? a.categoria ?? "ALTRO").toString().trim() || "ALTRO"
+}
+
+function normalizeAttiviCategoria(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+const ADULTI_CATEGORIA_ESCLUSE = new Set([
+  "QUOTE DANZA",
+  "DANZA ADULTI",
+  "DANZA BAMBINI",
+  "PROFESSIONALE",
+  "INVITO",
+  "ABBONAMENTI STAFF",
+])
+
+function isAdultiCategoriaEsclusa(a: Abbonamento): boolean {
+  const n = normalizeAttiviCategoria(attiviCategoriaLabel(a))
+  const macro = normalizeAttiviCategoria(a.macroCategoriaDescrizione ?? "")
+  return (
+    ADULTI_CATEGORIA_ESCLUSE.has(n) ||
+    ADULTI_CATEGORIA_ESCLUSE.has(macro) ||
+    n.includes("STAFF") ||
+    macro.includes("STAFF") ||
+    isAbbonamentoStaff(a)
+  )
+}
+
+function dedupBambiniByClienteId(rows: Abbonamento[]): Abbonamento[] {
+  const byCliente = new Map<string, Abbonamento>()
+  for (const a of rows) {
+    const id = String(a.clienteId ?? "").trim()
+    if (!id) continue
+    const prev = byCliente.get(id)
+    if (!prev) {
+      byCliente.set(id, a)
+      continue
+    }
+    const dPrev = inferDurataMesiAbb(prev)
+    const dNext = inferDurataMesiAbb(a)
+    if (dPrev == null && dNext != null) {
+      byCliente.set(id, a)
+      continue
+    }
+    if (dNext != null && (dPrev == null || dNext > dPrev)) {
+      byCliente.set(id, a)
+    }
+  }
+  return Array.from(byCliente.values())
+}
+
+/** Stessa segmentazione della pagina Attivi: con consulente solo adulti; senza, adulti + bambini deduplicati. */
+function segmentaAttiviComePaginaAttivi(attivi: Abbonamento[], soloAdulti: boolean): Abbonamento[] {
+  const adulti = attivi
+    .filter((a) => !isAbbonamentoBambini(a))
+    .filter((a) => !isAdultiCategoriaEsclusa(a) && !isAbbonamentoPersonalTrainer(a))
+  if (soloAdulti) return adulti
+  const bambini = dedupBambiniByClienteId(attivi.filter((a) => isAbbonamentoBambini(a)))
+  return [...adulti, ...bambini]
+}
+
 function inferDurataMesiAbb(a: Abbonamento): number | null {
   const d = a.durataMesi
   if (d != null && d >= 1 && d <= 120) return d
@@ -393,8 +460,8 @@ function isPastCalendarMonth(anno: number, mese: number): boolean {
 }
 
 /** Versione cache dashboard/dettaglio. Al cambio, si serve subito la versione precedente e si ricalcola in sottofondo. */
-const DASHBOARD_CACHE_V = "attivi-kpi-9"
-const DASHBOARD_CACHE_V_PREV = ["gestanti-adulti-8", "gestanti-adulti-7"] as const
+const DASHBOARD_CACHE_V = "attivi-allinea-10"
+const DASHBOARD_CACHE_V_PREV = ["attivi-kpi-9", "gestanti-adulti-8", "gestanti-adulti-7"] as const
 
 function dashboardCacheParams(consulente: string | undefined, v: string = DASHBOARD_CACHE_V) {
   return { consulente: consulente ?? null, v }
@@ -547,6 +614,7 @@ function shareInflight<T>(key: string, fn: () => Promise<T>): Promise<T> {
 
 // Evita che React Query rimanga in loading infinito quando SQL non risponde.
 const DASHBOARD_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_SQL_TIMEOUT_MS ?? 180_000)
+const DASHBOARD_ATTIVI_SQL_TIMEOUT_MS = Number(process.env.DASHBOARD_ATTIVI_SQL_TIMEOUT_MS ?? 60_000)
 function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
   return Promise.race([
     p,
@@ -554,6 +622,26 @@ function withDashboardSqlTimeout<T>(p: Promise<T>): Promise<T> {
       setTimeout(() => rej(new Error("__FITCENTER_DASHBOARD_SQL_TIMEOUT__")), DASHBOARD_SQL_TIMEOUT_MS)
     ),
   ])
+}
+
+/** Stessa fonte della pagina Attivi se c’è la consulente; altrimenti solo non scaduti. Non fa fallire il resto della dashboard. */
+async function loadAbbonamentiRowsForDashboardKpi(
+  idConsultant: string | undefined,
+  asOfKey: string
+): Promise<Record<string, unknown>[]> {
+  const q = idConsultant
+    ? gestionaleSql.queryAbbonamenti(idConsultant)
+    : gestionaleSql.queryAbbonamentiPerKpiAttivi(undefined, asOfKey)
+  try {
+    return await Promise.race([
+      q,
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("__DASHBOARD_ATTIVI_TIMEOUT__")), DASHBOARD_ATTIVI_SQL_TIMEOUT_MS)
+      ),
+    ])
+  } catch {
+    return []
+  }
 }
 
 function dashboardCacheAsOf(asOfKey: string): string {
@@ -688,7 +776,7 @@ async function computeDashboardSqlStats(
     const labels = budgetPerConsulente.getConsulentiLabels()
     const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
     const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-    const abbonamentiPromise = gestionaleSql.queryAbbonamentiPerKpiAttivi(undefined, asOf.key)
+    const abbonamentiPromise = loadAbbonamentiRowsForDashboardKpi(undefined, asOf.key)
 
     if (mergedIds) {
       const [abbonamentiRows, prog, perMeseRaw] = await Promise.all([
@@ -782,9 +870,7 @@ async function computeDashboardSqlStats(
   }
 
   const [abbonamentiRows, prog, perMeseSingle] = await Promise.all([
-    idUtente
-      ? gestionaleSql.queryAbbonamentiPerKpiAttivi(idUtente, asOf.key)
-      : Promise.resolve([] as Record<string, unknown>[]),
+    loadAbbonamentiRowsForDashboardKpi(idUtente, asOf.key),
     gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
     gestionaleSql.getVenditePerMeseAnno(anno, idUtente, venditeOpts),
   ])
@@ -812,7 +898,8 @@ async function computeDashboardSqlStats(
       undefined,
       venditeMeseSql,
       venditePerMeseSql,
-      asOf.date
+      asOf.date,
+      true
     ),
     anno,
     mese,
@@ -998,18 +1085,19 @@ function buildDashboardFromData(
   movimentiVenduto?: Record<string, unknown>[],
   venditeMeseSql?: number,
   venditePerMeseSql?: { mese: number; totale: number }[],
-  referenceDate?: Date
+  referenceDate?: Date,
+  soloAdulti?: boolean
 ): DashboardStats {
   const now = referenceDate ? new Date(referenceDate) : new Date()
   const oggi = toDateParts(now)
   const anno = oggi.year
   const mese = oggi.month
-  const attivi = filterAbbonamentiAttiviForKpi(abbonamenti, now)
+  const attivi = segmentaAttiviComePaginaAttivi(filterAbbonamentiAttiviForKpi(abbonamenti, now), Boolean(soloAdulti))
   const in30 = new Date(now)
   in30.setDate(in30.getDate() + 30)
   const in60 = new Date(now)
   in60.setDate(in60.getDate() + 60)
-  // In scadenza: stessi «attivi» del KPI (tutte le categorie tranne tesseramenti), non già rinnovati.
+  // In scadenza: stessi «attivi» del KPI (allineati alla pagina Attivi), non già rinnovati.
   const inScadenza = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in30)
   const inScadenza60 = attivi.filter((a) => a.rinnovato !== true && new Date(a.dataFine) <= in60)
   const budgetCorrente = budget.find((b) => b.anno === anno && b.mese === mese)
@@ -1246,32 +1334,6 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     }
     markRinnovato(list)
     let attivi = filterAbbonamentiAttiviForKpi(list, date)
-
-    // Dedupe bambini: lo stesso cliente iscritto a più corsi va contato una sola volta.
-    // Regola scelta: tiene la durata inferita più alta (se esiste un valore).
-    const dedupBambiniByClienteId = (rows: Abbonamento[]): Abbonamento[] => {
-      const byCliente = new Map<string, Abbonamento>()
-      for (const a of rows) {
-        const id = String(a.clienteId ?? "").trim()
-        if (!id) continue
-        const prev = byCliente.get(id)
-        if (!prev) {
-          byCliente.set(id, a)
-          continue
-        }
-        const dPrev = inferDurataMesiAbb(prev)
-        const dNext = inferDurataMesiAbb(a)
-        if (dPrev == null && dNext != null) {
-          byCliente.set(id, a)
-          continue
-        }
-        if (dNext != null && (dPrev == null || dNext > dPrev)) {
-          byCliente.set(id, a)
-          continue
-        }
-      }
-      return Array.from(byCliente.values())
-    }
     const orderDurata = ["1 mese", "2–3 mesi", "4–6 mesi", "7–12 mesi", "Oltre 12 mesi", "Durata non nota"] as const
     const byDurata = (rows: Abbonamento[]) => {
       const mCount = new Map<string, number>()
@@ -1288,28 +1350,7 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         totaleDurataMesi: mMesi.get(durata) ?? 0,
       }))
     }
-    const categoriaLabel = (a: Abbonamento) =>
-      (a.categoriaAbbonamentoDescrizione ?? a.macroCategoriaDescrizione ?? a.categoria ?? "ALTRO").toString().trim() || "ALTRO"
-    const normalizeCategoria = (s: string) =>
-      s
-        .toUpperCase()
-        .normalize("NFD")
-        .replace(/\p{M}/gu, "")
-        .replace(/\s+/g, " ")
-        .trim()
-    const adultiCategoriaEscluse = new Set([
-      "QUOTE DANZA",
-      "DANZA ADULTI",
-      "DANZA BAMBINI",
-      "PROFESSIONALE",
-      "INVITO",
-      "ABBONAMENTI STAFF",
-    ])
-    const isAdultiCategoriaEsclusa = (a: Abbonamento) => {
-      const n = normalizeCategoria(categoriaLabel(a))
-      const macro = normalizeCategoria(a.macroCategoriaDescrizione ?? "")
-      return adultiCategoriaEscluse.has(n) || adultiCategoriaEscluse.has(macro) || n.includes("STAFF") || macro.includes("STAFF") || isAbbonamentoStaff(a)
-    }
+    const categoriaLabel = attiviCategoriaLabel
     const byCategoria = (rows: Abbonamento[]) => {
       const m = new Map<string, number>()
       for (const a of rows) {

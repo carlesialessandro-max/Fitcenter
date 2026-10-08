@@ -56,9 +56,11 @@ export function Abbonamenti() {
     ? (adminConsulente.trim() ? adminConsulente.trim() : undefined)
     : consulenteFilter
 
-  const { data: dashboard } = useQuery({
+  const { data: dashboard, isLoading: dashboardLoading } = useQuery({
     queryKey: ["dashboard", effectiveConsulenteFilter],
     queryFn: () => dataApi.getDashboard(effectiveConsulenteFilter),
+    retry: 0,
+    staleTime: 2 * 60 * 1000,
   })
   const { data: budgetData } = useQuery({
     queryKey: ["budget"],
@@ -195,22 +197,26 @@ export function Abbonamenti() {
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Abbonamenti attivi</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-400">
-            {dashboard?.abbonamentiAttivi ?? abbonamenti.filter((a) => a.stato === "attivo").length}
+            {dashboardLoading && dashboard == null ? "…" : (dashboard?.abbonamentiAttivi ?? "—")}
           </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Entrate mese corrente</p>
           <p className="mt-1 text-2xl font-semibold text-amber-400">
-            €{(dashboard?.entrateMese ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+            {dashboardLoading && dashboard == null
+              ? "…"
+              : `€${(dashboard?.entrateMese ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
           </p>
         </div>
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
           <p className="text-sm text-zinc-400">Budget mese</p>
           <p className="mt-1 text-2xl font-semibold text-zinc-100">
-            €{(dashboard?.budgetMese ?? 6000).toLocaleString("it-IT", { minimumFractionDigits: 2 })}
+            {dashboardLoading && dashboard == null
+              ? "…"
+              : `€${(dashboard?.budgetMese ?? 0).toLocaleString("it-IT", { minimumFractionDigits: 2 })}`}
           </p>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {dashboard?.percentualeBudget ?? 0}% raggiunto
+            {dashboardLoading && dashboard == null ? "…" : `${dashboard?.percentualeBudget ?? 0}% raggiunto`}
           </p>
         </div>
       </div>

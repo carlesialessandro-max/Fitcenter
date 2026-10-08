@@ -226,7 +226,7 @@ export function Dashboard() {
   }
 
   const safeNum = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)
-  const kpiLoading = !data && (isLoading || isFetching)
+  const kpiLoading = !data && !error && (isLoading || isFetching)
 
   const oggi = role === "admin"
     ? fmtDateIt(asOf)
