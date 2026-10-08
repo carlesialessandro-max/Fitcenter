@@ -74,27 +74,33 @@ const COMPARTO_LABEL: Record<string, string> = {
   danza: "Danza",
 }
 
+function isMansioneCorsoFit(t: string): boolean {
+  if (/\bscuola nuoto\b|\bsn bambini\b|\bbimbo\b|\bbimbi\b|\bistruttore nuoto/.test(t)) return false
+  if (/\bnuoto\b/.test(t) && !/\bfit\b|\bterra\b|\bh ?2 ?0\b/.test(t)) return false
+  return (
+    /\bcorso\b|\bcorsi\b/.test(t) ||
+    (/\bfit\b/.test(t) && /\bh ?2 ?0\b|\bterra\b|\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba/.test(t)) ||
+    /\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba|\bgap\b|\bfunctional|\btrx\b|\btotem|\bstretch|\bstep\b/.test(t)
+  )
+}
+
 /** Mansione Libro paga → calendari FitCenter da usare (mai tutti insieme). */
 export function compartiPerMansione(mansione: string, dominio?: string): string[] {
   const t = norm(`${mansione} ${dominio ?? ""}`)
   if (!t) return []
-  if (/\bsala pesi\b|\bsala fitness\b|\bpalestr/.test(t) && !/\bcorsi\b|\bscuola nuoto\b/.test(t)) {
+  if (/\bsala pesi\b|\bsala fitness\b|\bpalestr/.test(t) && !/\bcorso\b|\bcorsi\b|\bscuola nuoto\b/.test(t)) {
     return ["sala_fitness"]
   }
   if (/\bbagnin/.test(t)) return ["piscina"]
   if (/\bdesk\b|\breception\b|\bsegreteri|\baccoglienza/.test(t)) return ["reception"]
-  if (/\bscuola nuoto\b|\bs n\b|\bsn bambini\b|\bistruttore nuoto/.test(t)) return ["scuola_nuoto"]
+  if (isMansioneCorsoFit(t)) return ["corsi"]
+  if (/\bscuola nuoto\b|\bs n\b|\bsn bambini\b|\bistruttore nuoto|\bbimbo\b|\bbimbi\b/.test(t)) {
+    return ["scuola_nuoto"]
+  }
   if (/\bdanza\b/.test(t)) return ["danza"]
   if (/\bcampus\b/.test(t)) return ["campus"]
   if (/\bacquatic/.test(t)) return ["acquaticita"]
   if (/\bpuliz/.test(t)) return ["pulizie"]
-  if (
-    /\bcorsi\b|\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba|\bgap\b|\bfunctional|\btrx\b|\btotem|\bstretch|\bstep\b/.test(
-      t
-    )
-  ) {
-    return ["corsi"]
-  }
   if (/\bfitness\b|\bpalestr/.test(t)) return ["sala_fitness"]
   if (/\bnuoto\b|\bvasca|\bpiscina/.test(t)) return ["scuola_nuoto"]
   return []
@@ -301,7 +307,10 @@ export function proponeConvalidaMese(opts: {
     const pe = opts.personaleById.get(t.personaleId)
     const calendariAttesi = compartiPerMansione(t.livelloNome, t.dominio)
     const allowed = new Set(calendariAttesi)
-    const daySlots = (byDay.get(t.giorno) ?? []).filter((s) => !allowed.size || allowed.has(s.comparto))
+    // Senza calendario atteso non si pesca da tutta la giornata (es. Corso Fit → S.N. Bambini).
+    const daySlots = allowed.size
+      ? (byDay.get(t.giorno) ?? []).filter((s) => allowed.has(s.comparto))
+      : []
     const samePerson = pe ? daySlots.filter((s) => namesMatch(pe, s.staff)) : []
     const match = samePerson[0]
     const sostitutiPossibili = daySlots.filter((s) => !pe || !namesMatch(pe, s.staff))
