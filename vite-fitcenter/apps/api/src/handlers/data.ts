@@ -6,6 +6,7 @@ import { budgetStore } from "../store/budget.js"
 import * as budgetPerConsulente from "../store/budget-per-consulente.js"
 import { store as chiamateStore } from "../store/chiamate.js"
 import * as abbonamentiFollowUpStore from "../store/abbonamenti-follow-up.js"
+import { insertCrmRinnovo } from "../services/crm-rinnovo.js"
 import * as convalidazioniStore from "../store/convalidazioni-giorni.js"
 import { store as oreLavorateStore } from "../store/ore-lavorate.js"
 import { getOperatoreConsulenteNome, getScopedUser, canVedereTotaliCentro } from "../middleware/auth.js"
@@ -3904,12 +3905,32 @@ export async function updateAbbonamentiFollowUp(req: Request, res: Response) {
   try {
     const abbonamentoId = String(req.params.abbonamentoId ?? "")
     if (!abbonamentoId) return res.status(400).json({ message: "abbonamentoId mancante" })
-    const body = req.body as { stato?: string; note?: string }
+    const body = req.body as {
+      stato?: string
+      note?: string
+      clienteId?: string
+      consulenteNome?: string
+    }
+    const stato = body.stato as abbonamentiFollowUpStore.RinnovoStato | undefined
     const entry = abbonamentiFollowUpStore.store.set(abbonamentoId, {
-      stato: body.stato as abbonamentiFollowUpStore.RinnovoStato | undefined,
+      stato,
       note: body.note,
     })
-    res.json(entry)
+    let crm: { ok: boolean; idAppuntamento?: number; message?: string } | undefined
+    if (stato) {
+      const idUtente = Number(String(body.clienteId ?? "").trim())
+      const operatoreNome =
+        getOperatoreConsulenteNome(req)?.trim() ||
+        String(body.consulenteNome ?? "").trim() ||
+        undefined
+      crm = await insertCrmRinnovo({
+        idUtente,
+        stato,
+        note: entry.note,
+        operatoreNome,
+      })
+    }
+    res.json({ ...entry, crm })
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
   }

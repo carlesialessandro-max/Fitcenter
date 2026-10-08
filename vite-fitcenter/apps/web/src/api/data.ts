@@ -279,11 +279,17 @@ export const dataApi = {
   },
   getAbbonamentiFollowUp: () =>
     api.get<Record<string, { stato: string; note: string; updatedAt: string }>>("/data/abbonamenti-follow-up"),
-  updateAbbonamentiFollowUp: (abbonamentoId: string, body: { stato?: string; note?: string }) =>
-    api.patch<{ abbonamentoId: string; stato: string; note: string; updatedAt: string }>(
-      `/data/abbonamenti-follow-up/${encodeURIComponent(abbonamentoId)}`,
-      body
-    ),
+  updateAbbonamentiFollowUp: (
+    abbonamentoId: string,
+    body: { stato?: string; note?: string; clienteId?: string; consulenteNome?: string }
+  ) =>
+    api.patch<{
+      abbonamentoId: string
+      stato: string
+      note: string
+      updatedAt: string
+      crm?: { ok: boolean; idAppuntamento?: number; message?: string }
+    }>(`/data/abbonamenti-follow-up/${encodeURIComponent(abbonamentoId)}`, body),
   getCrmAppuntamenti: (params: {
     nomeVenditore: string
     cognome: string

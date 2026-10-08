@@ -75,7 +75,8 @@ export function AbbonamentoDettaglio() {
   // CRM mese corrente: mostra per Nome+Cognome cliente (indipendente dall'operatore).
   const today = new Date()
   const fromIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-01`
-  const toIso = `${today.getFullYear()}-${String(today.getMonth() + 2).padStart(2, "0")}-01`
+  const toPlus = new Date(today.getFullYear(), today.getMonth() + 3, 1)
+  const toIso = `${toPlus.getFullYear()}-${String(toPlus.getMonth() + 1).padStart(2, "0")}-01`
   const cognomeCrm = String(cliente?.cognome ?? "").trim()
   const nomeCrm = String(cliente?.nome ?? "").trim()
   const canQueryCrm = !!cognomeCrm && !!nomeCrm
@@ -93,12 +94,28 @@ export function AbbonamentoDettaglio() {
     enabled: !!abbonamento?.clienteId,
   })
 
+  const [crmMsg, setCrmMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const updateMutation = useMutation({
     mutationFn: (updates: { stato?: RinnovoStato; note?: string }) =>
-      dataApi.updateAbbonamentiFollowUp(abbonamentoId!, updates),
-    onSuccess: () => {
+      dataApi.updateAbbonamentiFollowUp(abbonamentoId!, {
+        ...updates,
+        clienteId: abbonamento?.clienteId,
+        consulenteNome: abbonamento?.consulenteNome ?? consulenteFilter ?? undefined,
+      }),
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["data", "abbonamenti-follow-up"] })
+      void queryClient.invalidateQueries({ queryKey: ["data", "crm-appuntamenti-cliente"] })
+      if (res.crm) {
+        setCrmMsg(
+          res.crm.ok
+            ? { ok: true, text: "Registrato anche sul CRM del gestionale." }
+            : { ok: false, text: res.crm.message || "Non registrato sul gestionale." }
+        )
+      } else {
+        setCrmMsg(null)
+      }
     },
+    onError: (e: Error) => setCrmMsg({ ok: false, text: e.message }),
   })
 
   if (!abbonamentoId) {
@@ -200,6 +217,13 @@ export function AbbonamentoDettaglio() {
               </Button>
             ))}
           </div>
+          {crmMsg ? (
+            <p className={`mt-2 text-xs ${crmMsg.ok ? "text-emerald-300" : "text-amber-300"}`}>{crmMsg.text}</p>
+          ) : (
+            <p className="mt-2 text-xs text-zinc-500">
+              Appuntamento, rinnovo e non rinnova vengono scritti anche nel CRM del gestionale.
+            </p>
+          )}
           <div className="mt-4">
             <label className="block text-sm text-zinc-500">Note</label>
             <textarea
@@ -239,7 +263,7 @@ export function AbbonamentoDettaglio() {
 
           {canQueryCrm ? (
             <div className="mt-6">
-              <h3 className="mb-2 text-sm font-medium text-zinc-400">Appuntamenti CRM (mese in corso)</h3>
+              <h3 className="mb-2 text-sm font-medium text-zinc-400">Appuntamenti CRM (gestionale)</h3>
               {crmAppuntamenti.length === 0 ? (
                 <div className="rounded-md border border-zinc-800 bg-zinc-950/20 px-3 py-3 text-sm text-zinc-500">
                   Nessun appuntamento CRM trovato per questo cliente nel mese corrente.
