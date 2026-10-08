@@ -7,11 +7,13 @@ import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
-import { PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
+import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import type { QualificaConData } from "@/lib/personale-qualifiche"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
 const btnAmber = "rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
+const btnGhost = "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
 
 function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
@@ -328,6 +330,7 @@ function Turni({
   const [note, setNote] = useState("")
   const [cercaTurni, setCercaTurni] = useState("")
   const [cercaData, setCercaData] = useState("")
+  const [nuovoTurno, setNuovoTurno] = useState(false)
   useEffect(() => {
     if (!canChangeDay) setGiorno(todayIso())
   }, [canChangeDay, mese])
@@ -350,7 +353,12 @@ function Turni({
         quantita: Number(quantita.replace(",", ".")),
         note,
       }),
-    onSuccess: onDone,
+    onSuccess: () => {
+      setNote("")
+      setQuantita("1")
+      setNuovoTurno(false)
+      onDone()
+    },
     onError: (e: Error) => onError(e.message),
   })
   const delMut = useMutation({
@@ -375,62 +383,78 @@ function Turni({
 
   return (
     <div className="mt-4 space-y-4">
-      <form
-        className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 sm:grid-cols-2 lg:grid-cols-5"
-        onSubmit={(e) => {
-          e.preventDefault()
-          createMut.mutate()
-        }}
-      >
-        {!isUser && (
-          <label className="grid gap-1 text-xs text-zinc-400">
-            <span>Dipendente</span>
-            <LpagaSearchSelect
-              items={personeItems}
-              value={personaleId}
-              onChange={setPersonaleId}
-              placeholder="Cerca dipendente…"
-              required
-            />
-          </label>
-        )}
-        <label className="grid gap-1 text-xs text-zinc-400">
-          <span>Mansione</span>
-          <MansioneSearchSelect items={livelli} value={livelloId} onChange={setLivelloId} required />
-        </label>
-        <label className="grid gap-1 text-xs text-zinc-400">
-          <span>Data</span>
-          <input
-            type="date"
-            value={canChangeDay ? giorno : oggi}
-            onChange={(e) => canChangeDay && setGiorno(e.target.value)}
-            className={inputCls}
-            disabled={!canChangeDay}
-            min={canChangeDay ? undefined : oggi}
-            max={canChangeDay ? undefined : oggi}
-          />
-        </label>
-        <label className="grid gap-1 text-xs text-zinc-400">
-          <span>Valore</span>
-          <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} required />
-        </label>
-        <div className="flex items-end">
-          <button type="submit" className={`${btnAmber} w-full`} disabled={createMut.isPending}>
-            Aggiungi turno
-          </button>
-        </div>
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Note"
-          className={`${inputCls} ${isUser ? "lg:col-span-4" : "lg:col-span-5"}`}
-        />
-        {isUser && (
-          <p className="text-xs text-zinc-500 lg:col-span-5">
-            Puoi inserire turni solo per oggi ({fmtDateIt(oggi)}), entro mezzanotte.
-          </p>
-        )}
-      </form>
+      {!nuovoTurno && (
+        <button type="button" className={btnGhost} onClick={() => setNuovoTurno(true)}>
+          + Aggiungi turno di lavoro
+        </button>
+      )}
+      {nuovoTurno && (
+        <LibroPagaSlot title="Nuovo turno di lavoro">
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              createMut.mutate()
+            }}
+          >
+            {!isUser && (
+              <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+                <span>Dipendente</span>
+                <LpagaSearchSelect
+                  items={personeItems}
+                  value={personaleId}
+                  onChange={setPersonaleId}
+                  placeholder="Cerca dipendente…"
+                  required
+                />
+              </label>
+            )}
+            <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+              <span>Mansione</span>
+              <MansioneSearchSelect items={livelli} value={livelloId} onChange={setLivelloId} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400">
+              <span>Data</span>
+              <input
+                type="date"
+                value={canChangeDay ? giorno : oggi}
+                onChange={(e) => canChangeDay && setGiorno(e.target.value)}
+                className={inputCls}
+                disabled={!canChangeDay}
+                min={canChangeDay ? undefined : oggi}
+                max={canChangeDay ? undefined : oggi}
+              />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400">
+              <span>Valore</span>
+              <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} required />
+              <span className="text-[11px] text-zinc-500">Ore se paga oraria, servizi se paga fissa</span>
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+              <span>Note</span>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Orario / sostituzioni / altro"
+                className={inputCls}
+              />
+            </label>
+            {isUser && (
+              <p className="text-xs text-zinc-500 sm:col-span-2">
+                Puoi inserire turni solo per oggi ({fmtDateIt(oggi)}), entro mezzanotte.
+              </p>
+            )}
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <button type="button" className={btnGhost} onClick={() => setNuovoTurno(false)}>
+                Annulla
+              </button>
+              <button type="submit" className={btnAmber} disabled={createMut.isPending}>
+                {createMut.isPending ? "Salvataggio…" : "Salva"}
+              </button>
+            </div>
+          </form>
+        </LibroPagaSlot>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid min-w-[16rem] flex-1 gap-1 text-xs text-zinc-400">
           <span>Cerca turnazioni</span>
@@ -524,7 +548,10 @@ function Personale({
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
   const [tesseramento, setTesseramento] = useState("")
   const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
-  const [qualifiche, setQualifiche] = useState<string[]>([])
+  const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
+  const [contratto, setContratto] = useState("")
+  const [iban, setIban] = useState("")
+  const [nuovoOpen, setNuovoOpen] = useState(false)
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
   const [q, setQ] = useState("")
@@ -541,6 +568,8 @@ function Personale({
         tesseramento,
         tesseramentoScadenza,
         qualifiche,
+        contratto,
+        iban,
       }),
     onSuccess: () => {
       setNome("")
@@ -550,6 +579,9 @@ function Personale({
       setTesseramento("")
       setTesseramentoScadenza("")
       setQualifiche([])
+      setContratto("")
+      setIban("")
+      setNuovoOpen(false)
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -612,79 +644,98 @@ function Personale({
           onDone={onDone}
         />
       )}
-      <form
-        className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          createMut.mutate()
-        }}
-      >
-        <input value={cognome} onChange={(e) => setCognome(e.target.value)} placeholder="Cognome" className={inputCls} required />
-        <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome" className={inputCls} required />
-        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username" className={inputCls} required />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password accesso"
-          autoComplete="new-password"
-          className={inputCls}
-          required
-          minLength={6}
-        />
-        {me?.ruolo === "admin" && (
-          <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
-            <option value="user">Istruttore</option>
-            <option value="manager">Responsabile</option>
-          </select>
-        )}
-        <select
-          value={livelloId || (me?.ruolo === "manager" ? (reparti[0]?.id ?? "") : "")}
-          onChange={(e) => setLivelloId(e.target.value)}
-          className={inputCls}
-          required={me?.ruolo === "admin"}
-          disabled={me?.ruolo === "manager" && reparti.length <= 1}
-        >
-          {me?.ruolo === "admin" && <option value="">Reparto</option>}
-          {reparti.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
-            </option>
-          ))}
-        </select>
-        <input
-          value={tesseramento}
-          onChange={(e) => setTesseramento(e.target.value)}
-          placeholder="Tesseramento ASI"
-          className={inputCls}
-        />
-        <input
-          type="date"
-          value={tesseramentoScadenza}
-          onChange={(e) => setTesseramentoScadenza(e.target.value)}
-          className={inputCls}
-          title="Scadenza tessera"
-        />
-        <div className="flex w-full flex-wrap gap-3 text-sm text-zinc-300">
-          {PERSONALE_QUALIFICHE.map((q) => (
-            <label key={q.id} className="flex items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={qualifiche.includes(q.id)}
-                onChange={() =>
-                  setQualifiche((prev) =>
-                    prev.includes(q.id) ? prev.filter((x) => x !== q.id) : [...prev, q.id]
-                  )
-                }
-              />
-              {q.label}
-            </label>
-          ))}
-        </div>
-        <button type="submit" className={btnAmber} disabled={createMut.isPending}>
-          Aggiungi utente
+      {!nuovoOpen && (
+        <button type="button" className={btnGhost} onClick={() => setNuovoOpen(true)}>
+          + Aggiungi utente
         </button>
-      </form>
+      )}
+      {nuovoOpen && (
+        <LibroPagaSlot title="Nuovo utente">
+          <form
+            className="grid gap-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              createMut.mutate()
+            }}
+          >
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Cognome
+              <input value={cognome} onChange={(e) => setCognome(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Nome
+              <input value={nome} onChange={(e) => setNome(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Username
+              <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                className={inputCls}
+                required
+                minLength={6}
+              />
+            </label>
+            {me?.ruolo === "admin" && (
+              <label className="grid gap-1 text-xs text-zinc-500">
+                Ruolo
+                <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
+                  <option value="user">Istruttore</option>
+                  <option value="manager">Responsabile</option>
+                </select>
+              </label>
+            )}
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Reparto
+              <select
+                value={livelloId || (me?.ruolo === "manager" ? (reparti[0]?.id ?? "") : "")}
+                onChange={(e) => setLivelloId(e.target.value)}
+                className={inputCls}
+                required={me?.ruolo === "admin"}
+                disabled={me?.ruolo === "manager" && reparti.length <= 1}
+              >
+                {me?.ruolo === "admin" && <option value="">—</option>}
+                {reparti.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Scadenza contratto
+              <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              IBAN
+              <input value={iban} onChange={(e) => setIban(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Tesseramento ASI
+              <input value={tesseramento} onChange={(e) => setTesseramento(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Scadenza tessera
+              <input type="date" value={tesseramentoScadenza} onChange={(e) => setTesseramentoScadenza(e.target.value)} className={inputCls} />
+            </label>
+            <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <button type="button" className={btnGhost} onClick={() => setNuovoOpen(false)}>
+                Annulla
+              </button>
+              <button type="submit" className={btnAmber} disabled={createMut.isPending}>
+                {createMut.isPending ? "Salvataggio…" : "Salva"}
+              </button>
+            </div>
+          </form>
+        </LibroPagaSlot>
+      )}
       {pwdId && (
         <form
           className="flex flex-wrap items-end gap-3 rounded-2xl border border-amber-900/50 bg-amber-950/20 p-4"

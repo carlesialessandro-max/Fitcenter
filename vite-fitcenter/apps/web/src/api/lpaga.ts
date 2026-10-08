@@ -146,7 +146,7 @@ export const lpagaApi = {
     iban?: string
     tesseramento?: string
     tesseramentoScadenza?: string
-    qualifiche?: string[]
+    qualifiche?: { id: string; data?: string }[]
   }) => lpagaRequest<{ personale: unknown }>("/lpaga/personale", { method: "POST", body: JSON.stringify(body) }),
   patchPersonale: (id: string, body: Record<string, unknown>) =>
     lpagaRequest<{ personale: unknown }>(`/lpaga/personale/${encodeURIComponent(id)}`, {

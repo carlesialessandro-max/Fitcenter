@@ -1,7 +1,9 @@
 import { readCalendarioDb, writeCalendarioDb } from "../store/calendario-db.js"
 import {
   parseQualifichePersonale,
+  qualificheIds,
   type LpagaPersonale,
+  type LpagaQualifica,
   type LpagaRuolo,
 } from "../store/libro-paga-db.js"
 import { isGestionaleConfigured, queryAnagraficaStaff } from "./gestionale-sql.js"
@@ -32,14 +34,16 @@ export function puoModificarePersonale(
   return true
 }
 
-function mergeQualifiche(...lists: (string[] | undefined)[]): string[] {
-  const out: string[] = []
+function mergeQualifiche(...lists: (unknown[] | undefined)[]): LpagaQualifica[] {
+  const byId = new Map<string, LpagaQualifica>()
   for (const list of lists) {
-    for (const id of parseQualifichePersonale(list ?? [])) {
-      if (!out.includes(id)) out.push(id)
+    for (const q of parseQualifichePersonale(list ?? [])) {
+      const prev = byId.get(q.id)
+      if (!prev) byId.set(q.id, q)
+      else if (q.data && !prev.data) byId.set(q.id, q)
     }
   }
-  return out
+  return [...byId.values()]
 }
 
 export async function enrichPersonaleHr(list: LpagaPersonale[]): Promise<LpagaPersonale[]> {
@@ -99,7 +103,7 @@ export function syncIstruttoreCalendarioHr(p: LpagaPersonale): void {
     const now = new Date().toISOString()
     hit.tesseramento = (p.tesseramento ?? "").trim()
     hit.tesseramentoScadenza = p.tesseramentoScadenza?.trim() || null
-    hit.qualifiche = parseQualifichePersonale(p.qualifiche ?? [])
+    hit.qualifiche = qualificheIds(p.qualifiche ?? [])
     hit.updatedAt = now
     writeCalendarioDb(db)
   } catch (e) {

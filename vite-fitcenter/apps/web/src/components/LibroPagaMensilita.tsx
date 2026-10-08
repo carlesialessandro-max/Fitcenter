@@ -8,7 +8,8 @@ import type {
   LpagaRuolo,
   LpagaTurnoRow,
 } from "@/api/libroPaga"
-import { PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
+import { PERSONALE_QUALIFICHE, parseQualificheUi, type QualificaConData } from "@/lib/personale-qualifiche"
+import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -377,7 +378,7 @@ function DettaglioMese({
   const [password, setPassword] = useState("")
   const [tesseramento, setTesseramento] = useState(persona?.tesseramento ?? "")
   const [tesseramentoScadenza, setTesseramentoScadenza] = useState(isoDateInput(persona?.tesseramentoScadenza))
-  const [qualifiche, setQualifiche] = useState<string[]>(persona?.qualifiche ?? [])
+  const [qualifiche, setQualifiche] = useState<QualificaConData[]>(parseQualificheUi(persona?.qualifiche))
   useEffect(() => {
     setCognome(persona?.cognome ?? "")
     setNome(persona?.nome ?? "")
@@ -389,7 +390,7 @@ function DettaglioMese({
     setPassword("")
     setTesseramento(persona?.tesseramento ?? "")
     setTesseramentoScadenza(isoDateInput(persona?.tesseramentoScadenza))
-    setQualifiche([...(persona?.qualifiche ?? [])])
+    setQualifiche(parseQualificheUi(persona?.qualifiche))
   }, [persona])
   const saveMut = useMutation({
     mutationFn: () => {
@@ -417,7 +418,7 @@ function DettaglioMese({
   })
   const reparti = (livelli ?? []).filter((l) => !l.retribuibile)
   return (
-    <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+    <div className="max-w-2xl space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">
@@ -497,25 +498,7 @@ function DettaglioMese({
               className={inputCls}
             />
           </label>
-          <fieldset className="sm:col-span-2 rounded-lg border border-zinc-700/80 bg-zinc-950/40 p-3">
-            <legend className="px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Corsi sicurezza</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {PERSONALE_QUALIFICHE.map((q) => (
-                <label key={q.id} className="flex items-center gap-2 text-sm text-zinc-300">
-                  <input
-                    type="checkbox"
-                    checked={qualifiche.includes(q.id)}
-                    onChange={() =>
-                      setQualifiche((prev) =>
-                        prev.includes(q.id) ? prev.filter((x) => x !== q.id) : [...prev, q.id]
-                      )
-                    }
-                  />
-                  {q.label}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             Nuova password (vuoto = invariata)
             <input
@@ -583,14 +566,14 @@ function DettaglioMese({
           <dt className="mb-1 text-zinc-500">Corsi sicurezza</dt>
           <dd className="flex flex-wrap gap-2">
             {PERSONALE_QUALIFICHE.map((q) => {
-              const ok = (persona?.qualifiche ?? []).includes(q.id)
+              const hit = parseQualificheUi(persona?.qualifiche).find((x) => x.id === q.id)
               return (
                 <span
                   key={q.id}
-                  className={`rounded-full px-2 py-0.5 text-xs ${ok ? "bg-emerald-950/70 text-emerald-200" : "bg-zinc-800 text-zinc-500"}`}
+                  className={`rounded-full px-2 py-0.5 text-xs ${hit ? "bg-emerald-950/70 text-emerald-200" : "bg-zinc-800 text-zinc-500"}`}
                 >
                   {q.label}
-                  {ok ? "" : " — no"}
+                  {hit?.data ? ` · ${fmtDateIt(hit.data)}` : hit ? "" : " — no"}
                 </span>
               )
             })}

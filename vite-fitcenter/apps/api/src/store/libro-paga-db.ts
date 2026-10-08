@@ -30,6 +30,8 @@ export const LPAGA_QUALIFICHE = [
 
 export type LpagaQualificaId = (typeof LPAGA_QUALIFICHE)[number]
 
+export type LpagaQualifica = { id: string; data?: string }
+
 export type LpagaPersonale = {
   id: string
   nome: string
@@ -42,7 +44,7 @@ export type LpagaPersonale = {
   tesseramento?: string
   tesseramentoScadenza?: string
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
-  qualifiche?: string[]
+  qualifiche?: LpagaQualifica[]
   attivo: boolean
 }
 
@@ -148,7 +150,7 @@ function ymd(v: unknown): string {
   return s
 }
 
-export function parseQualifichePersonale(v: unknown): string[] {
+export function parseQualifichePersonale(v: unknown): LpagaQualifica[] {
   const allowed = new Set<string>(LPAGA_QUALIFICHE)
   let raw: unknown[] = []
   if (Array.isArray(v)) raw = v
@@ -160,15 +162,27 @@ export function parseQualifichePersonale(v: unknown): string[] {
       raw = v.split(",")
     }
   }
-  const out: string[] = []
+  const out: LpagaQualifica[] = []
   for (const item of raw) {
-    const id = String(item ?? "").trim()
-    if (allowed.has(id) && !out.includes(id)) out.push(id)
+    let id = ""
+    let data = ""
+    if (typeof item === "string") id = item.trim()
+    else if (item && typeof item === "object") {
+      const rec = item as { id?: unknown; data?: unknown }
+      id = String(rec.id ?? "").trim()
+      data = ymd(rec.data)
+    }
+    if (!allowed.has(id) || out.some((x) => x.id === id)) continue
+    out.push(data && /^\d{4}-\d{2}-\d{2}$/.test(data) ? { id, data } : { id })
   }
   return out
 }
 
-function parseQualificheStored(v: unknown): string[] | undefined {
+export function qualificheIds(v: unknown): string[] {
+  return parseQualifichePersonale(v).map((q) => q.id)
+}
+
+function parseQualificheStored(v: unknown): LpagaQualifica[] | undefined {
   if (v == null || v === "") return undefined
   return parseQualifichePersonale(v)
 }
@@ -261,7 +275,7 @@ CREATE TABLE dbo.FcLibroPagaPersonale (
   Iban NVARCHAR(34) NULL,
   Tesseramento NVARCHAR(120) NULL,
   TesseramentoScadenza DATE NULL,
-  Qualifiche NVARCHAR(400) NULL,
+  Qualifiche NVARCHAR(1000) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpPer_Attivo DEFAULT 1
 );
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Cognome') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Cognome NVARCHAR(200) NULL;
@@ -271,7 +285,8 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloId') IS NULL ALTER TABLE dbo.Fc
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Contratto') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Contratto DATE NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Tesseramento NVARCHAR(120) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(400) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(1000) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -558,7 +573,7 @@ export async function upsertPersonale(input: {
   iban?: string
   tesseramento?: string
   tesseramentoScadenza?: string
-  qualifiche?: string[]
+  qualifiche?: LpagaQualifica[] | string[]
   attivo: boolean
 }): Promise<LpagaPersonale> {
   const iban = (input.iban ?? "").trim()
@@ -599,7 +614,7 @@ export async function upsertPersonale(input: {
       sql.Date,
       tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? tesseramentoScadenza : null
     )
-    req.input("Qualifiche", sql.NVarChar(400), hasQualifiche ? JSON.stringify(qualifiche ?? []) : null)
+    req.input("Qualifiche", sql.NVarChar(1000), hasQualifiche ? JSON.stringify(qualifiche ?? []) : null)
     req.input("QualificheSet", sql.Bit, hasQualifiche)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
