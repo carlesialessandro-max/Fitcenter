@@ -3,6 +3,7 @@ import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
 import { livelloSottoAlbero } from "./libro-paga-scope.js"
+import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
 
@@ -46,7 +47,7 @@ function norm(s: string): string {
     .trim()
 }
 
-function namesMatch(person: Pick<LpagaPersonale, "nome" | "cognome">, staff: string): boolean {
+export function namesMatchPersonale(person: Pick<LpagaPersonale, "nome" | "cognome">, staff: string): boolean {
   const staffN = norm(staff)
   if (!staffN || staffN === "-" || staffN === "corso") return false
   const cognome = norm(person.cognome ?? "")
@@ -132,6 +133,12 @@ export type MatchCalendario = {
   note?: string
 }
 
+export type TornelloConvalida = {
+  disponibile: boolean
+  ok: boolean
+  orario?: string
+}
+
 export type TurnoConvalidaProposta = {
   turnoId: string
   personaleId: string
@@ -146,6 +153,7 @@ export type TurnoConvalidaProposta = {
   match?: MatchCalendario
   sostitutiPossibili: MatchCalendario[]
   salvato?: TurnoConvalida
+  tornello?: TornelloConvalida
 }
 
 export const FOGLI_ORARI_CONVALIDA = {
@@ -311,9 +319,9 @@ export function proponeConvalidaMese(opts: {
     const daySlots = allowed.size
       ? (byDay.get(t.giorno) ?? []).filter((s) => allowed.has(s.comparto))
       : []
-    const samePerson = pe ? daySlots.filter((s) => namesMatch(pe, s.staff)) : []
+    const samePerson = pe ? daySlots.filter((s) => namesMatchPersonale(pe, s.staff)) : []
     const match = samePerson[0]
-    const sostitutiPossibili = daySlots.filter((s) => !pe || !namesMatch(pe, s.staff))
+    const sostitutiPossibili = daySlots.filter((s) => !pe || !namesMatchPersonale(pe, s.staff))
     let proposto: TurnoConvalidaStato = "da_verificare"
     if (match) proposto = "ok"
     else if (sostitutiPossibili.length) proposto = "sostituzione"
@@ -371,5 +379,82 @@ export function payloadConvalidaMese(
     anomalie,
     fogli: FOGLI_ORARI_CONVALIDA,
     ...(extra?.confermatiOra != null ? { confermatiOra: extra.confermatiOra } : {}),
+  }
+}
+
+function ymdAccesso(v?: string): string {
+  const s = String(v ?? "").trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const it = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+  if (it) return `${it[3]}-${it[2]}-${it[1]}`
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return ""
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(d)
+  } catch {
+    return d.toISOString().slice(0, 10)
+  }
+}
+
+function hmAccesso(v?: string): string | undefined {
+  const s = String(v ?? "").trim()
+  const m = s.match(/(\d{1,2}):(\d{2})/)
+  if (!m) return undefined
+  return `${m[1].padStart(2, "0")}:${m[2]}`
+}
+
+export async function arricchisciTornelloConvalida(
+  mese: string,
+  rows: TurnoConvalidaProposta[],
+  personaleById: Map<string, LpagaPersonale>
+): Promise<TurnoConvalidaProposta[]> {
+  const vuoto = (): TornelloConvalida => ({ disponibile: false, ok: false })
+  if (!rows.length) return rows
+  if (!isGestionaleConfigured()) {
+    return rows.map((r) => ({ ...r, tornello: vuoto() }))
+  }
+  const days = daysInMonth(mese)
+  const from = days[0]
+  const to = days[days.length - 1]
+  if (!from || !to) return rows.map((r) => ({ ...r, tornello: vuoto() }))
+  try {
+    const accessi = await queryAccessiUtenti({ from, to })
+    if (!accessi.length) return rows.map((r) => ({ ...r, tornello: { disponibile: true, ok: false } }))
+    const byPersonDay = new Map<string, string>()
+    const people = [...new Map(rows.map((r) => [r.personaleId, personaleById.get(r.personaleId)]))]
+    for (const acc of accessi) {
+      const giorno = ymdAccesso(acc.dataEntrata)
+      if (!giorno.startsWith(mese)) continue
+      const label = [acc.cognome, acc.nome].filter(Boolean).join(" ").trim()
+      if (!label) continue
+      const orario = hmAccesso(acc.dataEntrata)
+      for (const [id, pe] of people) {
+        if (!pe) continue
+        if (!namesMatchPersonale(pe, label)) continue
+        const key = `${id}|${giorno}`
+        if (!byPersonDay.has(key) && orario) byPersonDay.set(key, orario)
+        else if (!byPersonDay.has(key)) byPersonDay.set(key, "")
+      }
+    }
+    return rows.map((r) => {
+      const hit = byPersonDay.get(`${r.personaleId}|${r.giorno}`)
+      if (hit == null) return { ...r, tornello: { disponibile: true, ok: false } }
+      return {
+        ...r,
+        tornello: {
+          disponibile: true,
+          ok: true,
+          ...(hit ? { orario: hit } : {}),
+        },
+      }
+    })
+  } catch (e) {
+    console.warn("[libro-paga] tornello convalida:", (e as Error)?.message ?? e)
+    return rows.map((r) => ({ ...r, tornello: vuoto() }))
   }
 }

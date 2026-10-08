@@ -18,6 +18,7 @@ import { livelloSottoAlbero, personaleVisibile } from "../services/libro-paga-sc
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
 import {
   applicaAutoOkConvalida,
+  arricchisciTornelloConvalida,
   FOGLI_ORARI_CONVALIDA,
   payloadConvalidaMese,
   proponeConvalidaMese,
@@ -28,7 +29,8 @@ import {
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { setPersonalePassword } from "../store/libro-paga-auth.js"
-import type { LpagaRuolo } from "../store/libro-paga-db.js"
+import { parseQualifichePersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
+import { enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 
 function statusOf(e: unknown): number {
   const n = (e as { status?: number })?.status
@@ -159,10 +161,15 @@ export async function postPersonale(req: Request, res: Response) {
       livelloId: String(req.body?.livelloId ?? "").trim(),
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
+      tesseramento: String(req.body?.tesseramento ?? "").trim(),
+      tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
+      qualifiche: parseQualifichePersonale(req.body?.qualifiche),
       attivo: req.body?.attivo !== false,
     })
+    syncIstruttoreCalendarioHr(row)
     if (username && password) await setPersonalePassword(row.id, username, password)
-    res.status(201).json({ personale: row })
+    const [enriched] = await enrichPersonaleHr([row])
+    res.status(201).json({ personale: enriched ?? row })
   } catch (e) {
     fail(res, e)
   }
@@ -195,13 +202,24 @@ export async function patchPersonale(req: Request, res: Response) {
       livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
+      tesseramento:
+        req.body?.tesseramento != null ? String(req.body.tesseramento).trim() : cur.tesseramento,
+      tesseramentoScadenza:
+        req.body?.tesseramentoScadenza != null
+          ? String(req.body.tesseramentoScadenza).trim()
+          : cur.tesseramentoScadenza,
+      qualifiche: req.body?.qualifiche != null ? parseQualifichePersonale(req.body.qualifiche) : cur.qualifiche,
       attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
     })
+    if (req.body?.tesseramento != null || req.body?.tesseramentoScadenza != null || req.body?.qualifiche != null) {
+      syncIstruttoreCalendarioHr(row)
+    }
     if (password) {
       if (!row.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
       await setPersonalePassword(row.id, row.username, password)
     }
-    res.json({ personale: row })
+    const [enriched] = await enrichPersonaleHr([row])
+    res.json({ personale: enriched ?? row })
   } catch (e) {
     fail(res, e)
   }
@@ -327,7 +345,11 @@ export async function getLibroPagaConvalida(req: Request, res: Response) {
       tree,
       personaleId,
     })
-    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      perBy
+    )
     res.json({
       mese,
       personaleId,
@@ -349,7 +371,11 @@ export async function getLibroPagaConvalidaMese(req: Request, res: Response) {
     const repartoId = String(req.query.reparto ?? "").trim()
     const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
     const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
-    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      perBy
+    )
     res.json(payloadConvalidaMese(mese, rows))
   } catch (e) {
     fail(res, e)
@@ -365,9 +391,17 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
     const repartoId = String(req.body?.reparto ?? req.query.reparto ?? "").trim()
     const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
     const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
-    const rows = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      perBy
+    )
     const confermatiOra = applicaAutoOkConvalida(rows, String(req.user?.nome || req.user?.username || "admin"))
-    const aggiornate = proponeConvalidaMese({ mese, turni, personaleById: perBy })
+    const aggiornate = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      perBy
+    )
     res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
   } catch (e) {
     fail(res, e)

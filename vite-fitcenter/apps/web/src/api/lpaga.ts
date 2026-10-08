@@ -51,6 +51,7 @@ export type LpagaConvalidaPayload = {
     match?: LpagaConvalidaMatch
     sostitutiPossibili: LpagaConvalidaMatch[]
     salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }
+    tornello?: { disponibile: boolean; ok: boolean; orario?: string }
   }[]
   fogli: { bagnini: string; desk: string }
 }
@@ -143,7 +144,15 @@ export const lpagaApi = {
     livelloId?: string
     contratto?: string
     iban?: string
+    tesseramento?: string
+    tesseramentoScadenza?: string
+    qualifiche?: string[]
   }) => lpagaRequest<{ personale: unknown }>("/lpaga/personale", { method: "POST", body: JSON.stringify(body) }),
+  patchPersonale: (id: string, body: Record<string, unknown>) =>
+    lpagaRequest<{ personale: unknown }>(`/lpaga/personale/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   setPersonalePassword: (id: string, password: string) =>
     lpagaRequest<{ ok: boolean }>(`/lpaga/personale/${encodeURIComponent(id)}/password`, {
       method: "PUT",

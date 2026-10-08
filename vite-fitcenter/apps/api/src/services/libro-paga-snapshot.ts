@@ -12,6 +12,7 @@ import {
   nominativo,
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
+import { enrichPersonaleHr } from "./libro-paga-hr.js"
 
 export function defaultMeseLpaga(): string {
   try {
@@ -50,7 +51,7 @@ export async function buildLibroPagaSnapshot(opts?: {
 }) {
   const mese = opts?.mese && isYmLpaga(opts.mese) ? opts.mese : defaultMeseLpaga()
   const storage = await ensureLibroPagaStorage()
-  const [livelli, personaleAll, turniTutti, savedMens, validazioni, totaliReparto, macroQuote] = await Promise.all([
+  const [livelli, personaleRaw, turniTutti, savedMens, validazioni, totaliReparto, macroQuote] = await Promise.all([
     listLivelli(),
     listPersonale(),
     listTurni(),
@@ -59,6 +60,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     listTotaliReparto(),
     listMacroQuote(),
   ])
+  const personaleAll = await enrichPersonaleHr(personaleRaw)
   const vis = opts?.visibleIds
   const livelloTree = opts?.livelloTree
   const scopedTurni =

@@ -25,6 +25,10 @@ export type LpagaPersonale = {
   livelloId?: string
   contratto?: string
   iban?: string
+  tesseramento?: string
+  tesseramentoScadenza?: string
+  tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
+  qualifiche?: string[]
   attivo: boolean
   nominativo?: string
   repartoNome?: string
@@ -140,11 +144,14 @@ export const libroPagaApi = {
     livelloId?: string
     contratto?: string
     iban?: string
+    tesseramento?: string
+    tesseramentoScadenza?: string
+    qualifiche?: string[]
     attivo?: boolean
   }) => api.post<{ personale: LpagaPersonale }>("/libro-paga/personale", body),
   setPersonalePassword: (id: string, password: string) =>
     api.put<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}/password`, { password }),
-  patchPersonale: (id: string, body: Partial<LpagaPersonale>) =>
+  patchPersonale: (id: string, body: Partial<LpagaPersonale> & { password?: string }) =>
     api.patch<{ personale: LpagaPersonale }>(`/libro-paga/personale/${encodeURIComponent(id)}`, body),
   deletePersonale: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}`),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>

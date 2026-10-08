@@ -1,11 +1,12 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo } from "../store/libro-paga-db.js"
+import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale } from "../store/libro-paga-db.js"
 import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
   alberoDaDeleghe,
   alberoConvalidaViewer,
   applicaAutoOkConvalida,
+  arricchisciTornelloConvalida,
   FOGLI_ORARI_CONVALIDA,
   payloadConvalidaMese,
   proponeConvalidaMese,
@@ -18,6 +19,7 @@ import {
 import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
+import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 
 function statusOf(e: unknown): number {
   const n = (e as { status?: number })?.status
@@ -249,10 +251,77 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       livelloId: livelloId || me.livelloId,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
+      tesseramento: String(req.body?.tesseramento ?? "").trim(),
+      tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
+      qualifiche: parseQualifichePersonale(req.body?.qualifiche),
       attivo: true,
     })
+    syncIstruttoreCalendarioHr(row)
     await setPersonalePassword(row.id, username, password)
-    res.status(201).json({ personale: row })
+    const [enriched] = await enrichPersonaleHr([row])
+    res.status(201).json({ personale: enriched ?? row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function patchLpagaPersonale(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    assertGestionePersonale(me)
+    const id = String(req.params.id ?? "").trim()
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const vis = personaleVisibile(me, personale, livelli)
+    if (!vis.has(id)) return res.status(403).json({ message: "Utente non visibile" })
+    const cur = personale.find((p) => p.id === id)
+    if (!cur) return res.status(404).json({ message: "Persona non trovata" })
+    const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
+    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    assertPuoModificarePersonale(me, cur, ruolo)
+    if (me.ruolo === "manager") {
+      const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
+      const nextLivello = req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId ?? ""
+      if (nextLivello && !consentiti.has(nextLivello)) {
+        return res.status(403).json({ message: "Puoi modificare utenti solo nel tuo reparto" })
+      }
+    }
+    const nome = req.body?.nome != null ? String(req.body.nome).trim() : cur.nome
+    if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
+    const username =
+      req.body?.username != null ? String(req.body.username).trim().toLowerCase() : cur.username ?? ""
+    const password = req.body?.password != null ? String(req.body.password) : ""
+    if (username && username !== (cur.username ?? "").toLowerCase()) {
+      if (personale.some((p) => p.id !== id && (p.username ?? "").toLowerCase() === username)) {
+        return res.status(409).json({ message: "Username già in uso" })
+      }
+    }
+    const row = await upsertPersonale({
+      id,
+      nome,
+      cognome: req.body?.cognome != null ? String(req.body.cognome).trim() : cur.cognome,
+      username,
+      ruolo: me.ruolo === "manager" ? (ruolo === "admin" ? cur.ruolo : ruolo) : ruolo,
+      livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
+      contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
+      iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
+      tesseramento:
+        req.body?.tesseramento != null ? String(req.body.tesseramento).trim() : cur.tesseramento,
+      tesseramentoScadenza:
+        req.body?.tesseramentoScadenza != null
+          ? String(req.body.tesseramentoScadenza).trim()
+          : cur.tesseramentoScadenza,
+      qualifiche: req.body?.qualifiche != null ? parseQualifichePersonale(req.body.qualifiche) : cur.qualifiche,
+      attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
+    })
+    if (req.body?.tesseramento != null || req.body?.tesseramentoScadenza != null || req.body?.qualifiche != null) {
+      syncIstruttoreCalendarioHr(row)
+    }
+    if (password) {
+      if (!row.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
+      await setPersonalePassword(row.id, row.username, password)
+    }
+    const [enriched] = await enrichPersonaleHr([row])
+    res.json({ personale: enriched ?? row })
   } catch (e) {
     fail(res, e)
   }
@@ -321,7 +390,11 @@ export async function getLpagaConvalida(req: Request, res: Response) {
       tree,
       personaleId,
     })
-    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      perBy
+    )
     res.json({
       mese,
       personaleId,
@@ -342,7 +415,11 @@ export async function getLpagaConvalidaMese(req: Request, res: Response) {
     const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
     const perBy = new Map(personale.map((p) => [p.id, p]))
     const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
-    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      perBy
+    )
     res.json(payloadConvalidaMese(mese, rows))
   } catch (e) {
     fail(res, e)
@@ -357,9 +434,17 @@ export async function postLpagaConvalidaMese(req: Request, res: Response) {
     const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
     const perBy = new Map(personale.map((p) => [p.id, p]))
     const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
-    const rows = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    const rows = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      perBy
+    )
     const confermatiOra = applicaAutoOkConvalida(rows, me.username || me.id)
-    const aggiornate = proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy })
+    const aggiornate = await arricchisciTornelloConvalida(
+      mese,
+      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      perBy
+    )
     res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
   } catch (e) {
     fail(res, e)

@@ -1,6 +1,14 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import type { LibroPagaSnapshot, LpagaMensilitaRow, LpagaPersonale, LpagaTurnoRow } from "@/api/libroPaga"
+import type {
+  LibroPagaSnapshot,
+  LpagaLivello,
+  LpagaMensilitaRow,
+  LpagaPersonale,
+  LpagaRuolo,
+  LpagaTurnoRow,
+} from "@/api/libroPaga"
+import { PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -11,9 +19,19 @@ function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
 }
 
-function fmtDateIt(iso: string | null | undefined): string {
+function isoDateInput(iso: string | null | undefined): string {
   const s = String(iso ?? "").slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—"
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return ""
+  const y = Number(s.slice(0, 4))
+  const m = Number(s.slice(5, 7))
+  const d = Number(s.slice(8, 10))
+  if (y < 1990 || m < 1 || m > 12 || d < 1 || d > 31) return ""
+  return s
+}
+
+function fmtDateIt(iso: string | null | undefined): string {
+  const s = isoDateInput(iso)
+  if (!s) return "—"
   const [y, m, d] = s.split("-")
   return `${d}/${m}/${y}`
 }
@@ -32,6 +50,13 @@ function ruoloLabel(r: string): string {
   return "Istruttore"
 }
 
+function fonteTessera(f?: string): string {
+  if (f === "gestionale") return "da anagrafica gestionale"
+  if (f === "calendario") return "da personale calendari"
+  if (f === "manuale") return "inserito in libro paga"
+  return ""
+}
+
 type Pannello = { kind: "dettaglio" | "modifica"; personaleId: string }
 
 export function LibroPagaMensilitaTab({
@@ -44,6 +69,9 @@ export function LibroPagaMensilitaTab({
   onDone,
   onConvalida,
   onConvalidaMese,
+  canEditPersonale,
+  onSavePersonale,
+  allowAdminRole,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -54,6 +82,9 @@ export function LibroPagaMensilitaTab({
   onDone: () => void
   onConvalida?: (personaleId: string) => void
   onConvalidaMese?: () => void
+  canEditPersonale?: (personaleId: string) => boolean
+  onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
+  allowAdminRole?: boolean
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -118,6 +149,12 @@ export function LibroPagaMensilitaTab({
           lezioni={lezioni}
           hideIban={hideIban}
           onClose={() => setPannello(null)}
+          canEdit={Boolean(persona && canEditPersonale?.(persona.id))}
+          livelli={data.livelli}
+          onSavePersonale={onSavePersonale}
+          allowAdminRole={allowAdminRole}
+          onError={onError}
+          onDone={onDone}
         />
       )}
       <div className="space-y-2">
@@ -246,12 +283,24 @@ export function LibroPagaPersonaleDettaglio({
   mensilita,
   lezioni,
   onClose,
+  canEdit,
+  livelli,
+  onSavePersonale,
+  allowAdminRole,
+  onError,
+  onDone,
 }: {
   persona: LpagaPersonale
   mese: string
   mensilita?: LpagaMensilitaRow
   lezioni: LpagaTurnoRow[]
   onClose: () => void
+  canEdit?: boolean
+  livelli?: LpagaLivello[]
+  onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
+  allowAdminRole?: boolean
+  onError?: (s: string) => void
+  onDone?: () => void
 }) {
   const nominativo = persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()
   return (
@@ -276,6 +325,12 @@ export function LibroPagaPersonaleDettaglio({
       mese={mese}
       lezioni={lezioni}
       onClose={onClose}
+      canEdit={canEdit}
+      livelli={livelli}
+      onSavePersonale={onSavePersonale}
+      allowAdminRole={allowAdminRole}
+      onError={onError}
+      onDone={onDone}
     />
   )
 }
@@ -287,6 +342,12 @@ function DettaglioMese({
   lezioni,
   hideIban,
   onClose,
+  canEdit,
+  livelli,
+  onSavePersonale,
+  allowAdminRole,
+  onError,
+  onDone,
 }: {
   row: LpagaMensilitaRow
   persona?: LpagaPersonale
@@ -294,20 +355,187 @@ function DettaglioMese({
   lezioni: LpagaTurnoRow[]
   hideIban?: boolean
   onClose: () => void
+  canEdit?: boolean
+  livelli?: LpagaLivello[]
+  onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
+  allowAdminRole?: boolean
+  onError?: (s: string) => void
+  onDone?: () => void
 }) {
   const year = mese.slice(0, 4)
   const iban = hideIban ? "" : persona?.iban || row.iban
+  const editable = Boolean(
+    canEdit && persona && onSavePersonale && (allowAdminRole || persona.ruolo !== "admin")
+  )
+  const [cognome, setCognome] = useState(persona?.cognome ?? "")
+  const [nome, setNome] = useState(persona?.nome ?? "")
+  const [username, setUsername] = useState(persona?.username ?? "")
+  const [ruolo, setRuolo] = useState<LpagaRuolo>(persona?.ruolo ?? "user")
+  const [livelloId, setLivelloId] = useState(persona?.livelloId ?? "")
+  const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
+  const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
+  const [password, setPassword] = useState("")
+  const [tesseramento, setTesseramento] = useState(persona?.tesseramento ?? "")
+  const [tesseramentoScadenza, setTesseramentoScadenza] = useState(isoDateInput(persona?.tesseramentoScadenza))
+  const [qualifiche, setQualifiche] = useState<string[]>(persona?.qualifiche ?? [])
+  useEffect(() => {
+    setCognome(persona?.cognome ?? "")
+    setNome(persona?.nome ?? "")
+    setUsername(persona?.username ?? "")
+    setRuolo(persona?.ruolo ?? "user")
+    setLivelloId(persona?.livelloId ?? "")
+    setContratto(isoDateInput(persona?.contratto))
+    setIbanEdit(persona?.iban ?? "")
+    setPassword("")
+    setTesseramento(persona?.tesseramento ?? "")
+    setTesseramentoScadenza(isoDateInput(persona?.tesseramentoScadenza))
+    setQualifiche([...(persona?.qualifiche ?? [])])
+  }, [persona])
+  const saveMut = useMutation({
+    mutationFn: () => {
+      if (!persona || !onSavePersonale) throw new Error("Salvataggio non disponibile")
+      if (!nome.trim()) throw new Error("Nome obbligatorio")
+      return onSavePersonale(persona.id, {
+        cognome: cognome.trim(),
+        nome: nome.trim(),
+        username: username.trim(),
+        ruolo,
+        livelloId,
+        contratto,
+        iban: ibanEdit.trim(),
+        tesseramento: tesseramento.trim(),
+        tesseramentoScadenza,
+        qualifiche,
+        ...(password.trim() ? { password: password.trim() } : {}),
+      })
+    },
+    onSuccess: () => {
+      setPassword("")
+      onDone?.()
+    },
+    onError: (e: Error) => onError?.(e.message),
+  })
+  const reparti = (livelli ?? []).filter((l) => !l.retribuibile)
   return (
     <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-zinc-200">Dettaglio mese · {meseLabel(mese)}</h2>
+          <h2 className="text-sm font-medium text-zinc-200">
+            {editable ? "Modifica utente" : "Dettaglio mese"} · {meseLabel(mese)}
+          </h2>
           <p className="mt-1 text-lg font-semibold text-zinc-100">{row.personaleNome}</p>
         </div>
         <button type="button" className={btnGhost} onClick={onClose}>
           Chiudi
         </button>
       </div>
+      {editable ? (
+        <form
+          className="grid gap-3 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            saveMut.mutate()
+          }}
+        >
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Cognome
+            <input value={cognome} onChange={(e) => setCognome(e.target.value)} className={inputCls} />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Nome
+            <input value={nome} onChange={(e) => setNome(e.target.value)} className={inputCls} required />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Username
+            <input value={username} onChange={(e) => setUsername(e.target.value)} className={inputCls} autoComplete="off" />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Ruolo
+            <select value={ruolo} onChange={(e) => setRuolo(e.target.value as LpagaRuolo)} className={inputCls}>
+              <option value="user">Istruttore</option>
+              <option value="manager">Responsabile</option>
+              {allowAdminRole && <option value="admin">Amministratore</option>}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Reparto
+            <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls}>
+              <option value="">—</option>
+              {reparti.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Scad. contratto
+            <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+            IBAN
+            <input value={ibanEdit} onChange={(e) => setIbanEdit(e.target.value)} className={inputCls} autoComplete="off" />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Tesseramento ASI
+            <input
+              value={tesseramento}
+              onChange={(e) => setTesseramento(e.target.value)}
+              className={inputCls}
+              placeholder="Numero tessera / ente"
+            />
+            {fonteTessera(persona?.tesseramentoFonte) ? (
+              <span className="text-[11px] text-zinc-500">{fonteTessera(persona?.tesseramentoFonte)}</span>
+            ) : null}
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Scadenza tessera
+            <input
+              type="date"
+              value={tesseramentoScadenza}
+              onChange={(e) => setTesseramentoScadenza(e.target.value)}
+              className={inputCls}
+            />
+          </label>
+          <fieldset className="sm:col-span-2 rounded-lg border border-zinc-700/80 bg-zinc-950/40 p-3">
+            <legend className="px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Corsi sicurezza</legend>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {PERSONALE_QUALIFICHE.map((q) => (
+                <label key={q.id} className="flex items-center gap-2 text-sm text-zinc-300">
+                  <input
+                    type="checkbox"
+                    checked={qualifiche.includes(q.id)}
+                    onChange={() =>
+                      setQualifiche((prev) =>
+                        prev.includes(q.id) ? prev.filter((x) => x !== q.id) : [...prev, q.id]
+                      )
+                    }
+                  />
+                  {q.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+            Nuova password (vuoto = invariata)
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={inputCls}
+              autoComplete="new-password"
+              minLength={6}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
+              {saveMut.isPending ? "Salvataggio…" : "Salva modifiche"}
+            </button>
+            <span className="text-sm text-zinc-400">Tot. progr. {year}: {eur(row.totAnno ?? row.importo)}</span>
+            <span className="text-sm text-zinc-400">Importo mese: {eur(row.importo)}</span>
+          </div>
+        </form>
+      ) : (
       <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">Cognome</dt>
@@ -341,7 +569,35 @@ function DettaglioMese({
           <dt className="text-zinc-500">Importo mese</dt>
           <dd>{eur(row.importo)}</dd>
         </div>
+        <div className="flex justify-between gap-3 sm:justify-start sm:col-span-2">
+          <dt className="text-zinc-500">Tesseramento ASI</dt>
+          <dd>
+            {persona?.tesseramento?.trim() ? persona.tesseramento : "—"}
+            {persona?.tesseramentoScadenza ? ` · scad. ${fmtDateIt(persona.tesseramentoScadenza)}` : ""}
+            {fonteTessera(persona?.tesseramentoFonte) ? (
+              <span className="ml-2 text-xs text-zinc-500">{fonteTessera(persona?.tesseramentoFonte)}</span>
+            ) : null}
+          </dd>
+        </div>
+        <div className="sm:col-span-2">
+          <dt className="mb-1 text-zinc-500">Corsi sicurezza</dt>
+          <dd className="flex flex-wrap gap-2">
+            {PERSONALE_QUALIFICHE.map((q) => {
+              const ok = (persona?.qualifiche ?? []).includes(q.id)
+              return (
+                <span
+                  key={q.id}
+                  className={`rounded-full px-2 py-0.5 text-xs ${ok ? "bg-emerald-950/70 text-emerald-200" : "bg-zinc-800 text-zinc-500"}`}
+                >
+                  {q.label}
+                  {ok ? "" : " — no"}
+                </span>
+              )
+            })}
+          </dd>
+        </div>
       </dl>
+      )}
       <div>
         <h3 className="mb-2 text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
         <div className="overflow-x-auto rounded-xl border border-zinc-800">

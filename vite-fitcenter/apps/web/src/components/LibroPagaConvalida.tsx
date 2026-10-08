@@ -40,6 +40,7 @@ export type ConvalidaRow = {
   calendariAttesi?: string[]
   sostitutiPossibili: { comparto: string; date: string; start: string; title: string; staff: string }[]
   salvato?: { stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }
+  tornello?: { disponibile: boolean; ok: boolean; orario?: string }
 }
 
 export type ConvalidaPayload = LpagaConvalidaPayload
@@ -80,8 +81,9 @@ export function LibroPagaConvalidaPanel({
           <h2 className="text-sm font-medium text-zinc-200">Convalida mensilità</h2>
           <p className="mt-1 text-lg font-semibold text-zinc-100">{data.personaleNome}</p>
           <p className="text-xs text-zinc-500">
-            Confronta i turni Libro paga con i calendari FitCenter (corsi, scuola nuoto, fitness, bagnini, desk).{" "}
-            {nDone}/{data.rows.length} controllati.
+            Confronta i turni Libro paga con i calendari FitCenter (corsi, scuola nuoto, fitness, bagnini, desk) e
+            con gli accessi tornello, se l’istruttore è in anagrafica gestionale. {nDone}/{data.rows.length}{" "}
+            controllati.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -138,25 +140,26 @@ export function LibroPagaConvalidaPanel({
             <tr>
               <th className="px-3 py-2">Data</th>
               <th className="px-3 py-2">Mansione / valore</th>
-              <th className="px-3 py-2">Calendario</th>
-              <th className="px-3 py-2">Stato</th>
-              <th className="px-3 py-2">Azioni</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.rows.map((r) => {
-              const stato = r.salvato?.stato ?? r.proposto
-              const sub = r.sostitutiPossibili[0]
-              return (
-                <tr key={r.turnoId} className="border-t border-zinc-800 align-top text-zinc-200">
-                  <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(r.giorno)}</td>
-                  <td className="px-3 py-2">
-                    <div>{r.livelloNome}</div>
-                    <div className="text-xs text-zinc-500">
-                      {r.quantita}
-                      {r.note ? ` · ${r.note}` : ""}
-                    </div>
-                  </td>
+                <th className="px-3 py-2">Calendario</th>
+                <th className="px-3 py-2">Tornello</th>
+                <th className="px-3 py-2">Stato</th>
+                <th className="px-3 py-2">Azioni</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r) => {
+                const stato = r.salvato?.stato ?? r.proposto
+                const sub = r.sostitutiPossibili[0]
+                return (
+                  <tr key={r.turnoId} className="border-t border-zinc-800 align-top text-zinc-200">
+                    <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(r.giorno)}</td>
+                    <td className="px-3 py-2">
+                      <div>{r.livelloNome}</div>
+                      <div className="text-xs text-zinc-500">
+                        {r.quantita}
+                        {r.note ? ` · ${r.note}` : ""}
+                      </div>
+                    </td>
                   <td className="px-3 py-2 text-xs text-zinc-400">
                     {r.match ? (
                       <span>
@@ -200,6 +203,7 @@ export function LibroPagaConvalidaPanel({
                       </span>
                     )}
                   </td>
+                  <td className="px-3 py-2 text-xs">{testoTornello(r.tornello)}</td>
                   <td className={`px-3 py-2 text-xs ${statoCls(stato)}`}>{statoLabel(stato)}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
@@ -238,7 +242,7 @@ export function LibroPagaConvalidaPanel({
             })}
             {!data.rows.length && (
               <tr>
-                <td className="px-3 py-6 text-zinc-500" colSpan={5}>
+                <td className="px-3 py-6 text-zinc-500" colSpan={6}>
                   Nessun turno in questo mese.
                 </td>
               </tr>
@@ -257,6 +261,14 @@ function labelComparto(c: string): string {
   if (c === "piscina") return "bagnini"
   if (c === "reception") return "desk"
   return c
+}
+
+function testoTornello(t?: { disponibile: boolean; ok: boolean; orario?: string }): ReactNode {
+  if (!t || !t.disponibile) return <span className="text-zinc-500">n/d</span>
+  if (t.ok) {
+    return <span className="text-emerald-300">Ingresso{t.orario ? ` ${t.orario}` : ""}</span>
+  }
+  return <span className="text-amber-300">Nessun accesso</span>
 }
 
 function testoCalendario(r: ConvalidaRow): ReactNode {
@@ -403,6 +415,7 @@ export function LibroPagaConvalidaMesePanel({
                 <th className="px-3 py-2">Data</th>
                 <th className="px-3 py-2">Mansione / valore</th>
                 <th className="px-3 py-2">Calendario</th>
+                <th className="px-3 py-2">Tornello</th>
                 <th className="px-3 py-2">Stato</th>
                 <th className="px-3 py-2">Azioni</th>
               </tr>
@@ -423,6 +436,7 @@ export function LibroPagaConvalidaMesePanel({
                       </div>
                     </td>
                     <td className="px-3 py-2 text-xs text-zinc-400">{testoCalendario(r)}</td>
+                    <td className="px-3 py-2 text-xs">{testoTornello(r.tornello)}</td>
                     <td className={`px-3 py-2 text-xs ${statoCls(stato)}`}>{statoLabel(stato)}</td>
                     <td className="px-3 py-2">
                       <div className="flex flex-wrap gap-1">

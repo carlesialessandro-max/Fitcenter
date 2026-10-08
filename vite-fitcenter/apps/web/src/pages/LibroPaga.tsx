@@ -25,6 +25,7 @@ import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report"
 
@@ -34,7 +35,7 @@ function eur(n: number): string {
 
 function fmtDateIt(iso: string | null | undefined): string {
   const s = String(iso ?? "").slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—"
+  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(s)) return "—"
   const [y, m, d] = s.split("-")
   return `${d}/${m}/${y}`
 }
@@ -445,6 +446,9 @@ function PersonaleTab({
   const [livelloId, setLivelloId] = useState("")
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
+  const [tesseramento, setTesseramento] = useState("")
+  const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
+  const [qualifiche, setQualifiche] = useState<string[]>([])
   const [password, setPassword] = useState("")
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
@@ -466,6 +470,9 @@ function PersonaleTab({
         livelloId,
         contratto,
         iban,
+        tesseramento,
+        tesseramentoScadenza,
+        qualifiche,
         attivo: true,
       }),
     onSuccess: () => {
@@ -473,6 +480,9 @@ function PersonaleTab({
       setCognome("")
       setUsername("")
       setPassword("")
+      setTesseramento("")
+      setTesseramentoScadenza("")
+      setQualifiche([])
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -539,7 +549,7 @@ function PersonaleTab({
                     className="mr-2 text-xs text-zinc-300 hover:underline"
                     onClick={() => setDettaglioId(r.id)}
                   >
-                    Dettaglio
+                    Modifica
                   </button>
                   <button
                     type="button"
@@ -577,6 +587,12 @@ function PersonaleTab({
             mensilita={data.mensilita.find((m) => m.personaleId === dettaglioId)}
             lezioni={data.turni.filter((t) => t.personaleId === dettaglioId).sort((a, b) => b.giorno.localeCompare(a.giorno))}
             onClose={() => setDettaglioId(null)}
+            canEdit
+            allowAdminRole
+            livelli={data.livelli}
+            onSavePersonale={(id, body) => libroPagaApi.patchPersonale(id, body)}
+            onError={onError}
+            onDone={onDone}
           />
         )
       })()}
@@ -615,6 +631,35 @@ function PersonaleTab({
         </select>
         <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
         <input value={iban} onChange={(e) => setIban(e.target.value)} placeholder="IBAN" className={inputCls} />
+        <input
+          value={tesseramento}
+          onChange={(e) => setTesseramento(e.target.value)}
+          placeholder="Tesseramento ASI"
+          className={inputCls}
+        />
+        <input
+          type="date"
+          value={tesseramentoScadenza}
+          onChange={(e) => setTesseramentoScadenza(e.target.value)}
+          className={inputCls}
+          title="Scadenza tessera"
+        />
+        <div className="flex w-full flex-wrap gap-3 text-sm text-zinc-300">
+          {PERSONALE_QUALIFICHE.map((q) => (
+            <label key={q.id} className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={qualifiche.includes(q.id)}
+                onChange={() =>
+                  setQualifiche((prev) =>
+                    prev.includes(q.id) ? prev.filter((x) => x !== q.id) : [...prev, q.id]
+                  )
+                }
+              />
+              {q.label}
+            </label>
+          ))}
+        </div>
         <button type="submit" className={btnAmber} disabled={createMut.isPending}>
           Aggiungi utente
         </button>
@@ -1000,6 +1045,9 @@ function MensilitaTab({
         data={data}
         mese={mese}
         canEdit={() => true}
+        canEditPersonale={() => true}
+        allowAdminRole
+        onSavePersonale={(id, body) => libroPagaApi.patchPersonale(id, body)}
         onSave={(body) => libroPagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}

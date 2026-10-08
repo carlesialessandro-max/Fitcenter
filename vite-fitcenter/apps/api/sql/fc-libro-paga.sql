@@ -30,8 +30,15 @@ CREATE TABLE dbo.FcLibroPagaPersonale (
   LivelloId NVARCHAR(64) NULL,
   Contratto DATE NULL,
   Iban NVARCHAR(34) NULL,
+  Tesseramento NVARCHAR(120) NULL,
+  TesseramentoScadenza DATE NULL,
+  Qualifiche NVARCHAR(400) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpPer_Attivo DEFAULT 1
 );
+GO
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Tesseramento NVARCHAR(120) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(400) NULL;
 GO
 
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL

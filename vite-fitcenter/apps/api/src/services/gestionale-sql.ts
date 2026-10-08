@@ -5970,6 +5970,154 @@ export async function queryAccessiUtenti(params: { from: string; to: string }): 
   }
 }
 
+export type AnagraficaStaffHit = {
+  idUtente: string
+  cognome: string
+  nome: string
+  tesseramento?: string
+  tesseramentoScadenza?: string
+  qualifiche: string[]
+}
+
+function truthyGestionaleFlag(v: unknown): boolean {
+  const s = String(v ?? "").trim().toLowerCase()
+  if (!s) return false
+  if (["0", "no", "false", "n", "none", "null"].includes(s)) return false
+  return true
+}
+
+function qualificheFromAnagraficaRow(row: Record<string, unknown>): string[] {
+  const out: string[] = []
+  const add = (id: string) => {
+    if (!out.includes(id)) out.push(id)
+  }
+  for (const [key, val] of Object.entries(row)) {
+    const k = key.toLowerCase().replace(/[\s_]+/g, "")
+    const text = String(val ?? "").toLowerCase()
+    const colHit = truthyGestionaleFlag(val)
+    if ((k.includes("antincendio") && colHit) || text.includes("antincendio")) add("antincendio")
+    if ((k.includes("soccorso") && colHit) || text.includes("primo soccorso") || text.includes("primosoccorso")) {
+      add("primo_soccorso")
+    }
+    if (
+      ((k.includes("sicurezza") && (k.includes("lavoro") || k.includes("luogo"))) && colHit) ||
+      text.includes("sicurezza luogo") ||
+      text.includes("sicurezza sul lavoro")
+    ) {
+      add("sicurezza_luogo_lavoro")
+    }
+    if ((k === "rls" || k.includes("rls")) && colHit) add("rls")
+    if (text.includes(" rls") || text.startsWith("rls") || text === "rls") add("rls")
+    if (
+      ((k.includes("piscina") && k.includes("responsabile")) && colHit) ||
+      text.includes("responsabile piscina")
+    ) {
+      add("responsabile_piscina")
+    }
+  }
+  return out
+}
+
+function formatAsiTessera(raw: string): string {
+  const t = raw.trim()
+  if (!t) return ""
+  if (/asi/i.test(t)) return t
+  return `ASI ${t}`
+}
+
+/** Anagrafica gestionale (Utenti): tessera ASI e, se presenti, corsi sicurezza. */
+export async function queryAnagraficaStaff(
+  people: { cognome?: string; nome: string }[]
+): Promise<AnagraficaStaffHit[]> {
+  const p = await getPool()
+  if (!p || !people.length) return []
+  const tbl = defaultTables.clienti
+  if (!isSafeSqlIdentifierLoose(tbl)) return []
+  const qObj = qualifySqlObject(tbl).query
+  const cols = await prenGetCols(tbl)
+  const set = new Set(cols)
+  const pickCol = (cands: string[]): string | null => {
+    for (const c of cands) if (set.has(c.toLowerCase())) return c
+    return null
+  }
+  const idCol = pickCol(["IDUtente", "IdUtente"]) ?? "IDUtente"
+  const cognomeCol = pickCol(["Cognome"]) ?? "Cognome"
+  const nomeCol = pickCol(["Nome"]) ?? "Nome"
+  const tessCol = pickCol([
+    "Custom2",
+    "AsiTessera",
+    "ASI_Tessera",
+    "TesseraASI",
+    "Tessera_Asi",
+    "Tessera",
+    "NumeroTessera",
+    "Custom1",
+  ])
+  const scadCol = pickCol([
+    "Custom3",
+    "DataScadenzaTessera",
+    "ScadenzaTessera",
+    "ScadenzaASI",
+    "DataScadenzaASI",
+    "ScadenzaAsi",
+  ])
+  const extra = cols.filter((c) =>
+    /antincendio|soccorso|sicurezza|rls|piscina|custom[0-9]/i.test(c)
+  )
+  const selectCols = new Set<string>([idCol, cognomeCol, nomeCol, ...extra])
+  if (tessCol) selectCols.add(tessCol)
+  if (scadCol) selectCols.add(scadCol)
+  const selectList = [...selectCols].map((c) => `[${c}]`).join(", ")
+
+  const pairs = people
+    .map((x) => ({
+      cognome: String(x.cognome ?? "").trim().toUpperCase(),
+      nome: String(x.nome ?? "").trim().toUpperCase(),
+    }))
+    .filter((x) => x.cognome || x.nome)
+    .slice(0, 200)
+  if (!pairs.length) return []
+
+  const req = p.request()
+  const orParts: string[] = []
+  pairs.forEach((pair, i) => {
+    req.input(`c${i}`, sql.NVarChar(200), pair.cognome)
+    req.input(`n${i}`, sql.NVarChar(200), pair.nome)
+    orParts.push(
+      `(UPPER(LTRIM(RTRIM(ISNULL(u.[${cognomeCol}], N'')))) = @c${i} AND UPPER(LTRIM(RTRIM(ISNULL(u.[${nomeCol}], N'')))) = @n${i})`
+    )
+  })
+  try {
+    const r = await req.query(
+      `SELECT TOP (400) ${selectList}
+       FROM ${qObj} u
+       WHERE ${orParts.join(" OR ")}`
+    )
+    const out: AnagraficaStaffHit[] = []
+    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const cognome = String(rowGet(row, [cognomeCol, "Cognome"]) ?? "").trim()
+      const nome = String(rowGet(row, [nomeCol, "Nome"]) ?? "").trim()
+      const idUtente = String(rowGet(row, [idCol, "IDUtente", "IdUtente"]) ?? "").trim()
+      const tessRaw = tessCol ? String(rowGet(row, [tessCol]) ?? "").trim() : ""
+      const scadRaw = scadCol ? toIsoDateOnlyMaybe(rowGet(row, [scadCol])) : null
+      const tesseramento = tessRaw ? formatAsiTessera(tessRaw) : ""
+      const hit: AnagraficaStaffHit = {
+        idUtente,
+        cognome,
+        nome,
+        qualifiche: qualificheFromAnagraficaRow(row),
+      }
+      if (tesseramento) hit.tesseramento = tesseramento
+      if (scadRaw) hit.tesseramentoScadenza = scadRaw
+      if (hit.idUtente || hit.cognome || hit.nome) out.push(hit)
+    }
+    return out
+  } catch (e) {
+    console.warn("[libro-paga] anagrafica gestionale:", (e as Error)?.message ?? e)
+    return []
+  }
+}
+
 function getIncassiViewName(): string {
   // Default: movimenti di cassa (coerente con griglia "Movimenti di Cassa" del gestionale).
   // Override via env se necessario.

@@ -7,6 +7,7 @@ import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -521,6 +522,9 @@ function Personale({
   const [password, setPassword] = useState("")
   const [ruolo, setRuolo] = useState<"user" | "manager">("user")
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
+  const [tesseramento, setTesseramento] = useState("")
+  const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
+  const [qualifiche, setQualifiche] = useState<string[]>([])
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
   const [q, setQ] = useState("")
@@ -534,12 +538,18 @@ function Personale({
         password,
         ruolo: me?.ruolo === "manager" ? "user" : ruolo,
         livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
+        tesseramento,
+        tesseramentoScadenza,
+        qualifiche,
       }),
     onSuccess: () => {
       setNome("")
       setCognome("")
       setUsername("")
       setPassword("")
+      setTesseramento("")
+      setTesseramentoScadenza("")
+      setQualifiche([])
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -594,6 +604,12 @@ function Personale({
           mensilita={detMens}
           lezioni={detTurni}
           onClose={() => setDettaglioId(null)}
+          canEdit={me?.ruolo === "admin" || (me?.ruolo === "manager" && detPersona.ruolo !== "admin")}
+          allowAdminRole={me?.ruolo === "admin"}
+          livelli={data.livelli}
+          onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
+          onError={onError}
+          onDone={onDone}
         />
       )}
       <form
@@ -636,6 +652,35 @@ function Personale({
             </option>
           ))}
         </select>
+        <input
+          value={tesseramento}
+          onChange={(e) => setTesseramento(e.target.value)}
+          placeholder="Tesseramento ASI"
+          className={inputCls}
+        />
+        <input
+          type="date"
+          value={tesseramentoScadenza}
+          onChange={(e) => setTesseramentoScadenza(e.target.value)}
+          className={inputCls}
+          title="Scadenza tessera"
+        />
+        <div className="flex w-full flex-wrap gap-3 text-sm text-zinc-300">
+          {PERSONALE_QUALIFICHE.map((q) => (
+            <label key={q.id} className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={qualifiche.includes(q.id)}
+                onChange={() =>
+                  setQualifiche((prev) =>
+                    prev.includes(q.id) ? prev.filter((x) => x !== q.id) : [...prev, q.id]
+                  )
+                }
+              />
+              {q.label}
+            </label>
+          ))}
+        </div>
         <button type="submit" className={btnAmber} disabled={createMut.isPending}>
           Aggiungi utente
         </button>
@@ -695,9 +740,9 @@ function Personale({
                     className="mr-2 text-xs text-zinc-300 hover:underline"
                     onClick={() => setDettaglioId(p.id)}
                   >
-                    Dettaglio
+                    {me?.ruolo === "admin" || p.ruolo !== "admin" ? "Modifica" : "Dettaglio"}
                   </button>
-                  {p.username && (
+                  {p.username && (me?.ruolo === "admin" || p.ruolo !== "admin") && (
                     <button
                       type="button"
                       className="text-xs text-amber-300 hover:underline"
@@ -782,6 +827,14 @@ function Mensilita({
         data={data}
         mese={mese}
         canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager" || Boolean(data.canValidate)}
+        canEditPersonale={(id) => {
+          const p = data.personale.find((x) => x.id === id)
+          if (!p) return false
+          if (me?.ruolo === "admin") return true
+          return me?.ruolo === "manager" && p.ruolo !== "admin"
+        }}
+        allowAdminRole={me?.ruolo === "admin"}
+        onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
         hideIban={me?.ruolo === "user"}
         onSave={(body) => lpagaApi.putMensilita(body)}
         onError={onError}

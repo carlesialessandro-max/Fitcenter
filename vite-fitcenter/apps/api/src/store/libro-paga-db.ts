@@ -20,6 +20,16 @@ export type LpagaLivello = {
   attivo: boolean
 }
 
+export const LPAGA_QUALIFICHE = [
+  "sicurezza_luogo_lavoro",
+  "antincendio",
+  "primo_soccorso",
+  "rls",
+  "responsabile_piscina",
+] as const
+
+export type LpagaQualificaId = (typeof LPAGA_QUALIFICHE)[number]
+
 export type LpagaPersonale = {
   id: string
   nome: string
@@ -29,6 +39,10 @@ export type LpagaPersonale = {
   livelloId?: string
   contratto?: string
   iban?: string
+  tesseramento?: string
+  tesseramentoScadenza?: string
+  tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
+  qualifiche?: string[]
   attivo: boolean
 }
 
@@ -134,6 +148,31 @@ function ymd(v: unknown): string {
   return s
 }
 
+export function parseQualifichePersonale(v: unknown): string[] {
+  const allowed = new Set<string>(LPAGA_QUALIFICHE)
+  let raw: unknown[] = []
+  if (Array.isArray(v)) raw = v
+  else if (typeof v === "string" && v.trim()) {
+    try {
+      const j = JSON.parse(v)
+      raw = Array.isArray(j) ? j : String(v).split(",")
+    } catch {
+      raw = v.split(",")
+    }
+  }
+  const out: string[] = []
+  for (const item of raw) {
+    const id = String(item ?? "").trim()
+    if (allowed.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+function parseQualificheStored(v: unknown): string[] | undefined {
+  if (v == null || v === "") return undefined
+  return parseQualifichePersonale(v)
+}
+
 function iso(v: unknown): string {
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString()
   const s = String(v ?? "").trim()
@@ -220,6 +259,9 @@ CREATE TABLE dbo.FcLibroPagaPersonale (
   LivelloId NVARCHAR(64) NULL,
   Contratto DATE NULL,
   Iban NVARCHAR(34) NULL,
+  Tesseramento NVARCHAR(120) NULL,
+  TesseramentoScadenza DATE NULL,
+  Qualifiche NVARCHAR(400) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpPer_Attivo DEFAULT 1
 );
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Cognome') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Cognome NVARCHAR(200) NULL;
@@ -227,6 +269,9 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','Username') IS NULL ALTER TABLE dbo.FcL
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Ruolo') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Ruolo NVARCHAR(20) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloId') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloId NVARCHAR(64) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Contratto') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Contratto DATE NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Tesseramento NVARCHAR(120) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(400) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -341,6 +386,9 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const username = String(r.Username ?? r.username ?? "").trim()
   const livelloId = String(r.LivelloId ?? r.livelloId ?? "").trim()
   const contratto = ymd(r.Contratto ?? r.contratto)
+  const tesseramento = String(r.Tesseramento ?? r.tesseramento ?? "").trim()
+  const tesseramentoScadenza = ymd(r.TesseramentoScadenza ?? r.tesseramentoScadenza)
+  const qualifiche = parseQualificheStored(r.Qualifiche ?? r.qualifiche)
   const ruoloRaw = String(r.Ruolo ?? r.ruolo ?? "user").toLowerCase()
   const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
   return {
@@ -350,8 +398,13 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
     ...(username ? { username } : {}),
     ruolo,
     ...(livelloId ? { livelloId } : {}),
-    ...(contratto && /^\d{4}-\d{2}-\d{2}$/.test(contratto) ? { contratto } : {}),
+    ...(contratto && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(contratto) ? { contratto } : {}),
     ...(iban ? { iban } : {}),
+    ...(tesseramento ? { tesseramento } : {}),
+    ...(tesseramentoScadenza && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(tesseramentoScadenza)
+      ? { tesseramentoScadenza }
+      : {}),
+    ...(qualifiche ? { qualifiche } : {}),
     attivo: r.Attivo == null && r.attivo == null ? true : bit(r.Attivo ?? r.attivo),
   }
 }
@@ -484,7 +537,10 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
     const p = await pool()
     if (!p) return readFile().personale
     const r = await p.request().query(
-      "SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Attivo FROM dbo.FcLibroPagaPersonale ORDER BY Cognome, Nome"
+      `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
+              CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Attivo,
+              Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza, Qualifiche
+       FROM dbo.FcLibroPagaPersonale ORDER BY Cognome, Nome`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
   }
@@ -500,10 +556,17 @@ export async function upsertPersonale(input: {
   livelloId?: string
   contratto?: string
   iban?: string
+  tesseramento?: string
+  tesseramentoScadenza?: string
+  qualifiche?: string[]
   attivo: boolean
 }): Promise<LpagaPersonale> {
   const iban = (input.iban ?? "").trim()
   const ruolo: LpagaRuolo = input.ruolo === "admin" || input.ruolo === "manager" ? input.ruolo : "user"
+  const tesseramento = (input.tesseramento ?? "").trim()
+  const tesseramentoScadenza = (input.tesseramentoScadenza ?? "").trim()
+  const hasQualifiche = input.qualifiche !== undefined
+  const qualifiche = hasQualifiche ? parseQualifichePersonale(input.qualifiche) : undefined
   const row: LpagaPersonale = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
@@ -513,6 +576,9 @@ export async function upsertPersonale(input: {
     ...(input.livelloId?.trim() ? { livelloId: input.livelloId.trim() } : {}),
     ...(input.contratto?.trim() ? { contratto: input.contratto.trim() } : {}),
     ...(iban ? { iban } : {}),
+    ...(tesseramento ? { tesseramento } : {}),
+    ...(tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? { tesseramentoScadenza } : {}),
+    ...(qualifiche ? { qualifiche } : {}),
     attivo: input.attivo !== false,
   }
   if ((await ensureLibroPagaStorage()) === "sql") {
@@ -527,21 +593,38 @@ export async function upsertPersonale(input: {
     req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
     req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)
+    req.input("Tesseramento", sql.NVarChar(120), tesseramento || null)
+    req.input(
+      "TesseramentoScadenza",
+      sql.Date,
+      tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? tesseramentoScadenza : null
+    )
+    req.input("Qualifiche", sql.NVarChar(400), hasQualifiche ? JSON.stringify(qualifiche ?? []) : null)
+    req.input("QualificheSet", sql.Bit, hasQualifiche)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaPersonale AS t
       USING (SELECT @Id AS Id) AS s ON t.Id = s.Id
       WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
-        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Attivo);
+        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Tesseramento=@Tesseramento,
+        TesseramentoScadenza=@TesseramentoScadenza,
+        Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Tesseramento, TesseramentoScadenza, Qualifiche, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Tesseramento, @TesseramentoScadenza, @Qualifiche, @Attivo);
     `)
     return row
   }
   const db = readFile()
   const i = db.personale.findIndex((x) => x.id === row.id)
-  if (i >= 0) db.personale[i] = row
-  else db.personale.push(row)
+  if (i >= 0) {
+    const prev = db.personale[i]
+    db.personale[i] = {
+      ...row,
+      ...(hasQualifiche ? { qualifiche: qualifiche ?? [] } : prev.qualifiche ? { qualifiche: prev.qualifiche } : {}),
+      ...(row.tesseramento ? {} : prev.tesseramento ? { tesseramento: prev.tesseramento } : {}),
+      ...(row.tesseramentoScadenza ? {} : prev.tesseramentoScadenza ? { tesseramentoScadenza: prev.tesseramentoScadenza } : {}),
+    }
+  } else db.personale.push(row)
   writeFile(db)
   return row
 }

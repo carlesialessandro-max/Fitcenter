@@ -9,6 +9,7 @@ import {
   getLpagaDeleghe,
   postLpagaLogin,
   postLpagaLogout,
+  patchLpagaPersonale,
   postLpagaPersonale,
   postLpagaTurno,
   putLpagaConvalidaTurno,
@@ -35,6 +36,7 @@ libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
 libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)
 libroPagaPortalRouter.post("/personale", requireLpaga, postLpagaPersonale)
+libroPagaPortalRouter.patch("/personale/:id", requireLpaga, patchLpagaPersonale)
 libroPagaPortalRouter.put("/personale/:id/password", requireLpaga, putLpagaPersonalePassword)
 libroPagaPortalRouter.get("/convalida", requireLpaga, getLpagaConvalida)
 libroPagaPortalRouter.get("/convalida-mese", requireLpaga, getLpagaConvalidaMese)
