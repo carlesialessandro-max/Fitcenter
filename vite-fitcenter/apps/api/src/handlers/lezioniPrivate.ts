@@ -107,7 +107,7 @@ function assertLiberiCamilla(
 ): string | null {
   const closed = lezioniFuoriOrario(lezioni)
   if (closed && !allowClosedSlots(u, istrNome)) {
-    return "Fuori orario: solo Camilla Nardi può prenotare le vasche chiuse"
+    return "Fuori orario: solo Camilla Nardi o Patrizia Mangiavacchi possono prenotare le vasche chiuse"
   }
   return assertAllLiberi(db, lezioni, except, closed && allowClosedSlots(u, istrNome))
 }

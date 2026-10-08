@@ -8,7 +8,7 @@ import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
 import { LP_VASCHE_LEGENDA, lpOreSlotsTutti, slotAperto } from "@/lib/lp-vasche-orari"
 import { addDaysIso, buildWeeklyLessonDates, isoDow, LP_DOW_LABELS } from "@/lib/lp-pacchetto-date"
-import { isCamillaNome, isCamillaUser } from "@/lib/lp-camilla"
+import { canBookClosedNome, canBookClosedUser, FUORI_ORARIO_LABEL } from "@/lib/lp-camilla"
 import { LezioniPrivateAbbonamentiTab } from "@/pages/LezioniPrivateAbbonamentiTab"
 
 type Tab = "richieste" | "calendario" | "istruttori" | "abbonamenti"
@@ -155,7 +155,7 @@ export function LezioniPrivate() {
   const instructors = q.data?.instructors ?? []
   const richieste = q.data?.richieste ?? []
   const lezioni = q.data?.lezioni ?? []
-  const canBookClosed = isCamillaUser(user) || canDesk
+  const canBookClosed = canBookClosedUser(user) || canDesk
   const ore = canBookClosed ? (occQ.data?.ore?.length ? occQ.data.ore : lpOreSlotsTutti()) : (occQ.data?.ore ?? q.data?.ore ?? [])
   const booked = occQ.data?.booked ?? []
 
@@ -262,7 +262,7 @@ export function LezioniPrivate() {
               <p className="mt-2 text-sm text-zinc-500">
                 Ogni lezione dura 30 minuti. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa). Ludica
                 lun–ven: 8:00–15:15 (2 lez.), 15:15–16:15 (6), chiusa 16:15–18:30, 18:30–20:15 (4). Sabato come da tabella.
-                Camilla Nardi può prenotare anche gli orari chiusi.
+                {FUORI_ORARIO_LABEL} possono prenotare anche gli orari chiusi (ludica compresa).
               </p>
               <div className="mt-3 overflow-x-auto rounded-xl border border-zinc-800">
                 <table className="min-w-full text-left text-xs text-zinc-400">
@@ -790,7 +790,9 @@ function PrendiModal({
           </select>
         </div>
         {!slotAperto(giorno, ora, vasca, corsia) ? (
-          <p className="mt-2 text-xs text-amber-300">Orario fuori fascia ufficiale: solo Camilla Nardi (utente o istruttore).</p>
+          <p className="mt-2 text-xs text-amber-300">
+            Orario fuori fascia ufficiale: solo {FUORI_ORARIO_LABEL} (utente o istruttore).
+          </p>
         ) : null}
         <DatePacchettoPreview giorni={previewGiorni} ora={ora} />
         {m.isError ? <p className="mt-2 text-sm text-red-400">{String((m.error as Error).message)}</p> : null}
@@ -912,9 +914,10 @@ function BookSlotModal({
   onDone: () => void
 }) {
   const match = instructors.find((i) => i.attivo && i.nome.trim().toLowerCase() === userNome.trim().toLowerCase())
-  const camillaIstr = instructors.find((i) => i.attivo && isCamillaNome(i.nome))
+  const closedMatch = instructors.find((i) => i.attivo && canBookClosedNome(i.nome) && i.nome.trim().toLowerCase() === userNome.trim().toLowerCase())
+  const closedAny = instructors.find((i) => i.attivo && canBookClosedNome(i.nome))
   const [istruttoreId, setIstruttoreId] = useState(
-    slotChiuso ? (camillaIstr?.id ?? match?.id ?? "") : (match?.id ?? instructors.find((i) => i.attivo)?.id ?? ""),
+    slotChiuso ? (closedMatch?.id ?? closedAny?.id ?? match?.id ?? "") : (match?.id ?? instructors.find((i) => i.attivo)?.id ?? ""),
   )
   const [clienteNome, setClienteNome] = useState("")
   const [telefono, setTelefono] = useState("")
@@ -958,7 +961,7 @@ function BookSlotModal({
         </p>
         {slotChiuso ? (
           <p className="mt-2 text-xs text-amber-300">
-            Orario fuori fascia ufficiale: solo Camilla Nardi (utente CAMILLA o istruttore).
+            Orario fuori fascia ufficiale: solo {FUORI_ORARIO_LABEL} (utente o istruttore).
           </p>
         ) : null}
         <div className="mt-3">
