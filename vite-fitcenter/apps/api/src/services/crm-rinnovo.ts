@@ -170,19 +170,24 @@ export async function insertCrmRinnovo(params: {
     }
     const idAzienda = await resolveAzienda(pr, idUtente)
 
-    const existing = await pw
-      .request()
-      .input("idUtente", sql.Int, idUtente)
-      .input("idCat", sql.Int, idCat)
-      .query(`
-        SELECT TOP 1 IDAppuntamentoCategoriaUtente AS id
-        FROM dbo.AppuntamentiCategorieUtenti
-        WHERE IDUtente = @idUtente
-          AND IDAppuntamentoCategoria = @idCat
-          AND DataChiusura IS NULL
-        ORDER BY IDAppuntamentoCategoriaUtente DESC
-      `)
-    let idAttivita = Number((existing.recordset?.[0] as { id?: number } | undefined)?.id)
+    let idAttivita = 0
+    try {
+      const existing = await pr
+        .request()
+        .input("idUtente", sql.Int, idUtente)
+        .input("idCat", sql.Int, idCat)
+        .query(`
+          SELECT TOP 1 IDAppuntamentoCategoriaUtente AS id
+          FROM dbo.AppuntamentiCategorieUtenti
+          WHERE IDUtente = @idUtente
+            AND IDAppuntamentoCategoria = @idCat
+            AND DataChiusura IS NULL
+          ORDER BY IDAppuntamentoCategoriaUtente DESC
+        `)
+      idAttivita = Number((existing.recordset?.[0] as { id?: number } | undefined)?.id)
+    } catch {
+      idAttivita = 0
+    }
 
     const tx = new sql.Transaction(pw)
     await tx.begin()
