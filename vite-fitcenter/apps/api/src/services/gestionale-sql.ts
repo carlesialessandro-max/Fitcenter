@@ -2146,11 +2146,7 @@ export async function queryAbbonamentiPerKpiAttivi(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return []
   const tblA = getAbbonamentiTableName()
   const dateFilter = ` AND a.[DataFine] >= CAST(@asOf AS DATE)`
-  const newReq = () => {
-    const req = p.request()
-    req.timeout = 55_000
-    return req.input("asOf", sql.VarChar(10), asOf)
-  }
+  const newReq = () => p.request().input("asOf", sql.VarChar(10), asOf)
 
   const runWithCol = async (col: string) => {
     let req = newReq()
