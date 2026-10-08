@@ -81,9 +81,9 @@ export function LibroPagaConvalidaPanel({
           <h2 className="text-sm font-medium text-zinc-200">Convalida mensilità</h2>
           <p className="mt-1 text-lg font-semibold text-zinc-100">{data.personaleNome}</p>
           <p className="text-xs text-zinc-500">
-            Confronta i turni Libro paga con i calendari FitCenter (corsi, scuola nuoto, fitness, bagnini, desk) e
-            con gli accessi tornello, se l’istruttore è in anagrafica gestionale. {nDone}/{data.rows.length}{" "}
-            controllati.
+            Confronta i turni Libro paga con i calendari FitCenter (corsi, scuola nuoto, fitness, bagnini, desk).
+            Tornello: basta la prima entrata in struttura quel giorno (stesso ingresso per tutti i corsi).{" "}
+            {nDone}/{data.rows.length} controllati.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

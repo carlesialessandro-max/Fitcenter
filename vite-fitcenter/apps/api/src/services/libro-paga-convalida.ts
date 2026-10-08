@@ -382,30 +382,117 @@ export function payloadConvalidaMese(
   }
 }
 
-function ymdAccesso(v?: string): string {
-  const s = String(v ?? "").trim()
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
-  const it = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
-  if (it) return `${it[3]}-${it[2]}-${it[1]}`
-  const d = new Date(s)
-  if (Number.isNaN(d.getTime())) return ""
-  try {
-    return new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Rome",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).format(d)
-  } catch {
-    return d.toISOString().slice(0, 10)
-  }
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
 }
 
-function hmAccesso(v?: string): string | undefined {
-  const s = String(v ?? "").trim()
-  const m = s.match(/(\d{1,2}):(\d{2})/)
-  if (!m) return undefined
-  return `${m[1].padStart(2, "0")}:${m[2]}`
+/**
+ * DATETIME del gestionale è naive (ora di centrale). Il driver mssql lo marca spesso come UTC:
+ * non convertire Europe/Rome, usa le cifre così come sono (come in pagina Corsi).
+ */
+function parseAccessoWallClock(val: unknown): { ymd: string; hm: string; minutes: number } | null {
+  if (val == null || val === "") return null
+  if (val instanceof Date && !Number.isNaN(val.getTime())) {
+    const ymd = `${val.getUTCFullYear()}-${pad2(val.getUTCMonth() + 1)}-${pad2(val.getUTCDate())}`
+    const hh = val.getUTCHours()
+    const mi = val.getUTCMinutes()
+    return { ymd, hm: `${pad2(hh)}:${pad2(mi)}`, minutes: hh * 60 + mi }
+  }
+  const s = String(val).trim()
+  if (!s) return null
+  const iso = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{1,2}):(\d{2})/.exec(s)
+  if (iso) {
+    const hh = Number(iso[4])
+    const mi = Number(iso[5])
+    return { ymd: `${iso[1]}-${iso[2]}-${iso[3]}`, hm: `${pad2(hh)}:${pad2(mi)}`, minutes: hh * 60 + mi }
+  }
+  const it = /^(\d{2})\/(\d{2})\/(\d{4})(?:[^\d]+(\d{1,2}):(\d{2}))?/.exec(s)
+  if (it) {
+    const hh = Number(it[4] ?? 0)
+    const mi = Number(it[5] ?? 0)
+    return { ymd: `${it[3]}-${it[2]}-${it[1]}`, hm: `${pad2(hh)}:${pad2(mi)}`, minutes: hh * 60 + mi }
+  }
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return null
+  const ymd = `${d.getUTCFullYear()}-${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())}`
+  const hh = d.getUTCHours()
+  const mi = d.getUTCMinutes()
+  return { ymd, hm: `${pad2(hh)}:${pad2(mi)}`, minutes: hh * 60 + mi }
+}
+
+function rawIgnoreCase(raw: Record<string, unknown>, key: string): unknown {
+  if (Object.prototype.hasOwnProperty.call(raw, key) && raw[key] != null) return raw[key]
+  const lk = key.toLowerCase()
+  for (const rk of Object.keys(raw)) {
+    if (rk.toLowerCase() === lk && raw[rk] != null) return raw[rk]
+  }
+  return undefined
+}
+
+function clockFromAccesso(acc: {
+  dataEntrata?: string
+  raw?: Record<string, unknown>
+}): { ymd: string; hm: string; minutes: number } | null {
+  const raw = acc.raw ?? {}
+  const primary =
+    rawIgnoreCase(raw, "AccessiDataOra") ??
+    rawIgnoreCase(raw, "DataEntrata") ??
+    rawIgnoreCase(raw, "DataIngresso") ??
+    rawIgnoreCase(raw, "DataOraEntrata") ??
+    acc.dataEntrata
+  const parsed = parseAccessoWallClock(primary)
+  if (parsed && parsed.hm !== "00:00") return parsed
+  const d = parseAccessoWallClock(rawIgnoreCase(raw, "AccessiData"))
+  const t = parseAccessoWallClock(rawIgnoreCase(raw, "AccessiOra"))
+  if (d && t) return { ymd: d.ymd, hm: t.hm, minutes: t.minutes }
+  return parsed
+}
+
+/** Solo transiti di entrata (Terminale «Ingresso dx piscina», ecc.). Le uscite non contano. */
+function isIngressoTornello(raw: Record<string, unknown> | undefined): boolean {
+  const r = raw ?? {}
+  const parts = [
+    rawIgnoreCase(r, "TerminaleDescrizione"),
+    rawIgnoreCase(r, "TerminaleDesc"),
+    rawIgnoreCase(r, "DescrizioneTerminale"),
+    rawIgnoreCase(r, "Terminale"),
+    rawIgnoreCase(r, "AccessiTerminale"),
+    rawIgnoreCase(r, "TerminaleAccesso"),
+    rawIgnoreCase(r, "TerminaleNome"),
+    rawIgnoreCase(r, "NomeTerminale"),
+    rawIgnoreCase(r, "Varco"),
+    rawIgnoreCase(r, "VarcoNome"),
+    rawIgnoreCase(r, "Verso"),
+    rawIgnoreCase(r, "Direzione"),
+    rawIgnoreCase(r, "Tipo"),
+    rawIgnoreCase(r, "TipoEvento"),
+    rawIgnoreCase(r, "Evento"),
+    rawIgnoreCase(r, "Descrizione"),
+  ]
+  let blob = parts
+    .map((x) => String(x ?? ""))
+    .join(" ")
+    .toLowerCase()
+  if (!blob.trim()) {
+    blob = Object.entries(r)
+      .filter(([k]) => /terminal|varco|verso|direzion|tipo|event|descriz/i.test(k))
+      .map(([, v]) => String(v ?? ""))
+      .join(" ")
+      .toLowerCase()
+  }
+  if (!blob.trim()) return true
+  if (/\buscit[aeio]?\b|\bexit\b|\bout\b/.test(blob)) return false
+  if (/\bentrata\s+subordinat/.test(blob)) return false
+  return true
+}
+
+function labelAccesso(acc: { cognome?: string; nome?: string; raw?: Record<string, unknown> }): string {
+  const raw = acc.raw ?? {}
+  const nomeUtente = String(
+    rawIgnoreCase(raw, "Nome utente") ?? rawIgnoreCase(raw, "NomeUtente") ?? ""
+  ).trim()
+  if (nomeUtente) return nomeUtente
+  return [acc.cognome, acc.nome].filter(Boolean).join(" ").trim()
 }
 
 export async function arricchisciTornelloConvalida(
@@ -425,32 +512,28 @@ export async function arricchisciTornelloConvalida(
   try {
     const accessi = await queryAccessiUtenti({ from, to })
     if (!accessi.length) return rows.map((r) => ({ ...r, tornello: { disponibile: true, ok: false } }))
-    const byPersonDay = new Map<string, string>()
+    const byPersonDay = new Map<string, { hm: string; minutes: number }>()
     const people = [...new Map(rows.map((r) => [r.personaleId, personaleById.get(r.personaleId)]))]
     for (const acc of accessi) {
-      const giorno = ymdAccesso(acc.dataEntrata)
-      if (!giorno.startsWith(mese)) continue
-      const label = [acc.cognome, acc.nome].filter(Boolean).join(" ").trim()
+      if (!isIngressoTornello(acc.raw)) continue
+      const clock = clockFromAccesso(acc)
+      if (!clock || !clock.ymd.startsWith(mese)) continue
+      const label = labelAccesso(acc)
       if (!label) continue
-      const orario = hmAccesso(acc.dataEntrata)
       for (const [id, pe] of people) {
         if (!pe) continue
         if (!namesMatchPersonale(pe, label)) continue
-        const key = `${id}|${giorno}`
-        if (!byPersonDay.has(key) && orario) byPersonDay.set(key, orario)
-        else if (!byPersonDay.has(key)) byPersonDay.set(key, "")
+        const key = `${id}|${clock.ymd}`
+        const prev = byPersonDay.get(key)
+        if (!prev || clock.minutes < prev.minutes) byPersonDay.set(key, { hm: clock.hm, minutes: clock.minutes })
       }
     }
     return rows.map((r) => {
       const hit = byPersonDay.get(`${r.personaleId}|${r.giorno}`)
-      if (hit == null) return { ...r, tornello: { disponibile: true, ok: false } }
+      if (!hit) return { ...r, tornello: { disponibile: true, ok: false } }
       return {
         ...r,
-        tornello: {
-          disponibile: true,
-          ok: true,
-          ...(hit ? { orario: hit } : {}),
-        },
+        tornello: { disponibile: true, ok: true, orario: hit.hm },
       }
     })
   } catch (e) {
