@@ -115,16 +115,46 @@ function isoYmdFromDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-function eventMatchesCalendarDay(e: CalendarioMergedEvent, d: Date): boolean {
-  const dateIso = String(e.dateIso ?? "").trim()
-  if (dateIso) return dateIso === isoYmdFromDate(d)
-  return e.dow === d.getDay()
+function eventDateIso(e: { dateIso?: string | null }): string {
+  return String(e.dateIso ?? "").trim()
+}
+
+function eventsMatchingCalendarDay(events: CalendarioMergedEvent[], d: Date): CalendarioMergedEvent[] {
+  const iso = isoYmdFromDate(d)
+  const dated = events.filter((e) => eventDateIso(e) === iso)
+  if (dated.length) return dated
+  return events.filter((e) => !eventDateIso(e) && e.dow === d.getDay())
 }
 
 function parseCostoOrario(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null
   const n = Number(String(v).replace(",", "."))
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null
+}
+
+const QUALIFICHE_PERSONALE = [
+  "sicurezza_luogo_lavoro",
+  "antincendio",
+  "primo_soccorso",
+  "rls",
+  "responsabile_piscina",
+] as const
+
+function parseTesseramentoScadenza(v: unknown): string | null {
+  const t = String(v ?? "").trim()
+  if (!t) return null
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null
+}
+
+function parseQualifiche(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  const allowed = new Set<string>(QUALIFICHE_PERSONALE)
+  const out: string[] = []
+  for (const raw of v) {
+    const id = String(raw ?? "").trim()
+    if (allowed.has(id) && !out.includes(id)) out.push(id)
+  }
+  return out
 }
 
 const COMPARTO_LABELS: Record<CalendarioComparto, string> = {
@@ -424,8 +454,7 @@ export function getCalendarioPianoOperativo(req: Request, res: Response) {
   const dateIso = isoYmdFromDate(date)
   const db = readCalendarioDb()
   const reparti = PIANO_OPERATIVO_COMPARTI.map((comparto) => {
-    const events = mergeForComparto(comparto, db)
-      .filter((e) => eventMatchesCalendarDay(e, date))
+    const events = eventsMatchingCalendarDay(mergeForComparto(comparto, db), date)
       .map((e) => ({
         ...e,
         staffDisplay: displayStaff(e, db.instructors),
@@ -678,6 +707,9 @@ export function postCalendarioInstructor(req: Request, res: Response) {
     email?: string
     attivitaSvolta?: string
     costoOrario?: unknown
+    tesseramento?: string
+    tesseramentoScadenza?: string | null
+    qualifiche?: unknown
   }
   const nome = String(b.nome ?? "").trim()
   const cognome = String(b.cognome ?? "").trim()
@@ -685,6 +717,9 @@ export function postCalendarioInstructor(req: Request, res: Response) {
   const email = String(b.email ?? "").trim().toLowerCase()
   const attivitaSvolta = String(b.attivitaSvolta ?? "").trim()
   const costoOrario = parseCostoOrario(b.costoOrario)
+  const tesseramento = String(b.tesseramento ?? "").trim()
+  const tesseramentoScadenza = parseTesseramentoScadenza(b.tesseramentoScadenza)
+  const qualifiche = parseQualifiche(b.qualifiche)
   if (!nome || !cognome) return res.status(400).json({ message: "Nome e cognome obbligatori" })
 
   const now = new Date().toISOString()
@@ -696,6 +731,9 @@ export function postCalendarioInstructor(req: Request, res: Response) {
     email,
     attivitaSvolta,
     costoOrario,
+    tesseramento,
+    tesseramentoScadenza,
+    qualifiche,
     createdAt: now,
     updatedAt: now,
   }
@@ -721,6 +759,9 @@ export function putCalendarioInstructor(req: Request, res: Response) {
     email?: string
     attivitaSvolta?: string
     costoOrario?: unknown
+    tesseramento?: string
+    tesseramentoScadenza?: string | null
+    qualifiche?: unknown
   }
   const nome = b.nome !== undefined ? String(b.nome).trim() : prev.nome
   const cognome = b.cognome !== undefined ? String(b.cognome).trim() : prev.cognome
@@ -728,6 +769,12 @@ export function putCalendarioInstructor(req: Request, res: Response) {
   const email = b.email !== undefined ? String(b.email).trim().toLowerCase() : prev.email
   const attivitaSvolta = b.attivitaSvolta !== undefined ? String(b.attivitaSvolta).trim() : (prev.attivitaSvolta ?? "")
   const costoOrario = b.costoOrario !== undefined ? parseCostoOrario(b.costoOrario) : (prev.costoOrario ?? null)
+  const tesseramento = b.tesseramento !== undefined ? String(b.tesseramento).trim() : (prev.tesseramento ?? "")
+  const tesseramentoScadenza =
+    b.tesseramentoScadenza !== undefined
+      ? parseTesseramentoScadenza(b.tesseramentoScadenza)
+      : (prev.tesseramentoScadenza ?? null)
+  const qualifiche = b.qualifiche !== undefined ? parseQualifiche(b.qualifiche) : (prev.qualifiche ?? [])
   if (!nome || !cognome) return res.status(400).json({ message: "Nome e cognome obbligatori" })
 
   const row: CalendarioIstruttore = {
@@ -738,6 +785,9 @@ export function putCalendarioInstructor(req: Request, res: Response) {
     email,
     attivitaSvolta,
     costoOrario,
+    tesseramento,
+    tesseramentoScadenza,
+    qualifiche,
     updatedAt: new Date().toISOString(),
   }
   const next = upsertInstructor(db, row)

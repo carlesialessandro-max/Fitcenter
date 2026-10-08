@@ -11,7 +11,7 @@ import { staffColorKey, staffLaneLabel, staffPillClasses } from "@/lib/staff-col
 import {
   compartoIsManualServer,
   compartoIsServerSeeded,
-  eventMatchesCalendarDay,
+  eventsMatchingCalendarDay,
   MANUAL_SERVER_COMPARTI,
 } from "@/lib/calendario-manual"
 import {
@@ -149,9 +149,9 @@ function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
 }
 function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
-  return events
-    .filter((e) => eventMatchesCalendarDay(e, d))
-    .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+  return eventsMatchingCalendarDay(events, d).sort(
+    (a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title)
+  )
 }
 function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRangeGrid?: boolean): CalEvent[] {
   return eventsForDay(events, d).filter((e) =>
@@ -196,8 +196,8 @@ function eventRangeMin(e: CalEvent): { sm: number; em: number } {
   return { sm, em }
 }
 
-function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number): ShiftGrid {
-  let minS = 8 * 60
+function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number, defaultMinS = 8 * 60): ShiftGrid {
+  let minS = defaultMinS
   let maxE = 21 * 60
   for (const d of days) {
     for (const e of eventsForDay(events, d)) {
@@ -1458,10 +1458,14 @@ export function CalendarioRepartoPage() {
   const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
   const cells = view === "month" ? monthMatrix(cursor) : []
   const weekShiftGrid = useMemo(() => {
-    const probe = shiftGridCovering(weekDays, events, 16)
-    return shiftGridCovering(weekDays, events, weekSlotPx(probe.slots.length))
-  }, [weekDays, events])
-  const dayShiftGrid = useMemo(() => shiftGridCovering([dayOnly], events, 22), [dayOnly, events])
+    const defaultMinS = apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" ? 6 * 60 : 8 * 60
+    const probe = shiftGridCovering(weekDays, events, 16, defaultMinS)
+    return shiftGridCovering(weekDays, events, weekSlotPx(probe.slots.length), defaultMinS)
+  }, [weekDays, events, apiComparto])
+  const dayShiftGrid = useMemo(() => {
+    const defaultMinS = apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" ? 6 * 60 : 8 * 60
+    return shiftGridCovering([dayOnly], events, 22, defaultMinS)
+  }, [dayOnly, events, apiComparto])
   const weekHours = useMemo(() => {
     if (!apiComparto || !shiftRangeGrid) return null
     return computeWeekHoursByStaff(weekDays, events, instructors)

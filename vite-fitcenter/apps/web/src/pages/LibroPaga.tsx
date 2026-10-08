@@ -491,6 +491,11 @@ function PersonaleTab({
     onSuccess: onDone,
     onError: (e: Error) => onError(e.message),
   })
+  const ruoloMut = useMutation({
+    mutationFn: ({ id, ruolo }: { id: string; ruolo: LpagaRuolo }) => libroPagaApi.patchPersonale(id, { ruolo }),
+    onSuccess: onDone,
+    onError: (e: Error) => onError(e.message),
+  })
 
   const Table = ({ title, rows, showReparto }: { title: string; rows: LpagaPersonale[]; showReparto?: boolean }) => (
     <Card title={title}>
@@ -501,6 +506,7 @@ function PersonaleTab({
               <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Nome</th>
               <th className="px-3 py-2">Username</th>
+              <th className="px-3 py-2">Ruolo</th>
               {showReparto && <th className="px-3 py-2">Reparto</th>}
               <th className="px-3 py-2">Scad. contratto</th>
               <th className="px-3 py-2" />
@@ -512,6 +518,19 @@ function PersonaleTab({
                 <td className="px-3 py-2">{r.cognome ?? "—"}</td>
                 <td className="px-3 py-2">{r.nome}</td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{r.username ?? "—"}</td>
+                <td className="px-3 py-2">
+                  <select
+                    className={inputCls}
+                    value={r.ruolo}
+                    disabled={ruoloMut.isPending}
+                    aria-label={`Ruolo di ${r.nominativo ?? r.username ?? r.id}`}
+                    onChange={(e) => ruoloMut.mutate({ id: r.id, ruolo: e.target.value as LpagaRuolo })}
+                  >
+                    <option value="user">User</option>
+                    <option value="manager">Manager</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </td>
                 {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
                 <td className="px-3 py-2">{fmtDateIt(r.contratto)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">

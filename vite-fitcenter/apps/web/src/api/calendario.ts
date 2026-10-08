@@ -21,6 +21,9 @@ export type CalendarioIstruttore = {
   email: string
   attivitaSvolta?: string
   costoOrario?: number | null
+  tesseramento?: string
+  tesseramentoScadenza?: string | null
+  qualifiche?: string[]
   createdAt: string
   updatedAt: string
 }
@@ -93,6 +96,9 @@ export const calendarioApi = {
     email?: string
     attivitaSvolta?: string
     costoOrario?: number | null
+    tesseramento?: string
+    tesseramentoScadenza?: string | null
+    qualifiche?: string[]
   }) => api.post<CalendarioIstruttore>("/data/calendario/instructors", body),
   putInstructor: (
     id: string,
@@ -103,6 +109,9 @@ export const calendarioApi = {
       email?: string
       attivitaSvolta?: string
       costoOrario?: number | null
+      tesseramento?: string
+      tesseramentoScadenza?: string | null
+      qualifiche?: string[]
     }
   ) =>
     api.put<CalendarioIstruttore>(`/data/calendario/instructors/${encodeURIComponent(id)}`, body),

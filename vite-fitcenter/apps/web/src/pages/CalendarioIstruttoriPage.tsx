@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import type { CalendarioIstruttore } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
 import { useAuth } from "@/contexts/AuthContext"
+import { labelQualifica, PERSONALE_QUALIFICHE } from "@/lib/personale-qualifiche"
 
 const H2 = { blue: "#46A6D9" } as const
 
@@ -26,6 +27,9 @@ function PersonalePanel({
   const [email, setEmail] = useState("")
   const [attivitaSvolta, setAttivitaSvolta] = useState("")
   const [costoOrario, setCostoOrario] = useState("")
+  const [tesseramento, setTesseramento] = useState("")
+  const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
+  const [qualifiche, setQualifiche] = useState<string[]>([])
   const [editId, setEditId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -37,6 +41,9 @@ function PersonalePanel({
     setEmail("")
     setAttivitaSvolta("")
     setCostoOrario("")
+    setTesseramento("")
+    setTesseramentoScadenza("")
+    setQualifiche([])
     setEditId(null)
   }
 
@@ -48,6 +55,13 @@ function PersonalePanel({
     setEmail(r.email ?? "")
     setAttivitaSvolta(r.attivitaSvolta ?? "")
     setCostoOrario(r.costoOrario != null ? String(r.costoOrario) : "")
+    setTesseramento(r.tesseramento ?? "")
+    setTesseramentoScadenza(r.tesseramentoScadenza ?? "")
+    setQualifiche([...(r.qualifiche ?? [])])
+  }
+
+  function toggleQualifica(id: string) {
+    setQualifiche((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
   }
 
   async function submit(e: FormEvent) {
@@ -71,6 +85,9 @@ function PersonalePanel({
         email: email.trim(),
         attivitaSvolta: attivitaSvolta.trim(),
         costoOrario: costo,
+        tesseramento: tesseramento.trim(),
+        tesseramentoScadenza: tesseramentoScadenza.trim() || null,
+        qualifiche,
       }
       if (editId) {
         await calendarioApi.putInstructor(editId, body)
@@ -114,6 +131,17 @@ function PersonalePanel({
               <span className="mt-1 block text-xs text-zinc-500">
                 {r.attivitaSvolta || "—"} · {formatCosto(r.costoOrario)}
               </span>
+              {r.tesseramento ? (
+                <span className="block text-xs text-zinc-500">
+                  Tessera {r.tesseramento}
+                  {r.tesseramentoScadenza ? ` · scad. ${r.tesseramentoScadenza}` : ""}
+                </span>
+              ) : null}
+              {(r.qualifiche ?? []).length ? (
+                <span className="mt-1 block text-[11px] text-zinc-500">
+                  {(r.qualifiche ?? []).map(labelQualifica).join(" · ")}
+                </span>
+              ) : null}
               <span className="block truncate text-xs text-zinc-500">
                 {r.telefono || "—"} · {r.email || "—"}
               </span>
@@ -127,7 +155,9 @@ function PersonalePanel({
   return (
     <section className="rounded-2xl border border-zinc-800 bg-zinc-900/25 p-4">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Anagrafica personale (server)</h2>
-      <p className="mt-1 text-xs text-zinc-600">Nome, contatti, attività e costo orario. Usabile nei calendari reparto.</p>
+      <p className="mt-1 text-xs text-zinc-600">
+        Nome, contatti, tesseramento, corsi sicurezza e costo orario. Usabile nei calendari reparto.
+      </p>
       {err ? <p className="mt-2 text-xs text-red-400">{err}</p> : null}
       <form onSubmit={submit} className="mt-3 grid gap-2 sm:grid-cols-2">
         <input
@@ -168,6 +198,32 @@ function PersonalePanel({
           inputMode="decimal"
           className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
         />
+        <input
+          value={tesseramento}
+          onChange={(ev) => setTesseramento(ev.target.value)}
+          placeholder="Tesseramento (ente / numero)"
+          className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+        />
+        <label className="flex flex-col gap-1 text-xs text-zinc-500">
+          Scadenza tessera
+          <input
+            type="date"
+            value={tesseramentoScadenza}
+            onChange={(ev) => setTesseramentoScadenza(ev.target.value)}
+            className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+          />
+        </label>
+        <fieldset className="sm:col-span-2 rounded-lg border border-zinc-700/80 bg-zinc-950/50 p-3">
+          <legend className="px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Corsi sicurezza</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {PERSONALE_QUALIFICHE.map((q) => (
+              <label key={q.id} className="flex items-center gap-2 text-sm text-zinc-300">
+                <input type="checkbox" checked={qualifiche.includes(q.id)} onChange={() => toggleQualifica(q.id)} />
+                {q.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <div className="flex flex-wrap gap-2 sm:col-span-2">
           <button
             type="submit"
@@ -194,6 +250,17 @@ function PersonalePanel({
               <span className="mt-1 block text-xs text-zinc-500">
                 {r.attivitaSvolta || "—"} · {formatCosto(r.costoOrario)}
               </span>
+              {r.tesseramento ? (
+                <span className="block text-xs text-zinc-500">
+                  Tessera {r.tesseramento}
+                  {r.tesseramentoScadenza ? ` · scad. ${r.tesseramentoScadenza}` : ""}
+                </span>
+              ) : null}
+              {(r.qualifiche ?? []).length ? (
+                <span className="mt-1 block text-[11px] text-zinc-500">
+                  {(r.qualifiche ?? []).map(labelQualifica).join(" · ")}
+                </span>
+              ) : null}
               <span className="block truncate text-xs text-zinc-500">
                 {r.telefono || "—"} · {r.email || "—"}
               </span>

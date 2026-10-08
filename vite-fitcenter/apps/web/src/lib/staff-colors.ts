@@ -18,11 +18,40 @@ const STAFF_PALETTE = [
 /** Reception: colori fissi chiesti in calendario. */
 const STAFF_FIXED_CLASSES: Record<string, string> = {
   simo: "border-yellow-400/80 bg-yellow-500/35 text-yellow-50",
+  simo_piscina: "border-yellow-400/80 bg-yellow-500/35 text-yellow-50",
   victoria: "border-green-500/70 bg-green-700/45 text-green-50",
   irene: "border-orange-500/80 bg-orange-500/40 text-orange-50",
   tommaso: "border-sky-400/80 bg-sky-400/35 text-sky-50",
   alba: "border-blue-800/90 bg-blue-950/80 text-blue-100",
   ale: "border-lime-400/80 bg-lime-400/30 text-lime-50",
+}
+
+const PISCINA_ZONES = new Set(["invernale", "interna", "esterna", "piscina"])
+
+/** Sigle Excel bagnini: SIMO è Simone, non Simona desk. */
+const PISCINA_ALIAS: Record<string, string> = {
+  simo: "simo_piscina",
+  simone: "simo_piscina",
+  flo: "flo",
+  florenzi: "flo",
+  nad: "nad",
+  nadia: "nad",
+  monteverde: "nad",
+  rebe: "rebe",
+  rebecca: "rebe",
+  ced: "ced",
+  cedrola: "ced",
+  iervo: "iervo",
+  iervolino: "iervo",
+  rica: "rica",
+  ricasoli: "rica",
+  tuci: "tuci",
+  stan: "stan",
+  stanzione: "stan",
+  berna: "berna",
+  bernardi: "berna",
+  caddeo: "caddeo",
+  piras: "piras",
 }
 
 const STAFF_ALIAS: Record<string, string> = {
@@ -83,20 +112,42 @@ export function staffAliasKey(display: string | null | undefined): string | null
   return null
 }
 
+function piscinaAliasKey(display: string | null | undefined): string | null {
+  const n = normStaffToken(String(display ?? ""))
+  if (!n) return null
+  if (PISCINA_ALIAS[n]) return PISCINA_ALIAS[n]
+  const parts = n.split(/\s+/).filter(Boolean)
+  const first = parts[0]
+  if (first && PISCINA_ALIAS[first]) return PISCINA_ALIAS[first]
+  const last = parts.length > 1 ? parts[parts.length - 1] : undefined
+  if (last && PISCINA_ALIAS[last]) return PISCINA_ALIAS[last]
+  return null
+}
+
+function hashedNameKey(raw: string): string {
+  const s = normStaffToken(raw)
+  if (!s || s === "—") return "unknown"
+  const first = s.split(/\s+/).filter(Boolean)[0]
+  return first ? `name:${first}` : "unknown"
+}
+
 /** Corsia / colore: nome Excel prima dell'anagrafica, senza id istruttore (evita doppioni settimana). */
 export function staffColorKey(e: {
   istruttoreId?: string | null
   staffDisplay?: string | null
   staff?: string | null
   staffOverride?: string | null
+  zona?: string | null
 }): string {
   const excel = excelStaffName(e)
+  if (PISCINA_ZONES.has(String(e.zona ?? ""))) {
+    const piscina = piscinaAliasKey(excel) ?? piscinaAliasKey(e.staffDisplay)
+    if (piscina) return piscina
+    return hashedNameKey(excel && excel !== "—" ? excel : String(e.staffDisplay ?? ""))
+  }
   const alias = staffAliasKey(excel) ?? staffAliasKey(e.staffDisplay)
   if (alias) return alias
-  const s = normStaffToken(excel && excel !== "—" ? excel : String(e.staffDisplay ?? ""))
-  if (!s || s === "—") return "unknown"
-  const first = s.split(/\s+/).filter(Boolean)[0]
-  return first ? `name:${first}` : "unknown"
+  return hashedNameKey(excel && excel !== "—" ? excel : String(e.staffDisplay ?? ""))
 }
 
 export function staffLaneLabel(e: {
@@ -104,8 +155,9 @@ export function staffLaneLabel(e: {
   staff?: string | null
   staffOverride?: string | null
 }): string {
+  const display = String(e.staffDisplay ?? "").trim()
   const raw = excelStaffName(e)
-  const t = (raw || String(e.staffDisplay ?? "")).trim()
+  const t = (display && display !== "—" ? display : raw || "").trim()
   if (!t || t === "—") return "—"
   const parts = t.split(/\s+/).filter(Boolean)
   if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`

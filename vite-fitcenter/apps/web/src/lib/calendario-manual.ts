@@ -27,9 +27,24 @@ function isoYmd(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+function eventDateIso(e: { dateIso?: string | null }): string {
+  return String(e.dateIso ?? "").trim()
+}
+
 /** Slot visibile nel giorno di calendario d (data esatta o, legacy, ripetizione settimanale per dow). */
 export function eventMatchesCalendarDay(e: CalendarioMergedEventDto, d: Date): boolean {
-  const dateIso = String((e as { dateIso?: string | null }).dateIso ?? "").trim()
+  const dateIso = eventDateIso(e)
   if (dateIso) return dateIso === isoYmd(d)
   return e.dow === d.getDay()
+}
+
+/** Se quel giorno ha turni con data, ignora i vecchi slot settimanali senza data (doppioni SIMO/Innocenti). */
+export function eventsMatchingCalendarDay<T extends { dateIso?: string | null; dow: number }>(
+  events: T[],
+  d: Date
+): T[] {
+  const iso = isoYmd(d)
+  const dated = events.filter((e) => eventDateIso(e) === iso)
+  if (dated.length) return dated
+  return events.filter((e) => !eventDateIso(e) && e.dow === d.getDay())
 }

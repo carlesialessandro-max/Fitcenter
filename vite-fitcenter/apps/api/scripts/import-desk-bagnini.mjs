@@ -98,10 +98,23 @@ function headerToDow(cell) {
 }
 
 function cellToStart(v) {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const h = v.getHours()
+    const min = v.getMinutes()
+    if (h < 6 || h > 23) return null
+    return `${pad2(h)}:${pad2(min)}`
+  }
+  if (typeof v === "number" && Number.isFinite(v) && v > 0 && v < 1) {
+    const total = Math.round(v * 24 * 60)
+    const h = Math.floor(total / 60)
+    const min = total % 60
+    if (h < 6 || h > 23) return null
+    return `${pad2(h)}:${pad2(min)}`
+  }
   const t = String(v ?? "")
     .trim()
     .replace(",", ".")
-  const m = t.match(/(?:^|[\sT])(\d{1,2})[.:](\d{2})(?!\d)/) || t.match(/^(\d{1,2})[.:](\d{2})(?!\d)/)
+  const m = t.match(/(?:^|[\sT])(\d{1,2})[.:](\d{2})(?::\d{2})?/) || t.match(/^(\d{1,2})[.:](\d{2})(?::\d{2})?/)
   if (m) {
     const h = Number(m[1])
     if (h < 6 || h > 23) return null
@@ -459,35 +472,56 @@ function detectWorkbookKind(xlsxPath) {
   return null
 }
 
-const STAFF_ALIASES = {
-  FLO: ["FIORETTI"],
-  REBE: ["REBECCA"],
-  NAD: ["NADIA"],
-  BERNA: ["BERNARDI", "BERNARDINI"],
+/** Sigle Excel INVERNALE → persona univoca (SIMO = Simone Innocenti, non Simona reception). */
+const BAGNINI_ABBREV = {
+  FLO: { cognome: "FLORENZI" },
+  NAD: { cognome: "MONTEVERDE" },
+  CED: { cognome: "CEDROLA" },
+  IERVO: { cognome: "IERVOLINO", nome: "MASSIMO" },
+  SIMO: { cognome: "INNOCENTI", nome: "SIMONE" },
+  RICA: { cognome: "RICASOLI" },
+  TUCI: { cognome: "TUCI" },
+  STAN: { cognome: "STANZIONE" },
+  BERNA: { cognome: "BERNARDI" },
+  CADDEO: { cognome: "CADDEO" },
+  PIRAS: { cognome: "PIRAS" },
 }
 
-function matchIstruttore(instructors, abbrev) {
-  const a = String(abbrev ?? "")
+function foldName(s) {
+  return String(s ?? "")
     .trim()
     .toUpperCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+}
+
+function matchIstruttore(instructors, abbrev) {
+  const a = foldName(abbrev)
   if (a.length < 3) return null
-  const aliases = STAFF_ALIASES[a] ?? []
+  const mapped = BAGNINI_ABBREV[a]
+  if (mapped) {
+    const hits = instructors.filter((i) => {
+      const cog = foldName(i.cognome)
+      const nom = foldName(i.nome)
+      if (cog !== mapped.cognome && !cog.startsWith(mapped.cognome)) return false
+      if (mapped.nome && nom !== mapped.nome && !nom.startsWith(mapped.nome)) return false
+      return true
+    })
+    if (hits.length === 1) return hits[0]
+    if (hits.length > 1 && mapped.nome) {
+      const exact = hits.filter((i) => foldName(i.nome) === mapped.nome)
+      if (exact.length === 1) return exact[0]
+    }
+    if (hits.length === 1) return hits[0]
+    return hits[0] ?? null
+  }
   const hits = []
   for (const i of instructors) {
-    const cog = String(i.cognome ?? "")
-      .toUpperCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-    const nom = String(i.nome ?? "")
-      .toUpperCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+    const cog = foldName(i.cognome)
+    const nom = foldName(i.nome)
     const full = `${cog} ${nom}`.trim()
     let score = 0
     if (cog === a || nom === a) score = 100
-    else if (aliases.some((al) => cog === al || nom === al || cog.startsWith(al) || nom.startsWith(al))) score = 80
     else if (cog.startsWith(a)) score = 40 + a.length
     else if (nom.startsWith(a)) score = 30 + a.length
     else if (full.startsWith(a)) score = 20 + a.length
@@ -501,10 +535,7 @@ function matchIstruttore(instructors, abbrev) {
 }
 
 function upsertComparto(db, comparto, zona, titlePrefix, events, replace, now) {
-  const prefix = `${comparto}|`
-  const kept = replace
-    ? db.revisions.filter((r) => !(r.comparto === comparto && String(r.stableKey).startsWith(prefix)))
-    : db.revisions
+  const kept = replace ? db.revisions.filter((r) => r.comparto !== comparto) : db.revisions
   const existing = new Set(kept.filter((r) => r.comparto === comparto).map((r) => r.stableKey))
   let added = 0
   const next = [...kept]

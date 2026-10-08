@@ -1,5 +1,5 @@
 import type { CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
-import { eventMatchesCalendarDay } from "@/lib/calendario-manual"
+import { eventsMatchingCalendarDay } from "@/lib/calendario-manual"
 import { eventTimeRange, parseHm } from "@/lib/reception-shift"
 import { staffColorKey, staffLaneLabel } from "@/lib/staff-colors"
 
@@ -98,13 +98,10 @@ function datesForMonth(anchor: Date): Date[] {
 
 function countOccurrencesOnDates(events: CalendarioMergedEventDto[], dates: Date[]): Map<string, number> {
   const counts = new Map<string, number>()
-  for (const e of events) {
-    const sk = e.stableKey
-    let n = 0
-    for (const d of dates) {
-      if (eventMatchesCalendarDay(e, d)) n++
+  for (const d of dates) {
+    for (const e of eventsMatchingCalendarDay(events, d)) {
+      counts.set(e.stableKey, (counts.get(e.stableKey) ?? 0) + 1)
     }
-    counts.set(sk, n)
   }
   return counts
 }
@@ -220,8 +217,7 @@ export function computeWeekHoursByStaff(
   for (let i = 0; i < weekDays.length; i++) {
     const d = weekDays[i]!
     const intervals = new Map<string, { label: string; ranges: { sm: number; em: number }[] }>()
-    for (const e of events) {
-      if (!eventMatchesCalendarDay(e, d)) continue
+    for (const e of eventsMatchingCalendarDay(events, d)) {
       const { start, end } = eventTimeRange(e)
       const sm = parseHm(start)
       const em = parseHm(end)

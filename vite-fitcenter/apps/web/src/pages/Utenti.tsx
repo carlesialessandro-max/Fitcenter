@@ -122,6 +122,32 @@ export function Utenti() {
     onError: (e: Error) => setError(e.message),
   })
 
+  const roleMut = useMutation({
+    mutationFn: async ({ username, role }: { username: string; role: Role }) => {
+      const u = usersQ.data?.users.find((x) => x.username === username)
+      if (!u) throw new Error("Utente non trovato")
+      const defaults = pagesQ.data?.roleDefaults[role] ?? []
+      await authApi.updateUser(username, {
+        nome: u.nome,
+        role,
+        consulenteNome: u.consulenteNome ?? null,
+        email: u.email ?? null,
+        leadFilter: u.leadFilter === "bambini" ? "bambini" : "",
+        vedeTotaliCentro: role === "operatore" ? u.vedeTotaliCentro === true : false,
+        pages: defaults,
+      })
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["auth-users"] })
+      if (editing === vars.username) {
+        const defaults = pagesQ.data?.roleDefaults[vars.role] ?? []
+        setForm((p) => ({ ...p, role: vars.role, pages: [...defaults] }))
+      }
+      setError("")
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
   const deleteMut = useMutation({
     mutationFn: (username: string) => authApi.deleteUser(username),
     onSuccess: () => {
@@ -183,7 +209,7 @@ export function Utenti() {
   }
 
   const users = usersQ.data?.users ?? []
-  const busy = createMut.isPending || updateMut.isPending || deleteMut.isPending
+  const busy = createMut.isPending || updateMut.isPending || deleteMut.isPending || roleMut.isPending
   const showForm = creating || !!editing
 
   return (
@@ -192,8 +218,8 @@ export function Utenti() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Utenti e accessi</h1>
           <p className="text-sm text-zinc-500">
-            Crea e elimina login, imposta le password e scegli quali pagine vede ciascuno. Il ruolo
-            determina anche i permessi sulle API.
+            Crea e elimina login, cambia il ruolo dalla tabella o dal modulo, imposta le password e
+            scegli quali pagine vede ciascuno. Il ruolo determina anche i permessi sulle API.
           </p>
         </div>
         <button
@@ -235,7 +261,25 @@ export function Utenti() {
                 <tr key={u.username} className="border-t border-zinc-800 text-zinc-200">
                   <td className="px-3 py-2 font-mono text-xs">{u.username}</td>
                   <td className="px-3 py-2">{u.nome}</td>
-                  <td className="px-3 py-2">{ROLE_LABEL[u.role] ?? u.role}</td>
+                  <td className="px-3 py-2">
+                    <select
+                      className="rounded border border-zinc-600 bg-zinc-800 px-2 py-1 text-sm text-zinc-100"
+                      value={u.role}
+                      disabled={busy}
+                      aria-label={`Ruolo di ${u.username}`}
+                      onChange={(e) => {
+                        const role = e.target.value as Role
+                        if (role === u.role) return
+                        roleMut.mutate({ username: u.username, role })
+                      }}
+                    >
+                      {(pagesQ.data?.roles ?? (Object.keys(ROLE_LABEL) as Role[])).map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABEL[r] ?? r}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td className="px-3 py-2 text-zinc-400">{n}</td>
                   <td className="px-3 py-2 text-right">
                     <button
@@ -445,7 +489,7 @@ export function Utenti() {
           <div className="flex gap-2">
             <button
               type="submit"
-              disabled={busy || form.pages.length === 0}
+              disabled={busy || (form.role !== "admin" && form.pages.length === 0)}
               className="rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
             >
               {busy ? "Salvataggio…" : "Salva"}

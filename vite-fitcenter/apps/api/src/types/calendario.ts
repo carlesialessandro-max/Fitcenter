@@ -22,6 +22,12 @@ export type CalendarioIstruttore = {
   attivitaSvolta?: string
   /** Costo orario in euro (opzionale). */
   costoOrario?: number | null
+  /** Ente / numero tessera (FIN, sindacato, …). */
+  tesseramento?: string
+  /** Scadenza tessera YYYY-MM-DD. */
+  tesseramentoScadenza?: string | null
+  /** Corsi sicurezza: sicurezza_luogo_lavoro, antincendio, primo_soccorso, rls, responsabile_piscina. */
+  qualifiche?: string[]
   createdAt: string
   updatedAt: string
 }
