@@ -2132,6 +2132,86 @@ export async function queryAbbonamenti(
   }
 }
 
+/**
+ * Abbonamenti con DataFine >= asOf, senza join Utenti e senza storico già scaduto.
+ * Serve il KPI dashboard «Abbonamenti attivi» (tesseramenti/staff/PT e range date restano in JS).
+ */
+export async function queryAbbonamentiPerKpiAttivi(
+  idConsultant: string | undefined,
+  asOfKey: string
+): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const asOf = String(asOfKey ?? "").trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return []
+  const tblA = getAbbonamentiTableName()
+  const dateFilter = ` AND CAST(a.[DataFine] AS DATE) >= CAST(@asOf AS DATE)`
+  const newReq = () => p.request().input("asOf", sql.VarChar(10), asOf)
+
+  const runWithCol = async (col: string) => {
+    let req = newReq()
+    if (idConsultant) {
+      const { type, value } = idParamType(idConsultant)
+      req = req.input("id", type, value)
+    }
+    const where = (idConsultant ? ` WHERE a.[${col}] = @id` : " WHERE 1=1") + dateFilter
+    const r = await req.query(`SELECT a.* FROM [${tblA}] a ${where}`)
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  }
+
+  if (!idConsultant) {
+    const r = await newReq().query(`SELECT a.* FROM [${tblA}] a WHERE 1=1${dateFilter}`)
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  }
+
+  const viewCfg = getViewVenditoreAbbonamento()
+  if (viewCfg) {
+    const ids = parseConsultantIds(idConsultant)
+    if (ids.length > 0) {
+      try {
+        const idParams = ids.map((_, i) => `@id${i}`).join(", ")
+        const idWhere = ids.length === 1 ? `R.[${viewCfg.colId}] = @id0` : `R.[${viewCfg.colId}] IN (${idParams})`
+        let req = newReq()
+        ids.forEach((id, i) => {
+          req = req.input(`id${i}`, sql.Int, id)
+        })
+        const r = await req.query(
+          `SELECT a.*, R.[${viewCfg.colNome}] AS ConsulenteNome
+           FROM [${tblA}] a
+           INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
+           WHERE ${idWhere}${dateFilter}`
+        )
+        return (r.recordset ?? []) as Record<string, unknown>[]
+      } catch {
+        return []
+      }
+    }
+  }
+
+  const colsToTry = ["IDVenditore", "Abbonanditore"]
+  const envCol = process.env.GESTIONALE_ABBONAMENTI_COL_VENDITORE
+  if (envCol && !colsToTry.includes(envCol)) colsToTry.unshift(envCol)
+
+  for (const col of colsToTry) {
+    try {
+      const rows = await runWithCol(col)
+      if (rows.length > 0) return rows
+    } catch {
+      // colonna inesistente, prova la prossima
+    }
+  }
+  try {
+    const req = newReq().input("id", sql.VarChar, String(idConsultant))
+    const r = await req.query(
+      `SELECT a.* FROM [${tblA}] a
+       WHERE (CAST(a.IDVenditore AS NVARCHAR(50)) = @id OR CAST(a.Abbonanditore AS NVARCHAR(50)) = @id)${dateFilter}`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}
+
 /** Vendite dalla tabella MovimentiVenduto. Con view venditore: join su IDIscrizione, filtro per venditore anagrafica. */
 export async function queryMovimentiVenduto(idConsultant?: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()

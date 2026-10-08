@@ -393,8 +393,8 @@ function isPastCalendarMonth(anno: number, mese: number): boolean {
 }
 
 /** Versione cache dashboard/dettaglio. Al cambio, si serve subito la versione precedente e si ricalcola in sottofondo. */
-const DASHBOARD_CACHE_V = "gestanti-adulti-8"
-const DASHBOARD_CACHE_V_PREV = ["gestanti-adulti-7"] as const
+const DASHBOARD_CACHE_V = "attivi-kpi-9"
+const DASHBOARD_CACHE_V_PREV = ["gestanti-adulti-8", "gestanti-adulti-7"] as const
 
 function dashboardCacheParams(consulente: string | undefined, v: string = DASHBOARD_CACHE_V) {
   return { consulente: consulente ?? null, v }
@@ -629,6 +629,11 @@ function overlayAttiviFromPrevious(stats: DashboardStats, prev: DashboardStats |
   }
 }
 
+/** Cache con attivi=0 (query stub) non va servita per oggi: forza ricalcolo SQL. */
+function dashboardCacheHasAttivi(stats: DashboardStats, asOfKey: string): boolean {
+  return !isAsOfToday(asOfKey) || (stats.abbonamentiAttivi ?? 0) > 0
+}
+
 function mapVenditePerMeseWithProgressivo(
   perMeseRaw: { mese: number; totale: number }[],
   mese: number,
@@ -683,7 +688,7 @@ async function computeDashboardSqlStats(
     const labels = budgetPerConsulente.getConsulentiLabels()
     const idParts = await Promise.all(labels.map((label) => resolveConsultantId(label)))
     const mergedIds = gestionaleSql.mergeConsultantIdStrings(idParts)
-    const abbonamentiPromise = Promise.resolve([] as Record<string, unknown>[])
+    const abbonamentiPromise = gestionaleSql.queryAbbonamentiPerKpiAttivi(undefined, asOf.key)
 
     if (mergedIds) {
       const [abbonamentiRows, prog, perMeseRaw] = await Promise.all([
@@ -777,7 +782,9 @@ async function computeDashboardSqlStats(
   }
 
   const [abbonamentiRows, prog, perMeseSingle] = await Promise.all([
-    Promise.resolve([] as Record<string, unknown>[]),
+    idUtente
+      ? gestionaleSql.queryAbbonamentiPerKpiAttivi(idUtente, asOf.key)
+      : Promise.resolve([] as Record<string, unknown>[]),
     gestionaleSql.getVenditeProgressivoMese(anno, mese, oggi.day, idUtente),
     gestionaleSql.getVenditePerMeseAnno(anno, idUtente, venditeOpts),
   ])
@@ -902,7 +909,7 @@ export async function getDashboard(req: Request, res: Response) {
     const depSig = getFrozenDepSig(cacheAsOf, await getBudgetDepSig())
     const cacheKeyParams = dashboardCacheParams(consulente)
     const cachedHit = await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, false)
-    if (cachedHit) {
+    if (cachedHit && dashboardCacheHasAttivi(cachedHit.stats, asOf.key)) {
       if (cachedHit.v !== DASHBOARD_CACHE_V) {
         void refreshDashboardCache({
           scope,
@@ -921,7 +928,7 @@ export async function getDashboard(req: Request, res: Response) {
     if (fromSql) {
       if (isAsOfToday(asOf.key) && scope === "admin") void sealClosedDaysInBackground()
       const staleHit = await readDashboardCacheAnyVersion(scope, consulente, asOf.key, depSig, true)
-      if (staleHit) {
+      if (staleHit && dashboardCacheHasAttivi(staleHit.stats, asOf.key)) {
         res.json(staleHit.stats)
         void refreshDashboardCache({
           scope,
