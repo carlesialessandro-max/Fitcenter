@@ -164,13 +164,48 @@ function dedupe(arr) {
   return out
 }
 
-function main() {
+async function main() {
   const includeAll = process.env.PLANNING_INCLUDE_ALL === "1"
+  const terraPdf = path.join(importDir, "terra-2026-27-dal-14-set.pdf")
+  const acquaPdf = path.join(importDir, "acqua-2026-27-dal-14-set.pdf")
+  const nuotoXlsx = path.join(importDir, "scuola-nuoto-adulti-2026-27.xlsx")
+
+  if (fs.existsSync(terraPdf) && fs.existsSync(acquaPdf)) {
+    const { buildCorsiFromPdfAndExcel } = await import("./parse-corsi-pdf.mjs")
+    const parsed = await buildCorsiFromPdfAndExcel({ terraPdf, acquaPdf, nuotoXlsx })
+    console.log("pdf terra", parsed.terra, "acqua", parsed.acquaPdf, "nuoto excel", parsed.nuoto)
+
+    let prev = {}
+    if (fs.existsSync(outFile)) {
+      try {
+        prev = JSON.parse(fs.readFileSync(outFile, "utf8"))
+      } catch {
+        prev = {}
+      }
+    }
+
+    const payload = {
+      generatedAt: new Date().toISOString(),
+      planningNote:
+        "Corsi terra/acqua da PDF dal 14 settembre 2026. TRAINER su nuoto adulti sostituiti con planning scuola nuoto adulti.",
+      sources: [
+        path.relative(webRoot, terraPdf),
+        path.relative(webRoot, acquaPdf),
+        fs.existsSync(nuotoXlsx) ? path.relative(webRoot, nuotoXlsx) : null,
+      ].filter(Boolean),
+      events: parsed.events,
+      eventsByComparto: prev.eventsByComparto,
+    }
+    fs.mkdirSync(path.dirname(outFile), { recursive: true })
+    fs.writeFileSync(outFile, JSON.stringify(payload, null, 2), "utf8")
+    console.log("Scritto", outFile, "totale", payload.events.length)
+    return
+  }
 
   function useSheet(zona, sheetName) {
     if (includeAll) return true
     const n = sheetName.toUpperCase()
-    if (zona === "terra") return n.includes("DAL 15")
+    if (zona === "terra") return n.includes("DAL 15") || n.includes("DAL 14")
     if (zona === "acqua") return n.includes("PLANNING SETTEMBRE") && !n.includes("1 AL 14")
     return true
   }
@@ -216,9 +251,22 @@ function main() {
     }),
   }
 
+  let prev = {}
+  if (fs.existsSync(outFile)) {
+    try {
+      prev = JSON.parse(fs.readFileSync(outFile, "utf8"))
+    } catch {
+      prev = {}
+    }
+  }
+
   fs.mkdirSync(path.dirname(outFile), { recursive: true })
-  fs.writeFileSync(outFile, JSON.stringify(payload, null, 2), "utf8")
+  fs.writeFileSync(
+    outFile,
+    JSON.stringify({ ...payload, eventsByComparto: prev.eventsByComparto }, null, 2),
+    "utf8"
+  )
   console.log("Scritto", outFile, "totale", payload.events.length)
 }
 
-main()
+void main()

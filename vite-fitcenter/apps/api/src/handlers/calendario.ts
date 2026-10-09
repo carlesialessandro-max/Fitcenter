@@ -398,7 +398,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
       zona: r?.zona ?? e.zona,
       stableKey: sk,
       istruttoreId: r?.istruttoreId ?? null,
-      staffOverride: r?.staffOverride ?? null,
+      staffOverride: staffOverrideFromRevision(r?.staffOverride, e.staff),
       note: r?.note ?? null,
       updatedAt: r?.updatedAt,
       updatedBy: r?.updatedBy,
@@ -428,6 +428,22 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
   }
 
   return out
+}
+
+function isPlaceholderStaff(s: string | null | undefined): boolean {
+  const u = String(s ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  return !u || u === "—" || u === "-" || u === "TRAINER" || u === "TRAINING" || u === "TRAINERS"
+}
+
+function staffOverrideFromRevision(rev: string | null | undefined, baseStaff: string): string | null {
+  const r = rev != null ? String(rev).trim() : ""
+  const b = String(baseStaff ?? "").trim()
+  if (isPlaceholderStaff(r) && b && !isPlaceholderStaff(b)) return null
+  return r || null
 }
 
 function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttore[]): string {
