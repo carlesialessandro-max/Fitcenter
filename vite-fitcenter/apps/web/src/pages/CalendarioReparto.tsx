@@ -26,12 +26,15 @@ type CreateSlotComparto = CourseLikeComparto | ManualSlotComparto
 import {
   addHoursToHm,
   buildShiftTitle,
+  compareByShiftRange,
+  eventRangeMin,
   eventTimeRange,
   formatHm,
   formatShiftDurationLabel,
-  parseHm,
+  normalizeHmInput,
   shiftEventInHour,
 } from "@/lib/reception-shift"
+import { dedupeShiftEvents } from "@/lib/shift-dedupe"
 import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
 import {
   CALENDARIO_SEGMENTI,
@@ -149,9 +152,7 @@ function hasPlanningGrid(comparto: CalendarioComparto): boolean {
   return COMPARTI_CALENDARIO_GRID.includes(comparto)
 }
 function eventsForDay(events: CalEvent[], d: Date): CalEvent[] {
-  return eventsMatchingCalendarDay(events, d).sort(
-    (a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title)
-  )
+  return eventsMatchingCalendarDay(events, d).sort(compareByShiftRange)
 }
 function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRangeGrid?: boolean): CalEvent[] {
   return eventsForDay(events, d).filter((e) =>
@@ -187,15 +188,6 @@ function buildShiftGrid(startMin: number, endMin: number, slotPx: number): Shift
   return { startMin: start, slotMin, slotPx, slots, height: slots.length * slotPx }
 }
 
-function eventRangeMin(e: CalEvent): { sm: number; em: number } {
-  const { start, end } = eventTimeRange(e)
-  const sm = parseHm(start)
-  const em = parseHm(end)
-  if (sm == null) return { sm: 8 * 60, em: 8 * 60 + 30 }
-  if (em == null || em <= sm) return { sm, em: sm + 30 }
-  return { sm, em }
-}
-
 function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number, defaultMinS = 8 * 60): ShiftGrid {
   let minS = defaultMinS
   let maxE = 21 * 60
@@ -212,47 +204,6 @@ function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number, def
 function weekSlotPx(slotCount: number): number {
   const target = 420
   return Math.max(12, Math.min(18, Math.floor(target / Math.max(slotCount, 1))))
-}
-
-function mergeOverlappingShifts(laneEvents: CalEvent[]): CalEvent[] {
-  const sorted = [...laneEvents].sort((a, b) => {
-    const ar = eventRangeMin(a)
-    const br = eventRangeMin(b)
-    return ar.sm - br.sm || br.em - ar.em || a.id.localeCompare(b.id)
-  })
-  const out: CalEvent[] = []
-  for (const e of sorted) {
-    const r = eventRangeMin(e)
-    const last = out[out.length - 1]
-    if (!last) {
-      out.push(e)
-      continue
-    }
-    const lr = eventRangeMin(last)
-    if (r.sm < lr.em) {
-      const lastDur = lr.em - lr.sm
-      const dur = r.em - r.sm
-      if (dur > lastDur || (dur === lastDur && r.sm < lr.sm)) out[out.length - 1] = e
-      continue
-    }
-    out.push(e)
-  }
-  return out
-}
-
-function dedupeShiftEvents(dayEvents: CalEvent[]): CalEvent[] {
-  const byLane = new Map<string, CalEvent[]>()
-  const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
-  for (const e of sorted) {
-    const key = staffColorKey(e)
-    const list = byLane.get(key)
-    if (list) list.push(e)
-    else byLane.set(key, [e])
-  }
-  const out: CalEvent[] = []
-  for (const list of byLane.values()) out.push(...mergeOverlappingShifts(list))
-  out.sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
-  return out
 }
 
 function dayStaffLanes(dayEvents: CalEvent[]): { key: string; label: string }[] {
@@ -817,9 +768,11 @@ function EditEventModal({
     return isoYmd(new Date())
   })
   const [dow, setDow] = useState(event.dow)
-  const [start, setStart] = useState(event.start)
   const isShiftRangeMode = scheduleMode !== "corsi" && scheduleMode !== "none"
   const isCorsiLikeEdit = scheduleMode === "corsi"
+  const [start, setStart] = useState(() =>
+    scheduleMode !== "corsi" && scheduleMode !== "none" ? eventTimeRange(event).start : event.start
+  )
 
   function setSlotDayFromIso(iso: string) {
     const d = parseIsoLocal(iso)
@@ -856,16 +809,18 @@ function EditEventModal({
     const fromEv = String(event.dateIso ?? "").trim()
     setSlotDateIso(fromEv || String(calendarDateIso ?? "").trim() || isoYmd(new Date()))
     setDow(event.dow)
-    setStart(event.start)
     setTitle(event.title)
     if (isShiftRangeMode && shiftComparto) {
       const r = eventTimeRange(event)
+      setStart(r.start)
       setEnd(r.end)
       setActivity(
         event.title.includes("·")
           ? event.title.split("·")[0].trim() || defaultActivityForShiftComparto(shiftComparto)
           : defaultActivityForShiftComparto(shiftComparto)
       )
+    } else {
+      setStart(event.start)
     }
     if (scheduleMode === "corsi") {
       setZona(event.zona === "acqua" || event.zona === "terra" ? event.zona : "terra")
@@ -1063,10 +1018,10 @@ function EditEventModal({
                 staffText,
                 note,
                 dow: scheduleFields ? dow : event.dow,
-                start: scheduleFields ? start.trim() : event.start,
+                start: scheduleFields ? normalizeHmInput(start) : event.start,
                 title: scheduleFields
                   ? isShiftRangeMode && shiftComparto
-                    ? buildShiftTitle(activity, start.trim(), end.trim())
+                    ? buildShiftTitle(activity, normalizeHmInput(start), normalizeHmInput(end))
                     : title.trim()
                   : event.title,
                 zona:
@@ -1136,8 +1091,10 @@ function CreateSlotModal({
 
   async function submit(ev: FormEvent) {
     ev.preventDefault()
+    const startHm = normalizeHmInput(start)
+    const endHm = normalizeHmInput(end)
     const tit = isShiftRange
-      ? buildShiftTitle(activity, start.trim(), end.trim())
+      ? buildShiftTitle(activity, startHm, endHm)
       : (title.trim() || (isCorsiLike ? "" : "Copertura")).trim()
     if (!tit) {
       alert(isShiftRange ? "Controlla orari e attività" : "Titolo obbligatorio")
@@ -1162,7 +1119,7 @@ function CreateSlotModal({
         create: true,
         dow,
         dateIso: isCorsiLike ? null : slotDateIso,
-        start: start.trim(),
+        start: isShiftRange ? startHm : start.trim(),
         title: tit,
         zona: zonaOut,
         istruttoreId: istruttoreId || null,
@@ -1734,7 +1691,9 @@ export function CalendarioRepartoPage() {
             <div className="mt-px grid grid-cols-7 gap-px bg-zinc-800">
               {cells.map(({ date, inMonth }) => {
                 const wend = date.getDay() === 0 || date.getDay() === 6
-                const dayEv = eventsForDay(events, date)
+                const dayEv = shiftRangeGrid
+                  ? dedupeShiftEvents(eventsForDay(events, date))
+                  : eventsForDay(events, date)
                 return (
                   <div
                     key={isoYmd(date)}

@@ -115,6 +115,28 @@ function isoYmdFromDate(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+function normalizeHm(raw: string): string {
+  const m = String(raw ?? "")
+    .trim()
+    .match(/^(\d{1,2})[:.](\d{2})/)
+  if (!m) return String(raw ?? "").trim()
+  const h = Number(m[1])
+  const min = Number(m[2])
+  if (!Number.isFinite(h) || h > 23 || !Number.isFinite(min) || min > 59) return String(raw ?? "").trim()
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`
+}
+
+function shiftRangeStartForSort(e: { start: string; title: string }): string {
+  const re = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
+  let last: string | null = null
+  let m: RegExpExecArray | null
+  const title = String(e.title ?? "")
+  while ((m = re.exec(title))) {
+    last = `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`
+  }
+  return last ?? normalizeHm(e.start)
+}
+
 function eventDateIso(e: { dateIso?: string | null }): string {
   return String(e.dateIso ?? "").trim()
 }
@@ -459,7 +481,12 @@ export function getCalendarioPianoOperativo(req: Request, res: Response) {
         ...e,
         staffDisplay: displayStaff(e, db.instructors),
       }))
-      .sort((a, b) => a.start.localeCompare(b.start) || a.title.localeCompare(b.title))
+      .sort(
+        (a, b) =>
+          shiftRangeStartForSort(a).localeCompare(shiftRangeStartForSort(b)) ||
+          a.title.localeCompare(b.title) ||
+          a.staffDisplay.localeCompare(b.staffDisplay, "it")
+      )
     return {
       comparto,
       label: COMPARTO_LABELS[comparto],
@@ -528,7 +555,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
       })
     }
     const dow = Number(body.dow)
-    const start = String(body.start ?? "").trim()
+    const start = normalizeHm(String(body.start ?? "").trim())
     const dateIsoRaw = body.dateIso != null ? String(body.dateIso).trim() : ""
     const dateIso = dateIsoRaw && isIsoDate(dateIsoRaw) ? dateIsoRaw : null
     if (MANUAL_ONLY_COMPARTI.includes(raw) && !dateIso) {
@@ -625,7 +652,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   }
 
   const dow = Number(body.dow ?? baseEv?.dow ?? prevRev?.dow)
-  const start = String(body.start ?? baseEv?.start ?? prevRev?.start ?? "").trim()
+  const start = normalizeHm(String(body.start ?? baseEv?.start ?? prevRev?.start ?? "").trim())
   const title = String(body.title ?? baseEv?.title ?? prevRev?.title ?? "").trim()
   const dateIsoBody = body.dateIso !== undefined ? String(body.dateIso ?? "").trim() : undefined
   const dateIso =

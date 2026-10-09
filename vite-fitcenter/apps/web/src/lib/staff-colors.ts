@@ -75,6 +75,15 @@ const STAFF_SURNAME_ALIAS: Record<string, string> = {
   vittoria: "victoria",
 }
 
+const STAFF_LANE_LABEL: Record<string, string> = {
+  simo: "SIMO",
+  victoria: "VICTORIA",
+  irene: "Irene",
+  tommaso: "Tommaso",
+  alba: "Alba",
+  ale: "ALE",
+}
+
 function normStaffToken(s: string): string {
   return s
     .trim()
@@ -157,6 +166,8 @@ export function staffLaneLabel(e: {
 }): string {
   const display = String(e.staffDisplay ?? "").trim()
   const raw = excelStaffName(e)
+  const alias = staffAliasKey(raw) ?? staffAliasKey(display)
+  if (alias && STAFF_LANE_LABEL[alias]) return STAFF_LANE_LABEL[alias]
   const t = (display && display !== "—" ? display : raw || "").trim()
   if (!t || t === "—") return "—"
   const parts = t.split(/\s+/).filter(Boolean)

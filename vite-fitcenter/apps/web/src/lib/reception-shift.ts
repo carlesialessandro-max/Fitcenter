@@ -60,10 +60,38 @@ export function formatShiftDurationLabel(start: string, end: string): string {
 }
 
 function usableShiftStart(titleStart: number, em: number, fieldStart: number | null): number {
-  if (fieldStart != null && fieldStart >= SHIFT_DAY_START_MIN && fieldStart < em) return fieldStart
+  // Fascia nel titolo è quella salvata (es. 08:00–08:30); il campo start può restare un orario vecchio.
   if (titleStart >= SHIFT_DAY_START_MIN && titleStart < em) return titleStart
+  if (fieldStart != null && fieldStart >= SHIFT_DAY_START_MIN && fieldStart < em) return fieldStart
   if (em > DESK_OPEN_MIN) return DESK_OPEN_MIN
   return SHIFT_DAY_START_MIN
+}
+
+export function normalizeHmInput(raw: string): string {
+  const m = parseHm(String(raw ?? "").trim())
+  return m == null ? String(raw ?? "").trim() : formatHm(m)
+}
+
+export function eventRangeMin(e: { title: string; start: string }): { sm: number; em: number } {
+  const { start, end } = eventTimeRange(e)
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  if (sm == null) return { sm: 8 * 60, em: 8 * 60 + 30 }
+  if (em == null || em <= sm) return { sm, em: sm + 30 }
+  return { sm, em }
+}
+
+export function compareByShiftRange(
+  a: { title: string; start: string; staffDisplay?: string | null },
+  b: { title: string; start: string; staffDisplay?: string | null }
+): number {
+  const ar = eventRangeMin(a)
+  const br = eventRangeMin(b)
+  return (
+    ar.sm - br.sm ||
+    ar.em - br.em ||
+    String(a.staffDisplay ?? "").localeCompare(String(b.staffDisplay ?? ""), "it")
+  )
 }
 
 export function eventTimeRange(e: { title: string; start: string }): { start: string; end: string } {

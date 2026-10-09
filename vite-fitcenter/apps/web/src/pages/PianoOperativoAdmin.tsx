@@ -4,8 +4,9 @@ import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioMergedEventDto } from "@/api/calendario"
 import { calendarioApi } from "@/api/calendario"
 import { useAuth } from "@/contexts/AuthContext"
-import { eventTimeRange } from "@/lib/reception-shift"
+import { compareByShiftRange, eventTimeRange } from "@/lib/reception-shift"
 import { compartoUsesShiftRange } from "@/lib/calendario-shift"
+import { dedupeShiftEvents } from "@/lib/shift-dedupe"
 import { apiToSegmento, calendarioPath } from "@/pages/calendario-routes"
 
 const IT_DOW_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"] as const
@@ -174,7 +175,10 @@ export function PianoOperativoAdmin() {
     document.title = "Piano operativo · FitCenter"
   }, [])
 
-  const totalSlots = reparti.reduce((n, r) => n + r.events.length, 0)
+  const totalSlots = reparti.reduce(
+    (n, r) => n + (compartoUsesShiftRange(r.comparto) ? dedupeShiftEvents(r.events).length : r.events.length),
+    0
+  )
 
   return (
     <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
@@ -222,11 +226,16 @@ export function PianoOperativoAdmin() {
                     </Link>
                   ) : null}
                 </div>
-                {r.events.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-zinc-600">Nessun turno in questo giorno.</p>
-                ) : (
+                {(() => {
+                  const slots = compartoUsesShiftRange(r.comparto)
+                    ? dedupeShiftEvents(r.events)
+                    : [...r.events].sort(compareByShiftRange)
+                  if (slots.length === 0) {
+                    return <p className="px-4 py-3 text-sm text-zinc-600">Nessun turno in questo giorno.</p>
+                  }
+                  return (
                   <ul className="divide-y divide-zinc-800/80">
-                    {r.events.map((e) => (
+                    {slots.map((e) => (
                       <li key={e.stableKey} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
                         <SlotTimeLabel e={e} comparto={r.comparto} />
                         <span className="text-zinc-300">{e.title}</span>
@@ -235,7 +244,8 @@ export function PianoOperativoAdmin() {
                       </li>
                     ))}
                   </ul>
-                )}
+                  )
+                })()}
               </section>
             )
           })}
