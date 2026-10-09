@@ -336,6 +336,52 @@ function isAdultiCategoriaEsclusa(a: Abbonamento): boolean {
   )
 }
 
+function consulenteNomeMatch(got: string | undefined, want: string): boolean {
+  const g = normalizeAttiviCategoria(got ?? "")
+  const w = normalizeAttiviCategoria(want)
+  if (!g || !w) return false
+  if (g === w) return true
+  const wParts = w.split(" ").filter((p) => p.length >= 3)
+  const gParts = g.split(" ").filter((p) => p.length >= 3)
+  if (wParts.length >= 2 && wParts.every((p) => g.includes(p))) return true
+  if (gParts.length === 1 && wParts.includes(gParts[0]!)) return true
+  if (wParts.length === 1 && g.includes(wParts[0]!)) return true
+  return false
+}
+
+function filterAbbonamentiDelConsulente(list: Abbonamento[], consulenteNome: string | undefined): Abbonamento[] {
+  const want = (consulenteNome ?? "").trim()
+  if (!want) return list
+  return list.filter((a) => consulenteNomeMatch(a.consulenteNome, want))
+}
+
+/**
+ * Adulti = categorie spuntate nel listino gestionale (NUOVI/RINNOVI/GOLD + GESTANTI,
+ * AGONISMO MASTER, PACCHETTO PRIVATE ADULTI). Non DANZA, VARIE, staff, PT, invito, scuola nuoto, ecc.
+ */
+function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
+  if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a) || isAdultiCategoriaEsclusa(a)) {
+    return false
+  }
+  const macro = normalizeAttiviCategoria(a.macroCategoriaDescrizione ?? "")
+  const cat = normalizeAttiviCategoria(a.categoriaAbbonamentoDescrizione ?? "")
+  const piano = normalizeAttiviCategoria(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+  if (macro.includes("DANZA") || macro.includes("PROMOZION") || macro.includes("EVENTI") || macro.includes("VARIE")) return false
+  if (cat.includes("MAMME FIT") || cat.includes("PISCINA ESTERNA")) return false
+  if (cat.includes("SCUOLA NUOTO") || cat.includes("ACQUATIC") || cat.includes("CAMPUS") || cat.includes("JUJITSU")) return false
+  if (cat.includes("AGONISMO CATEGORIE") || cat.includes("PACCHETTO PRIVATE BAMBINI")) return false
+  if (macro.includes("GOLD") || macro === "RINNOVI" || macro.startsWith("RINNOVI ")) return true
+  if (cat.includes("GYM") && !cat.includes("GYMPAY")) return true
+  if (cat.includes("NUOTO LIBERO")) return true
+  if (cat.includes("PACCHETTI INGRESSI") || cat.includes("PERCORSO SPA") || cat.includes("POLE DANCE")) return true
+  if (cat.includes("ROSSI") && cat.includes("ORARIO LIBERO")) return true
+  if (cat.includes("VERDI") && cat.includes("ORARIO RIDOTTO")) return true
+  if (cat.includes("GESTANTI") || cat.includes("ROSSO OPEN GOLD")) return true
+  if (cat.includes("AGONISMO MASTER") || piano.includes("AGONISMO MASTER")) return true
+  if (cat.includes("PACCHETTO PRIVATE ADULTI") || piano.includes("PACCHETTO PRIVATE ADULTI")) return true
+  return false
+}
+
 function dedupBambiniByClienteId(rows: Abbonamento[]): Abbonamento[] {
   const byCliente = new Map<string, Abbonamento>()
   for (const a of rows) {
@@ -359,13 +405,11 @@ function dedupBambiniByClienteId(rows: Abbonamento[]): Abbonamento[] {
   return Array.from(byCliente.values())
 }
 
-/** Stessa segmentazione della pagina Attivi: con consulente solo adulti; senza, adulti + bambini deduplicati. */
+/** Stessa segmentazione della pagina Attivi: listino adulti spuntato; con consulente 1 cliente = 1 (come il gestionale). */
 function segmentaAttiviComePaginaAttivi(attivi: Abbonamento[], soloAdulti: boolean): Abbonamento[] {
-  const adulti = attivi
-    .filter((a) => !isAbbonamentoBambini(a))
-    .filter((a) => !isAdultiCategoriaEsclusa(a) && !isAbbonamentoPersonalTrainer(a))
-  if (soloAdulti) return adulti
-  const bambini = dedupBambiniByClienteId(attivi.filter((a) => isAbbonamentoBambini(a)))
+  const adulti = attivi.filter((a) => isAbbonamentoAdultiListino(a))
+  if (soloAdulti) return dedupBambiniByClienteId(adulti)
+  const bambini = dedupBambiniByClienteId(attivi.filter((a) => isAbbonamentoBambini(a) && !isAbbonamentoAdultiListino(a)))
   return [...adulti, ...bambini]
 }
 
@@ -486,8 +530,8 @@ function isPastCalendarMonth(anno: number, mese: number): boolean {
 }
 
 /** Versione cache dashboard/dettaglio. Al cambio, si serve subito la versione precedente e si ricalcola in sottofondo. */
-const DASHBOARD_CACHE_V = "attivi-varie-11"
-const DASHBOARD_CACHE_V_PREV = ["attivi-allinea-10", "attivi-kpi-9", "gestanti-adulti-8"] as const
+const DASHBOARD_CACHE_V = "attivi-listino-12"
+const DASHBOARD_CACHE_V_PREV = [] as const
 
 function dashboardCacheParams(consulente: string | undefined, v: string = DASHBOARD_CACHE_V) {
   return { consulente: consulente ?? null, v }
@@ -904,7 +948,10 @@ async function computeDashboardSqlStats(
   venditePerMeseSql = perMeseSingle.map((row) =>
     row.mese === mese ? { ...row, totale: venditeMeseSql } : row
   )
-  const abbonamenti = abbonamentiRows.map((r) => rowToAbbonamento(r))
+  const abbonamenti = filterAbbonamentiDelConsulente(
+    abbonamentiRows.map((r) => rowToAbbonamento(r)),
+    consulente
+  )
   markRinnovato(abbonamenti)
   const leads = leadsStore.list({})
   const leadTotali = leads.length
@@ -1359,6 +1406,7 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
       }
     }
     markRinnovato(list)
+    if (consulenteQ) list = filterAbbonamentiDelConsulente(list, consulenteQ)
     let attivi = filterAbbonamentiAttiviForKpi(list, date)
     const orderDurata = ["1 mese", "2–3 mesi", "4–6 mesi", "7–12 mesi", "Oltre 12 mesi", "Durata non nota"] as const
     const byDurata = (rows: Abbonamento[]) => {
@@ -1388,12 +1436,9 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         .sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria))
     }
 
-    const adultiRaw = attivi.filter((a) => !isAbbonamentoBambini(a))
-    const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a))
-    // Regole business applicate in modo unico a TUTTI i blocchi (card/grafici/liste),
-    // così i totali tornano sempre con la somma per categoria.
-    const adulti = adultiRaw.filter((a) => !isAdultiCategoriaEsclusa(a) && !isAbbonamentoPersonalTrainer(a))
-    // Filtro consulente adulti: solo abbonamenti adulti (scuola nuoto / agonismo categorie restano fuori).
+    const adultiRaw = attivi.filter((a) => isAbbonamentoAdultiListino(a))
+    const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a) && !isAbbonamentoAdultiListino(a))
+    const adulti = consulenteQ ? dedupBambiniByClienteId(adultiRaw) : adultiRaw
     const bambini = consulenteQ ? [] : dedupBambiniByClienteId(bambiniRaw)
     const attiviSegmentati = [...adulti, ...bambini]
 

@@ -187,7 +187,16 @@ export function rowToAbbonamento(row: Record<string, unknown>): Abbonamento {
     dataInizio: dateStr(row.DataInizio ?? row.Datalnizio ?? row.dataInizio ?? row.Inizio ?? row.inizio),
     dataFine,
     stato: (row.Stato ?? row.stato ?? stato) as "attivo" | "scaduto",
-    consulenteNome: str(row.NomeOperatore ?? row.ConsulenteNome ?? row.consulenteNome ?? row.Consulente ?? row.consulente) || undefined,
+    consulenteNome:
+      str(
+        row.NomeVenditoreAbbonamento ??
+          row.ConsulenteNome ??
+          row.NomeVenditore ??
+          row.consulenteNome ??
+          row.NomeOperatore ??
+          row.Consulente ??
+          row.consulente
+      ) || undefined,
     categoriaAbbonamentoDescrizione: categoriaAbbonamentoDescrizione || undefined,
     abbonamentoDescrizione: abbonamentoDescrizione || undefined,
     macroCategoriaDescrizione: macroCategoriaDescrizione || undefined,
