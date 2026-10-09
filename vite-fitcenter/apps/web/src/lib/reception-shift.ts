@@ -32,10 +32,11 @@ function padRangeHm(h: string, min: string): string | null {
 }
 
 export function parseRangeFromTitle(title: string): { start: string; end: string } | null {
+  const raw = String(title ?? "")
   const re = new RegExp(RANGE_RE.source, "g")
   let last: { start: string; end: string } | null = null
   let m: RegExpExecArray | null
-  while ((m = re.exec(String(title ?? "")))) {
+  while ((m = re.exec(raw))) {
     const start = padRangeHm(m[1]!, m[2]!)
     const end = padRangeHm(m[3]!, m[4]!)
     if (!start || !end) continue
@@ -44,7 +45,20 @@ export function parseRangeFromTitle(title: string): { start: string; end: string
     if (sm == null || em == null || em <= sm) continue
     last = { start, end }
   }
-  return last
+  if (last) return last
+  const times: string[] = []
+  const timeRe = /(\d{1,2})[:.](\d{2})/g
+  while ((m = timeRe.exec(raw))) {
+    const hm = padRangeHm(m[1]!, m[2]!)
+    if (hm) times.push(hm)
+  }
+  if (times.length < 2) return null
+  const start = times[0]!
+  const end = times[1]!
+  const sm = parseHm(start)
+  const em = parseHm(end)
+  if (sm == null || em == null || em <= sm) return null
+  return { start, end }
 }
 
 export function formatShiftDurationLabel(start: string, end: string): string {
