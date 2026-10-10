@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-09T11:03:24.687Z",
+  "generatedAt": "2026-10-10T08:13:52.043Z",
   "planningNote": "Corsi terra/acqua da PDF dal 14 settembre 2026. TRAINER su nuoto adulti sostituiti con planning scuola nuoto adulti.",
   "sources": [
     "data\\planning-import\\terra-2026-27-dal-14-set.pdf",
@@ -62,13 +62,13 @@
       "staff": "STELLA"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-1-13:00-NUOTO_MASTER-e22cdfc3",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-1-13:00-NUOTO_MASTER-3873d063",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 1,
       "start": "13:00",
       "title": "NUOTO MASTER",
-      "staff": "TRAINER"
+      "staff": "FLORENZI L"
     },
     {
       "id": "acqua-DAL_14_SETTEMBRE_2026-1-13:30-ACQUA_GYM-ef6b19d8",
@@ -215,13 +215,13 @@
       "staff": "SVETLANA"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-1-20:15-NUOTO_MASTER_20.-73280cdf",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-1-20:15-NUOTO_MASTER-c1938263",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 1,
       "start": "20:15",
-      "title": "NUOTO MASTER 20.",
-      "staff": "TRAINER"
+      "title": "NUOTO MASTER",
+      "staff": "YLENIA"
     },
     {
       "id": "acqua-SCUOLA_NUOTO_ADULTI-2-08:45-NUOTO_ADULTI-77a61ca1",
@@ -494,13 +494,13 @@
       "staff": "NADIA"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-3-13:00-NUOTO_MASTER-cdbb1fc1",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-3-13:00-NUOTO_MASTER-b449a79e",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 3,
       "start": "13:00",
       "title": "NUOTO MASTER",
-      "staff": "TRAINER"
+      "staff": "NADIA"
     },
     {
       "id": "acqua-DAL_14_SETTEMBRE_2026-3-13:30-ACQUA_GYM-08478166",
@@ -611,13 +611,13 @@
       "staff": "REBECCA"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-3-20:30-NUOTO_MASTER-65fd9659",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-3-20:30-NUOTO_MASTER-a6c87de3",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 3,
       "start": "20:30",
       "title": "NUOTO MASTER",
-      "staff": "TRAINER"
+      "staff": "NADIA"
     },
     {
       "id": "acqua-SCUOLA_NUOTO_ADULTI-4-08:45-NUOTO_ADULTI-1f93959b",
@@ -881,13 +881,13 @@
       "staff": "NADIA"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-5-13:00-NUOTO_MASTER-cb8b45d4",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-5-13:00-NUOTO_MASTER-9683d573",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 5,
       "start": "13:00",
       "title": "NUOTO MASTER",
-      "staff": "TRAINER"
+      "staff": "SIMONE"
     },
     {
       "id": "acqua-DAL_14_SETTEMBRE_2026-5-13:30-ACQUA_STRONG-ed8e75bc",
@@ -1007,13 +1007,13 @@
       "staff": "GABRIELE"
     },
     {
-      "id": "acqua-DAL_14_SETTEMBRE_2026-5-20:15-NUOTO_MASTER-a742b235",
+      "id": "acqua-DAL_14_SETTEMBRE_2026-5-20:15-NUOTO_MASTER-da951dce",
       "zona": "acqua",
       "sheet": "DAL 14 SETTEMBRE 2026",
       "dow": 5,
       "start": "20:15",
       "title": "NUOTO MASTER",
-      "staff": "TRAINER"
+      "staff": "SIMONE"
     },
     {
       "id": "terra-DAL_14_SETTEMBRE_2026-6-11:00-ADDOMINALI-2bfc219c",

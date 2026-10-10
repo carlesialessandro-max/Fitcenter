@@ -1085,6 +1085,7 @@ function planningInstructorFromCalendarioCorsi(
     if (hhmmNormalized(e.start) !== hm) continue
     if (!titleMatchesCalendarioCorso(g.servizio, e.title)) continue
     const name = String(e.staffDisplay ?? e.staff ?? "").trim()
+    if (!name || /^(trainer|training|trainers|—|-)$/i.test(name)) continue
     if (name) return name
   }
   return ""

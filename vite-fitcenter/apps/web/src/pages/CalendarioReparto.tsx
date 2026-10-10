@@ -161,7 +161,7 @@ function eventsForDayAndHour(events: CalEvent[], d: Date, hour: number, shiftRan
 }
 function staffCellLabel(s: string): string {
   const t = s.trim()
-  if (!t || t === "—") return "—"
+  if (!t || t === "—" || /^(trainer|training|trainers)$/i.test(t)) return "—"
   const parts = t.split(/\s+/).filter(Boolean)
   if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`
   return parts[0] ?? t

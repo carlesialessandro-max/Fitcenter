@@ -215,7 +215,28 @@ function parsePdfCorsi(items, zona, sheet, legendYMax) {
   return events
 }
 
-function parseExcelNuotoAdulti(xlsxPath) {
+function hmToMin(hm) {
+  const m = String(hm ?? "").match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) return 0
+  return Number(m[1]) * 60 + Number(m[2])
+}
+
+function isTrainerStaff(s) {
+  return /^(trainer|training|trainers)?$/i.test(String(s ?? "").trim())
+}
+
+/** Nuoto Master nel PDF è (TRAINER): prende l'istruttore Avanzato dello stesso giorno dallo Excel. */
+function staffFromExcelForNuoto(dow, start, rawExcel) {
+  const same = rawExcel.filter((e) => e.dow === dow && e.staff && !isTrainerStaff(e.staff))
+  if (!same.length) return ""
+  const t = hmToMin(start)
+  const avanzato = same.filter((e) => /avanzato/i.test(e.title))
+  const pool = avanzato.length ? avanzato : same
+  pool.sort((a, b) => Math.abs(hmToMin(a.start) - t) - Math.abs(hmToMin(b.start) - t))
+  return pool[0]?.staff ?? ""
+}
+
+function parseExcelNuotoAdultiRaw(xlsxPath) {
   const XLSX = loadXlsx()
   const wb = XLSX.readFile(xlsxPath)
   const sheetName = wb.SheetNames.find((n) => /AGO|2026|ADULTI|DAL/i.test(n) && !/estiv/i.test(n)) ?? wb.SheetNames[0]
@@ -266,7 +287,11 @@ function parseExcelNuotoAdulti(xlsxPath) {
       })
     }
   }
-  return collapseSameStaffNuoto(events)
+  return events
+}
+
+function parseExcelNuotoAdulti(xlsxPath) {
+  return collapseSameStaffNuoto(parseExcelNuotoAdultiRaw(xlsxPath))
 }
 
 function collapseSameStaffNuoto(events) {
@@ -315,8 +340,17 @@ export async function buildCorsiFromPdfAndExcel({ terraPdf, acquaPdf, nuotoXlsx 
   const acquaItems = await pdfItems(acquaPdf)
   const terra = parsePdfCorsi(terraItems, "terra", "DAL 14 SETTEMBRE 2026", 205)
   const acquaPdfEvents = parsePdfCorsi(acquaItems, "acqua", "DAL 14 SETTEMBRE 2026", 118)
-  const acquaSenzaNuotoAdulti = acquaPdfEvents.filter((e) => !/nuoto\s+adulti/i.test(e.title))
-  const nuoto = fs.existsSync(nuotoXlsx) ? parseExcelNuotoAdulti(nuotoXlsx) : []
+  const nuotoRaw = fs.existsSync(nuotoXlsx) ? parseExcelNuotoAdultiRaw(nuotoXlsx) : []
+  const nuoto = collapseSameStaffNuoto(nuotoRaw)
+  const acquaSenzaNuotoAdulti = acquaPdfEvents
+    .filter((e) => !/nuoto\s+adulti/i.test(e.title))
+    .map((e) => {
+      if (!/nuoto/i.test(e.title) || (e.staff && !isTrainerStaff(e.staff))) return e
+      const staff = staffFromExcelForNuoto(e.dow, e.start, nuotoRaw)
+      if (!staff) return e
+      const title = String(e.title).replace(/\s+20\.\s*$/g, "").trim() || e.title
+      return { ...e, title, staff, id: eventId(e.zona, e.sheet, e.dow, e.start, title, staff) }
+    })
   const all = [...terra, ...acquaSenzaNuotoAdulti, ...nuoto]
   const seen = new Set()
   const out = []
