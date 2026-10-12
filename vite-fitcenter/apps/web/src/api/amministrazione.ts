@@ -48,10 +48,27 @@ export type AmmDashboard = {
   totVariabile: number
   totSpese: number
   totCollaboratori: number
+  totBuste: number
+  totPersonale: number
   byMacro: AmmDashRiga[]
   byReparto: AmmDashRiga[]
   byMese: { mese: string; label: string; importo: number }[]
+  byCollaboratori: AmmDashRiga[]
+  byBuste: AmmDashRiga[]
   nSpese: number
+  nBuste: number
+}
+
+export type AmmBusta = {
+  id: string
+  nominativo: string
+  mese: string
+  descrizione: string
+  totale: number
+  quote: AmmQuota[]
+  origine: "manuale" | "mastrino"
+  createdAt: string
+  updatedAt: string
 }
 
 export type AmmOcrParsed = {
@@ -101,6 +118,26 @@ export const amministrazioneApi = {
     return body.id ? api.put<{ spesa: AmmSpesa }>(path, fd) : api.post<{ spesa: AmmSpesa }>(path, fd)
   },
   importSpese: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/spese/import", { righe }),
+  listBuste: (mese?: string) => {
+    const s = mese ? `?mese=${encodeURIComponent(mese)}` : ""
+    return api.get<{ buste: AmmBusta[] }>(`/amministrazione/buste${s}`)
+  },
+  saveBusta: (body: Partial<AmmBusta> & { nominativo: string; mese: string; totale: number; quote: AmmQuota[] }) =>
+    body.id
+      ? api.put<{ busta: AmmBusta }>(`/amministrazione/buste/${encodeURIComponent(body.id)}`, body)
+      : api.post<{ busta: AmmBusta }>("/amministrazione/buste", body),
+  deleteBusta: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/buste/${encodeURIComponent(id)}`),
+  importBuste: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/buste/import", { righe }),
+  collaboratori: (anno: number, mese?: string) => {
+    const q = new URLSearchParams({ anno: String(anno) })
+    if (mese) q.set("mese", mese)
+    return api.get<{
+      anno: number
+      mese: string | null
+      tot: number
+      righe: { id: string; nome: string; macroId?: string; importo: number; nTurni: number }[]
+    }>(`/amministrazione/collaboratori?${q}`)
+  },
   deleteSpesa: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/spese/${encodeURIComponent(id)}`),
   ocr: (text: string, filename?: string) =>
     api.post<{ parsed: AmmOcrParsed; fornitoreNoto: AmmFornitore | null; fornitori: AmmFornitore[] }>(

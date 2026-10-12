@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 import { useAuth } from "@/contexts/AuthContext"
 import {
   amministrazioneApi,
+  type AmmBusta,
   type AmmQuota,
   type AmmReparto,
   type AmmSpesa,
@@ -12,6 +13,7 @@ import {
 } from "@/api/amministrazione"
 import { extractPdfText } from "@/lib/pdf-fattura-text"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
+import { downloadAmmMastrinoTemplate, parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
 
 const COLORS = ["#46A6D9", "#F59E0B", "#34D399", "#A78BFA", "#F87171", "#FBBF24", "#60A5FA", "#C084FC"]
 const inputCls =
@@ -54,7 +56,7 @@ function nomeReparto(reparti: AmmReparto[], id: string): string {
   return reparti.find((r) => r.id === id)?.nome ?? id
 }
 
-type Tab = "dashboard" | "spese" | "reparti"
+type Tab = "dashboard" | "spese" | "stipendi" | "reparti"
 type Imputazione = "sotto" | "macro"
 
 export function AmministrazioneCosti() {
@@ -73,20 +75,22 @@ export function AmministrazioneCosti() {
   }
   const tab: Tab = loc.pathname.includes("/reparti")
     ? "reparti"
-    : loc.pathname.includes("/spese")
-      ? "spese"
-      : "dashboard"
+    : loc.pathname.includes("/stipendi")
+      ? "stipendi"
+      : loc.pathname.includes("/spese")
+        ? "spese"
+        : "dashboard"
   const tabs: { id: Tab; to: string; label: string }[] = [
     { id: "dashboard", to: "/amministrazione", label: "Dashboard costi" },
     { id: "spese", to: "/amministrazione/spese", label: "Registro spese" },
+    { id: "stipendi", to: "/amministrazione/stipendi", label: "Stipendi" },
     { id: "reparti", to: "/amministrazione/reparti", label: "Reparti e centri di costo" },
   ]
   return (
     <div className="p-4 sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Costi di struttura per competenza (data documento). I pagamenti fornitori non entrano. I collaboratori sportivi
-        arrivano dal libro paga.
+        Costi per competenza (data documento). Buste paga dipendenti da mastrino; collaboratori sportivi dal libro paga.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -100,7 +104,15 @@ export function AmministrazioneCosti() {
           </button>
         ))}
       </div>
-      {tab === "dashboard" ? <DashboardTab /> : tab === "spese" ? <RegistroTab /> : <RepartiTab />}
+      {tab === "dashboard" ? (
+        <DashboardTab />
+      ) : tab === "spese" ? (
+        <RegistroTab />
+      ) : tab === "stipendi" ? (
+        <StipendiTab />
+      ) : (
+        <RepartiTab />
+      )}
     </div>
   )
 }
@@ -168,11 +180,12 @@ function DashboardTab() {
       {dash.isError && <p className="text-sm text-red-400">{(dash.error as Error).message}</p>}
       {d && (
         <>
-          <div className="grid gap-3 sm:grid-cols-4">
-            <Kpi title="Totale competenza" value={eur(d.tot)} hint={`${d.nSpese} documenti + collaboratori sportivi`} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Kpi title="Totale competenza" value={eur(d.tot)} hint={`${d.nSpese} documenti · ${d.nBuste ?? 0} buste`} />
             <Kpi title="Fissi" value={eur(d.totFisso)} hint={`${fissoPct}% del totale`} />
-            <Kpi title="Variabili" value={eur(d.totVariabile)} hint={`di cui libro paga ${eur(d.totCollaboratori)}`} />
-            <Kpi title="Solo registro spese" value={eur(d.totSpese)} hint="Senza collaboratori sportivi" />
+            <Kpi title="Variabili" value={eur(d.totVariabile)} hint={`di cui collaboratori ${eur(d.totCollaboratori)}`} />
+            <Kpi title="Dipendenti fissi" value={eur(d.totBuste ?? 0)} hint="Buste paga da mastrino" />
+            <Kpi title="Collaboratori sportivi" value={eur(d.totCollaboratori)} hint="Dal libro paga, non si inseriscono qui" />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-zinc-800 p-4">
@@ -728,6 +741,311 @@ function RegistroTab() {
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+function StipendiTab() {
+  const qc = useQueryClient()
+  const now = currentYm()
+  const [mese, setMese] = useState(now)
+  const [error, setError] = useState("")
+  const [importMsg, setImportMsg] = useState("")
+  const [preview, setPreview] = useState<AmmMastrinoPreview[] | null>(null)
+  const [open, setOpen] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [nominativo, setNominativo] = useState("")
+  const [totale, setTotale] = useState("")
+  const [descrizione, setDescrizione] = useState("Busta paga")
+  const [repartoId, setRepartoId] = useState("amministrazione-uffici")
+  const [formMese, setFormMese] = useState(now)
+  const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
+  const buste = useQuery({
+    queryKey: ["amm-buste", mese],
+    queryFn: () => amministrazioneApi.listBuste(mese),
+  })
+  const collab = useQuery({
+    queryKey: ["amm-collab", mese],
+    queryFn: () => amministrazioneApi.collaboratori(Number(mese.slice(0, 4)), mese),
+  })
+  const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
+  const macros = macrosOf(attivi)
+
+  function startNew() {
+    setEditId(null)
+    setNominativo("")
+    setTotale("")
+    setDescrizione("Busta paga")
+    setRepartoId("amministrazione-uffici")
+    setFormMese(mese)
+    setOpen(true)
+  }
+  function startEdit(b: AmmBusta) {
+    setEditId(b.id)
+    setNominativo(b.nominativo)
+    setTotale(String(b.totale).replace(".", ","))
+    setDescrizione(b.descrizione)
+    setRepartoId(b.quote[0]?.repartoId ?? "amministrazione-uffici")
+    setFormMese(b.mese)
+    setOpen(true)
+  }
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      amministrazioneApi.saveBusta({
+        id: editId ?? undefined,
+        nominativo,
+        mese: formMese,
+        descrizione,
+        totale: Number(totale.replace(",", ".")),
+        quote: [{ repartoId, percentuale: 100 }],
+        origine: "manuale",
+      }),
+    onSuccess: () => {
+      setOpen(false)
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const delMut = useMutation({
+    mutationFn: (id: string) => amministrazioneApi.deleteBusta(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const importMut = useMutation({
+    mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
+    onSuccess: (r) => {
+      setPreview(null)
+      setImportMsg(
+        `Importate ${r.inserite} buste` +
+          (r.saltate ? `, ${r.saltate} già presenti` : "") +
+          (r.errori.length ? `, ${r.errori.length} errori` : "") +
+          "."
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  async function onExcel(file: File | null) {
+    if (!file) return
+    setError("")
+    setImportMsg("")
+    try {
+      const buf = await file.arrayBuffer()
+      setPreview(parseAmmMastrino(buf, attivi))
+    } catch (e) {
+      setError((e as Error).message || "Excel non leggibile")
+    }
+  }
+
+  const okPreview = (preview ?? []).filter((p) => !p.errore)
+  const totBusteMese = (buste.data?.buste ?? []).reduce((s, b) => s + b.totale, 0)
+
+  return (
+    <div className="mt-4 space-y-6">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-xs text-zinc-500">
+          Mese competenza
+          <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
+        </label>
+      </div>
+      {error && <p className="text-sm text-red-400">{error}</p>}
+      {importMsg && <p className="text-sm text-emerald-300">{importMsg}</p>}
+
+      <section className="space-y-3 rounded-2xl border border-zinc-800 p-4">
+        <div>
+          <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
+          <p className="text-xs text-zinc-500">
+            Solo lettura dal libro paga (turni del mese). Desk, amministrazione e consulenze non stanno qui: vanno nelle
+            buste paga.
+          </p>
+        </div>
+        {collab.isLoading && <p className="text-sm text-zinc-500">Caricamento libro paga…</p>}
+        <p className="text-lg font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</p>
+        <table className="min-w-full text-left text-sm">
+          <thead className="text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="py-1">Reparto</th>
+              <th className="py-1 text-right">Turni</th>
+              <th className="py-1 text-right">Importo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(collab.data?.righe ?? []).map((r) => (
+              <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
+                <td className="py-1.5">{r.nome}</td>
+                <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>
+                <td className="py-1.5 text-right">{eur(r.importo)}</td>
+              </tr>
+            ))}
+            {!collab.data?.righe.length && (
+              <tr>
+                <td className="py-4 text-zinc-500" colSpan={3}>
+                  Nessun costo collaboratori in questo mese. Se il libro paga ha i turni, ricarica dopo il deploy.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="space-y-3 rounded-2xl border border-zinc-800 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
+            <p className="text-xs text-zinc-500">
+              Da mastrino (Excel) o inserimento manuale. Default: Amministrazione e uffici.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className={btnGhost} onClick={() => downloadAmmMastrinoTemplate()}>
+              Modello mastrino
+            </button>
+            <label className={`${btnGhost} cursor-pointer`}>
+              Importa mastrino
+              <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => void onExcel(e.target.files?.[0] ?? null)} />
+            </label>
+            <button type="button" className={btnAmber} onClick={startNew}>
+              + Busta paga
+            </button>
+          </div>
+        </div>
+        <p className="text-lg font-semibold text-zinc-100">{eur(totBusteMese)}</p>
+        {preview && (
+          <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-zinc-400">
+                Anteprima: {okPreview.length} valide, {preview.length - okPreview.length} con errori
+              </p>
+              <div className="flex gap-2">
+                <button type="button" className={btnGhost} onClick={() => setPreview(null)}>
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className={btnAmber}
+                  disabled={!okPreview.length || importMut.isPending}
+                  onClick={() => importMut.mutate(okPreview)}
+                >
+                  {importMut.isPending ? "Import…" : `Importa ${okPreview.length}`}
+                </button>
+              </div>
+            </div>
+            <div className="max-h-48 overflow-auto text-xs">
+              {preview.map((p) => (
+                <p key={p.riga} className={p.errore ? "text-red-300" : "text-zinc-300"}>
+                  r.{p.riga} {p.nominativo || "—"} {p.mese} {p.totale ? eur(p.totale) : "—"}{" "}
+                  {p.errore ?? nomeReparto(attivi, p.quote[0]?.repartoId ?? "")}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+        {open && (
+          <form
+            className="grid gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 sm:grid-cols-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              saveMut.mutate()
+            }}
+          >
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Nominativo
+              <input value={nominativo} onChange={(e) => setNominativo(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Mese
+              <input type="month" value={formMese} onChange={(e) => setFormMese(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Importo lordo / costo
+              <input value={totale} onChange={(e) => setTotale(e.target.value)} className={inputCls} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Reparto
+              <select value={repartoId} onChange={(e) => setRepartoId(e.target.value)} className={inputCls}>
+                {macros.map((m) => (
+                  <optgroup key={m.id} label={m.nome}>
+                    {sottoOf(attivi, m.id).map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.nome}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+              Descrizione
+              <input value={descrizione} onChange={(e) => setDescrizione(e.target.value)} className={inputCls} />
+            </label>
+            <div className="flex justify-end gap-2 sm:col-span-2">
+              <button type="button" className={btnGhost} onClick={() => setOpen(false)}>
+                Annulla
+              </button>
+              <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
+                {saveMut.isPending ? "Salvataggio…" : "Salva"}
+              </button>
+            </div>
+          </form>
+        )}
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="text-xs uppercase text-zinc-500">
+              <tr>
+                <th className="py-1 pr-3">Nominativo</th>
+                <th className="py-1 pr-3">Reparto</th>
+                <th className="py-1 pr-3">Origine</th>
+                <th className="py-1 text-right">Importo</th>
+                <th className="py-1" />
+              </tr>
+            </thead>
+            <tbody>
+              {(buste.data?.buste ?? []).map((b) => (
+                <tr key={b.id} className="border-t border-zinc-800 text-zinc-200">
+                  <td className="py-1.5 pr-3">
+                    {b.nominativo}
+                    {b.descrizione && <span className="block text-xs text-zinc-500">{b.descrizione}</span>}
+                  </td>
+                  <td className="py-1.5 pr-3 text-xs text-zinc-400">
+                    {b.quote.map((q) => `${nomeReparto(attivi, q.repartoId)} ${q.percentuale}%`).join(" · ")}
+                  </td>
+                  <td className="py-1.5 pr-3 capitalize text-zinc-400">{b.origine}</td>
+                  <td className="py-1.5 text-right">{eur(b.totale)}</td>
+                  <td className="py-1.5 text-right whitespace-nowrap">
+                    <button type="button" className="mr-2 text-xs text-zinc-300 hover:underline" onClick={() => startEdit(b)}>
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-red-400 hover:underline"
+                      onClick={() => {
+                        if (confirm("Eliminare questa busta paga?")) delMut.mutate(b.id)
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!buste.data?.buste.length && (
+                <tr>
+                  <td className="py-4 text-zinc-500" colSpan={5}>
+                    Nessuna busta in questo mese. Importa il mastrino o inserisci a mano.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   )
 }

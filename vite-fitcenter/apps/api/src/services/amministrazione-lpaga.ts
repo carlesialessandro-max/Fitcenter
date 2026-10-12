@@ -30,7 +30,7 @@ export function codiceRepartoDaMansione(dominio: string, nome: string): string |
   if (/\bspa|benesser/.test(d)) return "spa"
   if (/\bpiscina|acqua|nuoto/.test(d)) return "piscina"
   if (/\bpalestr|fitness/.test(d)) return "fitness"
-  return null
+  return "personale-condiviso"
 }
 
 export type AmmLpagaRiga = {

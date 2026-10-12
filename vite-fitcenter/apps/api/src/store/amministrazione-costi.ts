@@ -7,6 +7,7 @@ export type AmmRepartoTipo = "operativo" | "struttura"
 export type AmmLivello = "macro" | "sotto"
 export type AmmTipoCosto = "fisso" | "variabile"
 export type AmmOrigine = "manuale" | "ocr" | "excel"
+export type AmmBustaOrigine = "manuale" | "mastrino"
 
 export type AmmReparto = {
   id: string
@@ -46,11 +47,26 @@ export type AmmSpesa = {
   updatedAt: string
 }
 
+export type AmmBusta = {
+  id: string
+  nominativo: string
+  mese: string
+  descrizione: string
+  totale: number
+  quote: AmmQuota[]
+  origine: AmmBustaOrigine
+  createdAt: string
+  updatedAt: string
+}
+
 type FileShape = {
   reparti: AmmReparto[]
   fornitori: AmmFornitore[]
   spese: AmmSpesa[]
+  buste: AmmBusta[]
 }
+
+export const BUSTA_DEFAULT_REPARTO = "amministrazione-uffici"
 
 const FILE = "amministrazione-costi.json"
 
@@ -105,7 +121,7 @@ export const REPARTO_ID_LEGACY: Record<string, string> = {
 }
 
 function empty(): FileShape {
-  return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [] }
+  return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [], buste: [] }
 }
 
 function remapRepartoId(id: string): string {
@@ -157,10 +173,20 @@ function migrate(raw: Partial<FileShape>): FileShape {
       origine,
     }
   })
+  const buste: AmmBusta[] = (Array.isArray(raw.buste) ? raw.buste : []).map((b) => ({
+    ...b,
+    mese: String(b.mese ?? "").slice(0, 7),
+    quote: (b.quote ?? []).map((q) => ({
+      repartoId: remapRepartoId(String(q.repartoId ?? "")),
+      percentuale: Number(q.percentuale) || 0,
+    })),
+    origine: b.origine === "mastrino" ? "mastrino" : "manuale",
+  }))
   return {
     reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
     fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
     spese,
+    buste,
   }
 }
 
@@ -340,5 +366,58 @@ export const ammCostiStore = {
       const p = path.join(pdfDir(), path.basename(cur.pathPdf))
       if (fs.existsSync(p)) fs.unlinkSync(p)
     }
+  },
+  listBuste(): AmmBusta[] {
+    return load().buste.slice().sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  getBusta(id: string): AmmBusta | undefined {
+    return load().buste.find((b) => b.id === id)
+  },
+  findBustaDup(nominativo: string, mese: string, totale: number): AmmBusta | undefined {
+    const n = nominativo.trim().toLowerCase()
+    const t = Math.round(totale * 100) / 100
+    return load().buste.find(
+      (b) => b.nominativo.trim().toLowerCase() === n && b.mese === mese && Math.abs(b.totale - t) < 0.01
+    )
+  },
+  upsertBusta(body: Partial<AmmBusta> & { nominativo: string; mese: string; totale: number; quote: AmmQuota[] }): AmmBusta {
+    const d = load()
+    const mese = String(body.mese ?? "").slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    const totale = Number(String(body.totale).replace(",", "."))
+    if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
+    const quote = (body.quote ?? []).map((q) => ({
+      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
+      percentuale: Number(String(q.percentuale).replace(",", ".")),
+    }))
+    if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
+    const ids = new Set(d.reparti.map((r) => r.id))
+    for (const q of quote) {
+      if (!ids.has(q.repartoId)) throw Object.assign(new Error("Reparto sconosciuto nella ripartizione"), { status: 400 })
+    }
+    const nominativo = body.nominativo.trim()
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    const id = String(body.id ?? "").trim() || randomUUID()
+    const cur = d.buste.find((b) => b.id === id)
+    const row: AmmBusta = {
+      id,
+      nominativo,
+      mese,
+      descrizione: String(body.descrizione ?? cur?.descrizione ?? "").trim(),
+      totale: Math.round(totale * 100) / 100,
+      quote,
+      origine: body.origine === "mastrino" || body.origine === "manuale" ? body.origine : (cur?.origine ?? "manuale"),
+      createdAt: cur?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    }
+    if (cur) Object.assign(cur, row)
+    else d.buste.push(row)
+    save(d)
+    return row
+  },
+  deleteBusta(id: string): void {
+    const d = load()
+    d.buste = d.buste.filter((b) => b.id !== id)
+    save(d)
   },
 }

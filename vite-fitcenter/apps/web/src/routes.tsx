@@ -136,6 +136,7 @@ export const router = createBrowserRouter([
       { path: "libro-paga", element: <LibroPaga /> },
       { path: "amministrazione", element: <AmministrazioneCosti /> },
       { path: "amministrazione/spese", element: <AmministrazioneCosti /> },
+      { path: "amministrazione/stipendi", element: <AmministrazioneCosti /> },
       { path: "amministrazione/reparti", element: <AmministrazioneCosti /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },

@@ -4,6 +4,7 @@ import type { Request, Response } from "express"
 import {
   allocateQuote,
   ammCostiStore,
+  BUSTA_DEFAULT_REPARTO,
   macroIdOf,
   pdfDir,
   type AmmQuota,
@@ -210,6 +211,127 @@ export function getAmmSpesaPdf(req: Request, res: Response) {
   }
 }
 
+function bustaFromBody(b: Record<string, unknown>, id?: string): Parameters<typeof ammCostiStore.upsertBusta>[0] {
+  let quote = quoteFrom(b.quote)
+  if (!quote.length && b.repartoId) {
+    quote = [{ repartoId: String(b.repartoId), percentuale: 100 }]
+  }
+  if (!quote.length) quote = [{ repartoId: BUSTA_DEFAULT_REPARTO, percentuale: 100 }]
+  return {
+    id,
+    nominativo: String(b.nominativo ?? ""),
+    mese: String(b.mese ?? "").slice(0, 7),
+    descrizione: String(b.descrizione ?? ""),
+    totale: Number(String(b.totale ?? "").replace(",", ".")),
+    quote,
+    origine: b.origine === "mastrino" ? "mastrino" : "manuale",
+  }
+}
+
+export function getAmmBuste(req: Request, res: Response) {
+  try {
+    const mese = String(req.query.mese ?? "").trim()
+    let rows = ammCostiStore.listBuste()
+    if (/^\d{4}-\d{2}$/.test(mese)) rows = rows.filter((b) => b.mese === mese)
+    else if (/^\d{4}$/.test(mese)) rows = rows.filter((b) => b.mese.startsWith(mese))
+    res.json({ buste: rows })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmBusta(req: Request, res: Response) {
+  try {
+    const row = ammCostiStore.upsertBusta(bustaFromBody(bodyOf(req)))
+    res.json({ busta: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function putAmmBusta(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id mancante" })
+    const cur = ammCostiStore.getBusta(id)
+    if (!cur) return res.status(404).json({ message: "Busta paga non trovata" })
+    const row = ammCostiStore.upsertBusta(bustaFromBody({ ...cur, ...bodyOf(req) }, id))
+    res.json({ busta: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function deleteAmmBusta(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id mancante" })
+    ammCostiStore.deleteBusta(id)
+    res.json({ ok: true })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmBusteImport(req: Request, res: Response) {
+  try {
+    const righe = Array.isArray(req.body?.righe) ? req.body.righe : []
+    if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
+    let inserite = 0
+    let saltate = 0
+    const errori: { riga: number; message: string }[] = []
+    righe.forEach((raw: Record<string, unknown>, i: number) => {
+      const riga = Number(raw.riga) || i + 1
+      try {
+        const nominativo = String(raw.nominativo ?? "").trim()
+        const mese = String(raw.mese ?? "").slice(0, 7)
+        const totale = Number(String(raw.totale ?? "").replace(",", "."))
+        const dup = ammCostiStore.findBustaDup(nominativo, mese, totale)
+        if (dup) {
+          saltate += 1
+          return
+        }
+        ammCostiStore.upsertBusta(bustaFromBody({ ...raw, origine: "mastrino" }))
+        inserite += 1
+      } catch (e) {
+        errori.push({ riga, message: (e as Error)?.message ?? "Riga non valida" })
+      }
+    })
+    res.json({ inserite, saltate, errori })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getAmmCollaboratori(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno) || new Date().getFullYear()
+    const meseQ = String(req.query.mese ?? "").trim()
+    const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
+    const reparti = ammCostiStore.listReparti(true)
+    const nomeOf = (id: string) => reparti.find((r) => r.id === id)?.nome ?? id
+    const lpAnno = await costiCollaboratoriAnno(anno)
+    const lpMesi = mese ? lpAnno.filter((m) => m.mese === mese) : lpAnno
+    const by = new Map<string, { importo: number; nTurni: number }>()
+    for (const m of lpMesi) {
+      for (const r of m.righe) {
+        const cur = by.get(r.repartoId) ?? { importo: 0, nTurni: 0 }
+        cur.importo = Math.round((cur.importo + r.importo) * 100) / 100
+        cur.nTurni += r.nTurni
+        by.set(r.repartoId, cur)
+      }
+    }
+    const righe = [...by.entries()]
+      .map(([id, v]) => ({ id, nome: nomeOf(id), macroId: macroIdOf(reparti, id), importo: v.importo, nTurni: v.nTurni }))
+      .filter((r) => r.importo)
+      .sort((a, b) => b.importo - a.importo)
+    const tot = Math.round(righe.reduce((s, r) => s + r.importo, 0) * 100) / 100
+    res.json({ anno, mese: mese || null, tot, righe })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export function postAmmOcr(req: Request, res: Response) {
   try {
     const text = String(req.body?.text ?? "")
@@ -225,7 +347,7 @@ export function postAmmOcr(req: Request, res: Response) {
   }
 }
 
-type Slice = { repartoId: string; nome: string; importo: number; fonte: "spesa" | "libro-paga" }
+type Slice = { repartoId: string; nome: string; importo: number; fonte: "spesa" | "libro-paga" | "busta" }
 
 export async function getAmmDashboard(req: Request, res: Response) {
   try {
@@ -261,6 +383,19 @@ export async function getAmmDashboard(req: Request, res: Response) {
         }))
     }
 
+    const busteAll = ammCostiStore.listBuste().filter((b) => (mese ? b.mese === mese : b.mese.startsWith(String(anno))))
+    const bustaSlices: Slice[] = []
+    for (const b of busteAll) {
+      for (const a of allocateQuote(b.totale, b.quote).filter((x) => inFiltro(x.repartoId))) {
+        bustaSlices.push({
+          repartoId: a.repartoId,
+          nome: nomeOf(a.repartoId),
+          importo: a.importo,
+          fonte: "busta",
+        })
+      }
+    }
+
     const lpAnno = await costiCollaboratoriAnno(anno)
     const lpMesi = mese ? lpAnno.filter((m) => m.mese === mese) : lpAnno
     const lpSlices: Slice[] = []
@@ -276,10 +411,10 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
 
-    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices]
+    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices]
     const tot = Math.round(allSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
 
-    let totFisso = 0
+    let totFisso = bustaSlices.reduce((s, x) => s + x.importo, 0)
     let totVariabile = lpSlices.reduce((s, x) => s + x.importo, 0)
     for (const s of spese) {
       const alloc = allocateQuote(s.totale, s.quote).filter((a) => inFiltro(a.repartoId))
@@ -326,6 +461,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const sub = m.righe.filter((r) => inFiltro(r.repartoId)).reduce((n, r) => n + r.importo, 0)
       byMeseMap.set(m.mese, Math.round(((byMeseMap.get(m.mese) ?? 0) + sub) * 100) / 100)
     }
+    for (const b of ammCostiStore.listBuste()) {
+      if (!b.mese.startsWith(String(anno))) continue
+      const sub = allocateQuote(b.totale, b.quote).filter((a) => inFiltro(a.repartoId)).reduce((n, a) => n + a.importo, 0)
+      byMeseMap.set(b.mese, Math.round(((byMeseMap.get(b.mese) ?? 0) + sub) * 100) / 100)
+    }
     const byMese = [...byMeseMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([meseKey, importo]) => ({
       mese: meseKey,
       label: meseKey.slice(5),
@@ -333,7 +473,24 @@ export async function getAmmDashboard(req: Request, res: Response) {
     }))
 
     const totLpaga = Math.round(lpSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
-    const totSpese = Math.round((tot - totLpaga) * 100) / 100
+    const totBuste = Math.round(bustaSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
+    const totSpese = Math.round((tot - totLpaga - totBuste) * 100) / 100
+    const byCollaboratoriMap = new Map<string, number>()
+    for (const x of lpSlices) {
+      byCollaboratoriMap.set(x.repartoId, Math.round(((byCollaboratoriMap.get(x.repartoId) ?? 0) + x.importo) * 100) / 100)
+    }
+    const byCollaboratori = [...byCollaboratoriMap.entries()]
+      .map(([id, importo]) => ({ id, nome: nomeOf(id), macroId: macroIdOf(reparti, id), importo }))
+      .filter((r) => r.importo)
+      .sort((a, b) => b.importo - a.importo)
+    const byBusteMap = new Map<string, number>()
+    for (const x of bustaSlices) {
+      byBusteMap.set(x.repartoId, Math.round(((byBusteMap.get(x.repartoId) ?? 0) + x.importo) * 100) / 100)
+    }
+    const byBuste = [...byBusteMap.entries()]
+      .map(([id, importo]) => ({ id, nome: nomeOf(id), macroId: macroIdOf(reparti, id), importo }))
+      .filter((r) => r.importo)
+      .sort((a, b) => b.importo - a.importo)
 
     res.json({
       anno,
@@ -344,10 +501,15 @@ export async function getAmmDashboard(req: Request, res: Response) {
       totVariabile,
       totSpese: Math.round(totSpese * 100) / 100,
       totCollaboratori: totLpaga,
+      totBuste,
+      totPersonale: Math.round((totLpaga + totBuste) * 100) / 100,
       byMacro,
       byReparto,
       byMese,
+      byCollaboratori,
+      byBuste,
       nSpese: spese.length,
+      nBuste: busteAll.length,
     })
   } catch (e) {
     fail(res, e)

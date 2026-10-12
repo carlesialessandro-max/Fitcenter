@@ -2,14 +2,20 @@ import { Router } from "express"
 import multer from "multer"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 import {
+  deleteAmmBusta,
   deleteAmmSpesa,
+  getAmmBuste,
+  getAmmCollaboratori,
   getAmmDashboard,
   getAmmReparti,
   getAmmSpesaPdf,
   getAmmSpese,
+  postAmmBusta,
+  postAmmBusteImport,
   postAmmImport,
   postAmmOcr,
   postAmmSpesa,
+  putAmmBusta,
   putAmmReparto,
   putAmmSpesa,
 } from "../handlers/amministrazione.js"
@@ -30,6 +36,12 @@ amministrazioneRouter.get("/dashboard", getAmmDashboard)
 amministrazioneRouter.get("/reparti", getAmmReparti)
 amministrazioneRouter.put("/reparti", putAmmReparto)
 amministrazioneRouter.put("/reparti/:id", putAmmReparto)
+amministrazioneRouter.get("/collaboratori", getAmmCollaboratori)
+amministrazioneRouter.get("/buste", getAmmBuste)
+amministrazioneRouter.post("/buste/import", postAmmBusteImport)
+amministrazioneRouter.post("/buste", postAmmBusta)
+amministrazioneRouter.put("/buste/:id", putAmmBusta)
+amministrazioneRouter.delete("/buste/:id", deleteAmmBusta)
 amministrazioneRouter.get("/spese", getAmmSpese)
 amministrazioneRouter.post("/spese/import", postAmmImport)
 amministrazioneRouter.post("/spese", upload.single("pdf"), postAmmSpesa)
