@@ -38,24 +38,12 @@ function isoTodayLocal(): string {
   return `${y}-${m}-${day}`
 }
 
-function digitsPhone(s: unknown): string {
-  return String(s ?? "")
-    .replace(/[^\d+]/g, "")
-    .replace(/^00/, "+")
-    .trim()
-}
-
 function normalizeText(s: string): string {
   return String(s ?? "")
     .toLowerCase()
     .trim()
     .normalize("NFD")
     .replace(/\p{Diacritic}+/gu, "")
-}
-
-function accessEmailKey(raw: any): string | null {
-  const e = String(raw?.Email ?? raw?.email ?? raw?.Mail ?? raw?.E_mail ?? raw?.["E-mail"] ?? "").trim().toLowerCase()
-  return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? `email:${e}` : null
 }
 
 function accessNameKey(nome: unknown, cognome: unknown): string | null {
@@ -91,11 +79,6 @@ function accessNameKeysFromRow(raw: any, fallbackNome?: unknown, fallbackCognome
   }
 
   return Array.from(out)
-}
-
-function accessTelKey(raw: any): string | null {
-  const tel = digitsPhone(raw?.SMS ?? raw?.Sms ?? raw?.sms ?? raw?.Cellulare ?? raw?.Telefono ?? raw?.Tel ?? raw?.TelefonoCellulare)
-  return tel ? `tel:${tel}` : null
 }
 
 function parseAccessDateLocal(val: unknown): Date | null {
@@ -172,15 +155,8 @@ function buildAccessKeysIndex(rows: AccessoUtenteRow[]): { presentKeys: Set<stri
     // da serializzazione ISO con Z/offset e portare a "tutti grigi".
     if (!dtIn) continue
     if (id) push(`id:${id}`, dtIn)
-    const ek = accessEmailKey(raw)
-    if (ek) push(ek, dtIn)
     const nameKeys = accessNameKeysFromRow(raw, r.nome, r.cognome)
-    const telKey = accessTelKey(raw)
-    for (const nk of nameKeys) {
-      push(nk, dtIn)
-      if (telKey) push(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`, dtIn)
-    }
-    if (telKey) push(telKey, dtIn)
+    for (const nk of nameKeys) push(nk, dtIn)
   }
 
   // Normalizza chiavi name: aggiungendo anche il reverse (Nome Cognome <-> Cognome Nome)
@@ -326,11 +302,10 @@ export function ScuolaNuoto() {
 
   function participantCandidateKeys(u: any): string[] {
     const out = new Set<string>()
+    const id = String(u?.idUtente ?? "").trim()
+    if (id) out.add(`id:${id}`)
     const k = String(u?.key ?? "").trim()
-    if (k) out.add(k)
-
-    const email = String(u?.email ?? "").trim().toLowerCase()
-    if (email && email.includes("@")) out.add(`email:${email}`)
+    if (k.startsWith("id:")) out.add(k)
 
     const nome = String(u?.nome ?? "").trim()
     const cognome = String(u?.cognome ?? "").trim()
@@ -339,19 +314,16 @@ export function ScuolaNuoto() {
     if (nk1) out.add(nk1)
     if (nk2) out.add(nk2)
 
-    const tel = digitsPhone(u?.cellulare)
-    const telKey = tel ? `tel:${tel}` : null
-    if (telKey) out.add(telKey)
-    for (const nk of [nk1, nk2]) {
-      if (nk && telKey) out.add(`name_tel:${nk.slice("name:".length)}:${telKey.slice("tel:".length)}`)
-    }
-
     return Array.from(out)
   }
 
   function isPresentParticipant(u: any): boolean {
     const cands = participantCandidateKeys(u)
-    return cands.some((kk) => presentKeys.has(kk))
+    const idKeys = cands.filter((kk) => kk.startsWith("id:"))
+    if (idKeys.some((kk) => presentKeys.has(kk))) return true
+    // Email/cellulare sono spesso del genitore: non li usiamo.
+    // Se l’ID non ha transiti, resta solo il nominativo esatto (Agata ≠ Andrea).
+    return cands.some((kk) => kk.startsWith("name:") && presentKeys.has(kk))
   }
 
   const ovQ = useQuery({

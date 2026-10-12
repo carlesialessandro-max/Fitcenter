@@ -749,12 +749,6 @@ export function participantForLessonAccess(g: CorsoGroup, p: PrenotazioneCorsoRo
 type AccessEvent = { t: Date; kind: "in" | "out" }
 type AccessIndex = Map<string, AccessEvent[]> // idKey -> access events (sorted by time)
 
-function accessKeyEmailFromRaw(raw: any): string | null {
-  const cand = String(raw?.Email ?? raw?.email ?? raw?.CustomerEmail ?? raw?.customerEmail ?? "").trim().toLowerCase()
-  if (!cand || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cand)) return null
-  return `email:${cand}`
-}
-
 function accessKeyNameFromAny(input: { cognome?: unknown; nome?: unknown; raw?: any }): string | null {
   const cognome = String(input.cognome ?? input.raw?.Cognome ?? input.raw?.cognome ?? "").trim().toLowerCase()
   const nome = String(input.nome ?? input.raw?.Nome ?? input.raw?.nome ?? "").trim().toLowerCase()
@@ -846,7 +840,6 @@ export function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: stri
     const raw = (r.raw ?? {}) as any
     const id = String(r.idUtente ?? raw?.IDUtente ?? raw?.IdUtente ?? raw?.UtenteId ?? "").trim()
     const k = `id:${id}`
-    const kEmail = accessKeyEmailFromRaw(raw)
     const kName = accessKeyNameFromAny({ cognome: r.cognome, nome: r.nome, raw })
 
     const dtIn = parseAccessDateAny(raw?.AccessiDataOra ?? r.dataEntrata ?? raw?.AccessiData ?? raw?.AccessiOra)
@@ -855,7 +848,6 @@ export function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: stri
       const kind = accessKindFromRaw(raw)
       const ev: AccessEvent = { t: dtIn, kind }
       if (id) push(k, ev)
-      if (kEmail) push(kEmail, ev)
       if (kName) push(kName, ev)
     }
 
@@ -863,7 +855,6 @@ export function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: stri
     if (dtOut && localYmd(dtOut) === giornoIso) {
       const ev: AccessEvent = { t: dtOut, kind: "out" }
       if (id) push(k, ev)
-      if (kEmail) push(kEmail, ev)
       if (kName) push(kName, ev)
     }
   }
@@ -876,24 +867,17 @@ export function buildAccessIndexForDay(rows: AccessoUtenteRow[], giornoIso: stri
 
 export function isPresentByAccess(accessIdx: AccessIndex, p: PrenotazioneCorsoRow, giornoIso: string): { present: boolean; entry: Date | null; exit: Date | null } {
   const stable = participantStableKey(p, 0)
-  const candidateKeys: string[] = []
-  if (stable.startsWith("id:")) candidateKeys.push(stable)
   const raw = (p.raw ?? {}) as any
-  const emailKey = accessKeyEmailFromRaw(raw) ?? (() => {
-    const e = String(p.email ?? "").trim().toLowerCase()
-    return e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? `email:${e}` : null
-  })()
-  if (emailKey) candidateKeys.push(emailKey)
   const nameKey = accessKeyNameFromAny({ cognome: p.cognome, nome: p.nome, raw })
-  if (nameKey) candidateKeys.push(nameKey)
 
+  // Non usare email/telefono: in famiglia sono spesso del genitore (ingresso padre ≠ presenza figlio).
   let evs: AccessEvent[] = []
-  for (const k of candidateKeys) {
-    const got = accessIdx.get(k)
-    if (got && got.length > 0) {
-      evs = got
-      break
-    }
+  if (stable.startsWith("id:")) {
+    const byId = accessIdx.get(stable)
+    if (byId?.length) evs = byId
+  }
+  if (evs.length === 0 && nameKey) {
+    evs = accessIdx.get(nameKey) ?? []
   }
   if (evs.length === 0) return { present: false, entry: null, exit: null }
 
