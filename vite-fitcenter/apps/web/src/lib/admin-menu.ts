@@ -87,6 +87,15 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/libro-paga", label: "Libro paga" },
     ],
   },
+  {
+    title: "Amministrazione",
+    tone: "main",
+    items: [
+      { to: "/amministrazione", label: "Dashboard costi" },
+      { to: "/amministrazione/spese", label: "Registro spese" },
+      { to: "/amministrazione/reparti", label: "Reparti e centri di costo" },
+    ],
+  },
 ]
 
 /** Sezione del menu admin che contiene la pagina corrente (match più specifico). */
