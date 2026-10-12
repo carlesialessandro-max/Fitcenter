@@ -9,18 +9,26 @@ function norm(s: string): string {
     .trim()
 }
 
-/** Collaboratori sportivi: mappa mansione libro paga → centro di costo operativo. */
-export function codiceRepartoDaMansione(dominio: string, nome: string): "piscina" | "fitness" | "manutenzione" | null {
+/** Collaboratori sportivi: mansione libro paga → sotto-reparto (o macro se non è preciso). */
+export function codiceRepartoDaMansione(dominio: string, nome: string): string | null {
   const s = norm(`${dominio} ${nome}`)
   if (!s) return null
-  if (/\bmanutenz/.test(s)) return "manutenzione"
   if (/\b(desk|reception|segreter|amminist|ufficio|consulenz)\b/.test(s)) return null
-  if (/\b(piscina|acqua|nuoto|bagnin|vasca|scuola nuoto|h20|h2o)\b/.test(s)) return "piscina"
-  if (/\b(fitness|palestr|corso|corsi|pole|personal|sala pesi|trx|spinn|fit|danza|pilates|yoga|functional)\b/.test(s)) {
-    return "fitness"
-  }
+  if (/\bpuliz/.test(s)) return "pulizie"
+  if (/\bmanutenz/.test(s)) return "manutenzione-impianti"
+  if (/\b(spa|benesser|massagg|estetic)/.test(s)) return "spa-benessere"
+  if (/\bpole/.test(s)) return "pole-dance"
+  if (/\bpersonal/.test(s)) return "personal-training"
+  if (/\b(scuola nuoto bambini|snb|bimbi|baby)/.test(s)) return "scuola-nuoto-bambini"
+  if (/\b(scuola nuoto adulti|master|adulti)/.test(s) && /\b(nuoto|scuola)/.test(s)) return "scuola-nuoto-adulti"
+  if (/\b(acquagym|acqua fitness|corsi in acqua|idro)/.test(s)) return "corsi-acqua"
+  if (/\b(sala pesi|palestr)/.test(s) && !/\bcors/.test(s)) return "palestra-sala-pesi"
+  if (/\b(pilates|yoga|spinning|trx|functional|corso|corsi|fit\b|danza)/.test(s)) return "corsi-fitness"
+  if (/\b(piscina|acqua|nuoto|bagnin|vasca|h20|h2o)\b/.test(s)) return "piscina"
+  if (/\b(fitness|palestr)\b/.test(s)) return "fitness"
   const d = norm(dominio)
-  if (/\bpiscina|acqua/.test(d)) return "piscina"
+  if (/\bspa|benesser/.test(d)) return "spa"
+  if (/\bpiscina|acqua|nuoto/.test(d)) return "piscina"
   if (/\bpalestr|fitness/.test(d)) return "fitness"
   return null
 }

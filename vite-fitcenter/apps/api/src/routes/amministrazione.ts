@@ -7,6 +7,7 @@ import {
   getAmmReparti,
   getAmmSpesaPdf,
   getAmmSpese,
+  postAmmImport,
   postAmmOcr,
   postAmmSpesa,
   putAmmReparto,
@@ -30,6 +31,7 @@ amministrazioneRouter.get("/reparti", getAmmReparti)
 amministrazioneRouter.put("/reparti", putAmmReparto)
 amministrazioneRouter.put("/reparti/:id", putAmmReparto)
 amministrazioneRouter.get("/spese", getAmmSpese)
+amministrazioneRouter.post("/spese/import", postAmmImport)
 amministrazioneRouter.post("/spese", upload.single("pdf"), postAmmSpesa)
 amministrazioneRouter.put("/spese/:id", upload.single("pdf"), putAmmSpesa)
 amministrazioneRouter.delete("/spese/:id", deleteAmmSpesa)

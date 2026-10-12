@@ -2,6 +2,7 @@ import { api } from "./client"
 import { getApiBase } from "./baseUrl"
 
 export type AmmRepartoTipo = "operativo" | "struttura"
+export type AmmLivello = "macro" | "sotto"
 export type AmmTipoCosto = "fisso" | "variabile"
 
 export type AmmReparto = {
@@ -9,6 +10,8 @@ export type AmmReparto = {
   codice: string
   nome: string
   tipo: AmmRepartoTipo
+  livello: AmmLivello
+  macroId?: string
   note?: string
   attivo: boolean
   ordine: number
@@ -29,10 +32,12 @@ export type AmmSpesa = {
   tipoCosto: AmmTipoCosto
   quote: AmmQuota[]
   pathPdf?: string
-  origine: "manuale" | "ocr"
+  origine: "manuale" | "ocr" | "excel"
   createdAt: string
   updatedAt: string
 }
+
+export type AmmDashRiga = { id: string; nome: string; importo: number; macroId?: string }
 
 export type AmmDashboard = {
   anno: number
@@ -43,7 +48,8 @@ export type AmmDashboard = {
   totVariabile: number
   totSpese: number
   totCollaboratori: number
-  byReparto: { id: string; nome: string; importo: number }[]
+  byMacro: AmmDashRiga[]
+  byReparto: AmmDashRiga[]
   byMese: { mese: string; label: string; importo: number }[]
   nSpese: number
 }
@@ -54,6 +60,12 @@ export type AmmOcrParsed = {
   dataDocumento: string
   totale: number | null
   descrizione: string
+}
+
+export type AmmImportEsito = {
+  inserite: number
+  saltate: number
+  errori: { riga: number; message: string }[]
 }
 
 function token(): string | null {
@@ -88,11 +100,12 @@ export const amministrazioneApi = {
     const path = body.id ? `/amministrazione/spese/${encodeURIComponent(body.id)}` : "/amministrazione/spese"
     return body.id ? api.put<{ spesa: AmmSpesa }>(path, fd) : api.post<{ spesa: AmmSpesa }>(path, fd)
   },
+  importSpese: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/spese/import", { righe }),
   deleteSpesa: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/spese/${encodeURIComponent(id)}`),
-  ocr: (text: string) =>
+  ocr: (text: string, filename?: string) =>
     api.post<{ parsed: AmmOcrParsed; fornitoreNoto: AmmFornitore | null; fornitori: AmmFornitore[] }>(
       "/amministrazione/ocr",
-      { text }
+      { text, filename }
     ),
   pdfUrl: (id: string) => `${getApiBase()}/amministrazione/spese/${encodeURIComponent(id)}/pdf`,
   openPdf: async (id: string) => {

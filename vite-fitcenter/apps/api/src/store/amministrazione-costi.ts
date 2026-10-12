@@ -4,14 +4,17 @@ import { randomUUID } from "crypto"
 import { getDataDir, readJson, writeJson } from "./persist.js"
 
 export type AmmRepartoTipo = "operativo" | "struttura"
+export type AmmLivello = "macro" | "sotto"
 export type AmmTipoCosto = "fisso" | "variabile"
-export type AmmOrigine = "manuale" | "ocr"
+export type AmmOrigine = "manuale" | "ocr" | "excel"
 
 export type AmmReparto = {
   id: string
   codice: string
   nome: string
   tipo: AmmRepartoTipo
+  livello: AmmLivello
+  macroId?: string
   note?: string
   attivo: boolean
   ordine: number
@@ -51,52 +54,118 @@ type FileShape = {
 
 const FILE = "amministrazione-costi.json"
 
+function macro(id: string, nome: string, tipo: AmmRepartoTipo, ordine: number, note?: string): AmmReparto {
+  return { id, codice: id, nome, tipo, livello: "macro", attivo: true, ordine, note }
+}
+
+function sotto(id: string, macroId: string, nome: string, tipo: AmmRepartoTipo, ordine: number, note?: string): AmmReparto {
+  return { id, codice: id, nome, tipo, livello: "sotto", macroId, attivo: true, ordine, note }
+}
+
 export const REPARTI_SEED: AmmReparto[] = [
-  { id: "piscina", codice: "piscina", nome: "Piscina", tipo: "operativo", attivo: true, ordine: 1, note: "Coperta, estiva, parco acquatico" },
-  { id: "fitness", codice: "fitness", nome: "Fitness / Corsi", tipo: "operativo", attivo: true, ordine: 2, note: "Palestra, corsi, pole dance, personal" },
-  { id: "manutenzione", codice: "manutenzione", nome: "Manutenzione", tipo: "operativo", attivo: true, ordine: 3 },
-  {
-    id: "amministrazione",
-    codice: "amministrazione",
-    nome: "Amministrazione, Desk e Uffici",
-    tipo: "struttura",
-    attivo: true,
-    ordine: 4,
-    note: "Costo fisso di gestione struttura",
-  },
-  {
-    id: "utenze",
-    codice: "utenze",
-    nome: "Utenze generali",
-    tipo: "struttura",
-    attivo: true,
-    ordine: 5,
-    note: "Costo fisso da ripartire",
-  },
+  macro("piscina", "Piscina", "operativo", 10, "Coperta, estiva, scuole nuoto, corsi in acqua"),
+  sotto("piscina-coperta", "piscina", "Piscina coperta", "operativo", 11),
+  sotto("piscina-estiva", "piscina", "Piscina estiva e parco acquatico", "operativo", 12),
+  sotto("scuola-nuoto-bambini", "piscina", "Scuola nuoto bambini", "operativo", 13),
+  sotto("scuola-nuoto-adulti", "piscina", "Scuola nuoto adulti", "operativo", 14),
+  sotto("corsi-acqua", "piscina", "Corsi in acqua e attività di gruppo", "operativo", 15),
+
+  macro("fitness", "Palestra & Fitness", "operativo", 20, "Palestra, corsi, pole dance, personal"),
+  sotto("palestra-sala-pesi", "fitness", "Palestra e sala pesi", "operativo", 21),
+  sotto("corsi-fitness", "fitness", "Corsi fitness e attività di gruppo", "operativo", 22),
+  sotto("pole-dance", "fitness", "Pole Dance", "operativo", 23),
+  sotto("personal-training", "fitness", "Personal Training", "operativo", 24),
+
+  macro("spa", "SPA & Benessere", "operativo", 30),
+  sotto("spa-benessere", "spa", "SPA e benessere", "operativo", 31),
+
+  macro("servizi", "Servizi operativi", "operativo", 40),
+  sotto("manutenzione-impianti", "servizi", "Manutenzione e impianti", "operativo", 41),
+  sotto("pulizie", "servizi", "Pulizie", "operativo", 42),
+  sotto("personale-condiviso", "servizi", "Personale condiviso", "operativo", 43),
+
+  macro("gestione", "Gestione & Direzione", "struttura", 50, "Costi fissi: desk, uffici, marketing, commerciale"),
+  sotto("amministrazione-uffici", "gestione", "Amministrazione e uffici", "struttura", 51, "Desk, segreteria, direzione"),
+  sotto("marketing-pubblicita", "gestione", "Marketing e pubblicità", "struttura", 52),
+  sotto("commerciale-vendite", "gestione", "Commerciale e vendite", "struttura", 53),
+
+  macro("generali", "Spese generali & Utenze", "struttura", 60, "Da ripartire sulle macro-aree operative"),
+  sotto("utenze-generali", "generali", "Utenze generali", "struttura", 61, "Luce, gas, acqua dell'intera struttura"),
+  sotto("costi-generali-struttura", "generali", "Costi generali della struttura", "struttura", 62, "Affitti, assicurazioni"),
+  sotto("altri-costi", "generali", "Altri costi", "struttura", 63),
 ]
+
+const SEED_IDS = new Set(REPARTI_SEED.map((r) => r.id))
+
+/** Vecchi centri (prima del dettaglio sotto-reparto) → macro attuale. */
+export const REPARTO_ID_LEGACY: Record<string, string> = {
+  manutenzione: "servizi",
+  amministrazione: "gestione",
+  utenze: "generali",
+}
 
 function empty(): FileShape {
   return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [] }
 }
 
-function load(): FileShape {
-  const raw = readJson<Partial<FileShape>>(FILE, empty())
+function remapRepartoId(id: string): string {
+  return REPARTO_ID_LEGACY[id] ?? id
+}
+
+function migrate(raw: Partial<FileShape>): FileShape {
   const seedById = new Map(REPARTI_SEED.map((r) => [r.id, r]))
-  const have = new Set((raw.reparti ?? []).map((r) => r.id))
-  const reparti = [...(raw.reparti ?? [])]
-  for (const s of REPARTI_SEED) {
-    if (!have.has(s.id)) reparti.push({ ...s })
-  }
-  return {
-    reparti: reparti.map((r) => ({
-      ...seedById.get(r.id),
-      ...r,
+  const incoming = Array.isArray(raw.reparti) ? raw.reparti : []
+  const byId = new Map<string, AmmReparto>()
+  for (const r of incoming) {
+    if (!r?.id) continue
+    const id = remapRepartoId(String(r.id))
+    const seed = seedById.get(id)
+    byId.set(id, {
+      id,
+      codice: String(r.codice ?? seed?.codice ?? id),
+      nome: seed?.nome ?? String(r.nome ?? id),
+      tipo: seed?.tipo ?? (r.tipo === "struttura" ? "struttura" : "operativo"),
+      livello: seed?.livello ?? (r.livello === "sotto" ? "sotto" : "macro"),
+      macroId: seed?.macroId ?? (r.livello === "sotto" ? r.macroId : undefined),
+      note: seed?.note ?? r.note,
       attivo: r.attivo !== false,
-      ordine: Number(r.ordine) || 99,
-    })),
-    fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
-    spese: Array.isArray(raw.spese) ? raw.spese : [],
+      ordine: seed?.ordine ?? (Number(r.ordine) || 99),
+    })
   }
+  for (const s of REPARTI_SEED) {
+    const cur = byId.get(s.id)
+    if (!cur) byId.set(s.id, { ...s })
+    else {
+      cur.livello = s.livello
+      cur.macroId = s.macroId
+      cur.tipo = s.tipo
+      cur.ordine = s.ordine
+      cur.codice = s.codice
+      cur.nome = s.nome
+      cur.note = s.note
+      if (s.livello === "macro" || cur.attivo !== false) cur.attivo = true
+    }
+  }
+  const spese: AmmSpesa[] = (Array.isArray(raw.spese) ? raw.spese : []).map((s) => {
+    const origine: AmmOrigine = s.origine === "ocr" || s.origine === "excel" ? s.origine : "manuale"
+    return {
+      ...s,
+      quote: (s.quote ?? []).map((q) => ({
+        repartoId: remapRepartoId(String(q.repartoId ?? "")),
+        percentuale: Number(q.percentuale) || 0,
+      })),
+      origine,
+    }
+  })
+  return {
+    reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
+    fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
+    spese,
+  }
+}
+
+function load(): FileShape {
+  return migrate(readJson<Partial<FileShape>>(FILE, empty()))
 }
 
 function save(d: FileShape) {
@@ -141,6 +210,12 @@ export function allocateQuote(totale: number, quote: AmmQuota[]): { repartoId: s
   return out
 }
 
+export function macroIdOf(reparti: AmmReparto[], id: string): string {
+  const r = reparti.find((x) => x.id === id)
+  if (!r) return id
+  return r.livello === "macro" ? r.id : (r.macroId ?? r.id)
+}
+
 export const ammCostiStore = {
   listReparti(all = false): AmmReparto[] {
     const r = load().reparti.sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome, "it"))
@@ -152,11 +227,19 @@ export const ammCostiStore = {
     if (!nome) throw Object.assign(new Error("Nome reparto obbligatorio"), { status: 400 })
     const id = String(body.id ?? "").trim() || randomUUID()
     const cur = d.reparti.find((r) => r.id === id)
+    const livello: AmmLivello = body.livello === "sotto" || body.livello === "macro" ? body.livello : (cur?.livello ?? "sotto")
+    const macroId = livello === "sotto" ? String(body.macroId ?? cur?.macroId ?? "").trim() || undefined : undefined
+    if (livello === "sotto" && (!macroId || !d.reparti.some((r) => r.id === macroId && r.livello === "macro"))) {
+      throw Object.assign(new Error("Sotto-reparto: scegli la macro-area"), { status: 400 })
+    }
+    const parent = macroId ? d.reparti.find((r) => r.id === macroId) : undefined
     const row: AmmReparto = {
       id,
       codice: (body.codice ?? cur?.codice ?? nome).trim().toLowerCase().replace(/\s+/g, "-"),
       nome,
-      tipo: body.tipo === "struttura" || body.tipo === "operativo" ? body.tipo : (cur?.tipo ?? "operativo"),
+      tipo: body.tipo === "struttura" || body.tipo === "operativo" ? body.tipo : (parent?.tipo ?? cur?.tipo ?? "operativo"),
+      livello,
+      macroId,
       note: (body.note ?? cur?.note ?? "").trim() || undefined,
       attivo: body.attivo ?? cur?.attivo ?? true,
       ordine: Number(body.ordine ?? cur?.ordine ?? 50),
@@ -186,6 +269,18 @@ export const ammCostiStore = {
   getSpesa(id: string): AmmSpesa | undefined {
     return load().spese.find((s) => s.id === id)
   },
+  findDuplicate(fornitore: string, numeroDocumento: string, dataDocumento: string, totale: number): AmmSpesa | undefined {
+    const f = fornitore.trim().toLowerCase()
+    const n = numeroDocumento.trim().toLowerCase()
+    const t = Math.round(totale * 100) / 100
+    return load().spese.find(
+      (s) =>
+        s.fornitore.trim().toLowerCase() === f &&
+        s.dataDocumento === dataDocumento &&
+        Math.abs(s.totale - t) < 0.01 &&
+        (n ? s.numeroDocumento.trim().toLowerCase() === n : true)
+    )
+  },
   upsertSpesa(body: Partial<AmmSpesa> & { fornitore: string; dataDocumento: string; totale: number; quote: AmmQuota[] }): AmmSpesa {
     const d = load()
     const dataDocumento = String(body.dataDocumento ?? "").slice(0, 10)
@@ -193,7 +288,7 @@ export const ammCostiStore = {
     const totale = Number(String(body.totale).replace(",", "."))
     if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
     const quote = (body.quote ?? []).map((q) => ({
-      repartoId: String(q.repartoId ?? "").trim(),
+      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
       percentuale: Number(String(q.percentuale).replace(",", ".")),
     }))
     if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
@@ -206,6 +301,7 @@ export const ammCostiStore = {
     const f = this.ensureFornitore(fornitore)
     const id = String(body.id ?? "").trim() || randomUUID()
     const cur = d.spese.find((s) => s.id === id)
+    const origine: AmmOrigine = body.origine === "ocr" || body.origine === "excel" || body.origine === "manuale" ? body.origine : (cur?.origine ?? "manuale")
     const row: AmmSpesa = {
       id,
       fornitore,
@@ -217,7 +313,7 @@ export const ammCostiStore = {
       tipoCosto: body.tipoCosto === "variabile" || body.tipoCosto === "fisso" ? body.tipoCosto : (cur?.tipoCosto ?? "fisso"),
       quote,
       pathPdf: body.pathPdf ?? cur?.pathPdf,
-      origine: body.origine ?? cur?.origine ?? "manuale",
+      origine,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }
