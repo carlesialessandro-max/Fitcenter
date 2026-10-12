@@ -476,7 +476,7 @@ function DettaglioMese({
         </div>
       </div>
       {!soloTurni && (editable ? (
-        <form>
+        <form
           className="grid gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
