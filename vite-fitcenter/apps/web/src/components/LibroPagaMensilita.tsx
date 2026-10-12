@@ -392,6 +392,10 @@ function DettaglioMese({
     setTesseramentoScadenza(isoDateInput(persona?.tesseramentoScadenza))
     setQualifiche(parseQualificheUi(persona?.qualifiche))
   }, [persona])
+  const [filtroMansione, setFiltroMansione] = useState("")
+  useEffect(() => {
+    setFiltroMansione("")
+  }, [persona?.id, mese])
   const saveMut = useMutation({
     mutationFn: () => {
       if (!persona || !onSavePersonale) throw new Error("Salvataggio non disponibile")
@@ -417,6 +421,28 @@ function DettaglioMese({
     onError: (e: Error) => onError?.(e.message),
   })
   const reparti = (livelli ?? []).filter((l) => !l.retribuibile)
+  const mansioniMese = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const t of lezioni) {
+      if (!t.livelloId || map.has(t.livelloId)) continue
+      map.set(t.livelloId, t.livelloNome || "—")
+    }
+    return [...map.entries()]
+      .map(([id, nome]) => ({ id, nome }))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+  }, [lezioni])
+  const lezioniFiltrate = useMemo(
+    () => (filtroMansione ? lezioni.filter((t) => t.livelloId === filtroMansione) : lezioni),
+    [lezioni, filtroMansione]
+  )
+  const totFiltrato = useMemo(
+    () => ({
+      n: lezioniFiltrate.length,
+      quantita: lezioniFiltrate.reduce((s, t) => s + t.quantita, 0),
+      importo: lezioniFiltrate.reduce((s, t) => s + t.importo, 0),
+    }),
+    [lezioniFiltrate]
+  )
   return (
     <div className="max-w-2xl space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -582,7 +608,26 @@ function DettaglioMese({
       </dl>
       )}
       <div>
-        <h3 className="mb-2 text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
+        <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+          <h3 className="text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
+          {mansioniMese.length > 0 && (
+            <label className="grid min-w-[12rem] gap-1 text-xs text-zinc-500">
+              Filtro mansione
+              <select
+                value={filtroMansione}
+                onChange={(e) => setFiltroMansione(e.target.value)}
+                className={inputCls}
+              >
+                <option value="">Tutte le mansioni</option>
+                {mansioniMese.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
@@ -596,7 +641,7 @@ function DettaglioMese({
               </tr>
             </thead>
             <tbody>
-              {lezioni.map((t) => (
+              {lezioniFiltrate.map((t) => (
                 <tr key={t.id} className="border-t border-zinc-800 text-zinc-200">
                   <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(t.giorno)}</td>
                   <td className="px-3 py-2">{t.livelloNome}</td>
@@ -606,16 +651,25 @@ function DettaglioMese({
                   <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 </tr>
               ))}
-              {!lezioni.length && (
+              {!lezioniFiltrate.length && (
                 <tr>
                   <td className="px-3 py-6 text-zinc-500" colSpan={6}>
-                    Nessuna lezione in questo mese.
+                    {lezioni.length
+                      ? "Nessuna lezione per la mansione selezionata."
+                      : "Nessuna lezione in questo mese."}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+        {lezioniFiltrate.length > 0 && (
+          <p className="mt-2 text-xs text-zinc-400">
+            {totFiltrato.n} turn{totFiltrato.n === 1 ? "o" : "i"}
+            {filtroMansione ? (totFiltrato.n === 1 ? " filtrato" : " filtrati") : ""} · valore{" "}
+            {totFiltrato.quantita} · {eur(totFiltrato.importo)}
+          </p>
+        )}
       </div>
     </div>
   )
