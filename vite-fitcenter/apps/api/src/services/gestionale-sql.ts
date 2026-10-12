@@ -1247,11 +1247,7 @@ function sqlExistsInvito7gg(tblA: string, userIdExpr: string, abbCols: Set<strin
   )`
 }
 
-/**
- * Referral: invito 7 giorni (max 3 mesi prima) che diventa abbonamento con inizio nel mese,
- * oppure «Presentato da» negli ultimi 3 mesi (non un rinnovo, non danza).
- * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore.
- */
+/** Data vendita riga abbonamento (operazione / registrazione / inizio). */
 function sqlReferralAbbSaleDateExpr(alias: string, cols: Set<string>): string {
   const parts: string[] = []
   for (const logical of ["DataOperazione", "DataRegistrazione", "DataInizio"] as const) {
@@ -1273,6 +1269,12 @@ function sqlReferralAbbInizioExpr(alias: string, cols: Set<string>): string {
   return parts.length === 1 ? parts[0]! : `COALESCE(${parts.join(", ")})`
 }
 
+/**
+ * Referral: sempre con socio presentatore (IDPresentatore). Invito 7 giorni (max 3 mesi prima)
+ * che diventa abbonamento con inizio nel mese, oppure iscrizione immediata con data presentazione
+ * negli ultimi 3 mesi (non un rinnovo, non danza). Senza presentatore non è un referral.
+ * `venditoreUtenteIds` vuoto: nessun filtro venditore. Con ID: filtro su colonna venditore.
+ */
 export async function queryReferralPresentati(
   venditoreUtenteIds: number[],
   fromIso: string,
@@ -1308,8 +1310,8 @@ export async function queryReferralPresentati(
     presDateSql != null
       ? `(${presDateSql} IS NOT NULL AND CAST(${presDateSql} AS DATE) >= CAST(@prevFrom AS DATE) AND CAST(${presDateSql} AS DATE) < CAST(@to AS DATE))`
       : `1 = 1`
-  const pathImmediato = `(u.[${colPres}] IS NOT NULL AND ${notRinnovi} AND ${presOk})`
-  const qualifyReferral = `(${existsInvito} OR ${pathImmediato})`
+  const hasPresenter = `(u.[${colPres}] IS NOT NULL AND ISNULL(u.[${colPres}], 0) <> 0)`
+  const qualifyReferral = `(${hasPresenter} AND ${notRinnovi} AND (${existsInvito} OR ${presOk}))`
 
   const mkReq = () => {
     let req = p

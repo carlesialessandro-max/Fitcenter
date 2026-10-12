@@ -2657,7 +2657,14 @@ export async function getReferralPresentati(req: Request, res: Response) {
     const items = rows
       .filter((row) => {
         const blob = `${row.ReferralAbbDescrizione ?? ""} ${row.ReferralMacro ?? ""}`.toUpperCase()
-        return !blob.includes("DANZA")
+        if (blob.includes("DANZA")) return false
+        const rawPid =
+          row.SocioPresentatoreIDUtente != null && String(row.SocioPresentatoreIDUtente).trim() !== ""
+            ? String(row.SocioPresentatoreIDUtente).trim()
+            : row.ReferralIDSocioPresentatore != null && String(row.ReferralIDSocioPresentatore).trim() !== ""
+              ? String(row.ReferralIDSocioPresentatore).trim()
+              : ""
+        return rawPid !== "" && rawPid !== "0"
       })
       .map((row) => {
       const pc = String(row.SocioPresentatoreCognome ?? "").trim()

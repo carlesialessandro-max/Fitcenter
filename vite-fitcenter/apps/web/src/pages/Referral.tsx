@@ -72,8 +72,9 @@ export function Referral() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-zinc-100">Referral (porta un amico)</h1>
         <p className="mt-1 text-sm text-zinc-500">
-          Invito 7 giorni o «Presentato da» al massimo 3 mesi prima, che diventa abbonamento con inizio nel mese
-          scelto. I rinnovi, la danza e i presentati di anni prima (es. 2022) non contano.
+          Solo chi è stato presentato da un socio: invito 7 giorni o iscrizione immediata al massimo 3 mesi prima,
+          che diventa abbonamento con inizio nel mese scelto. Senza «Presentato da» non è un referral. I rinnovi, la
+          danza e i presentati di anni prima (es. 2022) non contano.
           {role === "admin" ? (
             <> Admin: scegli «Tutti i venditori» o una consulente per filtrare le vendite attribuite.</>
           ) : (
@@ -150,8 +151,8 @@ export function Referral() {
         <p className="text-sm text-red-400">{(query.error as Error).message}</p>
       ) : filtered.length === 0 ? (
         <p className="text-sm text-zinc-500">
-          Nessun referral nel mese: serve un invito 7 giorni o «Presentato da» entro 3 mesi, e un abbonamento che
-          parte nel mese (non un rinnovo, non danza)
+          Nessun referral nel mese: serve un socio che ha presentato, un invito 7 giorni o «Presentato da» entro 3
+          mesi, e un abbonamento che parte nel mese (non un rinnovo, non danza)
           {role === "admin" && !adminTutti ? " (venditore selezionato)" : ""}. SQL non disponibile se la lista resta vuota dopo il deploy.
         </p>
       ) : (
