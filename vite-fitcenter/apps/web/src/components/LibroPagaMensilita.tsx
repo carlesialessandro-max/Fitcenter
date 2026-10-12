@@ -150,12 +150,7 @@ export function LibroPagaMensilitaTab({
           lezioni={lezioni}
           hideIban={hideIban}
           onClose={() => setPannello(null)}
-          canEdit={Boolean(persona && canEditPersonale?.(persona.id))}
-          livelli={data.livelli}
-          onSavePersonale={onSavePersonale}
-          allowAdminRole={allowAdminRole}
-          onError={onError}
-          onDone={onDone}
+          soloTurni
         />
       )}
       <div className="space-y-2">
@@ -349,6 +344,7 @@ function DettaglioMese({
   allowAdminRole,
   onError,
   onDone,
+  soloTurni,
 }: {
   row: LpagaMensilitaRow
   persona?: LpagaPersonale
@@ -362,11 +358,12 @@ function DettaglioMese({
   allowAdminRole?: boolean
   onError?: (s: string) => void
   onDone?: () => void
+  soloTurni?: boolean
 }) {
   const year = mese.slice(0, 4)
   const iban = hideIban ? "" : persona?.iban || row.iban
   const editable = Boolean(
-    canEdit && persona && onSavePersonale && (allowAdminRole || persona.ruolo !== "admin")
+    !soloTurni && canEdit && persona && onSavePersonale && (allowAdminRole || persona.ruolo !== "admin")
   )
   const [cognome, setCognome] = useState(persona?.cognome ?? "")
   const [nome, setNome] = useState(persona?.nome ?? "")
@@ -443,21 +440,43 @@ function DettaglioMese({
     }),
     [lezioniFiltrate]
   )
+  const filtroMansioneEl =
+    mansioniMese.length > 0 ? (
+      <label className="grid min-w-[16rem] gap-1 text-xs text-zinc-400">
+        Filtro mansione
+        <select value={filtroMansione} onChange={(e) => setFiltroMansione(e.target.value)} className={inputCls}>
+          <option value="">Tutte le mansioni</option>
+          {mansioniMese.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.nome}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null
   return (
-    <div className="max-w-2xl space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="max-w-4xl space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">
             {editable ? "Modifica utente" : "Dettaglio mese"} · {meseLabel(mese)}
           </h2>
           <p className="mt-1 text-lg font-semibold text-zinc-100">{row.personaleNome}</p>
+          {soloTurni ? (
+            <p className="mt-1 text-sm text-zinc-400">
+              Tot. progr. {year}: {eur(row.totAnno ?? row.importo)} · Importo mese: {eur(row.importo)}
+            </p>
+          ) : null}
         </div>
-        <button type="button" className={btnGhost} onClick={onClose}>
-          Chiudi
-        </button>
+        <div className="flex flex-wrap items-end gap-2">
+          {filtroMansioneEl}
+          <button type="button" className={btnGhost} onClick={onClose}>
+            Chiudi
+          </button>
+        </div>
       </div>
-      {editable ? (
-        <form
+      {!soloTurni && (editable ? (
+        <form>
           className="grid gap-3 sm:grid-cols-2"
           onSubmit={(e) => {
             e.preventDefault()
@@ -606,28 +625,9 @@ function DettaglioMese({
           </dd>
         </div>
       </dl>
-      )}
+      ))}
       <div>
-        <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
-          <h3 className="text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
-          {mansioniMese.length > 0 && (
-            <label className="grid min-w-[12rem] gap-1 text-xs text-zinc-500">
-              Filtro mansione
-              <select
-                value={filtroMansione}
-                onChange={(e) => setFiltroMansione(e.target.value)}
-                className={inputCls}
-              >
-                <option value="">Tutte le mansioni</option>
-                {mansioniMese.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
+        <h3 className="mb-2 text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
