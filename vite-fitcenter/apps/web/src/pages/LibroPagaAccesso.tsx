@@ -878,14 +878,6 @@ function Mensilita({
         data={data}
         mese={mese}
         canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager" || Boolean(data.canValidate)}
-        canEditPersonale={(id) => {
-          const p = data.personale.find((x) => x.id === id)
-          if (!p) return false
-          if (me?.ruolo === "admin") return true
-          return me?.ruolo === "manager" && p.ruolo !== "admin"
-        }}
-        allowAdminRole={me?.ruolo === "admin"}
-        onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
         hideIban={me?.ruolo === "user"}
         onSave={(body) => lpagaApi.putMensilita(body)}
         onError={onError}

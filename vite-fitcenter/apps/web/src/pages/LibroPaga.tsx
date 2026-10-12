@@ -1093,9 +1093,6 @@ function MensilitaTab({
         data={data}
         mese={mese}
         canEdit={() => true}
-        canEditPersonale={() => true}
-        allowAdminRole
-        onSavePersonale={(id, body) => libroPagaApi.patchPersonale(id, body)}
         onSave={(body) => libroPagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}

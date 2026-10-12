@@ -70,9 +70,6 @@ export function LibroPagaMensilitaTab({
   onDone,
   onConvalida,
   onConvalidaMese,
-  canEditPersonale,
-  onSavePersonale,
-  allowAdminRole,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -83,9 +80,6 @@ export function LibroPagaMensilitaTab({
   onDone: () => void
   onConvalida?: (personaleId: string) => void
   onConvalidaMese?: () => void
-  canEditPersonale?: (personaleId: string) => boolean
-  onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
-  allowAdminRole?: boolean
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
