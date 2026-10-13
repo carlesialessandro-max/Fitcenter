@@ -20,7 +20,7 @@ import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleRaggiungibile
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
-import { isAlberto } from "../lib/report-collaboratori-access.js"
+import { canVedereReportCollaboratoriLpaga } from "../lib/report-collaboratori-access.js"
 
 function statusOf(e: unknown): number {
   const n = (e as { status?: number })?.status
@@ -44,11 +44,13 @@ export async function requireLpaga(req: Request, res: Response, next: NextFuncti
   next()
 }
 
-/** Report collaboratori sportivi sul libro paga: solo Alberto. */
+/** Report collaboratori sportivi: admin del libro paga (Alberto) o nominativo Alberto. */
 export function requireLpagaAlberto(req: Request, res: Response, next: NextFunction) {
   const u = req.lpaga
   if (!u) return res.status(401).json({ message: "Sessione Libro paga mancante" })
-  if (!isAlberto(u)) return res.status(403).json({ message: "Pagina riservata ad admin e Alberto" })
+  if (!canVedereReportCollaboratoriLpaga(u)) {
+    return res.status(403).json({ message: "Pagina riservata ad admin del libro paga e Alberto" })
+  }
   next()
 }
 

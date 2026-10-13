@@ -26,3 +26,16 @@ export function canVedereReportCollaboratori(u: {
   if (u.role === "admin") return true
   return isAlberto(u)
 }
+
+/** Portale /lpaga: admin del libro paga (Alberto) oppure nominativo Alberto. */
+export function canVedereReportCollaboratoriLpaga(u: {
+  ruolo?: string
+  username?: string
+  nome?: string
+  cognome?: string
+  nominativo?: string
+} | null | undefined): boolean {
+  if (!u) return false
+  if (u.ruolo === "admin") return true
+  return isAlberto(u)
+}
