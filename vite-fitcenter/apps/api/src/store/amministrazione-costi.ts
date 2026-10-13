@@ -518,4 +518,29 @@ export const ammCostiStore = {
     d.collaboratori = d.collaboratori.filter((c) => c.id !== id)
     save(d)
   },
+  /** Sostituisce tutto il mese: il riepilogo Mattonai è la fonte, libro paga e import precedenti non restano. */
+  replaceCollaboratoriMese(
+    mese: string,
+    righe: (Partial<AmmCollaboratore> & { nominativo: string; totale: number; quote: AmmQuota[] })[]
+  ): { inserite: number; sostituite: number } {
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    const d = load()
+    const prev = d.collaboratori.filter((c) => c.mese === mese)
+    const prevQuote = new Map(prev.map((c) => [c.nominativo.trim().toLowerCase(), c.quote]))
+    d.collaboratori = d.collaboratori.filter((c) => c.mese !== mese)
+    save(d)
+    let inserite = 0
+    for (const raw of righe) {
+      const nominativo = String(raw.nominativo ?? "").trim()
+      const key = nominativo.toLowerCase()
+      this.upsertCollaboratore({
+        ...raw,
+        nominativo,
+        mese,
+        quote: prevQuote.get(key) ?? raw.quote,
+      })
+      inserite += 1
+    }
+    return { inserite, sostituite: prev.length }
+  },
 }

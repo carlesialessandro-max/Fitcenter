@@ -940,8 +940,8 @@ function StipendiTab() {
     onSuccess: (r) => {
       setCollabPreview(null)
       setImportMsg(
-        `Importati ${r.inserite} collaboratori` +
-          (r.saltate ? `, ${r.saltate} già presenti` : "") +
+        `Mese sostituito dal riepilogo: ${r.inserite} nominativi` +
+          (r.sostituite ? ` (prima ${r.sostituite})` : "") +
           (r.errori.length ? `, ${r.errori.length} errori` : "") +
           "."
       )
@@ -1037,8 +1037,9 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
             <p className="text-xs text-zinc-500">
-              A fine mese importa il riepilogo contabile (Studio Mattonai): lista semplice, importo lordo. Fino ad
-              allora si vede la stima dai turni del libro paga.
+              Il PDF dello Studio Mattonai è la fonte: nominativi e importi di quel file. Chi emette fattura è già
+              escluso lì; chi ha anche busta resta in lista se fa funzioni fuori dal libro paga. All’import si
+              sostituisce tutto il mese (via la stima dei turni).
             </p>
           </div>
           <label className={`${btnAmber} cursor-pointer`}>
@@ -1050,7 +1051,7 @@ function StipendiTab() {
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-zinc-400">
-                Anteprima: {collabPreview.length} persone, {eur(collabPreview.reduce((s, x) => s + x.totale, 0))}
+                Sostituisce il mese: {collabPreview.length} persone, {eur(collabPreview.reduce((s, x) => s + x.totale, 0))}
               </p>
               <div className="flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setCollabPreview(null)}>

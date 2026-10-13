@@ -92,6 +92,7 @@ export type AmmOcrParsed = {
 export type AmmImportEsito = {
   inserite: number
   saltate: number
+  sostituite?: number
   errori: { riga: number; message: string }[]
   lette?: number
   companyName?: string

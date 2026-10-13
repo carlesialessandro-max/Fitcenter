@@ -398,34 +398,34 @@ export function postAmmCollaboratoriImport(req: Request, res: Response) {
   try {
     const righe = Array.isArray(req.body?.righe) ? req.body.righe : []
     if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
-    let inserite = 0
-    let saltate = 0
+    const mese = String(righe[0]?.mese ?? req.body?.mese ?? "").slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(mese)) return res.status(400).json({ message: "Mese non valido" })
     const errori: { riga: number; message: string }[] = []
+    const pronte: Parameters<typeof ammCostiStore.replaceCollaboratoriMese>[1] = []
     righe.forEach((raw: Record<string, unknown>, i: number) => {
       const riga = Number(raw.riga) || i + 1
       try {
         const nominativo = String(raw.nominativo ?? "").trim()
-        const mese = String(raw.mese ?? "").slice(0, 7)
         const totale = Number(String(raw.totale ?? "").replace(",", "."))
-        if (ammCostiStore.findCollabDup(nominativo, mese, totale)) {
-          saltate += 1
-          return
-        }
+        if (!nominativo) throw new Error("Nominativo mancante")
+        if (!Number.isFinite(totale) || totale <= 0) return
         const quote = quoteFrom(raw.quote)
-        ammCostiStore.upsertCollaboratore({
+        pronte.push({
           nominativo,
           mese,
           totale,
           descrizione: String(raw.descrizione ?? ""),
           tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
-          quote: quote.length ? quote : [{ repartoId: raw.tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 }],
+          quote: quote.length
+            ? quote
+            : [{ repartoId: raw.tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 }],
         })
-        inserite += 1
       } catch (e) {
         errori.push({ riga, message: (e as Error)?.message ?? "Riga non valida" })
       }
     })
-    res.json({ inserite, saltate, errori })
+    const { inserite, sostituite } = ammCostiStore.replaceCollaboratoriMese(mese, pronte)
+    res.json({ inserite, saltate: 0, sostituite, errori })
   } catch (e) {
     fail(res, e)
   }
