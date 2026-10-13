@@ -7,7 +7,9 @@ export type AmmRepartoTipo = "operativo" | "struttura"
 export type AmmLivello = "macro" | "sotto"
 export type AmmTipoCosto = "fisso" | "variabile"
 export type AmmOrigine = "manuale" | "ocr" | "excel" | "fattureincloud"
-export type AmmBustaOrigine = "manuale" | "mastrino"
+export type AmmBustaOrigine = "manuale" | "mastrino" | "pdf"
+export type AmmCollabTipo = "sportivo" | "gestionale"
+export type AmmCollabOrigine = "riepilogo"
 
 export type AmmReparto = {
   id: string
@@ -60,11 +62,25 @@ export type AmmBusta = {
   updatedAt: string
 }
 
+export type AmmCollaboratore = {
+  id: string
+  nominativo: string
+  mese: string
+  descrizione: string
+  totale: number
+  tipo: AmmCollabTipo
+  quote: AmmQuota[]
+  origine: AmmCollabOrigine
+  createdAt: string
+  updatedAt: string
+}
+
 type FileShape = {
   reparti: AmmReparto[]
   fornitori: AmmFornitore[]
   spese: AmmSpesa[]
   buste: AmmBusta[]
+  collaboratori: AmmCollaboratore[]
 }
 
 export const BUSTA_DEFAULT_REPARTO = "amministrazione-uffici"
@@ -122,7 +138,7 @@ export const REPARTO_ID_LEGACY: Record<string, string> = {
 }
 
 function empty(): FileShape {
-  return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [], buste: [] }
+  return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [], buste: [], collaboratori: [] }
 }
 
 function remapRepartoId(id: string): string {
@@ -184,13 +200,24 @@ function migrate(raw: Partial<FileShape>): FileShape {
       repartoId: remapRepartoId(String(q.repartoId ?? "")),
       percentuale: Number(q.percentuale) || 0,
     })),
-    origine: b.origine === "mastrino" ? "mastrino" : "manuale",
+    origine: b.origine === "mastrino" || b.origine === "pdf" ? b.origine : "manuale",
+  }))
+  const collaboratori: AmmCollaboratore[] = (Array.isArray(raw.collaboratori) ? raw.collaboratori : []).map((c) => ({
+    ...c,
+    mese: String(c.mese ?? "").slice(0, 7),
+    quote: (c.quote ?? []).map((q) => ({
+      repartoId: remapRepartoId(String(q.repartoId ?? "")),
+      percentuale: Number(q.percentuale) || 0,
+    })),
+    tipo: c.tipo === "gestionale" ? "gestionale" : "sportivo",
+    origine: "riepilogo",
   }))
   return {
     reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
     fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
     spese,
     buste,
+    collaboratori,
   }
 }
 
@@ -419,7 +446,10 @@ export const ammCostiStore = {
       descrizione: String(body.descrizione ?? cur?.descrizione ?? "").trim(),
       totale: Math.round(totale * 100) / 100,
       quote,
-      origine: body.origine === "mastrino" || body.origine === "manuale" ? body.origine : (cur?.origine ?? "manuale"),
+      origine:
+        body.origine === "mastrino" || body.origine === "manuale" || body.origine === "pdf"
+          ? body.origine
+          : (cur?.origine ?? "manuale"),
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }
@@ -431,6 +461,61 @@ export const ammCostiStore = {
   deleteBusta(id: string): void {
     const d = load()
     d.buste = d.buste.filter((b) => b.id !== id)
+    save(d)
+  },
+  listCollaboratori(): AmmCollaboratore[] {
+    return load()
+      .collaboratori.slice()
+      .sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  findCollabDup(nominativo: string, mese: string, totale: number): AmmCollaboratore | undefined {
+    const n = nominativo.trim().toLowerCase()
+    const t = Math.round(totale * 100) / 100
+    return load().collaboratori.find(
+      (c) => c.nominativo.trim().toLowerCase() === n && c.mese === mese && Math.abs(c.totale - t) < 0.01
+    )
+  },
+  upsertCollaboratore(
+    body: Partial<AmmCollaboratore> & { nominativo: string; mese: string; totale: number; quote: AmmQuota[] }
+  ): AmmCollaboratore {
+    const d = load()
+    const mese = String(body.mese ?? "").slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    const totale = Number(String(body.totale).replace(",", "."))
+    if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
+    const quote = (body.quote ?? []).map((q) => ({
+      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
+      percentuale: Number(String(q.percentuale).replace(",", ".")),
+    }))
+    if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
+    const ids = new Set(d.reparti.map((r) => r.id))
+    for (const q of quote) {
+      if (!ids.has(q.repartoId)) throw Object.assign(new Error("Reparto sconosciuto nella ripartizione"), { status: 400 })
+    }
+    const nominativo = body.nominativo.trim()
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    const id = String(body.id ?? "").trim() || randomUUID()
+    const cur = d.collaboratori.find((c) => c.id === id)
+    const row: AmmCollaboratore = {
+      id,
+      nominativo,
+      mese,
+      descrizione: String(body.descrizione ?? cur?.descrizione ?? "").trim(),
+      totale: Math.round(totale * 100) / 100,
+      tipo: body.tipo === "gestionale" || cur?.tipo === "gestionale" ? "gestionale" : "sportivo",
+      quote,
+      origine: "riepilogo",
+      createdAt: cur?.createdAt ?? nowIso(),
+      updatedAt: nowIso(),
+    }
+    if (cur) Object.assign(cur, row)
+    else d.collaboratori.push(row)
+    save(d)
+    return row
+  },
+  deleteCollaboratore(id: string): void {
+    const d = load()
+    d.collaboratori = d.collaboratori.filter((c) => c.id !== id)
     save(d)
   },
 }

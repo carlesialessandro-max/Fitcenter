@@ -15,6 +15,9 @@ import {
   postAmmImport,
   postAmmOcr,
   postAmmSpesa,
+  postAmmStipendiPdf,
+  postAmmCollaboratoriImport,
+  deleteAmmCollaboratore,
   getFicStatus,
   postFicConnect,
   postFicDisconnect,
@@ -41,6 +44,9 @@ amministrazioneRouter.get("/reparti", getAmmReparti)
 amministrazioneRouter.put("/reparti", putAmmReparto)
 amministrazioneRouter.put("/reparti/:id", putAmmReparto)
 amministrazioneRouter.get("/collaboratori", getAmmCollaboratori)
+amministrazioneRouter.post("/collaboratori/import", postAmmCollaboratoriImport)
+amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
+amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
 amministrazioneRouter.get("/buste", getAmmBuste)
 amministrazioneRouter.post("/buste/import", postAmmBusteImport)
 amministrazioneRouter.post("/buste", postAmmBusta)

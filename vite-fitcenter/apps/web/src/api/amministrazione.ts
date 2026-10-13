@@ -67,9 +67,18 @@ export type AmmBusta = {
   descrizione: string
   totale: number
   quote: AmmQuota[]
-  origine: "manuale" | "mastrino"
+  origine: "manuale" | "mastrino" | "pdf"
   createdAt: string
   updatedAt: string
+}
+
+export type AmmStipendiPdfRiga = {
+  nominativo: string
+  mese: string
+  totale: number
+  descrizione: string
+  tipo: "sportivo" | "gestionale" | "dipendente"
+  quote: AmmQuota[]
 }
 
 export type AmmOcrParsed = {
@@ -141,6 +150,18 @@ export const amministrazioneApi = {
       : api.post<{ busta: AmmBusta }>("/amministrazione/buste", body),
   deleteBusta: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/buste/${encodeURIComponent(id)}`),
   importBuste: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/buste/import", { righe }),
+  parseStipendiPdf: (text: string, filename: string, mese: string) =>
+    api.post<{
+      mese: string
+      sportivi: AmmStipendiPdfRiga[]
+      gestionali: AmmStipendiPdfRiga[]
+      dipendenti: AmmStipendiPdfRiga[]
+      totSportivi: number
+      totGestionali: number
+      totDipendenti: number
+    }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
+  importCollaboratori: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/collaboratori/import", { righe }),
+  deleteCollaboratore: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/${encodeURIComponent(id)}`),
   collaboratori: (anno: number, mese?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })
     if (mese) q.set("mese", mese)
@@ -148,7 +169,8 @@ export const amministrazioneApi = {
       anno: number
       mese: string | null
       tot: number
-      righe: { id: string; nome: string; macroId?: string; importo: number; nTurni: number }[]
+      fonte?: "riepilogo" | "libro-paga"
+      righe: { id: string; nome: string; macroId?: string; importo: number; nTurni: number; tipo?: string; descrizione?: string }[]
     }>(`/amministrazione/collaboratori?${q}`)
   },
   deleteSpesa: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/spese/${encodeURIComponent(id)}`),

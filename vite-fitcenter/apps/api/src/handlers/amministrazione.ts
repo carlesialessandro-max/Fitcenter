@@ -13,6 +13,7 @@ import {
 } from "../store/amministrazione-costi.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import { costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
+import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import { listAcquistiMese, listCompanies, pickCompany, publicStatus, resolvedConfig } from "../services/fattureincloud.js"
 
@@ -236,7 +237,7 @@ function bustaFromBody(b: Record<string, unknown>, id?: string): Parameters<type
     descrizione: String(b.descrizione ?? ""),
     totale: Number(String(b.totale ?? "").replace(",", ".")),
     quote,
-    origine: b.origine === "mastrino" ? "mastrino" : "manuale",
+    origine: b.origine === "mastrino" ? "mastrino" : b.origine === "pdf" ? "pdf" : "manuale",
   }
 }
 
@@ -303,7 +304,7 @@ export function postAmmBusteImport(req: Request, res: Response) {
           saltate += 1
           return
         }
-        ammCostiStore.upsertBusta(bustaFromBody({ ...raw, origine: "mastrino" }))
+        ammCostiStore.upsertBusta(bustaFromBody({ ...raw, origine: raw.origine === "pdf" ? "pdf" : "mastrino" }))
         inserite += 1
       } catch (e) {
         errori.push({ riga, message: (e as Error)?.message ?? "Riga non valida" })
@@ -320,6 +321,27 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const meseQ = String(req.query.mese ?? "").trim()
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
+    const stored = ammCostiStore
+      .listCollaboratori()
+      .filter((c) => (mese ? c.mese === mese : c.mese.startsWith(String(anno))))
+    if (stored.length) {
+      const tot = Math.round(stored.reduce((s, c) => s + c.totale, 0) * 100) / 100
+      res.json({
+        anno,
+        mese: mese || null,
+        tot,
+        fonte: "riepilogo",
+        righe: stored.map((c) => ({
+          id: c.id,
+          nome: c.nominativo,
+          importo: c.totale,
+          nTurni: 0,
+          tipo: c.tipo,
+          descrizione: c.descrizione,
+        })),
+      })
+      return
+    }
     const reparti = ammCostiStore.listReparti(true)
     const nomeOf = (id: string) => reparti.find((r) => r.id === id)?.nome ?? id
     const lpAnno = await costiCollaboratoriAnno(anno)
@@ -338,7 +360,83 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
       .filter((r) => r.importo)
       .sort((a, b) => b.importo - a.importo)
     const tot = Math.round(righe.reduce((s, r) => s + r.importo, 0) * 100) / 100
-    res.json({ anno, mese: mese || null, tot, righe })
+    res.json({ anno, mese: mese || null, tot, fonte: "libro-paga", righe })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmStipendiPdf(req: Request, res: Response) {
+  try {
+    const text = String(req.body?.text ?? "")
+    const filename = String(req.body?.filename ?? "")
+    const mese = String(req.body?.mese ?? "").slice(0, 7)
+    if (text.trim().length < 20) return res.status(400).json({ message: "Testo PDF insufficiente" })
+    const parsed = parseStipendiPdf(text, filename, mese)
+    const sportivi = parsed.filter((r) => r.tipo === "sportivo")
+    const gestionali = parsed.filter((r) => r.tipo === "gestionale")
+    const dipendenti = parsed.filter((r) => r.tipo === "dipendente")
+    const withQuote = parsed.map((r) => ({
+      ...r,
+      quote: [{ repartoId: defaultRepartoFor(r), percentuale: 100 }],
+    }))
+    res.json({
+      mese: parsed[0]?.mese || mese,
+      sportivi: withQuote.filter((r) => r.tipo === "sportivo"),
+      gestionali: withQuote.filter((r) => r.tipo === "gestionale"),
+      dipendenti: withQuote.filter((r) => r.tipo === "dipendente"),
+      totSportivi: Math.round(sportivi.reduce((s, r) => s + r.totale, 0) * 100) / 100,
+      totGestionali: Math.round(gestionali.reduce((s, r) => s + r.totale, 0) * 100) / 100,
+      totDipendenti: Math.round(dipendenti.reduce((s, r) => s + r.totale, 0) * 100) / 100,
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmCollaboratoriImport(req: Request, res: Response) {
+  try {
+    const righe = Array.isArray(req.body?.righe) ? req.body.righe : []
+    if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
+    let inserite = 0
+    let saltate = 0
+    const errori: { riga: number; message: string }[] = []
+    righe.forEach((raw: Record<string, unknown>, i: number) => {
+      const riga = Number(raw.riga) || i + 1
+      try {
+        const nominativo = String(raw.nominativo ?? "").trim()
+        const mese = String(raw.mese ?? "").slice(0, 7)
+        const totale = Number(String(raw.totale ?? "").replace(",", "."))
+        if (ammCostiStore.findCollabDup(nominativo, mese, totale)) {
+          saltate += 1
+          return
+        }
+        const quote = quoteFrom(raw.quote)
+        ammCostiStore.upsertCollaboratore({
+          nominativo,
+          mese,
+          totale,
+          descrizione: String(raw.descrizione ?? ""),
+          tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
+          quote: quote.length ? quote : [{ repartoId: raw.tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 }],
+        })
+        inserite += 1
+      } catch (e) {
+        errori.push({ riga, message: (e as Error)?.message ?? "Riga non valida" })
+      }
+    })
+    res.json({ inserite, saltate, errori })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function deleteAmmCollaboratore(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id mancante" })
+    ammCostiStore.deleteCollaboratore(id)
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }
@@ -408,10 +506,29 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
 
+    const collabAll = ammCostiStore.listCollaboratori()
     const lpAnno = await costiCollaboratoriAnno(anno)
-    const lpMesi = mese ? lpAnno.filter((m) => m.mese === mese) : lpAnno
     const lpSlices: Slice[] = []
-    for (const m of lpMesi) {
+    const mesiTarget = mese
+      ? [mese]
+      : Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
+    for (const ym of mesiTarget) {
+      const stored = collabAll.filter((c) => c.mese === ym)
+      if (stored.length) {
+        for (const c of stored) {
+          for (const a of allocateQuote(c.totale, c.quote).filter((x) => inFiltro(x.repartoId))) {
+            lpSlices.push({
+              repartoId: a.repartoId,
+              nome: nomeOf(a.repartoId),
+              importo: a.importo,
+              fonte: "libro-paga",
+            })
+          }
+        }
+        continue
+      }
+      const m = lpAnno.find((x) => x.mese === ym)
+      if (!m) continue
       for (const r of m.righe) {
         if (!inFiltro(r.repartoId)) continue
         lpSlices.push({
@@ -469,9 +586,16 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const sub = alloc.reduce((n, a) => n + a.importo, 0)
       byMeseMap.set(ym, Math.round(((byMeseMap.get(ym) ?? 0) + sub) * 100) / 100)
     }
-    for (const m of lpAnno) {
-      const sub = m.righe.filter((r) => inFiltro(r.repartoId)).reduce((n, r) => n + r.importo, 0)
-      byMeseMap.set(m.mese, Math.round(((byMeseMap.get(m.mese) ?? 0) + sub) * 100) / 100)
+    for (const ym of Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)) {
+      const stored = collabAll.filter((c) => c.mese === ym)
+      let sub = 0
+      if (stored.length) {
+        sub = stored.reduce((n, c) => n + allocateQuote(c.totale, c.quote).filter((a) => inFiltro(a.repartoId)).reduce((x, a) => x + a.importo, 0), 0)
+      } else {
+        const m = lpAnno.find((x) => x.mese === ym)
+        sub = m ? m.righe.filter((r) => inFiltro(r.repartoId)).reduce((n, r) => n + r.importo, 0) : 0
+      }
+      byMeseMap.set(ym, Math.round(((byMeseMap.get(ym) ?? 0) + sub) * 100) / 100)
     }
     for (const b of ammCostiStore.listBuste()) {
       if (!b.mese.startsWith(String(anno))) continue

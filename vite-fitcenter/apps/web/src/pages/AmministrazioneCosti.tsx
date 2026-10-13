@@ -9,6 +9,7 @@ import {
   type AmmQuota,
   type AmmReparto,
   type AmmSpesa,
+  type AmmStipendiPdfRiga,
   type AmmTipoCosto,
 } from "@/api/amministrazione"
 import { extractPdfText } from "@/lib/pdf-fattura-text"
@@ -599,7 +600,7 @@ function RegistroTab() {
                 disabled={!okPreview.length || importMut.isPending}
                 onClick={() => importMut.mutate(okPreview)}
               >
-                {importMut.isPending ? "Import…" : `Importa ${okPreview.length}`}
+                {importMut.isPending ? "Caricamento…" : `Importa ${okPreview.length}`}
               </button>
             </div>
           </div>
@@ -867,6 +868,8 @@ function StipendiTab() {
   const [error, setError] = useState("")
   const [importMsg, setImportMsg] = useState("")
   const [preview, setPreview] = useState<AmmMastrinoPreview[] | null>(null)
+  const [collabPreview, setCollabPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
+  const [bustePdfPreview, setBustePdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [nominativo, setNominativo] = useState("")
@@ -932,10 +935,39 @@ function StipendiTab() {
     },
     onError: (e: Error) => setError(e.message),
   })
+  const importCollabMut = useMutation({
+    mutationFn: (righe: AmmStipendiPdfRiga[]) => amministrazioneApi.importCollaboratori(righe),
+    onSuccess: (r) => {
+      setCollabPreview(null)
+      setImportMsg(
+        `Importati ${r.inserite} collaboratori` +
+          (r.saltate ? `, ${r.saltate} già presenti` : "") +
+          (r.errori.length ? `, ${r.errori.length} errori` : "") +
+          "."
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const delCollabMut = useMutation({
+    mutationFn: (id: string) => amministrazioneApi.deleteCollaboratore(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
   const importMut = useMutation({
-    mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
+    mutationFn: (righe: AmmMastrinoPreview[] | AmmStipendiPdfRiga[]) =>
+      amministrazioneApi.importBuste(
+        (righe as AmmStipendiPdfRiga[]).some((x) => "tipo" in x && x.tipo === "dipendente")
+          ? (righe as AmmStipendiPdfRiga[]).map((x) => ({ ...x, origine: "pdf" }))
+          : righe
+      ),
     onSuccess: (r) => {
       setPreview(null)
+      setBustePdfPreview(null)
       setImportMsg(
         `Importate ${r.inserite} buste` +
           (r.saltate ? `, ${r.saltate} già presenti` : "") +
@@ -955,13 +987,39 @@ function StipendiTab() {
     try {
       const buf = await file.arrayBuffer()
       setPreview(parseAmmMastrino(buf, attivi))
+      setBustePdfPreview(null)
     } catch (e) {
       setError((e as Error).message || "Excel non leggibile")
     }
   }
 
+  async function onStipendiPdf(file: File | null, kind: "sportivi" | "buste") {
+    if (!file) return
+    setError("")
+    setImportMsg("")
+    try {
+      const text = await extractPdfText(file, 80)
+      const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
+      if (kind === "sportivi") {
+        const righe = [...parsed.sportivi, ...parsed.gestionali]
+        if (!righe.length) throw new Error("Nessun collaboratore nel PDF. Serve il riepilogo Studio Mattonai.")
+        setCollabPreview(righe)
+        setBustePdfPreview(null)
+        setPreview(null)
+      } else {
+        if (!parsed.dipendenti.length) throw new Error("Nessuna busta paga nel PDF. Serve il file Teamsystem delle buste.")
+        setBustePdfPreview(parsed.dipendenti)
+        setCollabPreview(null)
+        setPreview(null)
+      }
+    } catch (e) {
+      setError((e as Error).message || "PDF non leggibile")
+    }
+  }
+
   const okPreview = (preview ?? []).filter((p) => !p.errore)
   const totBusteMese = (buste.data?.buste ?? []).reduce((s, b) => s + b.totale, 0)
+  const fonteRiepilogo = collab.data?.fonte === "riepilogo"
 
   return (
     <div className="mt-4 space-y-6">
@@ -975,35 +1033,89 @@ function StipendiTab() {
       {importMsg && <p className="text-sm text-emerald-300">{importMsg}</p>}
 
       <section className="space-y-3 rounded-2xl border border-zinc-800 p-4">
-        <div>
-          <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
-          <p className="text-xs text-zinc-500">
-            Solo lettura dal libro paga (turni del mese). Desk, amministrazione e consulenze non stanno qui: vanno nelle
-            buste paga.
-          </p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
+            <p className="text-xs text-zinc-500">
+              A fine mese importa il riepilogo contabile (Studio Mattonai): lista semplice, importo lordo. Fino ad
+              allora si vede la stima dai turni del libro paga.
+            </p>
+          </div>
+          <label className={`${btnAmber} cursor-pointer`}>
+            Importa riepilogo PDF
+            <input type="file" accept=".pdf" className="hidden" onChange={(e) => void onStipendiPdf(e.target.files?.[0] ?? null, "sportivi")} />
+          </label>
         </div>
-        {collab.isLoading && <p className="text-sm text-zinc-500">Caricamento libro paga…</p>}
+        {collabPreview && (
+          <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-zinc-400">
+                Anteprima: {collabPreview.length} persone, {eur(collabPreview.reduce((s, x) => s + x.totale, 0))}
+              </p>
+              <div className="flex gap-2">
+                <button type="button" className={btnGhost} onClick={() => setCollabPreview(null)}>
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className={btnAmber}
+                  disabled={importCollabMut.isPending}
+                  onClick={() => importCollabMut.mutate(collabPreview)}
+                >
+                  {importCollabMut.isPending ? "Caricamento…" : `Importa ${collabPreview.length}`}
+                </button>
+              </div>
+            </div>
+            <div className="max-h-56 overflow-auto text-xs">
+              {collabPreview.map((p, i) => (
+                <p key={`${p.nominativo}-${i}`} className="text-zinc-300">
+                  {p.nominativo} · {p.tipo === "gestionale" ? "amm/gest" : "istruttore"} · {eur(p.totale)}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+        {collab.isLoading && <p className="text-sm text-zinc-500">Caricamento…</p>}
         <p className="text-lg font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</p>
         <table className="min-w-full text-left text-sm">
           <thead className="text-xs uppercase text-zinc-500">
             <tr>
-              <th className="py-1">Reparto</th>
-              <th className="py-1 text-right">Turni</th>
+              <th className="py-1">{fonteRiepilogo ? "Nominativo" : "Reparto"}</th>
+              {!fonteRiepilogo && <th className="py-1 text-right">Turni</th>}
               <th className="py-1 text-right">Importo</th>
+              {fonteRiepilogo && <th className="py-1" />}
             </tr>
           </thead>
           <tbody>
             {(collab.data?.righe ?? []).map((r) => (
               <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="py-1.5">{r.nome}</td>
-                <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>
+                <td className="py-1.5">
+                  {r.nome}
+                  {fonteRiepilogo && r.tipo === "gestionale" && (
+                    <span className="ml-2 text-xs text-zinc-500">amm/gest</span>
+                  )}
+                </td>
+                {!fonteRiepilogo && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
                 <td className="py-1.5 text-right">{eur(r.importo)}</td>
+                {fonteRiepilogo && (
+                  <td className="py-1.5 text-right">
+                    <button
+                      type="button"
+                      className="text-xs text-red-400 hover:underline"
+                      onClick={() => {
+                        if (confirm("Eliminare questa riga?")) delCollabMut.mutate(r.id)
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
             {!collab.data?.righe.length && (
               <tr>
-                <td className="py-4 text-zinc-500" colSpan={3}>
-                  Nessun costo collaboratori in questo mese. Se il libro paga ha i turni, ricarica dopo il deploy.
+                <td className="py-4 text-zinc-500" colSpan={fonteRiepilogo ? 3 : 3}>
+                  Nessun collaboratore in questo mese. Importa il riepilogo PDF di fine mese.
                 </td>
               </tr>
             )}
@@ -1016,10 +1128,14 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
             <p className="text-xs text-zinc-500">
-              Da mastrino (Excel) o inserimento manuale. Default: Amministrazione e uffici.
+              Buste paga Teamsystem (PDF) o mastrino Excel. Importo = lordo competenze della busta.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <label className={`${btnAmber} cursor-pointer`}>
+              Importa buste PDF
+              <input type="file" accept=".pdf" className="hidden" onChange={(e) => void onStipendiPdf(e.target.files?.[0] ?? null, "buste")} />
+            </label>
             <button type="button" className={btnGhost} onClick={() => downloadAmmMastrinoTemplate()}>
               Modello mastrino
             </button>
@@ -1033,6 +1149,35 @@ function StipendiTab() {
           </div>
         </div>
         <p className="text-lg font-semibold text-zinc-100">{eur(totBusteMese)}</p>
+        {bustePdfPreview && (
+          <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-zinc-400">
+                Anteprima buste: {bustePdfPreview.length} persone, {eur(bustePdfPreview.reduce((s, x) => s + x.totale, 0))}
+              </p>
+              <div className="flex gap-2">
+                <button type="button" className={btnGhost} onClick={() => setBustePdfPreview(null)}>
+                  Annulla
+                </button>
+                <button
+                  type="button"
+                  className={btnAmber}
+                  disabled={importMut.isPending}
+                  onClick={() => importMut.mutate(bustePdfPreview)}
+                >
+                  {importMut.isPending ? "Caricamento…" : `Importa ${bustePdfPreview.length}`}
+                </button>
+              </div>
+            </div>
+            <div className="max-h-48 overflow-auto text-xs">
+              {bustePdfPreview.map((p, i) => (
+                <p key={`${p.nominativo}-${i}`} className="text-zinc-300">
+                  {p.nominativo} · {eur(p.totale)} · {nomeReparto(attivi, p.quote[0]?.repartoId ?? "")}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
         {preview && (
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1049,7 +1194,7 @@ function StipendiTab() {
                   disabled={!okPreview.length || importMut.isPending}
                   onClick={() => importMut.mutate(okPreview)}
                 >
-                  {importMut.isPending ? "Import…" : `Importa ${okPreview.length}`}
+                  {importMut.isPending ? "Caricamento…" : `Importa ${okPreview.length}`}
                 </button>
               </div>
             </div>
@@ -1132,7 +1277,9 @@ function StipendiTab() {
                   <td className="py-1.5 pr-3 text-xs text-zinc-400">
                     {b.quote.map((q) => `${nomeReparto(attivi, q.repartoId)} ${q.percentuale}%`).join(" · ")}
                   </td>
-                  <td className="py-1.5 pr-3 capitalize text-zinc-400">{b.origine}</td>
+                  <td className="py-1.5 pr-3 text-zinc-400">
+                    {b.origine === "pdf" ? "Busta PDF" : b.origine === "mastrino" ? "Mastrino" : "Manuale"}
+                  </td>
                   <td className="py-1.5 text-right">{eur(b.totale)}</td>
                   <td className="py-1.5 text-right whitespace-nowrap">
                     <button type="button" className="mr-2 text-xs text-zinc-300 hover:underline" onClick={() => startEdit(b)}>
