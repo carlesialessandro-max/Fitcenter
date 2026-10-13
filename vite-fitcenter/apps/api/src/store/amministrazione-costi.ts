@@ -6,7 +6,7 @@ import { getDataDir, readJson, writeJson } from "./persist.js"
 export type AmmRepartoTipo = "operativo" | "struttura"
 export type AmmLivello = "macro" | "sotto"
 export type AmmTipoCosto = "fisso" | "variabile"
-export type AmmOrigine = "manuale" | "ocr" | "excel"
+export type AmmOrigine = "manuale" | "ocr" | "excel" | "fattureincloud"
 export type AmmBustaOrigine = "manuale" | "mastrino"
 
 export type AmmReparto = {
@@ -43,6 +43,7 @@ export type AmmSpesa = {
   quote: AmmQuota[]
   pathPdf?: string
   origine: AmmOrigine
+  ficId?: number
   createdAt: string
   updatedAt: string
 }
@@ -163,7 +164,9 @@ function migrate(raw: Partial<FileShape>): FileShape {
     }
   }
   const spese: AmmSpesa[] = (Array.isArray(raw.spese) ? raw.spese : []).map((s) => {
-    const origine: AmmOrigine = s.origine === "ocr" || s.origine === "excel" ? s.origine : "manuale"
+    const origine: AmmOrigine =
+      s.origine === "ocr" || s.origine === "excel" || s.origine === "fattureincloud" ? s.origine : "manuale"
+    const ficId = Number(s.ficId)
     return {
       ...s,
       quote: (s.quote ?? []).map((q) => ({
@@ -171,6 +174,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
         percentuale: Number(q.percentuale) || 0,
       })),
       origine,
+      ficId: Number.isFinite(ficId) && ficId > 0 ? ficId : undefined,
     }
   })
   const buste: AmmBusta[] = (Array.isArray(raw.buste) ? raw.buste : []).map((b) => ({
@@ -295,6 +299,10 @@ export const ammCostiStore = {
   getSpesa(id: string): AmmSpesa | undefined {
     return load().spese.find((s) => s.id === id)
   },
+  findByFicId(ficId: number): AmmSpesa | undefined {
+    if (!Number.isFinite(ficId) || ficId <= 0) return undefined
+    return load().spese.find((s) => s.ficId === ficId)
+  },
   findDuplicate(fornitore: string, numeroDocumento: string, dataDocumento: string, totale: number): AmmSpesa | undefined {
     const f = fornitore.trim().toLowerCase()
     const n = numeroDocumento.trim().toLowerCase()
@@ -327,7 +335,11 @@ export const ammCostiStore = {
     const f = this.ensureFornitore(fornitore)
     const id = String(body.id ?? "").trim() || randomUUID()
     const cur = d.spese.find((s) => s.id === id)
-    const origine: AmmOrigine = body.origine === "ocr" || body.origine === "excel" || body.origine === "manuale" ? body.origine : (cur?.origine ?? "manuale")
+    const origine: AmmOrigine =
+      body.origine === "ocr" || body.origine === "excel" || body.origine === "manuale" || body.origine === "fattureincloud"
+        ? body.origine
+        : (cur?.origine ?? "manuale")
+    const ficNum = Number(body.ficId ?? cur?.ficId)
     const row: AmmSpesa = {
       id,
       fornitore,
@@ -340,6 +352,7 @@ export const ammCostiStore = {
       quote,
       pathPdf: body.pathPdf ?? cur?.pathPdf,
       origine,
+      ficId: Number.isFinite(ficNum) && ficNum > 0 ? ficNum : undefined,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }

@@ -15,6 +15,10 @@ import {
   postAmmImport,
   postAmmOcr,
   postAmmSpesa,
+  getFicStatus,
+  postFicConnect,
+  postFicDisconnect,
+  postFicSync,
   putAmmBusta,
   putAmmReparto,
   putAmmSpesa,
@@ -49,3 +53,7 @@ amministrazioneRouter.put("/spese/:id", upload.single("pdf"), putAmmSpesa)
 amministrazioneRouter.delete("/spese/:id", deleteAmmSpesa)
 amministrazioneRouter.get("/spese/:id/pdf", getAmmSpesaPdf)
 amministrazioneRouter.post("/ocr", postAmmOcr)
+amministrazioneRouter.get("/fattureincloud", getFicStatus)
+amministrazioneRouter.post("/fattureincloud/connect", postFicConnect)
+amministrazioneRouter.post("/fattureincloud/disconnect", postFicDisconnect)
+amministrazioneRouter.post("/fattureincloud/sync", postFicSync)

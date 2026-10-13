@@ -56,6 +56,13 @@ function nomeReparto(reparti: AmmReparto[], id: string): string {
   return reparti.find((r) => r.id === id)?.nome ?? id
 }
 
+function origineLabel(o: AmmSpesa["origine"]): string {
+  if (o === "fattureincloud") return "Fatture in Cloud"
+  if (o === "excel") return "Excel"
+  if (o === "ocr") return "PDF"
+  return "Manuale"
+}
+
 type Tab = "dashboard" | "spese" | "stipendi" | "reparti"
 type Imputazione = "sotto" | "macro"
 
@@ -91,6 +98,7 @@ export function AmministrazioneCosti() {
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
         Costi per competenza (data documento). Buste paga dipendenti da mastrino; collaboratori sportivi dal libro paga.
+        Le fatture di acquisto si possono scaricare da Fatture in Cloud.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -321,7 +329,10 @@ function RegistroTab() {
   const [error, setError] = useState("")
   const [preview, setPreview] = useState<AmmExcelPreview[] | null>(null)
   const [importMsg, setImportMsg] = useState("")
+  const [ficToken, setFicToken] = useState("")
+  const [ficOpen, setFicOpen] = useState(false)
   const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
+  const fic = useQuery({ queryKey: ["amm-fic"], queryFn: amministrazioneApi.ficStatus })
   const list = useQuery({
     queryKey: ["amm-spese", mese, q],
     queryFn: () => amministrazioneApi.listSpese(mese, q),
@@ -361,7 +372,7 @@ function RegistroTab() {
           totale: Number(form.totale.replace(",", ".")),
           tipoCosto: form.tipoCosto,
           quote,
-          origine: pdf ? "ocr" : "manuale",
+          origine: pdf ? "ocr" : editId ? undefined : "manuale",
         },
         pdf
       ),
@@ -379,6 +390,43 @@ function RegistroTab() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["amm-spese"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const ficConnectMut = useMutation({
+    mutationFn: () =>
+      amministrazioneApi.ficConnect({
+        accessToken: ficToken.trim() || undefined,
+        defaultRepartoId: "altri-costi",
+      }),
+    onSuccess: () => {
+      setFicToken("")
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-fic"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const ficDisconnectMut = useMutation({
+    mutationFn: () => amministrazioneApi.ficDisconnect(),
+    onSuccess: () => {
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-fic"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const ficSyncMut = useMutation({
+    mutationFn: () => amministrazioneApi.ficSync(mese, fic.data?.defaultRepartoId || "altri-costi"),
+    onSuccess: (r) => {
+      setImportMsg(
+        `Fatture in Cloud: ${r.lette ?? 0} lette, ${r.inserite} nuove` +
+          (r.saltate ? `, ${r.saltate} già presenti` : "") +
+          (r.errori.length ? `, ${r.errori.length} errori` : "") +
+          "."
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-spese"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+      void qc.invalidateQueries({ queryKey: ["amm-meta"] })
+      void qc.invalidateQueries({ queryKey: ["amm-fic"] })
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -464,10 +512,75 @@ function RegistroTab() {
           Importa Excel
           <input type="file" accept=".xlsx,.xls" className="hidden" onChange={(e) => void onExcel(e.target.files?.[0] ?? null)} />
         </label>
+        <button
+          type="button"
+          className={btnAmber}
+          disabled={ficSyncMut.isPending}
+          onClick={() => {
+            if (!fic.data?.connected) {
+              setFicOpen(true)
+              setError("Collega Fatture in Cloud per scaricare gli acquisti del mese.")
+              return
+            }
+            ficSyncMut.mutate()
+          }}
+        >
+          {ficSyncMut.isPending ? "Scarico…" : "Scarica da Fatture in Cloud"}
+        </button>
+        <button type="button" className={btnGhost} onClick={() => setFicOpen((v) => !v)}>
+          {fic.data?.connected ? `Collegato: ${fic.data.companyName || "Fatture in Cloud"}` : "Collega Fatture in Cloud"}
+        </button>
         <button type="button" className={btnAmber} onClick={startNew}>
           + Nuova spesa
         </button>
       </div>
+      {ficOpen && (
+        <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
+          <p className="text-zinc-400">
+            In Fatture in Cloud: Impostazioni → Applicazioni collegate → Collega una nuova applicazione. Crea prima
+            un’app su developers.fattureincloud.it, copia l’identificativo applicazione, autorizza la lettura degli
+            acquisti e incolla qui il token. In alternativa si può mettere il token e l’id azienda nel file di
+            configurazione dell’API.
+          </p>
+          {fic.data?.connected ? (
+            <p className="text-emerald-300">
+              Collegato a {fic.data.companyName || "azienda"} ({fic.data.tokenMasked}
+              {fic.data.fromEnv ? ", da .env" : ""}). Le nuove spese vanno su «Altri costi»: poi le riassegni al
+              sotto-reparto.
+            </p>
+          ) : (
+            <p className="text-zinc-500">Non collegato: senza token non si possono scaricare gli acquisti.</p>
+          )}
+          <div className="flex flex-wrap items-end gap-2">
+            {!fic.data?.fromEnv && (
+              <label className="grid min-w-[18rem] flex-1 gap-1 text-xs text-zinc-500">
+                Token di accesso
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={ficToken}
+                  onChange={(e) => setFicToken(e.target.value)}
+                  placeholder="Incolla il token"
+                  className={inputCls}
+                />
+              </label>
+            )}
+            <button
+              type="button"
+              className={btnAmber}
+              disabled={ficConnectMut.isPending || (!ficToken.trim() && !fic.data?.connected && !fic.data?.fromEnv)}
+              onClick={() => ficConnectMut.mutate()}
+            >
+              {ficConnectMut.isPending ? "Verifica…" : fic.data?.connected ? "Aggiorna collegamento" : "Collega"}
+            </button>
+            {fic.data?.connected && !fic.data.fromEnv && (
+              <button type="button" className={btnGhost} disabled={ficDisconnectMut.isPending} onClick={() => ficDisconnectMut.mutate()}>
+                Scollega
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {error && <p className="text-sm text-red-400">{error}</p>}
       {importMsg && <p className="text-sm text-emerald-300">{importMsg}</p>}
       {preview && (
@@ -694,6 +807,7 @@ function RegistroTab() {
               <th className="px-3 py-2">Fornitore</th>
               <th className="px-3 py-2">N. doc</th>
               <th className="px-3 py-2">Tipo</th>
+              <th className="px-3 py-2">Origine</th>
               <th className="px-3 py-2">Ripartizione</th>
               <th className="px-3 py-2 text-right">Totale</th>
               <th className="px-3 py-2" />
@@ -706,6 +820,7 @@ function RegistroTab() {
                 <td className="px-3 py-2">{s.fornitore}</td>
                 <td className="px-3 py-2">{s.numeroDocumento || "—"}</td>
                 <td className="px-3 py-2 capitalize">{s.tipoCosto}</td>
+                <td className="px-3 py-2 text-xs text-zinc-400">{origineLabel(s.origine)}</td>
                 <td className="px-3 py-2 text-xs text-zinc-400">
                   {s.quote.map((x) => `${nomeReparto(reparti, x.repartoId)} ${x.percentuale}%`).join(" · ")}
                 </td>
@@ -733,7 +848,7 @@ function RegistroTab() {
             ))}
             {!list.data?.spese.length && (
               <tr>
-                <td className="px-3 py-6 text-zinc-500" colSpan={7}>
+                <td className="px-3 py-6 text-zinc-500" colSpan={8}>
                   Nessuna spesa in questo mese. I collaboratori sportivi non si inseriscono qui: restano nel libro paga.
                 </td>
               </tr>

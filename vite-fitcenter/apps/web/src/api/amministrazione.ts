@@ -32,7 +32,8 @@ export type AmmSpesa = {
   tipoCosto: AmmTipoCosto
   quote: AmmQuota[]
   pathPdf?: string
-  origine: "manuale" | "ocr" | "excel"
+  origine: "manuale" | "ocr" | "excel" | "fattureincloud"
+  ficId?: number
   createdAt: string
   updatedAt: string
 }
@@ -83,6 +84,18 @@ export type AmmImportEsito = {
   inserite: number
   saltate: number
   errori: { riga: number; message: string }[]
+  lette?: number
+  companyName?: string
+}
+
+export type AmmFicStatus = {
+  connected: boolean
+  fromEnv: boolean
+  companyId: number | null
+  companyName: string
+  tokenMasked: string
+  defaultRepartoId: string
+  lastSyncAt: string | null
 }
 
 function token(): string | null {
@@ -144,6 +157,12 @@ export const amministrazioneApi = {
       "/amministrazione/ocr",
       { text, filename }
     ),
+  ficStatus: () => api.get<AmmFicStatus>("/amministrazione/fattureincloud"),
+  ficConnect: (body: { accessToken?: string; companyId?: number; defaultRepartoId?: string }) =>
+    api.post<AmmFicStatus>("/amministrazione/fattureincloud/connect", body),
+  ficDisconnect: () => api.post<AmmFicStatus>("/amministrazione/fattureincloud/disconnect", {}),
+  ficSync: (mese: string, repartoId?: string) =>
+    api.post<AmmImportEsito>("/amministrazione/fattureincloud/sync", { mese, repartoId }),
   pdfUrl: (id: string) => `${getApiBase()}/amministrazione/spese/${encodeURIComponent(id)}/pdf`,
   openPdf: async (id: string) => {
     const res = await fetch(amministrazioneApi.pdfUrl(id), {

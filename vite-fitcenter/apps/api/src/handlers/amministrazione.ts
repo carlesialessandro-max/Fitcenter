@@ -13,6 +13,8 @@ import {
 } from "../store/amministrazione-costi.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import { costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
+import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
+import { listAcquistiMese, listCompanies, pickCompany, publicStatus, resolvedConfig } from "../services/fattureincloud.js"
 
 function fail(res: Response, e: unknown) {
   const status = (e as { status?: number })?.status
@@ -105,7 +107,17 @@ function spesaFromBody(b: Record<string, unknown>, id?: string): Parameters<type
     totale: Number(String(b.totale ?? "").replace(",", ".")),
     tipoCosto: (b.tipoCosto === "variabile" ? "variabile" : "fisso") as AmmTipoCosto,
     quote: quoteFrom(b.quote),
-    origine: b.origine === "ocr" ? "ocr" : b.origine === "excel" ? "excel" : "manuale",
+    origine:
+      b.origine === "ocr"
+        ? "ocr"
+        : b.origine === "excel"
+          ? "excel"
+          : b.origine === "fattureincloud"
+            ? "fattureincloud"
+            : b.origine === "manuale"
+              ? "manuale"
+              : undefined,
+    ficId: b.ficId != null ? Number(b.ficId) : undefined,
   }
 }
 
@@ -510,6 +522,117 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byBuste,
       nSpese: spese.length,
       nBuste: busteAll.length,
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function getFicStatus(_req: Request, res: Response) {
+  try {
+    res.json(publicStatus())
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postFicConnect(req: Request, res: Response) {
+  try {
+    const token = String(req.body?.accessToken ?? "").trim() || resolvedConfig().cfg?.accessToken || ""
+    if (!token) return res.status(400).json({ message: "Incolla il token di Fatture in Cloud" })
+    const companies = await listCompanies(token)
+    if (!companies.length) {
+      return res.status(400).json({ message: "Nessuna azienda collegata a questo token" })
+    }
+    const wanted = Number(req.body?.companyId)
+    const company = pickCompany(companies, Number.isFinite(wanted) && wanted > 0 ? wanted : undefined)
+    if (!company) return res.status(400).json({ message: "Azienda non trovata" })
+    const defaultRepartoId = String(req.body?.defaultRepartoId ?? "").trim() || FIC_DEFAULT_REPARTO
+    const ids = new Set(ammCostiStore.listReparti(true).map((r) => r.id))
+    if (!ids.has(defaultRepartoId)) {
+      return res.status(400).json({ message: "Reparto predefinito non valido" })
+    }
+    ficStore.save({
+      accessToken: company.accessToken || token,
+      companyId: company.id,
+      companyName: company.name,
+      defaultRepartoId,
+      connectedAt: new Date().toISOString(),
+      lastSyncAt: ficStore.get()?.lastSyncAt,
+    })
+    res.json({
+      ...publicStatus(),
+      companies: companies.map((c) => ({ id: c.id, name: c.name })),
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postFicDisconnect(_req: Request, res: Response) {
+  try {
+    ficStore.clear()
+    res.json(publicStatus())
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postFicSync(req: Request, res: Response) {
+  try {
+    const mese = String(req.body?.mese ?? req.query.mese ?? "").trim()
+    if (!/^\d{4}-\d{2}$/.test(mese)) return res.status(400).json({ message: "Mese non valido" })
+    const { cfg } = resolvedConfig()
+    if (!cfg?.accessToken || !cfg.companyId) {
+      return res.status(400).json({ message: "Collega prima Fatture in Cloud" })
+    }
+    if (!cfg.companyName) {
+      try {
+        const companies = await listCompanies(cfg.accessToken)
+        const company = pickCompany(companies, cfg.companyId)
+        if (company) {
+          ficStore.save({ ...cfg, companyName: company.name, accessToken: company.accessToken || cfg.accessToken })
+        }
+      } catch {
+        /* nome azienda opzionale */
+      }
+    }
+    const docs = await listAcquistiMese(ficStore.get() ?? cfg, mese)
+    const repartoId = String(req.body?.repartoId ?? cfg.defaultRepartoId ?? FIC_DEFAULT_REPARTO).trim() || FIC_DEFAULT_REPARTO
+    const ids = new Set(ammCostiStore.listReparti(true).map((r) => r.id))
+    if (!ids.has(repartoId)) return res.status(400).json({ message: "Reparto predefinito non valido" })
+    let inserite = 0
+    let saltate = 0
+    const errori: { riga: number; message: string }[] = []
+    docs.forEach((doc, i) => {
+      try {
+        if (ammCostiStore.findByFicId(doc.id) || ammCostiStore.findDuplicate(doc.fornitore, doc.numeroDocumento, doc.dataDocumento, doc.totale)) {
+          saltate += 1
+          return
+        }
+        ammCostiStore.upsertSpesa({
+          fornitore: doc.fornitore,
+          numeroDocumento: doc.numeroDocumento,
+          dataDocumento: doc.dataDocumento,
+          descrizione: doc.descrizione,
+          totale: doc.totale,
+          tipoCosto: "fisso",
+          quote: [{ repartoId, percentuale: 100 }],
+          origine: "fattureincloud",
+          ficId: doc.id,
+        })
+        inserite += 1
+      } catch (e) {
+        errori.push({ riga: i + 1, message: (e as Error)?.message ?? "Documento non importabile" })
+      }
+    })
+    ficStore.markSynced()
+    res.json({
+      inserite,
+      saltate,
+      errori,
+      lette: docs.length,
+      companyName: (ficStore.get() ?? cfg).companyName,
     })
   } catch (e) {
     fail(res, e)
