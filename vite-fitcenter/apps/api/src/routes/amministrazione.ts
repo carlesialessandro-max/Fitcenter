@@ -18,6 +18,7 @@ import {
   postAmmSpesa,
   postAmmStipendiPdf,
   postAmmCollaboratoriImport,
+  postAmmCollaboratoriReportImport,
   postAmmCollaboratoreImporto,
   deleteAmmCollaboratore,
   getFicStatus,
@@ -43,6 +44,7 @@ amministrazioneRouter.use(requireAuth)
 
 amministrazioneRouter.get("/collaboratori/report", requireAdminOrAlberto, getAmmCollaboratoriReport)
 amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, postAmmCollaboratoreImporto)
+amministrazioneRouter.post("/collaboratori/report/import", requireAdminOrAlberto, postAmmCollaboratoriReportImport)
 
 amministrazioneRouter.use(requireAdmin)
 

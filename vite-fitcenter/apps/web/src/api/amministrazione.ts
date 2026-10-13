@@ -205,6 +205,8 @@ export const amministrazioneApi = {
     api.get<AmmCollabReport>(`/amministrazione/collaboratori/report?anno=${encodeURIComponent(String(anno))}`),
   setImportoCollaboratore: (body: { nominativo: string; mese: string; totale: number; tipo?: "sportivo" | "gestionale" }) =>
     api.post<{ row: AmmCollaboratoreRiga }>(`/amministrazione/collaboratori/importo`, body),
+  importCollaboratoriReport: (anno: number, righe: unknown[]) =>
+    api.post<AmmImportEsito & { nPersone?: number }>("/amministrazione/collaboratori/report/import", { anno, righe }),
   collaboratori: (anno: number, mese?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })
     if (mese) q.set("mese", mese)

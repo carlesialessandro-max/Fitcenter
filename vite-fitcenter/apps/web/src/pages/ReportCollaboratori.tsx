@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { amministrazioneApi, type AmmCollabReport, type AmmCollabReportRiga } from "@/api/amministrazione"
 import { lpagaApi } from "@/api/lpaga"
+import { parseCollabReportExcel, type CollabReportExcelRiga } from "@/lib/collab-report-excel"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
@@ -106,6 +107,7 @@ export function ReportCollaboratori({
   const [tipoNew, setTipoNew] = useState<"sportivo" | "gestionale">("sportivo")
   const [msg, setMsg] = useState("")
   const [err, setErr] = useState("")
+  const [preview, setPreview] = useState<{ nPersone: number; tot: number; righe: CollabReportExcelRiga[] } | null>(null)
 
   const report = useQuery({
     queryKey: ["amm-collab-report", source, anno],
@@ -148,6 +150,43 @@ export function ReportCollaboratori({
   }, [filtered, mesi])
   const totAnno = Math.round(filtered.reduce((s, r) => s + r.tot, 0) * 100) / 100
 
+  const importMut = useMutation({
+    mutationFn: (righe: CollabReportExcelRiga[]) =>
+      source === "lpaga"
+        ? lpagaApi.importCollaboratoriReport(anno, righe)
+        : amministrazioneApi.importCollaboratoriReport(anno, righe),
+    onSuccess: (r) => {
+      setPreview(null)
+      setErr("")
+      setMsg(
+        `Importati ${r.nPersone ?? 0} nominativi, ${r.inserite} mensilità` +
+          (r.sostituite ? ` (prima ${r.sostituite} righe dell'anno)` : "") +
+          "."
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => {
+      setMsg("")
+      setErr(e.message)
+    },
+  })
+
+  async function onExcel(file: File | null) {
+    if (!file) return
+    setErr("")
+    setMsg("")
+    try {
+      const buf = await file.arrayBuffer()
+      const parsed = parseCollabReportExcel(buf, anno)
+      setPreview({ nPersone: parsed.nPersone, tot: parsed.tot, righe: parsed.righe })
+    } catch (e) {
+      setPreview(null)
+      setErr((e as Error).message || "Excel non leggibile")
+    }
+  }
+
   function saveCell(nominativo: string, mese: string, totale: number, tipoRiga?: AmmCollabReportRiga["tipo"]) {
     saveMut.mutate({ nominativo, mese, totale, tipo: tipoRiga })
   }
@@ -181,14 +220,27 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Come il file COMP_SP: tutte le mensilità, importo modificabile, oltre 5.000 € e oltre 15.000 €. Si può
-            aggiungere un istruttore. Ogni modifica è tracciata (chi, quando, da/a) per i controlli esterni. Solo admin
-            e Alberto.
+            Come il REPORT GENERALE: tutte le mensilità, importo modificabile, oltre 5.000 € e oltre 15.000 €. Importa
+            l’Excel, correggi gli importi o aggiungi un istruttore. Ogni modifica è tracciata. Solo admin e Alberto.
           </p>
         </div>
-        <button type="button" className={btnGhost} onClick={() => window.print()}>
-          Stampa / PDF
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <label className={`${btnAmber} cursor-pointer`}>
+            Importa Excel
+            <input
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={(e) => {
+                void onExcel(e.target.files?.[0] ?? null)
+                e.target.value = ""
+              }}
+            />
+          </label>
+          <button type="button" className={btnGhost} onClick={() => window.print()}>
+            Stampa / PDF
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-3 print:hidden">
@@ -217,6 +269,27 @@ export function ReportCollaboratori({
 
       {err ? <p className="mt-3 text-sm text-red-400 print:hidden">{err}</p> : null}
       {msg ? <p className="mt-3 text-sm text-emerald-300 print:hidden">{msg}</p> : null}
+      {preview ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
+          <p className="text-sm text-zinc-300">
+            File letto: {preview.nPersone} persone, {preview.righe.length} mensilità, {eur(preview.tot)} per il {anno}.
+            Sostituisce i dati già presenti di quest’anno. Le partite IVA non vengono importate.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" className={btnGhost} onClick={() => setPreview(null)}>
+              Annulla
+            </button>
+            <button
+              type="button"
+              className={btnAmber}
+              disabled={importMut.isPending}
+              onClick={() => importMut.mutate(preview.righe)}
+            >
+              {importMut.isPending ? "Importazione…" : `Importa ${preview.nPersone}`}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="mt-4 flex flex-wrap items-end gap-2 rounded-2xl border border-zinc-800 bg-zinc-950/40 p-3 print:hidden"

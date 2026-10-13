@@ -497,6 +497,28 @@ export function getAmmCollaboratoriReport(req: Request, res: Response) {
   }
 }
 
+export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
+  try {
+    const anno = Number(req.body?.anno)
+    const righe = Array.isArray(req.body?.righe) ? req.body.righe : []
+    if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
+    const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
+    const { inserite, sostituite, nPersone } = ammCostiStore.importCollaboratoriReport(
+      anno,
+      righe.map((raw: Record<string, unknown>) => ({
+        nominativo: String(raw.nominativo ?? "").trim(),
+        mese: String(raw.mese ?? "").slice(0, 7),
+        totale: Number(String(raw.totale ?? "").replace(",", ".")),
+        tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
+      })),
+      user
+    )
+    res.json({ inserite, saltate: 0, sostituite, nPersone, errori: [] })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export function postAmmCollaboratoreImporto(req: Request, res: Response) {
   try {
     const nominativo = String(req.body?.nominativo ?? "").trim()

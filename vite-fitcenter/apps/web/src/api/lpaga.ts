@@ -188,4 +188,9 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  importCollaboratoriReport: (anno: number, righe: unknown[]) =>
+    lpagaRequest<import("./amministrazione").AmmImportEsito & { nPersone?: number }>("/lpaga/collaboratori/report/import", {
+      method: "POST",
+      body: JSON.stringify({ anno, righe }),
+    }),
 }

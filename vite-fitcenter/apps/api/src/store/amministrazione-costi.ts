@@ -9,7 +9,7 @@ export type AmmTipoCosto = "fisso" | "variabile"
 export type AmmOrigine = "manuale" | "ocr" | "excel" | "fattureincloud"
 export type AmmBustaOrigine = "manuale" | "mastrino" | "pdf"
 export type AmmCollabTipo = "sportivo" | "gestionale"
-export type AmmCollabOrigine = "riepilogo" | "manuale"
+export type AmmCollabOrigine = "riepilogo" | "manuale" | "excel"
 
 export type AmmCollabAudit = {
   id: string
@@ -230,7 +230,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
       percentuale: Number(q.percentuale) || 0,
     })),
     tipo: c.tipo === "gestionale" ? "gestionale" : "sportivo",
-    origine: c.origine === "manuale" ? "manuale" : "riepilogo",
+    origine: c.origine === "manuale" || c.origine === "excel" ? c.origine : "riepilogo",
     modificatoDa: String(c.modificatoDa ?? "").trim() || undefined,
   }))
   const collaboratoriAudit: AmmCollabAudit[] = (Array.isArray(raw.collaboratoriAudit) ? raw.collaboratoriAudit : [])
@@ -542,7 +542,10 @@ export const ammCostiStore = {
       totale: Math.round(totale * 100) / 100,
       tipo: body.tipo === "gestionale" || cur?.tipo === "gestionale" ? "gestionale" : "sportivo",
       quote,
-      origine: body.origine === "manuale" || body.origine === "riepilogo" ? body.origine : (cur?.origine ?? "riepilogo"),
+      origine:
+        body.origine === "manuale" || body.origine === "riepilogo" || body.origine === "excel"
+          ? body.origine
+          : (cur?.origine ?? "riepilogo"),
       modificatoDa: (body.modificatoDa ?? cur?.modificatoDa)?.trim() || undefined,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
@@ -642,5 +645,59 @@ export const ammCostiStore = {
       inserite += 1
     }
     return { inserite, sostituite: prev.length }
+  },
+  /** Sostituisce l'anno del report COMP_SP (Excel REPORT GENERALE). */
+  importCollaboratoriReport(
+    anno: number,
+    righe: { nominativo: string; mese: string; totale: number; tipo?: AmmCollabTipo }[],
+    user: string
+  ): { inserite: number; sostituite: number; nPersone: number } {
+    if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
+      throw Object.assign(new Error("Anno non valido"), { status: 400 })
+    }
+    const prefix = `${anno}-`
+    const d = load()
+    const prev = d.collaboratori.filter((c) => c.mese.startsWith(prefix))
+    const prevQuote = new Map(prev.map((c) => [c.nominativo.trim().toLowerCase(), c.quote]))
+    d.collaboratori = d.collaboratori.filter((c) => !c.mese.startsWith(prefix))
+    save(d)
+    const persone = new Set<string>()
+    let inserite = 0
+    for (const raw of righe) {
+      const nominativo = String(raw.nominativo ?? "").trim()
+      const mese = String(raw.mese ?? "").slice(0, 7)
+      const totale = Number(String(raw.totale ?? "").replace(",", "."))
+      if (!nominativo || !/^\d{4}-\d{2}$/.test(mese) || !mese.startsWith(prefix)) continue
+      if (!Number.isFinite(totale) || totale <= 0) continue
+      const key = nominativo.toLowerCase()
+      persone.add(key)
+      const tipo: AmmCollabTipo = raw.tipo === "gestionale" ? "gestionale" : "sportivo"
+      this.upsertCollaboratore({
+        nominativo,
+        mese,
+        totale,
+        tipo,
+        origine: "excel",
+        modificatoDa: user.trim() || undefined,
+        quote: prevQuote.get(key) ?? [
+          { repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 },
+        ],
+      })
+      inserite += 1
+    }
+    const d2 = load()
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: user.trim() || "sconosciuto",
+      nominativo: "Import Excel",
+      mese: String(anno),
+      da: prev.length,
+      a: inserite,
+      azione: "importo",
+    }
+    d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
+    save(d2)
+    return { inserite, sostituite: prev.length, nPersone: persone.size }
   },
 }
