@@ -145,6 +145,7 @@ export const lpagaApi = {
     livelloId?: string
     contratto?: string
     iban?: string
+    email?: string
     tesseramento?: string
     tesseramentoScadenza?: string
     qualifiche?: { id: string; data?: string }[]

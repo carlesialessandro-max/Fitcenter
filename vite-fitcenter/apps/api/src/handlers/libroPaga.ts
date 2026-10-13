@@ -162,6 +162,7 @@ export async function postPersonale(req: Request, res: Response) {
       livelloId: String(req.body?.livelloId ?? "").trim(),
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
+      email: String(req.body?.email ?? "").trim().toLowerCase(),
       tesseramento: String(req.body?.tesseramento ?? "").trim(),
       tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
       qualifiche: parseQualifichePersonale(req.body?.qualifiche),
@@ -203,6 +204,7 @@ export async function patchPersonale(req: Request, res: Response) {
       livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
+      email: req.body?.email != null ? String(req.body.email).trim().toLowerCase() : cur.email,
       tesseramento:
         req.body?.tesseramento != null ? String(req.body.tesseramento).trim() : cur.tesseramento,
       tesseramentoScadenza:

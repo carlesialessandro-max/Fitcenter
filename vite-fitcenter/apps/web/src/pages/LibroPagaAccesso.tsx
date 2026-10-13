@@ -139,7 +139,9 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
-  const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita" | "report" | "collaboratori">("home")
+  const [tab, setTab] = useState<"home" | "anagrafica" | "turni" | "personale" | "mensilita" | "report" | "collaboratori">(
+    "home"
+  )
   const [error, setError] = useState("")
   const meQ = useQuery({ queryKey: ["lpaga-me"], queryFn: () => lpagaApi.me() })
   const me = meQ.data?.user
@@ -174,6 +176,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
 
   const tabs: { id: typeof tab; label: string }[] = [
     { id: "home", label: "Home" },
+    { id: "anagrafica", label: "Anagrafica" },
     { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
@@ -228,6 +231,18 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
         {snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
         {snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
         {data && tab === "home" && <Home data={data} me={me} />}
+        {data && tab === "anagrafica" && me && (
+          <MiaAnagrafica
+            data={data}
+            me={me}
+            onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+              void qc.invalidateQueries({ queryKey: ["lpaga-me"] })
+            }}
+          />
+        )}
         {data && tab === "turni" && (
           <Turni
             data={data}
@@ -277,6 +292,101 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <h2 className="mb-3 text-sm font-medium text-zinc-300">{title}</h2>
       {children}
+    </div>
+  )
+}
+
+function MiaAnagrafica({
+  data,
+  me,
+  onError,
+  onDone,
+}: {
+  data: LpagaPortalSnapshot
+  me: LpagaMe
+  onError: (s: string) => void
+  onDone: () => void
+}) {
+  const persona = data.personale.find((p) => p.id === me.id)
+  const [email, setEmail] = useState(persona?.email ?? "")
+  const [iban, setIban] = useState(persona?.iban ?? "")
+  const [password, setPassword] = useState("")
+  const [msg, setMsg] = useState("")
+  useEffect(() => {
+    setEmail(persona?.email ?? "")
+    setIban(persona?.iban ?? "")
+  }, [persona?.email, persona?.iban])
+  const saveMut = useMutation({
+    mutationFn: () =>
+      lpagaApi.patchPersonale(me.id, {
+        email: email.trim(),
+        iban: iban.trim(),
+        ...(password.trim() ? { password: password.trim() } : {}),
+      }),
+    onSuccess: () => {
+      setPassword("")
+      setMsg("Anagrafica aggiornata.")
+      onDone()
+    },
+    onError: (e: Error) => {
+      setMsg("")
+      onError(e.message)
+    },
+  })
+  if (!persona) {
+    return <p className="mt-4 text-sm text-zinc-500">Anagrafica non disponibile.</p>
+  }
+  return (
+    <div className="mt-4 max-w-xl space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-zinc-100">La mia anagrafica</h2>
+        <p className="mt-1 text-sm text-zinc-500">
+          Puoi aggiornare email e IBAN. Nome, ruolo e reparto li modifica l’amministrazione.
+        </p>
+      </div>
+      <form
+        className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          saveMut.mutate()
+        }}
+      >
+        <p className="text-sm text-zinc-300">
+          {persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()}
+          {persona.repartoNome ? <span className="text-zinc-500"> · {persona.repartoNome}</span> : null}
+        </p>
+        <label className="grid gap-1 text-xs text-zinc-500">
+          Email
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={inputCls}
+            autoComplete="email"
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-500">
+          IBAN
+          <input value={iban} onChange={(e) => setIban(e.target.value)} className={inputCls} autoComplete="off" />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-500">
+          Nuova password (vuoto = invariata)
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputCls}
+            autoComplete="new-password"
+            minLength={6}
+          />
+        </label>
+        {msg ? <p className="text-sm text-emerald-300">{msg}</p> : null}
+        <div>
+          <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
+            {saveMut.isPending ? "Salvataggio…" : "Salva"}
+          </button>
+        </div>
+      </form>
     </div>
   )
 }
@@ -558,6 +668,7 @@ function Personale({
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
+  const [email, setEmail] = useState("")
   const [nuovoOpen, setNuovoOpen] = useState(false)
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
@@ -577,6 +688,7 @@ function Personale({
         qualifiche,
         contratto,
         iban,
+        email,
       }),
     onSuccess: () => {
       setNome("")
@@ -588,6 +700,7 @@ function Personale({
       setQualifiche([])
       setContratto("")
       setIban("")
+      setEmail("")
       setNuovoOpen(false)
       onDone()
     },
@@ -729,6 +842,16 @@ function Personale({
             <label className="grid gap-1 text-xs text-zinc-500">
               IBAN
               <input value={iban} onChange={(e) => setIban(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputCls}
+                autoComplete="email"
+              />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               Tesseramento ASI

@@ -41,6 +41,7 @@ export type LpagaPersonale = {
   livelloId?: string
   contratto?: string
   iban?: string
+  email?: string
   tesseramento?: string
   tesseramentoScadenza?: string
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
@@ -273,6 +274,7 @@ CREATE TABLE dbo.FcLibroPagaPersonale (
   LivelloId NVARCHAR(64) NULL,
   Contratto DATE NULL,
   Iban NVARCHAR(34) NULL,
+  Email NVARCHAR(200) NULL,
   Tesseramento NVARCHAR(120) NULL,
   TesseramentoScadenza DATE NULL,
   Qualifiche NVARCHAR(1000) NULL,
@@ -287,6 +289,7 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -394,9 +397,19 @@ function mapLivello(r: Record<string, unknown>): LpagaLivello {
   }
 }
 
+export function normalizeLpagaEmail(raw: unknown): string {
+  return String(raw ?? "").trim().toLowerCase()
+}
+
+export function isValidLpagaEmail(email: string): boolean {
+  if (!email) return true
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
 function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const ibanRaw = String(r.Iban ?? r.iban ?? "").trim()
   const iban = ibanRaw && ibanRaw.toUpperCase() !== "NULL" ? ibanRaw : ""
+  const email = normalizeLpagaEmail(r.Email ?? r.email)
   const cognome = String(r.Cognome ?? r.cognome ?? "").trim()
   const username = String(r.Username ?? r.username ?? "").trim()
   const livelloId = String(r.LivelloId ?? r.livelloId ?? "").trim()
@@ -415,6 +428,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
     ...(livelloId ? { livelloId } : {}),
     ...(contratto && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(contratto) ? { contratto } : {}),
     ...(iban ? { iban } : {}),
+    ...(email ? { email } : {}),
     ...(tesseramento ? { tesseramento } : {}),
     ...(tesseramentoScadenza && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(tesseramentoScadenza)
       ? { tesseramentoScadenza }
@@ -553,9 +567,9 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
     if (!p) return [...readFile().personale].sort(cmpPersonaleNomeCognome)
     const r = await p.request().query(
       `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
-              CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Attivo,
+              CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza, Qualifiche
-       FROM dbo.FcLibroPagaPersonale ORDER BY Nome, Cognome`
+       FROM dbo.FcLibroPagaPersonale ORDER BY Cognome COLLATE Latin1_General_CI_AI, Nome COLLATE Latin1_General_CI_AI`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
   }
@@ -571,12 +585,17 @@ export async function upsertPersonale(input: {
   livelloId?: string
   contratto?: string
   iban?: string
+  email?: string
   tesseramento?: string
   tesseramentoScadenza?: string
   qualifiche?: LpagaQualifica[] | string[]
   attivo: boolean
 }): Promise<LpagaPersonale> {
   const iban = (input.iban ?? "").trim()
+  const email = normalizeLpagaEmail(input.email)
+  if (email && !isValidLpagaEmail(email)) {
+    throw Object.assign(new Error("Indirizzo email non valido"), { status: 400 })
+  }
   const ruolo: LpagaRuolo = input.ruolo === "admin" || input.ruolo === "manager" ? input.ruolo : "user"
   const tesseramento = (input.tesseramento ?? "").trim()
   const tesseramentoScadenza = (input.tesseramentoScadenza ?? "").trim()
@@ -591,6 +610,7 @@ export async function upsertPersonale(input: {
     ...(input.livelloId?.trim() ? { livelloId: input.livelloId.trim() } : {}),
     ...(input.contratto?.trim() ? { contratto: input.contratto.trim() } : {}),
     ...(iban ? { iban } : {}),
+    ...(email ? { email } : {}),
     ...(tesseramento ? { tesseramento } : {}),
     ...(tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? { tesseramentoScadenza } : {}),
     ...(qualifiche ? { qualifiche } : {}),
@@ -608,6 +628,7 @@ export async function upsertPersonale(input: {
     req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
     req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)
+    req.input("Email", sql.NVarChar(200), email || null)
     req.input("Tesseramento", sql.NVarChar(120), tesseramento || null)
     req.input(
       "TesseramentoScadenza",
@@ -621,11 +642,11 @@ export async function upsertPersonale(input: {
       MERGE dbo.FcLibroPagaPersonale AS t
       USING (SELECT @Id AS Id) AS s ON t.Id = s.Id
       WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
-        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Tesseramento=@Tesseramento,
+        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
         TesseramentoScadenza=@TesseramentoScadenza,
         Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Tesseramento, TesseramentoScadenza, Qualifiche, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Tesseramento, @TesseramentoScadenza, @Qualifiche, @Attivo);
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, Qualifiche, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @Qualifiche, @Attivo);
     `)
     return row
   }
@@ -897,13 +918,19 @@ export async function upsertMensilita(input: {
   return i >= 0 ? db.mensilita[i]! : row
 }
 
+const collatorPersonale = new Intl.Collator("it", { sensitivity: "base", ignorePunctuation: true, numeric: false })
+
 export function cmpPersonaleNomeCognome(
-  a: { nome?: string; cognome?: string },
-  b: { nome?: string; cognome?: string }
+  a: { nome?: string; cognome?: string; nominativo?: string },
+  b: { nome?: string; cognome?: string; nominativo?: string }
 ): number {
-  const n = (a.nome ?? "").localeCompare(b.nome ?? "", "it", { sensitivity: "base" })
-  if (n) return n
-  return (a.cognome ?? "").localeCompare(b.cognome ?? "", "it", { sensitivity: "base" })
+  const chiave = (p: { nome?: string; cognome?: string; nominativo?: string }) => {
+    const c = (p.cognome ?? "").trim().replace(/\s+/g, " ")
+    const n = (p.nome ?? "").trim().replace(/\s+/g, " ")
+    if (c || n) return `${c} ${n}`.trim()
+    return (p.nominativo ?? "").trim().replace(/\s+/g, " ")
+  }
+  return collatorPersonale.compare(chiave(a), chiave(b))
 }
 
 export function nominativo(p: LpagaPersonale): string {

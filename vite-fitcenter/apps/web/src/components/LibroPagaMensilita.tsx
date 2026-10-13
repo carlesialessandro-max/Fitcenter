@@ -366,6 +366,7 @@ function DettaglioMese({
   const [livelloId, setLivelloId] = useState(persona?.livelloId ?? "")
   const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
+  const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
   const [password, setPassword] = useState("")
   const [tesseramento, setTesseramento] = useState(persona?.tesseramento ?? "")
   const [tesseramentoScadenza, setTesseramentoScadenza] = useState(isoDateInput(persona?.tesseramentoScadenza))
@@ -378,6 +379,7 @@ function DettaglioMese({
     setLivelloId(persona?.livelloId ?? "")
     setContratto(isoDateInput(persona?.contratto))
     setIbanEdit(persona?.iban ?? "")
+    setEmailEdit(persona?.email ?? "")
     setPassword("")
     setTesseramento(persona?.tesseramento ?? "")
     setTesseramentoScadenza(isoDateInput(persona?.tesseramentoScadenza))
@@ -399,6 +401,7 @@ function DettaglioMese({
         livelloId,
         contratto,
         iban: ibanEdit.trim(),
+        email: emailEdit.trim(),
         tesseramento: tesseramento.trim(),
         tesseramentoScadenza,
         qualifiche,
@@ -516,6 +519,16 @@ function DettaglioMese({
             IBAN
             <input value={ibanEdit} onChange={(e) => setIbanEdit(e.target.value)} className={inputCls} autoComplete="off" />
           </label>
+          <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+            Email
+            <input
+              type="email"
+              value={emailEdit}
+              onChange={(e) => setEmailEdit(e.target.value)}
+              className={inputCls}
+              autoComplete="email"
+            />
+          </label>
           <label className="grid gap-1 text-xs text-zinc-500">
             Tesseramento ASI
             <input
@@ -586,6 +599,10 @@ function DettaglioMese({
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">IBAN</dt>
           <dd className="font-mono text-xs">{iban?.trim() ? iban : "—"}</dd>
+        </div>
+        <div className="flex justify-between gap-3 sm:justify-start">
+          <dt className="text-zinc-500">Email</dt>
+          <dd className="text-xs">{persona?.email?.trim() ? persona.email : "—"}</dd>
         </div>
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">Importo mese</dt>

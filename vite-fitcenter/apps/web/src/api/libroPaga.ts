@@ -25,6 +25,7 @@ export type LpagaPersonale = {
   livelloId?: string
   contratto?: string
   iban?: string
+  email?: string
   tesseramento?: string
   tesseramentoScadenza?: string
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
@@ -144,6 +145,7 @@ export const libroPagaApi = {
     livelloId?: string
     contratto?: string
     iban?: string
+    email?: string
     tesseramento?: string
     tesseramentoScadenza?: string
     qualifiche?: { id: string; data?: string }[]

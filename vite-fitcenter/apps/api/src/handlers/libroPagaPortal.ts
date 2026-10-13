@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail } from "../store/libro-paga-db.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
@@ -263,6 +263,7 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       livelloId: livelloId || me.livelloId,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
+      email: normalizeLpagaEmail(req.body?.email),
       tesseramento: String(req.body?.tesseramento ?? "").trim(),
       tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
       qualifiche: parseQualifichePersonale(req.body?.qualifiche),
@@ -280,13 +281,40 @@ export async function postLpagaPersonale(req: Request, res: Response) {
 export async function patchLpagaPersonale(req: Request, res: Response) {
   try {
     const me = viewer(req)
-    assertGestionePersonale(me)
     const id = String(req.params.id ?? "").trim()
+    const self = me.id === id
+    if (!self) assertGestionePersonale(me)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
     const vis = personaleVisibile(me, personale, livelli)
-    if (!vis.has(id)) return res.status(403).json({ message: "Utente non visibile" })
+    if (!vis.has(id) && !self) return res.status(403).json({ message: "Utente non visibile" })
     const cur = personale.find((p) => p.id === id)
     if (!cur) return res.status(404).json({ message: "Persona non trovata" })
+    const password = req.body?.password != null ? String(req.body.password) : ""
+    if (self && me.ruolo === "user") {
+      const email = req.body?.email != null ? normalizeLpagaEmail(req.body.email) : cur.email ?? ""
+      const iban = req.body?.iban != null ? String(req.body.iban).trim() : cur.iban ?? ""
+      const row = await upsertPersonale({
+        id,
+        nome: cur.nome,
+        cognome: cur.cognome,
+        username: cur.username,
+        ruolo: cur.ruolo,
+        livelloId: cur.livelloId,
+        contratto: cur.contratto,
+        iban,
+        email,
+        tesseramento: cur.tesseramento,
+        tesseramentoScadenza: cur.tesseramentoScadenza,
+        qualifiche: cur.qualifiche,
+        attivo: cur.attivo,
+      })
+      if (password) {
+        if (!row.username) return res.status(400).json({ message: "Username obbligatorio per la password" })
+        await setPersonalePassword(row.id, row.username, password)
+      }
+      const [enriched] = await enrichPersonaleHr([row])
+      return res.json({ personale: enriched ?? row })
+    }
     const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
     assertPuoModificarePersonale(me, cur, ruolo)
@@ -301,7 +329,6 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
     if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
     const username =
       req.body?.username != null ? String(req.body.username).trim().toLowerCase() : cur.username ?? ""
-    const password = req.body?.password != null ? String(req.body.password) : ""
     if (username && username !== (cur.username ?? "").toLowerCase()) {
       if (personale.some((p) => p.id !== id && (p.username ?? "").toLowerCase() === username)) {
         return res.status(409).json({ message: "Username già in uso" })
@@ -316,6 +343,7 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
       livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
+      email: req.body?.email != null ? normalizeLpagaEmail(req.body.email) : cur.email,
       tesseramento:
         req.body?.tesseramento != null ? String(req.body.tesseramento).trim() : cur.tesseramento,
       tesseramentoScadenza:

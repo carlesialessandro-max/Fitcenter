@@ -464,6 +464,7 @@ function PersonaleTab({
   const [livelloId, setLivelloId] = useState("")
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
+  const [email, setEmail] = useState("")
   const [tesseramento, setTesseramento] = useState("")
   const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
@@ -475,9 +476,7 @@ function PersonaleTab({
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
-  const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
-  const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
-  const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome)
+  const righe = data.personale.filter(match).sort(cmpNomeCognome)
   const createMut = useMutation({
     mutationFn: () =>
       libroPagaApi.createPersonale({
@@ -489,6 +488,7 @@ function PersonaleTab({
         livelloId,
         contratto,
         iban,
+        email,
         tesseramento,
         tesseramentoScadenza,
         qualifiche,
@@ -504,6 +504,7 @@ function PersonaleTab({
       setQualifiche([])
       setContratto("")
       setIban("")
+      setEmail("")
       setNuovoOpen(false)
       onDone()
     },
@@ -692,6 +693,16 @@ function PersonaleTab({
               <input value={iban} onChange={(e) => setIban(e.target.value)} className={inputCls} />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
+              Email
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputCls}
+                autoComplete="email"
+              />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
               Tesseramento ASI
               <input value={tesseramento} onChange={(e) => setTesseramento(e.target.value)} className={inputCls} />
             </label>
@@ -740,9 +751,7 @@ function PersonaleTab({
           </button>
         </form>
       )}
-      <Table title={`Dipendenti (user) · ${users.length}`} rows={users} />
-      <Table title={`Responsabili (manager) · ${managers.length}`} rows={managers} showReparto />
-      <Table title={`Amministratori (admin) · ${admins.length}`} rows={admins} />
+      <Table title={`Personale · ${righe.length}`} rows={righe} showReparto />
     </div>
   )
 }
