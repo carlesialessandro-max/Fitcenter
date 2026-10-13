@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { useLocation, useNavigate } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { useAuth } from "@/contexts/AuthContext"
@@ -1039,7 +1039,12 @@ function StipendiTab() {
             <p className="text-xs text-zinc-500">
               Il PDF dello Studio Mattonai è la fonte: nominativi e importi di quel file. Chi emette fattura è già
               escluso lì; chi ha anche busta resta in lista se fa funzioni fuori dal libro paga. All’import si
-              sostituisce tutto il mese (via la stima dei turni).
+              sostituisce tutto il mese (via la stima dei turni). Il report annuale (tutte le mensilità, modifica
+              importo, aggiungi istruttore) è nel{" "}
+              <Link to="/libro-paga?tab=collaboratori" className="underline">
+                libro paga
+              </Link>
+              , visibile solo ad admin e Alberto.
             </p>
           </div>
           <label className={`${btnAmber} cursor-pointer`}>

@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   CartesianGrid,
@@ -27,8 +28,10 @@ import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheF
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import type { QualificaConData } from "@/lib/personale-qualifiche"
+import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
+import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
 
-type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report"
+type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report" | "collaboratori"
 
 function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
@@ -71,9 +74,16 @@ const btnGhost = "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zin
 const COLORS = ["#46A6D9", "#F59E0B", "#34D399", "#A78BFA", "#F87171", "#FBBF24", "#60A5FA", "#C084FC"]
 
 export function LibroPaga() {
-  const { role } = useAuth()
+  const { role, user } = useAuth()
+  const [params] = useSearchParams()
   const qc = useQueryClient()
-  const [tab, setTab] = useState<Tab>("home")
+  const canFull = role === "admin"
+  const canCollab = canVedereReportCollaboratori(user)
+  const [tab, setTab] = useState<Tab>(() => {
+    if (params.get("tab") === "collaboratori" && canCollab) return "collaboratori"
+    if (!canFull && canCollab) return "collaboratori"
+    return "home"
+  })
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
   const [error, setError] = useState("")
@@ -82,7 +92,7 @@ export function LibroPaga() {
   const snap = useQuery({
     queryKey: ["libro-paga", mese, reparto],
     queryFn: () => libroPagaApi.get(mese, reparto || undefined),
-    enabled: role === "admin",
+    enabled: canFull,
   })
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["libro-paga"] })
@@ -98,7 +108,7 @@ export function LibroPaga() {
     onError: (e: Error) => setError(e.message),
   })
 
-  if (role !== "admin") {
+  if (!canFull && !canCollab) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center p-6">
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 text-center">
@@ -110,15 +120,18 @@ export function LibroPaga() {
   }
 
   const data = snap.data
-  const tabs: { id: Tab; label: string }[] = [
-    { id: "home", label: "Home" },
-    { id: "livelli", label: "Livelli" },
-    { id: "personale", label: "Personale" },
-    { id: "turni", label: "Turnazioni" },
-    { id: "convalide", label: "Convalide" },
-    { id: "mensilita", label: "Mensilità" },
-    { id: "report", label: "Report" },
-  ]
+  const tabs: { id: Tab; label: string }[] = canFull
+    ? [
+        { id: "home", label: "Home" },
+        { id: "livelli", label: "Livelli" },
+        { id: "personale", label: "Personale" },
+        { id: "turni", label: "Turnazioni" },
+        { id: "convalide", label: "Convalide" },
+        { id: "mensilita", label: "Mensilità" },
+        { id: "report", label: "Report" },
+        ...(canCollab ? [{ id: "collaboratori" as Tab, label: "Collaboratori sportivi" }] : []),
+      ]
+    : [{ id: "collaboratori", label: "Collaboratori sportivi" }]
 
   return (
     <div className="p-4 sm:p-6">
@@ -130,6 +143,7 @@ export function LibroPaga() {
             responsabili entrano da <span className="font-mono text-zinc-400">/lpaga</span> senza login FitCenter.
           </p>
         </div>
+        {canFull ? (
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1 text-sm text-zinc-400">
             <span className="text-xs">Reparto</span>
@@ -159,6 +173,7 @@ export function LibroPaga() {
             {importMut.isPending ? "Import in corso…" : "Importa backup Payroll"}
           </button>
         </div>
+        ) : null}
       </div>
 
       {data?.storage === "json" && (
@@ -181,9 +196,10 @@ export function LibroPaga() {
       </div>
 
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-      {snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
-      {snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
+      {canFull && snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
+      {canFull && snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
 
+      {tab === "collaboratori" && canCollab ? <ReportCollaboratori compact /> : null}
       {data && tab === "home" && <HomeTab data={data} />}
       {data && tab === "livelli" && (
         <LivelliTab data={data} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />

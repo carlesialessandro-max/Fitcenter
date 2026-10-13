@@ -437,12 +437,18 @@ function RichiesteTab({
     }
     return [...map.entries()].sort((a, b) => b[0].localeCompare(a[0]))
   }, [richieste])
-  const [giornoSel, setGiornoSel] = useState(() => isoToday())
-  useEffect(() => {
-    if (!giorniRichieste.length) return
-    if (!giorniRichieste.some(([d]) => d === giornoSel)) setGiornoSel(giorniRichieste[0]![0])
-  }, [giorniRichieste, giornoSel])
-  const richiesteGiorno = richieste.filter((r) => r.createdAt.slice(0, 10) === giornoSel)
+  const nAperte = richieste.filter((r) => r.status === "aperta").length
+  const [vista, setVista] = useState<"aperte" | "tutte" | string>("aperte")
+  const richiesteVista = useMemo(() => {
+    const list =
+      vista === "aperte"
+        ? richieste.filter((r) => r.status === "aperta")
+        : vista === "tutte"
+          ? richieste
+          : richieste.filter((r) => r.createdAt.slice(0, 10) === vista)
+    return list.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }, [richieste, vista])
+  const mostraData = vista === "aperte" || vista === "tutte"
 
   return (
     <div className="mt-5 grid gap-6">
@@ -554,22 +560,44 @@ function RichiesteTab({
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <input
             type="date"
-            value={giornoSel}
-            onChange={(e) => e.target.value && setGiornoSel(e.target.value)}
+            value={vista === "aperte" || vista === "tutte" ? isoToday() : vista}
+            onChange={(e) => e.target.value && setVista(e.target.value)}
             className="rounded-lg border border-zinc-700 bg-zinc-900/50 px-3 py-2 text-zinc-100"
           />
           <span className="text-sm text-zinc-500">
-            {fmtDateIt(giornoSel)} · {richiesteGiorno.length} richiest{richiesteGiorno.length === 1 ? "a" : "e"}
+            {vista === "aperte"
+              ? `Aperte · ${richiesteVista.length}`
+              : vista === "tutte"
+                ? `Tutte · ${richiesteVista.length}`
+                : `${fmtDateIt(vista)} · ${richiesteVista.length} richiest${richiesteVista.length === 1 ? "a" : "e"}`}
           </span>
         </div>
         <div className="mb-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setVista("aperte")}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              vista === "aperte" ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+            }`}
+          >
+            Aperte ({nAperte})
+          </button>
+          <button
+            type="button"
+            onClick={() => setVista("tutte")}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              vista === "tutte" ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+            }`}
+          >
+            Tutte ({richieste.length})
+          </button>
           {giorniRichieste.map(([d, n]) => (
             <button
               key={d}
               type="button"
-              onClick={() => setGiornoSel(d)}
+              onClick={() => setVista(d)}
               className={`rounded-full px-3 py-1 text-xs font-medium ${
-                giornoSel === d ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                vista === d ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
               }`}
             >
               {fmtDateIt(d)} ({n})
@@ -580,6 +608,7 @@ function RichiesteTab({
         <table className="min-w-full text-left text-sm">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-950/50 text-zinc-400">
+              {mostraData ? <th className="px-3 py-2 font-medium">Data</th> : null}
               <th className="px-3 py-2 font-medium">Ora reg.</th>
               <th className="px-3 py-2 font-medium">Chi registra</th>
               <th className="px-3 py-2 font-medium">Cognome e nome</th>
@@ -594,15 +623,22 @@ function RichiesteTab({
             </tr>
           </thead>
           <tbody>
-            {richiesteGiorno.length === 0 ? (
+            {richiesteVista.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-6 text-zinc-500">
-                  Nessuna richiesta in questa data.
+                <td colSpan={mostraData ? 12 : 11} className="px-3 py-6 text-zinc-500">
+                  {vista === "aperte"
+                    ? "Nessuna richiesta aperta."
+                    : vista === "tutte"
+                      ? "Nessuna richiesta."
+                      : "Nessuna richiesta in questa data."}
                 </td>
               </tr>
             ) : null}
-            {richiesteGiorno.map((r) => (
+            {richiesteVista.map((r) => (
               <tr key={r.id} className="border-b border-zinc-800/60 align-top">
+                {mostraData ? (
+                  <td className="px-3 py-2 text-zinc-300">{fmtDateIt(r.createdAt.slice(0, 10))}</td>
+                ) : null}
                 <td className="px-3 py-2 text-zinc-300">{(r.createdAt.slice(11, 16) || "—")}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.createdBy}</td>
                 <td className="px-3 py-2 font-medium text-zinc-100">{r.clienteNome}</td>

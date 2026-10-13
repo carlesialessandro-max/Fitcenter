@@ -9,7 +9,18 @@ export type AmmTipoCosto = "fisso" | "variabile"
 export type AmmOrigine = "manuale" | "ocr" | "excel" | "fattureincloud"
 export type AmmBustaOrigine = "manuale" | "mastrino" | "pdf"
 export type AmmCollabTipo = "sportivo" | "gestionale"
-export type AmmCollabOrigine = "riepilogo"
+export type AmmCollabOrigine = "riepilogo" | "manuale"
+
+export type AmmCollabAudit = {
+  id: string
+  at: string
+  user: string
+  nominativo: string
+  mese: string
+  da: number | null
+  a: number | null
+  azione: "importo" | "aggiunto" | "eliminato"
+}
 
 export type AmmReparto = {
   id: string
@@ -71,6 +82,7 @@ export type AmmCollaboratore = {
   tipo: AmmCollabTipo
   quote: AmmQuota[]
   origine: AmmCollabOrigine
+  modificatoDa?: string
   createdAt: string
   updatedAt: string
 }
@@ -81,6 +93,7 @@ type FileShape = {
   spese: AmmSpesa[]
   buste: AmmBusta[]
   collaboratori: AmmCollaboratore[]
+  collaboratoriAudit: AmmCollabAudit[]
 }
 
 export const BUSTA_DEFAULT_REPARTO = "amministrazione-uffici"
@@ -138,7 +151,14 @@ export const REPARTO_ID_LEGACY: Record<string, string> = {
 }
 
 function empty(): FileShape {
-  return { reparti: REPARTI_SEED.map((r) => ({ ...r })), fornitori: [], spese: [], buste: [], collaboratori: [] }
+  return {
+    reparti: REPARTI_SEED.map((r) => ({ ...r })),
+    fornitori: [],
+    spese: [],
+    buste: [],
+    collaboratori: [],
+    collaboratoriAudit: [],
+  }
 }
 
 function remapRepartoId(id: string): string {
@@ -210,14 +230,32 @@ function migrate(raw: Partial<FileShape>): FileShape {
       percentuale: Number(q.percentuale) || 0,
     })),
     tipo: c.tipo === "gestionale" ? "gestionale" : "sportivo",
-    origine: "riepilogo",
+    origine: c.origine === "manuale" ? "manuale" : "riepilogo",
+    modificatoDa: String(c.modificatoDa ?? "").trim() || undefined,
   }))
+  const collaboratoriAudit: AmmCollabAudit[] = (Array.isArray(raw.collaboratoriAudit) ? raw.collaboratoriAudit : [])
+    .map((a) => {
+      const azione: AmmCollabAudit["azione"] =
+        a.azione === "aggiunto" || a.azione === "eliminato" ? a.azione : "importo"
+      return {
+        id: String(a.id ?? ""),
+        at: String(a.at ?? ""),
+        user: String(a.user ?? ""),
+        nominativo: String(a.nominativo ?? ""),
+        mese: String(a.mese ?? "").slice(0, 7),
+        da: a.da == null ? null : Number(a.da),
+        a: a.a == null ? null : Number(a.a),
+        azione,
+      }
+    })
+    .filter((a) => a.id && a.at)
   return {
     reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
     fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
     spese,
     buste,
     collaboratori,
+    collaboratoriAudit,
   }
 }
 
@@ -504,7 +542,8 @@ export const ammCostiStore = {
       totale: Math.round(totale * 100) / 100,
       tipo: body.tipo === "gestionale" || cur?.tipo === "gestionale" ? "gestionale" : "sportivo",
       quote,
-      origine: "riepilogo",
+      origine: body.origine === "manuale" || body.origine === "riepilogo" ? body.origine : (cur?.origine ?? "riepilogo"),
+      modificatoDa: (body.modificatoDa ?? cur?.modificatoDa)?.trim() || undefined,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }
@@ -517,6 +556,67 @@ export const ammCostiStore = {
     const d = load()
     d.collaboratori = d.collaboratori.filter((c) => c.id !== id)
     save(d)
+  },
+  listCollaboratoriAudit(limit = 80): AmmCollabAudit[] {
+    return load()
+      .collaboratoriAudit.slice()
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, Math.max(1, Math.min(limit, 300)))
+  },
+  setImportoCollaboratore(body: {
+    nominativo: string
+    mese: string
+    totale: number
+    tipo?: AmmCollabTipo
+    user: string
+  }): AmmCollaboratore {
+    const nominativo = body.nominativo.trim()
+    const mese = String(body.mese ?? "").slice(0, 7)
+    const totale = Number(String(body.totale).replace(",", "."))
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
+    const d = load()
+    const key = nominativo.toLowerCase()
+    const cur =
+      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese) ??
+      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key)
+    const tipo: AmmCollabTipo =
+      body.tipo === "gestionale" || body.tipo === "sportivo"
+        ? body.tipo
+        : (cur?.tipo === "gestionale" ? "gestionale" : "sportivo")
+    const quote =
+      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese)?.quote ??
+      (tipo === "gestionale"
+        ? [{ repartoId: "amministrazione-uffici", percentuale: 100 }]
+        : [{ repartoId: "personale-condiviso", percentuale: 100 }])
+    const same = d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese)
+    const prevTot = same ? same.totale : null
+    const row = this.upsertCollaboratore({
+      id: same?.id,
+      nominativo,
+      mese,
+      totale: Math.round(totale * 100) / 100,
+      tipo,
+      quote,
+      origine: "manuale",
+      modificatoDa: body.user.trim() || undefined,
+      descrizione: same?.descrizione ?? "",
+    })
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: body.user.trim() || "sconosciuto",
+      nominativo,
+      mese,
+      da: prevTot,
+      a: row.totale,
+      azione: same ? "importo" : "aggiunto",
+    }
+    const d2 = load()
+    d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
+    save(d2)
+    return row
   },
   /** Sostituisce tutto il mese: il riepilogo Mattonai è la fonte, libro paga e import precedenti non restano. */
   replaceCollaboratoriMese(

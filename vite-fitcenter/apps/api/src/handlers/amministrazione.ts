@@ -442,6 +442,75 @@ export function deleteAmmCollaboratore(req: Request, res: Response) {
   }
 }
 
+const MESI_LABEL = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+
+export function getAmmCollaboratoriReport(req: Request, res: Response) {
+  try {
+    const now = new Date()
+    const anno = Number(req.query.anno) || now.getFullYear()
+    const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese.startsWith(`${anno}-`))
+    const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
+    const byNome = new Map<
+      string,
+      { nominativo: string; tipo: "sportivo" | "gestionale"; mesi: Record<string, { id: string; totale: number; origine: string }> }
+    >()
+    for (const c of stored) {
+      const key = c.nominativo.trim().toLowerCase()
+      const cur = byNome.get(key) ?? {
+        nominativo: c.nominativo.trim(),
+        tipo: c.tipo,
+        mesi: {},
+      }
+      if (c.tipo === "gestionale") cur.tipo = "gestionale"
+      cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine }
+      byNome.set(key, cur)
+    }
+    const righe = [...byNome.values()]
+      .map((r) => {
+        const tot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+        return {
+          nominativo: r.nominativo,
+          tipo: r.tipo,
+          mesi: r.mesi,
+          tot,
+          oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
+          oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
+        }
+      })
+      .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+    const totMese: Record<string, number> = {}
+    for (const m of mesi) {
+      totMese[m] = Math.round(righe.reduce((s, r) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+    }
+    const totAnno = Math.round(righe.reduce((s, r) => s + r.tot, 0) * 100) / 100
+    res.json({
+      anno,
+      mesi: mesi.map((id, i) => ({ id, label: MESI_LABEL[i] ?? id })),
+      righe,
+      totMese,
+      totAnno,
+      n: righe.length,
+      audit: ammCostiStore.listCollaboratoriAudit(60),
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmCollaboratoreImporto(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const mese = String(req.body?.mese ?? "").slice(0, 7)
+    const totale = Number(String(req.body?.totale ?? "").replace(",", "."))
+    const tipo = req.body?.tipo === "gestionale" ? "gestionale" : req.body?.tipo === "sportivo" ? "sportivo" : undefined
+    const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
+    const row = ammCostiStore.setImportoCollaboratore({ nominativo, mese, totale, tipo, user })
+    res.json({ row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export function postAmmOcr(req: Request, res: Response) {
   try {
     const text = String(req.body?.text ?? "")

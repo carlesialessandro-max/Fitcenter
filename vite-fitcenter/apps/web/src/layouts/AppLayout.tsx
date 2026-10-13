@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { BrandLogo } from "@/components/BrandLogo"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { adminMenuGroupForPath } from "@/lib/admin-menu"
+import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
 
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
 
@@ -184,6 +185,14 @@ function isRealPath(to: string): boolean {
   return !!to && !to.startsWith("__")
 }
 
+function navHasPath(items: NavItem[], path: string): boolean {
+  for (const item of items) {
+    if (item.to === path) return true
+    if (item.children?.length && navHasPath(item.children, path)) return true
+  }
+  return false
+}
+
 function isPathAllowed(pathname: string, pages: string[]): boolean {
   for (const p of pages) {
     if (pathname === p) return true
@@ -296,11 +305,19 @@ export function AppLayout() {
       ? [...new Set(["/", "/dashboard", "/libro-paga", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/reparti", ...(user!.pages ?? [])])]
       : user?.pages
   const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, pagesForNav!) : roleNav
-  const nav: NavItem[] =
+  const navRestricted: NavItem[] =
     role !== "admin" && user?.vedeTotaliCentro !== true ? excludeNavPath(navBase, "/incassi") : navBase
+  const nav: NavItem[] =
+    role !== "admin" &&
+    canVedereReportCollaboratori(user) &&
+    !navHasPath(navRestricted, "/libro-paga")
+      ? [...navRestricted, { to: "/libro-paga", label: "Libro paga" }]
+      : navRestricted
   const homePath = firstNavPath(nav)
   const mustRedirectPages =
-    customPages && !isPathAllowed(location.pathname, pagesForNav ?? user!.pages!)
+    customPages &&
+    !isPathAllowed(location.pathname, pagesForNav ?? user!.pages!) &&
+    !(canVedereReportCollaboratori(user) && location.pathname.startsWith("/libro-paga"))
 
   const Sidebar = (
     <aside className="flex h-full w-72 flex-col border-r border-zinc-800 bg-zinc-900/95 sm:w-56 sm:bg-zinc-900/50">

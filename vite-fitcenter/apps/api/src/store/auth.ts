@@ -3,6 +3,7 @@ import type { Role } from "../types/auth.js"
 import { isEmailOtpEnabled, maskEmail, sendLoginOtpEmail } from "../services/mail-otp.js"
 import { readJson, writeJson } from "./persist.js"
 import { sanitizePages } from "./pages.js"
+import { canVedereReportCollaboratori } from "../lib/report-collaboratori-access.js"
 import crypto from "crypto"
 
 export interface User {
@@ -350,6 +351,13 @@ function token(): string {
   return crypto.randomUUID() + "-" + Date.now().toString(36)
 }
 
+function pagesWithReport(u: User): string[] | undefined {
+  if (!canVedereReportCollaboratori(u) || u.role === "admin") return u.pages
+  if (!u.pages?.length) return u.pages
+  if (u.pages.includes("/libro-paga")) return u.pages
+  return [...u.pages, "/libro-paga"]
+}
+
 function toPublicUser(u: UserRecord): User {
   return {
     username: u.username,
@@ -358,7 +366,7 @@ function toPublicUser(u: UserRecord): User {
     consulenteNome: u.consulenteNome,
     leadFilter: u.leadFilter,
     vedeTotaliCentro: u.vedeTotaliCentro,
-    pages: u.pages,
+    pages: pagesWithReport(u),
   }
 }
 

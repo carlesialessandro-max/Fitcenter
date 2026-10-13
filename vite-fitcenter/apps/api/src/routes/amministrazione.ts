@@ -1,11 +1,12 @@
 import { Router } from "express"
 import multer from "multer"
-import { requireAdmin, requireAuth } from "../middleware/auth.js"
+import { requireAdmin, requireAdminOrAlberto, requireAuth } from "../middleware/auth.js"
 import {
   deleteAmmBusta,
   deleteAmmSpesa,
   getAmmBuste,
   getAmmCollaboratori,
+  getAmmCollaboratoriReport,
   getAmmDashboard,
   getAmmReparti,
   getAmmSpesaPdf,
@@ -17,6 +18,7 @@ import {
   postAmmSpesa,
   postAmmStipendiPdf,
   postAmmCollaboratoriImport,
+  postAmmCollaboratoreImporto,
   deleteAmmCollaboratore,
   getFicStatus,
   postFicConnect,
@@ -37,7 +39,12 @@ const upload = multer({
 })
 
 export const amministrazioneRouter = Router()
-amministrazioneRouter.use(requireAuth, requireAdmin)
+amministrazioneRouter.use(requireAuth)
+
+amministrazioneRouter.get("/collaboratori/report", requireAdminOrAlberto, getAmmCollaboratoriReport)
+amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, postAmmCollaboratoreImporto)
+
+amministrazioneRouter.use(requireAdmin)
 
 amministrazioneRouter.get("/dashboard", getAmmDashboard)
 amministrazioneRouter.get("/reparti", getAmmReparti)

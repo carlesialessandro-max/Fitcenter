@@ -138,6 +138,7 @@ export const router = createBrowserRouter([
       { path: "amministrazione/spese", element: <AmministrazioneCosti /> },
       { path: "amministrazione/stipendi", element: <AmministrazioneCosti /> },
       { path: "amministrazione/reparti", element: <AmministrazioneCosti /> },
+      { path: "amministrazione/report-collaboratori", element: <Navigate to="/libro-paga?tab=collaboratori" replace /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
       { path: "firme", element: <SignaturesAdmin /> },

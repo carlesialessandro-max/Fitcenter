@@ -9,6 +9,8 @@ import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheF
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import type { QualificaConData } from "@/lib/personale-qualifiche"
+import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
+import { isAlberto } from "@/lib/report-collaboratori-access"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -136,7 +138,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
-  const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita" | "report">("home")
+  const [tab, setTab] = useState<"home" | "turni" | "personale" | "mensilita" | "report" | "collaboratori">("home")
   const [error, setError] = useState("")
   const meQ = useQuery({ queryKey: ["lpaga-me"], queryFn: () => lpagaApi.me() })
   const me = meQ.data?.user
@@ -148,6 +150,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const data = snap.data
   const isUser = me?.ruolo === "user"
   const canTeam = me?.ruolo === "manager" || me?.ruolo === "admin"
+  const canCollab = isAlberto(me)
 
   useEffect(() => {
     const msg = `${(meQ.error as Error | undefined)?.message ?? ""} ${(snap.error as Error | undefined)?.message ?? ""}`
@@ -174,6 +177,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
     ...(canTeam ? ([{ id: "report" as const, label: "Report" }] as const) : []),
+    ...(canCollab ? ([{ id: "collaboratori" as const, label: "Collaboratori sportivi" }] as const) : []),
   ]
 
   return (
@@ -260,6 +264,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           />
         )}
         {data && tab === "report" && canTeam && <LibroPagaReport data={data} />}
+        {tab === "collaboratori" && canCollab ? <ReportCollaboratori source="lpaga" compact /> : null}
       </main>
       <PwaInstallHint />
     </div>

@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express"
 import { authStore } from "../store/auth.js"
 import type { User } from "../store/auth.js"
+import { canVedereReportCollaboratori } from "../lib/report-collaboratori-access.js"
 
 function bearerToken(req: Request): string | null {
   const authHeader = req.headers.authorization
@@ -21,6 +22,16 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const u = req.user
   if (!u) return res.status(401).json({ message: "Token mancante" })
   if (u.role !== "admin") return res.status(403).json({ message: "Permessi insufficienti" })
+  next()
+}
+
+/** Report collaboratori sportivi: solo admin e Alberto. */
+export function requireAdminOrAlberto(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (!canVedereReportCollaboratori(u)) {
+    return res.status(403).json({ message: "Pagina riservata ad admin e Alberto" })
+  }
   next()
 }
 

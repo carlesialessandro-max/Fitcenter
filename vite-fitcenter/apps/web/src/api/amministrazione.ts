@@ -89,6 +89,44 @@ export type AmmOcrParsed = {
   descrizione: string
 }
 
+export type AmmCollaboratoreRiga = {
+  id: string
+  nominativo: string
+  mese: string
+  totale: number
+  tipo: "sportivo" | "gestionale"
+}
+
+export type AmmCollabReportRiga = {
+  nominativo: string
+  tipo: "sportivo" | "gestionale"
+  mesi: Record<string, { id: string; totale: number; origine: string }>
+  tot: number
+  oltre5000: number
+  oltre15000: number
+}
+
+export type AmmCollabAudit = {
+  id: string
+  at: string
+  user: string
+  nominativo: string
+  mese: string
+  da: number | null
+  a: number | null
+  azione: "importo" | "aggiunto" | "eliminato"
+}
+
+export type AmmCollabReport = {
+  anno: number
+  mesi: { id: string; label: string }[]
+  righe: AmmCollabReportRiga[]
+  totMese: Record<string, number>
+  totAnno: number
+  n: number
+  audit: AmmCollabAudit[]
+}
+
 export type AmmImportEsito = {
   inserite: number
   saltate: number
@@ -163,6 +201,10 @@ export const amministrazioneApi = {
     }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
   importCollaboratori: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/collaboratori/import", { righe }),
   deleteCollaboratore: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/${encodeURIComponent(id)}`),
+  reportCollaboratori: (anno: number) =>
+    api.get<AmmCollabReport>(`/amministrazione/collaboratori/report?anno=${encodeURIComponent(String(anno))}`),
+  setImportoCollaboratore: (body: { nominativo: string; mese: string; totale: number; tipo?: "sportivo" | "gestionale" }) =>
+    api.post<{ row: AmmCollaboratoreRiga }>(`/amministrazione/collaboratori/importo`, body),
   collaboratori: (anno: number, mese?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })
     if (mese) q.set("mese", mese)

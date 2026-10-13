@@ -1,4 +1,5 @@
 import { getApiBase } from "./baseUrl"
+import type { AmmCollabReport, AmmCollaboratoreRiga } from "./amministrazione"
 import type { LibroPagaSnapshot, LpagaLivello, LpagaRuolo } from "./libroPaga"
 
 const API_BASE = getApiBase()
@@ -179,5 +180,12 @@ export const lpagaApi = {
     lpagaRequest<{ managerId: string; deleghe: string[] }>("/lpaga/deleghe", {
       method: "PUT",
       body: JSON.stringify({ ids, managerId }),
+    }),
+  reportCollaboratori: (anno: number) =>
+    lpagaRequest<AmmCollabReport>(`/lpaga/collaboratori/report?anno=${encodeURIComponent(String(anno))}`),
+  setImportoCollaboratore: (body: { nominativo: string; mese: string; totale: number; tipo?: "sportivo" | "gestionale" }) =>
+    lpagaRequest<{ row: AmmCollaboratoreRiga }>("/lpaga/collaboratori/importo", {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 }

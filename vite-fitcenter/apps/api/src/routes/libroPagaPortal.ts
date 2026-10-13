@@ -18,7 +18,9 @@ import {
   putLpagaPersonalePassword,
   removeLpagaTurno,
   requireLpaga,
+  requireLpagaAlberto,
 } from "../handlers/libroPagaPortal.js"
+import { getAmmCollaboratoriReport, postAmmCollaboratoreImporto } from "../handlers/amministrazione.js"
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60_000,
@@ -44,3 +46,5 @@ libroPagaPortalRouter.post("/convalida-mese", requireLpaga, postLpagaConvalidaMe
 libroPagaPortalRouter.put("/convalida/turno", requireLpaga, putLpagaConvalidaTurno)
 libroPagaPortalRouter.get("/deleghe", requireLpaga, getLpagaDeleghe)
 libroPagaPortalRouter.put("/deleghe", requireLpaga, putLpagaDeleghe)
+libroPagaPortalRouter.get("/collaboratori/report", requireLpaga, requireLpagaAlberto, getAmmCollaboratoriReport)
+libroPagaPortalRouter.post("/collaboratori/importo", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreImporto)
