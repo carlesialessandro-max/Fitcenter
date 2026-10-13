@@ -100,6 +100,8 @@ export type AmmCollaboratoreRiga = {
 export type AmmCollabReportRiga = {
   nominativo: string
   tipo: "sportivo" | "gestionale"
+  reparto?: string
+  mansione?: string
   mesi: Record<string, { id: string; totale: number; origine: string }>
   tot: number
   oltre5000: number

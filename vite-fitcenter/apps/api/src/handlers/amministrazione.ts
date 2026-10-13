@@ -14,6 +14,7 @@ import {
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import { costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
+import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import { listAcquistiMese, listCompanies, pickCompany, publicStatus, resolvedConfig } from "../services/fattureincloud.js"
 
@@ -443,13 +444,95 @@ export function deleteAmmCollaboratore(req: Request, res: Response) {
 }
 
 const MESI_LABEL = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+const REPARTO_SENZA = "Senza reparto"
+const REPARTO_AMM = "Amministrazione"
+const REPARTO_ORDINE = [
+  "piscina",
+  "acqua",
+  "nuoto",
+  "palestra",
+  "fitness",
+  "sala",
+  "ristorante",
+  "bar",
+  "spa",
+  "miscellanea",
+  "amministrazione",
+  "gestione",
+]
 
-export function getAmmCollaboratoriReport(req: Request, res: Response) {
+function nameTokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 1)
+    .sort()
+}
+
+function nameKey(s: string): string {
+  return nameTokens(s).join(" ")
+}
+
+function ordineReparto(nome: string): number {
+  const n = nome.toLowerCase()
+  if (n === REPARTO_SENZA.toLowerCase()) return 900
+  const i = REPARTO_ORDINE.findIndex((k) => n.includes(k))
+  return i >= 0 ? i : 80
+}
+
+type AnagReparto = { key: string; tokens: string[]; dominio: string; mansione: string }
+
+async function anagraficaReparti(): Promise<AnagReparto[]> {
+  try {
+    const [pers, liv] = await Promise.all([listPersonale(), listLivelli()])
+    return pers.map((p) => {
+      const mansione = p.livelloId ? liv.find((l) => l.id === p.livelloId)?.nome ?? "" : ""
+      const dominio = p.livelloId ? dominioLivello(liv, p.livelloId) : ""
+      return {
+        key: nameKey(nominativo(p)),
+        tokens: nameTokens(nominativo(p)),
+        dominio: (dominio && dominio !== "—" ? dominio : mansione).trim(),
+        mansione: mansione.trim(),
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+function matchAnag(nominativoRiga: string, anag: AnagReparto[]): AnagReparto | null {
+  const key = nameKey(nominativoRiga)
+  if (!key) return null
+  const exact = anag.filter((a) => a.key === key)
+  if (exact.length === 1) return exact[0]!
+  if (exact.length > 1) return exact.find((a) => a.dominio) ?? exact[0]!
+  const tokens = nameTokens(nominativoRiga)
+  if (tokens.length < 2) return null
+  const fuzzy = anag.filter((a) => {
+    if (a.tokens.length < 2) return false
+    return tokens.every((t) => a.tokens.includes(t)) || a.tokens.every((t) => tokens.includes(t))
+  })
+  if (fuzzy.length === 1) return fuzzy[0]!
+  return null
+}
+
+function labelReparto(tipo: "sportivo" | "gestionale", hit: AnagReparto | null): string {
+  if (hit?.dominio) return hit.dominio
+  if (tipo === "gestionale") return REPARTO_AMM
+  return REPARTO_SENZA
+}
+
+export async function getAmmCollaboratoriReport(req: Request, res: Response) {
   try {
     const now = new Date()
     const anno = Number(req.query.anno) || now.getFullYear()
     const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese.startsWith(`${anno}-`))
     const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
+    const anag = await anagraficaReparti()
     const byNome = new Map<
       string,
       { nominativo: string; tipo: "sportivo" | "gestionale"; mesi: Record<string, { id: string; totale: number; origine: string }> }
@@ -468,16 +551,27 @@ export function getAmmCollaboratoriReport(req: Request, res: Response) {
     const righe = [...byNome.values()]
       .map((r) => {
         const tot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+        const hit = matchAnag(r.nominativo, anag)
         return {
           nominativo: r.nominativo,
           tipo: r.tipo,
+          reparto: labelReparto(r.tipo, hit),
+          mansione: hit?.mansione || "",
           mesi: r.mesi,
           tot,
           oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
           oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
         }
       })
-      .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+      .sort((a, b) => {
+        const ra = a.reparto || REPARTO_SENZA
+        const rb = b.reparto || REPARTO_SENZA
+        const o = ordineReparto(ra) - ordineReparto(rb)
+        if (o) return o
+        const c = ra.localeCompare(rb, "it")
+        if (c) return c
+        return a.nominativo.localeCompare(b.nominativo, "it")
+      })
     const totMese: Record<string, number> = {}
     for (const m of mesi) {
       totMese[m] = Math.round(righe.reduce((s, r) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100

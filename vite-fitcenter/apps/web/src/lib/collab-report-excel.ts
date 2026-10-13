@@ -131,11 +131,8 @@ export function parseCollabReportExcel(buf: ArrayBuffer, anno: number): {
     const nominativo = cleanNome(nomeRaw)
     if (!nominativo) continue
     const tipo = tipoFrom(nomeRaw)
-    const firstCol = mesiCols[0]?.col ?? 0
-    const extra = firstCol > 0 ? parseImporto(row[firstCol - 1]) : null
-    const shift = extra != null && extra > 0 ? 1 : 0
     for (const m of mesiCols) {
-      const tot = parseImporto(row[m.col - shift])
+      const tot = parseImporto(row[m.col])
       if (tot == null || tot <= 0) continue
       const mese = `${anno}-${String(m.mm).padStart(2, "0")}`
       const key = `${nominativo.toLowerCase()}|${mese}`
