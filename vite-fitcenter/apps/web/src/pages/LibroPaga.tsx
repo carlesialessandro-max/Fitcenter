@@ -476,7 +476,9 @@ function PersonaleTab({
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
-  const righe = data.personale.filter(match).sort(cmpNomeCognome)
+  const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
+  const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
+  const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome)
   const createMut = useMutation({
     mutationFn: () =>
       libroPagaApi.createPersonale({
@@ -536,8 +538,8 @@ function PersonaleTab({
         <table className="min-w-full text-left text-sm">
           <thead className="text-xs uppercase text-zinc-500">
             <tr>
-              <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Nome</th>
+              <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
               {showReparto && <th className="px-3 py-2">Reparto</th>}
@@ -548,8 +550,8 @@ function PersonaleTab({
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.cognome ?? "—"}</td>
                 <td className="px-3 py-2">{r.nome}</td>
+                <td className="px-3 py-2">{r.cognome ?? "—"}</td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{r.username ?? "—"}</td>
                 <td className="px-3 py-2">
                   <select
@@ -751,7 +753,9 @@ function PersonaleTab({
           </button>
         </form>
       )}
-      <Table title={`Personale · ${righe.length}`} rows={righe} showReparto />
+      <Table title={`Dipendenti (user) · ${users.length}`} rows={users} />
+      <Table title={`Responsabili (manager) · ${managers.length}`} rows={managers} showReparto />
+      <Table title={`Amministratori (admin) · ${admins.length}`} rows={admins} />
     </div>
   )
 }

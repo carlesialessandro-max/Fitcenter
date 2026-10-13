@@ -569,7 +569,7 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
       `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza, Qualifiche
-       FROM dbo.FcLibroPagaPersonale ORDER BY Cognome COLLATE Latin1_General_CI_AI, Nome COLLATE Latin1_General_CI_AI`
+       FROM dbo.FcLibroPagaPersonale ORDER BY Nome COLLATE Latin1_General_CI_AI, Cognome COLLATE Latin1_General_CI_AI`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
   }
@@ -925,9 +925,9 @@ export function cmpPersonaleNomeCognome(
   b: { nome?: string; cognome?: string; nominativo?: string }
 ): number {
   const chiave = (p: { nome?: string; cognome?: string; nominativo?: string }) => {
-    const c = (p.cognome ?? "").trim().replace(/\s+/g, " ")
     const n = (p.nome ?? "").trim().replace(/\s+/g, " ")
-    if (c || n) return `${c} ${n}`.trim()
+    const c = (p.cognome ?? "").trim().replace(/\s+/g, " ")
+    if (n || c) return `${n} ${c}`.trim()
     return (p.nominativo ?? "").trim().replace(/\s+/g, " ")
   }
   return collatorPersonale.compare(chiave(a), chiave(b))

@@ -11,7 +11,7 @@ import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
-import { cmpNomeCognome } from "@/lib/personale-sort"
+import { cmpNomeCognome, cmpRuoloNomeCognome } from "@/lib/personale-sort"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -735,7 +735,7 @@ function Personale({
           .toLowerCase()
           .includes(n)
     )
-    .sort(cmpNomeCognome)
+    .sort(cmpRuoloNomeCognome)
   const detPersona = dettaglioId ? data.personale.find((p) => p.id === dettaglioId) : undefined
   const detMens = dettaglioId ? data.mensilita.find((m) => m.personaleId === dettaglioId) : undefined
   const detTurni = dettaglioId
@@ -906,8 +906,8 @@ function Personale({
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
             <tr>
-              <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Nome</th>
+              <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
               <th className="px-3 py-2">Reparto</th>
@@ -915,50 +915,61 @@ function Personale({
             </tr>
           </thead>
           <tbody>
-            {personeFiltrate.map((p) => (
-              <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{p.cognome ?? "—"}</td>
-                <td className="px-3 py-2">{p.nome}</td>
-                <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
-                <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
-                <td className="px-3 py-2">{p.repartoNome}</td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <button
-                    type="button"
-                    className="mr-2 text-xs text-zinc-300 hover:underline"
-                    onClick={() => setDettaglioId(p.id)}
-                  >
-                    {me?.ruolo === "admin" || p.ruolo !== "admin" ? "Modifica" : "Dettaglio"}
-                  </button>
-                  {p.username && (me?.ruolo === "admin" || p.ruolo !== "admin") && (
+            {personeFiltrate.flatMap((p, i) => {
+              const header =
+                i === 0 || p.ruolo !== personeFiltrate[i - 1]?.ruolo ? (
+                  <tr key={`ruolo-${p.ruolo}`} className="border-t border-zinc-800 bg-zinc-900/70">
+                    <td className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400" colSpan={6}>
+                      {ruoloLabel(p.ruolo)}
+                    </td>
+                  </tr>
+                ) : null
+              const row = (
+                <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
+                  <td className="px-3 py-2">{p.nome}</td>
+                  <td className="px-3 py-2">{p.cognome ?? "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
+                  <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
+                  <td className="px-3 py-2">{p.repartoNome}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
                     <button
                       type="button"
-                      className="mr-2 text-xs text-amber-300 hover:underline"
-                      onClick={() => {
-                        setPwdId(p.id)
-                        setPwdNew("")
-                      }}
+                      className="mr-2 text-xs text-zinc-300 hover:underline"
+                      onClick={() => setDettaglioId(p.id)}
                     >
-                      Password
+                      {me?.ruolo === "admin" || p.ruolo !== "admin" ? "Modifica" : "Dettaglio"}
                     </button>
-                  )}
-                  {me?.ruolo === "admin" && p.id !== me.id ? (
-                    <button
-                      type="button"
-                      className="text-xs text-red-400 hover:underline disabled:opacity-50"
-                      disabled={delMut.isPending}
-                      onClick={() => {
-                        const nome = p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()
-                        if (!window.confirm(`Eliminare ${nome} dal libro paga? Vengono cancellati anche i suoi turni.`)) return
-                        delMut.mutate(p.id)
-                      }}
-                    >
-                      Elimina
-                    </button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
+                    {p.username && (me?.ruolo === "admin" || p.ruolo !== "admin") && (
+                      <button
+                        type="button"
+                        className="mr-2 text-xs text-amber-300 hover:underline"
+                        onClick={() => {
+                          setPwdId(p.id)
+                          setPwdNew("")
+                        }}
+                      >
+                        Password
+                      </button>
+                    )}
+                    {me?.ruolo === "admin" && p.id !== me.id ? (
+                      <button
+                        type="button"
+                        className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                        disabled={delMut.isPending}
+                        onClick={() => {
+                          const nome = p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()
+                          if (!window.confirm(`Eliminare ${nome} dal libro paga? Vengono cancellati anche i suoi turni.`)) return
+                          delMut.mutate(p.id)
+                        }}
+                      >
+                        Elimina
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              )
+              return header ? [header, row] : [row]
+            })}
             {!personeFiltrate.length && (
               <tr>
                 <td className="px-3 py-6 text-zinc-500" colSpan={6}>
