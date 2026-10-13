@@ -154,6 +154,8 @@ export const lpagaApi = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  deletePersonale: (id: string) =>
+    lpagaRequest<{ ok: boolean }>(`/lpaga/personale/${encodeURIComponent(id)}`, { method: "DELETE" }),
   setPersonalePassword: (id: string, password: string) =>
     lpagaRequest<{ ok: boolean }>(`/lpaga/personale/${encodeURIComponent(id)}/password`, {
       method: "PUT",
@@ -188,9 +190,14 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  importCollaboratoriReport: (anno: number, righe: unknown[]) =>
+  setRimanenzeCollaboratore: (body: { nominativo: string; anno: number; importo: number }) =>
+    lpagaRequest<{ row: { nominativo: string; anno: number; importo: number } | null }>("/lpaga/collaboratori/rimanenze", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  importCollaboratoriReport: (anno: number, righe: unknown[], rimanenze?: unknown[]) =>
     lpagaRequest<import("./amministrazione").AmmImportEsito & { nPersone?: number }>("/lpaga/collaboratori/report/import", {
       method: "POST",
-      body: JSON.stringify({ anno, righe }),
+      body: JSON.stringify({ anno, righe, rimanenze }),
     }),
 }

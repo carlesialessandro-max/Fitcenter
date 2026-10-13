@@ -216,6 +216,17 @@ export function setDeleghe(managerId: string, ids: string[]): string[] {
   return db.deleghe[managerId]!
 }
 
+export function removePersonaleDaDeleghe(personaleId: string): void {
+  const id = String(personaleId ?? "").trim()
+  if (!id) return
+  const db = readDb()
+  delete db.deleghe[id]
+  for (const [k, ids] of Object.entries(db.deleghe)) {
+    db.deleghe[k] = (ids ?? []).filter((x) => x !== id)
+  }
+  writeDb(db)
+}
+
 export function viewerPuoConvalidare(
   me: Pick<LpagaPersonale, "id" | "ruolo">,
   personale: LpagaPersonale[]

@@ -531,6 +531,7 @@ export async function getAmmCollaboratoriReport(req: Request, res: Response) {
     const now = new Date()
     const anno = Number(req.query.anno) || now.getFullYear()
     const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese.startsWith(`${anno}-`))
+    const rimanenzeAnno = ammCostiStore.listRimanenze(anno)
     const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
     const anag = await anagraficaReparti()
     const byNome = new Map<
@@ -548,9 +549,17 @@ export async function getAmmCollaboratoriReport(req: Request, res: Response) {
       cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine }
       byNome.set(key, cur)
     }
+    for (const r of rimanenzeAnno) {
+      const key = r.nominativo.trim().toLowerCase()
+      if (byNome.has(key)) continue
+      byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
+    }
+    const rimByNome = new Map(rimanenzeAnno.map((r) => [r.nominativo.trim().toLowerCase(), r.importo]))
     const righe = [...byNome.values()]
       .map((r) => {
-        const tot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+        const mesiTot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+        const rimanenze = rimByNome.get(r.nominativo.trim().toLowerCase()) ?? 0
+        const tot = Math.round((mesiTot + rimanenze) * 100) / 100
         const hit = matchAnag(r.nominativo, anag)
         return {
           nominativo: r.nominativo,
@@ -558,6 +567,7 @@ export async function getAmmCollaboratoriReport(req: Request, res: Response) {
           reparto: labelReparto(r.tipo, hit),
           mansione: hit?.mansione || "",
           mesi: r.mesi,
+          rimanenze,
           tot,
           oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
           oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
@@ -577,11 +587,13 @@ export async function getAmmCollaboratoriReport(req: Request, res: Response) {
       totMese[m] = Math.round(righe.reduce((s, r) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
     }
     const totAnno = Math.round(righe.reduce((s, r) => s + r.tot, 0) * 100) / 100
+    const totRimanenze = Math.round(righe.reduce((s, r) => s + r.rimanenze, 0) * 100) / 100
     res.json({
       anno,
       mesi: mesi.map((id, i) => ({ id, label: MESI_LABEL[i] ?? id })),
       righe,
       totMese,
+      totRimanenze,
       totAnno,
       n: righe.length,
       audit: ammCostiStore.listCollaboratoriAudit(60),
@@ -597,6 +609,7 @@ export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
     const righe = Array.isArray(req.body?.righe) ? req.body.righe : []
     if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
     const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
+    const rimanenze = Array.isArray(req.body?.rimanenze) ? req.body.rimanenze : []
     const { inserite, sostituite, nPersone } = ammCostiStore.importCollaboratoriReport(
       anno,
       righe.map((raw: Record<string, unknown>) => ({
@@ -605,7 +618,11 @@ export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
         totale: Number(String(raw.totale ?? "").replace(",", ".")),
         tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
       })),
-      user
+      user,
+      rimanenze.map((raw: Record<string, unknown>) => ({
+        nominativo: String(raw.nominativo ?? "").trim(),
+        importo: Number(String(raw.importo ?? "").replace(",", ".")),
+      }))
     )
     res.json({ inserite, saltate: 0, sostituite, nPersone, errori: [] })
   } catch (e) {
@@ -621,6 +638,19 @@ export function postAmmCollaboratoreImporto(req: Request, res: Response) {
     const tipo = req.body?.tipo === "gestionale" ? "gestionale" : req.body?.tipo === "sportivo" ? "sportivo" : undefined
     const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
     const row = ammCostiStore.setImportoCollaboratore({ nominativo, mese, totale, tipo, user })
+    res.json({ row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmCollaboratoreRimanenze(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const anno = Number(req.body?.anno)
+    const importo = Number(String(req.body?.importo ?? "").replace(",", "."))
+    const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
+    const row = ammCostiStore.setRimanenzaCollaboratore({ nominativo, anno, importo, user })
     res.json({ row })
   } catch (e) {
     fail(res, e)

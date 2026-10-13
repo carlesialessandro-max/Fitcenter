@@ -11,6 +11,7 @@ import {
   postLpagaLogout,
   patchLpagaPersonale,
   postLpagaPersonale,
+  removeLpagaPersonale,
   postLpagaTurno,
   putLpagaConvalidaTurno,
   putLpagaDeleghe,
@@ -23,6 +24,7 @@ import {
 import {
   getAmmCollaboratoriReport,
   postAmmCollaboratoreImporto,
+  postAmmCollaboratoreRimanenze,
   postAmmCollaboratoriReportImport,
 } from "../handlers/amministrazione.js"
 
@@ -43,6 +45,7 @@ libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)
 libroPagaPortalRouter.post("/personale", requireLpaga, postLpagaPersonale)
 libroPagaPortalRouter.patch("/personale/:id", requireLpaga, patchLpagaPersonale)
+libroPagaPortalRouter.delete("/personale/:id", requireLpaga, removeLpagaPersonale)
 libroPagaPortalRouter.put("/personale/:id/password", requireLpaga, putLpagaPersonalePassword)
 libroPagaPortalRouter.get("/convalida", requireLpaga, getLpagaConvalida)
 libroPagaPortalRouter.get("/convalida-mese", requireLpaga, getLpagaConvalidaMese)
@@ -52,4 +55,5 @@ libroPagaPortalRouter.get("/deleghe", requireLpaga, getLpagaDeleghe)
 libroPagaPortalRouter.put("/deleghe", requireLpaga, putLpagaDeleghe)
 libroPagaPortalRouter.get("/collaboratori/report", requireLpaga, requireLpagaAlberto, getAmmCollaboratoriReport)
 libroPagaPortalRouter.post("/collaboratori/importo", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreImporto)
+libroPagaPortalRouter.post("/collaboratori/rimanenze", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreRimanenze)
 libroPagaPortalRouter.post("/collaboratori/report/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriReportImport)

@@ -1,4 +1,5 @@
 import {
+  cmpPersonaleNomeCognome,
   dominioLivello,
   ensureLibroPagaStorage,
   listLivelli,
@@ -86,6 +87,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     if (vis) for (const id of vis) ids.add(id)
     personale = personaleAll.filter((p) => ids.has(p.id))
   }
+  personale = personale.slice().sort(cmpPersonaleNomeCognome)
   const totAnnoBy = new Map<string, number>()
   for (const t of scopedTurni) {
     if (!t.giorno.startsWith(year)) continue
@@ -164,7 +166,7 @@ export async function buildLibroPagaSnapshot(opts?: {
         totAnno: totAnnoBy.get(personaleId) ?? Math.round(agg.importo * 100) / 100,
       }
     })
-    .sort((a, b) => a.personaleNome.localeCompare(b.personaleNome, "it"))
+    .sort((a, b) => cmpPersonaleNomeCognome(perById.get(a.personaleId) ?? {}, perById.get(b.personaleId) ?? {}))
 
   const lastValByPerson = new Map<string, { giorno: string; stamp: string }>()
   for (const v of validazioni) {
@@ -185,7 +187,11 @@ export async function buildLibroPagaSnapshot(opts?: {
         okIeri: last?.giorno === yesterday,
       }
     })
-    .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+    .sort((a, b) => {
+      const pa = perById.get(a.personaleId)
+      const pb = perById.get(b.personaleId)
+      return cmpPersonaleNomeCognome(pa ?? {}, pb ?? {})
+    })
 
   const costiMesi = opts?.hideGlobalStats
     ? []

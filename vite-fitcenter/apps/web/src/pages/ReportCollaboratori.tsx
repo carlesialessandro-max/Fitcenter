@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { amministrazioneApi, type AmmCollabReport, type AmmCollabReportRiga } from "@/api/amministrazione"
 import { lpagaApi } from "@/api/lpaga"
-import { parseCollabReportExcel, type CollabReportExcelRiga } from "@/lib/collab-report-excel"
+import { parseCollabReportExcel, type CollabReportExcelRiga, type CollabReportExcelRimanenza } from "@/lib/collab-report-excel"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
@@ -112,7 +112,9 @@ export function ReportCollaboratori({
     nPersone: number
     tot: number
     totSettembre: number
+    totRimanenze: number
     righe: CollabReportExcelRiga[]
+    rimanenze: CollabReportExcelRimanenza[]
   } | null>(null)
 
   const report = useQuery({
@@ -127,6 +129,22 @@ export function ReportCollaboratori({
     onSuccess: () => {
       setErr("")
       setMsg("Importo aggiornato (modifica tracciata).")
+      void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => {
+      setMsg("")
+      setErr(e.message)
+    },
+  })
+
+  const rimMut = useMutation({
+    mutationFn: (body: { nominativo: string; anno: number; importo: number }) =>
+      source === "lpaga" ? lpagaApi.setRimanenzeCollaboratore(body) : amministrazioneApi.setRimanenzeCollaboratore(body),
+    onSuccess: () => {
+      setErr("")
+      setMsg("Rimanenze aggiornate (modifica tracciata).")
       void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
       void qc.invalidateQueries({ queryKey: ["amm-collab"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
@@ -173,10 +191,10 @@ export function ReportCollaboratori({
   const totAnno = Math.round(filtered.reduce((s, r) => s + r.tot, 0) * 100) / 100
 
   const importMut = useMutation({
-    mutationFn: (righe: CollabReportExcelRiga[]) =>
+    mutationFn: (body: { righe: CollabReportExcelRiga[]; rimanenze: CollabReportExcelRimanenza[] }) =>
       source === "lpaga"
-        ? lpagaApi.importCollaboratoriReport(anno, righe)
-        : amministrazioneApi.importCollaboratoriReport(anno, righe),
+        ? lpagaApi.importCollaboratoriReport(anno, body.righe, body.rimanenze)
+        : amministrazioneApi.importCollaboratoriReport(anno, body.righe, body.rimanenze),
     onSuccess: (r) => {
       setPreview(null)
       setErr("")
@@ -204,7 +222,14 @@ export function ReportCollaboratori({
       const parsed = parseCollabReportExcel(buf, anno)
       const totSettembre =
         Math.round(parsed.righe.filter((r) => r.mese.endsWith("-09")).reduce((s, r) => s + r.totale, 0) * 100) / 100
-      setPreview({ nPersone: parsed.nPersone, tot: parsed.tot, totSettembre, righe: parsed.righe })
+      setPreview({
+        nPersone: parsed.nPersone,
+        tot: parsed.tot,
+        totSettembre,
+        totRimanenze: parsed.totRimanenze,
+        righe: parsed.righe,
+        rimanenze: parsed.rimanenze,
+      })
     } catch (e) {
       setPreview(null)
       setErr((e as Error).message || "Excel non leggibile")
@@ -244,9 +269,9 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Come il REPORT GENERALE: tutte le mensilità, importo modificabile, oltre 5.000 € e oltre 15.000 €. Elenco
-            ordinato per reparto del libro paga. Importa l’Excel, correggi gli importi o aggiungi un istruttore. Ogni
-            modifica è tracciata. Solo admin e Alberto.
+            Come il REPORT GENERALE: tutte le mensilità, rimanenze anni precedenti, importo modificabile, oltre 5.000 € e
+            oltre 15.000 €. Elenco ordinato per reparto del libro paga. Importa l’Excel, correggi gli importi o aggiungi
+            un istruttore. Ogni modifica è tracciata. Solo admin e Alberto.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -309,7 +334,8 @@ export function ReportCollaboratori({
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
           <p className="text-sm text-zinc-300">
             File letto: {preview.nPersone} persone, {preview.righe.length} mensilità, {eur(preview.tot)} per il {anno}
-            {preview.totSettembre ? ` · settembre ${eur(preview.totSettembre)}` : ""}. Sostituisce i dati già presenti di
+            {preview.totSettembre ? ` · settembre ${eur(preview.totSettembre)}` : ""}
+            {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Sostituisce i dati già presenti di
             quest’anno. Le partite IVA non vengono importate.
           </p>
           <div className="flex gap-2">
@@ -320,7 +346,7 @@ export function ReportCollaboratori({
               type="button"
               className={btnAmber}
               disabled={importMut.isPending}
-              onClick={() => importMut.mutate(preview.righe)}
+              onClick={() => importMut.mutate({ righe: preview.righe, rimanenze: preview.rimanenze })}
             >
               {importMut.isPending ? "Importazione…" : `Importa ${preview.nPersone}`}
             </button>
@@ -380,6 +406,9 @@ export function ReportCollaboratori({
                   {m.label}
                 </th>
               ))}
+              <th className="px-2 py-2 text-right font-medium" title="Rimanenze degli anni precedenti">
+                Rimanenze
+              </th>
               <th className="px-2 py-2 text-right font-medium">IMPORTO</th>
               <th className="px-2 py-2 text-right font-medium">oltre € 5.000</th>
               <th className="px-2 py-2 text-right font-medium">oltre € 15.000</th>
@@ -388,14 +417,14 @@ export function ReportCollaboratori({
           <tbody>
             {report.isLoading ? (
               <tr>
-                <td colSpan={16} className="px-3 py-6 text-zinc-500">
+                <td colSpan={17} className="px-3 py-6 text-zinc-500">
                   Caricamento…
                 </td>
               </tr>
             ) : null}
             {!report.isLoading && filtered.length === 0 ? (
               <tr>
-                <td colSpan={16} className="px-3 py-6 text-zinc-500">
+                <td colSpan={17} className="px-3 py-6 text-zinc-500">
                   Nessun collaboratore in questo anno. Importa i riepiloghi mensili in Stipendi, oppure aggiungi un
                   istruttore qui.
                 </td>
@@ -407,7 +436,7 @@ export function ReportCollaboratori({
                 <Fragment key={g.reparto}>
                   <tr className="border-b border-zinc-800 bg-zinc-900/80">
                     <td
-                      colSpan={16}
+                      colSpan={17}
                       className="sticky left-0 z-10 bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200 print:static print:bg-zinc-200 print:text-zinc-800"
                     >
                       {g.reparto}
@@ -442,6 +471,15 @@ export function ReportCollaboratori({
                           </td>
                         )
                       })}
+                      <td className="px-0.5 py-0.5">
+                        <CellImporto
+                          nominativo={r.nominativo}
+                          mese={`${anno}-rim`}
+                          value={r.rimanenze ?? 0}
+                          pending={rimMut.isPending}
+                          onSave={(nom, _mese, tot) => rimMut.mutate({ nominativo: nom, anno, importo: tot })}
+                        />
+                      </td>
                       <td className="px-2 py-1 text-right font-medium tabular-nums text-zinc-100">{eur(r.tot)}</td>
                       <td
                         className={`px-2 py-1 text-right tabular-nums ${r.oltre5000 ? "text-amber-200" : "text-zinc-600"}`}
@@ -468,6 +506,9 @@ export function ReportCollaboratori({
                     {totMese[m.id] ? eur(totMese[m.id] ?? 0) : "—"}
                   </td>
                 ))}
+                <td className="px-2 py-2 text-right tabular-nums">
+                  {eur(filtered.reduce((s, r) => s + (r.rimanenze ?? 0), 0))}
+                </td>
                 <td className="px-2 py-2 text-right tabular-nums">{eur(totAnno)}</td>
                 <td className="px-2 py-2 text-right tabular-nums">
                   {eur(filtered.reduce((s, r) => s + r.oltre5000, 0))}
@@ -505,7 +546,9 @@ export function ReportCollaboratori({
                     </td>
                     <td className="px-3 py-1.5">{a.user}</td>
                     <td className="px-3 py-1.5">{a.nominativo}</td>
-                    <td className="px-3 py-1.5">{a.mese}</td>
+                    <td className="px-3 py-1.5">
+                      {/^\d{4}$/.test(a.mese) && a.nominativo !== "Import Excel" ? `Rimanenze ${a.mese}` : a.mese}
+                    </td>
                     <td className="px-3 py-1.5 text-right">{a.da == null ? "—" : eur(a.da)}</td>
                     <td className="px-3 py-1.5 text-right">{a.a == null ? "—" : eur(a.a)}</td>
                   </tr>

@@ -22,6 +22,14 @@ export type AmmCollabAudit = {
   azione: "importo" | "aggiunto" | "eliminato"
 }
 
+export type AmmCollabRimanenza = {
+  nominativo: string
+  anno: number
+  importo: number
+  updatedAt: string
+  modificatoDa?: string
+}
+
 export type AmmReparto = {
   id: string
   codice: string
@@ -94,6 +102,7 @@ type FileShape = {
   buste: AmmBusta[]
   collaboratori: AmmCollaboratore[]
   collaboratoriAudit: AmmCollabAudit[]
+  collaboratoriRimanenze: AmmCollabRimanenza[]
 }
 
 export const BUSTA_DEFAULT_REPARTO = "amministrazione-uffici"
@@ -158,6 +167,7 @@ function empty(): FileShape {
     buste: [],
     collaboratori: [],
     collaboratoriAudit: [],
+    collaboratoriRimanenze: [],
   }
 }
 
@@ -249,6 +259,17 @@ function migrate(raw: Partial<FileShape>): FileShape {
       }
     })
     .filter((a) => a.id && a.at)
+  const collaboratoriRimanenze: AmmCollabRimanenza[] = (
+    Array.isArray(raw.collaboratoriRimanenze) ? raw.collaboratoriRimanenze : []
+  )
+    .map((r) => ({
+      nominativo: String(r.nominativo ?? "").trim(),
+      anno: Number(r.anno),
+      importo: Math.round((Number(r.importo) || 0) * 100) / 100,
+      updatedAt: String(r.updatedAt ?? ""),
+      modificatoDa: String(r.modificatoDa ?? "").trim() || undefined,
+    }))
+    .filter((r) => r.nominativo && Number.isFinite(r.anno) && r.anno >= 1990 && r.importo > 0)
   return {
     reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
     fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
@@ -256,6 +277,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     buste,
     collaboratori,
     collaboratoriAudit,
+    collaboratoriRimanenze,
   }
 }
 
@@ -646,11 +668,60 @@ export const ammCostiStore = {
     }
     return { inserite, sostituite: prev.length }
   },
+  listRimanenze(anno: number): AmmCollabRimanenza[] {
+    return load().collaboratoriRimanenze.filter((r) => r.anno === anno)
+  },
+  setRimanenzaCollaboratore(body: {
+    nominativo: string
+    anno: number
+    importo: number
+    user: string
+  }): AmmCollabRimanenza | null {
+    const nominativo = body.nominativo.trim()
+    const anno = Number(body.anno)
+    const importo = Math.round((Number(String(body.importo).replace(",", ".")) || 0) * 100) / 100
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
+      throw Object.assign(new Error("Anno non valido"), { status: 400 })
+    }
+    if (!Number.isFinite(importo) || importo < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
+    const d = load()
+    const key = nominativo.toLowerCase()
+    const prev = d.collaboratoriRimanenze.find((r) => r.nominativo.trim().toLowerCase() === key && r.anno === anno)
+    d.collaboratoriRimanenze = d.collaboratoriRimanenze.filter(
+      (r) => !(r.nominativo.trim().toLowerCase() === key && r.anno === anno)
+    )
+    const row: AmmCollabRimanenza | null =
+      importo > 0
+        ? {
+            nominativo: prev?.nominativo ?? nominativo,
+            anno,
+            importo,
+            updatedAt: nowIso(),
+            modificatoDa: body.user.trim() || undefined,
+          }
+        : null
+    if (row) d.collaboratoriRimanenze.push(row)
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: body.user.trim() || "sconosciuto",
+      nominativo,
+      mese: String(anno),
+      da: prev?.importo ?? null,
+      a: row?.importo ?? 0,
+      azione: "importo",
+    }
+    d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
+    save(d)
+    return row
+  },
   /** Sostituisce l'anno del report COMP_SP (Excel REPORT GENERALE). */
   importCollaboratoriReport(
     anno: number,
     righe: { nominativo: string; mese: string; totale: number; tipo?: AmmCollabTipo }[],
-    user: string
+    user: string,
+    rimanenze: { nominativo: string; importo: number }[] = []
   ): { inserite: number; sostituite: number; nPersone: number } {
     if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
       throw Object.assign(new Error("Anno non valido"), { status: 400 })
@@ -686,6 +757,20 @@ export const ammCostiStore = {
       inserite += 1
     }
     const d2 = load()
+    d2.collaboratoriRimanenze = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
+    for (const raw of rimanenze) {
+      const nominativo = String(raw.nominativo ?? "").trim()
+      const importo = Math.round((Number(raw.importo) || 0) * 100) / 100
+      if (!nominativo || importo <= 0) continue
+      persone.add(nominativo.toLowerCase())
+      d2.collaboratoriRimanenze.push({
+        nominativo,
+        anno,
+        importo,
+        updatedAt: nowIso(),
+        modificatoDa: user.trim() || undefined,
+      })
+    }
     const audit: AmmCollabAudit = {
       id: randomUUID(),
       at: nowIso(),

@@ -1,8 +1,9 @@
 import type { NextFunction, Request, Response } from "express"
-import { deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale } from "../store/libro-paga-db.js"
-import { bearerLpaga, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale } from "../store/libro-paga-db.js"
+import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
+  removePersonaleDaDeleghe,
   alberoDaDeleghe,
   alberoConvalidaViewer,
   applicaAutoOkConvalida,
@@ -333,6 +334,27 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
     }
     const [enriched] = await enrichPersonaleHr([row])
     res.json({ personale: enriched ?? row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function removeLpagaPersonale(req: Request, res: Response) {
+  try {
+    const me = viewer(req)
+    if (me.ruolo !== "admin") {
+      return res.status(403).json({ message: "Solo l'amministratore può eliminare un utente" })
+    }
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Persona mancante" })
+    if (id === me.id) return res.status(400).json({ message: "Non puoi eliminare il tuo utente" })
+    const personale = await listPersonale()
+    const cur = personale.find((p) => p.id === id)
+    if (!cur) return res.status(404).json({ message: "Persona non trovata" })
+    await deletePersonale(id)
+    deletePersonaleCredentials(id)
+    removePersonaleDaDeleghe(id)
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }

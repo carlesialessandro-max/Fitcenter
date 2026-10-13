@@ -30,6 +30,7 @@ import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
+import { cmpNomeCognome } from "@/lib/personale-sort"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report" | "collaboratori"
 
@@ -474,9 +475,9 @@ function PersonaleTab({
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
-  const users = data.personale.filter((p) => p.ruolo === "user" && match(p))
-  const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p))
-  const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p))
+  const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
+  const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
+  const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome)
   const createMut = useMutation({
     mutationFn: () =>
       libroPagaApi.createPersonale({
@@ -582,7 +583,15 @@ function PersonaleTab({
                   >
                     Password
                   </button>
-                  <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(r.id)}>
+                  <button
+                    type="button"
+                    className="text-xs text-red-400 hover:underline"
+                    onClick={() => {
+                      const nome = r.nominativo ?? `${r.cognome ?? ""} ${r.nome}`.trim()
+                      if (!window.confirm(`Eliminare ${nome} dal libro paga? Vengono cancellati anche i suoi turni.`)) return
+                      delMut.mutate(r.id)
+                    }}
+                  >
                     Elimina
                   </button>
                 </td>
@@ -775,11 +784,12 @@ function TurniTab({
   const personeItems = useMemo(
     () =>
       attiviP
+        .slice()
+        .sort(cmpNomeCognome)
         .map((p) => ({
           id: p.id,
           label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim(),
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label, "it")),
+        })),
     [attiviP]
   )
   const [personaleId, setPersonaleId] = useState(attiviP[0]?.id ?? "")
@@ -934,7 +944,7 @@ function PersonaleDelegheAdmin({
   data: LibroPagaSnapshot
   onError: (s: string) => void
 }) {
-  const managers = data.personale.filter((p) => p.ruolo === "manager" && p.attivo)
+  const managers = data.personale.filter((p) => p.ruolo === "manager" && p.attivo).sort(cmpNomeCognome)
   const [managerId, setManagerId] = useState(managers[0]?.id ?? "")
   const q = useQuery({
     queryKey: ["lpaga-deleghe", managerId],
@@ -959,11 +969,11 @@ function PersonaleDelegheAdmin({
       }
       return Boolean(p.livelloId && ids.has(p.livelloId))
     })
+    .sort(cmpNomeCognome)
     .map((p) => ({
       id: p.id,
       label: `${p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
     }))
-    .sort((a, b) => a.label.localeCompare(b.label, "it"))
   if (!managers.length) return null
   return (
     <LibroPagaDelegheForm

@@ -11,6 +11,7 @@ import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
+import { cmpNomeCognome } from "@/lib/personale-sort"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -342,11 +343,12 @@ function Turni({
   const personeItems = useMemo(
     () =>
       persone
+        .slice()
+        .sort(cmpNomeCognome)
         .map((p) => ({
           id: p.id,
           label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim(),
-        }))
-        .sort((a, b) => a.label.localeCompare(b.label, "it")),
+        })),
     [persone]
   )
   const createMut = useMutation({
@@ -600,6 +602,11 @@ function Personale({
     },
     onError: (e: Error) => onError(e.message),
   })
+  const delMut = useMutation({
+    mutationFn: (id: string) => lpagaApi.deletePersonale(id),
+    onSuccess: onDone,
+    onError: (e: Error) => onError(e.message),
+  })
   const reparti =
     data.livelliAssegnabili?.length
       ? data.livelliAssegnabili
@@ -607,13 +614,15 @@ function Personale({
         ? data.livelli.filter((l) => !l.retribuibile)
         : data.livelli.filter((l) => !l.retribuibile && l.id === me?.livelloId)
   const n = q.trim().toLowerCase()
-  const personeFiltrate = data.personale.filter(
-    (p) =>
-      !n ||
-      `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""}`
-        .toLowerCase()
-        .includes(n)
-  )
+  const personeFiltrate = data.personale
+    .filter(
+      (p) =>
+        !n ||
+        `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""}`
+          .toLowerCase()
+          .includes(n)
+    )
+    .sort(cmpNomeCognome)
   const detPersona = dettaglioId ? data.personale.find((p) => p.id === dettaglioId) : undefined
   const detMens = dettaglioId ? data.mensilita.find((m) => m.personaleId === dettaglioId) : undefined
   const detTurni = dettaglioId
@@ -621,8 +630,8 @@ function Personale({
     : []
   const istruttoriDelega = data.personale
     .filter((p) => p.ruolo === "user" && p.id !== me?.id)
+    .sort(cmpNomeCognome)
     .map((p) => ({ id: p.id, label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim() }))
-    .sort((a, b) => a.label.localeCompare(b.label, "it"))
   return (
     <div className="mt-4 space-y-4">
       {(me?.ruolo === "manager" || me?.ruolo === "admin") && (
@@ -801,7 +810,7 @@ function Personale({
                   {p.username && (me?.ruolo === "admin" || p.ruolo !== "admin") && (
                     <button
                       type="button"
-                      className="text-xs text-amber-300 hover:underline"
+                      className="mr-2 text-xs text-amber-300 hover:underline"
                       onClick={() => {
                         setPwdId(p.id)
                         setPwdNew("")
@@ -810,6 +819,20 @@ function Personale({
                       Password
                     </button>
                   )}
+                  {me?.ruolo === "admin" && p.id !== me.id ? (
+                    <button
+                      type="button"
+                      className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                      disabled={delMut.isPending}
+                      onClick={() => {
+                        const nome = p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()
+                        if (!window.confirm(`Eliminare ${nome} dal libro paga? Vengono cancellati anche i suoi turni.`)) return
+                        delMut.mutate(p.id)
+                      }}
+                    >
+                      Elimina
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

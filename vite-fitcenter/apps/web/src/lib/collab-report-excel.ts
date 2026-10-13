@@ -7,6 +7,11 @@ export type CollabReportExcelRiga = {
   tipo: "sportivo" | "gestionale"
 }
 
+export type CollabReportExcelRimanenza = {
+  nominativo: string
+  importo: number
+}
+
 const MESE_NUM: Record<string, number> = {
   gen: 1,
   gennaio: 1,
@@ -85,6 +90,15 @@ function cleanNome(raw: string): string {
     .trim()
 }
 
+function parseRimanenzeCell(raw: unknown): number {
+  if (raw instanceof Date) return 0
+  if (typeof raw === "string" && /\d{1,2}\s*[\\/\-]\s*\d{1,2}/.test(raw)) return 0
+  const n = parseImporto(raw)
+  if (n == null || n <= 0) return 0
+  if (n >= 20000 && n <= 80000) return 0
+  return n
+}
+
 function mesiDaRiga(row: unknown[]): { col: number; mm: number }[] {
   const out: { col: number; mm: number }[] = []
   const seen = new Set<number>()
@@ -100,8 +114,10 @@ function mesiDaRiga(row: unknown[]): { col: number; mm: number }[] {
 export function parseCollabReportExcel(buf: ArrayBuffer, anno: number): {
   anno: number
   righe: CollabReportExcelRiga[]
+  rimanenze: CollabReportExcelRimanenza[]
   nPersone: number
   tot: number
+  totRimanenze: number
 } {
   if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) throw new Error("Anno non valido")
   const wb = XLSX.read(buf, { type: "array", raw: true })
@@ -112,6 +128,7 @@ export function parseCollabReportExcel(buf: ArrayBuffer, anno: number): {
   let mesiCols: { col: number; mm: number }[] = []
   let skipRest = false
   const byKey = new Map<string, CollabReportExcelRiga>()
+  const rimByNome = new Map<string, CollabReportExcelRimanenza>()
 
   for (const row of rows) {
     if (!Array.isArray(row) || !row.length) continue
@@ -131,6 +148,9 @@ export function parseCollabReportExcel(buf: ArrayBuffer, anno: number): {
     const nominativo = cleanNome(nomeRaw)
     if (!nominativo) continue
     const tipo = tipoFrom(nomeRaw)
+    const firstCol = mesiCols[0]?.col ?? 0
+    const rim = firstCol > 0 ? parseRimanenzeCell(row[firstCol - 1]) : 0
+    if (rim > 0) rimByNome.set(nominativo.toLowerCase(), { nominativo, importo: rim })
     for (const m of mesiCols) {
       const tot = parseImporto(row[m.col])
       if (tot == null || tot <= 0) continue
@@ -148,7 +168,9 @@ export function parseCollabReportExcel(buf: ArrayBuffer, anno: number): {
 
   const righe = [...byKey.values()]
   if (!righe.length) throw new Error("Nessun importo nel file. Serve il REPORT GENERALE con le colonne Gen–Dic.")
+  const rimanenze = [...rimByNome.values()]
   const tot = Math.round(righe.reduce((s, r) => s + r.totale, 0) * 100) / 100
-  const nPersone = new Set(righe.map((r) => r.nominativo.toLowerCase())).size
-  return { anno, righe, nPersone, tot }
+  const totRimanenze = Math.round(rimanenze.reduce((s, r) => s + r.importo, 0) * 100) / 100
+  const nPersone = new Set([...righe.map((r) => r.nominativo.toLowerCase()), ...rimanenze.map((r) => r.nominativo.toLowerCase())]).size
+  return { anno, righe, rimanenze, nPersone, tot, totRimanenze }
 }

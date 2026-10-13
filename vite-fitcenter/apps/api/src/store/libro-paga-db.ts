@@ -550,16 +550,16 @@ export async function deleteLivello(id: string): Promise<void> {
 export async function listPersonale(): Promise<LpagaPersonale[]> {
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
-    if (!p) return readFile().personale
+    if (!p) return [...readFile().personale].sort(cmpPersonaleNomeCognome)
     const r = await p.request().query(
       `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza, Qualifiche
-       FROM dbo.FcLibroPagaPersonale ORDER BY Cognome, Nome`
+       FROM dbo.FcLibroPagaPersonale ORDER BY Nome, Cognome`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
   }
-  return [...readFile().personale].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+  return [...readFile().personale].sort(cmpPersonaleNomeCognome)
 }
 
 export async function upsertPersonale(input: {
@@ -645,21 +645,30 @@ export async function upsertPersonale(input: {
 }
 
 export async function deletePersonale(id: string): Promise<void> {
-  const turni = await listTurni()
-  if (turni.some((t) => t.personaleId === id)) {
-    throw Object.assign(new Error("Persona usata da turni esistenti"), { status: 409 })
-  }
+  const pid = String(id ?? "").trim()
+  if (!pid) throw Object.assign(new Error("Persona mancante"), { status: 400 })
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
     if (!p) throw new Error("SQL non disponibile")
     const req = p.request()
-    req.input("Id", sql.NVarChar(64), id)
-    await req.query("DELETE FROM dbo.FcLibroPagaMensilita WHERE PersonaleId=@Id; DELETE FROM dbo.FcLibroPagaPersonale WHERE Id=@Id")
+    req.input("Id", sql.NVarChar(64), pid)
+    await req.query(`
+      DELETE FROM dbo.FcLibroPagaPresenze
+      WHERE TurnoId IN (SELECT Id FROM dbo.FcLibroPagaTurni WHERE PersonaleId=@Id);
+      DELETE FROM dbo.FcLibroPagaTurni WHERE PersonaleId=@Id;
+      DELETE FROM dbo.FcLibroPagaMensilita WHERE PersonaleId=@Id;
+      DELETE FROM dbo.FcLibroPagaValidazioni WHERE PersonaleId=@Id;
+      DELETE FROM dbo.FcLibroPagaPersonale WHERE Id=@Id;
+    `)
     return
   }
   const db = readFile()
-  db.personale = db.personale.filter((x) => x.id !== id)
-  db.mensilita = db.mensilita.filter((x) => x.personaleId !== id)
+  const turnoIds = new Set(db.turni.filter((t) => t.personaleId === pid).map((t) => t.id))
+  db.presenze = db.presenze.filter((x) => !turnoIds.has(x.turnoId))
+  db.turni = db.turni.filter((x) => x.personaleId !== pid)
+  db.mensilita = db.mensilita.filter((x) => x.personaleId !== pid)
+  db.validazioni = db.validazioni.filter((x) => x.personaleId !== pid)
+  db.personale = db.personale.filter((x) => x.id !== pid)
   writeFile(db)
 }
 
@@ -886,6 +895,15 @@ export async function upsertMensilita(input: {
   else db.mensilita.push(row)
   writeFile(db)
   return i >= 0 ? db.mensilita[i]! : row
+}
+
+export function cmpPersonaleNomeCognome(
+  a: { nome?: string; cognome?: string },
+  b: { nome?: string; cognome?: string }
+): number {
+  const n = (a.nome ?? "").localeCompare(b.nome ?? "", "it", { sensitivity: "base" })
+  if (n) return n
+  return (a.cognome ?? "").localeCompare(b.cognome ?? "", "it", { sensitivity: "base" })
 }
 
 export function nominativo(p: LpagaPersonale): string {

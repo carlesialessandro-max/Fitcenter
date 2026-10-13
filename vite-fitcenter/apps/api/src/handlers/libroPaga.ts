@@ -26,9 +26,10 @@ import {
   upsertTurnoConvalida,
   getDeleghe,
   setDeleghe,
+  removePersonaleDaDeleghe,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { setPersonalePassword } from "../store/libro-paga-auth.js"
+import { deletePersonaleCredentials, setPersonalePassword } from "../store/libro-paga-auth.js"
 import { parseQualifichePersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 
@@ -242,7 +243,11 @@ export async function putPersonalePassword(req: Request, res: Response) {
 
 export async function removePersonale(req: Request, res: Response) {
   try {
-    await deletePersonale(String(req.params.id ?? "").trim())
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Persona mancante" })
+    await deletePersonale(id)
+    deletePersonaleCredentials(id)
+    removePersonaleDaDeleghe(id)
     res.json({ ok: true })
   } catch (e) {
     fail(res, e)

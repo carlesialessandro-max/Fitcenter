@@ -103,6 +103,7 @@ export type AmmCollabReportRiga = {
   reparto?: string
   mansione?: string
   mesi: Record<string, { id: string; totale: number; origine: string }>
+  rimanenze: number
   tot: number
   oltre5000: number
   oltre15000: number
@@ -124,6 +125,7 @@ export type AmmCollabReport = {
   mesi: { id: string; label: string }[]
   righe: AmmCollabReportRiga[]
   totMese: Record<string, number>
+  totRimanenze?: number
   totAnno: number
   n: number
   audit: AmmCollabAudit[]
@@ -207,8 +209,17 @@ export const amministrazioneApi = {
     api.get<AmmCollabReport>(`/amministrazione/collaboratori/report?anno=${encodeURIComponent(String(anno))}`),
   setImportoCollaboratore: (body: { nominativo: string; mese: string; totale: number; tipo?: "sportivo" | "gestionale" }) =>
     api.post<{ row: AmmCollaboratoreRiga }>(`/amministrazione/collaboratori/importo`, body),
-  importCollaboratoriReport: (anno: number, righe: unknown[]) =>
-    api.post<AmmImportEsito & { nPersone?: number }>("/amministrazione/collaboratori/report/import", { anno, righe }),
+  setRimanenzeCollaboratore: (body: { nominativo: string; anno: number; importo: number }) =>
+    api.post<{ row: { nominativo: string; anno: number; importo: number } | null }>(
+      `/amministrazione/collaboratori/rimanenze`,
+      body
+    ),
+  importCollaboratoriReport: (anno: number, righe: unknown[], rimanenze?: unknown[]) =>
+    api.post<AmmImportEsito & { nPersone?: number }>("/amministrazione/collaboratori/report/import", {
+      anno,
+      righe,
+      rimanenze,
+    }),
   collaboratori: (anno: number, mese?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })
     if (mese) q.set("mese", mese)

@@ -147,6 +147,15 @@ export function validateLpagaPassword(password: string): string | null {
   return null
 }
 
+export function deletePersonaleCredentials(personaleId: string): void {
+  const id = String(personaleId ?? "").trim()
+  if (!id) return
+  const secrets = readJson<SecretRow[]>(SECRETS_FILE, []).filter((s) => s.id !== id)
+  writeJson(SECRETS_FILE, secrets)
+  const sessions = readJson<SessionRow[]>(SESSIONS_FILE, []).filter((s) => s.personaleId !== id)
+  writeJson(SESSIONS_FILE, sessions)
+}
+
 export async function setPersonalePassword(personaleId: string, username: string, password: string): Promise<void> {
   const err = validateLpagaPassword(password)
   if (err) throw Object.assign(new Error(err), { status: 400 })
