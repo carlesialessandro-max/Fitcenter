@@ -99,8 +99,9 @@ export function AmministrazioneCosti() {
     <div className="p-4 sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura (utenze, paghe desk,
-        amministrativi, manutentori, amministratori) vengono ripartiti sui reparti in base ai ricavi del periodo.
+        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura sono la somma di Gestione
+        & Direzione e Spese generali & Utenze (non imputabili ai singoli reparti) e vengono ripartiti su Piscina,
+        Fitness e SPA in base ai ricavi del periodo.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -271,12 +272,15 @@ function DashboardTab() {
           </div>
           <p className="text-xs text-zinc-500">
             Esempio: 100.000 € di costi piscina su 200.000 € di ricavi è un utile; 100.000 € di costi palestra su 50.000 € di
-            incassi è una perdita, e va tagliato il budget o spinta la vendita. I fissi di struttura sono spalmati sui tre
-            reparti in proporzione ai ricavi, altrimenti il risultato sarebbe gonfiato.
+            incassi è una perdita, e va tagliato il budget o spinta la vendita. I fissi di struttura (Gestione & Direzione +
+            Spese generali & Utenze) sono spalmati sui tre reparti in proporzione ai ricavi, altrimenti il risultato
+            sarebbe gonfiato. Pulizie e manutenzione restano costi operativi, fuori da questo riparto.
           </p>
           {(d.strutturaByMacro ?? []).length > 0 && (
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-              <li className="font-medium text-zinc-400">Costi di struttura ripartiti:</li>
+              <li className="font-medium text-zinc-400">
+                Fissi di struttura da ripartire {eur(d.totStruttura ?? 0)}:
+              </li>
               {(d.strutturaByMacro ?? []).map((r) => (
                 <li key={r.id}>
                   {r.nome} {eur(r.importo)}

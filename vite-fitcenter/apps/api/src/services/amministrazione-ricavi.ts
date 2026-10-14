@@ -2,7 +2,8 @@ import { isGestionaleConfigured, queryIncassiPerVoce } from "./gestionale-sql.js
 
 export const MACRO_COMMERCIALI = ["piscina", "fitness", "spa"] as const
 export type MacroCommerciale = (typeof MACRO_COMMERCIALI)[number]
-export const MACRO_STRUTTURA = ["gestione", "generali", "servizi"] as const
+/** Solo questi due centri: la somma è il pool dei fissi di struttura da ripartire sui reparti. */
+export const MACRO_STRUTTURA = ["gestione", "generali"] as const
 
 export function isMacroStruttura(macroId: string): boolean {
   return (MACRO_STRUTTURA as readonly string[]).includes(macroId)
