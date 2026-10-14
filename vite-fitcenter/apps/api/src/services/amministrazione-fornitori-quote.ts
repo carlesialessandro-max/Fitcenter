@@ -39,7 +39,59 @@ export const FORNITORI_QUOTE_SEED: AmmFornitoreQuoteSeed[] = [
     quote: q("piscina-coperta"),
     stagionale: "piscina-estate",
   },
+  {
+    match: ["toscochimica", "tosco chimica"],
+    label: "Toscochimica S.p.A.",
+    quote: q("piscina-coperta"),
+    stagionale: "piscina-estate",
+  },
 ]
+
+export type AmmSpesaQuoteCtx = { id?: string; fornitore: string; dataDocumento: string }
+
+function annoMese(dataDocumento: string): { anno: number; mese: number } | null {
+  const s = String(dataDocumento ?? "").slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  return { anno: Number(s.slice(0, 4)), mese: Number(s.slice(5, 7)) }
+}
+
+export function speseStessoFornitoreStagionale(nome: string, fornitoreSpesa: string): boolean {
+  const seed = seedFornitore(nome)
+  if (seed) return fornitoreMatch(fornitoreSpesa, seed.match)
+  const a = normFornitoreKey(nome)
+  const b = normFornitoreKey(fornitoreSpesa)
+  return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)))
+}
+
+/** Da giugno fino alla prima fornitura di settembre (apertura piscina esterna): ripartizione estiva. */
+export function inFinestraPiscinaEstate(
+  dataDocumento: string,
+  nomeFornitore: string,
+  spese?: AmmSpesaQuoteCtx[],
+  excludeSpesaId?: string
+): boolean {
+  const am = annoMese(dataDocumento)
+  if (!am) return false
+  const { anno, mese } = am
+  if (mese < 6 || mese > 9) return false
+  if (mese >= 6 && mese <= 8) return true
+  if (!spese?.length) return true
+  const septDates = spese
+    .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
+    .filter((s) => speseStessoFornitoreStagionale(nomeFornitore, s.fornitore))
+    .map((s) => String(s.dataDocumento).slice(0, 10))
+    .filter((d) => d.startsWith(`${anno}-09`))
+    .sort()
+  const first = septDates[0]
+  if (!first) return true
+  return dataDocumento.slice(0, 10) <= first
+}
+
+export function quotesMatch(a: AmmQuota[], b: AmmQuota[]): boolean {
+  if (a.length !== b.length) return false
+  const map = new Map(b.map((x) => [x.repartoId, Number(x.percentuale)]))
+  return a.every((x) => Math.abs((map.get(x.repartoId) ?? NaN) - Number(x.percentuale)) < 0.05)
+}
 
 export function normFornitoreKey(s: string): string {
   return s
@@ -65,13 +117,21 @@ export function fornitoreMatch(nome: string, needles: string[]): boolean {
   })
 }
 
-/** Fino a maggio e da settembre: 100% piscina coperta. Giugno–agosto: 50% coperta / 50% estiva. */
-export function quotePiscinaStagionale(dataDocumento: string): AmmQuota[] {
-  const m = Number(String(dataDocumento ?? "").slice(5, 7))
-  if (m >= 6 && m <= 8) {
+/** Fuori finestra: 100% piscina coperta. In finestra: 75% estiva / 25% coperta. */
+export function quotePiscinaStagionale(
+  dataDocumento: string,
+  opts?: { fornitore?: string; spese?: AmmSpesaQuoteCtx[]; excludeSpesaId?: string }
+): AmmQuota[] {
+  const inWindow = opts?.fornitore
+    ? inFinestraPiscinaEstate(dataDocumento, opts.fornitore, opts.spese, opts.excludeSpesaId)
+    : (() => {
+        const m = Number(String(dataDocumento ?? "").slice(5, 7))
+        return m >= 6 && m <= 9
+      })()
+  if (inWindow) {
     return [
-      { repartoId: "piscina-coperta", percentuale: 50 },
-      { repartoId: "piscina-estiva", percentuale: 50 },
+      { repartoId: "piscina-estiva", percentuale: 75 },
+      { repartoId: "piscina-coperta", percentuale: 25 },
     ]
   }
   return q("piscina-coperta")
@@ -94,9 +154,17 @@ export function resolveQuoteFornitore(opts: {
   nome: string
   dataDocumento: string
   remembered?: AmmQuota[] | null
+  spese?: AmmSpesaQuoteCtx[]
+  excludeSpesaId?: string
 }): AmmQuota[] | null {
   const seed = seedFornitore(opts.nome)
-  if (seed?.stagionale === "piscina-estate") return quotePiscinaStagionale(opts.dataDocumento)
+  if (seed?.stagionale === "piscina-estate") {
+    return quotePiscinaStagionale(opts.dataDocumento, {
+      fornitore: opts.nome,
+      spese: opts.spese,
+      excludeSpesaId: opts.excludeSpesaId,
+    })
+  }
   const mem = (opts.remembered ?? []).filter((x) => x.repartoId && Number(x.percentuale) > 0)
   if (mem.length && !isQuoteDumpDefault(mem)) {
     return mem.map((x) => ({ repartoId: x.repartoId, percentuale: Number(x.percentuale) }))

@@ -439,10 +439,10 @@ function compactFornitore(s: string): string {
 
 function quotePiscinaStagionale(dataDocumento: string): AmmQuota[] {
   const m = Number(String(dataDocumento ?? "").slice(5, 7))
-  if (m >= 6 && m <= 8) {
+  if (m >= 6 && m <= 9) {
     return [
-      { repartoId: "piscina-coperta", percentuale: 50 },
-      { repartoId: "piscina-estiva", percentuale: 50 },
+      { repartoId: "piscina-estiva", percentuale: 75 },
+      { repartoId: "piscina-coperta", percentuale: 25 },
     ]
   }
   return [{ repartoId: "piscina-coperta", percentuale: 100 }]
@@ -522,7 +522,12 @@ function RegistroTab() {
     setEditId(s.id)
     setPdf(null)
     setOcrMsg("")
-    setForm(formFromSpesa(s, reparti))
+    let next = formFromSpesa(s, reparti)
+    if (!s.quoteEccezione) {
+      const auto = applyQuoteFornitore(s.fornitore, s.dataDocumento)
+      if (auto) next = { ...next, ...auto, memoriaQuote: "default" }
+    }
+    setForm(next)
     setOpen(true)
   }
 
@@ -866,7 +871,8 @@ function RegistroTab() {
                 onChange={(e) => {
                   const fornitore = e.target.value
                   setForm((f) => {
-                    if (editId) return { ...f, fornitore }
+                    const hit = quoteMetaFor(fornitore, meta.data?.fornitoriQuote ?? [])
+                    if (editId && hit?.stagionale !== "piscina-estate") return { ...f, fornitore }
                     const auto = applyQuoteFornitore(fornitore, f.dataDocumento)
                     return { ...f, fornitore, ...(auto ?? {}), memoriaQuote: auto ? "default" : f.memoriaQuote }
                   })
@@ -892,8 +898,8 @@ function RegistroTab() {
                 onChange={(e) => {
                   const dataDocumento = e.target.value
                   setForm((f) => {
-                    if (editId) return { ...f, dataDocumento }
                     const hit = quoteMetaFor(f.fornitore, meta.data?.fornitoriQuote ?? [])
+                    if (editId && hit?.stagionale !== "piscina-estate") return { ...f, dataDocumento }
                     if (hit?.stagionale !== "piscina-estate") return { ...f, dataDocumento }
                     const auto = applyQuoteFornitore(f.fornitore, dataDocumento)
                     return { ...f, dataDocumento, ...(auto ?? {}) }

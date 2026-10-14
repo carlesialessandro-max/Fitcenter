@@ -6,6 +6,7 @@ import {
   FORNITORI_QUOTE_SEED,
   isQuoteDumpDefault,
   normFornitoreKey,
+  quotesMatch,
   resolveQuoteFornitore,
   seedFornitore,
   type AmmStagionaleFornitore,
@@ -457,7 +458,13 @@ export const ammCostiStore = {
     let n = 0
     for (const s of d.spese) {
       if (!isQuoteDumpDefault(s.quote)) continue
-      const q = resolveQuoteFornitore({ nome: s.fornitore, dataDocumento: s.dataDocumento, remembered: null })
+      const q = resolveQuoteFornitore({
+        nome: s.fornitore,
+        dataDocumento: s.dataDocumento,
+        remembered: null,
+        spese: d.spese,
+        excludeSpesaId: s.id,
+      })
       if (!q?.length || isQuoteDumpDefault(q)) continue
       s.quote = q.map((x) => ({ ...x }))
       s.updatedAt = nowIso()
@@ -468,11 +475,36 @@ export const ammCostiStore = {
     if (n || d.fornitoriQuote.length !== before) save(d)
     return n
   },
+  /** Aggiorna spese dei fornitori chimica piscina (giu → prima fornitura set): 75% estiva / 25% coperta. */
+  riapplicaQuotePiscinaEstate(): number {
+    const d = load()
+    let n = 0
+    for (const s of d.spese) {
+      if (s.quoteEccezione) continue
+      const seed = seedFornitore(s.fornitore)
+      if (seed?.stagionale !== "piscina-estate") continue
+      const expected = resolveQuoteFornitore({
+        nome: s.fornitore,
+        dataDocumento: s.dataDocumento,
+        remembered: null,
+        spese: d.spese,
+        excludeSpesaId: s.id,
+      })
+      if (!expected?.length || !quoteValide(expected) || quotesMatch(s.quote, expected)) continue
+      s.quote = expected.map((x) => ({ ...x }))
+      s.updatedAt = nowIso()
+      n += 1
+    }
+    if (n) save(d)
+    return n
+  },
   quoteForFornitore(nome: string, dataDocumento: string, fallbackRepartoId?: string): AmmQuota[] {
+    const d = load()
     const resolved = resolveQuoteFornitore({
       nome,
       dataDocumento,
       remembered: this.rememberedQuote(nome),
+      spese: d.spese,
     })
     if (resolved?.length) return resolved
     const fb = String(fallbackRepartoId ?? "").trim() || "altri-costi"
@@ -566,26 +598,36 @@ export const ammCostiStore = {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) throw Object.assign(new Error("Data documento non valida"), { status: 400 })
     const totale = Number(String(body.totale).replace(",", "."))
     if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
-    const quote = (body.quote ?? []).map((q) => ({
+    const id = String(body.id ?? "").trim() || randomUUID()
+    const cur = d.spese.find((s) => s.id === id)
+    const eccezione = body.rememberQuote === false || body.quoteEccezione === true
+    let quote = (body.quote ?? []).map((q) => ({
       repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
       percentuale: Number(String(q.percentuale).replace(",", ".")),
     }))
+    const fornitore = body.fornitore.trim()
+    if (!eccezione && seedFornitore(fornitore)?.stagionale === "piscina-estate") {
+      const auto = resolveQuoteFornitore({
+        nome: fornitore,
+        dataDocumento,
+        remembered: null,
+        spese: d.spese,
+        excludeSpesaId: cur?.id ?? id,
+      })
+      if (auto?.length) quote = auto
+    }
     if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
     const ids = new Set(d.reparti.map((r) => r.id))
     for (const q of quote) {
       if (!ids.has(q.repartoId)) throw Object.assign(new Error("Reparto sconosciuto nella ripartizione"), { status: 400 })
     }
-    const fornitore = body.fornitore.trim()
     if (!fornitore) throw Object.assign(new Error("Fornitore obbligatorio"), { status: 400 })
     const f = this.ensureFornitore(fornitore)
-    const id = String(body.id ?? "").trim() || randomUUID()
-    const cur = d.spese.find((s) => s.id === id)
     const origine: AmmOrigine =
       body.origine === "ocr" || body.origine === "excel" || body.origine === "manuale" || body.origine === "fattureincloud"
         ? body.origine
         : (cur?.origine ?? "manuale")
     const ficNum = Number(body.ficId ?? cur?.ficId)
-    const eccezione = body.rememberQuote === false || body.quoteEccezione === true
     const row: AmmSpesa = {
       id,
       fornitore,
