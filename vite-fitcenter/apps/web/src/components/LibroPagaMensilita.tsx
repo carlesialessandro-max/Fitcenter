@@ -426,6 +426,7 @@ function DettaglioMese({
   const [ruolo, setRuolo] = useState<LpagaRuolo>(persona?.ruolo ?? "user")
   const [livelloId, setLivelloId] = useState(persona?.livelloId ?? "")
   const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
+  const [visitaMedica, setVisitaMedica] = useState(isoDateInput(persona?.visitaMedica))
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
   const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
   const [password, setPassword] = useState("")
@@ -437,6 +438,7 @@ function DettaglioMese({
     setRuolo(persona?.ruolo ?? "user")
     setLivelloId(persona?.livelloId ?? "")
     setContratto(isoDateInput(persona?.contratto))
+    setVisitaMedica(isoDateInput(persona?.visitaMedica))
     setIbanEdit(persona?.iban ?? "")
     setEmailEdit(persona?.email ?? "")
     setPassword("")
@@ -457,6 +459,7 @@ function DettaglioMese({
         ruolo,
         livelloId,
         contratto,
+        visitaMedica,
         iban: ibanEdit.trim(),
         email: emailEdit.trim(),
         qualifiche,
@@ -570,6 +573,10 @@ function DettaglioMese({
             Scad. contratto
             <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
           </label>
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Visita medica
+            <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
+          </label>
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             IBAN
             <input value={ibanEdit} onChange={(e) => setIbanEdit(e.target.value)} className={inputCls} autoComplete="off" />
@@ -630,6 +637,10 @@ function DettaglioMese({
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">Scad. contratto</dt>
           <dd>{fmtDateIt(persona?.contratto)}</dd>
+        </div>
+        <div className="flex justify-between gap-3 sm:justify-start">
+          <dt className="text-zinc-500">Visita medica</dt>
+          <dd>{fmtDateIt(persona?.visitaMedica)}</dd>
         </div>
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">IBAN</dt>

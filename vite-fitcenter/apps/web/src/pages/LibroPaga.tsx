@@ -464,6 +464,7 @@ function PersonaleTab({
   const [ruolo, setRuolo] = useState<LpagaRuolo>("user")
   const [livelloId, setLivelloId] = useState("")
   const [contratto, setContratto] = useState("")
+  const [visitaMedica, setVisitaMedica] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
@@ -488,6 +489,7 @@ function PersonaleTab({
         ruolo,
         livelloId,
         contratto,
+        visitaMedica,
         iban,
         email,
         qualifiche,
@@ -500,6 +502,7 @@ function PersonaleTab({
       setPassword("")
       setQualifiche([])
       setContratto("")
+      setVisitaMedica("")
       setIban("")
       setEmail("")
       setNuovoOpen(false)
@@ -684,6 +687,10 @@ function PersonaleTab({
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Visita medica
+              <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               IBAN

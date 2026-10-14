@@ -46,6 +46,7 @@ export type LpagaPersonale = {
   tesseramento?: string
   tesseramentoScadenza?: string
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
+  visitaMedica?: string
   qualifiche?: LpagaQualifica[]
   attivo: boolean
   gestionale?: {
@@ -309,6 +310,7 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER T
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -435,6 +437,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const contratto = ymd(r.Contratto ?? r.contratto)
   const tesseramento = String(r.Tesseramento ?? r.tesseramento ?? "").trim()
   const tesseramentoScadenza = ymd(r.TesseramentoScadenza ?? r.tesseramentoScadenza)
+  const visitaMedica = ymd(r.VisitaMedica ?? r.visitaMedica)
   const qualifiche = parseQualificheStored(r.Qualifiche ?? r.qualifiche)
   const ruoloRaw = String(r.Ruolo ?? r.ruolo ?? "user").toLowerCase()
   const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
@@ -452,6 +455,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
     ...(tesseramentoScadenza && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(tesseramentoScadenza)
       ? { tesseramentoScadenza }
       : {}),
+    ...(visitaMedica && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(visitaMedica) ? { visitaMedica } : {}),
     ...(qualifiche ? { qualifiche } : {}),
     attivo: r.Attivo == null && r.attivo == null ? true : bit(r.Attivo ?? r.attivo),
   }
@@ -494,16 +498,40 @@ function mapMensilita(r: Record<string, unknown>): LpagaMensilita {
   }
 }
 
+function isRepartoPulizie(l: LpagaLivello): boolean {
+  return l.attivo !== false && !l.retribuibile && /^puliz/i.test(String(l.nome ?? "").trim())
+}
+
+async function ensureRepartoPulizie(rows: LpagaLivello[]): Promise<LpagaLivello[]> {
+  if (rows.some(isRepartoPulizie)) return rows
+  const created = await upsertLivello({
+    id: "pulizie",
+    nome: "Pulizie",
+    retribuzione: 0,
+    fissa: false,
+    retribuibile: false,
+    statistica: false,
+    speciale: false,
+    attivo: true,
+  })
+  return [...rows.filter((l) => l.id !== created.id), created].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+}
+
 export async function listLivelli(): Promise<LpagaLivello[]> {
+  let rows: LpagaLivello[]
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
-    if (!p) return readFile().livelli
-    const r = await p.request().query(
-      "SELECT Id, Nome, ParentId, Retribuzione, Fissa, Retribuibile, Statistica, Speciale, SpecialeId, Attivo FROM dbo.FcLibroPagaLivelli ORDER BY Nome"
-    )
-    return (r.recordset as Record<string, unknown>[]).map(mapLivello)
+    if (!p) rows = readFile().livelli
+    else {
+      const r = await p.request().query(
+        "SELECT Id, Nome, ParentId, Retribuzione, Fissa, Retribuibile, Statistica, Speciale, SpecialeId, Attivo FROM dbo.FcLibroPagaLivelli ORDER BY Nome"
+      )
+      rows = (r.recordset as Record<string, unknown>[]).map(mapLivello)
+    }
+  } else {
+    rows = [...readFile().livelli].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
   }
-  return [...readFile().livelli].sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+  return ensureRepartoPulizie(rows)
 }
 
 export async function upsertLivello(input: {
@@ -587,7 +615,8 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
     const r = await p.request().query(
       `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
-              Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza, Qualifiche
+              Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza,
+              CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica, Qualifiche
        FROM dbo.FcLibroPagaPersonale ORDER BY Nome COLLATE Latin1_General_CI_AI, Cognome COLLATE Latin1_General_CI_AI`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
@@ -607,6 +636,7 @@ export async function upsertPersonale(input: {
   email?: string
   tesseramento?: string
   tesseramentoScadenza?: string
+  visitaMedica?: string
   qualifiche?: LpagaQualifica[] | string[]
   attivo: boolean
 }): Promise<LpagaPersonale> {
@@ -618,6 +648,9 @@ export async function upsertPersonale(input: {
   const ruolo: LpagaRuolo = input.ruolo === "admin" || input.ruolo === "manager" ? input.ruolo : "user"
   const tesseramento = (input.tesseramento ?? "").trim()
   const tesseramentoScadenza = (input.tesseramentoScadenza ?? "").trim()
+  const hasVisitaMedica = input.visitaMedica !== undefined
+  const visitaMedicaRaw = (input.visitaMedica ?? "").trim()
+  const visitaMedica = visitaMedicaRaw && /^\d{4}-\d{2}-\d{2}$/.test(visitaMedicaRaw) ? visitaMedicaRaw : ""
   const hasQualifiche = input.qualifiche !== undefined
   const qualifiche = hasQualifiche ? parseQualifichePersonale(input.qualifiche) : undefined
   const row: LpagaPersonale = {
@@ -632,6 +665,7 @@ export async function upsertPersonale(input: {
     ...(email ? { email } : {}),
     ...(tesseramento ? { tesseramento } : {}),
     ...(tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? { tesseramentoScadenza } : {}),
+    ...(visitaMedica ? { visitaMedica } : {}),
     ...(qualifiche ? { qualifiche } : {}),
     attivo: input.attivo !== false,
   }
@@ -656,6 +690,8 @@ export async function upsertPersonale(input: {
     )
     req.input("Qualifiche", sql.NVarChar(1000), hasQualifiche ? JSON.stringify(qualifiche ?? []) : null)
     req.input("QualificheSet", sql.Bit, hasQualifiche)
+    req.input("VisitaMedica", sql.Date, visitaMedica || null)
+    req.input("VisitaMedicaSet", sql.Bit, hasVisitaMedica)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaPersonale AS t
@@ -663,9 +699,10 @@ export async function upsertPersonale(input: {
       WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
         LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
         TesseramentoScadenza=@TesseramentoScadenza,
+        VisitaMedica=CASE WHEN @VisitaMedicaSet=1 THEN @VisitaMedica ELSE t.VisitaMedica END,
         Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, Qualifiche, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @Qualifiche, @Attivo);
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
     `)
     return row
   }
@@ -678,6 +715,13 @@ export async function upsertPersonale(input: {
       ...(hasQualifiche ? { qualifiche: qualifiche ?? [] } : prev.qualifiche ? { qualifiche: prev.qualifiche } : {}),
       ...(row.tesseramento ? {} : prev.tesseramento ? { tesseramento: prev.tesseramento } : {}),
       ...(row.tesseramentoScadenza ? {} : prev.tesseramentoScadenza ? { tesseramentoScadenza: prev.tesseramentoScadenza } : {}),
+      ...(hasVisitaMedica
+        ? visitaMedica
+          ? { visitaMedica }
+          : {}
+        : prev.visitaMedica
+          ? { visitaMedica: prev.visitaMedica }
+          : {}),
     }
   } else db.personale.push(row)
   writeFile(db)

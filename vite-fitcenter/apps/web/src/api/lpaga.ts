@@ -148,6 +148,7 @@ export const lpagaApi = {
     email?: string
     tesseramento?: string
     tesseramentoScadenza?: string
+    visitaMedica?: string
     qualifiche?: { id: string; data?: string }[]
   }) => lpagaRequest<{ personale: unknown }>("/lpaga/personale", { method: "POST", body: JSON.stringify(body) }),
   patchPersonale: (id: string, body: Record<string, unknown>) =>

@@ -661,6 +661,7 @@ function Personale({
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
+  const [visitaMedica, setVisitaMedica] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
   const [nuovoOpen, setNuovoOpen] = useState(false)
@@ -679,6 +680,7 @@ function Personale({
         livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
         qualifiche,
         contratto,
+        visitaMedica,
         iban,
         email,
       }),
@@ -689,6 +691,7 @@ function Personale({
       setPassword("")
       setQualifiche([])
       setContratto("")
+      setVisitaMedica("")
       setIban("")
       setEmail("")
       setNuovoOpen(false)
@@ -828,6 +831,10 @@ function Personale({
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Visita medica
+              <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               IBAN
