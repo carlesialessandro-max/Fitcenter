@@ -19,6 +19,13 @@ export type AmmReparto = {
 
 export type AmmFornitore = { id: string; ragioneSociale: string }
 
+export type AmmFornitoreQuoteMeta = {
+  chiave: string
+  ragioneSociale: string
+  quote: AmmQuota[]
+  stagionale?: "piscina-estate"
+}
+
 export type AmmQuota = { repartoId: string; percentuale: number }
 
 export type AmmSpesa = {
@@ -187,7 +194,9 @@ export const amministrazioneApi = {
     if (reparto) q.set("reparto", reparto)
     return api.get<AmmDashboard>(`/amministrazione/dashboard?${q}`)
   },
-  meta: () => api.get<{ reparti: AmmReparto[]; fornitori: AmmFornitore[] }>("/amministrazione/reparti"),
+  meta: () => api.get<{ reparti: AmmReparto[]; fornitori: AmmFornitore[]; fornitoriQuote?: AmmFornitoreQuoteMeta[] }>(
+    "/amministrazione/reparti"
+  ),
   saveReparto: (body: Partial<AmmReparto> & { nome: string }) =>
     api.put<{ reparto: AmmReparto }>("/amministrazione/reparti", body),
   listSpese: (mese?: string, q?: string) => {
@@ -255,10 +264,12 @@ export const amministrazioneApi = {
   },
   deleteSpesa: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/spese/${encodeURIComponent(id)}`),
   ocr: (text: string, filename?: string) =>
-    api.post<{ parsed: AmmOcrParsed; fornitoreNoto: AmmFornitore | null; fornitori: AmmFornitore[] }>(
-      "/amministrazione/ocr",
-      { text, filename }
-    ),
+    api.post<{
+      parsed: AmmOcrParsed
+      fornitoreNoto: AmmFornitore | null
+      fornitori: AmmFornitore[]
+      quoteSuggerite?: AmmQuota[]
+    }>("/amministrazione/ocr", { text, filename }),
   ficStatus: () => api.get<AmmFicStatus>("/amministrazione/fattureincloud"),
   ficConnect: (body: { accessToken?: string; companyId?: number; defaultRepartoId?: string }) =>
     api.post<AmmFicStatus>("/amministrazione/fattureincloud/connect", body),

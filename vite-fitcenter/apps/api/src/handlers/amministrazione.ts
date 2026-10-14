@@ -61,7 +61,11 @@ function quoteFrom(raw: unknown): AmmQuota[] {
 
 export function getAmmReparti(_req: Request, res: Response) {
   try {
-    res.json({ reparti: ammCostiStore.listReparti(true), fornitori: ammCostiStore.listFornitori() })
+    res.json({
+      reparti: ammCostiStore.listReparti(true),
+      fornitori: ammCostiStore.listFornitori(),
+      fornitoriQuote: ammCostiStore.listFornitoriQuoteMeta(),
+    })
   } catch (e) {
     fail(res, e)
   }
@@ -150,6 +154,8 @@ export function postAmmImport(req: Request, res: Response) {
           saltate += 1
           return
         }
+        const quoteIn = quoteFrom(raw.quote)
+        const quote = quoteIn.length ? quoteIn : ammCostiStore.quoteForFornitore(fornitore, dataDocumento)
         ammCostiStore.upsertSpesa({
           fornitore,
           numeroDocumento,
@@ -157,7 +163,7 @@ export function postAmmImport(req: Request, res: Response) {
           descrizione: String(raw.descrizione ?? ""),
           totale,
           tipoCosto: raw.tipoCosto === "variabile" ? "variabile" : "fisso",
-          quote: quoteFrom(raw.quote),
+          quote,
           origine: "excel",
         })
         inserite += 1
@@ -674,7 +680,10 @@ export function postAmmOcr(req: Request, res: Response) {
     const fornitori = ammCostiStore.listFornitori()
     const n = parsed.fornitore.toLowerCase()
     const match = fornitori.find((f) => f.ragioneSociale.toLowerCase() === n || (n && f.ragioneSociale.toLowerCase().includes(n)))
-    res.json({ parsed, fornitoreNoto: match ?? null, fornitori })
+    const quoteSuggerite = parsed.fornitore
+      ? ammCostiStore.quoteForFornitore(match?.ragioneSociale || parsed.fornitore, parsed.dataDocumento || "")
+      : []
+    res.json({ parsed, fornitoreNoto: match ?? null, fornitori, quoteSuggerite })
   } catch (e) {
     fail(res, e)
   }
@@ -1020,7 +1029,7 @@ export async function postFicSync(req: Request, res: Response) {
           descrizione: doc.descrizione,
           totale: doc.totale,
           tipoCosto: "fisso",
-          quote: [{ repartoId, percentuale: 100 }],
+          quote: ammCostiStore.quoteForFornitore(doc.fornitore, doc.dataDocumento, repartoId),
           origine: "fattureincloud",
           ficId: doc.id,
         })

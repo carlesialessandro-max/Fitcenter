@@ -2,6 +2,13 @@ import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { getDataDir, readJson, writeJson } from "./persist.js"
+import {
+  FORNITORI_QUOTE_SEED,
+  normFornitoreKey,
+  resolveQuoteFornitore,
+  seedFornitore,
+  type AmmStagionaleFornitore,
+} from "../services/amministrazione-fornitori-quote.js"
 
 export type AmmRepartoTipo = "operativo" | "struttura"
 export type AmmLivello = "macro" | "sotto"
@@ -45,6 +52,14 @@ export type AmmReparto = {
 export type AmmFornitore = {
   id: string
   ragioneSociale: string
+}
+
+export type AmmFornitoreQuote = {
+  key: string
+  ragioneSociale: string
+  quote: AmmQuota[]
+  stagionale?: AmmStagionaleFornitore
+  updatedAt: string
 }
 
 export type AmmQuota = {
@@ -98,6 +113,7 @@ export type AmmCollaboratore = {
 type FileShape = {
   reparti: AmmReparto[]
   fornitori: AmmFornitore[]
+  fornitoriQuote: AmmFornitoreQuote[]
   spese: AmmSpesa[]
   buste: AmmBusta[]
   collaboratori: AmmCollaboratore[]
@@ -163,6 +179,7 @@ function empty(): FileShape {
   return {
     reparti: REPARTI_SEED.map((r) => ({ ...r })),
     fornitori: [],
+    fornitoriQuote: [],
     spese: [],
     buste: [],
     collaboratori: [],
@@ -270,9 +287,39 @@ function migrate(raw: Partial<FileShape>): FileShape {
       modificatoDa: String(r.modificatoDa ?? "").trim() || undefined,
     }))
     .filter((r) => r.nominativo && Number.isFinite(r.anno) && r.anno >= 1990 && r.importo > 0)
+  let fornitoriQuote: AmmFornitoreQuote[] = (Array.isArray(raw.fornitoriQuote) ? raw.fornitoriQuote : [])
+    .map((r) => ({
+      key: normFornitoreKey(String(r.key ?? r.ragioneSociale ?? "")),
+      ragioneSociale: String(r.ragioneSociale ?? "").trim(),
+      quote: (r.quote ?? []).map((q) => ({
+        repartoId: remapRepartoId(String(q.repartoId ?? "")),
+        percentuale: Number(q.percentuale) || 0,
+      })),
+      stagionale: r.stagionale === "piscina-estate" ? ("piscina-estate" as const) : undefined,
+      updatedAt: String(r.updatedAt ?? ""),
+    }))
+    .filter((r) => r.key && r.quote.length)
+  if (!fornitoriQuote.length) {
+    const latest = new Map<string, AmmFornitoreQuote>()
+    for (const s of spese) {
+      const key = normFornitoreKey(s.fornitore)
+      if (!key || !s.quote?.length) continue
+      const prev = latest.get(key)
+      if (!prev || String(s.updatedAt ?? "") > prev.updatedAt) {
+        latest.set(key, {
+          key,
+          ragioneSociale: s.fornitore,
+          quote: s.quote.map((q) => ({ ...q })),
+          updatedAt: String(s.updatedAt ?? s.createdAt ?? ""),
+        })
+      }
+    }
+    fornitoriQuote = [...latest.values()]
+  }
   return {
     reparti: [...byId.values()].filter((r) => SEED_IDS.has(r.id) || (r.livello === "sotto" && r.macroId && SEED_IDS.has(r.macroId))),
     fornitori: Array.isArray(raw.fornitori) ? raw.fornitori : [],
+    fornitoriQuote,
     spese,
     buste,
     collaboratori,
@@ -369,6 +416,86 @@ export const ammCostiStore = {
   listFornitori(): AmmFornitore[] {
     return load().fornitori.sort((a, b) => a.ragioneSociale.localeCompare(b.ragioneSociale, "it"))
   },
+  rememberFornitoreQuote(nome: string, quote: AmmQuota[]): void {
+    const key = normFornitoreKey(nome)
+    if (!key || !quoteValide(quote)) return
+    if (seedFornitore(nome)?.stagionale) return
+    const d = load()
+    const row: AmmFornitoreQuote = {
+      key,
+      ragioneSociale: nome.trim(),
+      quote: quote.map((q) => ({ repartoId: remapRepartoId(q.repartoId), percentuale: Number(q.percentuale) })),
+      updatedAt: nowIso(),
+    }
+    const i = d.fornitoriQuote.findIndex((x) => x.key === key)
+    if (i >= 0) d.fornitoriQuote[i] = row
+    else d.fornitoriQuote.push(row)
+    save(d)
+  },
+  rememberedQuote(nome: string): AmmQuota[] | null {
+    const key = normFornitoreKey(nome)
+    if (!key) return null
+    const d = load()
+    const exact = d.fornitoriQuote.find((x) => x.key === key)
+    if (exact?.quote?.length) return exact.quote.map((q) => ({ ...q }))
+    const compactNome = key.replace(/ /g, "")
+    const fuzzy = d.fornitoriQuote.find((x) => {
+      const k = x.key.replace(/ /g, "")
+      return k && (compactNome.includes(k) || k.includes(compactNome))
+    })
+    return fuzzy?.quote?.length ? fuzzy.quote.map((q) => ({ ...q })) : null
+  },
+  quoteForFornitore(nome: string, dataDocumento: string, fallbackRepartoId?: string): AmmQuota[] {
+    const resolved = resolveQuoteFornitore({
+      nome,
+      dataDocumento,
+      remembered: this.rememberedQuote(nome),
+    })
+    if (resolved?.length) return resolved
+    const fb = String(fallbackRepartoId ?? "").trim() || "altri-costi"
+    return [{ repartoId: fb, percentuale: 100 }]
+  },
+  listFornitoriQuoteMeta(): {
+    chiave: string
+    ragioneSociale: string
+    quote: AmmQuota[]
+    stagionale?: AmmStagionaleFornitore
+  }[] {
+    const remembered = load().fornitoriQuote
+    const out: {
+      chiave: string
+      ragioneSociale: string
+      quote: AmmQuota[]
+      stagionale?: AmmStagionaleFornitore
+    }[] = []
+    const seen = new Set<string>()
+    const mark = (k: string) => {
+      const c = k.replace(/ /g, "")
+      if (!c || seen.has(c)) return false
+      seen.add(c)
+      return true
+    }
+    for (const r of remembered) {
+      if (!r.key || !mark(r.key)) continue
+      out.push({
+        chiave: r.key,
+        ragioneSociale: r.ragioneSociale,
+        quote: r.quote.map((q) => ({ ...q })),
+        stagionale: r.stagionale,
+      })
+    }
+    for (const s of FORNITORI_QUOTE_SEED) {
+      const chiave = normFornitoreKey(s.match[0] ?? s.label)
+      if (!chiave || !mark(chiave)) continue
+      out.push({
+        chiave,
+        ragioneSociale: s.label,
+        quote: s.quote.map((q) => ({ ...q })),
+        stagionale: s.stagionale,
+      })
+    }
+    return out
+  },
   ensureFornitore(nome: string): AmmFornitore {
     const d = load()
     const n = nome.trim()
@@ -446,6 +573,7 @@ export const ammCostiStore = {
     if (cur) Object.assign(cur, row)
     else d.spese.push(row)
     save(d)
+    this.rememberFornitoreQuote(fornitore, quote)
     return row
   },
   setPdf(id: string, filename: string): AmmSpesa {

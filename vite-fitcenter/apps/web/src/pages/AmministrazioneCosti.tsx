@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import {
   amministrazioneApi,
   type AmmBusta,
+  type AmmFornitoreQuoteMeta,
   type AmmQuota,
   type AmmReparto,
   type AmmSpesa,
@@ -421,6 +422,44 @@ function quoteDaForm(f: FormState): AmmQuota[] {
   return f.quote.filter((q) => q.percentuale > 0)
 }
 
+function compactFornitore(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/g, "")
+}
+
+function quotePiscinaStagionale(dataDocumento: string): AmmQuota[] {
+  const m = Number(String(dataDocumento ?? "").slice(5, 7))
+  if (m >= 6 && m <= 8) {
+    return [
+      { repartoId: "piscina-coperta", percentuale: 50 },
+      { repartoId: "piscina-estiva", percentuale: 50 },
+    ]
+  }
+  return [{ repartoId: "piscina-coperta", percentuale: 100 }]
+}
+
+function quoteMetaFor(nome: string, list: AmmFornitoreQuoteMeta[]): AmmFornitoreQuoteMeta | undefined {
+  const n = compactFornitore(nome)
+  if (!n) return undefined
+  return list.find((r) => {
+    const keys = [r.chiave, r.ragioneSociale]
+    return keys.some((k) => {
+      const c = compactFornitore(k)
+      return Boolean(c) && (n === c || n.includes(c) || (c.length >= 8 && c.includes(n)))
+    })
+  })
+}
+
+function formFromQuote(quote: AmmQuota[], reparti: AmmReparto[]): Pick<FormState, "imputazione" | "sottoId" | "quote"> {
+  const one = quote.length === 1 && Math.abs(quote[0].percentuale - 100) < 0.05
+  const target = one ? reparti.find((r) => r.id === quote[0].repartoId) : undefined
+  if (target?.livello === "sotto") return { imputazione: "sotto", sottoId: target.id, quote: [] }
+  return { imputazione: "macro", sottoId: "", quote: quote.map((x) => ({ ...x })) }
+}
+
 function RegistroTab() {
   const qc = useQueryClient()
   const now = currentYm()
@@ -462,6 +501,19 @@ function RegistroTab() {
     setOcrMsg("")
     setForm(formFromSpesa(s, reparti))
     setOpen(true)
+  }
+
+  function applyQuoteFornitore(nome: string, dataDocumento: string, quoteOverride?: AmmQuota[]): Pick<FormState, "imputazione" | "sottoId" | "quote"> | null {
+    const q =
+      quoteOverride?.length
+        ? quoteOverride
+        : (() => {
+            const hit = quoteMetaFor(nome, meta.data?.fornitoriQuote ?? [])
+            if (!hit) return null
+            return hit.stagionale === "piscina-estate" ? quotePiscinaStagionale(dataDocumento) : hit.quote
+          })()
+    if (!q?.length) return null
+    return formFromQuote(q, attivi)
   }
 
   const saveMut = useMutation({
@@ -554,13 +606,17 @@ function RegistroTab() {
       const text = await extractPdfText(file)
       const r = await amministrazioneApi.ocr(text, file.name)
       const p = r.parsed
+      const fornitore = r.fornitoreNoto?.ragioneSociale || p.fornitore || ""
+      const dataDocumento = p.dataDocumento || ""
+      const auto = applyQuoteFornitore(fornitore, dataDocumento, r.quoteSuggerite)
       setForm((f) => ({
         ...f,
-        fornitore: r.fornitoreNoto?.ragioneSociale || p.fornitore || f.fornitore,
+        fornitore: fornitore || f.fornitore,
         numeroDocumento: p.numeroDocumento || f.numeroDocumento,
-        dataDocumento: p.dataDocumento || f.dataDocumento,
+        dataDocumento: dataDocumento || f.dataDocumento,
         descrizione: p.descrizione || f.descrizione,
         totale: p.totale != null ? String(p.totale).replace(".", ",") : f.totale,
+        ...(auto ?? {}),
       }))
       const missing: string[] = []
       if (!(r.fornitoreNoto?.ragioneSociale || p.fornitore)) missing.push("fornitore")
@@ -569,9 +625,11 @@ function RegistroTab() {
       setOcrMsg(
         missing.length
           ? `PDF letto in parte: manca ${missing.join(", ")}. Completa a mano e scegli il reparto.`
-          : r.fornitoreNoto
-            ? `Letto: fornitore già in anagrafica (${r.fornitoreNoto.ragioneSociale}). Controlla e conferma il reparto.`
-            : "Dati precompilati dal PDF. Controlla e scegli il sotto-reparto o lo split sulle macro-aree."
+          : auto
+            ? `Letto: ripartizione del fornitore applicata in automatico. Controlla e conferma.`
+            : r.fornitoreNoto
+              ? `Letto: fornitore già in anagrafica (${r.fornitoreNoto.ragioneSociale}). Controlla e conferma il reparto.`
+              : "Dati precompilati dal PDF. Controlla e scegli il sotto-reparto o lo split sulle macro-aree."
       )
     } catch (e) {
       setOcrMsg((e as Error).message || "Lettura PDF non riuscita: inserisci a mano.")
@@ -638,6 +696,10 @@ function RegistroTab() {
           + Nuova spesa
         </button>
       </div>
+      <p className="text-xs text-zinc-500">
+        Le percentuali impostate su un fornitore restano memorizzate e si riapplicano al prossimo scarico. RAMO e
+        Diversey: fino a maggio e da settembre 100% piscina coperta; da giugno ad agosto 50% coperta / 50% estiva.
+      </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
           <p className="text-zinc-400">
@@ -649,8 +711,8 @@ function RegistroTab() {
           {fic.data?.connected ? (
             <p className="text-emerald-300">
               Collegato a {fic.data.companyName || "azienda"} ({fic.data.tokenMasked}
-              {fic.data.fromEnv ? ", da .env" : ""}). Le nuove spese vanno su «Altri costi»: poi le riassegni al
-              sotto-reparto.
+              {fic.data.fromEnv ? ", da .env" : ""}). Allo scarico si riapplicano le ripartizioni già usate per quel
+              fornitore (o i default: Mattonai, TeamSystem, utenze, Technogym, prodotti piscina, ecc.).
             </p>
           ) : (
             <p className="text-zinc-500">Non collegato: senza token non si possono scaricare gli acquisti.</p>
@@ -772,7 +834,14 @@ function RegistroTab() {
               <input
                 list="amm-fornitori"
                 value={form.fornitore}
-                onChange={(e) => setForm((f) => ({ ...f, fornitore: e.target.value }))}
+                onChange={(e) => {
+                  const fornitore = e.target.value
+                  setForm((f) => {
+                    if (editId) return { ...f, fornitore }
+                    const auto = applyQuoteFornitore(fornitore, f.dataDocumento)
+                    return { ...f, fornitore, ...(auto ?? {}) }
+                  })
+                }}
                 className={inputCls}
                 required
               />
@@ -788,7 +857,22 @@ function RegistroTab() {
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               Data documento
-              <input type="date" value={form.dataDocumento} onChange={(e) => setForm((f) => ({ ...f, dataDocumento: e.target.value }))} className={inputCls} required />
+              <input
+                type="date"
+                value={form.dataDocumento}
+                onChange={(e) => {
+                  const dataDocumento = e.target.value
+                  setForm((f) => {
+                    if (editId) return { ...f, dataDocumento }
+                    const hit = quoteMetaFor(f.fornitore, meta.data?.fornitoriQuote ?? [])
+                    if (hit?.stagionale !== "piscina-estate") return { ...f, dataDocumento }
+                    const auto = applyQuoteFornitore(f.fornitore, dataDocumento)
+                    return { ...f, dataDocumento, ...(auto ?? {}) }
+                  })
+                }}
+                className={inputCls}
+                required
+              />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               Totale lordo
