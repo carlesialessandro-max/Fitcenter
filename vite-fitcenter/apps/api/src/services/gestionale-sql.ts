@@ -6189,6 +6189,20 @@ export function isAnagraficaStaffCategoria(cat?: string): boolean {
   return /\bSTAFF\b/.test(u)
 }
 
+function dedupeAnagraficaStaffHits(rows: AnagraficaStaffHit[]): AnagraficaStaffHit[] {
+  const byId = new Map<string, AnagraficaStaffHit>()
+  const noId: AnagraficaStaffHit[] = []
+  for (const h of rows) {
+    const id = String(h.idUtente ?? "").trim()
+    if (!id) {
+      noId.push(h)
+      continue
+    }
+    if (!byId.has(id)) byId.set(id, h)
+  }
+  return [...byId.values(), ...noId]
+}
+
 /** Anagrafica gestionale: utenti categoria STAFF (tessera ASI, certificato, CF, recapiti). */
 export async function queryAnagraficaStaff(
   people?: { cognome?: string; nome: string }[]
@@ -6196,127 +6210,129 @@ export async function queryAnagraficaStaff(
   const p = await getPool()
   if (!p) return []
   const pool = p
-  const tbl = defaultTables.clienti
-  if (!isSafeSqlIdentifierLoose(tbl)) return []
-  const qObj = qualifySqlObject(tbl).query
-  const cols = await prenGetCols(tbl)
-  const set = new Set(cols)
-  const pickCol = (cands: string[]): string | null => {
-    for (const c of cands) if (set.has(c.toLowerCase())) return c
-    return null
-  }
-  const idCol = pickCol(["IDUtente", "IdUtente"]) ?? "IDUtente"
-  const cognomeCol = pickCol(["Cognome"]) ?? "Cognome"
-  const nomeCol = pickCol(["Nome"]) ?? "Nome"
-  const tessCol = pickCol([
-    "Custom2",
-    "AsiTessera",
-    "ASI_Tessera",
-    "TesseraASI",
-    "Tessera_Asi",
-    "Tessera",
-    "NumeroTessera",
-    "Custom1",
-  ])
-  const scadCol = pickCol([
-    "Custom3",
-    "DataScadenzaTessera",
-    "ScadenzaTessera",
-    "ScadenzaASI",
-    "DataScadenzaASI",
-    "ScadenzaAsi",
-  ])
-  const certCol = pickCol([
-    "CertificatoMedico",
-    "Certificato_Medico",
-    "VisitaMedica",
-    "Idoneita",
-  ])
-  const certScadCol = pickCol([
-    "DataScadenzaCertificato",
-    "ScadenzaCertificatoMedico",
-    "ScadenzaCertificato",
-    "DataCertificatoMedico",
-    "DataVisitaMedica",
-    "ScadenzaVisitaMedica",
-  ])
-  const catCol = pickCol([
-    "CategoriaDescrizione",
-    "UtentiCategoriaDescrizione",
-    "CategoriaUtente",
-    "TipoCategoria",
-    "Categoria",
-  ])
-  const idCatCol = pickCol(["IDCategoriaUtente", "IdCategoriaUtente", "IDCategoria", "IdCategoria"])
-  const extra = cols.filter((c) =>
-    /antincendio|soccorso|sicurezza|rls|piscina|custom[0-9]/i.test(c)
-  )
-  const selectByLower = new Map<string, string>()
-  for (const c of [
-    idCol,
-    cognomeCol,
-    nomeCol,
-    tessCol,
-    scadCol,
-    certCol,
-    certScadCol,
-    catCol,
-    idCatCol,
-    "Email",
-    "EMail",
-    "Mail",
-    "SMS",
-    "Sms",
-    "Cellulare",
-    "Telefono_1",
-    "Telefono1",
-    "Telefono",
-    "CodiceFiscale",
-    "Cod_Fisc",
-    "Indirizzo_Via",
-    "IndirizzoVia",
-    "Indirizzo",
-    "Indirizzo_NumeroCivico",
-    "NumeroCivico",
-    "Indirizzo_Cap",
-    "CAP",
-    "Indirizzo_Citta",
-    "Citta",
-    "Indirizzo_Pv",
-    "Provincia",
-    "DataNascita",
-    "Sesso",
-    ...extra,
-  ]) {
-    if (!c || !set.has(c.toLowerCase()) || selectByLower.has(c.toLowerCase())) continue
-    selectByLower.set(c.toLowerCase(), c)
-  }
-  const selectList = [...selectByLower.values()].map((c) => `[${c}]`).join(", ")
-  const colMap = { idCol, cognomeCol, nomeCol, tessCol, scadCol, certCol, certScadCol, catCol }
-
-  function rowsToStaff(recordset: unknown, map = colMap): AnagraficaStaffHit[] {
-    const out: AnagraficaStaffHit[] = []
-    for (const row of (recordset as Record<string, unknown>[] | undefined) ?? []) {
-      const hit = mapAnagraficaStaffRow(row, map)
-      if (!hit || !isAnagraficaStaffCategoria(hit.categoria)) continue
-      out.push(hit)
-    }
-    return out
-  }
-
-  async function tryStaffQuery(sqlText: string, map = colMap): Promise<AnagraficaStaffHit[]> {
-    try {
-      const r = await pool.request().query(sqlText)
-      return rowsToStaff(r.recordset, map)
-    } catch {
-      return []
-    }
-  }
 
   const catText = (alias: string) =>
-    `UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) LIKE N'%STAFF%' AND UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) NOT LIKE N'%CLIENTE%'`
+    `(UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) = N'STAFF' OR (UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) LIKE N'%STAFF%' AND UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) NOT LIKE N'%CLIENTE%'))`
 
-  try {
+  async function queryStaffFromTable(tbl: string): Promise<AnagraficaStaffHit[]> {
+    if (!tbl || !isSafeSqlIdentifierLoose(tbl)) return []
+    const qObj = qualifySqlObject(tbl).query
+    const cols = await prenGetCols(tbl)
+    const set = new Set(cols)
+    const pickCol = (cands: string[]): string | null => {
+      for (const c of cands) if (set.has(c.toLowerCase())) return c
+      return null
+    }
+    const idCol = pickCol(["IDUtente", "IdUtente"]) ?? "IDUtente"
+    const cognomeCol = pickCol(["Cognome"]) ?? "Cognome"
+    const nomeCol = pickCol(["Nome"]) ?? "Nome"
+    const tessCol = pickCol([
+      "Custom2",
+      "AsiTessera",
+      "ASI_Tessera",
+      "TesseraASI",
+      "Tessera_Asi",
+      "Tessera",
+      "NumeroTessera",
+      "Custom1",
+    ])
+    const scadCol = pickCol([
+      "Custom3",
+      "DataScadenzaTessera",
+      "ScadenzaTessera",
+      "ScadenzaASI",
+      "DataScadenzaASI",
+      "ScadenzaAsi",
+    ])
+    const certCol = pickCol([
+      "CertificatoMedico",
+      "Certificato_Medico",
+      "VisitaMedica",
+      "Idoneita",
+    ])
+    const certScadCol = pickCol([
+      "DataScadenzaCertificato",
+      "ScadenzaCertificatoMedico",
+      "ScadenzaCertificato",
+      "DataCertificatoMedico",
+      "DataVisitaMedica",
+      "ScadenzaVisitaMedica",
+    ])
+    const catCol = pickCol([
+      "CategoriaDescrizione",
+      "UtentiCategoriaDescrizione",
+      "CategoriaUtente",
+      "TipoCategoria",
+      "Categoria",
+    ])
+    const idCatCol = pickCol(["IDCategoriaUtente", "IdCategoriaUtente", "IDCategoria", "IdCategoria"])
+    const extra = cols.filter((c) =>
+      /antincendio|soccorso|sicurezza|rls|piscina|custom[0-9]/i.test(c)
+    )
+    const selectByLower = new Map<string, string>()
+    for (const c of [
+      idCol,
+      cognomeCol,
+      nomeCol,
+      tessCol,
+      scadCol,
+      certCol,
+      certScadCol,
+      catCol,
+      idCatCol,
+      "Email",
+      "EMail",
+      "Mail",
+      "SMS",
+      "Sms",
+      "Cellulare",
+      "Telefono_1",
+      "Telefono1",
+      "Telefono",
+      "CodiceFiscale",
+      "Cod_Fisc",
+      "Indirizzo_Via",
+      "IndirizzoVia",
+      "Indirizzo",
+      "Indirizzo_NumeroCivico",
+      "NumeroCivico",
+      "Indirizzo_Cap",
+      "CAP",
+      "Indirizzo_Citta",
+      "Citta",
+      "Indirizzo_Pv",
+      "Provincia",
+      "DataNascita",
+      "Data_Nascita",
+      "Sesso",
+      ...extra,
+    ]) {
+      if (!c || !set.has(c.toLowerCase()) || selectByLower.has(c.toLowerCase())) continue
+      selectByLower.set(c.toLowerCase(), c)
+    }
+    const selectList = [...selectByLower.values()].map((c) => `[${c}]`).join(", ")
+    if (!selectList) return []
+    const colMap = { idCol, cognomeCol, nomeCol, tessCol, scadCol, certCol, certScadCol, catCol }
+
+    function rowsToStaff(recordset: unknown, map = colMap): AnagraficaStaffHit[] {
+      const out: AnagraficaStaffHit[] = []
+      for (const row of (recordset as Record<string, unknown>[] | undefined) ?? []) {
+        const hit = mapAnagraficaStaffRow(row, map)
+        if (!hit || !isAnagraficaStaffCategoria(hit.categoria)) continue
+        out.push(hit)
+      }
+      return out
+    }
+
+    async function tryStaffQuery(sqlText: string, map = colMap): Promise<AnagraficaStaffHit[]> {
+      try {
+        const r = await pool.request().query(sqlText)
+        return rowsToStaff(r.recordset, map)
+      } catch {
+        return []
+      }
+    }
+
     const attempts: (() => Promise<AnagraficaStaffHit[]>)[] = []
     if (catCol && !/^id/i.test(catCol)) {
       attempts.push(() =>
@@ -6327,9 +6343,9 @@ export async function queryAnagraficaStaff(
       )
     }
     const lookupTables = [
+      { table: "UtentiCategorie", id: "IDCategoria", desc: "Descrizione" },
       { table: "CategorieUtenti", id: "IDCategoria", desc: "Descrizione" },
       { table: "CategorieUtenti", id: "IDCategoria", desc: "CategoriaDescrizione" },
-      { table: "UtentiCategorie", id: "IDCategoria", desc: "Descrizione" },
       { table: "Categorie", id: "IDCategoria", desc: "Descrizione" },
       { table: "Categorie", id: "IDCategoria", desc: "CategoriaDescrizione" },
     ]
@@ -6350,9 +6366,20 @@ export async function queryAnagraficaStaff(
       }
     }
 
-    let staff: AnagraficaStaffHit[] = []
     for (const attempt of attempts) {
-      staff = await attempt()
+      const staff = dedupeAnagraficaStaffHits(await attempt())
+      if (staff.length) return staff
+    }
+    return []
+  }
+
+  try {
+    const sources = ["RVW_Utenti", defaultTables.clienti].filter(
+      (t, i, arr) => t && isSafeSqlIdentifierLoose(t) && arr.indexOf(t) === i
+    )
+    let staff: AnagraficaStaffHit[] = []
+    for (const tbl of sources) {
+      staff = await queryStaffFromTable(tbl)
       if (staff.length) break
     }
     if (!staff.length) {
