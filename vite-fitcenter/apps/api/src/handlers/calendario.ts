@@ -160,6 +160,7 @@ const QUALIFICHE_PERSONALE = [
   "primo_soccorso",
   "rls",
   "responsabile_piscina",
+  "blsd",
 ] as const
 
 function parseTesseramentoScadenza(v: unknown): string | null {

@@ -6105,10 +6105,12 @@ function qualificheFromAnagraficaRow(row: Record<string, unknown>): string[] {
     if (text.includes(" rls") || text.startsWith("rls") || text === "rls") add("rls")
     if (
       ((k.includes("piscina") && k.includes("responsabile")) && colHit) ||
-      text.includes("responsabile piscina")
+      text.includes("responsabile piscina") ||
+      text.includes("impianti tecnologici")
     ) {
       add("responsabile_piscina")
     }
+    if ((k.includes("blsd") && colHit) || text.includes("blsd")) add("blsd")
   }
   return out
 }

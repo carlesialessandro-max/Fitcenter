@@ -3,7 +3,8 @@ export const PERSONALE_QUALIFICHE = [
   { id: "antincendio", label: "Antincendio" },
   { id: "primo_soccorso", label: "Primo soccorso" },
   { id: "rls", label: "RLS" },
-  { id: "responsabile_piscina", label: "Responsabile piscina" },
+  { id: "responsabile_piscina", label: "Responsabile piscina e impianti tecnologici" },
+  { id: "blsd", label: "BLSD" },
 ] as const
 
 export type PersonaleQualificaId = (typeof PERSONALE_QUALIFICHE)[number]["id"]

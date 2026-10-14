@@ -26,6 +26,7 @@ export const LPAGA_QUALIFICHE = [
   "primo_soccorso",
   "rls",
   "responsabile_piscina",
+  "blsd",
 ] as const
 
 export type LpagaQualificaId = (typeof LPAGA_QUALIFICHE)[number]
