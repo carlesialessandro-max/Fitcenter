@@ -15,7 +15,7 @@ import {
 } from "./gestionale-sql.js"
 import { namesMatchPersonale } from "./libro-paga-convalida.js"
 
-const STAFF_CACHE_FILE = "lpaga-staff-anagrafica-v3.json"
+const STAFF_CACHE_FILE = "lpaga-staff-anagrafica-v4.json"
 const STAFF_TTL_MS = 15 * 60 * 1000
 
 type StaffCacheFile = { at: string; rows: AnagraficaStaffHit[] }

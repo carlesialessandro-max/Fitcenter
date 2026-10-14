@@ -6203,6 +6203,54 @@ function dedupeAnagraficaStaffHits(rows: AnagraficaStaffHit[]): AnagraficaStaffH
   return [...byId.values(), ...noId]
 }
 
+async function attachCertificatiMedici(
+  pool: sql.ConnectionPool,
+  staff: AnagraficaStaffHit[]
+): Promise<AnagraficaStaffHit[]> {
+  const ids = [
+    ...new Set(
+      staff
+        .map((h) => Number(h.idUtente))
+        .filter((n) => Number.isFinite(n) && n > 0)
+        .map((n) => Math.trunc(n))
+    ),
+  ]
+  if (!ids.length) return staff
+  try {
+    const r = await pool.request().query(
+      `SELECT c.[IDUtente], c.[IDCertificato],
+              MAX(CONVERT(nvarchar(200), c.[CertificatoDescrizione])) AS CertificatoDescrizione,
+              MAX(c.[CertificatoDataEmissione]) AS CertificatoDataEmissione,
+              MAX(c.[CertificatoDataScadenza]) AS CertificatoDataScadenza
+       FROM [dbo].[RVW_CertificatiUtenti] c
+       WHERE c.[IDUtente] IN (${ids.join(",")})
+       GROUP BY c.[IDUtente], c.[IDCertificato]`
+    )
+    const best = new Map<string, { desc: string; scad: string }>()
+    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const id = String(row.IDUtente ?? "").trim()
+      if (!id) continue
+      const desc = String(row.CertificatoDescrizione ?? "").trim() || "Certificato medico"
+      const scad = toIsoDateOnlyMaybe(row.CertificatoDataScadenza) || toIsoDateOnlyMaybe(row.CertificatoDataEmissione) || ""
+      const prev = best.get(id)
+      if (!prev || scad > prev.scad) best.set(id, { desc, scad })
+    }
+    if (!best.size) return staff
+    return staff.map((h) => {
+      const c = best.get(h.idUtente)
+      if (!c) return h
+      return {
+        ...h,
+        certificatoMedico: c.desc,
+        certificatoMedicoScadenza: c.scad || undefined,
+      }
+    })
+  } catch (e) {
+    console.warn("[libro-paga] certificati medici:", (e as Error)?.message ?? e)
+    return staff
+  }
+}
+
 /** Anagrafica gestionale: utenti categoria STAFF (tessera ASI, certificato, CF, recapiti). */
 export async function queryAnagraficaStaff(
   people?: { cognome?: string; nome: string }[]
@@ -6386,6 +6434,7 @@ export async function queryAnagraficaStaff(
       console.warn("[libro-paga] nessuna anagrafica categoria STAFF nel gestionale")
       return []
     }
+    staff = await attachCertificatiMedici(pool, staff)
     if (!people?.length) return staff
     const wanted = people.map((x) => ({
       c: String(x.cognome ?? "").trim().toUpperCase(),

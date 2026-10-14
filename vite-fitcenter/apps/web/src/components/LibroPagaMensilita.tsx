@@ -38,6 +38,14 @@ function fmtDateIt(iso: string | null | undefined): string {
   return `${d}/${m}/${y}`
 }
 
+function currentIsoDate(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date())
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
+}
+
 function meseLabel(mese: string): string {
   const [ys, ms] = mese.split("-")
   const y = Number(ys)
@@ -73,11 +81,19 @@ export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonal
     { k: "Tesseramento ASI", v: tess ? `${tess}${tessScad ? ` · scad. ${fmtDateIt(tessScad)}` : ""}` : "" },
     {
       k: "Certificato medico",
-      v: g?.certificatoMedico
-        ? `${g.certificatoMedico}${g.certificatoMedicoScadenza ? ` · scad. ${fmtDateIt(g.certificatoMedicoScadenza)}` : ""}`
-        : g?.certificatoMedicoScadenza
-          ? `scad. ${fmtDateIt(g.certificatoMedicoScadenza)}`
-          : "",
+      v: (() => {
+        const desc = (g?.certificatoMedico ?? "").trim()
+        const scad = (g?.certificatoMedicoScadenza ?? "").trim()
+        if (!desc && !scad) return ""
+        const today = currentIsoDate()
+        const scaduto = scad && today && scad < today
+        const bits = [
+          desc,
+          scad ? `scad. ${fmtDateIt(scad)}` : "",
+          scaduto ? "scaduto" : "",
+        ].filter(Boolean)
+        return bits.join(" · ")
+      })(),
     },
   ]
   return (
