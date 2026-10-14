@@ -542,6 +542,7 @@ function PersonaleTab({
               <th className="px-3 py-2">Ruolo</th>
               {showReparto && <th className="px-3 py-2">Reparto</th>}
               <th className="px-3 py-2">Scad. contratto</th>
+              <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -566,6 +567,7 @@ function PersonaleTab({
                 </td>
                 {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
                 <td className="px-3 py-2">{fmtDateIt(r.contratto)}</td>
+                <td className="px-3 py-2">{fmtDateIt(r.visitaMedica)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button
                     type="button"

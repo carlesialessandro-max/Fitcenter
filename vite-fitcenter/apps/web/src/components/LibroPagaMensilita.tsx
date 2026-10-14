@@ -79,6 +79,7 @@ export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonal
     { k: "Indirizzo", v: g ? fmtIndirizzo(g) : "" },
     { k: "Data di nascita", v: g?.dataNascita ? fmtDateIt(g.dataNascita) : "" },
     { k: "Tesseramento ASI", v: tess ? `${tess}${tessScad ? ` · scad. ${fmtDateIt(tessScad)}` : ""}` : "" },
+    { k: "Visita medica", v: persona?.visitaMedica ? fmtDateIt(persona.visitaMedica) : "" },
     {
       k: "Certificato medico",
       v: (() => {
@@ -114,6 +115,11 @@ export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonal
         </dl>
       ) : (
         <p className="mt-2 text-sm text-zinc-500">Nessun nominativo STAFF trovato nel gestionale per questa persona.</p>
+      )}
+      {!g && (
+        <p className="mt-2 text-sm text-zinc-300">
+          Visita medica: {persona?.visitaMedica ? fmtDateIt(persona.visitaMedica) : "—"}
+        </p>
       )}
     </div>
   )

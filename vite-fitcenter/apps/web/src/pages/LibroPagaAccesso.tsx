@@ -340,6 +340,10 @@ function MiaAnagrafica({
         </p>
       </div>
       <GestionaleAnagraficaBlock persona={persona} />
+      <p className="text-sm text-zinc-300">
+        Visita medica:{" "}
+        <span className="text-zinc-100">{fmtDateIt(persona.visitaMedica)}</span>
+      </p>
       <form
         className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4"
         onSubmit={(e) => {
@@ -904,6 +908,7 @@ function Personale({
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
               <th className="px-3 py-2">Reparto</th>
+              <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -912,7 +917,7 @@ function Personale({
               const header =
                 i === 0 || p.ruolo !== personeFiltrate[i - 1]?.ruolo ? (
                   <tr key={`ruolo-${p.ruolo}`} className="border-t border-zinc-800 bg-zinc-900/70">
-                    <td className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400" colSpan={6}>
+                    <td className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400" colSpan={7}>
                       {ruoloLabel(p.ruolo)}
                     </td>
                   </tr>
@@ -924,6 +929,7 @@ function Personale({
                   <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
                   <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
                   <td className="px-3 py-2">{p.repartoNome}</td>
+                  <td className="px-3 py-2">{fmtDateIt(p.visitaMedica)}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <button
                       type="button"
