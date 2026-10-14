@@ -4,6 +4,7 @@ import { randomUUID } from "crypto"
 import { getDataDir, readJson, writeJson } from "./persist.js"
 import {
   FORNITORI_QUOTE_SEED,
+  isQuoteDumpDefault,
   normFornitoreKey,
   resolveQuoteFornitore,
   seedFornitore,
@@ -298,12 +299,12 @@ function migrate(raw: Partial<FileShape>): FileShape {
       stagionale: r.stagionale === "piscina-estate" ? ("piscina-estate" as const) : undefined,
       updatedAt: String(r.updatedAt ?? ""),
     }))
-    .filter((r) => r.key && r.quote.length)
+    .filter((r) => r.key && r.quote.length && !isQuoteDumpDefault(r.quote))
   if (!fornitoriQuote.length) {
     const latest = new Map<string, AmmFornitoreQuote>()
     for (const s of spese) {
       const key = normFornitoreKey(s.fornitore)
-      if (!key || !s.quote?.length) continue
+      if (!key || !s.quote?.length || isQuoteDumpDefault(s.quote)) continue
       const prev = latest.get(key)
       if (!prev || String(s.updatedAt ?? "") > prev.updatedAt) {
         latest.set(key, {
@@ -418,7 +419,7 @@ export const ammCostiStore = {
   },
   rememberFornitoreQuote(nome: string, quote: AmmQuota[]): void {
     const key = normFornitoreKey(nome)
-    if (!key || !quoteValide(quote)) return
+    if (!key || !quoteValide(quote) || isQuoteDumpDefault(quote)) return
     if (seedFornitore(nome)?.stagionale) return
     const d = load()
     const row: AmmFornitoreQuote = {
@@ -437,13 +438,31 @@ export const ammCostiStore = {
     if (!key) return null
     const d = load()
     const exact = d.fornitoriQuote.find((x) => x.key === key)
-    if (exact?.quote?.length) return exact.quote.map((q) => ({ ...q }))
+    if (exact?.quote?.length && !isQuoteDumpDefault(exact.quote)) return exact.quote.map((q) => ({ ...q }))
     const compactNome = key.replace(/ /g, "")
     const fuzzy = d.fornitoriQuote.find((x) => {
       const k = x.key.replace(/ /g, "")
       return k && (compactNome.includes(k) || k.includes(compactNome))
     })
-    return fuzzy?.quote?.length ? fuzzy.quote.map((q) => ({ ...q })) : null
+    if (fuzzy?.quote?.length && !isQuoteDumpDefault(fuzzy.quote)) return fuzzy.quote.map((q) => ({ ...q }))
+    return null
+  },
+  /** Spese finite su «Altri costi» dallo scarico: applica i default fornitore (Italpower → utenze, ecc.). */
+  riapplicaQuoteFornitoriNoti(): number {
+    const d = load()
+    let n = 0
+    for (const s of d.spese) {
+      if (!isQuoteDumpDefault(s.quote)) continue
+      const q = resolveQuoteFornitore({ nome: s.fornitore, dataDocumento: s.dataDocumento, remembered: null })
+      if (!q?.length || isQuoteDumpDefault(q)) continue
+      s.quote = q.map((x) => ({ ...x }))
+      s.updatedAt = nowIso()
+      n += 1
+    }
+    const before = d.fornitoriQuote.length
+    d.fornitoriQuote = d.fornitoriQuote.filter((r) => !isQuoteDumpDefault(r.quote))
+    if (n || d.fornitoriQuote.length !== before) save(d)
+    return n
   },
   quoteForFornitore(nome: string, dataDocumento: string, fallbackRepartoId?: string): AmmQuota[] {
     const resolved = resolveQuoteFornitore({

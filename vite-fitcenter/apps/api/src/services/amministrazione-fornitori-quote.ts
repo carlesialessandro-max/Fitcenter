@@ -20,7 +20,7 @@ export const FORNITORI_QUOTE_SEED: AmmFornitoreQuoteSeed[] = [
   { match: ["team system", "teamsystem"], label: "Team system", quote: q("costi-generali-struttura") },
   { match: ["danio"], label: "Danio srl", quote: q("costi-generali-struttura") },
   { match: ["compass"], label: "Compass", quote: q("costi-generali-struttura") },
-  { match: ["italpower"], label: "Italpower", quote: q("utenze-generali") },
+  { match: ["italpower energia", "italpower"], label: "Italpower", quote: q("utenze-generali") },
   { match: ["publiacqua"], label: "Publiacqua", quote: q("utenze-generali") },
   { match: ["technogym"], label: "Technogym", quote: q("palestra-sala-pesi") },
   { match: ["de lage landen", "delage landen", "delagelanden"], label: "De Lage Landen", quote: q("palestra-sala-pesi") },
@@ -83,6 +83,13 @@ export function seedFornitore(nome: string): AmmFornitoreQuoteSeed | null {
   return hits.sort((a, b) => compact(b.match[0] ?? "").length - compact(a.match[0] ?? "").length)[0] ?? null
 }
 
+/** Ripartizione “secchio” dello scarico FIC, non una scelta dell’utente. */
+export function isQuoteDumpDefault(quote: AmmQuota[] | undefined | null): boolean {
+  if (!quote || quote.length !== 1) return false
+  const q0 = quote[0]!
+  return q0.repartoId === "altri-costi" && Math.abs(Number(q0.percentuale) - 100) < 0.05
+}
+
 export function resolveQuoteFornitore(opts: {
   nome: string
   dataDocumento: string
@@ -91,7 +98,9 @@ export function resolveQuoteFornitore(opts: {
   const seed = seedFornitore(opts.nome)
   if (seed?.stagionale === "piscina-estate") return quotePiscinaStagionale(opts.dataDocumento)
   const mem = (opts.remembered ?? []).filter((x) => x.repartoId && Number(x.percentuale) > 0)
-  if (mem.length) return mem.map((x) => ({ repartoId: x.repartoId, percentuale: Number(x.percentuale) }))
+  if (mem.length && !isQuoteDumpDefault(mem)) {
+    return mem.map((x) => ({ repartoId: x.repartoId, percentuale: Number(x.percentuale) }))
+  }
   if (seed?.quote?.length) return seed.quote.map((x) => ({ ...x }))
   return null
 }

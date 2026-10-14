@@ -92,6 +92,7 @@ export function putAmmReparto(req: Request, res: Response) {
 
 export function getAmmSpese(req: Request, res: Response) {
   try {
+    ammCostiStore.riapplicaQuoteFornitoriNoti()
     const mese = String(req.query.mese ?? "").trim()
     const q = String(req.query.q ?? "").trim().toLowerCase()
     let rows = ammCostiStore.listSpese()
@@ -693,6 +694,7 @@ type Slice = { repartoId: string; nome: string; importo: number; fonte: "spesa" 
 
 export async function getAmmDashboard(req: Request, res: Response) {
   try {
+    ammCostiStore.riapplicaQuoteFornitoriNoti()
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const meseQ = String(req.query.mese ?? "").trim()
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
@@ -1009,6 +1011,7 @@ export async function postFicSync(req: Request, res: Response) {
         /* nome azienda opzionale */
       }
     }
+    ammCostiStore.riapplicaQuoteFornitoriNoti()
     const docs = await listAcquistiMese(ficStore.get() ?? cfg, mese)
     const repartoId = String(req.body?.repartoId ?? cfg.defaultRepartoId ?? FIC_DEFAULT_REPARTO).trim() || FIC_DEFAULT_REPARTO
     const ids = new Set(ammCostiStore.listReparti(true).map((r) => r.id))
