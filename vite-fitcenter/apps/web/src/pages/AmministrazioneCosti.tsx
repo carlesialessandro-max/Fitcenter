@@ -437,9 +437,61 @@ function compactFornitore(s: string): string {
     .replace(/[^a-z0-9]+/g, "")
 }
 
-function quotePiscinaStagionale(dataDocumento: string): AmmQuota[] {
-  const m = Number(String(dataDocumento ?? "").slice(5, 7))
-  if (m >= 6 && m <= 9) {
+function inFinestraPiscinaEstateUi(
+  dataDocumento: string,
+  fornitore: string,
+  fornitoriQuote: AmmFornitoreQuoteMeta[],
+  speseAnno: AmmSpesa[],
+  excludeSpesaId?: string | null
+): boolean {
+  const doc = String(dataDocumento).slice(0, 10)
+  const m = Number(doc.slice(5, 7))
+  const anno = doc.slice(0, 4)
+  if (m < 6 || m > 9) return false
+  if (m >= 6 && m <= 8) return true
+  const hit = quoteMetaFor(fornitore, fornitoriQuote)
+  const matchFornitore = (nome: string) => {
+    if (!hit) return compactFornitore(nome) === compactFornitore(fornitore)
+    return [hit.chiave, hit.ragioneSociale].some((k) => {
+      const c = compactFornitore(k)
+      const n = compactFornitore(nome)
+      return Boolean(c && n && (n === c || n.includes(c) || (c.length >= 8 && c.includes(n))))
+    })
+  }
+  const altreSettembre = speseAnno
+    .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
+    .filter((s) => matchFornitore(s.fornitore))
+    .map((s) => s.dataDocumento.slice(0, 10))
+    .filter((d) => d.startsWith(`${anno}-09`))
+    .sort()
+  const primaFornitura = altreSettembre[0]
+  if (!primaFornitura) return false
+  return doc < primaFornitura
+}
+
+function quotePiscinaStagionale(
+  dataDocumento: string,
+  opts?: {
+    fornitore?: string
+    fornitoriQuote?: AmmFornitoreQuoteMeta[]
+    speseAnno?: AmmSpesa[]
+    excludeSpesaId?: string | null
+  }
+): AmmQuota[] {
+  const inWindow =
+    opts?.fornitore && opts.fornitoriQuote && opts.speseAnno
+      ? inFinestraPiscinaEstateUi(
+          dataDocumento,
+          opts.fornitore,
+          opts.fornitoriQuote,
+          opts.speseAnno,
+          opts.excludeSpesaId
+        )
+      : (() => {
+          const m = Number(String(dataDocumento ?? "").slice(5, 7))
+          return m >= 6 && m <= 8
+        })()
+  if (inWindow) {
     return [
       { repartoId: "piscina-estiva", percentuale: 75 },
       { repartoId: "piscina-coperta", percentuale: 25 },
@@ -503,10 +555,16 @@ function RegistroTab() {
     queryKey: ["amm-spese", mese, q],
     queryFn: () => amministrazioneApi.listSpese(mese, q),
   })
+  const [form, setForm] = useState<FormState>(emptyForm)
+  const quoteAnno = form.dataDocumento.slice(0, 4)
+  const speseAnnoQuote = useQuery({
+    queryKey: ["amm-spese", quoteAnno, "piscina-estate"],
+    queryFn: () => amministrazioneApi.listSpese(quoteAnno, ""),
+    enabled: open && /^\d{4}$/.test(quoteAnno),
+  })
   const reparti = meta.data?.reparti ?? []
   const attivi = reparti.filter((r) => r.attivo)
   const macros = macrosOf(attivi)
-  const [form, setForm] = useState<FormState>(emptyForm)
   const quote = quoteDaForm(form)
   const somma = quoteSum(quote)
   const okSplit = Math.abs(somma - 100) < 0.05 && quote.length > 0
@@ -524,21 +582,35 @@ function RegistroTab() {
     setOcrMsg("")
     let next = formFromSpesa(s, reparti)
     if (!s.quoteEccezione) {
-      const auto = applyQuoteFornitore(s.fornitore, s.dataDocumento)
+      const auto = applyQuoteFornitore(s.fornitore, s.dataDocumento, undefined, s.id)
       if (auto) next = { ...next, ...auto, memoriaQuote: "default" }
     }
     setForm(next)
     setOpen(true)
   }
 
-  function applyQuoteFornitore(nome: string, dataDocumento: string, quoteOverride?: AmmQuota[]): Pick<FormState, "imputazione" | "sottoId" | "quote"> | null {
+  function applyQuoteFornitore(
+    nome: string,
+    dataDocumento: string,
+    quoteOverride?: AmmQuota[],
+    excludeSpesaId?: string | null
+  ): Pick<FormState, "imputazione" | "sottoId" | "quote"> | null {
+    const fornitoriQuote = meta.data?.fornitoriQuote ?? []
+    const speseAnno = speseAnnoQuote.data?.spese ?? []
     const q =
       quoteOverride?.length
         ? quoteOverride
         : (() => {
-            const hit = quoteMetaFor(nome, meta.data?.fornitoriQuote ?? [])
+            const hit = quoteMetaFor(nome, fornitoriQuote)
             if (!hit) return null
-            return hit.stagionale === "piscina-estate" ? quotePiscinaStagionale(dataDocumento) : hit.quote
+            return hit.stagionale === "piscina-estate"
+              ? quotePiscinaStagionale(dataDocumento, {
+                  fornitore: nome,
+                  fornitoriQuote,
+                  speseAnno,
+                  excludeSpesaId: excludeSpesaId ?? editId,
+                })
+              : hit.quote
           })()
     if (!q?.length) return null
     return formFromQuote(q, attivi)

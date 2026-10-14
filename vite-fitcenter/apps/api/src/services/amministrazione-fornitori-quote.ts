@@ -63,7 +63,7 @@ export function speseStessoFornitoreStagionale(nome: string, fornitoreSpesa: str
   return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)))
 }
 
-/** Da giugno fino alla prima fornitura di settembre (apertura piscina esterna): ripartizione estiva. */
+/** Giugno–agosto: estiva. Settembre: solo date prima della prima fornitura del mese (apertura piscina esterna). */
 export function inFinestraPiscinaEstate(
   dataDocumento: string,
   nomeFornitore: string,
@@ -73,18 +73,18 @@ export function inFinestraPiscinaEstate(
   const am = annoMese(dataDocumento)
   if (!am) return false
   const { anno, mese } = am
+  const doc = dataDocumento.slice(0, 10)
   if (mese < 6 || mese > 9) return false
   if (mese >= 6 && mese <= 8) return true
-  if (!spese?.length) return true
-  const septDates = spese
+  const altreSettembre = (spese ?? [])
     .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
     .filter((s) => speseStessoFornitoreStagionale(nomeFornitore, s.fornitore))
     .map((s) => String(s.dataDocumento).slice(0, 10))
     .filter((d) => d.startsWith(`${anno}-09`))
     .sort()
-  const first = septDates[0]
-  if (!first) return true
-  return dataDocumento.slice(0, 10) <= first
+  const primaFornitura = altreSettembre[0]
+  if (!primaFornitura) return false
+  return doc < primaFornitura
 }
 
 export function quotesMatch(a: AmmQuota[], b: AmmQuota[]): boolean {
@@ -126,7 +126,7 @@ export function quotePiscinaStagionale(
     ? inFinestraPiscinaEstate(dataDocumento, opts.fornitore, opts.spese, opts.excludeSpesaId)
     : (() => {
         const m = Number(String(dataDocumento ?? "").slice(5, 7))
-        return m >= 6 && m <= 9
+        return m >= 6 && m <= 8
       })()
   if (inWindow) {
     return [
