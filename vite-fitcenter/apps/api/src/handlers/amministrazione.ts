@@ -133,6 +133,9 @@ function spesaFromBody(b: Record<string, unknown>, id?: string): Parameters<type
               ? "manuale"
               : undefined,
     ficId: b.ficId != null ? Number(b.ficId) : undefined,
+    rememberQuote: b.rememberQuote === false ? false : b.rememberQuote === true ? true : undefined,
+    quoteEccezione:
+      b.rememberQuote === true ? undefined : b.rememberQuote === false || b.quoteEccezione === true ? true : undefined,
   }
 }
 

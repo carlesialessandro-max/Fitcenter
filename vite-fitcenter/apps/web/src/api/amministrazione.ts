@@ -38,6 +38,7 @@ export type AmmSpesa = {
   totale: number
   tipoCosto: AmmTipoCosto
   quote: AmmQuota[]
+  quoteEccezione?: boolean
   pathPdf?: string
   origine: "manuale" | "ocr" | "excel" | "fattureincloud"
   ficId?: number
@@ -206,7 +207,16 @@ export const amministrazioneApi = {
     const s = p.toString()
     return api.get<{ spese: AmmSpesa[] }>(`/amministrazione/spese${s ? `?${s}` : ""}`)
   },
-  saveSpesa: async (body: Partial<AmmSpesa> & { fornitore: string; dataDocumento: string; totale: number; quote: AmmQuota[] }, pdf?: File | null) => {
+  saveSpesa: async (
+    body: Partial<AmmSpesa> & {
+      fornitore: string
+      dataDocumento: string
+      totale: number
+      quote: AmmQuota[]
+      rememberQuote?: boolean
+    },
+    pdf?: File | null
+  ) => {
     const fd = new FormData()
     fd.append("payload", JSON.stringify(body))
     if (pdf) fd.append("pdf", pdf)

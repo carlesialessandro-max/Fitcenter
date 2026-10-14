@@ -384,6 +384,7 @@ type FormState = {
   imputazione: Imputazione
   sottoId: string
   quote: AmmQuota[]
+  memoriaQuote: "default" | "eccezione"
 }
 
 function emptyForm(): FormState {
@@ -397,6 +398,7 @@ function emptyForm(): FormState {
     imputazione: "sotto",
     sottoId: "",
     quote: [],
+    memoriaQuote: "default",
   }
 }
 
@@ -414,6 +416,7 @@ function formFromSpesa(s: AmmSpesa, reparti: AmmReparto[]): FormState {
     imputazione: sotto ? "sotto" : "macro",
     sottoId: sotto && target ? target.id : "",
     quote: sotto ? [] : s.quote.map((x) => ({ ...x })),
+    memoriaQuote: s.quoteEccezione ? "eccezione" : "default",
   }
 }
 
@@ -451,6 +454,22 @@ function quoteMetaFor(nome: string, list: AmmFornitoreQuoteMeta[]): AmmFornitore
       return Boolean(c) && (n === c || n.includes(c) || (c.length >= 8 && c.includes(n)))
     })
   })
+}
+
+function quotesMatch(a: AmmQuota[], b: AmmQuota[]): boolean {
+  if (a.length !== b.length) return false
+  const map = new Map(b.map((x) => [x.repartoId, Number(x.percentuale)]))
+  return a.every((x) => Math.abs((map.get(x.repartoId) ?? NaN) - Number(x.percentuale)) < 0.05)
+}
+
+function memoriaQuoteDaRiparto(
+  fornitore: string,
+  quote: AmmQuota[],
+  list: AmmFornitoreQuoteMeta[]
+): FormState["memoriaQuote"] | null {
+  const hit = quoteMetaFor(fornitore, list)
+  if (!hit?.quote?.length || hit.stagionale === "piscina-estate") return null
+  return quotesMatch(quote, hit.quote) ? "default" : "eccezione"
 }
 
 function formFromQuote(quote: AmmQuota[], reparti: AmmReparto[]): Pick<FormState, "imputazione" | "sottoId" | "quote"> {
@@ -528,6 +547,8 @@ function RegistroTab() {
           totale: Number(form.totale.replace(",", ".")),
           tipoCosto: form.tipoCosto,
           quote,
+          rememberQuote: form.memoriaQuote !== "eccezione",
+          quoteEccezione: form.memoriaQuote === "eccezione",
           origine: pdf ? "ocr" : editId ? undefined : "manuale",
         },
         pdf
@@ -617,6 +638,7 @@ function RegistroTab() {
         descrizione: p.descrizione || f.descrizione,
         totale: p.totale != null ? String(p.totale).replace(".", ",") : f.totale,
         ...(auto ?? {}),
+        memoriaQuote: auto ? "default" : f.memoriaQuote,
       }))
       const missing: string[] = []
       if (!(r.fornitoreNoto?.ragioneSociale || p.fornitore)) missing.push("fornitore")
@@ -653,7 +675,9 @@ function RegistroTab() {
       const quoteNext = f.quote.some((x) => x.repartoId === id)
         ? f.quote.map((x) => (x.repartoId === id ? { ...x, percentuale: perc } : x))
         : [...f.quote, { repartoId: id, percentuale: perc }]
-      return { ...f, quote: quoteNext.filter((x) => x.percentuale > 0) }
+      const quote = quoteNext.filter((x) => x.percentuale > 0)
+      const auto = memoriaQuoteDaRiparto(f.fornitore, quote, meta.data?.fornitoriQuote ?? [])
+      return { ...f, quote, memoriaQuote: auto ?? f.memoriaQuote }
     })
   }
 
@@ -697,8 +721,9 @@ function RegistroTab() {
         </button>
       </div>
       <p className="text-xs text-zinc-500">
-        Le percentuali impostate su un fornitore restano memorizzate e si riapplicano al prossimo scarico. RAMO e
-        Diversey: fino a maggio e da settembre 100% piscina coperta; da giugno ad agosto 50% coperta / 50% estiva.
+        All’inserimento puoi confermare che le percentuali restano la regola del fornitore, oppure segnarle come
+        eccezione del mese (i prossimi scarichi tengono la regola precedente). RAMO e Diversey: fino a maggio e da
+        settembre 100% piscina coperta; da giugno ad agosto 50% coperta / 50% estiva.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
@@ -839,7 +864,7 @@ function RegistroTab() {
                   setForm((f) => {
                     if (editId) return { ...f, fornitore }
                     const auto = applyQuoteFornitore(fornitore, f.dataDocumento)
-                    return { ...f, fornitore, ...(auto ?? {}) }
+                    return { ...f, fornitore, ...(auto ?? {}), memoriaQuote: auto ? "default" : f.memoriaQuote }
                   })
                 }}
                 className={inputCls}
@@ -902,7 +927,14 @@ function RegistroTab() {
                   type="radio"
                   name="imputazione"
                   checked={form.imputazione === "sotto"}
-                  onChange={() => setForm((f) => ({ ...f, imputazione: "sotto" }))}
+                  onChange={() =>
+                    setForm((f) => {
+                      const next = { ...f, imputazione: "sotto" as const }
+                      const q = quoteDaForm(next)
+                      const auto = memoriaQuoteDaRiparto(f.fornitore, q, meta.data?.fornitoriQuote ?? [])
+                      return { ...next, memoriaQuote: auto ?? f.memoriaQuote }
+                    })
+                  }
                   className="accent-amber-500"
                 />
                 Sotto-reparto specifico (es. cloro → Piscina coperta)
@@ -912,7 +944,14 @@ function RegistroTab() {
                   type="radio"
                   name="imputazione"
                   checked={form.imputazione === "macro"}
-                  onChange={() => setForm((f) => ({ ...f, imputazione: "macro" }))}
+                  onChange={() =>
+                    setForm((f) => {
+                      const next = { ...f, imputazione: "macro" as const }
+                      const q = quoteDaForm(next)
+                      const auto = memoriaQuoteDaRiparto(f.fornitore, q, meta.data?.fornitoriQuote ?? [])
+                      return { ...next, memoriaQuote: auto ?? f.memoriaQuote }
+                    })
+                  }
                   className="accent-amber-500"
                 />
                 Split su macro-aree (es. gas 60% Piscina / 20% SPA / 20% Fitness)
@@ -923,7 +962,18 @@ function RegistroTab() {
                 Sotto-reparto
                 <select
                   value={form.sottoId}
-                  onChange={(e) => setForm((f) => ({ ...f, sottoId: e.target.value }))}
+                  onChange={(e) => {
+                    const sottoId = e.target.value
+                    setForm((f) => {
+                      const next = { ...f, sottoId }
+                      const auto = memoriaQuoteDaRiparto(
+                        f.fornitore,
+                        quoteDaForm(next),
+                        meta.data?.fornitoriQuote ?? []
+                      )
+                      return { ...next, memoriaQuote: auto ?? f.memoriaQuote }
+                    })
+                  }}
                   className={inputCls}
                   required
                 >
@@ -976,6 +1026,39 @@ function RegistroTab() {
                 {okSplit ? "Imputazione 100% sul sotto-reparto." : "Seleziona il sotto-reparto per salvare."}
               </p>
             )}
+            <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/40 p-3">
+              <p className="text-sm font-medium text-zinc-200">Regola del fornitore</p>
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input
+                  type="radio"
+                  name="memoriaQuote"
+                  checked={form.memoriaQuote === "default"}
+                  onChange={() => setForm((f) => ({ ...f, memoriaQuote: "default" }))}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>
+                  <span className="font-medium text-zinc-100">Rimangono così</span>
+                  <span className="block text-xs text-zinc-500">
+                    Diventa la regola di questo fornitore: i prossimi scarichi (aprile, maggio, …) la riapplicano da soli.
+                  </span>
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-zinc-300">
+                <input
+                  type="radio"
+                  name="memoriaQuote"
+                  checked={form.memoriaQuote === "eccezione"}
+                  onChange={() => setForm((f) => ({ ...f, memoriaQuote: "eccezione" }))}
+                  className="mt-0.5 accent-amber-500"
+                />
+                <span>
+                  <span className="font-medium text-zinc-100">Eccezione del mese</span>
+                  <span className="block text-xs text-zinc-500">
+                    Vale solo su questo documento. La regola precedente del fornitore resta per gli scarichi successivi.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button type="button" className={btnGhost} onClick={() => setOpen(false)}>
@@ -1011,6 +1094,7 @@ function RegistroTab() {
                 <td className="px-3 py-2 text-xs text-zinc-400">{origineLabel(s.origine)}</td>
                 <td className="px-3 py-2 text-xs text-zinc-400">
                   {s.quote.map((x) => `${nomeReparto(reparti, x.repartoId)} ${x.percentuale}%`).join(" · ")}
+                  {s.quoteEccezione ? <span className="ml-1 text-amber-400/90">· eccezione</span> : null}
                 </td>
                 <td className="px-3 py-2 text-right">{eur(s.totale)}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">

@@ -78,6 +78,8 @@ export type AmmSpesa = {
   totale: number
   tipoCosto: AmmTipoCosto
   quote: AmmQuota[]
+  /** true = ripartizione solo di questo documento, non diventa la regola del fornitore. */
+  quoteEccezione?: boolean
   pathPdf?: string
   origine: AmmOrigine
   ficId?: number
@@ -237,6 +239,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
         repartoId: remapRepartoId(String(q.repartoId ?? "")),
         percentuale: Number(q.percentuale) || 0,
       })),
+      quoteEccezione: s.quoteEccezione === true ? true : undefined,
       origine,
       ficId: Number.isFinite(ficId) && ficId > 0 ? ficId : undefined,
     }
@@ -304,7 +307,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     const latest = new Map<string, AmmFornitoreQuote>()
     for (const s of spese) {
       const key = normFornitoreKey(s.fornitore)
-      if (!key || !s.quote?.length || isQuoteDumpDefault(s.quote)) continue
+      if (!key || !s.quote?.length || isQuoteDumpDefault(s.quote) || s.quoteEccezione) continue
       const prev = latest.get(key)
       if (!prev || String(s.updatedAt ?? "") > prev.updatedAt) {
         latest.set(key, {
@@ -548,7 +551,15 @@ export const ammCostiStore = {
         (n ? s.numeroDocumento.trim().toLowerCase() === n : true)
     )
   },
-  upsertSpesa(body: Partial<AmmSpesa> & { fornitore: string; dataDocumento: string; totale: number; quote: AmmQuota[] }): AmmSpesa {
+  upsertSpesa(
+    body: Partial<AmmSpesa> & {
+      fornitore: string
+      dataDocumento: string
+      totale: number
+      quote: AmmQuota[]
+      rememberQuote?: boolean
+    }
+  ): AmmSpesa {
     const d = load()
     const dataDocumento = String(body.dataDocumento ?? "").slice(0, 10)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) throw Object.assign(new Error("Data documento non valida"), { status: 400 })
@@ -573,6 +584,7 @@ export const ammCostiStore = {
         ? body.origine
         : (cur?.origine ?? "manuale")
     const ficNum = Number(body.ficId ?? cur?.ficId)
+    const eccezione = body.rememberQuote === false || body.quoteEccezione === true
     const row: AmmSpesa = {
       id,
       fornitore,
@@ -583,16 +595,19 @@ export const ammCostiStore = {
       totale: Math.round(totale * 100) / 100,
       tipoCosto: body.tipoCosto === "variabile" || body.tipoCosto === "fisso" ? body.tipoCosto : (cur?.tipoCosto ?? "fisso"),
       quote,
+      quoteEccezione: eccezione ? true : undefined,
       pathPdf: body.pathPdf ?? cur?.pathPdf,
       origine,
       ficId: Number.isFinite(ficNum) && ficNum > 0 ? ficNum : undefined,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }
-    if (cur) Object.assign(cur, row)
-    else d.spese.push(row)
+    if (cur) {
+      Object.assign(cur, row)
+      if (!eccezione) delete cur.quoteEccezione
+    } else d.spese.push(row)
     save(d)
-    this.rememberFornitoreQuote(fornitore, quote)
+    if (!eccezione) this.rememberFornitoreQuote(fornitore, quote)
     return row
   },
   setPdf(id: string, filename: string): AmmSpesa {
