@@ -40,6 +40,18 @@ export type AmmSpesa = {
 
 export type AmmDashRiga = { id: string; nome: string; importo: number; macroId?: string }
 
+export type AmmRisultatoReparto = {
+  id: string
+  nome: string
+  ricavi: number
+  costiDiretti: number
+  quotaFissi: number
+  costoTotale: number
+  utile: number
+  marginePct: number | null
+  ripartoFissiPct: number
+}
+
 export type AmmDashboard = {
   anno: number
   mese: string | null
@@ -58,6 +70,16 @@ export type AmmDashboard = {
   byBuste: AmmDashRiga[]
   nSpese: number
   nBuste: number
+  ricaviDisponibili?: boolean
+  totRicavi?: number
+  totRicaviAltri?: number
+  totStruttura?: number
+  totCostoPnl?: number
+  totUtile?: number
+  marginePct?: number | null
+  strutturaByMacro?: AmmDashRiga[]
+  risultato?: AmmRisultatoReparto[]
+  ricaviDettaglio?: { voce: string; macro: string; importo: number; n: number }[]
 }
 
 export type AmmBusta = {

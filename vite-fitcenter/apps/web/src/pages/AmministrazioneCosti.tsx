@@ -89,7 +89,7 @@ export function AmministrazioneCosti() {
         ? "spese"
         : "dashboard"
   const tabs: { id: Tab; to: string; label: string }[] = [
-    { id: "dashboard", to: "/amministrazione", label: "Dashboard costi" },
+    { id: "dashboard", to: "/amministrazione", label: "Risultato per reparto" },
     { id: "spese", to: "/amministrazione/spese", label: "Registro spese" },
     { id: "stipendi", to: "/amministrazione/stipendi", label: "Stipendi" },
     { id: "reparti", to: "/amministrazione/reparti", label: "Reparti e centri di costo" },
@@ -98,8 +98,8 @@ export function AmministrazioneCosti() {
     <div className="p-4 sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Costi per competenza (data documento). Buste paga dipendenti da mastrino; collaboratori sportivi dal libro paga.
-        Le fatture di acquisto si possono scaricare da Fatture in Cloud.
+        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura (utenze, paghe desk,
+        amministrativi, manutentori, amministratori) vengono ripartiti sui reparti in base ai ricavi del periodo.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -138,9 +138,9 @@ function DashboardTab() {
     queryFn: () => amministrazioneApi.dashboard(anno, tuttoAnno ? undefined : `${anno}-${mese}`, reparto || undefined),
   })
   const d = dash.data
-  const fissoPct = d && d.tot > 0 ? Math.round((d.totFisso / d.tot) * 100) : 0
   const pie = d?.byMacro?.length ? d.byMacro : (d?.byReparto ?? [])
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
+  const pnl = d?.risultato ?? []
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -189,13 +189,100 @@ function DashboardTab() {
       {dash.isError && <p className="text-sm text-red-400">{(dash.error as Error).message}</p>}
       {d && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Kpi title="Totale competenza" value={eur(d.tot)} hint={`${d.nSpese} documenti · ${d.nBuste ?? 0} buste`} />
-            <Kpi title="Fissi" value={eur(d.totFisso)} hint={`${fissoPct}% del totale`} />
-            <Kpi title="Variabili" value={eur(d.totVariabile)} hint={`di cui collaboratori ${eur(d.totCollaboratori)}`} />
-            <Kpi title="Dipendenti fissi" value={eur(d.totBuste ?? 0)} hint="Buste paga da mastrino" />
-            <Kpi title="Collaboratori sportivi" value={eur(d.totCollaboratori)} hint="Dal libro paga, non si inseriscono qui" />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Kpi title="Ricavi" value={eur(d.totRicavi ?? 0)} hint={d.ricaviDisponibili ? "Incassi gestionale del periodo" : "Gestionale non disponibile"} />
+            <Kpi title="Costi dopo riparto" value={eur(d.totCostoPnl ?? d.tot)} hint={`Di cui fissi di struttura ${eur(d.totStruttura ?? 0)}`} />
+            <Kpi
+              title="Risultato"
+              value={eur(d.totUtile ?? 0)}
+              hint={d.marginePct == null ? "Serve almeno un ricavo" : `${d.marginePct}% sui ricavi`}
+              tone={(d.totUtile ?? 0) >= 0 ? "ok" : "ko"}
+            />
+            <Kpi title="Costi diretti" value={eur(d.tot)} hint={`${d.nSpese} documenti · ${d.nBuste ?? 0} buste · collaboratori ${eur(d.totCollaboratori)}`} />
           </div>
+          {(d.totRicaviAltri ?? 0) > 0.009 && (
+            <p className="text-xs text-zinc-500">
+              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Non entrano nel risultato dei tre reparti.
+            </p>
+          )}
+          <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+            <table className="min-w-full text-sm">
+              <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Reparto</th>
+                  <th className="px-3 py-2 font-medium text-right">Ricavi</th>
+                  <th className="px-3 py-2 font-medium text-right">Costi diretti</th>
+                  <th className="px-3 py-2 font-medium text-right">Quota fissi</th>
+                  <th className="px-3 py-2 font-medium text-right">Costo totale</th>
+                  <th className="px-3 py-2 font-medium text-right">Risultato</th>
+                  <th className="px-3 py-2 font-medium text-right">% su ricavi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pnl.length ? (
+                  pnl.map((r) => (
+                    <tr key={r.id} className="border-t border-zinc-800">
+                      <td className="px-3 py-2 text-zinc-100">
+                        {r.nome}
+                        <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoFissiPct}%</span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaFissi)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
+                      <td className={`px-3 py-2 text-right font-medium ${r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {eur(r.utile)}
+                      </td>
+                      <td className={`px-3 py-2 text-right ${r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {r.marginePct == null ? "—" : `${r.marginePct}%`}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-4 text-zinc-500" colSpan={7}>
+                      Nessun dato nel periodo. Inserisci i costi nel registro: il risultato ha senso quando ci sono ricavi e
+                      costi dello stesso mese.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {pnl.length ? (
+                <tfoot>
+                  <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
+                    <td className="px-3 py-2 text-zinc-100">Totale</td>
+                    <td className="px-3 py-2 text-right">{eur(d.totRicavi ?? 0)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">
+                      {eur(pnl.reduce((s, r) => s + r.costiDiretti, 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totStruttura ?? 0)}</td>
+                    <td className="px-3 py-2 text-right">{eur(d.totCostoPnl ?? 0)}</td>
+                    <td className={`px-3 py-2 text-right ${(d.totUtile ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {eur(d.totUtile ?? 0)}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${(d.totUtile ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.marginePct == null ? "—" : `${d.marginePct}%`}
+                    </td>
+                  </tr>
+                </tfoot>
+              ) : null}
+            </table>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Esempio: 100.000 € di costi piscina su 200.000 € di ricavi è un utile; 100.000 € di costi palestra su 50.000 € di
+            incassi è una perdita, e va tagliato il budget o spinta la vendita. I fissi di struttura sono spalmati sui tre
+            reparti in proporzione ai ricavi, altrimenti il risultato sarebbe gonfiato.
+          </p>
+          {(d.strutturaByMacro ?? []).length > 0 && (
+            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+              <li className="font-medium text-zinc-400">Costi di struttura ripartiti:</li>
+              {(d.strutturaByMacro ?? []).map((r) => (
+                <li key={r.id}>
+                  {r.nome} {eur(r.importo)}
+                </li>
+              ))}
+            </ul>
+          )}
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-zinc-800 p-4">
               <h3 className="mb-3 text-sm font-medium text-zinc-200">Spese per macro-area</h3>
@@ -260,11 +347,27 @@ function DashboardTab() {
   )
 }
 
-function Kpi({ title, value, hint }: { title: string; value: string; hint: string }) {
+function Kpi({
+  title,
+  value,
+  hint,
+  tone,
+}: {
+  title: string
+  value: string
+  hint: string
+  tone?: "ok" | "ko"
+}) {
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
       <p className="text-xs text-zinc-500">{title}</p>
-      <p className="mt-1 text-xl font-semibold text-zinc-100">{value}</p>
+      <p
+        className={`mt-1 text-xl font-semibold ${
+          tone === "ok" ? "text-emerald-400" : tone === "ko" ? "text-red-400" : "text-zinc-100"
+        }`}
+      >
+        {value}
+      </p>
       <p className="mt-1 text-xs text-zinc-500">{hint}</p>
     </div>
   )

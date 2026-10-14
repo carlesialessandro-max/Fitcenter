@@ -6584,6 +6584,69 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
   return { total, count, segments }
 }
 
+/** Incassi di cassa aggregati per voce (categoria abbonamento / causale), per il P&L amministrazione. */
+export async function queryIncassiPerVoce(params: { from: string; to: string }): Promise<{ voce: string; euro: number; n: number }[]> {
+  const p = await getPool()
+  if (!p) return []
+  const view = getIncassiViewName()
+  const vq = qualifySqlObject(view).query
+  const cols = await prenGetCols(view)
+  const dateCol = incassiDateCol(cols)
+  const idCol = pickExistingCol(cols, ["IdCassaMovimento", "IDCassaMovimento", "idCassaMovimento"])
+  const importoCol = pickExistingCol(cols, ["CassaMovimentiImporto", "Importo"]) ?? "CassaMovimentiImporto"
+  const causaleCol = pickExistingCol(cols, ["CassaMovimentiCausale", "Causale"])
+  const catAbbCol = pickExistingCol(cols, [
+    "AbbonamentiCategorieDescrizione",
+    "CategoriaAbbonamentoDescrizione",
+    "AbbonamentiCategoriaDescrizione",
+  ])
+  const abbCol = pickExistingCol(cols, ["AbbonamentiDescrizione", "AbbonamentoDescrizione"])
+  const catUtenteCol = pickExistingCol(cols, ["CategoriaDescrizione"])
+  const idExpr = idCol
+    ? bracketCol(idCol)
+    : `CONVERT(nvarchar(80), ${bracketCol(dateCol)}, 126) + N'|' + CONVERT(nvarchar(40), ${bracketCol(importoCol)})`
+  const causaleExpr = causaleCol ? `CONVERT(nvarchar(400), ${bracketCol(causaleCol)})` : "CAST(NULL AS nvarchar(400))"
+  const catAbbExpr = catAbbCol ? `CONVERT(nvarchar(200), ${bracketCol(catAbbCol)})` : "CAST(NULL AS nvarchar(200))"
+  const abbExpr = abbCol ? `CONVERT(nvarchar(200), ${bracketCol(abbCol)})` : "CAST(NULL AS nvarchar(200))"
+  const catUtenteExpr = catUtenteCol ? `CONVERT(nvarchar(200), ${bracketCol(catUtenteCol)})` : "CAST(NULL AS nvarchar(200))"
+  try {
+    const r = await p
+      .request()
+      .input("from", sql.VarChar(10), params.from)
+      .input("to", sql.VarChar(10), params.to)
+      .query(
+        `WITH d AS (
+           SELECT
+             ${idExpr} AS movId,
+             MAX(TRY_CONVERT(float, ${bracketCol(importoCol)})) AS euro,
+             MAX(${causaleExpr}) AS causale,
+             MAX(NULLIF(LTRIM(RTRIM(${catAbbExpr})), N'')) AS catAbb,
+             MAX(NULLIF(LTRIM(RTRIM(${abbExpr})), N'')) AS abbDesc,
+             MAX(NULLIF(LTRIM(RTRIM(${catUtenteExpr})), N'')) AS catUtente
+           FROM ${vq}
+           WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
+             AND COALESCE(TRY_CONVERT(float, ${bracketCol(importoCol)}), 0) <> 0
+           GROUP BY ${idExpr}
+         )
+         SELECT
+           COALESCE(catAbb, abbDesc, causale, catUtente, N'Altro') AS voce,
+           COUNT_BIG(*) AS n,
+           SUM(euro) AS euro
+         FROM d
+         GROUP BY COALESCE(catAbb, abbDesc, causale, catUtente, N'Altro')
+         ORDER BY SUM(euro) DESC;`
+      )
+    return ((r.recordset ?? []) as { voce?: unknown; euro?: unknown; n?: unknown }[]).map((row) => ({
+      voce: String(row.voce ?? "Altro").trim() || "Altro",
+      euro: Number(row.euro ?? 0) || 0,
+      n: Number(row.n ?? 0) || 0,
+    }))
+  } catch (e) {
+    console.warn("[amm] incassi per voce:", (e as Error)?.message ?? e)
+    return []
+  }
+}
+
 function isTicketingIncasso(row: Record<string, unknown>): boolean {
   const caus = String(
     firstNonEmpty(row, [

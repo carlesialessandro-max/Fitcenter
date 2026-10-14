@@ -91,7 +91,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     title: "Amministrazione",
     tone: "main",
     items: [
-      { to: "/amministrazione", label: "Dashboard costi" },
+      { to: "/amministrazione", label: "Risultato per reparto" },
       { to: "/amministrazione/spese", label: "Registro spese" },
       { to: "/amministrazione/stipendi", label: "Stipendi" },
       { to: "/amministrazione/reparti", label: "Reparti e centri di costo" },

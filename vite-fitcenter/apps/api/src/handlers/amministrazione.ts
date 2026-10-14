@@ -13,6 +13,14 @@ import {
 } from "../store/amministrazione-costi.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import { costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
+import {
+  isMacroCommerciale,
+  isMacroStruttura,
+  MACRO_COMMERCIALI,
+  queryRicaviAmm,
+  quoteRipartoFissi,
+  type MacroCommerciale,
+} from "../services/amministrazione-ricavi.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
 import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
@@ -710,8 +718,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const busteAll = ammCostiStore.listBuste().filter((b) => (mese ? b.mese === mese : b.mese.startsWith(String(anno))))
     const bustaSlices: Slice[] = []
+    const pnlAlloc: { repartoId: string; importo: number }[] = spese.flatMap((s) => allocateQuote(s.totale, s.quote))
     for (const b of busteAll) {
-      for (const a of allocateQuote(b.totale, b.quote).filter((x) => inFiltro(x.repartoId))) {
+      const alloc = allocateQuote(b.totale, b.quote)
+      pnlAlloc.push(...alloc)
+      for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
         bustaSlices.push({
           repartoId: a.repartoId,
           nome: nomeOf(a.repartoId),
@@ -731,7 +742,9 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const stored = collabAll.filter((c) => c.mese === ym)
       if (stored.length) {
         for (const c of stored) {
-          for (const a of allocateQuote(c.totale, c.quote).filter((x) => inFiltro(x.repartoId))) {
+          const alloc = allocateQuote(c.totale, c.quote)
+          pnlAlloc.push(...alloc)
+          for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
             lpSlices.push({
               repartoId: a.repartoId,
               nome: nomeOf(a.repartoId),
@@ -745,6 +758,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const m = lpAnno.find((x) => x.mese === ym)
       if (!m) continue
       for (const r of m.righe) {
+        pnlAlloc.push({ repartoId: r.repartoId, importo: r.importo })
         if (!inFiltro(r.repartoId)) continue
         lpSlices.push({
           repartoId: r.repartoId,
@@ -826,6 +840,43 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const totLpaga = Math.round(lpSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
     const totBuste = Math.round(bustaSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
     const totSpese = Math.round((tot - totLpaga - totBuste) * 100) / 100
+
+    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
+    const diretti: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
+    let totStruttura = 0
+    const strutturaByMacro = new Map<string, number>()
+    for (const x of pnlAlloc) {
+      const mid = macroIdOf(reparti, x.repartoId)
+      if (isMacroCommerciale(mid)) diretti[mid] = round2(diretti[mid] + x.importo)
+      else if (isMacroStruttura(mid)) {
+        totStruttura = round2(totStruttura + x.importo)
+        strutturaByMacro.set(mid, round2((strutturaByMacro.get(mid) ?? 0) + x.importo))
+      }
+    }
+    const ricavi = await queryRicaviAmm(anno, mese || undefined)
+    const ripartoPct = quoteRipartoFissi(ricavi.byMacro)
+    const risultato = MACRO_COMMERCIALI.map((id) => {
+      const ricavo = round2(ricavi.byMacro[id])
+      const costoDiretto = round2(diretti[id])
+      const quotaFissi = round2((totStruttura * (ripartoPct[id] || 0)) / 100)
+      const costoTotale = round2(costoDiretto + quotaFissi)
+      const utile = round2(ricavo - costoTotale)
+      const marginePct = ricavo > 0.009 ? Math.round((utile / ricavo) * 1000) / 10 : null
+      return {
+        id,
+        nome: nomeOf(id),
+        ricavi: ricavo,
+        costiDiretti: costoDiretto,
+        quotaFissi,
+        costoTotale,
+        utile,
+        marginePct,
+        ripartoFissiPct: ripartoPct[id],
+      }
+    })
+    const totRicavi = round2(risultato.reduce((s, r) => s + r.ricavi, 0))
+    const totCostoPnl = round2(risultato.reduce((s, r) => s + r.costoTotale, 0))
+    const totUtile = round2(totRicavi - totCostoPnl)
     const byCollaboratoriMap = new Map<string, number>()
     for (const x of lpSlices) {
       byCollaboratoriMap.set(x.repartoId, Math.round(((byCollaboratoriMap.get(x.repartoId) ?? 0) + x.importo) * 100) / 100)
@@ -861,6 +912,19 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byBuste,
       nSpese: spese.length,
       nBuste: busteAll.length,
+      ricaviDisponibili: ricavi.disponibile,
+      totRicavi,
+      totRicaviAltri: ricavi.totAltri,
+      totStruttura,
+      totCostoPnl,
+      totUtile,
+      marginePct: totRicavi > 0.009 ? Math.round((totUtile / totRicavi) * 1000) / 10 : null,
+      strutturaByMacro: [...strutturaByMacro.entries()]
+        .map(([id, importo]) => ({ id, nome: nomeOf(id), importo }))
+        .filter((r) => r.importo)
+        .sort((a, b) => b.importo - a.importo),
+      risultato,
+      ricaviDettaglio: ricavi.dettaglio,
     })
   } catch (e) {
     fail(res, e)

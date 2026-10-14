@@ -13,7 +13,7 @@ function norm(s: string): string {
 export function codiceRepartoDaMansione(dominio: string, nome: string): string | null {
   const s = norm(`${dominio} ${nome}`)
   if (!s) return null
-  if (/\b(desk|reception|segreter|amminist|ufficio|consulenz)\b/.test(s)) return null
+  if (/\b(desk|reception|segreter|amminist|ufficio|consulenz|direzion)\b/.test(s)) return "amministrazione-uffici"
   if (/\bpuliz/.test(s)) return "pulizie"
   if (/\bmanutenz/.test(s)) return "manutenzione-impianti"
   if (/\b(spa|benesser|massagg|estetic)/.test(s)) return "spa-benessere"

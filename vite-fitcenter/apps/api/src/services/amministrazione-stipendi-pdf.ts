@@ -113,8 +113,10 @@ const MESE_RE =
 function qualificaRepartoHint(chunk: string): string {
   const s = chunk.toLowerCase()
   if (/puliz/.test(s)) return "pulizie"
+  if (/manutenz|operaio|idraulic|elettric/.test(s)) return "manutenzione-impianti"
+  if (/bagnin/.test(s)) return "piscina-coperta"
   if (/\bdesk\b|reception|segreter/.test(s)) return "amministrazione-uffici"
-  if (/impiegat/.test(s)) return "amministrazione-uffici"
+  if (/impiegat|amminist|direzion/.test(s)) return "amministrazione-uffici"
   return "amministrazione-uffici"
 }
 
