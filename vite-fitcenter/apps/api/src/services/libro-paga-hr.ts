@@ -8,13 +8,14 @@ import {
   type LpagaRuolo,
 } from "../store/libro-paga-db.js"
 import {
+  isAnagraficaStaffCategoria,
   isGestionaleConfigured,
   queryAnagraficaStaff,
   type AnagraficaStaffHit,
 } from "./gestionale-sql.js"
 import { namesMatchPersonale } from "./libro-paga-convalida.js"
 
-const STAFF_CACHE_FILE = "lpaga-staff-anagrafica.json"
+const STAFF_CACHE_FILE = "lpaga-staff-anagrafica-v2.json"
 const STAFF_TTL_MS = 15 * 60 * 1000
 
 type StaffCacheFile = { at: string; rows: AnagraficaStaffHit[] }
@@ -60,12 +61,61 @@ function readStaffDisk(): StaffCacheFile {
   return readJson<StaffCacheFile>(STAFF_CACHE_FILE, { at: "", rows: [] })
 }
 
+function onlyStaff(rows: AnagraficaStaffHit[]): AnagraficaStaffHit[] {
+  return rows.filter((h) => isAnagraficaStaffCategoria(h.categoria))
+}
+
+function normAnag(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z]+/g, " ")
+    .trim()
+}
+
+function firstWord(s: string): string {
+  return normAnag(s).split(" ").filter(Boolean)[0] ?? ""
+}
+
+/** Solo nome e cognome (niente match sulla prima lettera: Corsini Claudia ≠ Corsini Alessandro). */
+function matchAnagraficaStaff(
+  p: { nome?: string; cognome?: string },
+  h: AnagraficaStaffHit
+): boolean {
+  const pc = firstWord(p.cognome ?? "")
+  const pn = firstWord(p.nome ?? "")
+  const hc = firstWord(h.cognome)
+  const hn = firstWord(h.nome)
+  if (pc.length < 2 || pn.length < 2 || hc.length < 2 || hn.length < 2) return false
+  return (pc === hc && pn === hn) || (pc === hn && pn === hc)
+}
+
+function scoreAnagrafica(h: AnagraficaStaffHit): number {
+  return [
+    h.codiceFiscale,
+    h.email,
+    h.cellulare,
+    h.indirizzo,
+    h.tesseramento,
+    h.certificatoMedico,
+    h.dataNascita,
+  ].filter((x) => String(x ?? "").trim()).length
+}
+
+function pickStaffHit(p: { nome?: string; cognome?: string }, rows: AnagraficaStaffHit[]): AnagraficaStaffHit | undefined {
+  const hits = rows.filter((h) => matchAnagraficaStaff(p, h))
+  if (!hits.length) return undefined
+  return hits.slice().sort((a, b) => scoreAnagrafica(b) - scoreAnagrafica(a))[0]
+}
+
 export async function refreshStaffAnagrafica(reason = "manual"): Promise<AnagraficaStaffHit[]> {
   if (staffInFlight) return staffInFlight
   staffInFlight = (async () => {
     try {
       if (!isGestionaleConfigured()) return staffMem?.rows ?? readStaffDisk().rows
-      const rows = await queryAnagraficaStaff()
+      const rows = onlyStaff(await queryAnagraficaStaff())
       staffMem = { at: Date.now(), rows }
       writeJson(STAFF_CACHE_FILE, { at: new Date().toISOString(), rows })
       console.log(`[libro-paga] anagrafica STAFF ${reason}: ${rows.length} nominativi`)
@@ -81,12 +131,13 @@ export async function refreshStaffAnagrafica(reason = "manual"): Promise<Anagraf
 }
 
 export async function getStaffAnagrafica(): Promise<AnagraficaStaffHit[]> {
-  if (staffMem && Date.now() - staffMem.at < STAFF_TTL_MS) return staffMem.rows
+  if (staffMem && Date.now() - staffMem.at < STAFF_TTL_MS) return onlyStaff(staffMem.rows)
   const disk = readStaffDisk()
+  const diskRows = onlyStaff(disk.rows)
   const diskAt = disk.at ? Date.parse(disk.at) : 0
-  if (disk.rows.length && diskAt && Date.now() - diskAt < STAFF_TTL_MS) {
-    staffMem = { at: diskAt, rows: disk.rows }
-    return disk.rows
+  if (diskRows.length && diskAt && Date.now() - diskAt < STAFF_TTL_MS) {
+    staffMem = { at: diskAt, rows: diskRows }
+    return diskRows
   }
   return refreshStaffAnagrafica("get")
 }
@@ -114,7 +165,7 @@ function hitToGestionale(geo: AnagraficaStaffHit): NonNullable<LpagaPersonale["g
     tesseramentoScadenza: geo.tesseramentoScadenza,
     certificatoMedico: geo.certificatoMedico,
     certificatoMedicoScadenza: geo.certificatoMedicoScadenza,
-    categoria: geo.categoria || "STAFF",
+    categoria: geo.categoria,
   }
 }
 
@@ -125,20 +176,17 @@ export async function enrichPersonaleHr(list: LpagaPersonale[]): Promise<LpagaPe
   try {
     anagrafica = await getStaffAnagrafica()
     if (!anagrafica.length && isGestionaleConfigured()) {
-      anagrafica = await queryAnagraficaStaff(list)
+      anagrafica = onlyStaff(await queryAnagraficaStaff(list))
     }
   } catch (e) {
     console.warn("[libro-paga] enrich anagrafica:", (e as Error)?.message ?? e)
   }
 
   return list.map((p) => {
-    const label = `${p.cognome ?? ""} ${p.nome}`.trim()
     const cal = instructors.find(
       (i) => namesMatchPersonale(p, `${i.cognome} ${i.nome}`) || namesMatchPersonale(p, `${i.nome} ${i.cognome}`)
     )
-    const geo =
-      anagrafica.find((h) => namesMatchPersonale(p, `${h.cognome} ${h.nome}`)) ??
-      anagrafica.find((h) => namesMatchPersonale(p, label))
+    const geo = pickStaffHit(p, anagrafica)
     const geoTess = (geo?.tesseramento ?? "").trim()
     const calTess = (cal?.tesseramento ?? "").trim()
     const tesseramento = geoTess || calTess

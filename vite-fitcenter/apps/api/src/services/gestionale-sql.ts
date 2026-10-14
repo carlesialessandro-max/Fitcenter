@@ -6160,7 +6160,9 @@ function mapAnagraficaStaffRow(
   const provincia = String(rowGet(row, ["Indirizzo_Pv", "Provincia", "Pv"]) ?? "").trim()
   const dataNascita = toIsoDateOnlyMaybe(rowGet(row, ["DataNascita", "Data_Nascita", "Nascita"]))
   const sesso = String(rowGet(row, ["Sesso", "Sex"]) ?? "").trim()
-  const categoria = cols.catCol ? String(rowGet(row, [cols.catCol]) ?? "").trim() : ""
+  const categoria = String(
+    rowGet(row, [cols.catCol ?? "", "CategoriaStaff", "CategoriaDescrizione", "Categoria"]) ?? ""
+  ).trim()
   if (cf) hit.codiceFiscale = cf
   if (email) hit.email = email
   if (cellulare) hit.cellulare = cellulare
@@ -6178,6 +6180,13 @@ function mapAnagraficaStaffRow(
   else if (certScad) hit.certificatoMedico = "presente"
   if (certScad) hit.certificatoMedicoScadenza = certScad
   return hit
+}
+
+export function isAnagraficaStaffCategoria(cat?: string): boolean {
+  const u = (cat ?? "").trim().toUpperCase()
+  if (!u) return false
+  if (/\bCLIENTE\b/.test(u) && !/\bSTAFF\b/.test(u)) return false
+  return /\bSTAFF\b/.test(u)
 }
 
 /** Anagrafica gestionale: utenti categoria STAFF (tessera ASI, certificato, CF, recapiti). */
@@ -6233,11 +6242,12 @@ export async function queryAnagraficaStaff(
   ])
   const catCol = pickCol([
     "CategoriaDescrizione",
-    "Categoria",
     "UtentiCategoriaDescrizione",
     "CategoriaUtente",
     "TipoCategoria",
+    "Categoria",
   ])
+  const idCatCol = pickCol(["IDCategoriaUtente", "IdCategoriaUtente", "IDCategoria", "IdCategoria"])
   const extra = cols.filter((c) =>
     /antincendio|soccorso|sicurezza|rls|piscina|custom[0-9]/i.test(c)
   )
@@ -6251,6 +6261,7 @@ export async function queryAnagraficaStaff(
     certCol,
     certScadCol,
     catCol,
+    idCatCol,
     "Email",
     "EMail",
     "Mail",
@@ -6283,57 +6294,81 @@ export async function queryAnagraficaStaff(
   const selectList = [...selectByLower.values()].map((c) => `[${c}]`).join(", ")
   const colMap = { idCol, cognomeCol, nomeCol, tessCol, scadCol, certCol, certScadCol, catCol }
 
-  const staffWhere = catCol
-    ? `UPPER(LTRIM(RTRIM(ISNULL(u.[${catCol}], N'')))) LIKE N'%STAFF%'`
-    : ""
-
-  async function run(sqlWhere: string): Promise<AnagraficaStaffHit[]> {
-    const r = await pool.request().query(
-      `SELECT TOP (2000) ${selectList}
-       FROM ${qObj} u
-       ${sqlWhere ? `WHERE ${sqlWhere}` : ""}`
-    )
+  function rowsToStaff(recordset: unknown, map = colMap): AnagraficaStaffHit[] {
     const out: AnagraficaStaffHit[] = []
-    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
-      const hit = mapAnagraficaStaffRow(row, colMap)
-      if (hit) out.push(hit)
+    for (const row of (recordset as Record<string, unknown>[] | undefined) ?? []) {
+      const hit = mapAnagraficaStaffRow(row, map)
+      if (!hit || !isAnagraficaStaffCategoria(hit.categoria)) continue
+      out.push(hit)
     }
     return out
   }
 
+  async function tryStaffQuery(sqlText: string, map = colMap): Promise<AnagraficaStaffHit[]> {
+    try {
+      const r = await pool.request().query(sqlText)
+      return rowsToStaff(r.recordset, map)
+    } catch {
+      return []
+    }
+  }
+
+  const catText = (alias: string) =>
+    `UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) LIKE N'%STAFF%' AND UPPER(LTRIM(RTRIM(ISNULL(${alias}, N'')))) NOT LIKE N'%CLIENTE%'`
+
   try {
-    if (staffWhere) {
-      const staff = await run(staffWhere)
-      if (staff.length) return staff
-    }
-    const pairs = (people ?? [])
-      .map((x) => ({
-        cognome: String(x.cognome ?? "").trim().toUpperCase(),
-        nome: String(x.nome ?? "").trim().toUpperCase(),
-      }))
-      .filter((x) => x.cognome || x.nome)
-      .slice(0, 200)
-    if (!pairs.length) return staffWhere ? [] : await run("")
-    const req = pool.request()
-    const orParts: string[] = []
-    pairs.forEach((pair, i) => {
-      req.input(`c${i}`, sql.NVarChar(200), pair.cognome)
-      req.input(`n${i}`, sql.NVarChar(200), pair.nome)
-      orParts.push(
-        `(UPPER(LTRIM(RTRIM(ISNULL(u.[${cognomeCol}], N'')))) = @c${i} AND UPPER(LTRIM(RTRIM(ISNULL(u.[${nomeCol}], N'')))) = @n${i})`
+    const attempts: (() => Promise<AnagraficaStaffHit[]>)[] = []
+    if (catCol && !/^id/i.test(catCol)) {
+      attempts.push(() =>
+        tryStaffQuery(
+          `SELECT TOP (2000) ${selectList} FROM ${qObj} u WHERE ${catText(`u.[${catCol}]`)} ORDER BY u.[${cognomeCol}], u.[${nomeCol}]`,
+          colMap
+        )
       )
-    })
-    const r = await req.query(
-      `SELECT TOP (400) ${selectList}
-       FROM ${qObj} u
-       WHERE ${orParts.join(" OR ")}`
-    )
-    const out: AnagraficaStaffHit[] = []
-    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
-      const hit = mapAnagraficaStaffRow(row, colMap)
-      if (hit) out.push(hit)
     }
-    return out
+    const lookupTables = [
+      { table: "CategorieUtenti", id: "IDCategoria", desc: "Descrizione" },
+      { table: "CategorieUtenti", id: "IDCategoria", desc: "CategoriaDescrizione" },
+      { table: "UtentiCategorie", id: "IDCategoria", desc: "Descrizione" },
+      { table: "Categorie", id: "IDCategoria", desc: "Descrizione" },
+      { table: "Categorie", id: "IDCategoria", desc: "CategoriaDescrizione" },
+    ]
+    if (idCatCol) {
+      for (const lk of lookupTables) {
+        const joinSelect = `${selectList}, cat.[${lk.desc}] AS [CategoriaStaff]`
+        const map = { ...colMap, catCol: "CategoriaStaff" }
+        attempts.push(() =>
+          tryStaffQuery(
+            `SELECT TOP (2000) ${joinSelect}
+             FROM ${qObj} u
+             INNER JOIN [dbo].[${lk.table}] cat ON cat.[${lk.id}] = u.[${idCatCol}]
+             WHERE ${catText(`cat.[${lk.desc}]`)}
+             ORDER BY u.[${cognomeCol}], u.[${nomeCol}]`,
+            map
+          )
+        )
+      }
+    }
+
+    let staff: AnagraficaStaffHit[] = []
+    for (const attempt of attempts) {
+      staff = await attempt()
+      if (staff.length) break
+    }
+    if (!staff.length) {
+      console.warn("[libro-paga] nessuna anagrafica categoria STAFF nel gestionale")
+      return []
+    }
+    if (!people?.length) return staff
+    const wanted = people.map((x) => ({
+      c: String(x.cognome ?? "").trim().toUpperCase(),
+      n: String(x.nome ?? "").trim().toUpperCase(),
+    }))
+    return staff.filter((h) => {
+      const c = h.cognome.trim().toUpperCase()
+      const n = h.nome.trim().toUpperCase()
+      return wanted.some((w) => w.c === c && w.n === n)
+    })
   } catch (e) {
     console.warn("[libro-paga] anagrafica gestionale:", (e as Error)?.message ?? e)
     return []
