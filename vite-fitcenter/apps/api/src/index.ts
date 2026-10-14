@@ -29,6 +29,7 @@ import { amministrazioneRouter } from "./routes/amministrazione.js"
 import { piscinaRouter } from "./routes/piscina.js"
 import { whatsappRouter } from "./routes/whatsapp.js"
 import { whatsappWebhookReceive, whatsappWebhookVerify } from "./handlers/whatsapp.js"
+import { startStaffAnagraficaSync } from "./services/libro-paga-hr.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT ?? 3001
@@ -173,4 +174,5 @@ app.listen(Number(PORT), HOST, () => {
   } else {
     console.log("  Sito: build non trovata. Esegui da vite-fitcenter: pnpm build   poi riavvia. Oppure: pnpm dev e apri http://localhost:5173")
   }
+  startStaffAnagraficaSync()
 })

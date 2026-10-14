@@ -10,6 +10,7 @@ import type {
 } from "@/api/libroPaga"
 import { PERSONALE_QUALIFICHE, parseQualificheUi, type QualificaConData } from "@/lib/personale-qualifiche"
 import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { ruoloLabel } from "@/lib/lpaga-ruolo"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -45,17 +46,61 @@ function meseLabel(mese: string): string {
   return new Date(y, m - 1, 1).toLocaleDateString("it-IT", { month: "long", year: "numeric" })
 }
 
-function ruoloLabel(r: string): string {
-  if (r === "admin") return "Amministratore"
-  if (r === "manager") return "Responsabile"
-  return "Istruttore"
-}
-
 function fonteTessera(f?: string): string {
-  if (f === "gestionale") return "da anagrafica gestionale"
+  if (f === "gestionale") return "da anagrafica gestionale (non modificabile)"
   if (f === "calendario") return "da personale calendari"
   if (f === "manuale") return "inserito in libro paga"
   return ""
+}
+
+function fmtIndirizzo(g: NonNullable<LpagaPersonale["gestionale"]>): string {
+  const via = [g.indirizzo, g.cap, g.citta, g.provincia].filter(Boolean).join(" · ")
+  return via
+}
+
+export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonale | null }) {
+  const g = persona?.gestionale
+  const tess = persona?.tesseramento || g?.tesseramento
+  const tessScad = persona?.tesseramentoScadenza || g?.tesseramentoScadenza
+  const rows: { k: string; v: string }[] = [
+    { k: "Categoria", v: g?.categoria || (g ? "STAFF" : "") },
+    { k: "Codice fiscale", v: g?.codiceFiscale ?? "" },
+    { k: "Email gestionale", v: g?.email ?? "" },
+    { k: "Cellulare", v: g?.cellulare ?? "" },
+    { k: "Telefono", v: g?.telefono ?? "" },
+    { k: "Indirizzo", v: g ? fmtIndirizzo(g) : "" },
+    { k: "Data di nascita", v: g?.dataNascita ? fmtDateIt(g.dataNascita) : "" },
+    { k: "Tesseramento ASI", v: tess ? `${tess}${tessScad ? ` · scad. ${fmtDateIt(tessScad)}` : ""}` : "" },
+    {
+      k: "Certificato medico",
+      v: g?.certificatoMedico
+        ? `${g.certificatoMedico}${g.certificatoMedicoScadenza ? ` · scad. ${fmtDateIt(g.certificatoMedicoScadenza)}` : ""}`
+        : g?.certificatoMedicoScadenza
+          ? `scad. ${fmtDateIt(g.certificatoMedicoScadenza)}`
+          : "",
+    },
+  ]
+  return (
+    <div className="sm:col-span-2 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3">
+      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">Anagrafica gestionale (STAFF)</p>
+      <p className="mt-1 text-[11px] text-zinc-500">
+        Dati presi dall’anagrafica del gestionale, categoria STAFF. Non si modificano dal libro paga.
+        {fonteTessera(persona?.tesseramentoFonte) ? ` ${fonteTessera(persona?.tesseramentoFonte)}.` : ""}
+      </p>
+      {g ? (
+        <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+          {rows.map((r) => (
+            <div key={r.k} className="flex justify-between gap-3 sm:justify-start">
+              <dt className="text-zinc-500">{r.k}</dt>
+              <dd className="text-zinc-200">{r.v.trim() ? r.v : "—"}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="mt-2 text-sm text-zinc-500">Nessun nominativo STAFF trovato nel gestionale per questa persona.</p>
+      )}
+    </div>
+  )
 }
 
 type Pannello = { kind: "dettaglio" | "modifica"; personaleId: string }
@@ -368,8 +413,6 @@ function DettaglioMese({
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
   const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
   const [password, setPassword] = useState("")
-  const [tesseramento, setTesseramento] = useState(persona?.tesseramento ?? "")
-  const [tesseramentoScadenza, setTesseramentoScadenza] = useState(isoDateInput(persona?.tesseramentoScadenza))
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>(parseQualificheUi(persona?.qualifiche))
   useEffect(() => {
     setCognome(persona?.cognome ?? "")
@@ -381,8 +424,6 @@ function DettaglioMese({
     setIbanEdit(persona?.iban ?? "")
     setEmailEdit(persona?.email ?? "")
     setPassword("")
-    setTesseramento(persona?.tesseramento ?? "")
-    setTesseramentoScadenza(isoDateInput(persona?.tesseramentoScadenza))
     setQualifiche(parseQualificheUi(persona?.qualifiche))
   }, [persona])
   const [filtroMansione, setFiltroMansione] = useState("")
@@ -402,8 +443,6 @@ function DettaglioMese({
         contratto,
         iban: ibanEdit.trim(),
         email: emailEdit.trim(),
-        tesseramento: tesseramento.trim(),
-        tesseramentoScadenza,
         qualifiche,
         ...(password.trim() ? { password: password.trim() } : {}),
       })
@@ -520,7 +559,7 @@ function DettaglioMese({
             <input value={ibanEdit} onChange={(e) => setIbanEdit(e.target.value)} className={inputCls} autoComplete="off" />
           </label>
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
-            Email
+            Email di accesso libro paga
             <input
               type="email"
               value={emailEdit}
@@ -529,27 +568,7 @@ function DettaglioMese({
               autoComplete="email"
             />
           </label>
-          <label className="grid gap-1 text-xs text-zinc-500">
-            Tesseramento ASI
-            <input
-              value={tesseramento}
-              onChange={(e) => setTesseramento(e.target.value)}
-              className={inputCls}
-              placeholder="Numero tessera / ente"
-            />
-            {fonteTessera(persona?.tesseramentoFonte) ? (
-              <span className="text-[11px] text-zinc-500">{fonteTessera(persona?.tesseramentoFonte)}</span>
-            ) : null}
-          </label>
-          <label className="grid gap-1 text-xs text-zinc-500">
-            Scadenza tessera
-            <input
-              type="date"
-              value={tesseramentoScadenza}
-              onChange={(e) => setTesseramentoScadenza(e.target.value)}
-              className={inputCls}
-            />
-          </label>
+          <GestionaleAnagraficaBlock persona={persona} />
           <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             Nuova password (vuoto = invariata)
@@ -601,22 +620,15 @@ function DettaglioMese({
           <dd className="font-mono text-xs">{iban?.trim() ? iban : "—"}</dd>
         </div>
         <div className="flex justify-between gap-3 sm:justify-start">
-          <dt className="text-zinc-500">Email</dt>
+          <dt className="text-zinc-500">Email accesso</dt>
           <dd className="text-xs">{persona?.email?.trim() ? persona.email : "—"}</dd>
         </div>
         <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">Importo mese</dt>
           <dd>{eur(row.importo)}</dd>
         </div>
-        <div className="flex justify-between gap-3 sm:justify-start sm:col-span-2">
-          <dt className="text-zinc-500">Tesseramento ASI</dt>
-          <dd>
-            {persona?.tesseramento?.trim() ? persona.tesseramento : "—"}
-            {persona?.tesseramentoScadenza ? ` · scad. ${fmtDateIt(persona.tesseramentoScadenza)}` : ""}
-            {fonteTessera(persona?.tesseramentoFonte) ? (
-              <span className="ml-2 text-xs text-zinc-500">{fonteTessera(persona?.tesseramentoFonte)}</span>
-            ) : null}
-          </dd>
+        <div className="sm:col-span-2">
+          <GestionaleAnagraficaBlock persona={persona} />
         </div>
         <div className="sm:col-span-2">
           <dt className="mb-1 text-zinc-500">Corsi sicurezza</dt>

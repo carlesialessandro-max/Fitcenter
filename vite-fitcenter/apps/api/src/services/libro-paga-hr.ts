@@ -1,3 +1,4 @@
+import { readJson, writeJson } from "../store/persist.js"
 import { readCalendarioDb, writeCalendarioDb } from "../store/calendario-db.js"
 import {
   parseQualifichePersonale,
@@ -6,8 +7,20 @@ import {
   type LpagaQualifica,
   type LpagaRuolo,
 } from "../store/libro-paga-db.js"
-import { isGestionaleConfigured, queryAnagraficaStaff } from "./gestionale-sql.js"
+import {
+  isGestionaleConfigured,
+  queryAnagraficaStaff,
+  type AnagraficaStaffHit,
+} from "./gestionale-sql.js"
 import { namesMatchPersonale } from "./libro-paga-convalida.js"
+
+const STAFF_CACHE_FILE = "lpaga-staff-anagrafica.json"
+const STAFF_TTL_MS = 15 * 60 * 1000
+
+type StaffCacheFile = { at: string; rows: AnagraficaStaffHit[] }
+
+let staffMem: { at: number; rows: AnagraficaStaffHit[] } | null = null
+let staffInFlight: Promise<AnagraficaStaffHit[]> | null = null
 
 export function assertPuoModificarePersonale(
   actor: { ruolo: LpagaRuolo },
@@ -25,10 +38,7 @@ export function assertPuoModificarePersonale(
   }
 }
 
-export function puoModificarePersonale(
-  actorRuolo: LpagaRuolo,
-  targetRuolo: LpagaRuolo
-): boolean {
+export function puoModificarePersonale(actorRuolo: LpagaRuolo, targetRuolo: LpagaRuolo): boolean {
   if (actorRuolo !== "admin" && actorRuolo !== "manager") return false
   if (actorRuolo === "manager" && targetRuolo === "admin") return false
   return true
@@ -46,12 +56,75 @@ function mergeQualifiche(...lists: (unknown[] | undefined)[]): LpagaQualifica[] 
   return [...byId.values()]
 }
 
+function readStaffDisk(): StaffCacheFile {
+  return readJson<StaffCacheFile>(STAFF_CACHE_FILE, { at: "", rows: [] })
+}
+
+export async function refreshStaffAnagrafica(reason = "manual"): Promise<AnagraficaStaffHit[]> {
+  if (staffInFlight) return staffInFlight
+  staffInFlight = (async () => {
+    try {
+      if (!isGestionaleConfigured()) return staffMem?.rows ?? readStaffDisk().rows
+      const rows = await queryAnagraficaStaff()
+      staffMem = { at: Date.now(), rows }
+      writeJson(STAFF_CACHE_FILE, { at: new Date().toISOString(), rows })
+      console.log(`[libro-paga] anagrafica STAFF ${reason}: ${rows.length} nominativi`)
+      return rows
+    } catch (e) {
+      console.warn("[libro-paga] refresh anagrafica STAFF:", (e as Error)?.message ?? e)
+      return staffMem?.rows ?? readStaffDisk().rows
+    } finally {
+      staffInFlight = null
+    }
+  })()
+  return staffInFlight
+}
+
+export async function getStaffAnagrafica(): Promise<AnagraficaStaffHit[]> {
+  if (staffMem && Date.now() - staffMem.at < STAFF_TTL_MS) return staffMem.rows
+  const disk = readStaffDisk()
+  const diskAt = disk.at ? Date.parse(disk.at) : 0
+  if (disk.rows.length && diskAt && Date.now() - diskAt < STAFF_TTL_MS) {
+    staffMem = { at: diskAt, rows: disk.rows }
+    return disk.rows
+  }
+  return refreshStaffAnagrafica("get")
+}
+
+export function startStaffAnagraficaSync(): void {
+  void refreshStaffAnagrafica("startup")
+  const t = setInterval(() => void refreshStaffAnagrafica("interval"), STAFF_TTL_MS)
+  if (typeof t.unref === "function") t.unref()
+}
+
+function hitToGestionale(geo: AnagraficaStaffHit): NonNullable<LpagaPersonale["gestionale"]> {
+  return {
+    idUtente: geo.idUtente || undefined,
+    codiceFiscale: geo.codiceFiscale,
+    email: geo.email,
+    cellulare: geo.cellulare,
+    telefono: geo.telefono,
+    indirizzo: geo.indirizzo,
+    cap: geo.cap,
+    citta: geo.citta,
+    provincia: geo.provincia,
+    dataNascita: geo.dataNascita,
+    sesso: geo.sesso,
+    tesseramento: geo.tesseramento,
+    tesseramentoScadenza: geo.tesseramentoScadenza,
+    certificatoMedico: geo.certificatoMedico,
+    certificatoMedicoScadenza: geo.certificatoMedicoScadenza,
+    categoria: geo.categoria || "STAFF",
+  }
+}
+
 export async function enrichPersonaleHr(list: LpagaPersonale[]): Promise<LpagaPersonale[]> {
   if (!list.length) return list
   const instructors = readCalendarioDb().instructors
-  let anagrafica: Awaited<ReturnType<typeof queryAnagraficaStaff>> = []
+  let anagrafica: AnagraficaStaffHit[] = []
   try {
-    if (isGestionaleConfigured()) {
+    anagrafica = await getStaffAnagrafica()
+    if (!anagrafica.length && isGestionaleConfigured()) {
       anagrafica = await queryAnagraficaStaff(list)
     }
   } catch (e) {
@@ -66,21 +139,15 @@ export async function enrichPersonaleHr(list: LpagaPersonale[]): Promise<LpagaPe
     const geo =
       anagrafica.find((h) => namesMatchPersonale(p, `${h.cognome} ${h.nome}`)) ??
       anagrafica.find((h) => namesMatchPersonale(p, label))
-    const storedTess = (p.tesseramento ?? "").trim()
     const geoTess = (geo?.tesseramento ?? "").trim()
     const calTess = (cal?.tesseramento ?? "").trim()
-    const tesseramento = storedTess || geoTess || calTess
-    const tesseramentoScadenza =
-      p.tesseramentoScadenza || geo?.tesseramentoScadenza || cal?.tesseramentoScadenza || undefined
-    const tesseramentoFonte: LpagaPersonale["tesseramentoFonte"] = storedTess
-      ? geoTess && storedTess === geoTess
-        ? "gestionale"
-        : "manuale"
-      : geoTess
-        ? "gestionale"
-        : calTess
-          ? "calendario"
-          : undefined
+    const tesseramento = geoTess || calTess
+    const tesseramentoScadenza = geo?.tesseramentoScadenza || cal?.tesseramentoScadenza || undefined
+    const tesseramentoFonte: LpagaPersonale["tesseramentoFonte"] = geoTess
+      ? "gestionale"
+      : calTess
+        ? "calendario"
+        : undefined
     const qualifiche =
       p.qualifiche != null ? parseQualifichePersonale(p.qualifiche) : mergeQualifiche(cal?.qualifiche, geo?.qualifiche)
     return {
@@ -89,6 +156,7 @@ export async function enrichPersonaleHr(list: LpagaPersonale[]): Promise<LpagaPe
       ...(tesseramentoScadenza ? { tesseramentoScadenza } : {}),
       ...(tesseramentoFonte ? { tesseramentoFonte } : {}),
       qualifiche,
+      ...(geo ? { gestionale: hitToGestionale(geo) } : {}),
     }
   })
 }

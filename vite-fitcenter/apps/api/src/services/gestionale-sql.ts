@@ -6056,8 +6056,21 @@ export type AnagraficaStaffHit = {
   idUtente: string
   cognome: string
   nome: string
+  codiceFiscale?: string
+  email?: string
+  cellulare?: string
+  telefono?: string
+  indirizzo?: string
+  cap?: string
+  citta?: string
+  provincia?: string
+  dataNascita?: string
+  sesso?: string
   tesseramento?: string
   tesseramentoScadenza?: string
+  certificatoMedico?: string
+  certificatoMedicoScadenza?: string
+  categoria?: string
   qualifiche: string[]
 }
 
@@ -6107,12 +6120,73 @@ function formatAsiTessera(raw: string): string {
   return `ASI ${t}`
 }
 
-/** Anagrafica gestionale (Utenti): tessera ASI e, se presenti, corsi sicurezza. */
+function mapAnagraficaStaffRow(
+  row: Record<string, unknown>,
+  cols: {
+    idCol: string
+    cognomeCol: string
+    nomeCol: string
+    tessCol: string | null
+    scadCol: string | null
+    certCol: string | null
+    certScadCol: string | null
+    catCol: string | null
+  }
+): AnagraficaStaffHit | null {
+  const cognome = String(rowGet(row, [cols.cognomeCol, "Cognome"]) ?? "").trim()
+  const nome = String(rowGet(row, [cols.nomeCol, "Nome"]) ?? "").trim()
+  const idUtente = String(rowGet(row, [cols.idCol, "IDUtente", "IdUtente"]) ?? "").trim()
+  if (!idUtente && !cognome && !nome) return null
+  const tessRaw = cols.tessCol ? String(rowGet(row, [cols.tessCol]) ?? "").trim() : ""
+  const scadRaw = cols.scadCol ? toIsoDateOnlyMaybe(rowGet(row, [cols.scadCol])) : null
+  const tesseramento = tessRaw ? formatAsiTessera(tessRaw) : ""
+  const certRaw = cols.certCol ? String(rowGet(row, [cols.certCol]) ?? "").trim() : ""
+  const certScad = cols.certScadCol ? toIsoDateOnlyMaybe(rowGet(row, [cols.certScadCol])) : null
+  const via = String(rowGet(row, ["Indirizzo_Via", "IndirizzoVia", "Indirizzo", "Via"]) ?? "").trim()
+  const civico = String(rowGet(row, ["Indirizzo_NumeroCivico", "NumeroCivico", "Indirizzo_N"]) ?? "").trim()
+  const indirizzo = [via, civico].filter(Boolean).join(" ").trim()
+  const hit: AnagraficaStaffHit = {
+    idUtente,
+    cognome,
+    nome,
+    qualifiche: qualificheFromAnagraficaRow(row),
+  }
+  const cf = String(rowGet(row, ["CodiceFiscale", "Cod_Fisc", "CodFiscale", "CF"]) ?? "").trim()
+  const email = String(rowGet(row, ["Email", "EMail", "E_mail", "Mail"]) ?? "").trim()
+  const cellulare = String(rowGet(row, ["SMS", "Sms", "Cellulare", "TelefonoCellulare", "Cell"]) ?? "").trim()
+  const telefono = String(rowGet(row, ["Telefono_1", "Telefono1", "Telefono", "Telefono_2"]) ?? "").trim()
+  const cap = String(rowGet(row, ["Indirizzo_Cap", "CAP", "Cap"]) ?? "").trim()
+  const citta = String(rowGet(row, ["Indirizzo_Citta", "Indirizzo_Comune", "Citta", "Comune"]) ?? "").trim()
+  const provincia = String(rowGet(row, ["Indirizzo_Pv", "Provincia", "Pv"]) ?? "").trim()
+  const dataNascita = toIsoDateOnlyMaybe(rowGet(row, ["DataNascita", "Data_Nascita", "Nascita"]))
+  const sesso = String(rowGet(row, ["Sesso", "Sex"]) ?? "").trim()
+  const categoria = cols.catCol ? String(rowGet(row, [cols.catCol]) ?? "").trim() : ""
+  if (cf) hit.codiceFiscale = cf
+  if (email) hit.email = email
+  if (cellulare) hit.cellulare = cellulare
+  if (telefono && telefono !== cellulare) hit.telefono = telefono
+  if (indirizzo) hit.indirizzo = indirizzo
+  if (cap) hit.cap = cap
+  if (citta) hit.citta = citta
+  if (provincia) hit.provincia = provincia
+  if (dataNascita) hit.dataNascita = dataNascita
+  if (sesso) hit.sesso = sesso
+  if (categoria) hit.categoria = categoria
+  if (tesseramento) hit.tesseramento = tesseramento
+  if (scadRaw) hit.tesseramentoScadenza = scadRaw
+  if (certRaw) hit.certificatoMedico = certRaw
+  else if (certScad) hit.certificatoMedico = "presente"
+  if (certScad) hit.certificatoMedicoScadenza = certScad
+  return hit
+}
+
+/** Anagrafica gestionale: utenti categoria STAFF (tessera ASI, certificato, CF, recapiti). */
 export async function queryAnagraficaStaff(
-  people: { cognome?: string; nome: string }[]
+  people?: { cognome?: string; nome: string }[]
 ): Promise<AnagraficaStaffHit[]> {
   const p = await getPool()
-  if (!p || !people.length) return []
+  if (!p) return []
+  const pool = p
   const tbl = defaultTables.clienti
   if (!isSafeSqlIdentifierLoose(tbl)) return []
   const qObj = qualifySqlObject(tbl).query
@@ -6143,33 +6217,112 @@ export async function queryAnagraficaStaff(
     "DataScadenzaASI",
     "ScadenzaAsi",
   ])
+  const certCol = pickCol([
+    "CertificatoMedico",
+    "Certificato_Medico",
+    "VisitaMedica",
+    "Idoneita",
+  ])
+  const certScadCol = pickCol([
+    "DataScadenzaCertificato",
+    "ScadenzaCertificatoMedico",
+    "ScadenzaCertificato",
+    "DataCertificatoMedico",
+    "DataVisitaMedica",
+    "ScadenzaVisitaMedica",
+  ])
+  const catCol = pickCol([
+    "CategoriaDescrizione",
+    "Categoria",
+    "UtentiCategoriaDescrizione",
+    "CategoriaUtente",
+    "TipoCategoria",
+  ])
   const extra = cols.filter((c) =>
     /antincendio|soccorso|sicurezza|rls|piscina|custom[0-9]/i.test(c)
   )
-  const selectCols = new Set<string>([idCol, cognomeCol, nomeCol, ...extra])
-  if (tessCol) selectCols.add(tessCol)
-  if (scadCol) selectCols.add(scadCol)
-  const selectList = [...selectCols].map((c) => `[${c}]`).join(", ")
+  const selectByLower = new Map<string, string>()
+  for (const c of [
+    idCol,
+    cognomeCol,
+    nomeCol,
+    tessCol,
+    scadCol,
+    certCol,
+    certScadCol,
+    catCol,
+    "Email",
+    "EMail",
+    "Mail",
+    "SMS",
+    "Sms",
+    "Cellulare",
+    "Telefono_1",
+    "Telefono1",
+    "Telefono",
+    "CodiceFiscale",
+    "Cod_Fisc",
+    "Indirizzo_Via",
+    "IndirizzoVia",
+    "Indirizzo",
+    "Indirizzo_NumeroCivico",
+    "NumeroCivico",
+    "Indirizzo_Cap",
+    "CAP",
+    "Indirizzo_Citta",
+    "Citta",
+    "Indirizzo_Pv",
+    "Provincia",
+    "DataNascita",
+    "Sesso",
+    ...extra,
+  ]) {
+    if (!c || !set.has(c.toLowerCase()) || selectByLower.has(c.toLowerCase())) continue
+    selectByLower.set(c.toLowerCase(), c)
+  }
+  const selectList = [...selectByLower.values()].map((c) => `[${c}]`).join(", ")
+  const colMap = { idCol, cognomeCol, nomeCol, tessCol, scadCol, certCol, certScadCol, catCol }
 
-  const pairs = people
-    .map((x) => ({
-      cognome: String(x.cognome ?? "").trim().toUpperCase(),
-      nome: String(x.nome ?? "").trim().toUpperCase(),
-    }))
-    .filter((x) => x.cognome || x.nome)
-    .slice(0, 200)
-  if (!pairs.length) return []
+  const staffWhere = catCol
+    ? `UPPER(LTRIM(RTRIM(ISNULL(u.[${catCol}], N'')))) LIKE N'%STAFF%'`
+    : ""
 
-  const req = p.request()
-  const orParts: string[] = []
-  pairs.forEach((pair, i) => {
-    req.input(`c${i}`, sql.NVarChar(200), pair.cognome)
-    req.input(`n${i}`, sql.NVarChar(200), pair.nome)
-    orParts.push(
-      `(UPPER(LTRIM(RTRIM(ISNULL(u.[${cognomeCol}], N'')))) = @c${i} AND UPPER(LTRIM(RTRIM(ISNULL(u.[${nomeCol}], N'')))) = @n${i})`
+  async function run(sqlWhere: string): Promise<AnagraficaStaffHit[]> {
+    const r = await pool.request().query(
+      `SELECT TOP (2000) ${selectList}
+       FROM ${qObj} u
+       ${sqlWhere ? `WHERE ${sqlWhere}` : ""}`
     )
-  })
+    const out: AnagraficaStaffHit[] = []
+    for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
+      const hit = mapAnagraficaStaffRow(row, colMap)
+      if (hit) out.push(hit)
+    }
+    return out
+  }
+
   try {
+    if (staffWhere) {
+      const staff = await run(staffWhere)
+      if (staff.length) return staff
+    }
+    const pairs = (people ?? [])
+      .map((x) => ({
+        cognome: String(x.cognome ?? "").trim().toUpperCase(),
+        nome: String(x.nome ?? "").trim().toUpperCase(),
+      }))
+      .filter((x) => x.cognome || x.nome)
+      .slice(0, 200)
+    if (!pairs.length) return staffWhere ? [] : await run("")
+    const req = pool.request()
+    const orParts: string[] = []
+    pairs.forEach((pair, i) => {
+      req.input(`c${i}`, sql.NVarChar(200), pair.cognome)
+      req.input(`n${i}`, sql.NVarChar(200), pair.nome)
+      orParts.push(
+        `(UPPER(LTRIM(RTRIM(ISNULL(u.[${cognomeCol}], N'')))) = @c${i} AND UPPER(LTRIM(RTRIM(ISNULL(u.[${nomeCol}], N'')))) = @n${i})`
+      )
+    })
     const r = await req.query(
       `SELECT TOP (400) ${selectList}
        FROM ${qObj} u
@@ -6177,21 +6330,8 @@ export async function queryAnagraficaStaff(
     )
     const out: AnagraficaStaffHit[] = []
     for (const row of (r.recordset ?? []) as Record<string, unknown>[]) {
-      const cognome = String(rowGet(row, [cognomeCol, "Cognome"]) ?? "").trim()
-      const nome = String(rowGet(row, [nomeCol, "Nome"]) ?? "").trim()
-      const idUtente = String(rowGet(row, [idCol, "IDUtente", "IdUtente"]) ?? "").trim()
-      const tessRaw = tessCol ? String(rowGet(row, [tessCol]) ?? "").trim() : ""
-      const scadRaw = scadCol ? toIsoDateOnlyMaybe(rowGet(row, [scadCol])) : null
-      const tesseramento = tessRaw ? formatAsiTessera(tessRaw) : ""
-      const hit: AnagraficaStaffHit = {
-        idUtente,
-        cognome,
-        nome,
-        qualifiche: qualificheFromAnagraficaRow(row),
-      }
-      if (tesseramento) hit.tesseramento = tesseramento
-      if (scadRaw) hit.tesseramentoScadenza = scadRaw
-      if (hit.idUtente || hit.cognome || hit.nome) out.push(hit)
+      const hit = mapAnagraficaStaffRow(row, colMap)
+      if (hit) out.push(hit)
     }
     return out
   } catch (e) {

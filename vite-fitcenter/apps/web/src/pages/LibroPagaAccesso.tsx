@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
-import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
+import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
@@ -12,6 +12,7 @@ import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome } from "@/lib/personale-sort"
+import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -50,12 +51,6 @@ function todayIso(): string {
   } catch {
     return new Date().toISOString().slice(0, 10)
   }
-}
-
-function ruoloLabel(r: string): string {
-  if (r === "admin") return "Amministratore"
-  if (r === "manager") return "Responsabile"
-  return "Istruttore"
 }
 
 export function LibroPagaAccesso() {
@@ -337,13 +332,14 @@ function MiaAnagrafica({
     return <p className="mt-4 text-sm text-zinc-500">Anagrafica non disponibile.</p>
   }
   return (
-    <div className="mt-4 max-w-xl space-y-4">
+    <div className="mt-4 max-w-4xl space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-zinc-100">La mia anagrafica</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Puoi aggiornare email e IBAN. Nome, ruolo e reparto li modifica l’amministrazione.
+          Puoi aggiornare l’email di accesso e l’IBAN. I dati anagrafici del gestionale (STAFF) sono in sola lettura.
         </p>
       </div>
+      <GestionaleAnagraficaBlock persona={persona} />
       <form
         className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4"
         onSubmit={(e) => {
@@ -356,7 +352,7 @@ function MiaAnagrafica({
           {persona.repartoNome ? <span className="text-zinc-500"> · {persona.repartoNome}</span> : null}
         </p>
         <label className="grid gap-1 text-xs text-zinc-500">
-          Email
+          Email di accesso libro paga
           <input
             type="email"
             value={email}
@@ -663,8 +659,6 @@ function Personale({
   const [password, setPassword] = useState("")
   const [ruolo, setRuolo] = useState<"user" | "manager">("user")
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
-  const [tesseramento, setTesseramento] = useState("")
-  const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
@@ -683,8 +677,6 @@ function Personale({
         password,
         ruolo: me?.ruolo === "manager" ? "user" : ruolo,
         livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
-        tesseramento,
-        tesseramentoScadenza,
         qualifiche,
         contratto,
         iban,
@@ -695,8 +687,6 @@ function Personale({
       setCognome("")
       setUsername("")
       setPassword("")
-      setTesseramento("")
-      setTesseramentoScadenza("")
       setQualifiche([])
       setContratto("")
       setIban("")
@@ -853,14 +843,9 @@ function Personale({
                 autoComplete="email"
               />
             </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Tesseramento ASI
-              <input value={tesseramento} onChange={(e) => setTesseramento(e.target.value)} className={inputCls} />
-            </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Scadenza tessera
-              <input type="date" value={tesseramentoScadenza} onChange={(e) => setTesseramentoScadenza(e.target.value)} className={inputCls} />
-            </label>
+            <p className="text-xs text-zinc-500 sm:col-span-2">
+              Tesseramento ASI, certificato medico e anagrafica STAFF arrivano dal gestionale e non si modificano qui.
+            </p>
             <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
             <div className="flex justify-end gap-2 sm:col-span-2">
               <button type="button" className={btnGhost} onClick={() => setNuovoOpen(false)}>
@@ -902,6 +887,7 @@ function Personale({
           </button>
         </form>
       )}
+      <p className="text-xs text-zinc-500">{RUOLO_LEGENDA}</p>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">

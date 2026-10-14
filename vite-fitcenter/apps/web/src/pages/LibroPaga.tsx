@@ -31,6 +31,7 @@ import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome } from "@/lib/personale-sort"
+import { RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report" | "collaboratori"
 
@@ -465,8 +466,6 @@ function PersonaleTab({
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
-  const [tesseramento, setTesseramento] = useState("")
-  const [tesseramentoScadenza, setTesseramentoScadenza] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [password, setPassword] = useState("")
   const [nuovoOpen, setNuovoOpen] = useState(false)
@@ -491,8 +490,6 @@ function PersonaleTab({
         contratto,
         iban,
         email,
-        tesseramento,
-        tesseramentoScadenza,
         qualifiche,
         attivo: true,
       }),
@@ -501,8 +498,6 @@ function PersonaleTab({
       setCognome("")
       setUsername("")
       setPassword("")
-      setTesseramento("")
-      setTesseramentoScadenza("")
       setQualifiche([])
       setContratto("")
       setIban("")
@@ -561,9 +556,9 @@ function PersonaleTab({
                     aria-label={`Ruolo di ${r.nominativo ?? r.username ?? r.id}`}
                     onChange={(e) => ruoloMut.mutate({ id: r.id, ruolo: e.target.value as LpagaRuolo })}
                   >
-                    <option value="user">User</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
+                    <option value="user">Istruttore</option>
+                    <option value="manager">Responsabile</option>
+                    <option value="admin">Amministratore</option>
                   </select>
                 </td>
                 {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
@@ -704,14 +699,9 @@ function PersonaleTab({
                 autoComplete="email"
               />
             </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Tesseramento ASI
-              <input value={tesseramento} onChange={(e) => setTesseramento(e.target.value)} className={inputCls} />
-            </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Scadenza tessera
-              <input type="date" value={tesseramentoScadenza} onChange={(e) => setTesseramentoScadenza(e.target.value)} className={inputCls} />
-            </label>
+            <p className="text-xs text-zinc-500 sm:col-span-2">
+              Tesseramento ASI, certificato medico e anagrafica (CF, recapiti, indirizzo) arrivano dal gestionale (categoria STAFF) e non si modificano qui.
+            </p>
             <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
             <div className="flex justify-end gap-2 sm:col-span-2">
               <button type="button" className={btnGhost} onClick={() => setNuovoOpen(false)}>
@@ -753,9 +743,10 @@ function PersonaleTab({
           </button>
         </form>
       )}
-      <Table title={`Dipendenti (user) · ${users.length}`} rows={users} />
-      <Table title={`Responsabili (manager) · ${managers.length}`} rows={managers} showReparto />
-      <Table title={`Amministratori (admin) · ${admins.length}`} rows={admins} />
+      <p className="text-xs text-zinc-500">{RUOLO_LEGENDA}</p>
+      <Table title={`Istruttori · ${users.length}`} rows={users} />
+      <Table title={`Responsabili · ${managers.length}`} rows={managers} showReparto />
+      <Table title={`Amministratori · ${admins.length}`} rows={admins} />
     </div>
   )
 }

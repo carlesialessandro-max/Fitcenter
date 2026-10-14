@@ -33,6 +33,24 @@ export type LpagaPersonale = {
   attivo: boolean
   nominativo?: string
   repartoNome?: string
+  gestionale?: {
+    idUtente?: string
+    codiceFiscale?: string
+    email?: string
+    cellulare?: string
+    telefono?: string
+    indirizzo?: string
+    cap?: string
+    citta?: string
+    provincia?: string
+    dataNascita?: string
+    sesso?: string
+    tesseramento?: string
+    tesseramentoScadenza?: string
+    certificatoMedico?: string
+    certificatoMedicoScadenza?: string
+    categoria?: string
+  }
 }
 
 export type LpagaTurnoRow = {
