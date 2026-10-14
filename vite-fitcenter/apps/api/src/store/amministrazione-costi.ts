@@ -137,12 +137,13 @@ function sotto(id: string, macroId: string, nome: string, tipo: AmmRepartoTipo, 
 }
 
 export const REPARTI_SEED: AmmReparto[] = [
-  macro("piscina", "Piscina", "operativo", 10, "Coperta, estiva, scuole nuoto, corsi in acqua"),
+  macro("piscina", "Piscina", "operativo", 10, "Coperta, estiva, scuole nuoto, corsi in acqua, agonismo"),
   sotto("piscina-coperta", "piscina", "Piscina coperta", "operativo", 11),
   sotto("piscina-estiva", "piscina", "Piscina estiva e parco acquatico", "operativo", 12),
   sotto("scuola-nuoto-bambini", "piscina", "Scuola nuoto bambini", "operativo", 13),
   sotto("scuola-nuoto-adulti", "piscina", "Scuola nuoto adulti", "operativo", 14),
   sotto("corsi-acqua", "piscina", "Corsi in acqua e attività di gruppo", "operativo", 15),
+  sotto("agonismo", "piscina", "Agonismo", "operativo", 16, "Hotel, iscrizioni gare e trasferte della squadra nuoto"),
 
   macro("fitness", "Palestra & Fitness", "operativo", 20, "Palestra, corsi, pole dance, personal"),
   sotto("palestra-sala-pesi", "fitness", "Palestra e sala pesi", "operativo", 21),

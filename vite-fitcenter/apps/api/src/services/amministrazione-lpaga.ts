@@ -19,6 +19,7 @@ export function codiceRepartoDaMansione(dominio: string, nome: string): string |
   if (/\b(spa|benesser|massagg|estetic)/.test(s)) return "spa-benessere"
   if (/\bpole/.test(s)) return "pole-dance"
   if (/\bpersonal/.test(s)) return "personal-training"
+  if (/\b(agonism|squadra nuoto|iscrizion.*gar|gare nuoto)\b/.test(s)) return "agonismo"
   if (/\b(scuola nuoto bambini|snb|bimbi|baby)/.test(s)) return "scuola-nuoto-bambini"
   if (/\b(scuola nuoto adulti|master|adulti)/.test(s) && /\b(nuoto|scuola)/.test(s)) return "scuola-nuoto-adulti"
   if (/\b(acquagym|acqua fitness|corsi in acqua|idro)/.test(s)) return "corsi-acqua"
