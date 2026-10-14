@@ -93,7 +93,7 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
 
   const viste: { id: Vista; label: string }[] = [
     { id: "riepilogo", label: "Riepilogo" },
-    { id: "dipendenti", label: "Per dipendente" },
+    { id: "dipendenti", label: "Per lavoratore" },
     { id: "mansioni", label: "Per mansione" },
     { id: "giorni", label: "Per data" },
     { id: "grafici", label: "Grafici" },
@@ -178,7 +178,7 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
       )}
 
       {vista === "dipendenti" && (
-        <Card title="Costo per dipendente">
+        <Card title="Costo per lavoratore">
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-zinc-500">
