@@ -30,7 +30,15 @@ import {
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { deletePersonaleCredentials, setPersonalePassword } from "../store/libro-paga-auth.js"
-import { parseQualifichePersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
+import { mergePersonaleLivelli, parseQualifichePersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
+
+function livelliFromBody(body: Record<string, unknown>) {
+  const ids = Array.isArray(body.livelloIds)
+    ? body.livelloIds.map((x) => String(x).trim()).filter(Boolean)
+    : undefined
+  const livelloId = body.livelloId != null ? String(body.livelloId).trim() : undefined
+  return mergePersonaleLivelli(livelloId, ids)
+}
 import { enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 
 function statusOf(e: unknown): number {
@@ -154,12 +162,13 @@ export async function postPersonale(req: Request, res: Response) {
     }
     const ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const livelli = livelliFromBody(req.body ?? {})
     const row = await upsertPersonale({
       nome,
       cognome: String(req.body?.cognome ?? "").trim(),
       username,
       ruolo,
-      livelloId: String(req.body?.livelloId ?? "").trim(),
+      ...livelli,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
       email: String(req.body?.email ?? "").trim().toLowerCase(),
@@ -196,13 +205,15 @@ export async function patchPersonale(req: Request, res: Response) {
         return res.status(409).json({ message: "Username già in uso" })
       }
     }
+    const livelli =
+      req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
     const row = await upsertPersonale({
       id,
       nome,
       cognome: req.body?.cognome != null ? String(req.body.cognome).trim() : cur.cognome,
       username,
       ruolo,
-      livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
+      ...livelli,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
       email: req.body?.email != null ? String(req.body.email).trim().toLowerCase() : cur.email,

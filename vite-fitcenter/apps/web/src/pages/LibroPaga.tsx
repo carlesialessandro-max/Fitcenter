@@ -23,6 +23,7 @@ import {
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
+import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
@@ -462,7 +463,7 @@ function PersonaleTab({
   const [cognome, setCognome] = useState("")
   const [username, setUsername] = useState("")
   const [ruolo, setRuolo] = useState<LpagaRuolo>("user")
-  const [livelloId, setLivelloId] = useState("")
+  const [livelloIds, setLivelloIds] = useState<string[]>([])
   const [contratto, setContratto] = useState("")
   const [visitaMedica, setVisitaMedica] = useState("")
   const [iban, setIban] = useState("")
@@ -487,7 +488,8 @@ function PersonaleTab({
         username,
         password,
         ruolo,
-        livelloId,
+        livelloIds,
+        livelloId: livelloIds[0] ?? "",
         contratto,
         visitaMedica,
         iban,
@@ -505,6 +507,7 @@ function PersonaleTab({
       setVisitaMedica("")
       setIban("")
       setEmail("")
+      setLivelloIds([])
       setNuovoOpen(false)
       onDone()
     },
@@ -675,17 +678,14 @@ function PersonaleTab({
                 <option value="admin">Amministratore</option>
               </select>
             </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Reparto
-              <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls}>
-                <option value="">—</option>
-                {data.livelli.filter((l) => !l.retribuibile).map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+              <span>Reparti / sotto-reparti</span>
+              <LibroPagaRepartiMulti
+                reparti={data.livelli.filter((l) => !l.retribuibile)}
+                value={livelloIds}
+                onChange={setLivelloIds}
+              />
+            </div>
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
@@ -968,18 +968,9 @@ function PersonaleDelegheAdmin({
     .filter((p) => {
       if (p.ruolo !== "user") return false
       const mgr = data.personale.find((x) => x.id === managerId)
-      if (!mgr?.livelloId) return true
-      const ids = new Set<string>([mgr.livelloId])
-      let added = true
-      while (added) {
-        added = false
-        for (const l of data.livelli) {
-          if (l.parentId && ids.has(l.parentId) && !ids.has(l.id)) {
-            ids.add(l.id)
-            added = true
-          }
-        }
-      }
+      const roots = livelloIdsFromPersona(mgr)
+      if (!roots.length) return true
+      const ids = livelloAlberoUnionUi(data.livelli, roots)
       return Boolean(p.livelloId && ids.has(p.livelloId))
     })
     .sort(cmpNomeCognome)

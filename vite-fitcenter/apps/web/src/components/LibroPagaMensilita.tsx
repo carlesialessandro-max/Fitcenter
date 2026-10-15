@@ -10,6 +10,7 @@ import type {
 } from "@/api/libroPaga"
 import { PERSONALE_QUALIFICHE, parseQualificheUi, type QualificaConData } from "@/lib/personale-qualifiche"
 import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { LibroPagaRepartiMulti, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
 
 const inputCls =
@@ -430,7 +431,7 @@ function DettaglioMese({
   const [nome, setNome] = useState(persona?.nome ?? "")
   const [username, setUsername] = useState(persona?.username ?? "")
   const [ruolo, setRuolo] = useState<LpagaRuolo>(persona?.ruolo ?? "user")
-  const [livelloId, setLivelloId] = useState(persona?.livelloId ?? "")
+  const [livelloIds, setLivelloIds] = useState<string[]>(() => livelloIdsFromPersona(persona))
   const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
   const [visitaMedica, setVisitaMedica] = useState(isoDateInput(persona?.visitaMedica))
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
@@ -442,7 +443,7 @@ function DettaglioMese({
     setNome(persona?.nome ?? "")
     setUsername(persona?.username ?? "")
     setRuolo(persona?.ruolo ?? "user")
-    setLivelloId(persona?.livelloId ?? "")
+    setLivelloIds(livelloIdsFromPersona(persona))
     setContratto(isoDateInput(persona?.contratto))
     setVisitaMedica(isoDateInput(persona?.visitaMedica))
     setIbanEdit(persona?.iban ?? "")
@@ -463,7 +464,8 @@ function DettaglioMese({
         nome: nome.trim(),
         username: username.trim(),
         ruolo,
-        livelloId,
+        livelloIds,
+        livelloId: livelloIds[0] ?? "",
         contratto,
         visitaMedica,
         iban: ibanEdit.trim(),
@@ -564,17 +566,11 @@ function DettaglioMese({
               {allowAdminRole && <option value="admin">Amministratore</option>}
             </select>
           </label>
-          <label className="grid gap-1 text-xs text-zinc-500">
-            Reparto
-            <select value={livelloId} onChange={(e) => setLivelloId(e.target.value)} className={inputCls}>
-              <option value="">—</option>
-              {reparti.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+            <span>Reparti / sotto-reparti</span>
+            <p className="text-[11px] text-zinc-600">Puoi selezionarne più di uno (es. corsi terra e acqua).</p>
+            <LibroPagaRepartiMulti reparti={reparti} value={livelloIds} onChange={setLivelloIds} />
+          </div>
           <label className="grid gap-1 text-xs text-zinc-500">
             Scad. contratto
             <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />

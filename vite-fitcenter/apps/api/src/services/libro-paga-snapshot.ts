@@ -11,6 +11,7 @@ import {
   listTurni,
   listValidazioni,
   nominativo,
+  repartoNomePersona,
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
@@ -114,7 +115,7 @@ export async function buildLibroPagaSnapshot(opts?: {
   const personaleOut = personale.map((p) => ({
     ...p,
     nominativo: nominativo(p),
-    repartoNome: p.livelloId ? livById.get(p.livelloId)?.nome ?? "—" : "—",
+    repartoNome: repartoNomePersona(p, livelli),
     ...(opts?.hideIban ? { iban: p.id === opts.viewerId ? p.iban ?? "" : "" } : {}),
   }))
 
@@ -182,7 +183,7 @@ export async function buildLibroPagaSnapshot(opts?: {
       return {
         personaleId: p.id,
         nominativo: nominativo(p),
-        reparto: p.livelloId ? livById.get(p.livelloId)?.nome ?? "—" : "—",
+        reparto: repartoNomePersona(p, livelli),
         ultima: last?.stamp ?? null,
         okIeri: last?.giorno === yesterday,
       }
@@ -266,7 +267,7 @@ export async function buildLibroPagaSnapshot(opts?: {
           nominativo: nominativo(viewer),
           ruolo: viewer.ruolo,
           livelloId: viewer.livelloId,
-          repartoNome: viewer.livelloId ? livById.get(viewer.livelloId)?.nome ?? "—" : "—",
+          repartoNome: repartoNomePersona(viewer, livelli),
         }
       : null,
     home: {

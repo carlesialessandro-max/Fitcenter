@@ -23,6 +23,7 @@ export type LpagaPersonale = {
   username?: string
   ruolo: LpagaRuolo
   livelloId?: string
+  livelloIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -162,6 +163,7 @@ export const libroPagaApi = {
     password?: string
     ruolo?: LpagaRuolo
     livelloId?: string
+    livelloIds?: string[]
     contratto?: string
     iban?: string
     email?: string

@@ -40,6 +40,8 @@ export type LpagaPersonale = {
   username?: string
   ruolo: LpagaRuolo
   livelloId?: string
+  /** Reparti / sotto-reparti di competenza (es. responsabile terra + acqua). */
+  livelloIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -208,6 +210,47 @@ function parseQualificheStored(v: unknown): LpagaQualifica[] | undefined {
   return parseQualifichePersonale(v)
 }
 
+function parseLivelloIdsStored(v: unknown, fallbackLivelloId?: string): string[] | undefined {
+  if (v != null && v !== "") {
+    try {
+      const raw = typeof v === "string" ? JSON.parse(v) : v
+      if (Array.isArray(raw)) {
+        const ids = raw.map((x) => String(x).trim()).filter(Boolean)
+        if (ids.length) return [...new Set(ids)]
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  if (fallbackLivelloId) return [fallbackLivelloId]
+  return undefined
+}
+
+export function mergePersonaleLivelli(
+  livelloId?: string,
+  livelloIds?: string[]
+): { livelloId?: string; livelloIds?: string[] } {
+  const merged = [...new Set([...(livelloIds ?? []), ...(livelloId?.trim() ? [livelloId.trim()] : [])])]
+  if (!merged.length) return {}
+  return { livelloId: merged[0], livelloIds: merged }
+}
+
+export function repartoNomePersona(
+  p: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
+  livelli: LpagaLivello[]
+): string {
+  const merged = mergePersonaleLivelli(p.livelloId, p.livelloIds)
+  const roots = merged.livelloIds ?? (merged.livelloId ? [merged.livelloId] : [])
+  if (!roots.length) return "—"
+  const labels = roots.map((id) => {
+    const l = livelli.find((x) => x.id === id)
+    if (!l) return null
+    const dom = dominioLivello(livelli, id)
+    return dom && dom !== l.nome ? `${dom} · ${l.nome}` : l.nome
+  })
+  return labels.filter(Boolean).join(", ") || "—"
+}
+
 function iso(v: unknown): string {
   if (v instanceof Date && !Number.isNaN(v.getTime())) return v.toISOString()
   const s = String(v ?? "").trim()
@@ -311,6 +354,7 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.F
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(500) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -434,6 +478,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const cognome = String(r.Cognome ?? r.cognome ?? "").trim()
   const username = String(r.Username ?? r.username ?? "").trim()
   const livelloId = String(r.LivelloId ?? r.livelloId ?? "").trim()
+  const livelloIds = parseLivelloIdsStored(r.LivelloIds ?? r.livelloIds, livelloId || undefined)
   const contratto = ymd(r.Contratto ?? r.contratto)
   const tesseramento = String(r.Tesseramento ?? r.tesseramento ?? "").trim()
   const tesseramentoScadenza = ymd(r.TesseramentoScadenza ?? r.tesseramentoScadenza)
@@ -447,7 +492,11 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
     ...(cognome ? { cognome } : {}),
     ...(username ? { username } : {}),
     ruolo,
-    ...(livelloId ? { livelloId } : {}),
+    ...(livelloIds?.length
+      ? { livelloId: livelloIds[0], livelloIds }
+      : livelloId
+        ? { livelloId }
+        : {}),
     ...(contratto && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(contratto) ? { contratto } : {}),
     ...(iban ? { iban } : {}),
     ...(email ? { email } : {}),
@@ -613,7 +662,7 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
     const p = await pool()
     if (!p) return [...readFile().personale].sort(cmpPersonaleNomeCognome)
     const r = await p.request().query(
-      `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId,
+      `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza,
               CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica, Qualifiche
@@ -631,6 +680,7 @@ export async function upsertPersonale(input: {
   username?: string
   ruolo?: LpagaRuolo
   livelloId?: string
+  livelloIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -653,13 +703,15 @@ export async function upsertPersonale(input: {
   const visitaMedica = visitaMedicaRaw && /^\d{4}-\d{2}-\d{2}$/.test(visitaMedicaRaw) ? visitaMedicaRaw : ""
   const hasQualifiche = input.qualifiche !== undefined
   const qualifiche = hasQualifiche ? parseQualifichePersonale(input.qualifiche) : undefined
+  const hasLivelloIds = input.livelloIds !== undefined || input.livelloId !== undefined
+  const livelliMerged = hasLivelloIds ? mergePersonaleLivelli(input.livelloId, input.livelloIds) : {}
   const row: LpagaPersonale = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
     ...(input.cognome?.trim() ? { cognome: input.cognome.trim() } : {}),
     ...(input.username?.trim() ? { username: input.username.trim().toLowerCase() } : {}),
     ruolo,
-    ...(input.livelloId?.trim() ? { livelloId: input.livelloId.trim() } : {}),
+    ...livelliMerged,
     ...(input.contratto?.trim() ? { contratto: input.contratto.trim() } : {}),
     ...(iban ? { iban } : {}),
     ...(email ? { email } : {}),
@@ -679,6 +731,8 @@ export async function upsertPersonale(input: {
     req.input("Username", sql.NVarChar(120), row.username ?? null)
     req.input("Ruolo", sql.NVarChar(20), row.ruolo)
     req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
+    req.input("LivelloIds", sql.NVarChar(500), hasLivelloIds ? JSON.stringify(row.livelloIds ?? []) : null)
+    req.input("LivelloIdsSet", sql.Bit, hasLivelloIds)
     req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)
     req.input("Email", sql.NVarChar(200), email || null)
@@ -697,12 +751,14 @@ export async function upsertPersonale(input: {
       MERGE dbo.FcLibroPagaPersonale AS t
       USING (SELECT @Id AS Id) AS s ON t.Id = s.Id
       WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
-        LivelloId=@LivelloId, Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
+        LivelloId=CASE WHEN @LivelloIdsSet=1 THEN @LivelloId ELSE t.LivelloId END,
+        LivelloIds=CASE WHEN @LivelloIdsSet=1 THEN @LivelloIds ELSE t.LivelloIds END,
+        Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
         TesseramentoScadenza=@TesseramentoScadenza,
         VisitaMedica=CASE WHEN @VisitaMedicaSet=1 THEN @VisitaMedica ELSE t.VisitaMedica END,
         Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @LivelloIds, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
     `)
     return row
   }
@@ -712,6 +768,13 @@ export async function upsertPersonale(input: {
     const prev = db.personale[i]
     db.personale[i] = {
       ...row,
+      ...(hasLivelloIds
+        ? {}
+        : prev.livelloIds?.length
+          ? { livelloId: prev.livelloId, livelloIds: prev.livelloIds }
+          : prev.livelloId
+            ? { livelloId: prev.livelloId }
+            : {}),
       ...(hasQualifiche ? { qualifiche: qualifiche ?? [] } : prev.qualifiche ? { qualifiche: prev.qualifiche } : {}),
       ...(row.tesseramento ? {} : prev.tesseramento ? { tesseramento: prev.tesseramento } : {}),
       ...(row.tesseramentoScadenza ? {} : prev.tesseramentoScadenza ? { tesseramentoScadenza: prev.tesseramentoScadenza } : {}),
