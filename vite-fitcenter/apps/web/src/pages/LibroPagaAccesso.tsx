@@ -8,7 +8,7 @@ import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
-import type { QualificaConData } from "@/lib/personale-qualifiche"
+import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome } from "@/lib/personale-sort"
@@ -340,10 +340,7 @@ function MiaAnagrafica({
         </p>
       </div>
       <GestionaleAnagraficaBlock persona={persona} />
-      <p className="text-sm text-zinc-300">
-        Visita medica:{" "}
-        <span className="text-zinc-100">{fmtDateIt(persona.visitaMedica)}</span>
-      </p>
+      <QualificheCorsiFields value={qualificheForDisplay(persona)} readOnly />
       <form
         className="grid gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4"
         onSubmit={(e) => {
@@ -394,8 +391,10 @@ function MiaAnagrafica({
 function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
   const h = data.home as typeof data.home & { mioOre?: number; mioImporto?: number; mioTurni?: number }
   const isUser = me?.ruolo === "user"
+  const io = me ? data.personale.find((p) => p.id === me.id) : undefined
   return (
     <div className="mt-4 space-y-4">
+      {io ? <QualificheCorsiFields value={qualificheForDisplay(io)} readOnly /> : null}
       {isUser && data.canValidate && (
         <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-200/90">
           Hai la delega per convalidare le mensilità del reparto: apri Mensilità e premi Convalida.
@@ -665,7 +664,6 @@ function Personale({
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
-  const [visitaMedica, setVisitaMedica] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
   const [nuovoOpen, setNuovoOpen] = useState(false)
@@ -682,9 +680,10 @@ function Personale({
         password,
         ruolo: me?.ruolo === "manager" ? "user" : ruolo,
         livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
-        qualifiche,
+        ...(me?.ruolo === "admin"
+          ? { qualifiche, visitaMedica: visitaMedicaFromQualifiche(qualifiche) }
+          : {}),
         contratto,
-        visitaMedica,
         iban,
         email,
       }),
@@ -695,7 +694,6 @@ function Personale({
       setPassword("")
       setQualifiche([])
       setContratto("")
-      setVisitaMedica("")
       setIban("")
       setEmail("")
       setNuovoOpen(false)
@@ -837,10 +835,6 @@ function Personale({
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
-              Visita medica
-              <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
-            </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
               IBAN
               <input value={iban} onChange={(e) => setIban(e.target.value)} className={inputCls} />
             </label>
@@ -857,7 +851,9 @@ function Personale({
             <p className="text-xs text-zinc-500 sm:col-span-2">
               Tesseramento ASI, certificato medico e anagrafica STAFF arrivano dal gestionale e non si modificano qui.
             </p>
-            <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
+            {me?.ruolo === "admin" ? (
+              <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
+            ) : null}
             <div className="flex justify-end gap-2 sm:col-span-2">
               <button type="button" className={btnGhost} onClick={() => setNuovoOpen(false)}>
                 Annulla
@@ -929,7 +925,7 @@ function Personale({
                   <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
                   <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
                   <td className="px-3 py-2">{p.repartoNome}</td>
-                  <td className="px-3 py-2">{fmtDateIt(p.visitaMedica)}</td>
+                  <td className="px-3 py-2">{fmtDateIt(visitaMedicaFromQualifiche(qualificheForDisplay(p)))}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <button
                       type="button"

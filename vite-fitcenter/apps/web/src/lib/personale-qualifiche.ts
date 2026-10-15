@@ -5,6 +5,7 @@ export const PERSONALE_QUALIFICHE = [
   { id: "rls", label: "RLS" },
   { id: "responsabile_piscina", label: "Responsabile piscina e impianti tecnologici" },
   { id: "blsd", label: "BLSD" },
+  { id: "visita_medica", label: "Visita medica" },
 ] as const
 
 export type PersonaleQualificaId = (typeof PERSONALE_QUALIFICHE)[number]["id"]
@@ -51,4 +52,20 @@ export function setDataQualifica(list: QualificaConData[], id: string, data: str
   const t = data.trim().slice(0, 10)
   if (!list.some((q) => q.id === id)) return [...list, t ? { id, data: t } : { id }]
   return list.map((q) => (q.id === id ? (t ? { id, data: t } : { id }) : q))
+}
+
+/** Unisce la colonna legacy visitaMedica nella lista corsi sicurezza. */
+export function qualificheForDisplay(persona?: {
+  qualifiche?: QualificaConData[] | { id: string; data?: string }[]
+  visitaMedica?: string
+}): QualificaConData[] {
+  const base = parseQualificheUi(persona?.qualifiche)
+  const v = String(persona?.visitaMedica ?? "").trim().slice(0, 10)
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return base
+  if (base.some((x) => x.id === "visita_medica")) return base
+  return [...base, { id: "visita_medica", data: v }]
+}
+
+export function visitaMedicaFromQualifiche(list: QualificaConData[]): string {
+  return dataQualifica(list, "visita_medica")
 }

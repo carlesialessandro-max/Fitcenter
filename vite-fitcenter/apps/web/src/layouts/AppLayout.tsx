@@ -302,7 +302,7 @@ export function AppLayout() {
               : navOperatore
   const pagesForNav =
     customPages && role === "admin"
-      ? [...new Set(["/", "/dashboard", "/libro-paga", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/reparti", ...(user!.pages ?? [])])]
+      ? [...new Set(["/", "/dashboard", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/reparti", ...(user!.pages ?? [])])]
       : user?.pages
   const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, pagesForNav!) : roleNav
   const navRestricted: NavItem[] =

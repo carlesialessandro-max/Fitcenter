@@ -8,7 +8,7 @@ import type {
   LpagaRuolo,
   LpagaTurnoRow,
 } from "@/api/libroPaga"
-import { PERSONALE_QUALIFICHE, parseQualificheUi, type QualificaConData } from "@/lib/personale-qualifiche"
+import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { LibroPagaRepartiMulti, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
@@ -80,7 +80,6 @@ export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonal
     { k: "Indirizzo", v: g ? fmtIndirizzo(g) : "" },
     { k: "Data di nascita", v: g?.dataNascita ? fmtDateIt(g.dataNascita) : "" },
     { k: "Tesseramento ASI", v: tess ? `${tess}${tessScad ? ` · scad. ${fmtDateIt(tessScad)}` : ""}` : "" },
-    { k: "Visita medica", v: persona?.visitaMedica ? fmtDateIt(persona.visitaMedica) : "" },
     {
       k: "Certificato medico",
       v: (() => {
@@ -116,11 +115,6 @@ export function GestionaleAnagraficaBlock({ persona }: { persona?: LpagaPersonal
         </dl>
       ) : (
         <p className="mt-2 text-sm text-zinc-500">Nessun nominativo STAFF trovato nel gestionale per questa persona.</p>
-      )}
-      {!g && (
-        <p className="mt-2 text-sm text-zinc-300">
-          Visita medica: {persona?.visitaMedica ? fmtDateIt(persona.visitaMedica) : "—"}
-        </p>
       )}
     </div>
   )
@@ -433,11 +427,10 @@ function DettaglioMese({
   const [ruolo, setRuolo] = useState<LpagaRuolo>(persona?.ruolo ?? "user")
   const [livelloIds, setLivelloIds] = useState<string[]>(() => livelloIdsFromPersona(persona))
   const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
-  const [visitaMedica, setVisitaMedica] = useState(isoDateInput(persona?.visitaMedica))
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
   const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
   const [password, setPassword] = useState("")
-  const [qualifiche, setQualifiche] = useState<QualificaConData[]>(parseQualificheUi(persona?.qualifiche))
+  const [qualifiche, setQualifiche] = useState<QualificaConData[]>(() => qualificheForDisplay(persona))
   useEffect(() => {
     setCognome(persona?.cognome ?? "")
     setNome(persona?.nome ?? "")
@@ -445,11 +438,10 @@ function DettaglioMese({
     setRuolo(persona?.ruolo ?? "user")
     setLivelloIds(livelloIdsFromPersona(persona))
     setContratto(isoDateInput(persona?.contratto))
-    setVisitaMedica(isoDateInput(persona?.visitaMedica))
     setIbanEdit(persona?.iban ?? "")
     setEmailEdit(persona?.email ?? "")
     setPassword("")
-    setQualifiche(parseQualificheUi(persona?.qualifiche))
+    setQualifiche(qualificheForDisplay(persona))
   }, [persona])
   const [filtroMansione, setFiltroMansione] = useState("")
   useEffect(() => {
@@ -467,10 +459,11 @@ function DettaglioMese({
         livelloIds,
         livelloId: livelloIds[0] ?? "",
         contratto,
-        visitaMedica,
         iban: ibanEdit.trim(),
         email: emailEdit.trim(),
-        qualifiche,
+        ...(allowAdminRole
+          ? { qualifiche, visitaMedica: visitaMedicaFromQualifiche(qualifiche) }
+          : {}),
         ...(password.trim() ? { password: password.trim() } : {}),
       })
     },
@@ -575,10 +568,6 @@ function DettaglioMese({
             Scad. contratto
             <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
           </label>
-          <label className="grid gap-1 text-xs text-zinc-500">
-            Visita medica
-            <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
-          </label>
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             IBAN
             <input value={ibanEdit} onChange={(e) => setIbanEdit(e.target.value)} className={inputCls} autoComplete="off" />
@@ -594,7 +583,12 @@ function DettaglioMese({
             />
           </label>
           <GestionaleAnagraficaBlock persona={persona} />
-          <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
+          <QualificheCorsiFields
+            value={qualifiche}
+            onChange={allowAdminRole ? setQualifiche : undefined}
+            inputCls={inputCls}
+            readOnly={!allowAdminRole}
+          />
           <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             Nuova password (vuoto = invariata)
             <input
@@ -641,10 +635,6 @@ function DettaglioMese({
           <dd>{fmtDateIt(persona?.contratto)}</dd>
         </div>
         <div className="flex justify-between gap-3 sm:justify-start">
-          <dt className="text-zinc-500">Visita medica</dt>
-          <dd>{fmtDateIt(persona?.visitaMedica)}</dd>
-        </div>
-        <div className="flex justify-between gap-3 sm:justify-start">
           <dt className="text-zinc-500">IBAN</dt>
           <dd className="font-mono text-xs">{iban?.trim() ? iban : "—"}</dd>
         </div>
@@ -659,23 +649,7 @@ function DettaglioMese({
         <div className="sm:col-span-2">
           <GestionaleAnagraficaBlock persona={persona} />
         </div>
-        <div className="sm:col-span-2">
-          <dt className="mb-1 text-zinc-500">Corsi sicurezza</dt>
-          <dd className="flex flex-wrap gap-2">
-            {PERSONALE_QUALIFICHE.map((q) => {
-              const hit = parseQualificheUi(persona?.qualifiche).find((x) => x.id === q.id)
-              return (
-                <span
-                  key={q.id}
-                  className={`rounded-full px-2 py-0.5 text-xs ${hit ? "bg-emerald-950/70 text-emerald-200" : "bg-zinc-800 text-zinc-500"}`}
-                >
-                  {q.label}
-                  {hit?.data ? ` · ${fmtDateIt(hit.data)}` : hit ? "" : " — no"}
-                </span>
-              )
-            })}
-          </dd>
-        </div>
+        <QualificheCorsiFields value={qualificheForDisplay(persona)} readOnly />
       </dl>
       ))}
       <div>

@@ -27,6 +27,7 @@ export const LPAGA_QUALIFICHE = [
   "rls",
   "responsabile_piscina",
   "blsd",
+  "visita_medica",
 ] as const
 
 export type LpagaQualificaId = (typeof LPAGA_QUALIFICHE)[number]
@@ -208,6 +209,38 @@ export function qualificheIds(v: unknown): string[] {
 function parseQualificheStored(v: unknown): LpagaQualifica[] | undefined {
   if (v == null || v === "") return undefined
   return parseQualifichePersonale(v)
+}
+
+function enrichQualificheVisitaMedica(
+  qualifiche: LpagaQualifica[] | undefined,
+  visitaMedica?: string
+): LpagaQualifica[] | undefined {
+  const base = qualifiche ?? []
+  const v = String(visitaMedica ?? "").trim().slice(0, 10)
+  if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return base.length ? base : qualifiche
+  if (base.some((x) => x.id === "visita_medica")) return base
+  return [...base, { id: "visita_medica", data: v }]
+}
+
+function visitaMedicaDaQualifiche(qualifiche: LpagaQualifica[] | undefined): string {
+  const d = qualifiche?.find((x) => x.id === "visita_medica")?.data
+  return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : ""
+}
+
+function syncQualificheVisitaMedica(
+  qualifiche: LpagaQualifica[] | undefined,
+  visitaMedicaRaw: string | undefined,
+  touchedQualifiche: boolean,
+  touchedVisita: boolean
+): { qualifiche: LpagaQualifica[]; visitaMedica?: string } {
+  let q = [...(qualifiche ?? [])]
+  if (touchedVisita && !touchedQualifiche) {
+    const v = String(visitaMedicaRaw ?? "").trim().slice(0, 10)
+    q = q.filter((x) => x.id !== "visita_medica")
+    if (v && /^\d{4}-\d{2}-\d{2}$/.test(v)) q.push({ id: "visita_medica", data: v })
+  }
+  const vm = visitaMedicaDaQualifiche(q)
+  return { qualifiche: q, ...(vm ? { visitaMedica: vm } : {}) }
 }
 
 function parseLivelloIdsStored(v: unknown, fallbackLivelloId?: string): string[] | undefined {
@@ -482,8 +515,10 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const contratto = ymd(r.Contratto ?? r.contratto)
   const tesseramento = String(r.Tesseramento ?? r.tesseramento ?? "").trim()
   const tesseramentoScadenza = ymd(r.TesseramentoScadenza ?? r.tesseramentoScadenza)
-  const visitaMedica = ymd(r.VisitaMedica ?? r.visitaMedica)
-  const qualifiche = parseQualificheStored(r.Qualifiche ?? r.qualifiche)
+  const visitaMedicaCol = ymd(r.VisitaMedica ?? r.visitaMedica)
+  const qualificheRaw = parseQualificheStored(r.Qualifiche ?? r.qualifiche)
+  const qualifiche = enrichQualificheVisitaMedica(qualificheRaw, visitaMedicaCol)
+  const visitaMedica = visitaMedicaDaQualifiche(qualifiche) || visitaMedicaCol
   const ruoloRaw = String(r.Ruolo ?? r.ruolo ?? "user").toLowerCase()
   const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
   return {
@@ -699,10 +734,18 @@ export async function upsertPersonale(input: {
   const tesseramento = (input.tesseramento ?? "").trim()
   const tesseramentoScadenza = (input.tesseramentoScadenza ?? "").trim()
   const hasVisitaMedica = input.visitaMedica !== undefined
-  const visitaMedicaRaw = (input.visitaMedica ?? "").trim()
-  const visitaMedica = visitaMedicaRaw && /^\d{4}-\d{2}-\d{2}$/.test(visitaMedicaRaw) ? visitaMedicaRaw : ""
   const hasQualifiche = input.qualifiche !== undefined
-  const qualifiche = hasQualifiche ? parseQualifichePersonale(input.qualifiche) : undefined
+  const synced =
+    hasQualifiche || hasVisitaMedica
+      ? syncQualificheVisitaMedica(
+          hasQualifiche ? parseQualifichePersonale(input.qualifiche) : [],
+          hasVisitaMedica ? String(input.visitaMedica ?? "").trim() : undefined,
+          hasQualifiche,
+          hasVisitaMedica
+        )
+      : null
+  const qualifiche = synced?.qualifiche
+  const visitaMedica = synced?.visitaMedica
   const hasLivelloIds = input.livelloIds !== undefined || input.livelloId !== undefined
   const livelliMerged = hasLivelloIds ? mergePersonaleLivelli(input.livelloId, input.livelloIds) : {}
   const row: LpagaPersonale = {
@@ -718,9 +761,10 @@ export async function upsertPersonale(input: {
     ...(tesseramento ? { tesseramento } : {}),
     ...(tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? { tesseramentoScadenza } : {}),
     ...(visitaMedica ? { visitaMedica } : {}),
-    ...(qualifiche ? { qualifiche } : {}),
+    ...(hasQualifiche || hasVisitaMedica ? { qualifiche: qualifiche ?? [] } : {}),
     attivo: input.attivo !== false,
   }
+  const corsiTouched = hasQualifiche || hasVisitaMedica
   if ((await ensureLibroPagaStorage()) === "sql") {
     const p = await pool()
     if (!p) throw new Error("SQL non disponibile")
@@ -742,10 +786,10 @@ export async function upsertPersonale(input: {
       sql.Date,
       tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? tesseramentoScadenza : null
     )
-    req.input("Qualifiche", sql.NVarChar(1000), hasQualifiche ? JSON.stringify(qualifiche ?? []) : null)
-    req.input("QualificheSet", sql.Bit, hasQualifiche)
+    req.input("Qualifiche", sql.NVarChar(1000), corsiTouched ? JSON.stringify(qualifiche ?? []) : null)
+    req.input("QualificheSet", sql.Bit, corsiTouched)
     req.input("VisitaMedica", sql.Date, visitaMedica || null)
-    req.input("VisitaMedicaSet", sql.Bit, hasVisitaMedica)
+    req.input("VisitaMedicaSet", sql.Bit, corsiTouched)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaPersonale AS t
@@ -775,16 +819,17 @@ export async function upsertPersonale(input: {
           : prev.livelloId
             ? { livelloId: prev.livelloId }
             : {}),
-      ...(hasQualifiche ? { qualifiche: qualifiche ?? [] } : prev.qualifiche ? { qualifiche: prev.qualifiche } : {}),
+      ...(corsiTouched
+        ? {
+            qualifiche: qualifiche ?? [],
+            ...(visitaMedica ? { visitaMedica } : {}),
+          }
+        : prev.qualifiche
+          ? { qualifiche: prev.qualifiche }
+          : {}),
+      ...(!corsiTouched && prev.visitaMedica ? { visitaMedica: prev.visitaMedica } : {}),
       ...(row.tesseramento ? {} : prev.tesseramento ? { tesseramento: prev.tesseramento } : {}),
       ...(row.tesseramentoScadenza ? {} : prev.tesseramentoScadenza ? { tesseramentoScadenza: prev.tesseramentoScadenza } : {}),
-      ...(hasVisitaMedica
-        ? visitaMedica
-          ? { visitaMedica }
-          : {}
-        : prev.visitaMedica
-          ? { visitaMedica: prev.visitaMedica }
-          : {}),
     }
   } else db.personale.push(row)
   writeFile(db)

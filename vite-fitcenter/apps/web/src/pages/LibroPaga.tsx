@@ -28,6 +28,7 @@ import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
@@ -465,7 +466,6 @@ function PersonaleTab({
   const [ruolo, setRuolo] = useState<LpagaRuolo>("user")
   const [livelloIds, setLivelloIds] = useState<string[]>([])
   const [contratto, setContratto] = useState("")
-  const [visitaMedica, setVisitaMedica] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
@@ -491,10 +491,10 @@ function PersonaleTab({
         livelloIds,
         livelloId: livelloIds[0] ?? "",
         contratto,
-        visitaMedica,
         iban,
         email,
         qualifiche,
+        visitaMedica: visitaMedicaFromQualifiche(qualifiche),
         attivo: true,
       }),
     onSuccess: () => {
@@ -504,7 +504,6 @@ function PersonaleTab({
       setPassword("")
       setQualifiche([])
       setContratto("")
-      setVisitaMedica("")
       setIban("")
       setEmail("")
       setLivelloIds([])
@@ -570,7 +569,7 @@ function PersonaleTab({
                 </td>
                 {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
                 <td className="px-3 py-2">{fmtDateIt(r.contratto)}</td>
-                <td className="px-3 py-2">{fmtDateIt(r.visitaMedica)}</td>
+                <td className="px-3 py-2">{fmtDateIt(visitaMedicaFromQualifiche(qualificheForDisplay(r)))}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <button
                     type="button"
@@ -689,10 +688,6 @@ function PersonaleTab({
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
-            </label>
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Visita medica
-              <input type="date" value={visitaMedica} onChange={(e) => setVisitaMedica(e.target.value)} className={inputCls} />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
               IBAN

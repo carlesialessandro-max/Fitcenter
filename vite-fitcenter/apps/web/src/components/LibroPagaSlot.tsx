@@ -11,6 +11,13 @@ import {
 const inputClsDefault =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
 
+function fmtDateIt(iso: string): string {
+  const s = String(iso ?? "").slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—"
+  const [y, m, d] = s.split("-")
+  return `${d}/${m}/${y}`
+}
+
 export function LibroPagaSlot({
   title,
   children,
@@ -30,25 +37,39 @@ export function QualificheCorsiFields({
   value,
   onChange,
   inputCls = inputClsDefault,
+  readOnly = false,
 }: {
   value: QualificaConData[]
-  onChange: (next: QualificaConData[]) => void
+  onChange?: (next: QualificaConData[]) => void
   inputCls?: string
+  readOnly?: boolean
 }) {
   const list = parseQualificheUi(value)
   return (
     <fieldset className="sm:col-span-2 rounded-lg border border-zinc-700/80 bg-zinc-950/40 p-3">
       <legend className="px-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Corsi sicurezza</legend>
+      {readOnly ? (
+        <p className="mb-2 text-[11px] text-zinc-600">Sola lettura: per modificare i corsi contatta l&apos;amministratore.</p>
+      ) : null}
       <div className="grid gap-3">
         {PERSONALE_QUALIFICHE.map((q) => {
           const on = list.some((x) => x.id === q.id)
+          const data = dataQualifica(list, q.id)
+          if (readOnly) {
+            return (
+              <div key={q.id} className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_10.5rem] sm:items-center">
+                <span className={`text-sm ${on ? "text-zinc-200" : "text-zinc-500"}`}>{q.label}</span>
+                <span className="text-sm text-zinc-300">{on && data ? fmtDateIt(data) : "—"}</span>
+              </div>
+            )
+          }
           return (
             <div key={q.id} className="grid gap-1 sm:grid-cols-[minmax(0,1fr)_10.5rem] sm:items-center">
               <label className="flex items-center gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"
                   checked={on}
-                  onChange={() => onChange(toggleQualificaConData(list, q.id))}
+                  onChange={() => onChange?.(toggleQualificaConData(list, q.id))}
                 />
                 {q.label}
               </label>
@@ -59,7 +80,7 @@ export function QualificheCorsiFields({
                   required
                   className={inputCls}
                   title={`Data ${q.label}`}
-                  onChange={(e) => onChange(setDataQualifica(list, q.id, e.target.value))}
+                  onChange={(e) => onChange?.(setDataQualifica(list, q.id, e.target.value))}
                 />
               ) : (
                 <span className="hidden text-xs text-zinc-600 sm:block">data corso</span>

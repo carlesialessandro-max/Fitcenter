@@ -266,8 +266,12 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       email: normalizeLpagaEmail(req.body?.email),
       tesseramento: String(req.body?.tesseramento ?? "").trim(),
       tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
-      visitaMedica: String(req.body?.visitaMedica ?? "").trim(),
-      qualifiche: parseQualifichePersonale(req.body?.qualifiche),
+      ...(me.ruolo === "admin"
+        ? {
+            visitaMedica: String(req.body?.visitaMedica ?? "").trim(),
+            qualifiche: parseQualifichePersonale(req.body?.qualifiche),
+          }
+        : {}),
       attivo: true,
     })
     syncIstruttoreCalendarioHr(row)
@@ -352,8 +356,14 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
         req.body?.tesseramentoScadenza != null
           ? String(req.body.tesseramentoScadenza).trim()
           : cur.tesseramentoScadenza,
-      visitaMedica: req.body?.visitaMedica != null ? String(req.body.visitaMedica).trim() : cur.visitaMedica,
-      qualifiche: req.body?.qualifiche != null ? parseQualifichePersonale(req.body.qualifiche) : cur.qualifiche,
+      visitaMedica:
+        me.ruolo === "admin" && req.body?.visitaMedica != null
+          ? String(req.body.visitaMedica).trim()
+          : cur.visitaMedica,
+      qualifiche:
+        me.ruolo === "admin" && req.body?.qualifiche != null
+          ? parseQualifichePersonale(req.body.qualifiche)
+          : cur.qualifiche,
       attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
     })
     if (req.body?.tesseramento != null || req.body?.tesseramentoScadenza != null || req.body?.qualifiche != null) {

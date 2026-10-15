@@ -17,7 +17,7 @@ export function AdminMenu() {
   const custom = (user?.pages?.length ?? 0) > 0
   const allow = useMemo(() => {
     if (!custom) return null
-    return new Set(["/", "/dashboard", "/libro-paga", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/reparti", ...(user?.pages ?? [])])
+    return new Set(["/", "/dashboard", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/reparti", ...(user?.pages ?? [])])
   }, [custom, user?.pages])
 
   const groups = useMemo(() => {
