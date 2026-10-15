@@ -15,6 +15,7 @@ import {
 } from "@/api/amministrazione"
 import { extractPdfText } from "@/lib/pdf-fattura-text"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
+import { macroSplitLabel, macroSplitTargets, normalizeMacroSplitQuote } from "@/lib/amm-macro-split"
 import { downloadAmmMastrinoTemplate, parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
 
 const COLORS = ["#46A6D9", "#F59E0B", "#34D399", "#A78BFA", "#F87171", "#FBBF24", "#60A5FA", "#C084FC"]
@@ -407,8 +408,9 @@ function emptyForm(): FormState {
 }
 
 function formFromSpesa(s: AmmSpesa, reparti: AmmReparto[]): FormState {
-  const one = s.quote.length === 1 && Math.abs(s.quote[0].percentuale - 100) < 0.05
-  const target = one ? reparti.find((r) => r.id === s.quote[0].repartoId) : undefined
+  const quoteNorm = normalizeMacroSplitQuote(s.quote.map((x) => ({ ...x })))
+  const one = quoteNorm.length === 1 && Math.abs(quoteNorm[0].percentuale - 100) < 0.05
+  const target = one ? reparti.find((r) => r.id === quoteNorm[0].repartoId) : undefined
   const sotto = target?.livello === "sotto"
   return {
     fornitore: s.fornitore,
@@ -419,7 +421,7 @@ function formFromSpesa(s: AmmSpesa, reparti: AmmReparto[]): FormState {
     tipoCosto: s.tipoCosto,
     imputazione: sotto ? "sotto" : "macro",
     sottoId: sotto && target ? target.id : "",
-    quote: sotto ? [] : s.quote.map((x) => ({ ...x })),
+    quote: sotto ? [] : quoteNorm.map((x) => ({ ...x })),
     memoriaQuote: s.quoteEccezione ? "eccezione" : "default",
   }
 }
@@ -565,6 +567,7 @@ function RegistroTab() {
   const reparti = meta.data?.reparti ?? []
   const attivi = reparti.filter((r) => r.attivo)
   const macros = macrosOf(attivi)
+  const macroSplit = macroSplitTargets(attivi)
   const quote = quoteDaForm(form)
   const somma = quoteSum(quote)
   const okSplit = Math.abs(somma - 100) < 0.05 && quote.length > 0
@@ -804,7 +807,7 @@ function RegistroTab() {
       <p className="text-xs text-zinc-500">
         All’inserimento puoi confermare che le percentuali restano la regola del fornitore, oppure segnarle come
         eccezione del mese (i prossimi scarichi tengono la regola precedente). RAMO e Diversey: fino a maggio e da
-        settembre 100% piscina coperta; da giugno ad agosto 50% coperta / 50% estiva.
+        settembre 100% piscina coperta; da giugno fino alla prima fornitura di settembre 75% piscina esterna / 25% coperta.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
@@ -1036,7 +1039,7 @@ function RegistroTab() {
                   }
                   className="accent-amber-500"
                 />
-                Split su macro-aree (es. gas 60% Piscina / 20% SPA / 20% Fitness)
+                Split su macro-aree (es. gas 40% Piscina / 20% Piscina esterna / 20% SPA / 20% Fitness)
               </label>
             </div>
             {form.imputazione === "sotto" ? (
@@ -1083,11 +1086,11 @@ function RegistroTab() {
                   <div className={`h-full ${okSplit ? "bg-emerald-500" : "bg-red-500"}`} style={{ width: `${Math.min(100, somma)}%` }} />
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {macros.map((r) => {
+                  {macroSplit.map((r) => {
                     const perc = form.quote.find((x) => x.repartoId === r.id)?.percentuale ?? 0
                     return (
                       <label key={r.id} className="grid gap-1 text-xs text-zinc-500">
-                        {r.nome}
+                        {macroSplitLabel(r)}
                         <input
                           type="number"
                           min={0}
@@ -1692,7 +1695,7 @@ function RepartiTab() {
     <div className="mt-4 space-y-4">
       <p className="text-sm text-zinc-500">
         Macro-aree e sotto-reparti. Un costo si imputa al sotto-reparto oppure si ripartisce in % sulle macro-aree (utenze
-        e spese generali).
+        e spese generali). Nello split, la piscina è divisa in Piscina e Piscina esterna.
       </p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       <form

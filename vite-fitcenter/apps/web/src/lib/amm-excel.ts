@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx"
 import type { AmmQuota, AmmReparto, AmmTipoCosto } from "@/api/amministrazione"
+import { normalizeMacroSplitQuote } from "@/lib/amm-macro-split"
 
 export type AmmExcelPreview = {
   fornitore: string
@@ -122,11 +123,16 @@ function matchReparto(reparti: AmmReparto[], raw: string): AmmReparto | undefine
   const n = normKey(raw)
   if (!n) return undefined
   const attivi = reparti.filter((r) => r.attivo)
-  return (
-    attivi.find((r) => r.id === raw.trim() || r.codice === n.replace(/\s/g, "-")) ??
-    attivi.find((r) => normKey(r.nome) === n) ??
-    attivi.find((r) => normKey(r.nome).includes(n) || n.includes(normKey(r.nome)))
-  )
+  const byId = attivi.find((r) => r.id === raw.trim() || r.codice === n.replace(/\s/g, "-"))
+  if (byId) return byId.id === "piscina" ? attivi.find((r) => r.id === "piscina-coperta") : byId
+  if (n === "piscina esterna" || n === "piscina estiva") {
+    return attivi.find((r) => r.id === "piscina-estiva")
+  }
+  const exact = attivi.find((r) => normKey(r.nome) === n)
+  if (exact) return exact.id === "piscina" ? attivi.find((r) => r.id === "piscina-coperta") : exact
+  const fuzzy = attivi.find((r) => normKey(r.nome).includes(n) || n.includes(normKey(r.nome)))
+  if (fuzzy?.id === "piscina") return attivi.find((r) => r.id === "piscina-coperta")
+  return fuzzy
 }
 
 function groupKey(r: AmmExcelPreview): string {
@@ -148,7 +154,8 @@ export function downloadAmmExcelTemplate() {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([
     AMM_EXCEL_HEADERS,
-    ["Enel Energia", "FT-2026-001", "2026-10-01", "Utenza luce ottobre", 1000, "fisso", "Piscina", 60],
+    ["Enel Energia", "FT-2026-001", "2026-10-01", "Utenza luce ottobre", 1000, "fisso", "Piscina", 40],
+    ["Enel Energia", "FT-2026-001", "2026-10-01", "Utenza luce ottobre", 1000, "fisso", "Piscina esterna", 20],
     ["Enel Energia", "FT-2026-001", "2026-10-01", "Utenza luce ottobre", 1000, "fisso", "Palestra & Fitness", 20],
     ["Enel Energia", "FT-2026-001", "2026-10-01", "Utenza luce ottobre", 1000, "fisso", "SPA & Benessere", 20],
     ["Fornitore Cloro", "2024/88", "15/09/2026", "Cloro piscina coperta", 320.5, "variabile", "Piscina coperta", 100],
@@ -238,6 +245,6 @@ export function parseAmmExcel(file: ArrayBuffer, reparti: AmmReparto[]): AmmExce
     if (Math.abs(somma - 100) >= 0.05) {
       return { ...p, errore: `Ripartizione ${somma}% (deve essere 100%)` }
     }
-    return p
+    return { ...p, quote: normalizeMacroSplitQuote(p.quote) }
   })
 }

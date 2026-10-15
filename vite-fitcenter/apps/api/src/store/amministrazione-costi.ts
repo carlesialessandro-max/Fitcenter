@@ -237,10 +237,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     const ficId = Number(s.ficId)
     return {
       ...s,
-      quote: (s.quote ?? []).map((q) => ({
-        repartoId: remapRepartoId(String(q.repartoId ?? "")),
-        percentuale: Number(q.percentuale) || 0,
-      })),
+      quote: normalizeQuoteList(s.quote ?? []),
       quoteEccezione: s.quoteEccezione === true ? true : undefined,
       origine,
       ficId: Number.isFinite(ficId) && ficId > 0 ? ficId : undefined,
@@ -249,19 +246,13 @@ function migrate(raw: Partial<FileShape>): FileShape {
   const buste: AmmBusta[] = (Array.isArray(raw.buste) ? raw.buste : []).map((b) => ({
     ...b,
     mese: String(b.mese ?? "").slice(0, 7),
-    quote: (b.quote ?? []).map((q) => ({
-      repartoId: remapRepartoId(String(q.repartoId ?? "")),
-      percentuale: Number(q.percentuale) || 0,
-    })),
+    quote: normalizeQuoteList(b.quote ?? []),
     origine: b.origine === "mastrino" || b.origine === "pdf" ? b.origine : "manuale",
   }))
   const collaboratori: AmmCollaboratore[] = (Array.isArray(raw.collaboratori) ? raw.collaboratori : []).map((c) => ({
     ...c,
     mese: String(c.mese ?? "").slice(0, 7),
-    quote: (c.quote ?? []).map((q) => ({
-      repartoId: remapRepartoId(String(q.repartoId ?? "")),
-      percentuale: Number(q.percentuale) || 0,
-    })),
+    quote: normalizeQuoteList(c.quote ?? []),
     tipo: c.tipo === "gestionale" ? "gestionale" : "sportivo",
     origine: c.origine === "manuale" || c.origine === "excel" ? c.origine : "riepilogo",
     modificatoDa: String(c.modificatoDa ?? "").trim() || undefined,
@@ -297,10 +288,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     .map((r) => ({
       key: normFornitoreKey(String(r.key ?? r.ragioneSociale ?? "")),
       ragioneSociale: String(r.ragioneSociale ?? "").trim(),
-      quote: (r.quote ?? []).map((q) => ({
-        repartoId: remapRepartoId(String(q.repartoId ?? "")),
-        percentuale: Number(q.percentuale) || 0,
-      })),
+      quote: normalizeQuoteList(r.quote ?? []),
       stagionale: r.stagionale === "piscina-estate" ? ("piscina-estate" as const) : undefined,
       updatedAt: String(r.updatedAt ?? ""),
     }))
@@ -386,6 +374,48 @@ export function macroIdOf(reparti: AmmReparto[], id: string): string {
   return r.livello === "macro" ? r.id : (r.macroId ?? r.id)
 }
 
+export const PISCINA_MACRO_SPLIT_IDS = ["piscina-coperta", "piscina-estiva"] as const
+
+export function macroSplitTargets(reparti: AmmReparto[]): AmmReparto[] {
+  const attivi = reparti.filter((x) => x.attivo)
+  const byId = new Map(attivi.map((r) => [r.id, r]))
+  const macros = attivi.filter((r) => r.livello === "macro").sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome, "it"))
+  const out: AmmReparto[] = []
+  for (const m of macros) {
+    if (m.id === "piscina") {
+      for (const sid of PISCINA_MACRO_SPLIT_IDS) {
+        const s = byId.get(sid)
+        if (s) out.push(s)
+      }
+    } else out.push(m)
+  }
+  return out
+}
+
+/** Ripartizioni con % sulla macro «piscina» → piscina coperta (stesso totale %). */
+export function normalizeMacroSplitQuote(quote: AmmQuota[]): AmmQuota[] {
+  if (!quote.some((q) => q.repartoId === "piscina")) return quote
+  const out: AmmQuota[] = []
+  for (const q of quote) {
+    if (q.repartoId === "piscina") out.push({ repartoId: "piscina-coperta", percentuale: q.percentuale })
+    else out.push(q)
+  }
+  const merged = new Map<string, number>()
+  for (const q of out) {
+    merged.set(q.repartoId, Math.round(((merged.get(q.repartoId) ?? 0) + q.percentuale) * 100) / 100)
+  }
+  return [...merged.entries()].map(([repartoId, percentuale]) => ({ repartoId, percentuale }))
+}
+
+function normalizeQuoteList(quote: AmmQuota[]): AmmQuota[] {
+  return normalizeMacroSplitQuote(
+    quote.map((q) => ({
+      repartoId: remapRepartoId(String(q.repartoId ?? "")),
+      percentuale: Number(q.percentuale) || 0,
+    }))
+  )
+}
+
 export const ammCostiStore = {
   listReparti(all = false): AmmReparto[] {
     const r = load().reparti.sort((a, b) => a.ordine - b.ordine || a.nome.localeCompare(b.nome, "it"))
@@ -430,7 +460,7 @@ export const ammCostiStore = {
     const row: AmmFornitoreQuote = {
       key,
       ragioneSociale: nome.trim(),
-      quote: quote.map((q) => ({ repartoId: remapRepartoId(q.repartoId), percentuale: Number(q.percentuale) })),
+      quote: normalizeQuoteList(quote),
       updatedAt: nowIso(),
     }
     const i = d.fornitoriQuote.findIndex((x) => x.key === key)
@@ -601,10 +631,12 @@ export const ammCostiStore = {
     const id = String(body.id ?? "").trim() || randomUUID()
     const cur = d.spese.find((s) => s.id === id)
     const eccezione = body.rememberQuote === false || body.quoteEccezione === true
-    let quote = (body.quote ?? []).map((q) => ({
-      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
-      percentuale: Number(String(q.percentuale).replace(",", ".")),
-    }))
+    let quote = normalizeQuoteList(
+      (body.quote ?? []).map((q) => ({
+        repartoId: String(q.repartoId ?? "").trim(),
+        percentuale: Number(String(q.percentuale).replace(",", ".")),
+      }))
+    )
     const fornitore = body.fornitore.trim()
     if (!eccezione && seedFornitore(fornitore)?.stagionale === "piscina-estate") {
       const auto = resolveQuoteFornitore({
@@ -691,10 +723,12 @@ export const ammCostiStore = {
     if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
     const totale = Number(String(body.totale).replace(",", "."))
     if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
-    const quote = (body.quote ?? []).map((q) => ({
-      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
-      percentuale: Number(String(q.percentuale).replace(",", ".")),
-    }))
+    const quote = normalizeQuoteList(
+      (body.quote ?? []).map((q) => ({
+        repartoId: String(q.repartoId ?? "").trim(),
+        percentuale: Number(String(q.percentuale).replace(",", ".")),
+      }))
+    )
     if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
     const ids = new Set(d.reparti.map((r) => r.id))
     for (const q of quote) {
@@ -748,10 +782,12 @@ export const ammCostiStore = {
     if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
     const totale = Number(String(body.totale).replace(",", "."))
     if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
-    const quote = (body.quote ?? []).map((q) => ({
-      repartoId: remapRepartoId(String(q.repartoId ?? "").trim()),
-      percentuale: Number(String(q.percentuale).replace(",", ".")),
-    }))
+    const quote = normalizeQuoteList(
+      (body.quote ?? []).map((q) => ({
+        repartoId: String(q.repartoId ?? "").trim(),
+        percentuale: Number(String(q.percentuale).replace(",", ".")),
+      }))
+    )
     if (!quoteValide(quote)) throw Object.assign(new Error("La ripartizione deve sommare 100%"), { status: 400 })
     const ids = new Set(d.reparti.map((r) => r.id))
     for (const q of quote) {
