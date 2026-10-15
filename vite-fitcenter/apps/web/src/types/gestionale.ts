@@ -148,6 +148,34 @@ export interface AbbAttiviInviaResponse {
   errors: string[]
 }
 
+export type RinnovoCorsoRow = {
+  clienteId: string
+  abbonamentoId: string
+  nome: string
+  email: string | null
+  telefono: string | null
+  piano: string
+  tipologia: "acquaticita" | "scuola_nuoto"
+  dataFine: string
+  consulenteNome: string | null
+}
+
+export interface ScuolaNuotoRinnoviResponse {
+  dataFine: string
+  totale: number
+  conEmail: number
+  conTelefono: number
+  acquaticita: RinnovoCorsoRow[]
+  scuolaNuoto: RinnovoCorsoRow[]
+}
+
+export interface ScuolaNuotoRinnoviInviaResponse {
+  sent: number
+  failed: number
+  skipped: number
+  errors: string[]
+}
+
 export type AbbAttiviInvioEsito = "sent" | "failed" | "skipped"
 
 export interface AbbAttiviInvioRecipient {

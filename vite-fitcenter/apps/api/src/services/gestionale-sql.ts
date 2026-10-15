@@ -2005,7 +2005,7 @@ export function mergeConsultantIdStrings(parts: (string | undefined)[]): string 
 }
 
 /** Opzioni per query abbonamenti: inScadenza = 30 o 60 restituisce solo abbonamenti con DataFine tra oggi e oggi+N. */
-export type QueryAbbonamentiOptions = { inScadenza?: number; leftJoinVenditore?: boolean }
+export type QueryAbbonamentiOptions = { inScadenza?: number; leftJoinVenditore?: boolean; dataFineEq?: string }
 
 /**
  * Età da tabella utenti: SOLO se imposti GESTIONALE_UTENTI_COL_ETA al nome reale della colonna.
@@ -2030,10 +2030,15 @@ export async function queryAbbonamenti(
   const tblA = getAbbonamentiTableName()
   const tblU = defaultTables.clienti
   const inScadenza = options?.inScadenza
-  const dateFilter =
+  const dataFineEq = String(options?.dataFineEq ?? "").trim()
+  const dataFineOk = /^\d{4}-\d{2}-\d{2}$/.test(dataFineEq) ? dataFineEq : ""
+  let dateFilter =
     inScadenza != null && inScadenza > 0
       ? ` AND CAST(a.DataFine AS DATE) >= CAST(GETDATE() AS DATE) AND CAST(a.DataFine AS DATE) <= CAST(DATEADD(day, ${Math.min(365, inScadenza)}, GETDATE()) AS DATE)`
       : ""
+  if (dataFineOk) {
+    dateFilter += ` AND CAST(a.DataFine AS DATE) = CAST('${dataFineOk}' AS DATE)`
+  }
   const etaFrag = sqlUtenteEtaFragment()
 
   const runWithCol = async (col: string) => {

@@ -544,6 +544,12 @@ export function ScuolaNuoto() {
                 Calendario planning scuola nuoto
               </Link>
               <Link
+                to="/scuola-nuoto/rinnovi"
+                className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
+              >
+                Rinnovi corsi
+              </Link>
+              <Link
                 to="/scuola-nuoto/note"
                 className="text-sm font-medium text-[#46A6D9] underline-offset-2 hover:underline"
               >

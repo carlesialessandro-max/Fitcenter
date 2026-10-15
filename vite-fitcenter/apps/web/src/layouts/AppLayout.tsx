@@ -110,7 +110,10 @@ const navScuolaNuoto: NavItem[] = [
   {
     to: "/scuola-nuoto",
     label: "Scuola Nuoto",
-    children: [{ to: "/scuola-nuoto/note", label: "Archivio note" }],
+    children: [
+      { to: "/scuola-nuoto/rinnovi", label: "Rinnovi corsi" },
+      { to: "/scuola-nuoto/note", label: "Archivio note" },
+    ],
   },
   { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
   navLezioniPrivateGroup,
@@ -143,6 +146,17 @@ const navCrm: NavItem[] = [
   { to: "/crm", label: "CRM Vendita" },
   { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
 ]
+
+const navScuolaNuotoRinnoviGroup: NavItem = {
+  to: "/scuola-nuoto",
+  label: "Scuola Nuoto",
+  children: [
+    { to: "/scuola-nuoto/rinnovi", label: "Rinnovi corsi" },
+    { to: "/scuola-nuoto/note", label: "Archivio note" },
+  ],
+}
+
+const navCrmBambini: NavItem[] = [...navCrm, navScuolaNuotoRinnoviGroup]
 
 function navAdminForPath(pathname: string): NavItem[] {
   const menu: NavItem = { to: "/", label: "Menu" }
@@ -280,8 +294,10 @@ export function AppLayout() {
     role === "calendari" &&
     !location.pathname.startsWith("/calendario")
   const roleNav: NavItem[] =
-    leadFilter === "bambini" || role === "crm"
-      ? navCrm
+    leadFilter === "bambini"
+      ? navCrmBambini
+      : role === "crm"
+        ? navCrm
       : role === "admin"
         ? navAdminForPath(location.pathname)
         : role === "calendari"

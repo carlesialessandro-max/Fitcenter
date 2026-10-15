@@ -14,7 +14,12 @@ import {
 } from "../handlers/calendario.js"
 import { getCorsiGestione, patchCorsiGestione, getCorsiClientiSearch } from "../handlers/corsiGestione.js"
 import { getNuotoLibero, patchNuotoLibero } from "../handlers/nuotoLibero.js"
-import { requireAdmin, requireAdminOrCampus, requireAdminOrOperatore, requireAuth, requireAdminOrDanza } from "../middleware/auth.js"
+import { requireAdmin, requireAdminOrCampus, requireAdminOrOperatore, requireAuth, requireAdminOrDanza, requireScuolaNuotoRinnovi } from "../middleware/auth.js"
+import {
+  getScuolaNuotoRinnovi,
+  getScuolaNuotoRinnoviMeta,
+  postScuolaNuotoRinnoviInvia,
+} from "../handlers/scuola-nuoto-rinnovi.js"
 import multer from "multer"
 import { getIncassi, getIncassiRiepilogo } from "../handlers/incassi.js"
 
@@ -49,6 +54,9 @@ dataRouter.get("/dettaglio-mese", getDettaglioMese)
 dataRouter.get("/dettaglio-anno", requireAdmin, getDettaglioAnno)
 dataRouter.get("/clienti", getClienti)
 dataRouter.get("/abbonamenti", getAbbonamenti)
+dataRouter.get("/scuola-nuoto-rinnovi/meta", requireScuolaNuotoRinnovi, getScuolaNuotoRinnoviMeta)
+dataRouter.get("/scuola-nuoto-rinnovi", requireScuolaNuotoRinnovi, getScuolaNuotoRinnovi)
+dataRouter.post("/scuola-nuoto-rinnovi-invia", requireScuolaNuotoRinnovi, postScuolaNuotoRinnoviInvia)
 dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
 dataRouter.get("/abbonamenti-attivi-contatti", requireAdmin, getAbbonamentiAttiviContatti)
 dataRouter.post("/abbonamenti-attivi-invia", requireAdmin, postAbbonamentiAttiviInvia)

@@ -32,6 +32,9 @@ import type {
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
 import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
+import { markRinnovato } from "../lib/mark-rinnovato.js"
+
+export { markRinnovato }
 
 /** Budget mensile: solo valori salvati (somma consulenti o snapshot totale). */
 function getBudgetListForYear(anno: number): { anno: number; mese: number; budget: number; vendite?: number }[] {
@@ -148,54 +151,6 @@ function parseDateToTime(s: string): number {
   if (it) return new Date(+it[3], +it[2] - 1, +it[1]).getTime()
   const d = new Date(t).getTime()
   return Number.isNaN(d) ? 0 : d
-}
-
-/** Marca rinnovato=true se esiste un altro abbonamento dello stesso cliente con dataInizio > dataFine di questo. */
-function markRinnovato(list: Abbonamento[]): void {
-  // Versione ottimizzata: O(n) invece di O(n^2).
-  // Per ogni cliente teniamo il massimo (dataInizio) e il secondo massimo, così
-  // possiamo decidere rapidamente se esiste un "altro" abbonamento rinnovato.
-  type Top = { time: number; id: string | null }
-  const topsByCliente = new Map<string, { top1: Top; top2: Top }>()
-
-  for (const a of list) {
-    const cliente = String(a.clienteId ?? "").trim()
-    if (!cliente) continue
-
-    const id = String(a.id ?? "").trim() || null
-    const inizioT = parseDateToTime(a.dataInizio ?? "")
-    const entry = topsByCliente.get(cliente)
-    if (!entry) {
-      topsByCliente.set(cliente, { top1: { time: inizioT, id }, top2: { time: 0, id: null } })
-      continue
-    }
-
-    // Aggiorna top1/top2 mantenendo due migliori per tempo, evitando di "duplicare" l'id.
-    if (inizioT > entry.top1.time) {
-      entry.top2 = entry.top1
-      entry.top1 = { time: inizioT, id }
-    } else if (id !== entry.top1.id && inizioT > entry.top2.time) {
-      entry.top2 = { time: inizioT, id }
-    }
-  }
-
-  for (const a of list) {
-    const cliente = String(a.clienteId ?? "").trim()
-    if (!cliente) continue
-
-    const id = String(a.id ?? "").trim() || null
-    const dataFineA = parseDateToTime(a.dataFine ?? "")
-    if (!dataFineA) continue
-
-    const entry = topsByCliente.get(cliente)
-    if (!entry) {
-      a.rinnovato = false
-      continue
-    }
-
-    const maxOther = entry.top1.id !== id ? entry.top1.time : entry.top2.time
-    a.rinnovato = maxOther > dataFineA
-  }
 }
 
 /** Cartella VARIE del gestionale e tutte le sottocategorie (tesseramenti, GYMPAY, BeActive, …). */

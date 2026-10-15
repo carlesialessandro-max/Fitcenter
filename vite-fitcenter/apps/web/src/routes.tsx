@@ -28,6 +28,7 @@ import { StampaReport } from "@/pages/StampaReport"
 import { Campus } from "@/pages/Campus"
 import { ScuolaNuoto } from "@/pages/ScuolaNuoto"
 import { ScuolaNuotoNoteArchivio } from "@/pages/ScuolaNuotoNoteArchivio"
+import { ScuolaNuotoRinnovi } from "@/pages/ScuolaNuotoRinnovi"
 import { LezioniPrivate } from "@/pages/LezioniPrivate"
 import { PiscinaMappa } from "@/pages/PiscinaMappa"
 import { Incassi } from "@/pages/Incassi"
@@ -113,6 +114,7 @@ export const router = createBrowserRouter([
       { path: "referral", element: <Referral /> },
       { path: "scuola-nuoto", element: <ScuolaNuoto /> },
       { path: "scuola-nuoto/note", element: <ScuolaNuotoNoteArchivio /> },
+      { path: "scuola-nuoto/rinnovi", element: <ScuolaNuotoRinnovi /> },
       { path: "lezioni-private", element: <Navigate to="/lezioni-private/richieste" replace /> },
       { path: "lezioni-private/richieste", element: <LezioniPrivate /> },
       { path: "lezioni-private/calendario", element: <LezioniPrivate /> },

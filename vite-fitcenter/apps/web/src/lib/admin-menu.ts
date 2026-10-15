@@ -56,6 +56,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
     tone: "main",
     items: [
       { to: "/scuola-nuoto", label: "Scuola nuoto" },
+      { to: "/scuola-nuoto/rinnovi", label: "Rinnovi corsi" },
       { to: "/scuola-nuoto/note", label: "Archivio note" },
     ],
   },

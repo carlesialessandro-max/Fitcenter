@@ -9,6 +9,8 @@ import type {
   AbbAttiviContattiResponse,
   AbbAttiviInviaResponse,
   AbbAttiviInviiResponse,
+  ScuolaNuotoRinnoviInviaResponse,
+  ScuolaNuotoRinnoviResponse,
 } from "@/types/gestionale"
 import type { Lead } from "@/types/lead"
 import { api } from "./client"
@@ -116,6 +118,16 @@ export const dataApi = {
     api.delete<{ ok: boolean }>(`/data/abbonamenti-attivi-invii/${encodeURIComponent(id)}`),
   deleteAbbonamentiAttiviInvii: () =>
     api.delete<{ ok: boolean; removed: number }>("/data/abbonamenti-attivi-invii"),
+  getScuolaNuotoRinnovi: (dataFine: string) =>
+    api.get<ScuolaNuotoRinnoviResponse>(`/data/scuola-nuoto-rinnovi?dataFine=${encodeURIComponent(dataFine)}`),
+  postScuolaNuotoRinnoviInvia: (body: {
+    dataFine: string
+    clienteIds: string[]
+    channel: "email" | "sms"
+    subject?: string
+    text: string
+    confirm: true
+  }) => api.post<ScuolaNuotoRinnoviInviaResponse>("/data/scuola-nuoto-rinnovi-invia", body),
   getAbbonamenti: (consulente?: string, inScadenza?: 30 | 60) => {
     let url = withConsulente("/data/abbonamenti", consulente)
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza

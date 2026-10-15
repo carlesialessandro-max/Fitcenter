@@ -90,6 +90,15 @@ export function requireAdminOrScuolaNuoto(req: Request, res: Response, next: Nex
   next()
 }
 
+/** Rinnovi corsi bambini: admin, scuola nuoto, consulenti bambini (es. Irene). */
+export function requireScuolaNuotoRinnovi(req: Request, res: Response, next: NextFunction) {
+  const u = req.user
+  if (!u) return res.status(401).json({ message: "Token mancante" })
+  if (u.role === "admin" || u.role === "scuola_nuoto") return next()
+  if (u.role === "operatore" && u.leadFilter === "bambini") return next()
+  return res.status(403).json({ message: "Permessi insufficienti" })
+}
+
 /** Reception, scuola nuoto e istruttori: lezioni private acqua. */
 export function requireLezioniPrivate(req: Request, res: Response, next: NextFunction) {
   const u = req.user
