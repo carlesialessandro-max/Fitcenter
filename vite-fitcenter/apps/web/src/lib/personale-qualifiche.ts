@@ -18,7 +18,7 @@ export const VALIDITA_ANNI_QUALIFICA: Record<PersonaleQualificaId, number> = {
   rls: 1,
   responsabile_piscina: 5,
   blsd: 2,
-  visita_medica: 2,
+  visita_medica: 1,
 }
 
 export function isPersonaleQualificaId(v: string): v is PersonaleQualificaId {
