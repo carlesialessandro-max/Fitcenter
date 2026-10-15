@@ -8,6 +8,7 @@ import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
@@ -204,6 +205,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             </select>
           )}
           <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
+          <ThemeToggle compact />
           <button type="button" className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300" onClick={() => void logout()}>
             Esci
           </button>

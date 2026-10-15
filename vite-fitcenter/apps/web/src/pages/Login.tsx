@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { authApi, type LoginResponse } from "@/api/auth"
 import { BrandLogo } from "@/components/BrandLogo"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
+import { ThemeToggle } from "@/components/ThemeToggle"
 
 export function Login() {
   const navigate = useNavigate()
@@ -157,6 +158,9 @@ export function Login() {
             </button>
           </form>
         )}
+        <div className="mt-6 border-t border-zinc-800 pt-4">
+          <ThemeToggle />
+        </div>
       </div>
       <PwaInstallHint />
     </div>

@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, Navigate } from "react-router-dom"
 import { cn } from "@workspace/ui/lib/utils"
 import { useAuth } from "@/contexts/AuthContext"
 import { BrandLogo } from "@/components/BrandLogo"
+import { ThemeToggle } from "@/components/ThemeToggle"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { adminMenuGroupForPath } from "@/lib/admin-menu"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
@@ -355,6 +356,7 @@ export function AppLayout() {
                     ? "Responsabile calendari"
                     : "Operatore"}
         </p>
+        <ThemeToggle />
         <button
           type="button"
           onClick={() => logout()}

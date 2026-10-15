@@ -7,8 +7,77 @@ html,
 body,
 #root {
   min-height: 100%;
-  background: #09090b;
 }
+html.dark,
+html:not(.light) {
+  color-scheme: dark;
+}
+html.dark body,
+html.dark #root,
+html:not(.light) body,
+html:not(.light) #root {
+  background: #09090b;
+  color: #fafafa;
+}
+html.light {
+  color-scheme: light;
+}
+html.light body,
+html.light #root {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+/* Tema chiaro: adatta le utility zinc più usate nel gestionale */
+html.light .bg-zinc-950,
+html.light .bg-zinc-950\/90,
+html.light .bg-zinc-950\/80,
+html.light .bg-zinc-950\/60,
+html.light .bg-zinc-950\/50,
+html.light .bg-zinc-950\/40,
+html.light .bg-zinc-950\/30,
+html.light .bg-zinc-950\/20 {
+  background-color: rgb(250 250 250) !important;
+}
+html.light .bg-zinc-900,
+html.light .bg-zinc-900\/95,
+html.light .bg-zinc-900\/50,
+html.light .bg-zinc-900\/40,
+html.light .bg-zinc-900\/30 {
+  background-color: rgb(255 255 255) !important;
+}
+html.light .bg-zinc-800,
+html.light .hover\:bg-zinc-800:hover {
+  background-color: #e4e4e7 !important;
+}
+html.light .text-zinc-100,
+html.light .text-zinc-200 {
+  color: #18181b !important;
+}
+html.light .text-zinc-300,
+html.light .text-zinc-400 {
+  color: #3f3f46 !important;
+}
+html.light .text-zinc-500,
+html.light .text-zinc-600 {
+  color: #71717a !important;
+}
+html.light .border-zinc-600,
+html.light .border-zinc-700,
+html.light .border-zinc-800 {
+  border-color: #d4d4d8 !important;
+}
+html.light input:not([type="checkbox"]):not([type="radio"]),
+html.light select,
+html.light textarea {
+  background-color: #fff !important;
+  color: #18181b !important;
+}
+html.light .placeholder\:text-zinc-500::placeholder,
+html.light .placeholder\:text-zinc-600::placeholder {
+  color: #a1a1aa !important;
+}
+
 body {
   margin: 0;
 }

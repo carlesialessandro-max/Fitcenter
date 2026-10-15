@@ -10,7 +10,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary"
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ErrorBoundary>
-      <ThemeProvider>
+      <ThemeProvider defaultTheme="dark" storageKey="fitcenter-theme">
 <AuthProvider>
         <App />
       </AuthProvider>
