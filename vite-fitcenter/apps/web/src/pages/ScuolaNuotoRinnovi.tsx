@@ -2,8 +2,9 @@ import { useEffect, useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
-import type { RinnovoCorsoRow, ScuolaNuotoRinnoviResponse } from "@/types/gestionale"
+import type { ScuolaNuotoRinnoviResponse } from "@/types/gestionale"
 import { SCUOLA_NUOTO_CORSI_SCADENZA } from "@/lib/scuola-nuoto-rinnovi"
+import { groupRinnoviByBambino, type RinnovoCorsoGruppo } from "@/lib/scuola-nuoto-rinnovi-group"
 
 type Channel = "email" | "sms"
 type Tab = "acquaticita" | "scuola_nuoto"
@@ -16,17 +17,17 @@ function toggleSet(prev: Set<string>, id: string): Set<string> {
 }
 
 function RinnoviTable({
-  rows,
+  groups,
   selected,
   onToggle,
   onToggleAll,
 }: {
-  rows: RinnovoCorsoRow[]
+  groups: RinnovoCorsoGruppo[]
   selected: Set<string>
-  onToggle: (id: string) => void
+  onToggle: (clienteId: string) => void
   onToggleAll: (ids: string[], on: boolean) => void
 }) {
-  const allIds = rows.map((r) => r.clienteId)
+  const allIds = groups.map((g) => g.clienteId)
   const allOn = allIds.length > 0 && allIds.every((id) => selected.has(id))
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-800">
@@ -42,29 +43,39 @@ function RinnoviTable({
               />
             </th>
             <th className="px-3 py-2">Cliente</th>
-            <th className="px-3 py-2">Abbonamento</th>
+            <th className="px-3 py-2">Abbonamenti (giorni / corsi)</th>
             <th className="px-3 py-2">Email</th>
             <th className="px-3 py-2">Cellulare</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800 text-zinc-200">
-          {rows.map((r) => (
-            <tr key={`${r.clienteId}-${r.abbonamentoId}`} className="hover:bg-zinc-900/40">
+          {groups.map((g) => (
+            <tr key={g.clienteId} className="hover:bg-zinc-900/40">
               <td className="px-3 py-2">
                 <input
                   type="checkbox"
-                  checked={selected.has(r.clienteId)}
-                  onChange={() => onToggle(r.clienteId)}
+                  checked={selected.has(g.clienteId)}
+                  onChange={() => onToggle(g.clienteId)}
                   className="accent-amber-500"
                 />
               </td>
-              <td className="px-3 py-2">{r.nome}</td>
-              <td className="px-3 py-2 text-zinc-400">{r.piano}</td>
-              <td className="px-3 py-2 text-xs text-zinc-400">{r.email ?? "—"}</td>
-              <td className="px-3 py-2 text-xs text-zinc-400">{r.telefono ?? "—"}</td>
+              <td className="px-3 py-2">{g.nome}</td>
+              <td className="px-3 py-2 text-zinc-400">
+                {g.piani.length > 1 ? (
+                  <ul className="list-inside list-disc text-xs">
+                    {g.piani.map((p) => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  g.piani[0] ?? "—"
+                )}
+              </td>
+              <td className="px-3 py-2 text-xs text-zinc-400">{g.email ?? "—"}</td>
+              <td className="px-3 py-2 text-xs text-zinc-400">{g.telefono ?? "—"}</td>
             </tr>
           ))}
-          {!rows.length && (
+          {!groups.length && (
             <tr>
               <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
                 Nessun abbonamento in scadenza per questo corso.
@@ -99,10 +110,12 @@ export function ScuolaNuotoRinnovi() {
     return tab === "acquaticita" ? d.acquaticita : d.scuolaNuoto
   }, [d, tab])
 
+  const tabGroups = useMemo(() => groupRinnoviByBambino(tabRows), [tabRows])
+
   useEffect(() => {
-    setSelected(new Set(tabRows.map((r) => r.clienteId)))
+    setSelected(new Set(tabGroups.map((g) => g.clienteId)))
     setConfirm(false)
-  }, [dataFine, tab, tabRows.length, tabRows[0]?.clienteId])
+  }, [dataFine, tab, tabGroups.length, tabGroups[0]?.clienteId])
 
   const sendM = useMutation({
     mutationFn: () =>
@@ -120,9 +133,9 @@ export function ScuolaNuotoRinnovi() {
     },
   })
 
-  const selectedInTab = tabRows.filter((r) => selected.has(r.clienteId))
+  const selectedGroups = tabGroups.filter((g) => selected.has(g.clienteId))
   const reachable =
-    channel === "email" ? selectedInTab.filter((r) => r.email) : selectedInTab.filter((r) => r.telefono)
+    channel === "email" ? selectedGroups.filter((g) => g.email) : selectedGroups.filter((g) => g.telefono)
 
   const canSend =
     confirm &&
@@ -138,7 +151,8 @@ export function ScuolaNuotoRinnovi() {
         <div>
           <h1 className="text-xl font-semibold text-zinc-100">Rinnovi corsi bambini</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            Scuola nuoto e acquaticità: elenco per fine corso e invio email/SMS come per gli abbonati attivi.
+            Scuola nuoto e acquaticità: un bambino con più giorni (es. lunedì e venerdì) compare una sola volta; l&apos;email
+            di rinnovo parte una volta per famiglia.
           </p>
         </div>
         <Link to="/scuola-nuoto" className="text-sm text-amber-400 hover:underline">
@@ -167,7 +181,8 @@ export function ScuolaNuotoRinnovi() {
       {d && (
         <>
           <p className="text-sm text-zinc-400">
-            {d.totale} in scadenza · {d.conEmail} con email · {d.conTelefono} con cellulare
+            {d.totaleBambini ?? d.totale} bambini · {d.totale} abbonamenti in scadenza · {d.conEmail} con email ·{" "}
+            {d.conTelefono} con cellulare
           </p>
 
           <div className="flex flex-wrap gap-2">
@@ -176,14 +191,14 @@ export function ScuolaNuotoRinnovi() {
               onClick={() => setTab("acquaticita")}
               className={`rounded-full px-3 py-1 text-sm ${tab === "acquaticita" ? "bg-cyan-600 text-white" : "bg-zinc-800 text-zinc-300"}`}
             >
-              Acquaticità ({d.acquaticita.length})
+              Acquaticità ({d.statsAcquaticita?.bambini ?? d.acquaticita.length})
             </button>
             <button
               type="button"
               onClick={() => setTab("scuola_nuoto")}
               className={`rounded-full px-3 py-1 text-sm ${tab === "scuola_nuoto" ? "bg-sky-600 text-white" : "bg-zinc-800 text-zinc-300"}`}
             >
-              Scuola nuoto ({d.scuolaNuoto.length})
+              Scuola nuoto ({d.statsScuolaNuoto?.bambini ?? d.scuolaNuoto.length})
             </button>
             <button
               type="button"
@@ -199,7 +214,7 @@ export function ScuolaNuotoRinnovi() {
           </div>
 
           <RinnoviTable
-            rows={tabRows}
+            groups={tabGroups}
             selected={selected}
             onToggle={(id) => setSelected((s) => toggleSet(s, id))}
             onToggleAll={(ids, on) =>
@@ -228,7 +243,7 @@ export function ScuolaNuotoRinnovi() {
             <div className="border-b border-zinc-800 px-4 py-3">
               <h2 className="text-base font-semibold text-zinc-100">Messaggio rinnovo corso</h2>
               <p className="text-xs text-zinc-500">
-                {selectedInTab.length} selezionati in {tab === "acquaticita" ? "Acquaticità" : "Scuola nuoto"} · fine{" "}
+                {selectedGroups.length} bambini selezionati in {tab === "acquaticita" ? "Acquaticità" : "Scuola nuoto"} · fine{" "}
                 {SCUOLA_NUOTO_CORSI_SCADENZA.find((c) => c.dataFine === dataFine)?.label}
               </p>
             </div>
@@ -271,8 +286,9 @@ export function ScuolaNuotoRinnovi() {
               </label>
               <label className="flex items-start gap-2 text-sm text-zinc-300">
                 <input type="checkbox" checked={confirm} onChange={(e) => setConfirm(e.target.checked)} className="mt-1 accent-amber-500" />
-                Confermo l&apos;invio {channel === "email" ? "email" : "SMS"} a {reachable.length} persone (
-                {selectedInTab.length - reachable.length} senza contatto esclusi).
+                Confermo l&apos;invio {channel === "email" ? "email" : "SMS"} a {reachable.length} bambini (
+                {selectedGroups.length - reachable.length} senza contatto esclusi). Un solo messaggio per bambino anche con più
+                abbonamenti.
               </label>
               {reachable.length > 800 && (
                 <p className="text-sm text-red-400">Troppi destinatari ({reachable.length}). Max 800: restringi la selezione.</p>

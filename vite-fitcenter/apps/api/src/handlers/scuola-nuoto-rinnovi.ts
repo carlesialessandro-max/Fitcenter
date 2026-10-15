@@ -90,11 +90,26 @@ export async function getScuolaNuotoRinnovi(req: Request, res: Response) {
     const rows = await loadRinnoviRows(dataFine)
     const acquaticita = rows.filter((r) => r.tipologia === "acquaticita")
     const scuolaNuoto = rows.filter((r) => r.tipologia === "scuola_nuoto")
+    const stats = (list: RinnovoCorsoRow[]) => {
+      const bambini = new Set(list.map((r) => r.clienteId))
+      const email = new Set(list.filter((r) => r.email).map((r) => r.clienteId))
+      const tel = new Set(list.filter((r) => r.telefono).map((r) => r.clienteId))
+      return {
+        abbonamenti: list.length,
+        bambini: bambini.size,
+        conEmail: email.size,
+        conTelefono: tel.size,
+      }
+    }
+    const all = stats(rows)
     res.json({
       dataFine,
-      totale: rows.length,
-      conEmail: rows.filter((r) => r.email).length,
-      conTelefono: rows.filter((r) => r.telefono).length,
+      totale: all.abbonamenti,
+      totaleBambini: all.bambini,
+      conEmail: all.conEmail,
+      conTelefono: all.conTelefono,
+      statsAcquaticita: stats(acquaticita),
+      statsScuolaNuoto: stats(scuolaNuoto),
       acquaticita,
       scuolaNuoto,
     })
@@ -148,18 +163,24 @@ export async function postScuolaNuotoRinnoviInvia(req: Request, res: Response) {
 
     const loaded = await loadRinnoviRows(dataFine)
     const allow = new Set(ids)
-    const picked = loaded.filter((r) => allow.has(r.clienteId))
-    if (!picked.length) return res.status(400).json({ message: "Nessun destinatario valido per questo corso" })
-    if (picked.length > 800) {
-      return res.status(400).json({ message: `Troppi destinatari (${picked.length}). Max 800.` })
-    }
+    const pickedAbb = loaded.filter((r) => allow.has(r.clienteId))
+    if (!pickedAbb.length) return res.status(400).json({ message: "Nessun destinatario valido per questo corso" })
 
-    const rows: ContattoInvio[] = picked.map((r) => ({
-      clienteId: r.clienteId,
-      nome: r.nome,
-      email: r.email,
-      telefono: r.telefono,
-    }))
+    const rows: ContattoInvio[] = []
+    const seenCliente = new Set<string>()
+    for (const r of pickedAbb) {
+      if (seenCliente.has(r.clienteId)) continue
+      seenCliente.add(r.clienteId)
+      rows.push({
+        clienteId: r.clienteId,
+        nome: r.nome,
+        email: r.email,
+        telefono: r.telefono,
+      })
+    }
+    if (rows.length > 800) {
+      return res.status(400).json({ message: `Troppi destinatari (${rows.length} bambini). Max 800.` })
+    }
 
     let sent = 0
     let failed = 0

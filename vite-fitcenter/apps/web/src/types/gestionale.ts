@@ -160,11 +160,21 @@ export type RinnovoCorsoRow = {
   consulenteNome: string | null
 }
 
+export type RinnovoCorsoStats = {
+  abbonamenti: number
+  bambini: number
+  conEmail: number
+  conTelefono: number
+}
+
 export interface ScuolaNuotoRinnoviResponse {
   dataFine: string
   totale: number
+  totaleBambini: number
   conEmail: number
   conTelefono: number
+  statsAcquaticita?: RinnovoCorsoStats
+  statsScuolaNuoto?: RinnovoCorsoStats
   acquaticita: RinnovoCorsoRow[]
   scuolaNuoto: RinnovoCorsoRow[]
 }
