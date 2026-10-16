@@ -120,13 +120,80 @@ function qualificaRepartoHint(chunk: string): string {
   return "amministrazione-uffici"
 }
 
-function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {
+const SKIP_RIEPILOGO =
+  /totale|matricola|cognome|nominativo|retribuz|trattenut|competenze|costo az|inps|inail|tfr|irpef|addizional|ditta|periodo|mese di|pagina|stampa|teamsystem|codice fiscale|cf\b|qualifica|netto busta/i
+
+function lastAmountOn(line: string): number | null {
+  const amts = amountsOn(line)
+  if (!amts.length) return null
+  return amts[amts.length - 1]!
+}
+
+/** In fondo al PDF Teamsystem: non sommare i cedolini, usare il riepilogo paghe. */
+function parseTeamsystemRiepilogo(text: string, mese: string): AmmPdfRiga[] {
+  const header = /r\s*i\s*e\s*p\s*i\s*l\s*o\s*g\s*o\s*[\s\n]*p\s*a\s*g\s*h\s*e|riepilogo\s+paghe/i.exec(text)
+  if (!header || header.index == null) return []
+  let section = text.slice(header.index)
+  const cut = section.search(/\n(?=DISTINTA CONTANTI|STAMPA VERSAMENTI|VERSAMENTI CONTRIBUTI)/i)
+  if (cut > 80) section = section.slice(0, cut)
+  const ym = meseFromText(section, mese)
+  const rows: AmmPdfRiga[] = []
+  const seen = new Set<string>()
+  let totRiepilogo: number | null = null
+  for (const raw of section.split(/\r?\n/)) {
+    const line = raw.replace(/\t/g, " ").replace(/[ \t]+/g, " ").trim()
+    if (!line) continue
+    if (/^totale\b/i.test(line)) {
+      const n = lastAmountOn(line)
+      if (n != null && n > 0) totRiepilogo = n
+      continue
+    }
+    if (SKIP_RIEPILOGO.test(line) && amountsOn(line).length < 1) continue
+    const nameM =
+      /^(?:\d{1,6}\s+)?([A-ZÀ-Ùa-zà-ù'][A-ZÀ-Ùa-zà-ù'\s]{3,55}?)(?:\s+)((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/.exec(line)
+    if (!nameM) continue
+    const nominativo = titleName(nameM[1] ?? "")
+    if (nominativo.split(" ").length < 2) continue
+    if (/totale|riepilogo|paghe|ditta/i.test(nominativo)) continue
+    const tot = lastAmountOn(line)
+    if (tot == null || tot <= 0) continue
+    const key = nominativo.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    rows.push({
+      nominativo,
+      mese: ym,
+      totale: tot,
+      descrizione: "Riepilogo paghe",
+      tipo: "dipendente",
+      qualifica: "amministrazione-uffici",
+    })
+  }
+  const sommaNomi = Math.round(rows.reduce((s, r) => s + r.totale, 0) * 100) / 100
+  if (totRiepilogo != null && totRiepilogo > 0) {
+    if (rows.length >= 3 && Math.abs(sommaNomi - totRiepilogo) / totRiepilogo < 0.08) return rows
+    return [
+      {
+        nominativo: "Dipendenti fissi (riepilogo paghe)",
+        mese: ym,
+        totale: totRiepilogo,
+        descrizione: "Riepilogo paghe Teamsystem",
+        tipo: "dipendente",
+        qualifica: "amministrazione-uffici",
+      },
+    ]
+  }
+  if (rows.length >= 3) return rows
+  return []
+}
+
+function parseTeamsystemBuste(text: string, mese: string): AmmPdfRiga[] {
   const ym = meseFromText(text, mese)
   const pages = text.split(/\n--- PAGE \d+ ---\n/i)
   const chunks = pages.length > 1 ? pages : text.split(/\n(?=Ditta\b)/)
   const byName = new Map<string, AmmPdfRiga>()
   for (const chunk of chunks) {
-    if (/R\s*I\s*E\s*P\s*I\s*L\s*O\s*G\s*O\s*P\s*A\s*G\s*H\s*E/i.test(chunk)) continue
+    if (/R\s*I\s*E\s*P\s*I\s*L\s*O\s*G\s*O\s*P\s*A\s*G\s*H\s*E|riepilogo\s+paghe/i.test(chunk)) continue
     if (/DISTINTA CONTANTI/i.test(chunk)) continue
     if (/STAMPA VERSAMENTI CONTRIBUTI/i.test(chunk)) continue
     const hm = MESE_RE.exec(chunk)
@@ -148,6 +215,12 @@ function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {
     })
   }
   return [...byName.values()]
+}
+
+function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {
+  const riep = parseTeamsystemRiepilogo(text, mese)
+  if (riep.length) return riep
+  return parseTeamsystemBuste(text, mese)
 }
 
 export function parseStipendiPdf(text: string, filename: string, mese: string): AmmPdfRiga[] {

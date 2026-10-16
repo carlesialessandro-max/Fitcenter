@@ -26,16 +26,29 @@ function linesFromItems(items: PdfItem[]): string[] {
 }
 
 /** Estrae testo da un PDF fattura (client, pdfjs), raggruppato per riga. */
-export async function extractPdfText(file: File, maxPages = 8): Promise<string> {
+export async function extractPdfText(
+  file: File,
+  maxPages = 8,
+  opts?: { preferTail?: boolean }
+): Promise<string> {
   const pdfjsLib = await import("pdfjs-dist")
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
   }
   const buf = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise
+  const pages: number[] = []
+  if (opts?.preferTail && pdf.numPages > maxPages) {
+    const tail = Math.min(20, pdf.numPages)
+    const head = Math.min(2, Math.max(0, pdf.numPages - tail))
+    for (let i = 1; i <= head; i++) pages.push(i)
+    for (let i = pdf.numPages - tail + 1; i <= pdf.numPages; i++) pages.push(i)
+  } else {
+    const n = Math.min(pdf.numPages, maxPages)
+    for (let i = 1; i <= n; i++) pages.push(i)
+  }
   const parts: string[] = []
-  const n = Math.min(pdf.numPages, maxPages)
-  for (let i = 1; i <= n; i++) {
+  for (const i of pages) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const items: PdfItem[] = []

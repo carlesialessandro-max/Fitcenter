@@ -510,7 +510,6 @@ export const ammCostiStore = {
     const d = load()
     let n = 0
     for (const s of d.spese) {
-      if (s.quoteEccezione) continue
       const seed = seedFornitore(s.fornitore)
       if (seed?.stagionale !== "piscina-estate") continue
       const expected = resolveQuoteFornitore({
@@ -521,7 +520,13 @@ export const ammCostiStore = {
         excludeSpesaId: s.id,
       })
       if (!expected?.length || !quoteValide(expected) || quotesMatch(s.quote, expected)) continue
+      const defaultCoperta =
+        s.quote.length === 1 &&
+        (s.quote[0]!.repartoId === "piscina-coperta" || s.quote[0]!.repartoId === "piscina") &&
+        Math.abs(Number(s.quote[0]!.percentuale) - 100) < 0.05
+      if (s.quoteEccezione && !defaultCoperta && !isQuoteDumpDefault(s.quote)) continue
       s.quote = expected.map((x) => ({ ...x }))
+      delete s.quoteEccezione
       s.updatedAt = nowIso()
       n += 1
     }
@@ -562,11 +567,12 @@ export const ammCostiStore = {
     }
     for (const r of remembered) {
       if (!r.key || !mark(r.key)) continue
+      const seed = seedFornitore(r.ragioneSociale) ?? seedFornitore(r.key)
       out.push({
         chiave: r.key,
         ragioneSociale: r.ragioneSociale,
         quote: r.quote.map((q) => ({ ...q })),
-        stagionale: r.stagionale,
+        stagionale: r.stagionale ?? seed?.stagionale,
       })
     }
     for (const s of FORNITORI_QUOTE_SEED) {

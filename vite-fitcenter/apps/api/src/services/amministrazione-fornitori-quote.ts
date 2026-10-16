@@ -28,8 +28,8 @@ export const FORNITORI_QUOTE_SEED: AmmFornitoreQuoteSeed[] = [
   { match: ["bracali"], label: "Bracali", quote: q("corsi-acqua") },
   { match: ["mangiavacchi"], label: "Mangiavacchi", quote: q("pulizie") },
   {
-    match: ["ramo rappresentanze", "ramo"],
-    label: "RAMO Rappresentanze",
+    match: ["ramo rappresentanze", "ra.mo", "ra mo", "ramo"],
+    label: "RA.MO",
     quote: q("piscina-coperta"),
     stagionale: "piscina-estate",
   },
@@ -63,28 +63,30 @@ export function speseStessoFornitoreStagionale(nome: string, fornitoreSpesa: str
   return Boolean(a && b && (a === b || a.includes(b) || b.includes(a)))
 }
 
-/** Giugno–agosto: estiva. Settembre: solo date prima della prima fornitura del mese (apertura piscina esterna). */
+/** Giugno–agosto sempre. Settembre: fino alla prima fornitura del fornitore (apertura piscina esterna), inclusa. */
 export function inFinestraPiscinaEstate(
   dataDocumento: string,
   nomeFornitore: string,
   spese?: AmmSpesaQuoteCtx[],
-  excludeSpesaId?: string
+  _excludeSpesaId?: string
 ): boolean {
   const am = annoMese(dataDocumento)
   if (!am) return false
   const { anno, mese } = am
-  const doc = dataDocumento.slice(0, 10)
+  const doc = String(dataDocumento ?? "").slice(0, 10)
   if (mese < 6 || mese > 9) return false
   if (mese >= 6 && mese <= 8) return true
-  const altreSettembre = (spese ?? [])
-    .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
-    .filter((s) => speseStessoFornitoreStagionale(nomeFornitore, s.fornitore))
-    .map((s) => String(s.dataDocumento).slice(0, 10))
+  const settembre = [
+    ...(spese ?? [])
+      .filter((s) => speseStessoFornitoreStagionale(nomeFornitore, s.fornitore))
+      .map((s) => String(s.dataDocumento).slice(0, 10)),
+    doc,
+  ]
     .filter((d) => d.startsWith(`${anno}-09`))
     .sort()
-  const primaFornitura = altreSettembre[0]
-  if (!primaFornitura) return false
-  return doc < primaFornitura
+  const prima = settembre[0]
+  if (!prima) return true
+  return doc <= prima
 }
 
 export function quotesMatch(a: AmmQuota[], b: AmmQuota[]): boolean {

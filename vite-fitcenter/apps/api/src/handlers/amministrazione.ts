@@ -1017,7 +1017,6 @@ export async function postFicSync(req: Request, res: Response) {
       }
     }
     ammCostiStore.riapplicaQuoteFornitoriNoti()
-    ammCostiStore.riapplicaQuotePiscinaEstate()
     const docs = await listAcquistiMese(ficStore.get() ?? cfg, mese)
     const repartoId = String(req.body?.repartoId ?? cfg.defaultRepartoId ?? FIC_DEFAULT_REPARTO).trim() || FIC_DEFAULT_REPARTO
     const ids = new Set(ammCostiStore.listReparti(true).map((r) => r.id))
@@ -1047,6 +1046,7 @@ export async function postFicSync(req: Request, res: Response) {
         errori.push({ riga: i + 1, message: (e as Error)?.message ?? "Documento non importabile" })
       }
     })
+    ammCostiStore.riapplicaQuotePiscinaEstate()
     ficStore.markSynced()
     res.json({
       inserite,

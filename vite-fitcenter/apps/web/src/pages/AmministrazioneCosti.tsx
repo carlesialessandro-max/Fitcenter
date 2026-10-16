@@ -460,15 +460,15 @@ function inFinestraPiscinaEstateUi(
       return Boolean(c && n && (n === c || n.includes(c) || (c.length >= 8 && c.includes(n))))
     })
   }
-  const altreSettembre = speseAnno
-    .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
-    .filter((s) => matchFornitore(s.fornitore))
-    .map((s) => s.dataDocumento.slice(0, 10))
+  const settembre = [
+    ...speseAnno.filter((s) => matchFornitore(s.fornitore)).map((s) => s.dataDocumento.slice(0, 10)),
+    doc,
+  ]
     .filter((d) => d.startsWith(`${anno}-09`))
     .sort()
-  const primaFornitura = altreSettembre[0]
-  if (!primaFornitura) return false
-  return doc < primaFornitura
+  const primaFornitura = settembre[0]
+  if (!primaFornitura) return true
+  return doc <= primaFornitura
 }
 
 function quotePiscinaStagionale(
@@ -605,15 +605,19 @@ function RegistroTab() {
         ? quoteOverride
         : (() => {
             const hit = quoteMetaFor(nome, fornitoriQuote)
+            const stagionale =
+              hit?.stagionale === "piscina-estate" ||
+              /diversey|toscochimic|ramo/.test(compactFornitore(nome))
+            if (stagionale) {
+              return quotePiscinaStagionale(dataDocumento, {
+                fornitore: nome,
+                fornitoriQuote,
+                speseAnno,
+                excludeSpesaId: excludeSpesaId ?? editId,
+              })
+            }
             if (!hit) return null
-            return hit.stagionale === "piscina-estate"
-              ? quotePiscinaStagionale(dataDocumento, {
-                  fornitore: nome,
-                  fornitoriQuote,
-                  speseAnno,
-                  excludeSpesaId: excludeSpesaId ?? editId,
-                })
-              : hit.quote
+            return hit.quote
           })()
     if (!q?.length) return null
     return formFromQuote(q, attivi)
@@ -806,8 +810,9 @@ function RegistroTab() {
       </div>
       <p className="text-xs text-zinc-500">
         All’inserimento puoi confermare che le percentuali restano la regola del fornitore, oppure segnarle come
-        eccezione del mese (i prossimi scarichi tengono la regola precedente). RAMO e Diversey: fino a maggio e da
-        settembre 100% piscina coperta; da giugno fino alla prima fornitura di settembre 75% piscina esterna / 25% coperta.
+        eccezione del mese (i prossimi scarichi tengono la regola precedente). RA.MO, Diversey e Toscochimica: fino a
+        maggio e dopo la prima fornitura di settembre 100% piscina coperta; da giugno fino a quella fornitura
+        (apertura piscina esterna) 75% piscina esterna / 25% coperta. Si ricalcola anche sulle fatture già scaricate.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
@@ -1354,7 +1359,9 @@ function StipendiTab() {
     setError("")
     setImportMsg("")
     try {
-      const text = await extractPdfText(file, 80)
+      const text = await extractPdfText(file, kind === "buste" ? 20 : 80, {
+        preferTail: kind === "buste",
+      })
       const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
       if (kind === "sportivi") {
         const righe = [...parsed.sportivi, ...parsed.gestionali]
@@ -1490,7 +1497,8 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
             <p className="text-xs text-zinc-500">
-              Buste paga Teamsystem (PDF) o mastrino Excel. Importo = lordo competenze della busta.
+              PDF Teamsystem: si legge il riepilogo paghe in fondo, non la somma dei singoli cedolini. In alternativa
+              mastrino Excel.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1515,7 +1523,9 @@ function StipendiTab() {
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-zinc-400">
-                Anteprima buste: {bustePdfPreview.length} persone, {eur(bustePdfPreview.reduce((s, x) => s + x.totale, 0))}
+                Anteprima da riepilogo: {bustePdfPreview.length}{" "}
+                {bustePdfPreview.length === 1 ? "riga" : "righe"},{" "}
+                {eur(bustePdfPreview.reduce((s, x) => s + x.totale, 0))}
               </p>
               <div className="flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setBustePdfPreview(null)}>
