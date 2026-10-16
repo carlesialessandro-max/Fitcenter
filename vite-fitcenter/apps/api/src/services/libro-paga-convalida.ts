@@ -2,7 +2,7 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { livelloAlberoUnion, livelloSottoAlbero, personaleLivelloRadici } from "./libro-paga-scope.js"
+import { livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -249,8 +249,9 @@ export function alberoDaDeleghe(meId: string, personale: LpagaPersonale[], livel
   const tree = new Set<string>()
   for (const id of managerIdsCheDelegatoA(meId, personale)) {
     const mgr = personale.find((p) => p.id === id)
-    if (!mgr?.livelloId) continue
-    for (const x of livelloSottoAlbero(livelli, mgr.livelloId)) tree.add(x)
+    const roots = mgr ? personaleLivelloRadici(mgr) : []
+    if (!roots.length) continue
+    for (const id of livelloAlberoUnion(livelli, roots)) tree.add(id)
   }
   return tree
 }

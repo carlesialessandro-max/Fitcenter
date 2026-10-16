@@ -12,6 +12,7 @@ export type LpagaMe = {
   cognome?: string
   ruolo: LpagaRuolo
   livelloId?: string
+  livelloIds?: string[]
   nominativo: string
 }
 

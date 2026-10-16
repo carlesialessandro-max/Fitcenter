@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
@@ -65,6 +65,11 @@ function viewer(req: Request): LpagaSessionUser {
   return u
 }
 
+/** Scope da anagrafica (tutti i livelloIds), non solo il primo livelloId della sessione. */
+function scopeMe(me: LpagaSessionUser, personale: LpagaPersonale[]): LpagaPersonale | LpagaSessionUser {
+  return personale.find((p) => p.id === me.id) ?? me
+}
+
 export async function postLpagaLogin(req: Request, res: Response) {
   try {
     const username = String(req.body?.username ?? "")
@@ -93,10 +98,11 @@ export async function getLpagaMe(req: Request, res: Response) {
 
 export async function getLpagaSnapshot(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const meseRaw = String(req.query.mese ?? "").trim()
     const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
     const [personaleAll, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personaleAll)
     const repartoId = String(req.query.reparto ?? "").trim()
     let livelloTree = resolveLivelloTree(me, livelli, me.ruolo === "admin" ? repartoId : undefined)
     let visibleIds = me.ruolo === "user" ? new Set([me.id]) : undefined
@@ -129,8 +135,9 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
 
 export async function postLpagaTurno(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
     const tree = resolveLivelloTree(me, livelli)
     let personaleId = String(req.body?.personaleId ?? "").trim()
     if (me.ruolo === "user") personaleId = me.id
@@ -166,9 +173,10 @@ export async function postLpagaTurno(req: Request, res: Response) {
 
 export async function removeLpagaTurno(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const id = String(req.params.id ?? "").trim()
-    const livelli = await listLivelli()
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
     const tree = resolveLivelloTree(me, livelli)
     const turni = await listTurni()
     const t = turni.find((x) => x.id === id)
@@ -188,8 +196,9 @@ export async function removeLpagaTurno(req: Request, res: Response) {
 
 export async function putLpagaMensilita(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+    const me = scopeMe(sess, personale)
     const personaleId = String(req.body?.personaleId ?? "").trim()
     const canValidate = viewerPuoConvalidare(me, personale)
     if (me.ruolo === "user" && !canValidate) {
@@ -285,11 +294,12 @@ export async function postLpagaPersonale(req: Request, res: Response) {
 
 export async function patchLpagaPersonale(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const id = String(req.params.id ?? "").trim()
-    const self = me.id === id
-    if (!self) assertGestionePersonale(me)
+    const self = sess.id === id
+    if (!self) assertGestionePersonale(sess)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
     const vis = personaleVisibile(me, personale, livelli)
     if (!vis.has(id) && !self) return res.status(403).json({ message: "Utente non visibile" })
     const cur = personale.find((p) => p.id === id)
@@ -403,11 +413,12 @@ export async function removeLpagaPersonale(req: Request, res: Response) {
 
 export async function putLpagaPersonalePassword(req: Request, res: Response) {
   try {
-    const me = viewer(req)
-    assertGestionePersonale(me)
+    const sess = viewer(req)
+    assertGestionePersonale(sess)
     const id = String(req.params.id ?? "").trim()
     const password = String(req.body?.password ?? "")
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
     const vis = personaleVisibile(me, personale, livelli)
     if (!vis.has(id)) return res.status(403).json({ message: "Utente non visibile" })
     const cur = personale.find((p) => p.id === id)
@@ -423,8 +434,9 @@ export async function putLpagaPersonalePassword(req: Request, res: Response) {
   }
 }
 
-async function loadConvalidaScope(me: LpagaSessionUser) {
+async function loadConvalidaScope(sess: LpagaSessionUser) {
   const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+  const me = scopeMe(sess, personale)
   if (!viewerPuoConvalidare(me, personale)) {
     const err = new Error("Non puoi convalidare le mensilità")
     ;(err as Error & { status?: number }).status = 403

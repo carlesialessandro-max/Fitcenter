@@ -16,6 +16,7 @@ import {
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
+import { personaleLivelloRadici } from "./libro-paga-scope.js"
 
 function buildLivelloTreeNodes(livelli: LpagaLivello[], parentId?: string): { id: string; nome: string; retribuibile: boolean; children?: ReturnType<typeof buildLivelloTreeNodes> }[] {
   const pid = (parentId ?? "").trim()
@@ -102,7 +103,7 @@ export async function buildLibroPagaSnapshot(opts?: {
   } else if (livelloTree) {
     const ids = new Set<string>()
     for (const p of personaleAll) {
-      if (p.livelloId && livelloTree.has(p.livelloId)) ids.add(p.id)
+      if (personaleLivelloRadici(p).some((id) => livelloTree.has(id))) ids.add(p.id)
     }
     for (const t of monthTurniPreview) ids.add(t.personaleId)
     if (opts?.viewerId) ids.add(opts.viewerId)

@@ -133,7 +133,6 @@ export function expandScopeTree(livelli: LpagaLivello[], roots: string[], base: 
   const rootSet = new Set(roots.map((x) => x.trim()).filter(Boolean))
   const out = new Set(base)
   for (const l of livelli) {
-    if (l.attivo === false) continue
     if (out.has(l.id)) continue
     let cur: LpagaLivello | undefined = l
     let guard = 0
@@ -190,7 +189,7 @@ export function personaleVisibile(
   const tree = livelloAlberoUnion(livelli, roots)
   const ids = new Set<string>([viewer.id])
   for (const p of personale) {
-    if (p.livelloId && tree.has(p.livelloId)) ids.add(p.id)
+    if (personaleLivelloRadici(p).some((id) => tree.has(id))) ids.add(p.id)
   }
   return ids
 }
@@ -214,7 +213,7 @@ export function personaleRaggiungibile(
   if (!tree?.size) return vis
   const ids = new Set(vis)
   for (const p of personale) {
-    if (p.livelloId && tree.has(p.livelloId)) ids.add(p.id)
+    if (personaleLivelloRadici(p).some((id) => tree.has(id))) ids.add(p.id)
   }
   for (const t of turni) {
     if (tree.has(t.livelloId)) ids.add(t.personaleId)
