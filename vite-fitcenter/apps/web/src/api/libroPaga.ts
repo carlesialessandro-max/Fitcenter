@@ -191,13 +191,17 @@ export const libroPagaApi = {
     if (reparto) q.set("reparto", reparto)
     return api.get<LibroPagaSnapshot>(`/libro-paga?${q.toString()}`)
   },
-  importDump: () =>
-    api.post<{
+  importDump: (file: File) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    return api.post<{
       turni: number
       mode: string
       snapshotId: string
       storage: string
-    }>("/libro-paga/import-dump", {}),
+      dump: string
+    }>("/libro-paga/import-dump", fd)
+  },
   listSnapshots: () =>
     api.get<{ snapshots: { id: string; createdAt: string; label: string; personale: number; turni: number }[] }>(
       "/libro-paga/snapshots"

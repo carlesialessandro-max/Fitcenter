@@ -13,7 +13,7 @@ import {
   upsertPersonale,
   upsertPresenza,
 } from "../store/libro-paga-db.js"
-import { importLibroPagaDump } from "../services/libro-paga-import.js"
+import { importLibroPagaDumpFromBuffer } from "../services/libro-paga-import.js"
 import { repairLibroPagaRuoliFromDeleghe } from "../services/libro-paga-repair.js"
 import {
   listLibroPagaSnapshots,
@@ -85,9 +85,13 @@ export async function getLibroPaga(req: Request, res: Response) {
   }
 }
 
-export async function postImportDump(_req: Request, res: Response) {
+export async function postImportDump(req: Request, res: Response) {
   try {
-    const result = await importLibroPagaDump()
+    const file = (req as Request & { file?: Express.Multer.File }).file
+    if (!file?.buffer?.length) {
+      return res.status(400).json({ message: "Seleziona un file dump Payroll (.sql o .gz)" })
+    }
+    const result = await importLibroPagaDumpFromBuffer(file.buffer, file.originalname || "dump.sql")
     res.json(result)
   } catch (e) {
     fail(res, e)

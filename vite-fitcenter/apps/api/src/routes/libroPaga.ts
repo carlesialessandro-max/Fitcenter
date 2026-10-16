@@ -1,4 +1,5 @@
 import { Router } from "express"
+import multer from "multer"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 import {
   getLibroPaga,
@@ -26,11 +27,21 @@ import {
   removeTurno,
 } from "../handlers/libroPaga.js"
 
+const dumpUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 40 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const n = file.originalname.toLowerCase()
+    const ok = n.endsWith(".sql") || n.endsWith(".gz") || n.endsWith(".sql.gz")
+    cb(null, ok)
+  },
+})
+
 export const libroPagaRouter = Router()
 libroPagaRouter.use(requireAuth, requireAdmin)
 
 libroPagaRouter.get("/", getLibroPaga)
-libroPagaRouter.post("/import-dump", postImportDump)
+libroPagaRouter.post("/import-dump", dumpUpload.single("file"), postImportDump)
 libroPagaRouter.get("/snapshots", getLibroPagaSnapshots)
 libroPagaRouter.post("/snapshots", postLibroPagaSnapshotNow)
 libroPagaRouter.post("/snapshots/restore", postLibroPagaRestoreSnapshot)
