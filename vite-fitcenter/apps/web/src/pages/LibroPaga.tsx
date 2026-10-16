@@ -25,7 +25,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
@@ -1107,39 +1107,6 @@ function statoConvLabel(s?: string | null): string {
   return "Da fare"
 }
 
-function convalidaPct(done: number, total: number): number {
-  if (total <= 0) return 0
-  return Math.min(100, Math.round((done / total) * 100))
-}
-
-function ConvalidaProgressBar({
-  done,
-  total,
-  className = "",
-}: {
-  done: number
-  total: number
-  className?: string
-}) {
-  const pct = convalidaPct(done, total)
-  const bar =
-    pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-amber-400" : "bg-zinc-700"
-  return (
-    <div className={`h-2 w-full overflow-hidden rounded-full bg-zinc-800 ${className}`}>
-      <div className={`h-full rounded-full transition-[width] ${bar}`} style={{ width: `${pct}%` }} />
-    </div>
-  )
-}
-
-type ConvalidaResponsabileRow = LibroPagaSnapshot["convalide"][number] | NonNullable<
-  LibroPagaSnapshot["convalideRiepilogo"]
->["responsabili"][number]
-
-function convalidaScopes(row: ConvalidaResponsabileRow) {
-  if ("scopes" in row && Array.isArray(row.scopes)) return row.scopes
-  return []
-}
-
 function ConvalideTab({
   data,
   mese,
@@ -1221,7 +1188,14 @@ function ConvalideTab({
             </select>
           )}
         </div>
-        <button type="button" className={btnAmber} onClick={() => setMeseOpen(true)}>
+        <button
+          type="button"
+          className={btnAmber}
+          onClick={() => {
+            setFiltri((f) => ({ ...f, scope: "" }))
+            setMeseOpen(true)
+          }}
+        >
           Convalida turni
         </button>
       </div>
@@ -1244,117 +1218,18 @@ function ConvalideTab({
           <p className="mt-1 text-xs text-zinc-500">{riep?.ultimaDa || "—"}</p>
         </Card>
       </div>
-      <Card title="Convalide dei responsabili">
-        <p className="mb-4 text-xs text-zinc-500">
-          Avanzamento del mese per ogni responsabile; sotto ogni scheda vedi il dettaglio per reparto o ambito (terra /
-          acqua, corsi, ecc.).
+      <Card title="Responsabili">
+        <p className="mb-3 text-xs text-zinc-500">
+          Clicca un responsabile per i sottoreparti: convalide fatte e da fare. Dal riquadro apri la convalida di quel
+          ambito.
         </p>
-        <div className="space-y-4">
-          {(riep?.responsabili ?? data.convalide).map((c) => {
-            const nTurni = "nTurni" in c ? (c.nTurni ?? 0) : 0
-            const nDaFare = "nDaFare" in c ? (c.nDaFare ?? 0) : 0
-            const nConf = "nConfermati" in c ? (c.nConfermati ?? 0) : 0
-            const ok = nTurni > 0 && nDaFare === 0
-            const scopes = convalidaScopes(c).filter((s) => s.nTurni > 0)
-            const pct = convalidaPct(nConf, nTurni)
-            return (
-              <article
-                key={c.personaleId}
-                className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 shadow-sm shadow-black/20"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h3 className="text-base font-medium text-zinc-100">{c.nominativo}</h3>
-                    <p className="text-sm text-zinc-500">{c.reparto || "—"}</p>
-                  </div>
-                  <span
-                    className={
-                      ok
-                        ? "shrink-0 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300"
-                        : nTurni === 0
-                          ? "shrink-0 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400"
-                          : "shrink-0 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-200"
-                    }
-                  >
-                    {nTurni === 0 ? "Nessun turno" : ok ? "Completo" : "In corso"}
-                  </span>
-                </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                  <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">Turni</p>
-                    <p className="text-lg font-semibold text-zinc-100">{nTurni}</p>
-                  </div>
-                  <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-emerald-600/80">Confermati</p>
-                    <p className="text-lg font-semibold text-emerald-300">{nConf}</p>
-                  </div>
-                  <div className="rounded-lg border border-amber-900/40 bg-amber-950/15 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-amber-600/80">Da fare</p>
-                    <p className="text-lg font-semibold text-amber-300">{nDaFare}</p>
-                  </div>
-                  <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2">
-                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">Ultima convalida</p>
-                    <p className="text-sm font-medium text-zinc-200">{fmtStamp(c.ultima)}</p>
-                    {"ultimaDa" in c && c.ultimaDa ? (
-                      <p className="truncate text-xs text-zinc-500">{c.ultimaDa}</p>
-                    ) : null}
-                  </div>
-                </div>
-                {nTurni > 0 ? (
-                  <div className="mt-4">
-                    <div className="mb-1.5 flex items-center justify-between text-xs text-zinc-500">
-                      <span>Avanzamento mese</span>
-                      <span className="tabular-nums text-zinc-400">
-                        {nConf}/{nTurni} · {pct}%
-                      </span>
-                    </div>
-                    <ConvalidaProgressBar done={nConf} total={nTurni} />
-                  </div>
-                ) : null}
-                {scopes.length > 0 ? (
-                  <div className="mt-4 border-t border-zinc-800 pt-4">
-                    <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-500">Per reparto</p>
-                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                      {scopes.map((s) => {
-                        const scopeOk = s.nDaFare === 0
-                        return (
-                          <div
-                            key={s.id}
-                            className={
-                              scopeOk
-                                ? "rounded-lg border border-emerald-900/50 bg-emerald-950/25 p-3"
-                                : "rounded-lg border border-zinc-800 bg-zinc-900/40 p-3"
-                            }
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="text-sm font-medium leading-snug text-zinc-100">{s.nome}</p>
-                              {scopeOk ? (
-                                <span className="shrink-0 text-xs font-medium text-emerald-400">Fatto</span>
-                              ) : (
-                                <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200">
-                                  {s.nDaFare} da fare
-                                </span>
-                              )}
-                            </div>
-                            <p className="mt-1 text-xs tabular-nums text-zinc-500">
-                              {s.nConfermati} confermati su {s.nTurni}
-                            </p>
-                            <ConvalidaProgressBar className="mt-2" done={s.nConfermati} total={s.nTurni} />
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-              </article>
-            )
-          })}
-          {!(riep?.responsabili ?? data.convalide).length && (
-            <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center text-sm text-zinc-500">
-              Nessun responsabile con turni nel periodo.
-            </p>
-          )}
-        </div>
+        <LibroPagaConvalideLista
+          responsabili={riep?.responsabili ?? data.convalide}
+          onApriScope={(scope) => {
+            setFiltri((f) => ({ ...f, scope }))
+            setMeseOpen(true)
+          }}
+        />
       </Card>
       <Card title={vista === "settimana" ? "Turni della settimana" : "Turni del mese"}>
         <div className="overflow-x-auto">

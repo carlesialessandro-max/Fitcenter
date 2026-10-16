@@ -515,11 +515,18 @@ export function buildRiepilogoConvalide(opts: {
   turni: { id: string; giorno: string; livelloId: string }[]
   personale: LpagaPersonale[]
   livelli: LpagaLivello[]
+  viewerId?: string
 }) {
   const byId = mapTurnoConvalide()
   const weeks = settimaneNelMese(opts.mese)
   const tot = statsTurniConvalida(opts.turni, byId)
-  const managers = opts.personale.filter((p) => p.ruolo === "manager" && p.attivo !== false)
+  const viewer = opts.viewerId ? opts.personale.find((p) => p.id === opts.viewerId) : undefined
+  const soloIo = viewer?.ruolo === "manager" ? viewer.id : undefined
+  const managers = opts.personale.filter((p) => {
+    if (p.ruolo !== "manager" || p.attivo === false) return false
+    if (soloIo) return p.id === soloIo
+    return true
+  })
   const responsabili = managers
     .map((m) => {
       const roots = personaleLivelloRadici(m)
@@ -547,7 +554,7 @@ export function buildRiepilogoConvalide(opts: {
         settimane,
       }
     })
-    .filter((r) => r.nTurni > 0 || r.ultima)
+    .filter((r) => (soloIo ? r.personaleId === soloIo : r.nTurni > 0 || r.ultima))
     .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
   return {
     mese: opts.mese,

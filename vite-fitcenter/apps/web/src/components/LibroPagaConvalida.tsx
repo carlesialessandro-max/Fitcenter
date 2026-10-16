@@ -531,6 +531,218 @@ export function LibroPagaConvalidaMesePanel({
   )
 }
 
+export type ConvalidaScopeRow = {
+  id: string
+  nome: string
+  nTurni: number
+  nConfermati: number
+  nDaFare: number
+}
+
+export type ConvalidaResponsabileRow = {
+  personaleId: string
+  nominativo: string
+  reparto: string
+  nTurni?: number
+  nConfermati?: number
+  nDaFare?: number
+  ultima: string | null
+  ultimaDa?: string | null
+  scopes?: ConvalidaScopeRow[]
+}
+
+function convalidaPct(done: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((done / total) * 100))
+}
+
+function ConvalidaProgressBar({
+  done,
+  total,
+  className = "",
+}: {
+  done: number
+  total: number
+  className?: string
+}) {
+  const pct = convalidaPct(done, total)
+  const bar = pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-amber-400" : "bg-zinc-700"
+  return (
+    <div className={`h-1.5 w-full overflow-hidden rounded-full bg-zinc-800 ${className}`}>
+      <div className={`h-full rounded-full transition-[width] ${bar}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+function fmtStampBreve(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ""
+  return d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })
+}
+
+function ScopeConvalidaCard({
+  scope,
+  onApri,
+}: {
+  scope: ConvalidaScopeRow
+  onApri?: (scopeId: string) => void
+}) {
+  const nFatte = Math.max(0, scope.nTurni - scope.nDaFare)
+  const ok = scope.nTurni > 0 && scope.nDaFare === 0
+  return (
+    <button
+      type="button"
+      onClick={() => onApri?.(scope.id)}
+      className={
+        ok
+          ? "flex flex-col rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3 text-left transition hover:border-emerald-700/70 hover:bg-emerald-950/35"
+          : "flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 text-left transition hover:border-amber-700/50 hover:bg-zinc-900/80"
+      }
+    >
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium leading-snug text-zinc-100">{scope.nome}</p>
+        {ok ? (
+          <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+            Fatto
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+            {scope.nDaFare} da fare
+          </span>
+        )}
+      </div>
+      <p className="mt-1.5 text-xs tabular-nums text-zinc-500">
+        {nFatte} fatte · {scope.nDaFare} da fare · {scope.nTurni} turni
+      </p>
+      <ConvalidaProgressBar className="mt-2" done={nFatte} total={scope.nTurni} />
+      {onApri ? <p className="mt-2 text-[11px] text-zinc-500">Apri convalida</p> : null}
+    </button>
+  )
+}
+
+/** Lista responsabili: click per i sottoreparti (fatte / da fare). Il responsabile vede solo i propri. */
+export function LibroPagaConvalideLista({
+  responsabili,
+  onlyMine,
+  onApriScope,
+}: {
+  responsabili: ConvalidaResponsabileRow[]
+  onlyMine?: boolean
+  onApriScope?: (scopeId: string) => void
+}) {
+  const [aperto, setAperto] = useState<string | null>(onlyMine && responsabili[0] ? responsabili[0].personaleId : null)
+
+  if (!responsabili.length) {
+    return (
+      <p className="rounded-xl border border-dashed border-zinc-800 px-4 py-10 text-center text-sm text-zinc-500">
+        Nessun responsabile con turni nel periodo.
+      </p>
+    )
+  }
+
+  const lista = onlyMine ? responsabili.slice(0, 1) : responsabili
+
+  return (
+    <div className="space-y-2">
+      {lista.map((c) => {
+        const nTurni = c.nTurni ?? 0
+        const nDaFare = c.nDaFare ?? 0
+        const nConf = c.nConfermati ?? 0
+        const nFatte = Math.max(0, nTurni - nDaFare)
+        const ok = nTurni > 0 && nDaFare === 0
+        const scopes = (c.scopes ?? []).filter((s) => s.nTurni > 0)
+        const isOpen = onlyMine || aperto === c.personaleId
+        const pct = convalidaPct(nFatte, nTurni)
+        return (
+          <div
+            key={c.personaleId}
+            className={
+              isOpen
+                ? "overflow-hidden rounded-xl border border-zinc-700 bg-zinc-900/50"
+                : "overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950/40"
+            }
+          >
+            {onlyMine ? (
+              <div className="border-b border-zinc-800 px-4 py-3">
+                <p className="text-sm font-medium text-zinc-100">{c.nominativo}</p>
+                <p className="text-xs text-zinc-500">{c.reparto || "Reparti assegnati"}</p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900/70"
+                onClick={() => setAperto((cur) => (cur === c.personaleId ? null : c.personaleId))}
+                aria-expanded={isOpen}
+              >
+                <span
+                  className={`mt-0.5 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${ok ? "bg-emerald-400" : nDaFare ? "bg-amber-400" : "bg-zinc-600"}`}
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-zinc-100">{c.nominativo}</span>
+                  <span className="block truncate text-xs text-zinc-500">{c.reparto || "—"}</span>
+                </span>
+                <span className="hidden min-w-[9rem] sm:block">
+                  {nTurni > 0 ? (
+                    <>
+                      <span className="mb-1 flex justify-between text-[11px] tabular-nums text-zinc-500">
+                        <span>
+                          {nFatte}/{nTurni}
+                        </span>
+                        <span>{pct}%</span>
+                      </span>
+                      <ConvalidaProgressBar done={nFatte} total={nTurni} />
+                    </>
+                  ) : (
+                    <span className="text-xs text-zinc-600">Nessun turno</span>
+                  )}
+                </span>
+                <span
+                  className={
+                    ok
+                      ? "shrink-0 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300"
+                      : nDaFare
+                        ? "shrink-0 rounded-full bg-amber-500/15 px-2.5 py-0.5 text-[11px] font-medium text-amber-200"
+                        : "shrink-0 rounded-full bg-zinc-800 px-2.5 py-0.5 text-[11px] text-zinc-400"
+                  }
+                >
+                  {nTurni === 0 ? "—" : ok ? "Completo" : `${nDaFare} da fare`}
+                </span>
+                <span className={`shrink-0 text-zinc-500 transition ${isOpen ? "rotate-90" : ""}`}>›</span>
+              </button>
+            )}
+            {isOpen ? (
+              <div className="space-y-3 border-t border-zinc-800 px-4 py-4">
+                <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
+                  <span>
+                    Confermati <span className="tabular-nums text-emerald-300">{nConf}</span>
+                  </span>
+                  <span>
+                    Da fare <span className="tabular-nums text-amber-300">{nDaFare}</span>
+                  </span>
+                  <span>
+                    Turni <span className="tabular-nums text-zinc-300">{nTurni}</span>
+                  </span>
+                  {c.ultima ? <span>Ultima {fmtStampBreve(c.ultima)}{c.ultimaDa ? ` · ${c.ultimaDa}` : ""}</span> : null}
+                </div>
+                {scopes.length ? (
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {scopes.map((s) => (
+                      <ScopeConvalidaCard key={s.id} scope={s} onApri={onApriScope} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-500">Nessun sottoreparto con turni in questo periodo.</p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function useLibroPagaConvalidaMese(
   mese: string,
   enabled: boolean,

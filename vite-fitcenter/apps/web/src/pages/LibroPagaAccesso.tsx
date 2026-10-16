@@ -5,7 +5,7 @@ import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -278,12 +278,10 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           />
         )}
         {data && tab === "convalide" && canTeam && (
-          <Mensilita
+          <ConvalidePortal
             data={data}
             mese={mese}
             me={me}
-            onError={setError}
-            openConvalidaMese
             onDone={() => {
               setError("")
               void qc.invalidateQueries({ queryKey: ["lpaga"] })
@@ -991,6 +989,101 @@ function Personale({
           </tbody>
         </table>
       </div>
+    </div>
+  )
+}
+
+function ConvalidePortal({
+  data,
+  mese,
+  me,
+  onDone,
+}: {
+  data: LpagaPortalSnapshot
+  mese: string
+  me?: LpagaMe
+  onDone: () => void
+}) {
+  const riep = data.convalideRiepilogo
+  const onlyMine = me?.ruolo === "manager"
+  const [meseOpen, setMeseOpen] = useState(false)
+  const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
+  const convMese = useLibroPagaConvalidaMese(
+    mese,
+    meseOpen,
+    (m) =>
+      lpagaApi.getConvalidaMese(m, {
+        scope: filtri.scope || undefined,
+        from: filtri.from || undefined,
+        to: filtri.to || undefined,
+      }),
+    `${filtri.scope}|${filtri.from}|${filtri.to}`
+  )
+  const nTurni = riep?.nTurni ?? data.turni.length
+  const nConf = riep?.nConfermati ?? 0
+  const nDaFare = riep?.nDaFare ?? 0
+  return (
+    <div className="mt-4 space-y-4">
+      {meseOpen && convMese.isLoading && <p className="text-sm text-zinc-500">Controllo turni…</p>}
+      {meseOpen && convMese.isError && <p className="text-sm text-red-400">{(convMese.error as Error).message}</p>}
+      {meseOpen && convMese.data && (
+        <LibroPagaConvalidaMesePanel
+          data={convMese.data}
+          onClose={() => setMeseOpen(false)}
+          onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body).then(onDone)}
+          onConfermaAllineati={() =>
+            lpagaApi
+              .postConvalidaMese(mese, {
+                scope: filtri.scope || undefined,
+                from: filtri.from || undefined,
+                to: filtri.to || undefined,
+              })
+              .then((r) => {
+                onDone()
+                return r
+              })
+          }
+          onFiltriChange={(f) => setFiltri(f)}
+        />
+      )}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <p className="text-sm text-zinc-400">
+          {onlyMine
+            ? "I tuoi sottoreparti: convalide fatte e da fare. Clicca un ambito per aprirlo."
+            : "Clicca un responsabile per i sottoreparti, poi apri la convalida."}
+        </p>
+        <button
+          type="button"
+          className={btnAmber}
+          onClick={() => {
+            setFiltri((f) => ({ ...f, scope: "" }))
+            setMeseOpen(true)
+          }}
+        >
+          Convalida turni
+        </button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Card title="Turni">
+          <p className="text-2xl font-semibold">{nTurni}</p>
+        </Card>
+        <Card title="Confermati">
+          <p className="text-2xl font-semibold text-emerald-300">{nConf}</p>
+        </Card>
+        <Card title="Da fare">
+          <p className="text-2xl font-semibold text-amber-300">{nDaFare}</p>
+        </Card>
+      </div>
+      <Card title={onlyMine ? "I tuoi reparti" : "Responsabili"}>
+        <LibroPagaConvalideLista
+          responsabili={riep?.responsabili ?? data.convalide}
+          onlyMine={onlyMine}
+          onApriScope={(scope) => {
+            setFiltri((f) => ({ ...f, scope }))
+            setMeseOpen(true)
+          }}
+        />
+      </Card>
     </div>
   )
 }

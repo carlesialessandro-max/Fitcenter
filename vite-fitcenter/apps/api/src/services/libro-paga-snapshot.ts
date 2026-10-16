@@ -200,6 +200,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     turni: turniOut.map((t) => ({ id: t.id, giorno: t.giorno, livelloId: t.livelloId })),
     personale: personaleAll,
     livelli,
+    viewerId: opts?.viewerId,
   })
   const convalide = convalideRiepilogo.responsabili.map((r) => {
     const giornoUltima = r.ultima ? r.ultima.slice(0, 10) : null
