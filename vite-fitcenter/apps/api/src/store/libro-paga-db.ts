@@ -506,56 +506,125 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
   }
 }
 
-type SqlRuoloRow = { Id: string; Username?: string; Ruolo: string }
-
-async function queryPersonaleRuoli(p: sql.ConnectionPool): Promise<SqlRuoloRow[]> {
-  const r = await p.request().query(`
-    SELECT Id, Username, Ruolo
-    FROM dbo.FcLibroPagaPersonale
-    WHERE Ruolo IN (N'admin', N'manager')
-  `)
-  return (r.recordset as SqlRuoloRow[]) ?? []
+type SqlHrRow = {
+  Id: string
+  Username?: string
+  Ruolo?: string
+  LivelloId?: string
+  LivelloIds?: string
+  Qualifiche?: string
+  VisitaMedica?: string
 }
 
-/** Ruoli ancora in SQL (se l’import dump ha scritto solo il JSON). */
-export async function copyPersonaleRuoliFromSql(): Promise<{
+async function queryPersonaleHr(p: sql.ConnectionPool): Promise<SqlHrRow[]> {
+  const r = await p.request().query(`
+    SELECT Id, Username, Ruolo, LivelloId, LivelloIds, Qualifiche,
+           CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica
+    FROM dbo.FcLibroPagaPersonale
+  `)
+  return (r.recordset as SqlHrRow[]) ?? []
+}
+
+function qualificheHaveDates(q: LpagaQualifica[] | undefined): boolean {
+  return Boolean(q?.some((x) => x.data && /^\d{4}-\d{2}-\d{2}$/.test(x.data)))
+}
+
+function richerQualifiche(sqlQ: LpagaQualifica[] | undefined, jsonQ: LpagaQualifica[] | undefined): LpagaQualifica[] | undefined {
+  if (qualificheHaveDates(sqlQ) && !qualificheHaveDates(jsonQ)) return sqlQ
+  if ((sqlQ?.length ?? 0) > (jsonQ?.length ?? 0)) return sqlQ
+  return undefined
+}
+
+/** Ruoli, mansioni e date corsi ancora in SQL (l’import dump ha spesso scritto solo il JSON). */
+export async function copyPersonaleHrFromSql(): Promise<{
   copied: number
+  dates: number
   sqlManagers: number
   sqlAdmins: number
+  sqlWithDates: number
+  sqlRows: number
 }> {
   const pools = [await getPoolWrite(), await getPool()].filter(Boolean) as sql.ConnectionPool[]
-  let rows: SqlRuoloRow[] = []
+  let rows: SqlHrRow[] = []
   let lastErr = ""
   for (const p of pools) {
     try {
-      rows = await queryPersonaleRuoli(p)
+      rows = await queryPersonaleHr(p)
       lastErr = ""
       break
     } catch (e) {
       lastErr = (e as Error)?.message ?? String(e)
     }
   }
-  if (lastErr) console.warn("[libro-paga] lettura ruoli SQL:", lastErr)
-  const sqlAdmins = rows.filter((x) => String(x.Ruolo).toLowerCase() === "admin").length
-  const sqlManagers = rows.filter((x) => String(x.Ruolo).toLowerCase() === "manager").length
-  console.log(`[libro-paga] SQL admin=${sqlAdmins} manager=${sqlManagers}`)
-  if (!rows.length) return { copied: 0, sqlManagers, sqlAdmins }
-  const db = readFile()
-  const byId = new Map(rows.map((x) => [String(x.Id), String(x.Ruolo) as LpagaRuolo]))
-  const byUser = new Map(
-    rows
-      .filter((x) => String(x.Username ?? "").trim())
-      .map((x) => [String(x.Username).trim().toLowerCase(), String(x.Ruolo) as LpagaRuolo])
+  if (lastErr) console.warn("[libro-paga] lettura anagrafica SQL:", lastErr)
+  const sqlAdmins = rows.filter((x) => String(x.Ruolo ?? "").trim().toLowerCase() === "admin").length
+  const sqlManagers = rows.filter((x) => String(x.Ruolo ?? "").trim().toLowerCase() === "manager").length
+  let sqlWithDates = 0
+  const byId = new Map<string, SqlHrRow>()
+  const byUser = new Map<string, SqlHrRow>()
+  for (const x of rows) {
+    byId.set(String(x.Id), x)
+    const u = String(x.Username ?? "").trim().toLowerCase()
+    if (u) byUser.set(u, x)
+    const q = parseQualificheStored(x.Qualifiche)
+    if (qualificheHaveDates(q) || ymd(x.VisitaMedica)) sqlWithDates += 1
+  }
+  const ruoli = new Map<string, number>()
+  for (const x of rows) {
+    const k = String(x.Ruolo ?? "").trim() || "(vuoto)"
+    ruoli.set(k, (ruoli.get(k) ?? 0) + 1)
+  }
+  console.log(
+    `[libro-paga] SQL righe=${rows.length} admin=${sqlAdmins} manager=${sqlManagers} conDateCorsi=${sqlWithDates} ruoli=${[...ruoli.entries()].map(([k, n]) => `${k}:${n}`).join(",")}`
   )
+  if (!rows.length) {
+    return { copied: 0, dates: 0, sqlManagers, sqlAdmins, sqlWithDates, sqlRows: 0 }
+  }
+  const db = readFile()
   let n = 0
+  let dates = 0
   db.personale = db.personale.map((pe) => {
-    const ruolo = byId.get(pe.id) ?? byUser.get((pe.username ?? "").trim().toLowerCase())
-    if (!ruolo || pe.ruolo === ruolo) return pe
+    const src = byId.get(pe.id) ?? byUser.get((pe.username ?? "").trim().toLowerCase())
+    if (!src) return pe
+    let next = { ...pe }
+    let changed = false
+    const ruoloSql = String(src.Ruolo ?? "").trim().toLowerCase()
+    const ruolo: LpagaRuolo | null =
+      ruoloSql === "admin" || ruoloSql === "manager" ? ruoloSql : null
+    if (ruolo && next.ruolo !== ruolo) {
+      next.ruolo = ruolo
+      changed = true
+    }
+    const livIds = parseLivelloIdsStored(src.LivelloIds, String(src.LivelloId ?? "").trim() || undefined)
+    if (livIds?.length && !next.livelloIds?.length && !next.livelloId) {
+      const merged = mergePersonaleLivelli(livIds[0], livIds)
+      next = { ...next, ...merged }
+      changed = true
+    }
+    const qSql = enrichQualificheVisitaMedica(parseQualificheStored(src.Qualifiche), ymd(src.VisitaMedica))
+    const qBetter = richerQualifiche(qSql, next.qualifiche)
+    if (qBetter) {
+      next.qualifiche = qBetter
+      const vm = visitaMedicaDaQualifiche(qBetter) || ymd(src.VisitaMedica)
+      if (vm) next.visitaMedica = vm
+      changed = true
+      dates += 1
+    }
+    if (!changed) return pe
     n += 1
-    return { ...pe, ruolo }
+    return next
   })
   if (n) writeFile(db)
-  return { copied: n, sqlManagers, sqlAdmins }
+  return { copied: n, dates, sqlManagers, sqlAdmins, sqlWithDates, sqlRows: rows.length }
+}
+
+export async function copyPersonaleRuoliFromSql(): Promise<{
+  copied: number
+  sqlManagers: number
+  sqlAdmins: number
+}> {
+  const r = await copyPersonaleHrFromSql()
+  return { copied: r.copied, sqlManagers: r.sqlManagers, sqlAdmins: r.sqlAdmins }
 }
 
 function mapLivello(r: Record<string, unknown>): LpagaLivello {
@@ -1311,8 +1380,69 @@ export async function exportFullFileDb(): Promise<FileDb> {
   }
 }
 
-export async function replaceImportedDb(next: FileDb): Promise<"sql" | "json"> {
+/** Sostituisce solo turni/presenze. Non tocca personale, ruoli, livelli, date corsi, mensilità. */
+export async function replaceTurniOnly(turni: LpagaTurno[], presenze: LpagaPresenza[] = []): Promise<"sql" | "json"> {
+  const db = readFile()
+  db.turni = turni
+  db.presenze = presenze
+  writeFile(db)
+  const write = await getPoolWrite()
+  if (!write) {
+    sqlReady = false
+    return "json"
+  }
+  try {
+    await write.request().query(`
+      DELETE FROM dbo.FcLibroPagaPresenze;
+      DELETE FROM dbo.FcLibroPagaTurni;
+    `)
+    for (let i = 0; i < turni.length; i += 40) {
+      const batch = turni.slice(i, i + 40)
+      const req = write.request()
+      const values: string[] = []
+      batch.forEach((t, j) => {
+        req.input(`Id${j}`, sql.NVarChar(64), t.id)
+        req.input(`P${j}`, sql.NVarChar(64), t.personaleId)
+        req.input(`L${j}`, sql.NVarChar(64), t.livelloId)
+        req.input(`G${j}`, sql.Date, t.giorno)
+        req.input(`Q${j}`, sql.Decimal(10, 2), t.quantita)
+        req.input(`I${j}`, sql.Decimal(10, 2), t.importo)
+        req.input(`N${j}`, sql.NVarChar(500), t.note ?? null)
+        req.input(`C${j}`, sql.NVarChar(120), t.creatoDa)
+        req.input(`A${j}`, sql.DateTime2, new Date(t.createdAt))
+        values.push(`(@Id${j}, @P${j}, @L${j}, @G${j}, @Q${j}, @I${j}, @N${j}, @C${j}, @A${j})`)
+      })
+      await req.query(
+        `INSERT INTO dbo.FcLibroPagaTurni (Id, PersonaleId, LivelloId, Giorno, Quantita, Importo, Note, CreatoDa, CreatedAt) VALUES ${values.join(",")}`
+      )
+    }
+    for (let i = 0; i < presenze.length; i += 40) {
+      const batch = presenze.slice(i, i + 40)
+      const req = write.request()
+      const values: string[] = []
+      batch.forEach((pr, j) => {
+        req.input(`Id${j}`, sql.NVarChar(64), pr.id)
+        req.input(`T${j}`, sql.NVarChar(64), pr.turnoId)
+        req.input(`V${j}`, sql.Decimal(10, 2), pr.valore)
+        req.input(`C${j}`, sql.NVarChar(120), pr.controllatoDa)
+        req.input(`A${j}`, sql.DateTime2, new Date(pr.controllatoAt))
+        values.push(`(@Id${j}, @T${j}, @V${j}, @C${j}, @A${j})`)
+      })
+      await req.query(
+        `INSERT INTO dbo.FcLibroPagaPresenze (Id, TurnoId, Valore, ControllatoDa, ControllatoAt) VALUES ${values.join(",")}`
+      )
+    }
+    return "sql"
+  } catch (e) {
+    sqlReady = false
+    console.warn("[libro-paga] import turni SQL fallito, JSON aggiornato (anagrafica intatta):", (e as Error)?.message)
+    return "json"
+  }
+}
+
+export async function replaceImportedDb(next: FileDb, opts?: { keepPersonale?: boolean }): Promise<"sql" | "json"> {
   writeFile(next)
+  const keepPersonale = Boolean(opts?.keepPersonale)
   if (next.turni.length > 3000) {
     sqlReady = false
     return "json"
@@ -1322,21 +1452,28 @@ export async function replaceImportedDb(next: FileDb): Promise<"sql" | "json"> {
     if (mode !== "sql") return "json"
     const p = await pool()
     if (!p) return "json"
-    await p.request().query(`
-      DELETE FROM dbo.FcLibroPagaPresenze;
-      DELETE FROM dbo.FcLibroPagaTurni;
-      DELETE FROM dbo.FcLibroPagaMensilita;
-      DELETE FROM dbo.FcLibroPagaValidazioni;
-      DELETE FROM dbo.FcLibroPagaTotaliReparto;
-      DELETE FROM dbo.FcLibroPagaMacroQuote;
-      DELETE FROM dbo.FcLibroPagaPersonale;
-      DELETE FROM dbo.FcLibroPagaLivelli;
-    `)
-    for (const l of next.livelli) {
-      await upsertLivello({ ...l, id: l.id, attivo: l.attivo !== false })
-    }
-    for (const pe of next.personale) {
-      await upsertPersonale({ ...pe, id: pe.id, attivo: pe.attivo !== false })
+    if (keepPersonale) {
+      await p.request().query(`
+        DELETE FROM dbo.FcLibroPagaPresenze;
+        DELETE FROM dbo.FcLibroPagaTurni;
+      `)
+    } else {
+      await p.request().query(`
+        DELETE FROM dbo.FcLibroPagaPresenze;
+        DELETE FROM dbo.FcLibroPagaTurni;
+        DELETE FROM dbo.FcLibroPagaMensilita;
+        DELETE FROM dbo.FcLibroPagaValidazioni;
+        DELETE FROM dbo.FcLibroPagaTotaliReparto;
+        DELETE FROM dbo.FcLibroPagaMacroQuote;
+        DELETE FROM dbo.FcLibroPagaPersonale;
+        DELETE FROM dbo.FcLibroPagaLivelli;
+      `)
+      for (const l of next.livelli) {
+        await upsertLivello({ ...l, id: l.id, attivo: l.attivo !== false })
+      }
+      for (const pe of next.personale) {
+        await upsertPersonale({ ...pe, id: pe.id, attivo: pe.attivo !== false })
+      }
     }
     sqlReady = true
     const p2 = await pool()

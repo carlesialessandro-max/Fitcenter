@@ -107,13 +107,13 @@ export function LibroPaga() {
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["libro-paga"] })
   const importMut = useMutation({
-    mutationFn: () => libroPagaApi.importDump(),
+    mutationFn: (file: File) => libroPagaApi.importDump(file),
     onSuccess: (r) => {
       setError("")
       invalidate()
       void qc.invalidateQueries({ queryKey: ["libro-paga-snapshots"] })
       alert(
-        `Importati ${r.turni} turni dal backup Payroll. Ruoli e anagrafica non modificati. Snapshot salvato (${r.snapshotId}).`
+        `Importati ${r.turni} turni da ${r.dump}. Ruoli e anagrafica non modificati. Snapshot salvato.`
       )
     },
     onError: (e: Error) => setError(e.message),
@@ -202,22 +202,28 @@ export function LibroPaga() {
             <span className="text-xs">Mese</span>
             <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
           </label>
-          <button
-            type="button"
-            className={btnGhost}
-            disabled={importMut.isPending}
-            onClick={() => {
-              if (
-                confirm(
-                  "Importare solo i TURNI dal file libropaga-dump.sql? Non cambia ruoli admin/responsabili né reparti del personale. Viene creato uno snapshot automatico prima dell'import."
-                )
-              ) {
-                importMut.mutate()
-              }
-            }}
-          >
+          <label className={`${btnGhost} cursor-pointer ${importMut.isPending ? "pointer-events-none opacity-50" : ""}`}>
             {importMut.isPending ? "Import in corso…" : "Importa turni Payroll"}
-          </button>
+            <input
+              type="file"
+              accept=".sql,.gz,application/sql,application/gzip"
+              className="hidden"
+              disabled={importMut.isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ""
+                if (!file) return
+                if (
+                  !confirm(
+                    `Importare solo i TURNI da «${file.name}»? Anagrafica, ruoli, date corsi e certificati non vengono toccati.`
+                  )
+                ) {
+                  return
+                }
+                importMut.mutate(file)
+              }}
+            />
+          </label>
           <button
             type="button"
             className={btnGhost}

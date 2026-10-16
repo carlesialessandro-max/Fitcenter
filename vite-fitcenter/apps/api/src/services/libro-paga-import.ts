@@ -1,4 +1,4 @@
-import { findDumpFile, parseMysqlTable, readDumpSql } from "./libro-paga-dump.js"
+import { findDumpFile, parseMysqlTable, readDumpSql, readDumpSqlFromBuffer } from "./libro-paga-dump.js"
 import type {
   FileDb,
   LpagaLivello,
@@ -11,7 +11,7 @@ import type {
   LpagaTurno,
   LpagaValidazione,
 } from "../store/libro-paga-db.js"
-import { exportFullFileDb, replaceImportedDb } from "../store/libro-paga-db.js"
+import { exportFullFileDb, replaceTurniOnly } from "../store/libro-paga-db.js"
 import { saveLibroPagaSnapshot } from "./libro-paga-backup.js"
 
 function n(v: string | null | undefined): number {
@@ -147,7 +147,10 @@ export function dumpSqlToDb(sql: string): FileDb {
   return { livelli, personale, turni, presenze, mensilita, validazioni, totaliReparto, macroQuote }
 }
 
-export async function importLibroPagaDump(): Promise<{
+export async function importLibroPagaDumpFromSql(
+  sql: string,
+  dumpName: string
+): Promise<{
   dump: string
   storage: "sql" | "json"
   mode: "turni-only"
@@ -159,44 +162,46 @@ export async function importLibroPagaDump(): Promise<{
   mensilita: number
   validazioni: number
 }> {
-  const dump = findDumpFile()
-  if (!dump) {
+  const current = await exportFullFileDb()
+  if (!current.personale.length) {
     throw Object.assign(
-      new Error(
-        "Dump Payroll non trovato nella cartella dati FitCenter (stessa di auth-users.json). Copia libropaga-dump.sql o Sql1272546_1_Mon.gz in C:\\FitCenter\\vite-fitcenter\\vite-fitcenter\\apps\\api\\data e riavvia FitCenterAPI."
-      ),
-      { status: 404 }
+      new Error("Anagrafica vuota: non si importa il dump Payroll. Ripristina prima il backup dati (ruoli e date)."),
+      { status: 409 }
     )
   }
-  const current = await exportFullFileDb()
-  const snapshot = saveLibroPagaSnapshot(current, "prima import turni Payroll")
-
-  const sql = readDumpSql(dump)
+  const snapshot = saveLibroPagaSnapshot(current, `prima import turni ${dumpName}`)
   const imported = dumpSqlToDb(sql)
-  if (!imported.turni.length) throw Object.assign(new Error("Dump senza turni"), { status: 400 })
+  if (!imported.turni.length) throw Object.assign(new Error("Dump senza turni (tabella workshifts)"), { status: 400 })
 
-  const db: FileDb = {
-    livelli: current.livelli.length ? current.livelli : imported.livelli,
-    personale: current.personale.length ? current.personale : imported.personale,
-    turni: imported.turni,
-    presenze: imported.presenze,
-    mensilita: current.mensilita,
-    validazioni: current.validazioni,
-    totaliReparto: current.totaliReparto,
-    macroQuote: current.macroQuote.length ? current.macroQuote : imported.macroQuote,
-  }
-
-  const storage = await replaceImportedDb(db)
+  const storage = await replaceTurniOnly(imported.turni, imported.presenze)
   return {
-    dump,
+    dump: dumpName,
     storage,
     mode: "turni-only",
     snapshotId: snapshot.id,
-    livelli: db.livelli.length,
-    personale: db.personale.length,
-    turni: db.turni.length,
-    presenze: db.presenze.length,
-    mensilita: db.mensilita.length,
-    validazioni: db.validazioni.length,
+    livelli: current.livelli.length,
+    personale: current.personale.length,
+    turni: imported.turni.length,
+    presenze: imported.presenze.length,
+    mensilita: current.mensilita.length,
+    validazioni: current.validazioni.length,
   }
+}
+
+export async function importLibroPagaDumpFromBuffer(buf: Buffer, filename: string) {
+  const sql = readDumpSqlFromBuffer(buf, filename)
+  return importLibroPagaDumpFromSql(sql, filename || "upload")
+}
+
+export async function importLibroPagaDump(): Promise<
+  Awaited<ReturnType<typeof importLibroPagaDumpFromSql>>
+> {
+  const dump = findDumpFile()
+  if (!dump) {
+    throw Object.assign(
+      new Error("Seleziona un file dump Payroll (.sql o .gz)."),
+      { status: 400 }
+    )
+  }
+  return importLibroPagaDumpFromSql(readDumpSql(dump), dump)
 }
