@@ -1194,6 +1194,43 @@ export function getLibroPagaFileDb() {
   }
 }
 
+async function listAllMensilita(): Promise<LpagaMensilita[]> {
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (!p) return readFile().mensilita
+    const r = await p.request().query(
+      "SELECT Id, PersonaleId, Mese, Bonifico, Nota, Chiuso FROM dbo.FcLibroPagaMensilita ORDER BY Mese DESC"
+    )
+    return (r.recordset as Record<string, unknown>[]).map(mapMensilita)
+  }
+  return readFile().mensilita
+}
+
+/** Stato completo libro paga (SQL o JSON) per backup / ripristino. */
+export async function exportFullFileDb(): Promise<FileDb> {
+  const [livelli, personale, turni, presenze, mensilita, validazioni, totaliReparto, macroQuote] =
+    await Promise.all([
+      listLivelli(),
+      listPersonale(),
+      listTurni(),
+      listPresenze(),
+      listAllMensilita(),
+      listValidazioni(),
+      listTotaliReparto(),
+      listMacroQuote(),
+    ])
+  return {
+    livelli,
+    personale,
+    turni,
+    presenze,
+    mensilita,
+    validazioni,
+    totaliReparto,
+    macroQuote,
+  }
+}
+
 export async function replaceImportedDb(next: FileDb): Promise<"sql" | "json"> {
   writeFile(next)
   if (next.turni.length > 3000) {

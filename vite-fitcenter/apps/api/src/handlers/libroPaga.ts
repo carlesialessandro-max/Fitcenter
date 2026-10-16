@@ -14,6 +14,13 @@ import {
   upsertPresenza,
 } from "../store/libro-paga-db.js"
 import { importLibroPagaDump } from "../services/libro-paga-import.js"
+import { repairLibroPagaRuoliFromDeleghe } from "../services/libro-paga-repair.js"
+import {
+  listLibroPagaSnapshots,
+  loadLibroPagaSnapshot,
+  saveLibroPagaSnapshot,
+} from "../services/libro-paga-backup.js"
+import { exportFullFileDb, replaceImportedDb } from "../store/libro-paga-db.js"
 import { livelloSottoAlbero, personaleVisibile } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga } from "../services/libro-paga-snapshot.js"
 import {
@@ -81,6 +88,49 @@ export async function getLibroPaga(req: Request, res: Response) {
 export async function postImportDump(_req: Request, res: Response) {
   try {
     const result = await importLibroPagaDump()
+    res.json(result)
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLibroPagaSnapshots(_req: Request, res: Response) {
+  try {
+    res.json({ snapshots: listLibroPagaSnapshots() })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLibroPagaSnapshotNow(_req: Request, res: Response) {
+  try {
+    const db = await exportFullFileDb()
+    const meta = saveLibroPagaSnapshot(db, "manuale")
+    res.json({ snapshot: meta })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLibroPagaRestoreSnapshot(req: Request, res: Response) {
+  try {
+    const id = String(req.body?.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Id snapshot obbligatorio" })
+    const db = loadLibroPagaSnapshot(id)
+    if (!db) return res.status(404).json({ message: "Snapshot non trovato" })
+    const storage = await replaceImportedDb(db)
+    res.json({ ok: true, storage, snapshotId: id })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLibroPagaRepairRuoli(req: Request, res: Response) {
+  try {
+    const adminUsernames = Array.isArray(req.body?.adminUsernames)
+      ? req.body.adminUsernames.map((x: unknown) => String(x))
+      : undefined
+    const result = await repairLibroPagaRuoliFromDeleghe({ adminUsernames })
     res.json(result)
   } catch (e) {
     fail(res, e)

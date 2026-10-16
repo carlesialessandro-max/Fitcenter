@@ -283,6 +283,10 @@ export function getDeleghe(managerId: string): string[] {
   return readDb().deleghe[managerId] ?? []
 }
 
+export function listDelegheManagerIds(): string[] {
+  return Object.keys(readDb().deleghe).filter(Boolean)
+}
+
 export function setDeleghe(managerId: string, ids: string[]): string[] {
   const db = readDb()
   db.deleghe[managerId] = [...new Set(ids.map((x) => x.trim()).filter(Boolean))]

@@ -1,5 +1,4 @@
 import { findDumpFile, parseMysqlTable, readDumpSql } from "./libro-paga-dump.js"
-import { saveDumpPasswords } from "../store/libro-paga-auth.js"
 import type {
   FileDb,
   LpagaLivello,
@@ -12,7 +11,8 @@ import type {
   LpagaTurno,
   LpagaValidazione,
 } from "../store/libro-paga-db.js"
-import { replaceImportedDb } from "../store/libro-paga-db.js"
+import { exportFullFileDb, replaceImportedDb } from "../store/libro-paga-db.js"
+import { saveLibroPagaSnapshot } from "./libro-paga-backup.js"
 
 function n(v: string | null | undefined): number {
   const x = Number(String(v ?? "").replace(",", "."))
@@ -150,6 +150,8 @@ export function dumpSqlToDb(sql: string): FileDb {
 export async function importLibroPagaDump(): Promise<{
   dump: string
   storage: "sql" | "json"
+  mode: "turni-only"
+  snapshotId: string
   livelli: number
   personale: number
   turni: number
@@ -166,20 +168,30 @@ export async function importLibroPagaDump(): Promise<{
       { status: 404 }
     )
   }
+  const current = await exportFullFileDb()
+  const snapshot = saveLibroPagaSnapshot(current, "prima import turni Payroll")
+
   const sql = readDumpSql(dump)
-  const db = dumpSqlToDb(sql)
-  if (!db.livelli.length) throw Object.assign(new Error("Dump senza livelli"), { status: 400 })
-  saveDumpPasswords(
-    parseMysqlTable(sql, "users").map((r) => ({
-      id: String(r.id ?? ""),
-      username: String(r.username ?? ""),
-      hash: String(r.password ?? ""),
-    }))
-  )
+  const imported = dumpSqlToDb(sql)
+  if (!imported.turni.length) throw Object.assign(new Error("Dump senza turni"), { status: 400 })
+
+  const db: FileDb = {
+    livelli: current.livelli.length ? current.livelli : imported.livelli,
+    personale: current.personale.length ? current.personale : imported.personale,
+    turni: imported.turni,
+    presenze: imported.presenze,
+    mensilita: current.mensilita,
+    validazioni: current.validazioni,
+    totaliReparto: current.totaliReparto,
+    macroQuote: current.macroQuote.length ? current.macroQuote : imported.macroQuote,
+  }
+
   const storage = await replaceImportedDb(db)
   return {
     dump,
     storage,
+    mode: "turni-only",
+    snapshotId: snapshot.id,
     livelli: db.livelli.length,
     personale: db.personale.length,
     turni: db.turni.length,

@@ -191,7 +191,23 @@ export const libroPagaApi = {
     if (reparto) q.set("reparto", reparto)
     return api.get<LibroPagaSnapshot>(`/libro-paga?${q.toString()}`)
   },
-  importDump: () => api.post<Record<string, unknown>>("/libro-paga/import-dump", {}),
+  importDump: () =>
+    api.post<{
+      turni: number
+      mode: string
+      snapshotId: string
+      storage: string
+    }>("/libro-paga/import-dump", {}),
+  listSnapshots: () =>
+    api.get<{ snapshots: { id: string; createdAt: string; label: string; personale: number; turni: number }[] }>(
+      "/libro-paga/snapshots"
+    ),
+  snapshotNow: () => api.post<{ snapshot: { id: string } }>("/libro-paga/snapshots", {}),
+  restoreSnapshot: (id: string) => api.post<{ ok: boolean; storage: string }>("/libro-paga/snapshots/restore", { id }),
+  repairRuoli: (adminUsernames?: string[]) =>
+    api.post<{ managers: number; admins: number; skipped: number }>("/libro-paga/repair-ruoli", {
+      adminUsernames: adminUsernames ?? [],
+    }),
   createLivello: (body: {
     nome: string
     parentId?: string

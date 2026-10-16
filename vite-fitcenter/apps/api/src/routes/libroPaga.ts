@@ -5,6 +5,10 @@ import {
   patchLivello,
   patchPersonale,
   postImportDump,
+  getLibroPagaSnapshots,
+  postLibroPagaSnapshotNow,
+  postLibroPagaRestoreSnapshot,
+  postLibroPagaRepairRuoli,
   postLivello,
   postPersonale,
   postTurno,
@@ -27,6 +31,10 @@ libroPagaRouter.use(requireAuth, requireAdmin)
 
 libroPagaRouter.get("/", getLibroPaga)
 libroPagaRouter.post("/import-dump", postImportDump)
+libroPagaRouter.get("/snapshots", getLibroPagaSnapshots)
+libroPagaRouter.post("/snapshots", postLibroPagaSnapshotNow)
+libroPagaRouter.post("/snapshots/restore", postLibroPagaRestoreSnapshot)
+libroPagaRouter.post("/repair-ruoli", postLibroPagaRepairRuoli)
 libroPagaRouter.post("/livelli", postLivello)
 libroPagaRouter.patch("/livelli/:id", patchLivello)
 libroPagaRouter.delete("/livelli/:id", removeLivello)

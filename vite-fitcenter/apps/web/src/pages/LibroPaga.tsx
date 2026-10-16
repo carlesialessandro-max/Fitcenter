@@ -99,15 +99,53 @@ export function LibroPaga() {
     enabled: canFull,
   })
 
+  const lpSnapshots = useQuery({
+    queryKey: ["libro-paga-snapshots"],
+    queryFn: () => libroPagaApi.listSnapshots(),
+    enabled: canFull,
+  })
+
   const invalidate = () => qc.invalidateQueries({ queryKey: ["libro-paga"] })
   const importMut = useMutation({
     mutationFn: () => libroPagaApi.importDump(),
     onSuccess: (r) => {
       setError("")
       invalidate()
+      void qc.invalidateQueries({ queryKey: ["libro-paga-snapshots"] })
       alert(
-        `Importati ${r.livelli} livelli, ${r.personale} persone, ${r.turni} turni (storage ${r.storage}).`
+        `Importati ${r.turni} turni dal backup Payroll. Ruoli e anagrafica non modificati. Snapshot salvato (${r.snapshotId}).`
       )
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const restoreSnapMut = useMutation({
+    mutationFn: (id: string) => libroPagaApi.restoreSnapshot(id),
+    onSuccess: () => {
+      setError("")
+      invalidate()
+      alert("Libro paga ripristinato dallo snapshot.")
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const repairRuoliMut = useMutation({
+    mutationFn: () => {
+      const raw = window.prompt(
+        "Username admin libro paga (separati da virgola). Lascia vuoto per ripristinare solo i responsabili dalle deleghe convalida:",
+        ""
+      )
+      if (raw === null) return Promise.reject(new Error("Annullato"))
+      const adminUsernames = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+      return libroPagaApi.repairRuoli(adminUsernames)
+    },
+    onSuccess: (r) => {
+      setError("")
+      invalidate()
+      alert(`Ripristinati ${r.managers} responsabili e ${r.admins} admin (da deleghe / lista).`)
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -169,13 +207,54 @@ export function LibroPaga() {
             className={btnGhost}
             disabled={importMut.isPending}
             onClick={() => {
-              if (confirm("Importare lo storico da Payroll (libropaga.it)? Password vecchie non vengono copiate.")) {
+              if (
+                confirm(
+                  "Importare solo i TURNI dal file libropaga-dump.sql? Non cambia ruoli admin/responsabili né reparti del personale. Viene creato uno snapshot automatico prima dell'import."
+                )
+              ) {
                 importMut.mutate()
               }
             }}
           >
-            {importMut.isPending ? "Import in corso…" : "Importa backup Payroll"}
+            {importMut.isPending ? "Import in corso…" : "Importa turni Payroll"}
           </button>
+          <button
+            type="button"
+            className={btnGhost}
+            disabled={repairRuoliMut.isPending}
+            onClick={() => repairRuoliMut.mutate()}
+            title="Ripristina responsabili da deleghe convalida; opzionale lista username admin"
+          >
+            {repairRuoliMut.isPending ? "Ripristino…" : "Ripristina ruoli"}
+          </button>
+          {(lpSnapshots.data?.snapshots.length ?? 0) > 0 ? (
+            <label className="grid gap-1 text-sm text-zinc-400">
+              <span className="text-xs">Snapshot libro paga</span>
+              <select
+                className={inputCls}
+                defaultValue=""
+                onChange={(e) => {
+                  const id = e.target.value
+                  if (!id) return
+                  e.target.value = ""
+                  if (
+                    confirm(
+                      "Ripristinare tutto il libro paga (personale, ruoli, turni) da questo snapshot? Sovrascrive lo stato attuale."
+                    )
+                  ) {
+                    restoreSnapMut.mutate(id)
+                  }
+                }}
+              >
+                <option value="">Ripristina snapshot…</option>
+                {lpSnapshots.data!.snapshots.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label} · {s.createdAt.slice(0, 16).replace("T", " ")} · {s.personale} pers.
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
         </div>
         ) : null}
       </div>
