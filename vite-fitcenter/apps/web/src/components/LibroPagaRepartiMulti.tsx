@@ -54,6 +54,25 @@ function childrenOf(livelli: LpagaLivello[], parentId: string): LpagaLivello[] {
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
 }
 
+/** Mansioni retribuibili il cui parent non è nell’albero attivo (es. sotto livello disattivato) → visibili sotto il reparto. */
+function childrenForPicker(all: LpagaLivello[], attivi: LpagaLivello[], parentId: string): LpagaLivello[] {
+  const kids = childrenOf(attivi, parentId)
+  const kidIds = new Set(kids.map((k) => k.id))
+  const parent = all.find((l) => l.id === parentId)
+  if (!parent || !isRoot(parent)) return kids
+  const subtreeAttivo = sottoAlberoUi(attivi, parentId)
+  for (const l of attivi) {
+    if (!l.retribuibile) continue
+    if (repartoRootId(all, l.id) !== parentId) continue
+    if (subtreeAttivo.has(l.id)) continue
+    if (!kidIds.has(l.id)) {
+      kids.push(l)
+      kidIds.add(l.id)
+    }
+  }
+  return kids.sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+}
+
 function repartoRootId(livelli: LpagaLivello[], id: string): string {
   const byId = new Map(livelli.map((l) => [l.id, l]))
   let cur = byId.get(id)
@@ -67,15 +86,24 @@ function repartoRootId(livelli: LpagaLivello[], id: string): string {
   return id
 }
 
+function repartoSubtreeIds(all: LpagaLivello[], attivi: LpagaLivello[], rootId: string): Set<string> {
+  const ids = sottoAlberoUi(attivi, rootId)
+  for (const l of attivi) {
+    if (l.retribuibile && repartoRootId(all, l.id) === rootId) ids.add(l.id)
+  }
+  return ids
+}
+
 function toggleRepartoIntero(
-  livelli: LpagaLivello[],
+  all: LpagaLivello[],
+  attivi: LpagaLivello[],
   value: string[],
   rootId: string,
   on: boolean
 ): string[] {
-  const subtree = sottoAlberoUi(livelli, rootId)
+  const subtree = repartoSubtreeIds(all, attivi, rootId)
   const without = value.filter((x) => !subtree.has(x))
-  return on ? compattaLivelloIds(livelli, [...without, rootId]) : without
+  return on ? compattaLivelloIds(attivi, [...without, rootId]) : without
 }
 
 function selectionCopre(livelli: LpagaLivello[], value: string[], nodeId: string): boolean {
@@ -83,13 +111,14 @@ function selectionCopre(livelli: LpagaLivello[], value: string[], nodeId: string
 }
 
 function toggleNodo(
-  livelli: LpagaLivello[],
+  all: LpagaLivello[],
+  attivi: LpagaLivello[],
   value: string[],
   nodeId: string,
   on: boolean
 ): string[] {
-  const rootId = repartoRootId(livelli, nodeId)
-  const rootSubtree = sottoAlberoUi(livelli, rootId)
+  const rootId = repartoRootId(all, nodeId)
+  const rootSubtree = repartoSubtreeIds(all, attivi, rootId)
   let next = value.filter((x) => x !== rootId)
   if (on) {
     if (!next.includes(nodeId)) next.push(nodeId)
@@ -97,10 +126,11 @@ function toggleNodo(
     next = next.filter((x) => x !== nodeId)
   }
   next = next.filter((x) => rootSubtree.has(x))
-  return compattaLivelloIds(livelli, next)
+  return compattaLivelloIds(attivi, next)
 }
 
 function LivelloRow({
+  allLivelli,
   livelli,
   node,
   depth,
@@ -109,6 +139,7 @@ function LivelloRow({
   expanded,
   onToggleExpand,
 }: {
+  allLivelli: LpagaLivello[]
   livelli: LpagaLivello[]
   node: LpagaLivello
   depth: number
@@ -118,12 +149,17 @@ function LivelloRow({
   onToggleExpand: (id: string) => void
 }) {
   const root = isRoot(node)
-  const kids = childrenOf(livelli, node.id)
+  const kids = childrenForPicker(allLivelli, livelli, node.id)
   const hasKids = kids.length > 0
   const isExpanded = expanded.has(node.id)
   const esplicito = value.includes(node.id)
   const interoReparto = root && esplicito
-  const coperto = selectionCopre(livelli, value, node.id)
+  const repartoRoot = repartoRootId(allLivelli, node.id)
+  const repartoInteroSelezionato = value.some((id) => {
+    const n = allLivelli.find((l) => l.id === id)
+    return Boolean(n && isRoot(n) && id === repartoRoot)
+  })
+  const coperto = repartoInteroSelezionato || selectionCopre(livelli, value, node.id)
   const checked = coperto
   const subtree = sottoAlberoUi(livelli, node.id)
   const selectedUnder = value.filter((x) => subtree.has(x) && x !== node.id)
@@ -155,8 +191,8 @@ function LivelloRow({
             disabled={disabled}
             onChange={() => {
               if (disabled) return
-              if (root) onChange(toggleRepartoIntero(livelli, value, node.id, !interoReparto))
-              else onChange(toggleNodo(livelli, value, node.id, !esplicito))
+              if (root) onChange(toggleRepartoIntero(allLivelli, livelli, value, node.id, !interoReparto))
+              else onChange(toggleNodo(allLivelli, livelli, value, node.id, !esplicito))
             }}
             className="mt-0.5 accent-amber-500 disabled:opacity-60"
           />
@@ -176,6 +212,7 @@ function LivelloRow({
         ? kids.map((c) => (
             <LivelloRow
               key={c.id}
+              allLivelli={allLivelli}
               livelli={livelli}
               node={c}
               depth={depth + 1}
@@ -199,7 +236,8 @@ export function LibroPagaRepartiMulti({
   value: string[]
   onChange: (ids: string[]) => void
 }) {
-  const attivi = useMemo(() => reparti.filter((l) => l.attivo !== false), [reparti])
+  const allLivelli = reparti
+  const attivi = useMemo(() => allLivelli.filter((l) => l.attivo !== false), [allLivelli])
   const roots = useMemo(() => attivi.filter(isRoot).sort((a, b) => a.nome.localeCompare(b.nome, "it")), [attivi])
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(roots.map((r) => r.id)))
 
@@ -227,6 +265,7 @@ export function LibroPagaRepartiMulti({
       {roots.map((r) => (
         <LivelloRow
           key={r.id}
+          allLivelli={allLivelli}
           livelli={attivi}
           node={r}
           depth={0}
