@@ -158,10 +158,15 @@ export function parseMysqlTable(sql: string, table: string): MysqlRow[] {
   return rows
 }
 
+export function readDumpSqlFromBuffer(buf: Buffer, filename = ""): string {
+  const n = filename.toLowerCase()
+  const gz = n.endsWith(".gz") || (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b)
+  return (gz ? zlib.gunzipSync(buf) : buf).toString("utf8")
+}
+
 export function readDumpSql(filePath: string): string {
   const buf = fs.readFileSync(filePath)
-  const gz = filePath.toLowerCase().endsWith(".gz") || (buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b)
-  return (gz ? zlib.gunzipSync(buf) : buf).toString("utf8")
+  return readDumpSqlFromBuffer(buf, filePath)
 }
 
 function isDumpFilename(name: string): boolean {
