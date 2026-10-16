@@ -461,7 +461,10 @@ function inFinestraPiscinaEstateUi(
     })
   }
   const settembre = [
-    ...speseAnno.filter((s) => matchFornitore(s.fornitore)).map((s) => s.dataDocumento.slice(0, 10)),
+    ...speseAnno
+      .filter((s) => !excludeSpesaId || s.id !== excludeSpesaId)
+      .filter((s) => matchFornitore(s.fornitore))
+      .map((s) => s.dataDocumento.slice(0, 10)),
     doc,
   ]
     .filter((d) => d.startsWith(`${anno}-09`))
