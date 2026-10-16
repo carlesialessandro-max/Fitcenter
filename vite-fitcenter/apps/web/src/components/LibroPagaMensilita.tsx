@@ -473,7 +473,7 @@ function DettaglioMese({
     },
     onError: (e: Error) => onError?.(e.message),
   })
-  const reparti = (livelli ?? []).filter((l) => !l.retribuibile)
+  const reparti = (livelli ?? []).filter((l) => l.attivo !== false)
   const mansioniMese = useMemo(() => {
     const map = new Map<string, string>()
     for (const t of lezioni) {
@@ -561,7 +561,9 @@ function DettaglioMese({
           </label>
           <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             <span>Reparti / sotto-reparti</span>
-            <p className="text-[11px] text-zinc-600">Puoi selezionarne più di uno (es. corsi terra e acqua).</p>
+            <p className="text-[11px] text-zinc-600">
+              Reparto intero oppure, aprendo la gerarchia, solo alcune mansioni (es. assistenza scuola nuoto in piscina).
+            </p>
             <LibroPagaRepartiMulti reparti={reparti} value={livelloIds} onChange={setLivelloIds} />
           </div>
           <label className="grid gap-1 text-xs text-zinc-500">
