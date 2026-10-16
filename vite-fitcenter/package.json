@@ -12,6 +12,7 @@
     "import:reception": "pnpm --filter api run import:reception",
     "import:acquaticita-spogliatoi": "pnpm --filter api run import:acquaticita-spogliatoi",
     "import:pulizie": "pnpm --filter api run import:pulizie",
+    "lpaga:repair-ruoli": "pnpm --filter api run lpaga:repair-ruoli",
     "start": "node apps/api/dist/index.js",
     "lint": "turbo lint",
     "format": "turbo format",

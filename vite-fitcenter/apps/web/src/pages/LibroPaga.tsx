@@ -132,8 +132,8 @@ export function LibroPaga() {
   const repairRuoliMut = useMutation({
     mutationFn: () => {
       const raw = window.prompt(
-        "Username admin libro paga (separati da virgola). Lascia vuoto per ripristinare solo i responsabili dalle deleghe convalida:",
-        ""
+        "Username admin libro paga (separati da virgola). «admin» resta sempre amministratore.",
+        "admin"
       )
       if (raw === null) return Promise.reject(new Error("Annullato"))
       const adminUsernames = raw

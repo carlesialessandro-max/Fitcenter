@@ -21,7 +21,8 @@
     "backup:data": "node scripts/backup-fitcenter-data.mjs",
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",
-    "backup:data:restore": "node scripts/backup-fitcenter-data.mjs --restore"
+    "backup:data:restore": "node scripts/backup-fitcenter-data.mjs --restore",
+    "lpaga:repair-ruoli": "tsx scripts/repair-lpaga-ruoli-from-deleghe.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

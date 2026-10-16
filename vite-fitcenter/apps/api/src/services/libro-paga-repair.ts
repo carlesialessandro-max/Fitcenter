@@ -7,7 +7,7 @@ export async function repairLibroPagaRuoliFromDeleghe(opts?: {
 }): Promise<{ managers: number; admins: number; skipped: number }> {
   const managerIds = new Set(listDelegheManagerIds())
   const adminUsernames = new Set(
-    (opts?.adminUsernames ?? []).map((u) => u.trim().toLowerCase()).filter(Boolean)
+    ["admin", ...(opts?.adminUsernames ?? [])].map((u) => u.trim().toLowerCase()).filter(Boolean)
   )
   const personale = await listPersonale()
   let managers = 0
