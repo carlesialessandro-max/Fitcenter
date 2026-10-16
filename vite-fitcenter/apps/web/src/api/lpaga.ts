@@ -67,6 +67,11 @@ export type LpagaConvalidaMesePayload = {
   confermatiOra?: number
   anomalie: LpagaConvalidaPayload["rows"]
   fogli: { bagnini: string; desk: string }
+  settimane?: { id: string; from: string; to: string; label: string }[]
+  scopeOpzioni?: { id: string; nome: string }[]
+  scopeId?: string
+  from?: string
+  to?: string
 }
 
 function getToken(): string | null {
@@ -168,12 +173,17 @@ export const lpagaApi = {
     lpagaRequest<LpagaConvalidaPayload>(
       `/lpaga/convalida?mese=${encodeURIComponent(mese)}&personaleId=${encodeURIComponent(personaleId)}`
     ),
-  getConvalidaMese: (mese: string) =>
-    lpagaRequest<LpagaConvalidaMesePayload>(`/lpaga/convalida-mese?mese=${encodeURIComponent(mese)}`),
-  postConvalidaMese: (mese: string) =>
+  getConvalidaMese: (mese: string, opts?: { scope?: string; from?: string; to?: string }) => {
+    const q = new URLSearchParams({ mese })
+    if (opts?.scope) q.set("scope", opts.scope)
+    if (opts?.from) q.set("from", opts.from)
+    if (opts?.to) q.set("to", opts.to)
+    return lpagaRequest<LpagaConvalidaMesePayload>(`/lpaga/convalida-mese?${q.toString()}`)
+  },
+  postConvalidaMese: (mese: string, opts?: { scope?: string; from?: string; to?: string }) =>
     lpagaRequest<LpagaConvalidaMesePayload>("/lpaga/convalida-mese", {
       method: "POST",
-      body: JSON.stringify({ mese }),
+      body: JSON.stringify({ mese, ...(opts?.scope ? { scope: opts.scope } : {}), ...(opts?.from ? { from: opts.from } : {}), ...(opts?.to ? { to: opts.to } : {}) }),
     }),
   putConvalidaTurno: (body: { turnoId: string; stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }) =>
     lpagaRequest<{ convalida: unknown }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),

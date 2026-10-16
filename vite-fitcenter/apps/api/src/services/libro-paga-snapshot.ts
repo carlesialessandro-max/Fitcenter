@@ -9,7 +9,6 @@ import {
   listPresenze,
   listTotaliReparto,
   listTurni,
-  listValidazioni,
   nominativo,
   repartoNomePersona,
   type LpagaLivello,
@@ -17,6 +16,7 @@ import {
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
 import { personaleLivelloRadici } from "./libro-paga-scope.js"
+import { buildRiepilogoConvalide, mapTurnoConvalide } from "./libro-paga-convalida.js"
 
 function buildLivelloTreeNodes(livelli: LpagaLivello[], parentId?: string): { id: string; nome: string; retribuibile: boolean; children?: ReturnType<typeof buildLivelloTreeNodes> }[] {
   const pid = (parentId ?? "").trim()
@@ -75,12 +75,11 @@ export async function buildLibroPagaSnapshot(opts?: {
 }) {
   const mese = opts?.mese && isYmLpaga(opts.mese) ? opts.mese : defaultMeseLpaga()
   const storage = await ensureLibroPagaStorage()
-  const [livelli, personaleRaw, turniTutti, savedMens, validazioni, totaliReparto, macroQuote] = await Promise.all([
+  const [livelli, personaleRaw, turniTutti, savedMens, totaliReparto, macroQuote] = await Promise.all([
     listLivelli(),
     listPersonale(),
     listTurni(),
     listMensilita(mese),
-    listValidazioni(),
     listTotaliReparto(),
     listMacroQuote(),
   ])
@@ -141,9 +140,11 @@ export async function buildLibroPagaSnapshot(opts?: {
     ...(opts?.hideIban ? { iban: p.id === opts.viewerId ? p.iban ?? "" : "" } : {}),
   }))
 
+  const convByTurno = mapTurnoConvalide()
   const turniOut = turni.map((t) => {
     const pr = presenzaByTurno.get(t.id)
     const pe = perById.get(t.personaleId)
+    const cv = convByTurno[t.id]
     return {
       ...t,
       personaleNome: pe ? nominativo(pe) : "—",
@@ -151,6 +152,9 @@ export async function buildLibroPagaSnapshot(opts?: {
       presenzaValore: pr?.valore ?? null,
       presenzaDa: pr?.controllatoDa ?? null,
       presenzaAt: pr?.controllatoAt ?? null,
+      convalidaStato: cv?.stato ?? null,
+      convalidaDa: cv?.da ?? null,
+      convalidaAt: cv?.at ?? null,
     }
   })
 
@@ -191,30 +195,25 @@ export async function buildLibroPagaSnapshot(opts?: {
     })
     .sort((a, b) => cmpPersonaleNomeCognome(perById.get(a.personaleId) ?? {}, perById.get(b.personaleId) ?? {}))
 
-  const lastValByPerson = new Map<string, { giorno: string; stamp: string }>()
-  for (const v of validazioni) {
-    const prev = lastValByPerson.get(v.personaleId)
-    if (!prev || v.giorno > prev.giorno || (v.giorno === prev.giorno && v.stamp > prev.stamp)) {
-      lastValByPerson.set(v.personaleId, { giorno: v.giorno, stamp: v.stamp })
+  const convalideRiepilogo = buildRiepilogoConvalide({
+    mese,
+    turni: turniOut.map((t) => ({ id: t.id, giorno: t.giorno, livelloId: t.livelloId })),
+    personale: personaleAll,
+    livelli,
+  })
+  const convalide = convalideRiepilogo.responsabili.map((r) => {
+    const giornoUltima = r.ultima ? r.ultima.slice(0, 10) : null
+    return {
+      personaleId: r.personaleId,
+      nominativo: r.nominativo,
+      reparto: r.reparto,
+      ultima: r.ultima,
+      okIeri: giornoUltima === yesterday || giornoUltima === todayYmd,
+      nTurni: r.nTurni,
+      nConfermati: r.nConfermati,
+      nDaFare: r.nDaFare,
     }
-  }
-  const convalide = personale
-    .filter((p) => p.ruolo === "manager")
-    .map((p) => {
-      const last = lastValByPerson.get(p.id)
-      return {
-        personaleId: p.id,
-        nominativo: nominativo(p),
-        reparto: repartoNomePersona(p, livelli),
-        ultima: last?.stamp ?? null,
-        okIeri: last?.giorno === yesterday,
-      }
-    })
-    .sort((a, b) => {
-      const pa = perById.get(a.personaleId)
-      const pb = perById.get(b.personaleId)
-      return cmpPersonaleNomeCognome(pa ?? {}, pb ?? {})
-    })
+  })
 
   const costiMesi = opts?.hideGlobalStats
     ? []
@@ -259,6 +258,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     turni: turniOut,
     mensilita,
     convalide,
+    convalideRiepilogo,
     reparti: livelli
       .filter((l) => !l.parentId)
       .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
@@ -280,7 +280,7 @@ export async function buildLibroPagaSnapshot(opts?: {
       user: personale.filter((p) => p.ruolo === "user").length,
       livelli: livelli.length,
       turniOggi: turni.filter((t) => t.giorno === todayYmd).length,
-      convalideOggi: validazioni.filter((v) => v.giorno === todayYmd || v.stamp.slice(0, 10) === todayYmd).length,
+      convalideOggi: turniOut.filter((t) => (t.convalidaAt ?? "").slice(0, 10) === todayYmd).length,
       costiMesi,
       donut: donutMese
         ? [

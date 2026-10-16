@@ -70,6 +70,9 @@ export type LpagaTurnoRow = {
   presenzaValore: number | null
   presenzaDa: string | null
   presenzaAt: string | null
+  convalidaStato?: string | null
+  convalidaDa?: string | null
+  convalidaAt?: string | null
 }
 
 export type LpagaMensilitaRow = {
@@ -94,6 +97,50 @@ export type LpagaConvalida = {
   reparto: string
   ultima: string | null
   okIeri: boolean
+  nTurni?: number
+  nConfermati?: number
+  nDaFare?: number
+}
+
+export type LpagaConvalideRiepilogo = {
+  mese: string
+  nTurni: number
+  nConfermati: number
+  nNonSvolte: number
+  nDaFare: number
+  ultima: string | null
+  ultimaDa: string | null
+  settimane: {
+    id: string
+    from: string
+    to: string
+    label: string
+    nTurni: number
+    nConfermati: number
+    nNonSvolte: number
+    nDaFare: number
+    ultima: string | null
+    ultimaDa: string | null
+  }[]
+  responsabili: {
+    personaleId: string
+    nominativo: string
+    reparto: string
+    nTurni: number
+    nConfermati: number
+    nNonSvolte: number
+    nDaFare: number
+    ultima: string | null
+    ultimaDa: string | null
+    scopes: {
+      id: string
+      nome: string
+      nTurni: number
+      nConfermati: number
+      nDaFare: number
+    }[]
+    settimane: LpagaConvalideRiepilogo["settimane"]
+  }[]
 }
 
 export type LpagaTreeNode = {
@@ -111,6 +158,7 @@ export type LibroPagaSnapshot = {
   turni: LpagaTurnoRow[]
   mensilita: LpagaMensilitaRow[]
   convalide: LpagaConvalida[]
+  convalideRiepilogo?: LpagaConvalideRiepilogo
   tree: LpagaTreeNode[]
   reparti?: { id: string; nome: string }[]
   home: {
@@ -190,15 +238,19 @@ export const libroPagaApi = {
     if (reparto) q.set("reparto", reparto)
     return api.get<import("@/api/lpaga").LpagaConvalidaPayload>(`/libro-paga/convalida?${q.toString()}`)
   },
-  getConvalidaMese: (mese: string, reparto?: string) => {
+  getConvalidaMese: (mese: string, opts?: { scope?: string; from?: string; to?: string }) => {
     const q = new URLSearchParams({ mese })
-    if (reparto) q.set("reparto", reparto)
+    if (opts?.scope) q.set("scope", opts.scope)
+    if (opts?.from) q.set("from", opts.from)
+    if (opts?.to) q.set("to", opts.to)
     return api.get<import("@/api/lpaga").LpagaConvalidaMesePayload>(`/libro-paga/convalida-mese?${q.toString()}`)
   },
-  postConvalidaMese: (mese: string, reparto?: string) =>
+  postConvalidaMese: (mese: string, opts?: { scope?: string; from?: string; to?: string }) =>
     api.post<import("@/api/lpaga").LpagaConvalidaMesePayload>("/libro-paga/convalida-mese", {
       mese,
-      ...(reparto ? { reparto } : {}),
+      ...(opts?.scope ? { scope: opts.scope } : {}),
+      ...(opts?.from ? { from: opts.from } : {}),
+      ...(opts?.to ? { to: opts.to } : {}),
     }),
   putConvalidaTurno: (body: {
     turnoId: string

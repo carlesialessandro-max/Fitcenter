@@ -214,7 +214,16 @@ export function LibroPaga() {
         {data && tab === "turni" && (
           <TurniTab data={data} mese={mese} q={q} setQ={setQ} reparto={reparto} onError={setError} onDone={() => { setError(""); invalidate() }} />
         )}
-      {data && tab === "convalide" && <ConvalideTab data={data} />}
+      {data && tab === "convalide" && (
+        <ConvalideTab
+          data={data}
+          mese={mese}
+          onDone={() => {
+            setError("")
+            invalidate()
+          }}
+        />
+      )}
       {data && tab === "mensilita" && (
         <MensilitaTab data={data} mese={mese} reparto={reparto} onError={setError} onDone={() => { setError(""); invalidate() }} />
       )}
@@ -998,36 +1007,197 @@ function PersonaleDelegheAdmin({
   )
 }
 
-function ConvalideTab({ data }: { data: LibroPagaSnapshot }) {
+function fmtStamp(iso: string | null | undefined): string {
+  if (!iso) return "—"
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return fmtDateIt(iso)
+  return d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })
+}
+
+function statoConvLabel(s?: string | null): string {
+  if (s === "ok") return "Confermato"
+  if (s === "sostituzione") return "Sostituzione"
+  if (s === "non_svolta") return "Non svolta"
+  if (s === "da_verificare") return "Da verificare"
+  return "Da fare"
+}
+
+function ConvalideTab({
+  data,
+  mese,
+  onDone,
+}: {
+  data: LibroPagaSnapshot
+  mese: string
+  onDone: () => void
+}) {
+  const riep = data.convalideRiepilogo
+  const [vista, setVista] = useState<"mese" | "settimana">("mese")
+  const [sett, setSett] = useState("")
+  const [meseOpen, setMeseOpen] = useState(false)
+  const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
+  const convMese = useLibroPagaConvalidaMese(
+    mese,
+    meseOpen,
+    (m) => libroPagaApi.getConvalidaMese(m, { scope: filtri.scope || undefined, from: filtri.from || undefined, to: filtri.to || undefined }),
+    `${filtri.scope}|${filtri.from}|${filtri.to}`
+  )
+  const weeks = riep?.settimane ?? []
+  const weekSel = weeks.find((w) => w.from === sett)
+  const turniVista = useMemo(() => {
+    if (vista === "settimana" && weekSel) {
+      return data.turni.filter((t) => t.giorno >= weekSel.from && t.giorno <= weekSel.to)
+    }
+    return data.turni
+  }, [data.turni, vista, weekSel])
+
   return (
     <div className="mt-4 space-y-4">
-      <Card title="Convalide responsabili">
+      {meseOpen && convMese.isLoading && <p className="text-sm text-zinc-500">Controllo turni…</p>}
+      {meseOpen && convMese.isError && <p className="text-sm text-red-400">{(convMese.error as Error).message}</p>}
+      {meseOpen && convMese.data && (
+        <LibroPagaConvalidaMesePanel
+          data={convMese.data}
+          showCalendariFitCenter
+          onClose={() => setMeseOpen(false)}
+          onSaveTurno={(body) => libroPagaApi.putConvalidaTurno(body).then(onDone)}
+          onConfermaAllineati={() =>
+            libroPagaApi.postConvalidaMese(mese, {
+              scope: filtri.scope || undefined,
+              from: filtri.from || undefined,
+              to: filtri.to || undefined,
+            }).then((r) => {
+              onDone()
+              return r
+            })
+          }
+          onFiltriChange={(f) => setFiltri(f)}
+        />
+      )}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className={vista === "mese" ? "rounded-md bg-amber-500/20 px-3 py-1.5 text-sm text-amber-200" : btnGhost}
+            onClick={() => setVista("mese")}
+          >
+            Mese
+          </button>
+          <button
+            type="button"
+            className={vista === "settimana" ? "rounded-md bg-amber-500/20 px-3 py-1.5 text-sm text-amber-200" : btnGhost}
+            onClick={() => {
+              setVista("settimana")
+              if (!sett && weeks[0]) setSett(weeks[0].from)
+            }}
+          >
+            Settimana
+          </button>
+          {vista === "settimana" && (
+            <select value={sett} onChange={(e) => setSett(e.target.value)} className={inputCls}>
+              {weeks.map((w) => (
+                <option key={w.id} value={w.from}>
+                  {w.label} · {w.nConfermati}/{w.nTurni}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <button type="button" className={btnAmber} onClick={() => setMeseOpen(true)}>
+          Convalida turni
+        </button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Card title="Turni periodo">
+          <p className="text-2xl font-semibold">{vista === "settimana" && weekSel ? weekSel.nTurni : riep?.nTurni ?? data.turni.length}</p>
+        </Card>
+        <Card title="Confermati">
+          <p className="text-2xl font-semibold text-emerald-300">
+            {vista === "settimana" && weekSel ? weekSel.nConfermati : riep?.nConfermati ?? 0}
+          </p>
+        </Card>
+        <Card title="Da fare">
+          <p className="text-2xl font-semibold text-amber-300">
+            {vista === "settimana" && weekSel ? weekSel.nDaFare : riep?.nDaFare ?? 0}
+          </p>
+        </Card>
+        <Card title="Ultima convalida">
+          <p className="text-sm text-zinc-200">{fmtStamp(riep?.ultima)}</p>
+          <p className="mt-1 text-xs text-zinc-500">{riep?.ultimaDa || "—"}</p>
+        </Card>
+      </div>
+      <Card title="Convalide dei responsabili">
+        <p className="mb-3 text-xs text-zinc-500">
+          Quando un responsabile convalida (anche solo corsi terra o acqua), qui vedi avanzamento del mese e per
+          settimana.
+        </p>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-zinc-500">
               <tr>
                 <th className="px-3 py-2">Responsabile</th>
                 <th className="px-3 py-2">Reparto</th>
-                <th className="px-3 py-2">Ultima convalida</th>
+                <th className="px-3 py-2 text-right">Turni</th>
+                <th className="px-3 py-2 text-right">Confermati</th>
+                <th className="px-3 py-2 text-right">Da fare</th>
+                <th className="px-3 py-2">Ultima</th>
                 <th className="px-3 py-2">Stato</th>
               </tr>
             </thead>
             <tbody>
-              {data.convalide.map((c) => (
-                <tr key={c.personaleId} className="border-t border-zinc-800 text-zinc-200">
-                  <td className="px-3 py-2">{c.nominativo}</td>
-                  <td className="px-3 py-2">{c.reparto}</td>
-                  <td className="px-3 py-2 text-zinc-400">{c.ultima ? fmtDateIt(c.ultima) : "—"}</td>
-                  <td className="px-3 py-2">
-                    <span className={`inline-block h-2.5 w-2.5 rounded-full ${c.okIeri ? "bg-emerald-400" : "bg-red-500"}`} />
+              {(riep?.responsabili ?? data.convalide).map((c) => {
+                const nTurni = "nTurni" in c ? (c.nTurni ?? 0) : 0
+                const nDaFare = "nDaFare" in c ? (c.nDaFare ?? 0) : 0
+                const nConf = "nConfermati" in c ? (c.nConfermati ?? 0) : 0
+                const ok = nTurni > 0 && nDaFare === 0
+                return (
+                  <tr key={c.personaleId} className="border-t border-zinc-800 text-zinc-200">
+                    <td className="px-3 py-2">{c.nominativo}</td>
+                    <td className="px-3 py-2 text-zinc-400">{c.reparto}</td>
+                    <td className="px-3 py-2 text-right">{nTurni}</td>
+                    <td className="px-3 py-2 text-right text-emerald-300">{nConf}</td>
+                    <td className="px-3 py-2 text-right text-amber-300">{nDaFare}</td>
+                    <td className="px-3 py-2 text-zinc-400">{fmtStamp(c.ultima)}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-red-500"}`} />
+                      <span className="ml-2 text-xs text-zinc-500">{ok ? "Completo" : "In corso"}</span>
+                    </td>
+                  </tr>
+                )
+              })}
+              {!(riep?.responsabili ?? data.convalide).length && (
+                <tr>
+                  <td className="px-3 py-6 text-zinc-500" colSpan={7}>
+                    Nessun responsabile con turni nel periodo.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
+        {riep?.responsabili?.some((r) => r.scopes.some((s) => s.nTurni > 0)) ? (
+          <div className="mt-4 space-y-3">
+            {riep.responsabili.map((r) =>
+              r.scopes.some((s) => s.nTurni > 0) ? (
+                <div key={r.personaleId}>
+                  <p className="mb-1 text-xs font-medium text-zinc-400">{r.nominativo} — per reparto</p>
+                  <div className="flex flex-wrap gap-2">
+                    {r.scopes
+                      .filter((s) => s.nTurni > 0)
+                      .map((s) => (
+                        <span key={s.id} className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300">
+                          {s.nome}: {s.nConfermati}/{s.nTurni}
+                          {s.nDaFare ? ` · ${s.nDaFare} da fare` : ""}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              ) : null
+            )}
+          </div>
+        ) : null}
       </Card>
-      <Card title="Presenze corsi (mese)">
+      <Card title={vista === "settimana" ? "Turni della settimana" : "Turni del mese"}>
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="text-xs uppercase text-zinc-500">
@@ -1035,20 +1205,18 @@ function ConvalideTab({ data }: { data: LibroPagaSnapshot }) {
                 <th className="px-3 py-2">Data</th>
                 <th className="px-3 py-2">Mansione</th>
                 <th className="px-3 py-2">Dipendente</th>
-                <th className="px-3 py-2 text-right">Quantità</th>
-                <th className="px-3 py-2">Note</th>
-                <th className="px-3 py-2 text-right">N. presenze</th>
+                <th className="px-3 py-2">Convalida</th>
+                <th className="px-3 py-2">Da</th>
               </tr>
             </thead>
             <tbody>
-              {data.turni.map((t) => (
+              {turniVista.map((t) => (
                 <tr key={t.id} className="border-t border-zinc-800 text-zinc-200">
                   <td className="px-3 py-2">{fmtDateIt(t.giorno)}</td>
                   <td className="px-3 py-2">{t.livelloNome}</td>
                   <td className="px-3 py-2">{t.personaleNome}</td>
-                  <td className="px-3 py-2 text-right">{t.quantita}</td>
-                  <td className="px-3 py-2 text-zinc-400">{t.note ?? "—"}</td>
-                  <td className="px-3 py-2 text-right">{t.presenzaValore ?? "?"}</td>
+                  <td className="px-3 py-2 text-zinc-300">{statoConvLabel(t.convalidaStato)}</td>
+                  <td className="px-3 py-2 text-xs text-zinc-500">{t.convalidaDa ?? "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -1074,8 +1242,19 @@ function MensilitaTab({
 }) {
   const [convId, setConvId] = useState<string | null>(null)
   const [meseOpen, setMeseOpen] = useState(false)
+  const [filtri, setFiltri] = useState({ scope: reparto || "", from: "", to: "" })
   const conv = useLibroPagaConvalida(mese, convId, (m, id) => libroPagaApi.getConvalida(m, id, reparto || undefined))
-  const convMese = useLibroPagaConvalidaMese(mese, meseOpen, (m) => libroPagaApi.getConvalidaMese(m, reparto || undefined), reparto)
+  const convMese = useLibroPagaConvalidaMese(
+    mese,
+    meseOpen,
+    (m) =>
+      libroPagaApi.getConvalidaMese(m, {
+        scope: filtri.scope || undefined,
+        from: filtri.from || undefined,
+        to: filtri.to || undefined,
+      }),
+    `${filtri.scope}|${filtri.from}|${filtri.to}`
+  )
   const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
     <div className="mt-4 space-y-4">
@@ -1087,7 +1266,14 @@ function MensilitaTab({
           showCalendariFitCenter
           onClose={() => setMeseOpen(false)}
           onSaveTurno={(body) => libroPagaApi.putConvalidaTurno(body)}
-          onConfermaAllineati={() => libroPagaApi.postConvalidaMese(mese, reparto || undefined)}
+          onConfermaAllineati={() =>
+            libroPagaApi.postConvalidaMese(mese, {
+              scope: filtri.scope || undefined,
+              from: filtri.from || undefined,
+              to: filtri.to || undefined,
+            })
+          }
+          onFiltriChange={setFiltri}
         />
       )}
       {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}

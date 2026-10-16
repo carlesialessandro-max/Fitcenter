@@ -9,15 +9,17 @@ import {
   applicaAutoOkConvalida,
   arricchisciTornelloConvalida,
   FOGLI_ORARI_CONVALIDA,
+  optionsScopeConvalida,
   payloadConvalidaMese,
   proponeConvalidaMese,
   setDeleghe,
+  treePerScopeConvalida,
   turniNelMesePerConvalida,
   upsertTurnoConvalida,
   viewerPuoConvalidare,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
@@ -444,7 +446,26 @@ async function loadConvalidaScope(sess: LpagaSessionUser) {
   }
   const tree = alberoConvalidaViewer(me, personale, livelli)
   const ids = personaleRaggiungibile(me, personale, livelli, turni, tree)
-  return { personale, livelli, turni, tree, ids }
+  return { personale, livelli, turni, tree, ids, me }
+}
+
+function filtriConvalidaMese(
+  req: Request,
+  tree: Set<string> | undefined,
+  me: { ruolo: string; livelloId?: string; livelloIds?: string[] },
+  livelli: import("../store/libro-paga-db.js").LpagaLivello[]
+) {
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const scopeId = String(req.query.scope ?? body.scope ?? req.query.reparto ?? body.reparto ?? "").trim()
+  const from = String(req.query.from ?? body.from ?? "").trim()
+  const to = String(req.query.to ?? body.to ?? "").trim()
+  const scopedTree = treePerScopeConvalida(livelli, tree, scopeId)
+  const roots =
+    me.ruolo === "admin"
+      ? livelli.filter((l) => !l.parentId).map((l) => l.id)
+      : personaleLivelloRadici(me)
+  const scopeOpzioni = optionsScopeConvalida(livelli, roots, tree)
+  return { scopeId, from, to, tree: scopedTree, scopeOpzioni }
 }
 
 async function assertConvalidaTarget(me: LpagaSessionUser, targetId: string) {
@@ -495,18 +516,35 @@ export async function getLpagaConvalida(req: Request, res: Response) {
 
 export async function getLpagaConvalidaMese(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const meseRaw = String(req.query.mese ?? "").trim()
     const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
-    const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
+    const { personale, livelli, turni, tree, ids, me } = await loadConvalidaScope(sess)
+    const filtri = filtriConvalidaMese(req, tree, me, livelli)
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
+    const scoped = turniNelMesePerConvalida({
+      mese,
+      turni,
+      personale,
+      livelli,
+      tree: filtri.tree,
+      personaleIds: ids,
+      from: filtri.from,
+      to: filtri.to,
+    })
     const rows = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
-    res.json(payloadConvalidaMese(mese, rows))
+    res.json(
+      payloadConvalidaMese(mese, rows, {
+        scopeId: filtri.scopeId,
+        from: filtri.from,
+        to: filtri.to,
+        scopeOpzioni: filtri.scopeOpzioni,
+      })
+    )
   } catch (e) {
     fail(res, e)
   }
@@ -514,24 +552,42 @@ export async function getLpagaConvalidaMese(req: Request, res: Response) {
 
 export async function postLpagaConvalidaMese(req: Request, res: Response) {
   try {
-    const me = viewer(req)
+    const sess = viewer(req)
     const meseRaw = String(req.body?.mese ?? req.query.mese ?? "").trim()
     const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
-    const { personale, livelli, turni, tree, ids } = await loadConvalidaScope(me)
+    const { personale, livelli, turni, tree, ids, me } = await loadConvalidaScope(sess)
+    const filtri = filtriConvalidaMese(req, tree, me, livelli)
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const scoped = turniNelMesePerConvalida({ mese, turni, personale, livelli, tree, personaleIds: ids })
+    const scoped = turniNelMesePerConvalida({
+      mese,
+      turni,
+      personale,
+      livelli,
+      tree: filtri.tree,
+      personaleIds: ids,
+      from: filtri.from,
+      to: filtri.to,
+    })
     const rows = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
-    const confermatiOra = applicaAutoOkConvalida(rows, me.username || me.id)
+    const confermatiOra = applicaAutoOkConvalida(rows, sess.nominativo || sess.username || sess.id)
     const aggiornate = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
-    res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
+    res.json(
+      payloadConvalidaMese(mese, aggiornate, {
+        confermatiOra,
+        scopeId: filtri.scopeId,
+        from: filtri.from,
+        to: filtri.to,
+        scopeOpzioni: filtri.scopeOpzioni,
+      })
+    )
   } catch (e) {
     fail(res, e)
   }
@@ -558,7 +614,7 @@ export async function putLpagaConvalidaTurno(req: Request, res: Response) {
       stato,
       nota: String(req.body?.nota ?? "").trim(),
       sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
-      da: me.username || me.id,
+      da: me.nominativo || me.username || me.id,
     })
     res.json({ convalida: row })
   } catch (e) {

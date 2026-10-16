@@ -2,7 +2,7 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
+import { expandScopeTree, livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -171,11 +171,76 @@ export function alberoConvalidaViewer(
   if (me.ruolo === "manager") {
     const roots = personaleLivelloRadici(me)
     if (!roots.length) return undefined
-    const tree = livelloAlberoUnion(livelli, roots)
+    const tree = expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
     return tree.size ? tree : undefined
   }
   const de = alberoDaDeleghe(me.id, personale, livelli)
   return de.size ? de : undefined
+}
+
+export function settimaneNelMese(mese: string): { id: string; from: string; to: string; label: string }[] {
+  if (!/^\d{4}-\d{2}$/.test(mese)) return []
+  const y = Number(mese.slice(0, 4))
+  const m = Number(mese.slice(5, 7))
+  const last = new Date(y, m, 0).getDate()
+  const out: { id: string; from: string; to: string; label: string }[] = []
+  let d = 1
+  let n = 1
+  while (d <= last) {
+    const dow = new Date(y, m - 1, d).getDay()
+    const toSun = dow === 0 ? 0 : 7 - dow
+    const toDay = Math.min(last, d + toSun)
+    const from = `${mese}-${String(d).padStart(2, "0")}`
+    const to = `${mese}-${String(toDay).padStart(2, "0")}`
+    out.push({
+      id: from,
+      from,
+      to,
+      label: `Sett. ${n} (${String(d).padStart(2, "0")}–${String(toDay).padStart(2, "0")}/${String(m).padStart(2, "0")})`,
+    })
+    d = toDay + 1
+    n += 1
+  }
+  return out
+}
+
+/** Nodi su cui il responsabile può convalidare in blocco (reparti assegnati + raggruppamenti, es. Corsi Fit Terra). */
+export function optionsScopeConvalida(
+  livelli: LpagaLivello[],
+  roots: string[],
+  viewerTree?: Set<string>
+): { id: string; nome: string }[] {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  const tree = viewerTree ?? expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
+  const seen = new Set<string>()
+  const opts: { id: string; nome: string }[] = []
+  const add = (id: string) => {
+    const l = byId.get(id)
+    if (!l || seen.has(id)) return
+    seen.add(id)
+    const dom = dominioLivello(livelli, id)
+    opts.push({ id, nome: dom && dom !== l.nome ? `${dom} · ${l.nome}` : l.nome })
+  }
+  for (const r of roots) add(r)
+  for (const id of tree) {
+    const l = byId.get(id)
+    if (!l || l.retribuibile) continue
+    add(id)
+  }
+  return opts.sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+}
+
+export function treePerScopeConvalida(
+  livelli: LpagaLivello[],
+  viewerTree: Set<string> | undefined,
+  scopeId: string
+): Set<string> | undefined {
+  const id = scopeId.trim()
+  if (!id) return viewerTree
+  const sub = expandScopeTree(livelli, [id], livelloAlberoUnion(livelli, [id]))
+  if (!viewerTree) return sub
+  if (!viewerTree.has(id) && ![...sub].some((x) => viewerTree.has(x))) return new Set()
+  return sub
 }
 
 export function turniNelMesePerConvalida(opts: {
@@ -186,12 +251,18 @@ export function turniNelMesePerConvalida(opts: {
   tree?: Set<string>
   personaleId?: string
   personaleIds?: Set<string>
+  from?: string
+  to?: string
 }): (LpagaTurno & { personaleNome: string; livelloNome: string; dominio?: string })[] {
   const livBy = new Map(opts.livelli.map((l) => [l.id, l]))
   const perBy = new Map(opts.personale.map((p) => [p.id, p]))
+  const from = (opts.from ?? "").trim()
+  const to = (opts.to ?? "").trim()
   return opts.turni
     .filter((t) => {
       if (t.giorno.slice(0, 7) !== opts.mese) return false
+      if (from && t.giorno < from) return false
+      if (to && t.giorno > to) return false
       if (opts.personaleId && t.personaleId !== opts.personaleId) return false
       if (opts.personaleIds && !opts.personaleIds.has(t.personaleId)) return false
       if (opts.tree && !opts.tree.has(t.livelloId)) return false
@@ -251,7 +322,7 @@ export function alberoDaDeleghe(meId: string, personale: LpagaPersonale[], livel
     const mgr = personale.find((p) => p.id === id)
     const roots = mgr ? personaleLivelloRadici(mgr) : []
     if (!roots.length) continue
-    for (const id of livelloAlberoUnion(livelli, roots)) tree.add(id)
+    for (const id of expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))) tree.add(id)
   }
   return tree
 }
@@ -378,7 +449,13 @@ export function applicaAutoOkConvalida(rows: TurnoConvalidaProposta[], da: strin
 export function payloadConvalidaMese(
   mese: string,
   rows: TurnoConvalidaProposta[],
-  extra?: { confermatiOra?: number }
+  extra?: {
+    confermatiOra?: number
+    scopeId?: string
+    from?: string
+    to?: string
+    scopeOpzioni?: { id: string; nome: string }[]
+  }
 ) {
   const anomalie = rows
     .filter(isAnomaliaConvalida)
@@ -393,7 +470,92 @@ export function payloadConvalidaMese(
     nConfermati: confermati.length,
     anomalie,
     fogli: FOGLI_ORARI_CONVALIDA,
+    settimane: settimaneNelMese(mese),
+    scopeOpzioni: extra?.scopeOpzioni ?? [],
+    scopeId: extra?.scopeId ?? "",
+    from: extra?.from ?? "",
+    to: extra?.to ?? "",
     ...(extra?.confermatiOra != null ? { confermatiOra: extra.confermatiOra } : {}),
+  }
+}
+
+export function mapTurnoConvalide(): Record<string, TurnoConvalida> {
+  return { ...readDb().turni }
+}
+
+function statsTurniConvalida(
+  turni: { id: string }[],
+  byId: Record<string, TurnoConvalida>
+): { nTurni: number; nConfermati: number; nNonSvolte: number; nDaFare: number; ultima: string | null; ultimaDa: string | null } {
+  let nConfermati = 0
+  let nNonSvolte = 0
+  let nDaFare = 0
+  let ultima: string | null = null
+  let ultimaDa: string | null = null
+  for (const t of turni) {
+    const s = byId[t.id]
+    if (!s || s.stato === "da_verificare") nDaFare += 1
+    else if (s.stato === "non_svolta") nNonSvolte += 1
+    else nConfermati += 1
+    if (s?.at && (!ultima || s.at > ultima)) {
+      ultima = s.at
+      ultimaDa = s.da ?? null
+    }
+  }
+  return { nTurni: turni.length, nConfermati, nNonSvolte, nDaFare, ultima, ultimaDa }
+}
+
+/** Riepilogo convalide turni del mese: admin vede i responsabili; il responsabile il proprio scope. */
+export function buildRiepilogoConvalide(opts: {
+  mese: string
+  turni: { id: string; giorno: string; livelloId: string }[]
+  personale: LpagaPersonale[]
+  livelli: LpagaLivello[]
+}) {
+  const byId = mapTurnoConvalide()
+  const weeks = settimaneNelMese(opts.mese)
+  const tot = statsTurniConvalida(opts.turni, byId)
+  const managers = opts.personale.filter((p) => p.ruolo === "manager" && p.attivo !== false)
+  const responsabili = managers
+    .map((m) => {
+      const roots = personaleLivelloRadici(m)
+      const tree = roots.length ? expandScopeTree(opts.livelli, roots, livelloAlberoUnion(opts.livelli, roots)) : new Set<string>()
+      const mine = opts.turni.filter((t) => tree.has(t.livelloId))
+      const st = statsTurniConvalida(mine, byId)
+      const scopes = optionsScopeConvalida(opts.livelli, roots, tree).map((s) => {
+        const sub = treePerScopeConvalida(opts.livelli, tree, s.id) ?? new Set<string>()
+        const list = opts.turni.filter((t) => sub.has(t.livelloId))
+        return { id: s.id, nome: s.nome, ...statsTurniConvalida(list, byId) }
+      })
+      const settimane = weeks.map((w) => ({
+        ...w,
+        ...statsTurniConvalida(
+          mine.filter((t) => t.giorno >= w.from && t.giorno <= w.to),
+          byId
+        ),
+      }))
+      return {
+        personaleId: m.id,
+        nominativo: nominativo(m),
+        reparto: roots.length ? roots.map((id) => opts.livelli.find((l) => l.id === id)?.nome ?? id).join(", ") : "—",
+        ...st,
+        scopes,
+        settimane,
+      }
+    })
+    .filter((r) => r.nTurni > 0 || r.ultima)
+    .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+  return {
+    mese: opts.mese,
+    ...tot,
+    settimane: weeks.map((w) => ({
+      ...w,
+      ...statsTurniConvalida(
+        opts.turni.filter((t) => t.giorno >= w.from && t.giorno <= w.to),
+        byId
+      ),
+    })),
+    responsabili,
   }
 }
 

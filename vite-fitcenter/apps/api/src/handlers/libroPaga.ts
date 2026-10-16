@@ -20,8 +20,10 @@ import {
   applicaAutoOkConvalida,
   arricchisciTornelloConvalida,
   FOGLI_ORARI_CONVALIDA,
+  optionsScopeConvalida,
   payloadConvalidaMese,
   proponeConvalidaMese,
+  treePerScopeConvalida,
   turniNelMesePerConvalida,
   upsertTurnoConvalida,
   getDeleghe,
@@ -382,21 +384,51 @@ export async function getLibroPagaConvalida(req: Request, res: Response) {
   }
 }
 
+function filtriConvalidaAdmin(req: Request, livelli: Awaited<ReturnType<typeof listLivelli>>) {
+  const body = (req.body ?? {}) as Record<string, unknown>
+  const scopeId = String(req.query.scope ?? body.scope ?? req.query.reparto ?? body.reparto ?? "").trim()
+  const from = String(req.query.from ?? body.from ?? "").trim()
+  const to = String(req.query.to ?? body.to ?? "").trim()
+  const roots = livelli.filter((l) => !l.parentId).map((l) => l.id)
+  const tree = treePerScopeConvalida(livelli, undefined, scopeId)
+  return {
+    scopeId,
+    from,
+    to,
+    tree,
+    scopeOpzioni: optionsScopeConvalida(livelli, roots),
+  }
+}
+
 export async function getLibroPagaConvalidaMese(req: Request, res: Response) {
   try {
     const meseRaw = String(req.query.mese ?? "").trim()
     const mese = isYm(meseRaw) ? meseRaw : defaultMese()
     const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const repartoId = String(req.query.reparto ?? "").trim()
-    const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
-    const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
+    const filtri = filtriConvalidaAdmin(req, livelli)
+    const turni = turniNelMesePerConvalida({
+      mese,
+      turni: turniTutti,
+      personale,
+      livelli,
+      tree: filtri.tree,
+      from: filtri.from,
+      to: filtri.to,
+    })
     const rows = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
-    res.json(payloadConvalidaMese(mese, rows))
+    res.json(
+      payloadConvalidaMese(mese, rows, {
+        scopeId: filtri.scopeId,
+        from: filtri.from,
+        to: filtri.to,
+        scopeOpzioni: filtri.scopeOpzioni,
+      })
+    )
   } catch (e) {
     fail(res, e)
   }
@@ -408,9 +440,16 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
     const mese = isYm(meseRaw) ? meseRaw : defaultMese()
     const [personale, livelli, turniTutti] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const perBy = new Map(personale.map((p) => [p.id, p]))
-    const repartoId = String(req.body?.reparto ?? req.query.reparto ?? "").trim()
-    const tree = repartoId ? livelloSottoAlbero(livelli, repartoId) : undefined
-    const turni = turniNelMesePerConvalida({ mese, turni: turniTutti, personale, livelli, tree })
+    const filtri = filtriConvalidaAdmin(req, livelli)
+    const turni = turniNelMesePerConvalida({
+      mese,
+      turni: turniTutti,
+      personale,
+      livelli,
+      tree: filtri.tree,
+      from: filtri.from,
+      to: filtri.to,
+    })
     const rows = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni, personaleById: perBy }),
@@ -422,7 +461,15 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
       proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
-    res.json(payloadConvalidaMese(mese, aggiornate, { confermatiOra }))
+    res.json(
+      payloadConvalidaMese(mese, aggiornate, {
+        confermatiOra,
+        scopeId: filtri.scopeId,
+        from: filtri.from,
+        to: filtri.to,
+        scopeOpzioni: filtri.scopeOpzioni,
+      })
+    )
   } catch (e) {
     fail(res, e)
   }

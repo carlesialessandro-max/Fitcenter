@@ -306,6 +306,7 @@ export function LibroPagaConvalidaMesePanel({
   onSaveTurno,
   onConfermaAllineati,
   showCalendariFitCenter,
+  onFiltriChange,
 }: {
   data: LpagaConvalidaMesePayload
   onClose: () => void
@@ -317,6 +318,7 @@ export function LibroPagaConvalidaMesePanel({
   }) => Promise<unknown>
   onConfermaAllineati: () => Promise<LpagaConvalidaMesePayload>
   showCalendariFitCenter?: boolean
+  onFiltriChange?: (f: { scope: string; from: string; to: string }) => void
 }) {
   const qc = useQueryClient()
   const mut = useMutation({
@@ -345,7 +347,8 @@ export function LibroPagaConvalidaMesePanel({
           <h2 className="text-sm font-medium text-zinc-200">Convalida tutto il mese</h2>
           <p className="mt-1 text-xs text-zinc-500">
             {riepilogo.nTurni} turni · {riepilogo.nConfermati} già confermati · {riepilogo.nConfermabili} allineati al
-            calendario da confermare · {riepilogo.nAnomalie} anomalie.
+            calendario da confermare · {riepilogo.nAnomalie} anomalie. Puoi filtrare per reparto (es. corsi terra / acqua)
+            e per settimana.
           </p>
           {((riepilogo.confermatiOra ?? auto.data?.confermatiOra) ?? 0) > 0 && (
             <p className="mt-1 text-xs text-emerald-300">
@@ -361,7 +364,7 @@ export function LibroPagaConvalidaMesePanel({
               disabled={auto.isPending}
               onClick={() => auto.mutate()}
             >
-              {auto.isPending ? "Conferma in corso…" : `Conferma i ${riepilogo.nConfermabili} allineati al calendario`}
+              {auto.isPending ? "Conferma in corso…" : `Conferma i ${riepilogo.nConfermabili} allineati`}
             </button>
           )}
           <button type="button" className={btnGhost} onClick={onClose}>
@@ -369,6 +372,53 @@ export function LibroPagaConvalidaMesePanel({
           </button>
         </div>
       </div>
+      {(onFiltriChange && ((riepilogo.scopeOpzioni?.length ?? 0) > 0 || (riepilogo.settimane?.length ?? 0) > 0)) ? (
+        <div className="flex flex-wrap gap-2">
+          {(riepilogo.scopeOpzioni?.length ?? 0) > 0 && (
+            <label className="grid gap-1 text-xs text-zinc-400">
+              Reparto / mansioni
+              <select
+                className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100"
+                value={riepilogo.scopeId ?? ""}
+                onChange={(e) =>
+                  onFiltriChange({
+                    scope: e.target.value,
+                    from: riepilogo.from ?? "",
+                    to: riepilogo.to ?? "",
+                  })
+                }
+              >
+                <option value="">Tutti i miei ambiti</option>
+                {riepilogo.scopeOpzioni!.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.nome}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(riepilogo.settimane?.length ?? 0) > 0 && (
+            <label className="grid gap-1 text-xs text-zinc-400">
+              Periodo
+              <select
+                className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100"
+                value={riepilogo.from && riepilogo.to ? `${riepilogo.from}|${riepilogo.to}` : ""}
+                onChange={(e) => {
+                  const [from, to] = e.target.value ? e.target.value.split("|") : ["", ""]
+                  onFiltriChange({ scope: riepilogo.scopeId ?? "", from, to })
+                }}
+              >
+                <option value="">Tutto il mese</option>
+                {riepilogo.settimane!.map((s) => (
+                  <option key={s.id} value={`${s.from}|${s.to}`}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      ) : null}
       <p className="text-xs text-zinc-500">
         I turni allineati al calendario si confermano in un click. Le anomalie (sostituzione, assenza in calendario)
         restano da controllare sotto. Fogli orari:{" "}

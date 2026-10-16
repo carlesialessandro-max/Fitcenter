@@ -135,7 +135,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
-  const [tab, setTab] = useState<"home" | "anagrafica" | "turni" | "personale" | "mensilita" | "report" | "collaboratori">(
+  const [tab, setTab] = useState<"home" | "anagrafica" | "turni" | "personale" | "mensilita" | "convalide" | "report" | "collaboratori">(
     "home"
   )
   const [error, setError] = useState("")
@@ -175,6 +175,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     { id: "anagrafica", label: "Anagrafica" },
     { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
     { id: "mensilita", label: "Mensilità" },
+    ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
     ...(canTeam ? ([{ id: "report" as const, label: "Report" }] as const) : []),
     ...(canCollab ? ([{ id: "collaboratori" as const, label: "Collaboratori sportivi" }] as const) : []),
@@ -270,6 +271,19 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             mese={mese}
             me={me}
             onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+            }}
+          />
+        )}
+        {data && tab === "convalide" && canTeam && (
+          <Mensilita
+            data={data}
+            mese={mese}
+            me={me}
+            onError={setError}
+            openConvalidaMese
             onDone={() => {
               setError("")
               void qc.invalidateQueries({ queryKey: ["lpaga"] })
@@ -987,18 +1001,26 @@ function Mensilita({
   me,
   onError,
   onDone,
+  openConvalidaMese,
 }: {
   data: LpagaPortalSnapshot
   mese: string
   me?: LpagaMe
   onError: (s: string) => void
   onDone: () => void
+  openConvalidaMese?: boolean
 }) {
   const canValidate = Boolean(data.canValidate) || me?.ruolo === "admin" || me?.ruolo === "manager"
   const [convId, setConvId] = useState<string | null>(null)
-  const [meseOpen, setMeseOpen] = useState(false)
+  const [meseOpen, setMeseOpen] = useState(Boolean(openConvalidaMese))
+  const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
   const conv = useLibroPagaConvalida(mese, canValidate ? convId : null, lpagaApi.getConvalida)
-  const convMese = useLibroPagaConvalidaMese(mese, meseOpen && canValidate, lpagaApi.getConvalidaMese)
+  const convMese = useLibroPagaConvalidaMese(
+    mese,
+    meseOpen && canValidate,
+    (m) => lpagaApi.getConvalidaMese(m, { scope: filtri.scope || undefined, from: filtri.from || undefined, to: filtri.to || undefined }),
+    `${filtri.scope}|${filtri.from}|${filtri.to}`
+  )
   const row = convId ? data.mensilita.find((r) => r.personaleId === convId) : undefined
   return (
     <div className="mt-4 space-y-4">
@@ -1009,7 +1031,14 @@ function Mensilita({
           data={convMese.data}
           onClose={() => setMeseOpen(false)}
           onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body)}
-          onConfermaAllineati={() => lpagaApi.postConvalidaMese(mese)}
+          onConfermaAllineati={() =>
+            lpagaApi.postConvalidaMese(mese, {
+              scope: filtri.scope || undefined,
+              from: filtri.from || undefined,
+              to: filtri.to || undefined,
+            })
+          }
+          onFiltriChange={setFiltri}
         />
       )}
       {convId && conv.isLoading && <p className="text-sm text-zinc-500">Caricamento convalida…</p>}
