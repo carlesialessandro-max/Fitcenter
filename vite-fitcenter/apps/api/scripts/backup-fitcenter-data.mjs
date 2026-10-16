@@ -169,7 +169,8 @@ function runRestore(restorePath, yes) {
   fs.mkdirSync(dataDir, { recursive: true })
   const copied = copyDirFiles(src, dataDir)
   const envBackup = path.join(src, "env.backup")
-  if (fs.existsSync(envBackup)) {
+  const withEnv = process.argv.includes("--with-env")
+  if (withEnv && fs.existsSync(envBackup)) {
     fs.copyFileSync(envBackup, path.join(apiRoot, ".env"))
     console.log("Ripristinato anche apps/api/.env da env.backup")
   }
@@ -178,6 +179,36 @@ function runRestore(restorePath, yes) {
   console.log(`  Destinazione: ${dataDir}`)
   console.log(`  File:         ${copied.filter((f) => f !== "backup-manifest.json" && f !== "env.backup").length}`)
   console.log("Riavvia il servizio API dopo il ripristino.")
+}
+
+function ymdOf(d) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+function findYesterdayBackup(backupRoot) {
+  const dirs = listBackupDirs(backupRoot)
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const y = ymdOf(yesterday)
+  const hits = dirs.filter((d) => path.basename(d).includes(`fitcenter-data-${y}`))
+  if (hits.length) return hits[hits.length - 1]
+  const today = ymdOf(now)
+  const beforeToday = dirs.filter((d) => path.basename(d) < `fitcenter-data-${today}`)
+  return beforeToday.length ? beforeToday[beforeToday.length - 1] : null
+}
+
+function runRestoreYesterday(yes) {
+  const dataDir = resolveDataDir()
+  const backupRoot = resolveBackupRoot(dataDir)
+  const src = findYesterdayBackup(backupRoot)
+  if (!src) {
+    console.error(`Nessun backup di ieri (o precedente) in ${backupRoot}`)
+    console.error("Esegui: node scripts/backup-fitcenter-data.mjs --list")
+    process.exit(1)
+  }
+  console.log(`Ripristino da: ${src}`)
+  runRestore(src, yes)
 }
 
 function runList() {
@@ -222,6 +253,11 @@ function runPruneOnly() {
 const args = process.argv.slice(2)
 if (args.includes("--list")) {
   runList()
+  process.exit(0)
+}
+
+if (args.includes("--restore-yesterday")) {
+  runRestoreYesterday(args.includes("--yes"))
   process.exit(0)
 }
 

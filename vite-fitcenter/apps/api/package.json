@@ -22,6 +22,7 @@
     "backup:data:list": "node scripts/backup-fitcenter-data.mjs --list",
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",
     "backup:data:restore": "node scripts/backup-fitcenter-data.mjs --restore",
+    "backup:data:restore-yesterday": "node scripts/backup-fitcenter-data.mjs --restore-yesterday --yes",
     "lpaga:repair-ruoli": "tsx scripts/repair-lpaga-ruoli-from-deleghe.ts"
   },
   "dependencies": {
