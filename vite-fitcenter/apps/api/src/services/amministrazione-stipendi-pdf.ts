@@ -123,10 +123,28 @@ function qualificaRepartoHint(chunk: string): string {
 const SKIP_RIEPILOGO =
   /totale|matricola|cognome|nominativo|retribuz|trattenut|competenze|costo az|inps|inail|tfr|irpef|addizional|ditta|periodo|mese di|pagina|stampa|teamsystem|codice fiscale|cf\b|qualifica|netto busta/i
 
-function lastAmountOn(line: string): number | null {
-  const amts = amountsOn(line)
+/** Nel riepilogo paghe il costo per l’azienda è di solito la colonna più alta (lordo + INPS/Inail ditta), non il netto. */
+function costoAziendaFromLine(line: string): number | null {
+  const amts = amountsOn(line).filter((n) => n > 0)
   if (!amts.length) return null
-  return amts[amts.length - 1]!
+  if (amts.length === 1) return amts[0]!
+  return Math.max(...amts)
+}
+
+function parseCostoAziendaCedolino(chunk: string): number | null {
+  const patterns = [
+    /costo\s*a\s*z\s*\.?\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
+    /costo\s*azienda\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
+    /costo\s*del\s*lavoro\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
+    /costo\s*azienda[^\d\n]{0,48}((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
+  ]
+  for (const re of patterns) {
+    const m = re.exec(chunk)
+    if (!m) continue
+    const n = parseEuro(m[1] ?? "")
+    if (n != null && n > 0) return n
+  }
+  return null
 }
 
 /** In fondo al PDF Teamsystem: non sommare i cedolini, usare il riepilogo paghe. */
@@ -143,8 +161,13 @@ function parseTeamsystemRiepilogo(text: string, mese: string): AmmPdfRiga[] {
   for (const raw of section.split(/\r?\n/)) {
     const line = raw.replace(/\t/g, " ").replace(/[ \t]+/g, " ").trim()
     if (!line) continue
+    if (/costo\s*(?:a\s*z|azienda|del\s*lavoro)\b/i.test(line) && /totale\b/i.test(line)) {
+      const n = costoAziendaFromLine(line)
+      if (n != null && n > 0) totRiepilogo = n
+      continue
+    }
     if (/^totale\b/i.test(line)) {
-      const n = lastAmountOn(line)
+      const n = costoAziendaFromLine(line)
       if (n != null && n > 0) totRiepilogo = n
       continue
     }
@@ -155,7 +178,7 @@ function parseTeamsystemRiepilogo(text: string, mese: string): AmmPdfRiga[] {
     const nominativo = titleName(nameM[1] ?? "")
     if (nominativo.split(" ").length < 2) continue
     if (/totale|riepilogo|paghe|ditta/i.test(nominativo)) continue
-    const tot = lastAmountOn(line)
+    const tot = costoAziendaFromLine(line)
     if (tot == null || tot <= 0) continue
     const key = nominativo.toLowerCase()
     if (seen.has(key)) continue
@@ -164,20 +187,32 @@ function parseTeamsystemRiepilogo(text: string, mese: string): AmmPdfRiga[] {
       nominativo,
       mese: ym,
       totale: tot,
-      descrizione: "Riepilogo paghe",
+      descrizione: "Costo azienda (riepilogo paghe)",
       tipo: "dipendente",
       qualifica: "amministrazione-uffici",
     })
   }
   const sommaNomi = Math.round(rows.reduce((s, r) => s + r.totale, 0) * 100) / 100
   if (totRiepilogo != null && totRiepilogo > 0) {
-    if (rows.length >= 3 && Math.abs(sommaNomi - totRiepilogo) / totRiepilogo < 0.08) return rows
+    if (rows.length >= 3 && Math.abs(sommaNomi - totRiepilogo) / totRiepilogo < 0.02) return rows
+    if (!rows.length || sommaNomi < totRiepilogo * 0.95) {
+      return [
+        {
+          nominativo: "Dipendenti fissi (costo azienda)",
+          mese: ym,
+          totale: totRiepilogo,
+          descrizione: "Costo azienda mese — riepilogo paghe Teamsystem (lordo + contributi ditta)",
+          tipo: "dipendente",
+          qualifica: "amministrazione-uffici",
+        },
+      ]
+    }
     return [
       {
-        nominativo: "Dipendenti fissi (riepilogo paghe)",
+        nominativo: "Dipendenti fissi (costo azienda)",
         mese: ym,
         totale: totRiepilogo,
-        descrizione: "Riepilogo paghe Teamsystem",
+        descrizione: "Costo azienda mese — riepilogo paghe Teamsystem",
         tipo: "dipendente",
         qualifica: "amministrazione-uffici",
       },
@@ -200,16 +235,15 @@ function parseTeamsystemBuste(text: string, mese: string): AmmPdfRiga[] {
     if (!hm) continue
     const nominativo = titleName(hm[3] ?? "")
     if (nominativo.split(" ").length < 2) continue
-    const iban = /\bIT[A-Z0-9]{15,}\s+((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})\s+((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/.exec(chunk)
-    const tot = iban ? parseEuro(iban[1] ?? "") : null
-    if (tot == null || tot <= 0) continue
+    const costoAz = parseCostoAziendaCedolino(chunk)
+    if (costoAz == null || costoAz <= 0) continue
     const key = nominativo.toLowerCase()
     if (byName.has(key)) continue
     byName.set(key, {
       nominativo,
       mese: ym,
-      totale: tot,
-      descrizione: "Busta paga",
+      totale: costoAz,
+      descrizione: "Costo azienda (cedolino)",
       tipo: "dipendente",
       qualifica: qualificaRepartoHint(chunk),
     })

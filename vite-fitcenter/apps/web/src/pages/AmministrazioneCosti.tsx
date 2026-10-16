@@ -1500,8 +1500,8 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
             <p className="text-xs text-zinc-500">
-              PDF Teamsystem: si legge il riepilogo paghe in fondo, non la somma dei singoli cedolini. In alternativa
-              mastrino Excel.
+              PDF Teamsystem: dal riepilogo paghe in fondo si importa il costo azienda del mese (retribuzione + INPS/Inail
+              a carico ditta), non il netto busta. In alternativa mastrino Excel con colonna «Costo azienda».
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1526,7 +1526,7 @@ function StipendiTab() {
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-zinc-400">
-                Anteprima da riepilogo: {bustePdfPreview.length}{" "}
+                Anteprima costo azienda: {bustePdfPreview.length}{" "}
                 {bustePdfPreview.length === 1 ? "riga" : "righe"},{" "}
                 {eur(bustePdfPreview.reduce((s, x) => s + x.totale, 0))}
               </p>
@@ -1600,7 +1600,7 @@ function StipendiTab() {
               <input type="month" value={formMese} onChange={(e) => setFormMese(e.target.value)} className={inputCls} required />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
-              Importo lordo / costo
+              Costo azienda
               <input value={totale} onChange={(e) => setTotale(e.target.value)} className={inputCls} required />
             </label>
             <label className="grid gap-1 text-xs text-zinc-500">
