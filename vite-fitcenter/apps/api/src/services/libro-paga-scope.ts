@@ -127,6 +127,29 @@ export function radiciReparto(livelli: LpagaLivello[]): { id: string; nome: stri
     .map((l) => ({ id: l.id, nome: l.nome }))
 }
 
+/** Mansione visibile se risale (anche via padri disattivati) a un nodo già nello scope o a una radice assegnata. */
+export function expandScopeTree(livelli: LpagaLivello[], roots: string[], base: Set<string>): Set<string> {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  const rootSet = new Set(roots.map((x) => x.trim()).filter(Boolean))
+  const out = new Set(base)
+  for (const l of livelli) {
+    if (l.attivo === false) continue
+    if (out.has(l.id)) continue
+    let cur: LpagaLivello | undefined = l
+    let guard = 0
+    while (cur && guard++ < 60) {
+      if (rootSet.has(cur.id) || out.has(cur.id)) {
+        out.add(l.id)
+        break
+      }
+      const pid = (cur.parentId ?? "").trim()
+      if (!pid || pid === "0") break
+      cur = byId.get(pid)
+    }
+  }
+  return out
+}
+
 /** Albero mansioni del viewer (responsabile) o del reparto scelto (admin). */
 export function resolveLivelloTree(
   viewer: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId" | "livelloIds">,
@@ -135,7 +158,9 @@ export function resolveLivelloTree(
 ): Set<string> | undefined {
   if (viewer.ruolo === "manager") {
     const roots = personaleLivelloRadici(viewer)
-    return roots.length ? livelloAlberoUnion(livelli, roots) : new Set()
+    if (!roots.length) return new Set()
+    const base = livelloAlberoUnion(livelli, roots)
+    return expandScopeTree(livelli, roots, base)
   }
   if (viewer.ruolo === "admin" && repartoId) {
     return livelloSottoAlbero(livelli, repartoId)
