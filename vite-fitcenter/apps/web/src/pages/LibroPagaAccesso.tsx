@@ -5,7 +5,8 @@ import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -1005,9 +1006,12 @@ function ConvalidePortal({
   onDone: () => void
 }) {
   const riep = data.convalideRiepilogo
+  const responsabili = riep?.responsabili ?? data.convalide
   const onlyMine = me?.ruolo === "manager"
   const [meseOpen, setMeseOpen] = useState(false)
   const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
+  const [aperto, setAperto] = useState<string | null>(onlyMine ? responsabili[0]?.personaleId ?? null : null)
+  const [selectedScopeIds, setSelectedScopeIds] = useState<string[]>([])
   const convMese = useLibroPagaConvalidaMese(
     mese,
     meseOpen,
@@ -1022,6 +1026,19 @@ function ConvalidePortal({
   const nTurni = riep?.nTurni ?? data.turni.length
   const nConf = riep?.nConfermati ?? 0
   const nDaFare = riep?.nDaFare ?? 0
+  const respSel = responsabili.find((r) => r.personaleId === aperto) ?? (onlyMine ? responsabili[0] : undefined)
+  const turniVista = useMemo(() => {
+    const roots = rootsFiltroTurniConvalide(respSel, selectedScopeIds)
+    if (roots === null) return data.turni
+    if (!roots.length) return onlyMine ? data.turni : []
+    const ids = livelloAlberoUnionUi(data.livelli, roots)
+    return data.turni.filter((t) => ids.has(t.livelloId))
+  }, [data.turni, data.livelli, respSel, selectedScopeIds, onlyMine])
+  const elencoHint = !respSel
+    ? "Tutti i turni visibili. Clicca un responsabile, poi i sottoreparti per filtrare."
+    : selectedScopeIds.length
+      ? `${respSel.nominativo} · ${selectedScopeIds.length} ${selectedScopeIds.length === 1 ? "sottoreparto" : "sottoreparti"}`
+      : `${respSel.nominativo} · tutto il reparto`
   return (
     <div className="mt-4 space-y-4">
       {meseOpen && convMese.isLoading && <p className="text-sm text-zinc-500">Controllo turni…</p>}
@@ -1049,8 +1066,8 @@ function ConvalidePortal({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-zinc-400">
           {onlyMine
-            ? "I tuoi sottoreparti: convalide fatte e da fare. Clicca un ambito per aprirlo."
-            : "Clicca un responsabile per i sottoreparti, poi apri la convalida."}
+            ? "Seleziona i sottoreparti per filtrare i turni in fondo. «Convalida questo ambito» apre il controllo."
+            : "Clicca un responsabile per tutto il suo reparto, poi i sottoreparti per filtrare i turni."}
         </p>
         <button
           type="button"
@@ -1076,14 +1093,19 @@ function ConvalidePortal({
       </div>
       <Card title={onlyMine ? "I tuoi reparti" : "Responsabili"}>
         <LibroPagaConvalideLista
-          responsabili={riep?.responsabili ?? data.convalide}
+          responsabili={responsabili}
           onlyMine={onlyMine}
+          aperto={aperto}
+          onApertoChange={setAperto}
+          selectedScopeIds={selectedScopeIds}
+          onSelectedScopeIdsChange={setSelectedScopeIds}
           onApriScope={(scope) => {
             setFiltri((f) => ({ ...f, scope }))
             setMeseOpen(true)
           }}
         />
       </Card>
+      <LibroPagaTurniConvalidaElenco turni={turniVista} title="Turni del mese" hint={elencoHint} />
     </div>
   )
 }

@@ -583,41 +583,55 @@ function fmtStampBreve(iso: string | null | undefined): string {
 
 function ScopeConvalidaCard({
   scope,
+  selected,
+  onToggle,
   onApri,
 }: {
   scope: ConvalidaScopeRow
+  selected?: boolean
+  onToggle?: () => void
   onApri?: (scopeId: string) => void
 }) {
   const nFatte = Math.max(0, scope.nTurni - scope.nDaFare)
   const ok = scope.nTurni > 0 && scope.nDaFare === 0
+  const ring = selected
+    ? "ring-1 ring-amber-400/80 border-amber-500/60 bg-amber-950/25"
+    : ok
+      ? "border-emerald-900/50 bg-emerald-950/20 hover:border-emerald-700/70"
+      : "border-zinc-800 bg-zinc-950/50 hover:border-zinc-600"
   return (
-    <button
-      type="button"
-      onClick={() => onApri?.(scope.id)}
-      className={
-        ok
-          ? "flex flex-col rounded-xl border border-emerald-900/50 bg-emerald-950/20 p-3 text-left transition hover:border-emerald-700/70 hover:bg-emerald-950/35"
-          : "flex flex-col rounded-xl border border-zinc-800 bg-zinc-950/50 p-3 text-left transition hover:border-amber-700/50 hover:bg-zinc-900/80"
-      }
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-sm font-medium leading-snug text-zinc-100">{scope.nome}</p>
-        {ok ? (
-          <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
-            Fatto
-          </span>
-        ) : (
-          <span className="shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-200">
-            {scope.nDaFare} da fare
-          </span>
-        )}
-      </div>
-      <p className="mt-1.5 text-xs tabular-nums text-zinc-500">
-        {nFatte} fatte · {scope.nDaFare} da fare · {scope.nTurni} turni
-      </p>
-      <ConvalidaProgressBar className="mt-2" done={nFatte} total={scope.nTurni} />
-      {onApri ? <p className="mt-2 text-[11px] text-zinc-500">Apri convalida</p> : null}
-    </button>
+    <div className={`flex flex-col rounded-xl border p-3 transition ${ring}`}>
+      <button type="button" onClick={onToggle} className="flex flex-col text-left">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-sm font-medium leading-snug text-zinc-100">{scope.nome}</p>
+          {ok ? (
+            <span className="shrink-0 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-300">
+              Fatto
+            </span>
+          ) : (
+            <span className="shrink-0 rounded-full bg-amber-500/20 px-2 py-0.5 text-[11px] font-medium text-amber-200">
+              {scope.nDaFare} da fare
+            </span>
+          )}
+        </div>
+        <p className="mt-1.5 text-xs tabular-nums text-zinc-500">
+          {nFatte} fatte · {scope.nDaFare} da fare · {scope.nTurni} turni
+        </p>
+        <ConvalidaProgressBar className="mt-2" done={nFatte} total={scope.nTurni} />
+        <p className="mt-2 text-[11px] text-zinc-500">
+          {selected ? "Selezionato per l’elenco turni" : "Clicca per filtrare l’elenco turni"}
+        </p>
+      </button>
+      {onApri ? (
+        <button
+          type="button"
+          className="mt-2 self-start text-[11px] font-medium text-amber-300 hover:underline"
+          onClick={() => onApri(scope.id)}
+        >
+          Convalida questo ambito
+        </button>
+      ) : null}
+    </div>
   )
 }
 
@@ -625,13 +639,36 @@ function ScopeConvalidaCard({
 export function LibroPagaConvalideLista({
   responsabili,
   onlyMine,
+  aperto,
+  onApertoChange,
+  selectedScopeIds,
+  onSelectedScopeIdsChange,
   onApriScope,
 }: {
   responsabili: ConvalidaResponsabileRow[]
   onlyMine?: boolean
+  aperto?: string | null
+  onApertoChange?: (id: string | null) => void
+  selectedScopeIds?: string[]
+  onSelectedScopeIdsChange?: (ids: string[]) => void
   onApriScope?: (scopeId: string) => void
 }) {
-  const [aperto, setAperto] = useState<string | null>(onlyMine && responsabili[0] ? responsabili[0].personaleId : null)
+  const [apertoInterno, setApertoInterno] = useState<string | null>(
+    onlyMine && responsabili[0] ? responsabili[0].personaleId : null
+  )
+  const apertoId = onApertoChange ? (aperto ?? null) : apertoInterno
+  const sel = selectedScopeIds ?? []
+
+  function setApertoId(id: string | null) {
+    if (onApertoChange) onApertoChange(id)
+    else setApertoInterno(id)
+    onSelectedScopeIdsChange?.([])
+  }
+
+  function toggleScope(id: string) {
+    const next = sel.includes(id) ? sel.filter((x) => x !== id) : [...sel, id]
+    onSelectedScopeIdsChange?.(next)
+  }
 
   if (!responsabili.length) {
     return (
@@ -652,7 +689,7 @@ export function LibroPagaConvalideLista({
         const nFatte = Math.max(0, nTurni - nDaFare)
         const ok = nTurni > 0 && nDaFare === 0
         const scopes = (c.scopes ?? []).filter((s) => s.nTurni > 0)
-        const isOpen = onlyMine || aperto === c.personaleId
+        const isOpen = onlyMine || apertoId === c.personaleId
         const pct = convalidaPct(nFatte, nTurni)
         return (
           <div
@@ -672,7 +709,7 @@ export function LibroPagaConvalideLista({
               <button
                 type="button"
                 className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-zinc-900/70"
-                onClick={() => setAperto((cur) => (cur === c.personaleId ? null : c.personaleId))}
+                onClick={() => setApertoId(apertoId === c.personaleId ? null : c.personaleId)}
                 aria-expanded={isOpen}
               >
                 <span
@@ -713,22 +750,46 @@ export function LibroPagaConvalideLista({
             )}
             {isOpen ? (
               <div className="space-y-3 border-t border-zinc-800 px-4 py-4">
-                <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
-                  <span>
-                    Confermati <span className="tabular-nums text-emerald-300">{nConf}</span>
-                  </span>
-                  <span>
-                    Da fare <span className="tabular-nums text-amber-300">{nDaFare}</span>
-                  </span>
-                  <span>
-                    Turni <span className="tabular-nums text-zinc-300">{nTurni}</span>
-                  </span>
-                  {c.ultima ? <span>Ultima {fmtStampBreve(c.ultima)}{c.ultimaDa ? ` · ${c.ultimaDa}` : ""}</span> : null}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap gap-4 text-xs text-zinc-500">
+                    <span>
+                      Confermati <span className="tabular-nums text-emerald-300">{nConf}</span>
+                    </span>
+                    <span>
+                      Da fare <span className="tabular-nums text-amber-300">{nDaFare}</span>
+                    </span>
+                    <span>
+                      Turni <span className="tabular-nums text-zinc-300">{nTurni}</span>
+                    </span>
+                    {c.ultima ? (
+                      <span>
+                        Ultima {fmtStampBreve(c.ultima)}
+                        {c.ultimaDa ? ` · ${c.ultimaDa}` : ""}
+                      </span>
+                    ) : null}
+                  </div>
+                  {sel.length > 0 ? (
+                    <button
+                      type="button"
+                      className="text-[11px] text-amber-300 hover:underline"
+                      onClick={() => onSelectedScopeIdsChange?.([])}
+                    >
+                      Mostra tutto il reparto
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-zinc-500">Elenco turni: tutto il reparto</span>
+                  )}
                 </div>
                 {scopes.length ? (
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {scopes.map((s) => (
-                      <ScopeConvalidaCard key={s.id} scope={s} onApri={onApriScope} />
+                      <ScopeConvalidaCard
+                        key={s.id}
+                        scope={s}
+                        selected={sel.includes(s.id)}
+                        onToggle={() => toggleScope(s.id)}
+                        onApri={onApriScope}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -739,6 +800,89 @@ export function LibroPagaConvalideLista({
           </div>
         )
       })}
+    </div>
+  )
+}
+
+export function rootsFiltroTurniConvalide(
+  responsabile: ConvalidaResponsabileRow | undefined,
+  selectedScopeIds: string[]
+): string[] | null {
+  if (!responsabile) return null
+  if (selectedScopeIds.length) return selectedScopeIds
+  const ids = (responsabile.scopes ?? []).filter((s) => s.nTurni > 0).map((s) => s.id)
+  return ids.length ? ids : []
+}
+
+export function LibroPagaTurniConvalidaElenco({
+  turni,
+  title,
+  hint,
+}: {
+  turni: {
+    id: string
+    giorno: string
+    livelloNome: string
+    personaleNome: string
+    convalidaStato?: string | null
+    convalidaDa?: string | null
+  }[]
+  title: string
+  hint?: string
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-medium text-zinc-300">{title}</h2>
+          {hint ? <p className="mt-0.5 text-xs text-zinc-500">{hint}</p> : null}
+        </div>
+        <p className="text-xs tabular-nums text-zinc-500">{turni.length} turni</p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-sm">
+          <thead className="text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Mansione</th>
+              <th className="px-3 py-2">Dipendente</th>
+              <th className="px-3 py-2">Convalida</th>
+              <th className="px-3 py-2">Da</th>
+            </tr>
+          </thead>
+          <tbody>
+            {turni.map((t) => {
+              const s = t.convalidaStato ?? ""
+              const label =
+                s === "ok"
+                  ? "Confermato"
+                  : s === "sostituzione"
+                    ? "Sostituzione"
+                    : s === "non_svolta"
+                      ? "Non svolta"
+                      : s === "da_verificare"
+                        ? "Da verificare"
+                        : "Da fare"
+              return (
+                <tr key={t.id} className="border-t border-zinc-800 text-zinc-200">
+                  <td className="px-3 py-2">{fmtDateIt(t.giorno)}</td>
+                  <td className="px-3 py-2">{t.livelloNome}</td>
+                  <td className="px-3 py-2">{t.personaleNome}</td>
+                  <td className="px-3 py-2 text-zinc-300">{label}</td>
+                  <td className="px-3 py-2 text-xs text-zinc-500">{t.convalidaDa ?? "—"}</td>
+                </tr>
+              )
+            })}
+            {!turni.length && (
+              <tr>
+                <td className="px-3 py-6 text-zinc-500" colSpan={5}>
+                  Nessun turno per la selezione.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

@@ -25,7 +25,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaDelegheForm, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
@@ -1099,14 +1099,6 @@ function fmtStamp(iso: string | null | undefined): string {
   return d.toLocaleString("it-IT", { dateStyle: "short", timeStyle: "short" })
 }
 
-function statoConvLabel(s?: string | null): string {
-  if (s === "ok") return "Confermato"
-  if (s === "sostituzione") return "Sostituzione"
-  if (s === "non_svolta") return "Non svolta"
-  if (s === "da_verificare") return "Da verificare"
-  return "Da fare"
-}
-
 function ConvalideTab({
   data,
   mese,
@@ -1117,10 +1109,13 @@ function ConvalideTab({
   onDone: () => void
 }) {
   const riep = data.convalideRiepilogo
+  const responsabili = riep?.responsabili ?? data.convalide
   const [vista, setVista] = useState<"mese" | "settimana">("mese")
   const [sett, setSett] = useState("")
   const [meseOpen, setMeseOpen] = useState(false)
   const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
+  const [aperto, setAperto] = useState<string | null>(null)
+  const [selectedScopeIds, setSelectedScopeIds] = useState<string[]>([])
   const convMese = useLibroPagaConvalidaMese(
     mese,
     meseOpen,
@@ -1129,12 +1124,24 @@ function ConvalideTab({
   )
   const weeks = riep?.settimane ?? []
   const weekSel = weeks.find((w) => w.from === sett)
+  const respSel = responsabili.find((r) => r.personaleId === aperto)
   const turniVista = useMemo(() => {
+    let list = data.turni
     if (vista === "settimana" && weekSel) {
-      return data.turni.filter((t) => t.giorno >= weekSel.from && t.giorno <= weekSel.to)
+      list = list.filter((t) => t.giorno >= weekSel.from && t.giorno <= weekSel.to)
     }
-    return data.turni
-  }, [data.turni, vista, weekSel])
+    const roots = rootsFiltroTurniConvalide(respSel, selectedScopeIds)
+    if (roots === null) return list
+    if (!roots.length) return []
+    const ids = livelloAlberoUnionUi(data.livelli, roots)
+    return list.filter((t) => ids.has(t.livelloId))
+  }, [data.turni, data.livelli, vista, weekSel, respSel, selectedScopeIds])
+  const elencoTitle = vista === "settimana" ? "Turni della settimana" : "Turni del mese"
+  const elencoHint = !respSel
+    ? "Tutti i turni. Clicca un responsabile per filtrare il reparto, poi i sottoreparti."
+    : selectedScopeIds.length
+      ? `${respSel.nominativo} · ${selectedScopeIds.length} ${selectedScopeIds.length === 1 ? "sottoreparto" : "sottoreparti"}`
+      : `${respSel.nominativo} · tutto il reparto`
 
   return (
     <div className="mt-4 space-y-4">
@@ -1220,43 +1227,22 @@ function ConvalideTab({
       </div>
       <Card title="Responsabili">
         <p className="mb-3 text-xs text-zinc-500">
-          Clicca un responsabile per i sottoreparti: convalide fatte e da fare. Dal riquadro apri la convalida di quel
-          ambito.
+          Clicca un responsabile per vedere i turni di tutto il suo reparto. Poi seleziona uno o più sottoreparti per
+          filtrare l’elenco in fondo. «Convalida questo ambito» apre il controllo turni.
         </p>
         <LibroPagaConvalideLista
-          responsabili={riep?.responsabili ?? data.convalide}
+          responsabili={responsabili}
+          aperto={aperto}
+          onApertoChange={setAperto}
+          selectedScopeIds={selectedScopeIds}
+          onSelectedScopeIdsChange={setSelectedScopeIds}
           onApriScope={(scope) => {
             setFiltri((f) => ({ ...f, scope }))
             setMeseOpen(true)
           }}
         />
       </Card>
-      <Card title={vista === "settimana" ? "Turni della settimana" : "Turni del mese"}>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-zinc-500">
-              <tr>
-                <th className="px-3 py-2">Data</th>
-                <th className="px-3 py-2">Mansione</th>
-                <th className="px-3 py-2">Dipendente</th>
-                <th className="px-3 py-2">Convalida</th>
-                <th className="px-3 py-2">Da</th>
-              </tr>
-            </thead>
-            <tbody>
-              {turniVista.map((t) => (
-                <tr key={t.id} className="border-t border-zinc-800 text-zinc-200">
-                  <td className="px-3 py-2">{fmtDateIt(t.giorno)}</td>
-                  <td className="px-3 py-2">{t.livelloNome}</td>
-                  <td className="px-3 py-2">{t.personaleNome}</td>
-                  <td className="px-3 py-2 text-zinc-300">{statoConvLabel(t.convalidaStato)}</td>
-                  <td className="px-3 py-2 text-xs text-zinc-500">{t.convalidaDa ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+      <LibroPagaTurniConvalidaElenco turni={turniVista} title={elencoTitle} hint={elencoHint} />
     </div>
   )
 }
