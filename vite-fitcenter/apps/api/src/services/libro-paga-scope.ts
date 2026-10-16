@@ -5,11 +5,103 @@ export function personaleLivelloRadici(p: Pick<LpagaPersonale, "livelloId" | "li
   return [...new Set(ids)]
 }
 
+function isRepartoRoot(l: LpagaLivello): boolean {
+  const p = (l.parentId ?? "").trim()
+  return !p || p === "0"
+}
+
+function repartoRootId(livelli: LpagaLivello[], id: string): string {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  let cur = byId.get(id)
+  let guard = 0
+  while (cur && guard++ < 40) {
+    if (isRepartoRoot(cur)) return cur.id
+    const pid = (cur.parentId ?? "").trim()
+    if (!pid) return cur.id
+    cur = byId.get(pid)
+  }
+  return id
+}
+
+/** Primo antenato attivo (salta livelli disattivati nella catena parentId). */
+function nearestActiveAncestorId(
+  livelli: LpagaLivello[],
+  attivoIds: Set<string>,
+  nodeId: string
+): string | undefined {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  let cur = byId.get(nodeId)
+  let guard = 0
+  while (cur && guard++ < 50) {
+    const pid = (cur.parentId ?? "").trim()
+    if (!pid || pid === "0") return undefined
+    if (attivoIds.has(pid)) return pid
+    cur = byId.get(pid)
+  }
+  return undefined
+}
+
+function livelloChildrenScoped(
+  livelli: LpagaLivello[],
+  attivi: LpagaLivello[],
+  attivoIds: Set<string>,
+  parentId: string
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const l of attivi) {
+    if ((l.parentId ?? "").trim() === parentId && !seen.has(l.id)) {
+      out.push(l.id)
+      seen.add(l.id)
+    }
+  }
+  for (const l of attivi) {
+    if (seen.has(l.id)) continue
+    if ((l.parentId ?? "").trim() === parentId) continue
+    if (nearestActiveAncestorId(livelli, attivoIds, l.id) === parentId) {
+      out.push(l.id)
+      seen.add(l.id)
+    }
+  }
+  return out
+}
+
+/** Unione sottoalberi + mansioni agganciate saltando padri disattivati (come picker reparti). */
 export function livelloAlberoUnion(livelli: LpagaLivello[], rootIds: string[]): Set<string> {
+  const attivi = livelli.filter((l) => l.attivo !== false)
+  const attivoIds = new Set(attivi.map((l) => l.id))
+  const roots = [...new Set(rootIds.map((x) => x.trim()).filter(Boolean))]
   const out = new Set<string>()
-  for (const id of rootIds) {
+  for (const id of roots) {
     for (const x of livelloSottoAlbero(livelli, id)) out.add(x)
   }
+  for (const r of roots) out.add(r)
+
+  let added = true
+  while (added) {
+    added = false
+    for (const id of out) {
+      for (const cid of livelloChildrenScoped(livelli, attivi, attivoIds, id)) {
+        if (!out.has(cid)) {
+          out.add(cid)
+          added = true
+        }
+      }
+    }
+  }
+
+  for (const r of roots) {
+    const rootL = livelli.find((l) => l.id === r)
+    if (rootL && !isRepartoRoot(rootL)) continue
+    for (const l of attivi) {
+      if (out.has(l.id)) continue
+      if (!l.retribuibile) continue
+      if (repartoRootId(livelli, l.id) !== r) continue
+      if (livelloSottoAlbero(livelli, r).has(l.id)) continue
+      out.add(l.id)
+    }
+  }
+
   return out
 }
 

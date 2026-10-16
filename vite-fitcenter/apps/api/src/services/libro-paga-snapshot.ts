@@ -90,7 +90,11 @@ export async function buildLibroPagaSnapshot(opts?: {
     livelloTree && vis
       ? turniTutti.filter((t) => livelloTree.has(t.livelloId) || vis.has(t.personaleId))
       : livelloTree
-        ? turniTutti.filter((t) => livelloTree.has(t.livelloId))
+        ? turniTutti.filter(
+            (t) =>
+              livelloTree.has(t.livelloId) ||
+              (opts?.viewerId != null && t.personaleId === opts.viewerId)
+          )
         : vis
           ? turniTutti.filter((t) => vis.has(t.personaleId))
           : turniTutti
