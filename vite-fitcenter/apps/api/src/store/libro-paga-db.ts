@@ -463,16 +463,35 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
       sqlReady = false
       return "json"
     }
-    if (write) {
-      await write.request().query(DDL)
-    } else {
+    let tablesOk = false
+    try {
       await p.request().query("SELECT TOP 1 Id FROM dbo.FcLibroPagaPersonale")
+      tablesOk = true
+    } catch {
+      tablesOk = false
+    }
+    if (!tablesOk && write) {
+      try {
+        await write.request().query(DDL)
+        tablesOk = true
+      } catch (e) {
+        console.warn("[libro-paga] DDL saltato (serve SELECT/UPDATE, non CREATE TABLE):", (e as Error)?.message)
+      }
+    }
+    if (!tablesOk) {
+      sqlReady = false
+      return "json"
     }
     const file = readFile()
     if (file.turni.length > 0) {
-      const cnt = await p.request().query("SELECT COUNT(*) AS n FROM dbo.FcLibroPagaTurni")
-      const n = Number((cnt.recordset[0] as { n?: number })?.n ?? 0)
-      if (n < file.turni.length) {
+      try {
+        const cnt = await p.request().query("SELECT COUNT(*) AS n FROM dbo.FcLibroPagaTurni")
+        const n = Number((cnt.recordset[0] as { n?: number })?.n ?? 0)
+        if (n < file.turni.length) {
+          sqlReady = false
+          return "json"
+        }
+      } catch {
         sqlReady = false
         return "json"
       }
@@ -487,31 +506,56 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
   }
 }
 
+type SqlRuoloRow = { Id: string; Username?: string; Ruolo: string }
+
+async function queryPersonaleRuoli(p: sql.ConnectionPool): Promise<SqlRuoloRow[]> {
+  const r = await p.request().query(`
+    SELECT Id, Username, Ruolo
+    FROM dbo.FcLibroPagaPersonale
+    WHERE Ruolo IN (N'admin', N'manager')
+  `)
+  return (r.recordset as SqlRuoloRow[]) ?? []
+}
+
 /** Ruoli ancora in SQL (se l’import dump ha scritto solo il JSON). */
-export async function copyPersonaleRuoliFromSql(): Promise<number> {
-  const p = (await getPoolWrite()) ?? (await getPool())
-  if (!p) return 0
-  let rows: { Id: string; Ruolo: string }[] = []
-  try {
-    const r = await p.request().query(
-      "SELECT Id, Ruolo FROM dbo.FcLibroPagaPersonale WHERE Ruolo IN (N'admin', N'manager')"
-    )
-    rows = (r.recordset as { Id: string; Ruolo: string }[]) ?? []
-  } catch {
-    return 0
+export async function copyPersonaleRuoliFromSql(): Promise<{
+  copied: number
+  sqlManagers: number
+  sqlAdmins: number
+}> {
+  const pools = [await getPoolWrite(), await getPool()].filter(Boolean) as sql.ConnectionPool[]
+  let rows: SqlRuoloRow[] = []
+  let lastErr = ""
+  for (const p of pools) {
+    try {
+      rows = await queryPersonaleRuoli(p)
+      lastErr = ""
+      break
+    } catch (e) {
+      lastErr = (e as Error)?.message ?? String(e)
+    }
   }
-  if (!rows.length) return 0
+  if (lastErr) console.warn("[libro-paga] lettura ruoli SQL:", lastErr)
+  const sqlAdmins = rows.filter((x) => String(x.Ruolo).toLowerCase() === "admin").length
+  const sqlManagers = rows.filter((x) => String(x.Ruolo).toLowerCase() === "manager").length
+  console.log(`[libro-paga] SQL admin=${sqlAdmins} manager=${sqlManagers}`)
+  if (!rows.length) return { copied: 0, sqlManagers, sqlAdmins }
   const db = readFile()
   const byId = new Map(rows.map((x) => [String(x.Id), String(x.Ruolo) as LpagaRuolo]))
+  const byUser = new Map(
+    rows
+      .filter((x) => String(x.Username ?? "").trim())
+      .map((x) => [String(x.Username).trim().toLowerCase(), String(x.Ruolo) as LpagaRuolo])
+  )
   let n = 0
   db.personale = db.personale.map((pe) => {
-    const ruolo = byId.get(pe.id)
+    const ruolo = byId.get(pe.id) ?? byUser.get((pe.username ?? "").trim().toLowerCase())
     if (!ruolo || pe.ruolo === ruolo) return pe
     n += 1
     return { ...pe, ruolo }
   })
   if (n) writeFile(db)
-  return n
+  return { copied: n, sqlManagers, sqlAdmins }
 }
 
 function mapLivello(r: Record<string, unknown>): LpagaLivello {
