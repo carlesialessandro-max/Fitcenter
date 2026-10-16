@@ -81,6 +81,51 @@ function isWindowsAuth(cs: string): boolean {
   return integrated === "true" || integrated === "yes" || integrated === "sspi"
 }
 
+function envBool(v: string | undefined, fallback: boolean): boolean {
+  if (v == null || v.trim() === "") return fallback
+  const s = v.trim().toLowerCase()
+  if (s === "true" || s === "1" || s === "yes" || s === "on") return true
+  if (s === "false" || s === "0" || s === "no" || s === "off") return false
+  return fallback
+}
+
+function parseHostPort(raw: string): { server: string; port?: number } {
+  let s = raw.trim()
+  if (s.toLowerCase().startsWith("tcp:")) s = s.slice(4)
+  const comma = s.lastIndexOf(",")
+  if (comma > 0 && /^\d+$/.test(s.slice(comma + 1))) {
+    return { server: s.slice(0, comma), port: Number(s.slice(comma + 1)) }
+  }
+  return { server: s }
+}
+
+/** Tedious 19+ vuole encrypt/trustServerCertificate boolean, non "true" dalla connection string. */
+function tediousConfigFromConnectionString(cs: string): sql.config {
+  const withTimeouts = ensureSqlTimeouts(cs)
+  const p = parseConnectionString(withTimeouts)
+  const host = p.get("server") ?? p.get("data source") ?? p.get("address") ?? ""
+  const { server, port } = parseHostPort(host)
+  const encrypt = envBool(p.get("encrypt"), true)
+  const connectRaw = Number(p.get("connect timeout") ?? 15)
+  const requestRaw = Number(p.get("request timeout") ?? 120000)
+  const connectTimeout = Number.isFinite(connectRaw) ? (connectRaw < 1000 ? connectRaw * 1000 : connectRaw) : 15000
+  const requestTimeout = Number.isFinite(requestRaw) ? requestRaw : 120000
+  return {
+    server: server || "localhost",
+    port: port ?? 1433,
+    database: p.get("database") ?? p.get("initial catalog") ?? "",
+    user: p.get("user id") ?? p.get("uid") ?? p.get("user") ?? undefined,
+    password: p.get("password") ?? p.get("pwd") ?? undefined,
+    connectionTimeout: connectTimeout,
+    requestTimeout,
+    options: {
+      encrypt,
+      trustServerCertificate: envBool(p.get("trustservercertificate"), encrypt),
+      enableArithAbort: true,
+    },
+  }
+}
+
 function ensureSqlTimeouts(cs: string): string {
   // Applica timeouts "nativi" al driver mssql.
   // Se non funzionano, la Promise JS (Promise.race) non basta perché alcune fasi possono bloccare l'event loop.
@@ -159,7 +204,7 @@ export async function getPool(): Promise<sql.ConnectionPool | null> {
       }
     } else {
       // Evita pool globale condiviso: usa ConnectionPool esplicito.
-      const p = new sql.ConnectionPool(ensureSqlTimeouts(cs))
+      const p = new sql.ConnectionPool(tediousConfigFromConnectionString(cs))
       pool = await p.connect()
     }
     return pool
@@ -191,7 +236,7 @@ export async function getPoolWrite(): Promise<sql.ConnectionPool | null> {
         },
       })
     } else {
-      const p = new sql.ConnectionPool(ensureSqlTimeouts(cs))
+      const p = new sql.ConnectionPool(tediousConfigFromConnectionString(cs))
       poolWrite = await p.connect()
     }
     return poolWrite

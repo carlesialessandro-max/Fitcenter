@@ -355,11 +355,11 @@ CREATE TABLE dbo.FcLibroPagaLivelli (
   SpecialeId NVARCHAR(64) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpLiv_Attivo DEFAULT 1
 );
-IF COL_LENGTH('dbo.FcLibroPagaLivelli','ParentId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD ParentId NVARCHAR(64) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaLivelli','Retribuibile') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Retribuibile BIT NULL;
-IF COL_LENGTH('dbo.FcLibroPagaLivelli','Statistica') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Statistica BIT NULL;
-IF COL_LENGTH('dbo.FcLibroPagaLivelli','Speciale') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Speciale BIT NULL;
-IF COL_LENGTH('dbo.FcLibroPagaLivelli','SpecialeId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD SpecialeId NVARCHAR(64) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaLivelli','ParentId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD ParentId NVARCHAR(64) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaLivelli','Retribuibile') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Retribuibile BIT NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaLivelli','Statistica') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Statistica BIT NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaLivelli','Speciale') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD Speciale BIT NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaLivelli', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaLivelli','SpecialeId') IS NULL ALTER TABLE dbo.FcLibroPagaLivelli ADD SpecialeId NVARCHAR(64) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaPersonale (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -376,18 +376,18 @@ CREATE TABLE dbo.FcLibroPagaPersonale (
   Qualifiche NVARCHAR(1000) NULL,
   Attivo BIT NOT NULL CONSTRAINT DF_FcLpPer_Attivo DEFAULT 1
 );
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Cognome') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Cognome NVARCHAR(200) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Username') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Username NVARCHAR(120) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Ruolo') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Ruolo NVARCHAR(20) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloId') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloId NVARCHAR(64) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Contratto') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Contratto DATE NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Tesseramento NVARCHAR(120) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(1000) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(500) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Cognome') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Cognome NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Username') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Username NVARCHAR(120) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Ruolo') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Ruolo NVARCHAR(20) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloId') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloId NVARCHAR(64) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Contratto') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Contratto DATE NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Tesseramento') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Tesseramento NVARCHAR(120) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesseramentoScadenza') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesseramentoScadenza DATE NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Qualifiche NVARCHAR(1000) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(500) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -449,16 +449,25 @@ CREATE TABLE dbo.FcLibroPagaMacroQuote (
 );
 `
 
+export function resetLibroPagaSqlReady(): void {
+  sqlReady = null
+}
+
 export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
   if (sqlReady === true) return "sql"
   if (sqlReady === false) return "json"
   try {
-    const p = await pool()
+    const write = await getPoolWrite()
+    const p = write ?? (await getPool())
     if (!p) {
       sqlReady = false
       return "json"
     }
-    await p.request().query(DDL)
+    if (write) {
+      await write.request().query(DDL)
+    } else {
+      await p.request().query("SELECT TOP 1 Id FROM dbo.FcLibroPagaPersonale")
+    }
     const file = readFile()
     if (file.turni.length > 0) {
       const cnt = await p.request().query("SELECT COUNT(*) AS n FROM dbo.FcLibroPagaTurni")
@@ -476,6 +485,33 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
     sqlReady = false
     return "json"
   }
+}
+
+/** Ruoli ancora in SQL (se l’import dump ha scritto solo il JSON). */
+export async function copyPersonaleRuoliFromSql(): Promise<number> {
+  const p = (await getPoolWrite()) ?? (await getPool())
+  if (!p) return 0
+  let rows: { Id: string; Ruolo: string }[] = []
+  try {
+    const r = await p.request().query(
+      "SELECT Id, Ruolo FROM dbo.FcLibroPagaPersonale WHERE Ruolo IN (N'admin', N'manager')"
+    )
+    rows = (r.recordset as { Id: string; Ruolo: string }[]) ?? []
+  } catch {
+    return 0
+  }
+  if (!rows.length) return 0
+  const db = readFile()
+  const byId = new Map(rows.map((x) => [String(x.Id), String(x.Ruolo) as LpagaRuolo]))
+  let n = 0
+  db.personale = db.personale.map((pe) => {
+    const ruolo = byId.get(pe.id)
+    if (!ruolo || pe.ruolo === ruolo) return pe
+    n += 1
+    return { ...pe, ruolo }
+  })
+  if (n) writeFile(db)
+  return n
 }
 
 function mapLivello(r: Record<string, unknown>): LpagaLivello {

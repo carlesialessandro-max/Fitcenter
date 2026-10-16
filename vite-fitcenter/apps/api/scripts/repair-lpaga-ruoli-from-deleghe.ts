@@ -32,4 +32,6 @@ function parseAdmins(argv: string[]): string[] {
 const admins = parseAdmins(process.argv.slice(2))
 
 const r = await repairLibroPagaRuoliFromDeleghe({ adminUsernames: admins })
-console.log(`Responsabili: ${r.managers}, admin: ${r.admins}, invariati: ${r.skipped}`)
+console.log(
+  `Ruoli da SQL: ${r.fromSql}, deleghe: ${r.deleghe}, responsabili: ${r.managers}, admin: ${r.admins}, invariati: ${r.skipped}`
+)

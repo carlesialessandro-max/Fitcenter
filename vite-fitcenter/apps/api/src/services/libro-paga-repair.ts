@@ -1,10 +1,19 @@
 import { listDelegheManagerIds } from "./libro-paga-convalida.js"
-import { listPersonale, upsertPersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
+import {
+  copyPersonaleRuoliFromSql,
+  listPersonale,
+  resetLibroPagaSqlReady,
+  upsertPersonale,
+  type LpagaRuolo,
+} from "../store/libro-paga-db.js"
 
 /** Ripristina ruolo manager per chi ha deleghe in convalida; opzionale lista username admin. */
 export async function repairLibroPagaRuoliFromDeleghe(opts?: {
   adminUsernames?: string[]
-}): Promise<{ managers: number; admins: number; skipped: number }> {
+}): Promise<{ managers: number; admins: number; skipped: number; fromSql: number; deleghe: number }> {
+  resetLibroPagaSqlReady()
+  const fromSql = await copyPersonaleRuoliFromSql()
+  resetLibroPagaSqlReady()
   const managerIds = new Set(listDelegheManagerIds())
   const adminUsernames = new Set(
     ["admin", ...(opts?.adminUsernames ?? [])].map((u) => u.trim().toLowerCase()).filter(Boolean)
@@ -42,5 +51,5 @@ export async function repairLibroPagaRuoliFromDeleghe(opts?: {
     if (next === "admin") admins += 1
     else managers += 1
   }
-  return { managers, admins, skipped }
+  return { managers, admins, skipped, fromSql, deleghe: managerIds.size }
 }
