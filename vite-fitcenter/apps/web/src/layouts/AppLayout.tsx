@@ -84,6 +84,7 @@ const navCampus: NavItem[] = [
 ] as const
 // Reception: firma da cassa, calendario e mappa piscina.
 const navFirme: NavItem[] = [
+  { to: "/firme", label: "Firme" },
   {
     to: "/firma-cassa",
     label: "Firma Cassa",

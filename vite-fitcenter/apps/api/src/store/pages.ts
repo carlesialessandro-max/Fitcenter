@@ -97,7 +97,7 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
   ],
   istruttore: ["/calendario/corsi", "/calendario/personale", "/corsi", "/corsi/presenze", ...LP],
   campus: ["/calendario/campus", "/calendario/personale", "/campus"],
-  firme: ["/firma-cassa", "/scontrini", "/campus", "/calendario/reception", "/piscina", ...LP],
+  firme: ["/firme", "/firma-cassa", "/scontrini", "/campus", "/calendario/reception", "/piscina", ...LP],
   scuola_nuoto: [
     "/calendario/scuola-nuoto",
     "/calendario/personale",
@@ -143,8 +143,19 @@ export function sanitizePages(pages: unknown, role: Role): string[] | undefined 
   return out
 }
 
+/** Aggiunge pagine obbligatorie per ruolo se mancano (es. reception con elenco personalizzato). */
+export function mergeRolePageGaps(role: Role, pages: string[]): string[] {
+  const out = [...pages]
+  if (role === "firme" && !out.includes("/firme")) {
+    const i = out.indexOf("/firma-cassa")
+    if (i >= 0) out.splice(i + 1, 0, "/firme")
+    else out.unshift("/firme")
+  }
+  return out
+}
+
 export function pagesForUser(role: Role, pages?: string[]): string[] {
-  if (pages?.length) return pages
+  if (pages?.length) return mergeRolePageGaps(role, pages)
   if (role === "admin") return [...ALL_PAGE_PATHS]
   return [...(ROLE_DEFAULT_PAGES[role] ?? [])]
 }

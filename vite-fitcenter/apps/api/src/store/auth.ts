@@ -2,7 +2,7 @@ import bcrypt from "bcrypt"
 import type { Role } from "../types/auth.js"
 import { isEmailOtpEnabled, maskEmail, sendLoginOtpEmail } from "../services/mail-otp.js"
 import { readJson, writeJson } from "./persist.js"
-import { sanitizePages } from "./pages.js"
+import { mergeRolePageGaps, sanitizePages } from "./pages.js"
 import { canVedereReportCollaboratori } from "../lib/report-collaboratori-access.js"
 import crypto from "crypto"
 
@@ -359,6 +359,8 @@ function pagesWithReport(u: User): string[] | undefined {
 }
 
 function toPublicUser(u: UserRecord): User {
+  const pages =
+    u.pages?.length ? mergeRolePageGaps(u.role, u.pages) : u.pages
   return {
     username: u.username,
     nome: u.nome,
@@ -366,7 +368,7 @@ function toPublicUser(u: UserRecord): User {
     consulenteNome: u.consulenteNome,
     leadFilter: u.leadFilter,
     vedeTotaliCentro: u.vedeTotaliCentro,
-    pages: pagesWithReport(u),
+    pages: pagesWithReport({ ...u, pages }),
   }
 }
 

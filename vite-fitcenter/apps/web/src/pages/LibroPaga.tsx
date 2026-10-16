@@ -1107,6 +1107,39 @@ function statoConvLabel(s?: string | null): string {
   return "Da fare"
 }
 
+function convalidaPct(done: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((done / total) * 100))
+}
+
+function ConvalidaProgressBar({
+  done,
+  total,
+  className = "",
+}: {
+  done: number
+  total: number
+  className?: string
+}) {
+  const pct = convalidaPct(done, total)
+  const bar =
+    pct >= 100 ? "bg-emerald-500" : pct > 0 ? "bg-amber-400" : "bg-zinc-700"
+  return (
+    <div className={`h-2 w-full overflow-hidden rounded-full bg-zinc-800 ${className}`}>
+      <div className={`h-full rounded-full transition-[width] ${bar}`} style={{ width: `${pct}%` }} />
+    </div>
+  )
+}
+
+type ConvalidaResponsabileRow = LibroPagaSnapshot["convalide"][number] | NonNullable<
+  LibroPagaSnapshot["convalideRiepilogo"]
+>["responsabili"][number]
+
+function convalidaScopes(row: ConvalidaResponsabileRow) {
+  if ("scopes" in row && Array.isArray(row.scopes)) return row.scopes
+  return []
+}
+
 function ConvalideTab({
   data,
   mese,
@@ -1212,75 +1245,116 @@ function ConvalideTab({
         </Card>
       </div>
       <Card title="Convalide dei responsabili">
-        <p className="mb-3 text-xs text-zinc-500">
-          Quando un responsabile convalida (anche solo corsi terra o acqua), qui vedi avanzamento del mese e per
-          settimana.
+        <p className="mb-4 text-xs text-zinc-500">
+          Avanzamento del mese per ogni responsabile; sotto ogni scheda vedi il dettaglio per reparto o ambito (terra /
+          acqua, corsi, ecc.).
         </p>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="text-xs uppercase text-zinc-500">
-              <tr>
-                <th className="px-3 py-2">Responsabile</th>
-                <th className="px-3 py-2">Reparto</th>
-                <th className="px-3 py-2 text-right">Turni</th>
-                <th className="px-3 py-2 text-right">Confermati</th>
-                <th className="px-3 py-2 text-right">Da fare</th>
-                <th className="px-3 py-2">Ultima</th>
-                <th className="px-3 py-2">Stato</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(riep?.responsabili ?? data.convalide).map((c) => {
-                const nTurni = "nTurni" in c ? (c.nTurni ?? 0) : 0
-                const nDaFare = "nDaFare" in c ? (c.nDaFare ?? 0) : 0
-                const nConf = "nConfermati" in c ? (c.nConfermati ?? 0) : 0
-                const ok = nTurni > 0 && nDaFare === 0
-                return (
-                  <tr key={c.personaleId} className="border-t border-zinc-800 text-zinc-200">
-                    <td className="px-3 py-2">{c.nominativo}</td>
-                    <td className="px-3 py-2 text-zinc-400">{c.reparto}</td>
-                    <td className="px-3 py-2 text-right">{nTurni}</td>
-                    <td className="px-3 py-2 text-right text-emerald-300">{nConf}</td>
-                    <td className="px-3 py-2 text-right text-amber-300">{nDaFare}</td>
-                    <td className="px-3 py-2 text-zinc-400">{fmtStamp(c.ultima)}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${ok ? "bg-emerald-400" : "bg-red-500"}`} />
-                      <span className="ml-2 text-xs text-zinc-500">{ok ? "Completo" : "In corso"}</span>
-                    </td>
-                  </tr>
-                )
-              })}
-              {!(riep?.responsabili ?? data.convalide).length && (
-                <tr>
-                  <td className="px-3 py-6 text-zinc-500" colSpan={7}>
-                    Nessun responsabile con turni nel periodo.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-        {riep?.responsabili?.some((r) => r.scopes.some((s) => s.nTurni > 0)) ? (
-          <div className="mt-4 space-y-3">
-            {riep.responsabili.map((r) =>
-              r.scopes.some((s) => s.nTurni > 0) ? (
-                <div key={r.personaleId}>
-                  <p className="mb-1 text-xs font-medium text-zinc-400">{r.nominativo} — per reparto</p>
-                  <div className="flex flex-wrap gap-2">
-                    {r.scopes
-                      .filter((s) => s.nTurni > 0)
-                      .map((s) => (
-                        <span key={s.id} className="rounded-md border border-zinc-800 px-2 py-1 text-xs text-zinc-300">
-                          {s.nome}: {s.nConfermati}/{s.nTurni}
-                          {s.nDaFare ? ` · ${s.nDaFare} da fare` : ""}
-                        </span>
-                      ))}
+        <div className="space-y-4">
+          {(riep?.responsabili ?? data.convalide).map((c) => {
+            const nTurni = "nTurni" in c ? (c.nTurni ?? 0) : 0
+            const nDaFare = "nDaFare" in c ? (c.nDaFare ?? 0) : 0
+            const nConf = "nConfermati" in c ? (c.nConfermati ?? 0) : 0
+            const ok = nTurni > 0 && nDaFare === 0
+            const scopes = convalidaScopes(c).filter((s) => s.nTurni > 0)
+            const pct = convalidaPct(nConf, nTurni)
+            return (
+              <article
+                key={c.personaleId}
+                className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 shadow-sm shadow-black/20"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-medium text-zinc-100">{c.nominativo}</h3>
+                    <p className="text-sm text-zinc-500">{c.reparto || "—"}</p>
+                  </div>
+                  <span
+                    className={
+                      ok
+                        ? "shrink-0 rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300"
+                        : nTurni === 0
+                          ? "shrink-0 rounded-full bg-zinc-800 px-3 py-1 text-xs text-zinc-400"
+                          : "shrink-0 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-200"
+                    }
+                  >
+                    {nTurni === 0 ? "Nessun turno" : ok ? "Completo" : "In corso"}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">Turni</p>
+                    <p className="text-lg font-semibold text-zinc-100">{nTurni}</p>
+                  </div>
+                  <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-emerald-600/80">Confermati</p>
+                    <p className="text-lg font-semibold text-emerald-300">{nConf}</p>
+                  </div>
+                  <div className="rounded-lg border border-amber-900/40 bg-amber-950/15 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-amber-600/80">Da fare</p>
+                    <p className="text-lg font-semibold text-amber-300">{nDaFare}</p>
+                  </div>
+                  <div className="rounded-lg border border-zinc-800/80 bg-zinc-900/30 px-3 py-2">
+                    <p className="text-[11px] uppercase tracking-wide text-zinc-500">Ultima convalida</p>
+                    <p className="text-sm font-medium text-zinc-200">{fmtStamp(c.ultima)}</p>
+                    {"ultimaDa" in c && c.ultimaDa ? (
+                      <p className="truncate text-xs text-zinc-500">{c.ultimaDa}</p>
+                    ) : null}
                   </div>
                 </div>
-              ) : null
-            )}
-          </div>
-        ) : null}
+                {nTurni > 0 ? (
+                  <div className="mt-4">
+                    <div className="mb-1.5 flex items-center justify-between text-xs text-zinc-500">
+                      <span>Avanzamento mese</span>
+                      <span className="tabular-nums text-zinc-400">
+                        {nConf}/{nTurni} · {pct}%
+                      </span>
+                    </div>
+                    <ConvalidaProgressBar done={nConf} total={nTurni} />
+                  </div>
+                ) : null}
+                {scopes.length > 0 ? (
+                  <div className="mt-4 border-t border-zinc-800 pt-4">
+                    <p className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-500">Per reparto</p>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {scopes.map((s) => {
+                        const scopeOk = s.nDaFare === 0
+                        return (
+                          <div
+                            key={s.id}
+                            className={
+                              scopeOk
+                                ? "rounded-lg border border-emerald-900/50 bg-emerald-950/25 p-3"
+                                : "rounded-lg border border-zinc-800 bg-zinc-900/40 p-3"
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="text-sm font-medium leading-snug text-zinc-100">{s.nome}</p>
+                              {scopeOk ? (
+                                <span className="shrink-0 text-xs font-medium text-emerald-400">Fatto</span>
+                              ) : (
+                                <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs font-medium text-amber-200">
+                                  {s.nDaFare} da fare
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs tabular-nums text-zinc-500">
+                              {s.nConfermati} confermati su {s.nTurni}
+                            </p>
+                            <ConvalidaProgressBar className="mt-2" done={s.nConfermati} total={s.nTurni} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}
+          {!(riep?.responsabili ?? data.convalide).length && (
+            <p className="rounded-lg border border-dashed border-zinc-800 px-4 py-8 text-center text-sm text-zinc-500">
+              Nessun responsabile con turni nel periodo.
+            </p>
+          )}
+        </div>
       </Card>
       <Card title={vista === "settimana" ? "Turni della settimana" : "Turni del mese"}>
         <div className="overflow-x-auto">
