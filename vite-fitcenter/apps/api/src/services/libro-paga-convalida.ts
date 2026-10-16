@@ -2,7 +2,7 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { livelloSottoAlbero } from "./libro-paga-scope.js"
+import { livelloAlberoUnion, livelloSottoAlbero, personaleLivelloRadici } from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -163,13 +163,16 @@ export const FOGLI_ORARI_CONVALIDA = {
 
 /** Mansioni visibili in convalida: admin = tutte; responsabile = sottoalbero; delegato = albero dei manager. */
 export function alberoConvalidaViewer(
-  me: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId">,
+  me: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId" | "livelloIds">,
   personale: LpagaPersonale[],
   livelli: LpagaLivello[]
 ): Set<string> | undefined {
   if (me.ruolo === "admin") return undefined
   if (me.ruolo === "manager") {
-    return me.livelloId ? livelloSottoAlbero(livelli, me.livelloId) : undefined
+    const roots = personaleLivelloRadici(me)
+    if (!roots.length) return undefined
+    const tree = livelloAlberoUnion(livelli, roots)
+    return tree.size ? tree : undefined
   }
   const de = alberoDaDeleghe(me.id, personale, livelli)
   return de.size ? de : undefined
