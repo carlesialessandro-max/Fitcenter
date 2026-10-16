@@ -12,9 +12,30 @@ import {
   listValidazioni,
   nominativo,
   repartoNomePersona,
+  type LpagaLivello,
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
+
+function buildLivelloTreeNodes(livelli: LpagaLivello[], parentId?: string): { id: string; nome: string; retribuibile: boolean; children?: ReturnType<typeof buildLivelloTreeNodes> }[] {
+  const pid = (parentId ?? "").trim()
+  return livelli
+    .filter((l) => {
+      const p = (l.parentId ?? "").trim()
+      if (!pid) return !p || p === "0"
+      return p === pid
+    })
+    .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+    .map((l) => {
+      const children = buildLivelloTreeNodes(livelli, l.id)
+      return {
+        id: l.id,
+        nome: l.nome,
+        retribuibile: l.retribuibile,
+        ...(children.length ? { children } : {}),
+      }
+    })
+}
 
 export function defaultMeseLpaga(): string {
   try {
@@ -209,25 +230,7 @@ export async function buildLibroPagaSnapshot(opts?: {
           miscellanea: t.miscellanea,
         }))
   const donutMese = opts?.hideGlobalStats ? undefined : totaliReparto.find((t) => t.mese === mese)
-  const tree = livelli
-    .filter((l) => !l.parentId)
-    .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
-    .map((root) => ({
-      id: root.id,
-      nome: root.nome,
-      children: livelli
-        .filter((l) => l.parentId === root.id)
-        .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
-        .map((ch) => ({
-          id: ch.id,
-          nome: ch.nome,
-          retribuibile: ch.retribuibile,
-          children: livelli
-            .filter((l) => l.parentId === ch.id)
-            .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
-            .map((g) => ({ id: g.id, nome: g.nome, retribuibile: g.retribuibile })),
-        })),
-    }))
+  const tree = buildLivelloTreeNodes(livelli)
 
   const miscDonut = opts?.hideGlobalStats
     ? []

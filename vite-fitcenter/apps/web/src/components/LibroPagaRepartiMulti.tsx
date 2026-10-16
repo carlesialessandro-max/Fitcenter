@@ -54,18 +54,45 @@ function childrenOf(livelli: LpagaLivello[], parentId: string): LpagaLivello[] {
     .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
 }
 
-/** Mansioni retribuibili il cui parent non è nell’albero attivo (es. sotto livello disattivato) → visibili sotto il reparto. */
+/** Primo antenato presente tra i livelli attivi (salta padri disattivati / assenti). */
+function nearestActiveAncestorId(
+  all: LpagaLivello[],
+  attivoIds: Set<string>,
+  nodeId: string
+): string | undefined {
+  const byId = new Map(all.map((l) => [l.id, l]))
+  let cur = byId.get(nodeId)
+  let guard = 0
+  while (cur && guard++ < 50) {
+    const pid = (cur.parentId ?? "").trim()
+    if (!pid || pid === "0") return undefined
+    if (attivoIds.has(pid)) return pid
+    cur = byId.get(pid)
+  }
+  return undefined
+}
+
+/**
+ * Figli nel picker: parentId diretto + nodi il cui parent reale è disattivato
+ * (es. Assistenza Scuola Nuoto sotto Scuola Nuoto con livello intermedio spento).
+ */
 function childrenForPicker(all: LpagaLivello[], attivi: LpagaLivello[], parentId: string): LpagaLivello[] {
+  const attivoIds = new Set(attivi.map((l) => l.id))
   const kids = childrenOf(attivi, parentId)
   const kidIds = new Set(kids.map((k) => k.id))
-  const parent = all.find((l) => l.id === parentId)
-  if (!parent || !isRoot(parent)) return kids
   const subtreeAttivo = sottoAlberoUi(attivi, parentId)
+
   for (const l of attivi) {
-    if (!l.retribuibile) continue
-    if (repartoRootId(all, l.id) !== parentId) continue
-    if (subtreeAttivo.has(l.id)) continue
-    if (!kidIds.has(l.id)) {
+    if (kidIds.has(l.id)) continue
+    if ((l.parentId ?? "").trim() === parentId) continue
+    const anc = nearestActiveAncestorId(all, attivoIds, l.id)
+    if (anc === parentId) {
+      kids.push(l)
+      kidIds.add(l.id)
+      continue
+    }
+    const parent = all.find((x) => x.id === parentId)
+    if (parent && isRoot(parent) && l.retribuibile && repartoRootId(all, l.id) === parentId && !subtreeAttivo.has(l.id)) {
       kids.push(l)
       kidIds.add(l.id)
     }
@@ -86,12 +113,25 @@ function repartoRootId(livelli: LpagaLivello[], id: string): string {
   return id
 }
 
-function repartoSubtreeIds(all: LpagaLivello[], attivi: LpagaLivello[], rootId: string): Set<string> {
-  const ids = sottoAlberoUi(attivi, rootId)
-  for (const l of attivi) {
-    if (l.retribuibile && repartoRootId(all, l.id) === rootId) ids.add(l.id)
+function pickerSubtree(all: LpagaLivello[], attivi: LpagaLivello[], rootId: string): Set<string> {
+  const ids = new Set<string>([rootId])
+  let added = true
+  while (added) {
+    added = false
+    for (const id of ids) {
+      for (const c of childrenForPicker(all, attivi, id)) {
+        if (!ids.has(c.id)) {
+          ids.add(c.id)
+          added = true
+        }
+      }
+    }
   }
   return ids
+}
+
+function repartoSubtreeIds(all: LpagaLivello[], attivi: LpagaLivello[], rootId: string): Set<string> {
+  return pickerSubtree(all, attivi, rootId)
 }
 
 function toggleRepartoIntero(
@@ -161,7 +201,7 @@ function LivelloRow({
   })
   const coperto = repartoInteroSelezionato || selectionCopre(livelli, value, node.id)
   const checked = coperto
-  const subtree = sottoAlberoUi(livelli, node.id)
+  const subtree = pickerSubtree(allLivelli, livelli, node.id)
   const selectedUnder = value.filter((x) => subtree.has(x) && x !== node.id)
   const indeterminate = root && !interoReparto && selectedUnder.length > 0
   const disabled = !root && coperto && !esplicito

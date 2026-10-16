@@ -680,7 +680,7 @@ function PersonaleTab({
             <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
               <span>Reparti / sotto-reparti</span>
               <LibroPagaRepartiMulti
-                reparti={data.livelli.filter((l) => l.attivo !== false)}
+                reparti={data.livelli}
                 value={livelloIds}
                 onChange={setLivelloIds}
               />

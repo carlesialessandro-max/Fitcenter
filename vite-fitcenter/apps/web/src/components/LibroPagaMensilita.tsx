@@ -473,7 +473,7 @@ function DettaglioMese({
     },
     onError: (e: Error) => onError?.(e.message),
   })
-  const reparti = (livelli ?? []).filter((l) => l.attivo !== false)
+  const reparti = livelli ?? []
   const mansioniMese = useMemo(() => {
     const map = new Map<string, string>()
     for (const t of lezioni) {
