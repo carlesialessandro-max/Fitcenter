@@ -235,9 +235,8 @@ function clienteWaText(r: LpRichiesta): string {
   const allievo = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
   const chi = (r.tutore ?? "").trim() || allievo
   const quando = r.quando?.trim() || "l'orario richiesto"
-  const durata = parseLpDurataMin(r.durataMin)
   return (
-    `Ciao ${chi}, abbiamo preso in carico la richiesta per la lezione privata di ${allievo} (${durata} minuti). ` +
+    `Ciao ${chi}, abbiamo preso in carico la richiesta per la lezione privata di ${allievo}. ` +
     `Stiamo verificando la disponibilita dell'acqua e dell'istruttore per ${quando}. ` +
     `Ti contatteremo a breve per confermare il giorno e l'orario definitivo. ` +
     `In base alla situazione concorderemo prova o pacchetto 5/10. Per annullare o spostare, accordati con l'istruttore. Lo staff H2SPORT`
@@ -254,10 +253,9 @@ function istruttoriWaText(r: LpRichiesta, by: string): string {
     .filter(Boolean)
     .join(" ")
   const chi = by.trim() || "reception"
-  const durata = parseLpDurataMin(r.durataMin)
   return (
     `Nuova richiesta lezione privata inserita da ${chi}. Chi e disponibile? ` +
-    `Allievo ${allievo}. Lezione ${durata} minuti. ` +
+    `Allievo ${allievo}. ` +
     (r.tutore?.trim() ? `Tutore ${r.tutore.trim()}. ` : "") +
     (orario ? `Orario ${orario}. ` : "") +
     (r.note?.trim() ? `Note: ${r.note.trim().slice(0, 80)}. ` : "") +
@@ -721,7 +719,7 @@ export async function patchLezioniPrivateLezione(req: Request, res: Response) {
     const nextOra = (b.ora != null ? String(b.ora).trim() : l.ora).slice(0, 5)
     const nextVasca = b.vasca != null ? asVasca(b.vasca) : l.vasca
     const nextCorsia = b.corsia != null ? Number(b.corsia) : l.corsia
-    const nextDurata = b.durataMin != null ? parseLpDurataMin(b.durataMin, l.durataMin) : parseLpDurataMin(l.durataMin)
+    const nextDurata = b.durataMin != null ? parseLpDurataMin(b.durataMin) : l.durataMin > 0 ? l.durataMin : 30
     if (!nextVasca) return res.status(400).json({ message: "Vasca non valida" })
     if (!isYmd(nextGiorno) || !isHm(nextOra)) return res.status(400).json({ message: "Giorno e ora non validi" })
     if (!Number.isFinite(nextCorsia)) return res.status(400).json({ message: "Corsia non valida" })

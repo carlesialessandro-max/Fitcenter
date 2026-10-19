@@ -1,6 +1,6 @@
 import type { VascaId } from "@/api/lezioniPrivate"
 
-export const LP_SLOT_STEP = 30
+export const LP_SLOT_STEP = 15
 export const LP_LEZIONE_MIN = 30
 
 export type LpFasciaVasca = {
@@ -114,7 +114,7 @@ export function slotAperto(
 
 export function lpOreSlotsTutti(): string[] {
   const out: string[] = []
-  for (let m = 7 * 60 + 30; m < 22 * 60; m += 30) {
+  for (let m = 7 * 60 + 30; m < 22 * 60; m += LP_SLOT_STEP) {
     const h = Math.floor(m / 60)
     const min = m % 60
     out.push(`${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`)
