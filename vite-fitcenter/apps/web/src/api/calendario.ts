@@ -88,6 +88,14 @@ export const calendarioApi = {
     api.get<CalendarioCompartoResponse>(`/data/calendario/${encodeURIComponent(comparto)}`),
   patchSlot: (comparto: CalendarioComparto, body: PatchCalendarioSlotBody) =>
     api.patch<{ ok: boolean; stableKey?: string }>(`/data/calendario/${encodeURIComponent(comparto)}/slot`, body),
+  duplica: (
+    comparto: CalendarioComparto,
+    body: { mode: "day" | "week"; fromIso: string; toIso: string },
+  ) =>
+    api.post<{ ok: boolean; copied: number; skipped: number }>(
+      `/data/calendario/${encodeURIComponent(comparto)}/duplica`,
+      body,
+    ),
   listInstructors: () => api.get<{ rows: CalendarioIstruttore[] }>("/data/calendario/instructors"),
   postInstructor: (body: {
     nome: string

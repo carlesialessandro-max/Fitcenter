@@ -729,6 +729,136 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
+function mondayIsoFrom(iso: string): string | null {
+  const d = parseIsoLocal(iso)
+  if (!d) return null
+  const js = d.getDay()
+  d.setDate(d.getDate() - (js === 0 ? 6 : js - 1))
+  return isoYmdFromDate(d)
+}
+
+function slotCopyFingerprint(e: {
+  start: string
+  title: string
+  zona?: string
+  istruttoreId?: string | null
+  staffOverride?: string | null
+  staff?: string
+}): string {
+  const staff = String(e.istruttoreId || e.staffOverride || e.staff || "")
+    .trim()
+    .toLowerCase()
+  return `${normalizeHm(e.start)}|${String(e.title ?? "").trim()}|${String(e.zona ?? "").trim()}|${staff}`
+}
+
+const DUPLICABLE_COMPARTI: CalendarioComparto[] = [...MANUAL_ONLY_COMPARTI, "sala_fitness"]
+
+/** Copia tutti i turni di un giorno o di una settimana su un'altra data. */
+export function postCalendarioDuplica(req: Request, res: Response) {
+  const u = req.user!
+  const raw = String(req.params.comparto ?? "").trim()
+  if (!isComparto(raw)) return res.status(400).json({ message: "Comparto non valido" })
+  if (!canWriteComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
+  if (!DUPLICABLE_COMPARTI.includes(raw)) {
+    return res.status(400).json({
+      message: "La duplicazione è disponibile sui calendari a data (reception, bagnini, sala fitness, acquaticità, spogliatoi, pulizie)",
+    })
+  }
+
+  const body = req.body as { mode?: string; fromIso?: string; toIso?: string }
+  const mode = body.mode === "week" ? "week" : body.mode === "day" ? "day" : null
+  const fromIso = String(body.fromIso ?? "").trim()
+  const toIso = String(body.toIso ?? "").trim()
+  if (!mode) return res.status(400).json({ message: "mode: day o week" })
+  if (!isIsoDate(fromIso) || !isIsoDate(toIso)) {
+    return res.status(400).json({ message: "fromIso e toIso obbligatori (YYYY-MM-DD)" })
+  }
+
+  const pairs: { src: string; dest: string }[] = []
+  if (mode === "day") {
+    if (fromIso === toIso) return res.status(400).json({ message: "Scegli un giorno di destinazione diverso" })
+    pairs.push({ src: fromIso, dest: toIso })
+  } else {
+    const srcMon = mondayIsoFrom(fromIso)
+    const destMon = mondayIsoFrom(toIso)
+    if (!srcMon || !destMon) return res.status(400).json({ message: "Date non valide" })
+    if (srcMon === destMon) return res.status(400).json({ message: "Scegli una settimana di destinazione diversa" })
+    for (let i = 0; i < 7; i++) {
+      const src = addDaysIso(srcMon, i)
+      const dest = addDaysIso(destMon, i)
+      if (!src || !dest) return res.status(400).json({ message: "Date non valide" })
+      pairs.push({ src, dest })
+    }
+  }
+
+  let db = readCalendarioDb()
+  const events = mergeForComparto(raw, db)
+  const now = new Date().toISOString()
+  const by = u.nome || u.username
+  let copied = 0
+  let skipped = 0
+
+  for (const { src, dest } of pairs) {
+    const srcDate = parseIsoLocal(src)
+    const destDate = parseIsoLocal(dest)
+    if (!srcDate || !destDate) continue
+    const destDow = destDate.getDay()
+    const srcEvents = eventsMatchingCalendarDay(events, srcDate)
+    const destKeys = new Set(eventsMatchingCalendarDay(events, destDate).map(slotCopyFingerprint))
+
+    for (const e of srcEvents) {
+      const fp = slotCopyFingerprint(e)
+      if (destKeys.has(fp)) {
+        skipped++
+        continue
+      }
+      const start = normalizeHm(e.start)
+      const title = String(e.title ?? "").trim()
+      const zona = String(e.zona ?? defaultZonaManual(raw)).trim() || defaultZonaManual(raw)
+      if (!start || !title) {
+        skipped++
+        continue
+      }
+      const istruttoreId = String(e.istruttoreId ?? "").trim() || null
+      const staffOverride = istruttoreId
+        ? String(e.staffOverride ?? "").trim() || null
+        : String(e.staffOverride ?? e.staff ?? "").trim()
+      if (!istruttoreId && !staffOverride) {
+        skipped++
+        continue
+      }
+      const stableKey =
+        raw === "sala_fitness"
+          ? stableKeyFromParts(zona, 0, start, `${title}|${dest}|${staffOverride ?? ""}`)
+          : `manual-${crypto.randomUUID()}`
+      if (db.revisions.some((r) => r.comparto === raw && r.stableKey === stableKey)) {
+        skipped++
+        continue
+      }
+      const rev: CalendarioSlotRevision = {
+        comparto: raw,
+        stableKey,
+        dow: destDow,
+        dateIso: dest,
+        start,
+        title,
+        zona,
+        istruttoreId,
+        staffOverride: staffOverride || null,
+        note: e.note ?? null,
+        updatedAt: now,
+        updatedBy: by,
+      }
+      db = upsertRevision(db, rev)
+      destKeys.add(fp)
+      copied++
+    }
+  }
+
+  writeCalendarioDb(db)
+  res.json({ ok: true, copied, skipped })
+}
+
 export function listCalendarioInstructors(req: Request, res: Response) {
   const u = req.user!
   const allow =

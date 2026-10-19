@@ -1257,6 +1257,132 @@ function CreateSlotModal({
   )
 }
 
+function weekRangeLabel(iso: string): string {
+  const d = parseIsoLocal(iso)
+  if (!d) return iso
+  const mon = startOfWeekMonday(d)
+  const sun = addDays(mon, 6)
+  return `${pad2(mon.getDate())}/${pad2(mon.getMonth() + 1)} – ${pad2(sun.getDate())}/${pad2(sun.getMonth() + 1)} ${sun.getFullYear()}`
+}
+
+function DuplicatePeriodModal({
+  events,
+  defaultMode,
+  defaultFromIso,
+  onClose,
+  onConfirm,
+}: {
+  events: CalEvent[]
+  defaultMode: "day" | "week"
+  defaultFromIso: string
+  onClose: () => void
+  onConfirm: (body: { mode: "day" | "week"; fromIso: string; toIso: string }) => Promise<void>
+}) {
+  const [mode, setMode] = useState<"day" | "week">(defaultMode)
+  const [fromIso, setFromIso] = useState(defaultFromIso)
+  const [toIso, setToIso] = useState(() => isoYmd(addDays(parseIsoLocal(defaultFromIso) ?? new Date(), 7)))
+  const [busy, setBusy] = useState(false)
+
+  const nSource = useMemo(() => {
+    const from = parseIsoLocal(fromIso)
+    if (!from) return 0
+    if (mode === "day") return eventsMatchingCalendarDay(events, from).length
+    const mon = startOfWeekMonday(from)
+    let n = 0
+    for (let i = 0; i < 7; i++) n += eventsMatchingCalendarDay(events, addDays(mon, i)).length
+    return n
+  }, [events, fromIso, mode])
+
+  async function submit(ev: FormEvent) {
+    ev.preventDefault()
+    if (!fromIso || !toIso) return
+    setBusy(true)
+    try {
+      await onConfirm({ mode, fromIso, toIso })
+      onClose()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Duplicazione fallita")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center" role="dialog" aria-modal>
+      <form
+        onSubmit={(e) => void submit(e)}
+        className="w-full max-w-md space-y-4 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-xl"
+      >
+        <h2 className="text-base font-semibold text-zinc-100">Duplica turni</h2>
+        <p className="text-sm text-zinc-400">
+          Copia tutti gli slot su un altro giorno o sulla settimana successiva. I turni già presenti in destinazione
+          (stesso orario, titolo e persona) non vengono sovrascritti.
+        </p>
+        <div className="grid grid-cols-2 gap-1">
+          {(
+            [
+              ["day", "Giorno"],
+              ["week", "Settimana"],
+            ] as const
+          ).map(([k, lab]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setMode(k)}
+              className={cn(
+                "rounded-md px-3 py-2 text-sm font-medium",
+                mode === k ? "text-zinc-900" : "border border-zinc-700 text-zinc-400 hover:text-zinc-200",
+              )}
+              style={mode === k ? { backgroundColor: H2.blue } : undefined}
+            >
+              {lab}
+            </button>
+          ))}
+        </div>
+        <label className="block text-xs font-medium text-zinc-400">
+          {mode === "week" ? "Settimana di partenza" : "Giorno di partenza"}
+          <input
+            type="date"
+            required
+            value={fromIso}
+            onChange={(e) => e.target.value && setFromIso(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+          />
+          <span className="mt-1 block capitalize text-zinc-300">
+            {mode === "week" ? weekRangeLabel(fromIso) : formatDateIt(fromIso)} · {nSource} slot
+          </span>
+        </label>
+        <label className="block text-xs font-medium text-zinc-400">
+          {mode === "week" ? "Settimana di destinazione" : "Giorno di destinazione"}
+          <input
+            type="date"
+            required
+            value={toIso}
+            onChange={(e) => e.target.value && setToIso(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+          />
+          <span className="mt-1 block capitalize text-zinc-300">
+            {mode === "week" ? weekRangeLabel(toIso) : formatDateIt(toIso)}
+          </span>
+        </label>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" onClick={onClose} className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
+            Annulla
+          </button>
+          <button
+            type="submit"
+            disabled={busy || nSource === 0}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-900 disabled:opacity-50"
+            style={{ backgroundColor: H2.blue }}
+          >
+            {busy ? "Copia…" : nSource === 0 ? "Nessuno slot da copiare" : `Copia ${nSource} slot`}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export function CalendarioRepartoPage() {
   const { segmento } = useParams<{ segmento: string }>()
   const { role } = useAuth()
@@ -1271,6 +1397,7 @@ export function CalendarioRepartoPage() {
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
   const [editCalendarDate, setEditCalendarDate] = useState<string | null>(null)
   const [createSlotComparto, setCreateSlotComparto] = useState<null | CreateSlotComparto>(null)
+  const [duplicaOpen, setDuplicaOpen] = useState(false)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
   const [inviaTurniOpen, setInviaTurniOpen] = useState(false)
 
@@ -1625,6 +1752,15 @@ export function CalendarioRepartoPage() {
                 Invia turni email
               </button>
             ) : null}
+            {apiComparto && compartoIsManualServer(apiComparto) && canWrite ? (
+              <button
+                type="button"
+                onClick={() => setDuplicaOpen(true)}
+                className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+              >
+                Duplica {view === "day" ? "giorno" : "settimana"}
+              </button>
+            ) : null}
             {scheduleMode !== "none" && canWrite ? (
               <button
                 type="button"
@@ -1648,6 +1784,31 @@ export function CalendarioRepartoPage() {
             ) : null}
           </div>
         </div>
+
+        {duplicaOpen && apiComparto && canWrite ? (
+          <DuplicatePeriodModal
+            events={events}
+            defaultMode={view === "day" ? "day" : "week"}
+            defaultFromIso={isoYmd(view === "day" ? dayOnly : weekDays[0] ?? cursor)}
+            onClose={() => setDuplicaOpen(false)}
+            onConfirm={async (body) => {
+              const r = await calendarioApi.duplica(apiComparto, body)
+              const dest = parseIsoLocal(body.toIso)
+              if (dest) {
+                setCursor(dest)
+                setView(body.mode === "day" ? "day" : "week")
+              }
+              await reload()
+              alert(
+                r.copied === 0
+                  ? r.skipped
+                    ? `Nessuno slot nuovo: ${r.skipped} già presenti in destinazione.`
+                    : "Nessuno slot da copiare."
+                  : `Copiati ${r.copied} slot${r.skipped ? ` (${r.skipped} già presenti, saltati)` : ""}.`,
+              )
+            }}
+          />
+        ) : null}
 
         {createSlotComparto && canWrite ? (
           <CreateSlotModal

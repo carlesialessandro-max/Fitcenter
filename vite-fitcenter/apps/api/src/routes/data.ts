@@ -8,6 +8,7 @@ import {
   getCalendarioPianoOperativo,
   listCalendarioInstructors,
   patchCalendarioSlot,
+  postCalendarioDuplica,
   postCalendarioInstructor,
   postCalendarioSendTurni,
   putCalendarioInstructor,
@@ -37,6 +38,7 @@ dataRouter.post("/calendario/:comparto/send-turni", postCalendarioSendTurni)
 dataRouter.get("/calendario/piano-operativo", getCalendarioPianoOperativo)
 dataRouter.get("/calendario/:comparto", getCalendarioComparto)
 dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
+dataRouter.post("/calendario/:comparto/duplica", postCalendarioDuplica)
 dataRouter.get("/corsi/gestione", getCorsiGestione)
 dataRouter.patch("/corsi/gestione", patchCorsiGestione)
 dataRouter.get("/corsi/clienti-search", getCorsiClientiSearch)
