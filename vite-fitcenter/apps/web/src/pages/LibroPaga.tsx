@@ -19,12 +19,12 @@ import {
   type LibroPagaSnapshot,
   type LpagaPersonale,
   type LpagaRuolo,
-  type LpagaTreeNode,
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
@@ -291,7 +291,19 @@ export function LibroPaga() {
       {tab === "collaboratori" && canCollab ? <ReportCollaboratori compact /> : null}
       {data && tab === "home" && <HomeTab data={data} />}
       {data && tab === "livelli" && (
-        <LivelliTab data={data} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />
+        <LibroPagaLivelliTab
+          data={data}
+          q={q}
+          setQ={setQ}
+          onError={setError}
+          onDone={() => {
+            setError("")
+            invalidate()
+          }}
+          createLivello={(body) => libroPagaApi.createLivello(body)}
+          deleteLivello={(id) => libroPagaApi.deleteLivello(id)}
+          showTreeDefault
+        />
       )}
       {data && tab === "personale" && (
         <PersonaleTab data={data} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />
@@ -390,152 +402,6 @@ function HomeTab({ data }: { data: LibroPagaSnapshot }) {
             </ResponsiveContainer>
           </div>
         </Card>
-      </div>
-    </div>
-  )
-}
-
-function Tree({ nodes, depth = 0 }: { nodes: LpagaTreeNode[]; depth?: number }) {
-  return (
-    <ul className={depth ? "ml-4 border-l border-zinc-800 pl-3" : ""}>
-      {nodes.map((n) => (
-        <li key={n.id} className="py-0.5 text-sm text-zinc-300">
-          <span className={n.retribuibile ? "text-zinc-200" : "italic text-zinc-400"}>{n.nome}</span>
-          {n.children?.length ? <Tree nodes={n.children} depth={depth + 1} /> : null}
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-function LivelliTab({
-  data,
-  q,
-  setQ,
-  onError,
-  onDone,
-}: {
-  data: LibroPagaSnapshot
-  q: string
-  setQ: (s: string) => void
-  onError: (s: string) => void
-  onDone: () => void
-}) {
-  const [showTree, setShowTree] = useState(false)
-  const [nome, setNome] = useState("")
-  const [parentId, setParentId] = useState("")
-  const [retrib, setRetrib] = useState("")
-  const [fissa, setFissa] = useState(false)
-  const [retribuibile, setRetribuibile] = useState(true)
-  const rows = useMemo(() => {
-    const n = q.trim().toLowerCase()
-    return data.livelli.filter((l) => !n || `${l.nome} ${l.dominio} ${l.parentNome}`.toLowerCase().includes(n))
-  }, [data.livelli, q])
-  const createMut = useMutation({
-    mutationFn: () =>
-      libroPagaApi.createLivello({
-        nome,
-        parentId: parentId || undefined,
-        retribuzione: Number(retrib.replace(",", ".") || 0),
-        fissa,
-        retribuibile,
-        attivo: true,
-      }),
-    onSuccess: () => {
-      setNome("")
-      setRetrib("")
-      onDone()
-    },
-    onError: (e: Error) => onError(e.message),
-  })
-  const delMut = useMutation({
-    mutationFn: (id: string) => libroPagaApi.deleteLivello(id),
-    onSuccess: onDone,
-    onError: (e: Error) => onError(e.message),
-  })
-
-  return (
-    <div className="mt-4 space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca livello…" className={inputCls} />
-        <button type="button" className={btnGhost} onClick={() => setShowTree((v) => !v)}>
-          {showTree ? "Nascondi gerarchia" : "Visualizza gerarchia"}
-        </button>
-      </div>
-      {showTree && (
-        <Card title="Gerarchia livelli">
-          <Tree nodes={data.tree} />
-        </Card>
-      )}
-      <form
-        className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          createMut.mutate()
-        }}
-      >
-        <label className="grid gap-1 text-xs text-zinc-400">
-          Nome
-          <input value={nome} onChange={(e) => setNome(e.target.value)} className={inputCls} required />
-        </label>
-        <label className="grid gap-1 text-xs text-zinc-400">
-          Padre / dominio
-          <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={inputCls}>
-            <option value="">(radice)</option>
-            {data.livelli.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-xs text-zinc-400">
-          Paga €
-          <input value={retrib} onChange={(e) => setRetrib(e.target.value)} className={inputCls} />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
-          <input type="checkbox" checked={retribuibile} onChange={(e) => setRetribuibile(e.target.checked)} />
-          Retribuibile
-        </label>
-        <label className="flex items-center gap-2 text-sm text-zinc-300">
-          <input type="checkbox" checked={fissa} onChange={(e) => setFissa(e.target.checked)} />
-          Fissa
-        </label>
-        <button type="submit" className={btnAmber} disabled={createMut.isPending}>
-          Aggiungi livello
-        </button>
-      </form>
-      <div className="overflow-x-auto rounded-2xl border border-zinc-800">
-        <table className="min-w-full text-left text-sm">
-          <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
-            <tr>
-              <th className="px-3 py-2">Nome</th>
-              <th className="px-3 py-2">Dominio</th>
-              <th className="px-3 py-2">Retribuibile</th>
-              <th className="px-3 py-2 text-right">Paga</th>
-              <th className="px-3 py-2">Oraria/Fissa</th>
-              <th className="px-3 py-2">Statistiche</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.nome}</td>
-                <td className="px-3 py-2 text-zinc-400">{r.dominio}</td>
-                <td className="px-3 py-2">{r.retribuibile ? "SI" : "NO"}</td>
-                <td className="px-3 py-2 text-right">{r.retribuibile ? eur(r.retribuzione) : "—"}</td>
-                <td className="px-3 py-2 text-zinc-400">{r.retribuibile ? (r.fissa ? "fissa" : "oraria") : "—"}</td>
-                <td className="px-3 py-2">{r.statistica ? "SI" : "—"}</td>
-                <td className="px-3 py-2 text-right">
-                  <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(r.id)}>
-                    Elimina
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       </div>
     </div>
   )

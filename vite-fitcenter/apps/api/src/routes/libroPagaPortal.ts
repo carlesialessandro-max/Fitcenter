@@ -19,8 +19,10 @@ import {
   putLpagaPersonalePassword,
   removeLpagaTurno,
   requireLpaga,
+  requireLpagaAdmin,
   requireLpagaAlberto,
 } from "../handlers/libroPagaPortal.js"
+import { patchLivello, postLivello, removeLivello } from "../handlers/libroPaga.js"
 import {
   getAmmCollaboratoriReport,
   postAmmCollaboratoreImporto,
@@ -40,6 +42,9 @@ libroPagaPortalRouter.post("/login", loginLimiter, postLpagaLogin)
 libroPagaPortalRouter.post("/logout", postLpagaLogout)
 libroPagaPortalRouter.get("/me", requireLpaga, getLpagaMe)
 libroPagaPortalRouter.get("/", requireLpaga, getLpagaSnapshot)
+libroPagaPortalRouter.post("/livelli", requireLpaga, requireLpagaAdmin, postLivello)
+libroPagaPortalRouter.patch("/livelli/:id", requireLpaga, requireLpagaAdmin, patchLivello)
+libroPagaPortalRouter.delete("/livelli/:id", requireLpaga, requireLpagaAdmin, removeLivello)
 libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
 libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)

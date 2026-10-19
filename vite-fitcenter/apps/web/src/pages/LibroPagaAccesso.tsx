@@ -5,6 +5,7 @@ import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
+import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
@@ -136,9 +137,10 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const qc = useQueryClient()
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
-  const [tab, setTab] = useState<"home" | "anagrafica" | "turni" | "personale" | "mensilita" | "convalide" | "report" | "collaboratori">(
-    "home"
-  )
+  const [tab, setTab] = useState<
+    "home" | "anagrafica" | "livelli" | "turni" | "personale" | "mensilita" | "convalide" | "report" | "collaboratori"
+  >("home")
+  const [q, setQ] = useState("")
   const [error, setError] = useState("")
   const meQ = useQuery({ queryKey: ["lpaga-me"], queryFn: () => lpagaApi.me() })
   const me = meQ.data?.user
@@ -149,7 +151,8 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   })
   const data = snap.data
   const isUser = me?.ruolo === "user"
-  const canTeam = me?.ruolo === "manager" || me?.ruolo === "admin"
+  const isAdmin = me?.ruolo === "admin"
+  const canTeam = me?.ruolo === "manager" || isAdmin
   const canCollab = canVedereReportCollaboratoriLpaga(me)
 
   useEffect(() => {
@@ -174,6 +177,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const tabs: { id: typeof tab; label: string }[] = [
     { id: "home", label: "Home" },
     { id: "anagrafica", label: "Anagrafica" },
+    ...(isAdmin ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
     { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
@@ -230,6 +234,21 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
         {snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
         {snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
         {data && tab === "home" && <Home data={data} me={me} />}
+        {data && tab === "livelli" && isAdmin && (
+          <LibroPagaLivelliTab
+            data={data}
+            q={q}
+            setQ={setQ}
+            onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+            }}
+            createLivello={(body) => lpagaApi.createLivello(body)}
+            deleteLivello={(id) => lpagaApi.deleteLivello(id)}
+            showTreeDefault
+          />
+        )}
         {data && tab === "anagrafica" && me && (
           <MiaAnagrafica
             data={data}
@@ -409,7 +428,7 @@ function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
   const io = me ? data.personale.find((p) => p.id === me.id) : undefined
   return (
     <div className="mt-4 space-y-4">
-      {io ? <QualificheCorsiFields value={qualificheForDisplay(io)} readOnly /> : null}
+      {io && isUser ? <QualificheCorsiFields value={qualificheForDisplay(io)} readOnly /> : null}
       {isUser && data.canValidate && (
         <p className="rounded-lg border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-200/90">
           Hai la delega per convalidare le mensilità del reparto: apri Mensilità e premi Convalida.

@@ -47,6 +47,15 @@ export async function requireLpaga(req: Request, res: Response, next: NextFuncti
   next()
 }
 
+export function requireLpagaAdmin(req: Request, res: Response, next: NextFunction) {
+  const u = req.lpaga
+  if (!u) return res.status(401).json({ message: "Sessione Libro paga mancante" })
+  if (u.ruolo !== "admin") {
+    return res.status(403).json({ message: "Solo l’amministratore libro paga può gestire i livelli" })
+  }
+  next()
+}
+
 /** Report collaboratori sportivi: admin del libro paga (Alberto) o nominativo Alberto. */
 export function requireLpagaAlberto(req: Request, res: Response, next: NextFunction) {
   const u = req.lpaga

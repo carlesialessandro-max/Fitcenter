@@ -137,6 +137,16 @@ export const lpagaApi = {
     if (reparto) q.set("reparto", reparto)
     return lpagaRequest<LpagaPortalSnapshot>(`/lpaga?${q.toString()}`, { method: "GET", cache: "no-store" })
   },
+  createLivello: (body: {
+    nome: string
+    parentId?: string
+    retribuzione: number
+    fissa: boolean
+    retribuibile?: boolean
+    attivo?: boolean
+  }) => lpagaRequest<{ livello: LpagaLivello }>("/lpaga/livelli", { method: "POST", body: JSON.stringify(body) }),
+  deleteLivello: (id: string) =>
+    lpagaRequest<{ ok: boolean }>(`/lpaga/livelli/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     lpagaRequest<{ turno: unknown }>("/lpaga/turni", { method: "POST", body: JSON.stringify(body) }),
   deleteTurno: (id: string) => lpagaRequest<{ ok: boolean }>(`/lpaga/turni/${encodeURIComponent(id)}`, { method: "DELETE" }),
