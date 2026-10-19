@@ -13,9 +13,10 @@ export function writeCalendarioDb(db: CalendarioDb): void {
   writeJson(FILE, db)
 }
 
-export function stableKeyFromParts(zona: string, dow: number, start: string, title: string): string {
+export function stableKeyFromParts(zona: string, dow: number, start: string, title: string, staff?: string): string {
   const t = title.trim().replace(/\s+/g, " ")
-  return `${zona}|${dow}|${start}|${t}`
+  const s = String(staff ?? "").trim().replace(/\s+/g, " ")
+  return s ? `${zona}|${dow}|${start}|${t}|${s}` : `${zona}|${dow}|${start}|${t}`
 }
 
 export function upsertRevision(db: CalendarioDb, rev: CalendarioSlotRevision): CalendarioDb {

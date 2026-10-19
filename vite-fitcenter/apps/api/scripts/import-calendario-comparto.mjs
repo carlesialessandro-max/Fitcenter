@@ -66,9 +66,10 @@ function planningJsonPaths() {
   ]
 }
 
-function stableKeyFromParts(zona, dow, start, title) {
+function stableKeyFromParts(zona, dow, start, title, staff) {
   const t = String(title ?? "").trim().replace(/\s+/g, " ")
-  return `${zona}|${dow}|${start}|${t}`
+  const s = String(staff ?? "").trim().replace(/\s+/g, " ")
+  return s ? `${zona}|${dow}|${start}|${t}|${s}` : `${zona}|${dow}|${start}|${t}`
 }
 
 function readDb(dataDir) {
@@ -129,12 +130,15 @@ let skipped = 0
 
 for (const e of planning.rows) {
   const zona = cfg.defaultZona(e)
-  const sk = stableKeyFromParts(zona, e.dow, e.start, e.title)
+  const staff = String(e.staff ?? "").trim()
+  const sk =
+    compartoArg === "scuola_nuoto"
+      ? stableKeyFromParts(zona, e.dow, e.start, e.title, staff)
+      : stableKeyFromParts(zona, e.dow, e.start, e.title)
   if (existingKeys.has(sk)) {
     skipped++
     continue
   }
-  const staff = String(e.staff ?? "").trim()
   db.revisions.push({
     comparto: compartoArg,
     stableKey: sk,

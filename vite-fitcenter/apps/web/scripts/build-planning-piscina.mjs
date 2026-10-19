@@ -41,6 +41,8 @@ const importDir = path.join(webRoot, "data", "planning-import")
 const outFile = path.join(webRoot, "src", "data", "planning-weekly.json")
 
 const DEFAULT_PISCINA_FILES = [
+  path.join(importDir, "piscina-orario-2026-2027.xlsx"),
+  path.join(importDir, "ORARIO 2026-27.xlsx"),
   path.join(importDir, "piscina-orario-2025-2026.xlsx"),
   path.join(importDir, "PISCINAORARIO 2025-2026.xlsx"),
 ]
@@ -117,7 +119,8 @@ function cellToStart(v) {
     if (dm) {
       const h = Number(dm[1])
       let m = Number(dm[2])
-      if (dm[2].length === 1) m = Number(dm[2]) * 6
+      /** Excel 10.30 → 10.3; in orario piscina una cifra = decine di minuti (10.3 → 10:30). */
+      if (dm[2].length === 1) m = Number(dm[2]) * 10
       if (h >= 5 && h <= 23 && m >= 0 && m <= 59) return `${pad2(h)}:${pad2(m)}`
     }
   }
@@ -181,6 +184,10 @@ function findLaneGridExclusiveEnd(row) {
       continue
     }
     if (n === "RESP") {
+      end = Math.min(end, c)
+      continue
+    }
+    if (n.includes("ASS") && n.includes("PV")) {
       end = Math.min(end, c)
       continue
     }
@@ -338,6 +345,7 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
     } else if (
       comparto !== "acquaticita" &&
       comparto !== "spogliatoi" &&
+      comparto !== "scuola_nuoto" &&
       labelRowScore(row) >= 2 &&
       !cellToStart(row[1]) &&
       !isLaneHeaderRow(row, comparto)

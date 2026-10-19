@@ -317,9 +317,9 @@ function seedCompartoFromPlanning(comparto: CalendarioComparto, db: CalendarioDb
   let next = db
   for (const e of base) {
     const zona = e.zona ?? defaultZonaSeeded(comparto)
-    const sk = stableKeyFromParts(zona, e.dow, e.start, e.title)
-    if (next.revisions.some((r) => r.comparto === comparto && r.stableKey === sk)) continue
     const staff = String(e.staff ?? "").trim()
+    const sk = stableKeyFromParts(zona, e.dow, e.start, e.title, staff)
+    if (next.revisions.some((r) => r.comparto === comparto && r.stableKey === sk)) continue
     const rev: CalendarioSlotRevision = {
       comparto,
       stableKey: sk,
@@ -612,7 +612,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     if (!staffOverride && !hasIns) return res.status(400).json({ message: "Inserire istruttore da anagrafica o nome testuale" })
     const stableKey =
       raw === "scuola_nuoto"
-        ? stableKeyFromParts(zona, dow, start, title)
+        ? stableKeyFromParts(zona, dow, start, title, staffOverride)
         : raw === "sala_fitness"
           ? stableKeyFromParts(zona, dateIso ? 0 : dow, start, `${title}|${dateIso ?? ""}|${staffOverride}`)
           : `manual-${crypto.randomUUID()}`
