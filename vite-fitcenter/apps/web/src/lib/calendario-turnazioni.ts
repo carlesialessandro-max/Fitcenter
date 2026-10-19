@@ -66,7 +66,7 @@ function mergeMinuteRanges(ranges: { sm: number; em: number }[]): { sm: number; 
   const out: { sm: number; em: number }[] = []
   for (const r of sorted) {
     const last = out[out.length - 1]
-    if (!last || r.sm >= last.em) {
+    if (!last || r.sm > last.em + 30) {
       out.push({ ...r })
       continue
     }

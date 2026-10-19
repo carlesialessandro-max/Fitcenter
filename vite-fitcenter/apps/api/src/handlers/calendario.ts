@@ -128,6 +128,83 @@ function normalizeHm(raw: string): string {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`
 }
 
+function hmToMin(raw: string): number | null {
+  const n = normalizeHm(raw)
+  const m = /^(\d{2}):(\d{2})$/.exec(n)
+  if (!m) return null
+  return Number(m[1]) * 60 + Number(m[2])
+}
+
+function minToHm(total: number): string {
+  const t = ((total % (24 * 60)) + 24 * 60) % (24 * 60)
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`
+}
+
+function shiftRangeFromEvent(e: { start: string; title: string }): { sm: number; em: number } {
+  const title = String(e.title ?? "")
+  const re = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
+  let last: { sm: number; em: number } | null = null
+  let m: RegExpExecArray | null
+  while ((m = re.exec(title))) {
+    const sm = Number(m[1]) * 60 + Number(m[2])
+    const em = Number(m[3]) * 60 + Number(m[4])
+    if (Number.isFinite(sm) && Number.isFinite(em) && em > sm) last = { sm, em }
+  }
+  if (last) return last
+  const sm = hmToMin(e.start) ?? 8 * 60
+  return { sm, em: sm + 30 }
+}
+
+function activityFromShiftTitle(title: string): string {
+  const t = String(title ?? "").trim()
+  const cut = t.search(/\d{1,2}[:.]\d{2}/)
+  const raw = (cut > 0 ? t.slice(0, cut) : t).replace(/[·•.\-–—]+\s*$/, "").trim()
+  return raw || "Sala pesi"
+}
+
+/** Unisce fette Excel da 30 minuti (anche con buco 08:00 / 09:00) nello stesso giorno e persona. */
+function coalesceSalaFitnessShifts(events: CalendarioMergedEvent[]): CalendarioMergedEvent[] {
+  const byLane = new Map<string, CalendarioMergedEvent[]>()
+  for (const e of events) {
+    const staff = String(e.staffOverride ?? e.staff ?? "")
+      .trim()
+      .toLowerCase()
+    const day = String(e.dateIso ?? "").trim() || `dow:${e.dow}`
+    const key = `${day}|${staff}`
+    const list = byLane.get(key)
+    if (list) list.push(e)
+    else byLane.set(key, [e])
+  }
+  const out: CalendarioMergedEvent[] = []
+  for (const list of byLane.values()) {
+    const sorted = [...list].sort((a, b) => shiftRangeFromEvent(a).sm - shiftRangeFromEvent(b).sm)
+    const merged: CalendarioMergedEvent[] = []
+    for (const e of sorted) {
+      const r = shiftRangeFromEvent(e)
+      const last = merged[merged.length - 1]
+      if (!last) {
+        merged.push({ ...e, mergedStableKeys: e.mergedStableKeys ?? [e.stableKey] })
+        continue
+      }
+      const lr = shiftRangeFromEvent(last)
+      if (r.sm <= lr.em + 30) {
+        const sm = Math.min(lr.sm, r.sm)
+        const em = Math.max(lr.em, r.em)
+        const start = minToHm(sm)
+        const end = minToHm(em)
+        const keys = [...new Set([...(last.mergedStableKeys ?? [last.stableKey]), ...(e.mergedStableKeys ?? [e.stableKey])])]
+        last.start = start
+        last.title = `${activityFromShiftTitle(last.title)} · ${start}–${end}`
+        last.mergedStableKeys = keys
+        continue
+      }
+      merged.push({ ...e, mergedStableKeys: e.mergedStableKeys ?? [e.stableKey] })
+    }
+    out.push(...merged)
+  }
+  return out
+}
+
 function shiftRangeStartForSort(e: { start: string; title: string }): string {
   const re = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
   let last: string | null = null
@@ -377,7 +454,7 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
       events = mergeServerSeededFromDb(comparto, seededDb)
       if (events.length > 0) writeCalendarioDb(seededDb)
     }
-    if (comparto === "sala_fitness") events = projectDatedEventsForward(events)
+    if (comparto === "sala_fitness") events = coalesceSalaFitnessShifts(projectDatedEventsForward(events))
     return events
   }
 

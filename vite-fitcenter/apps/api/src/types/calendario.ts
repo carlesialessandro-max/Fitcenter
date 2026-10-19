@@ -76,4 +76,5 @@ export type CalendarioMergedEvent = CalendarioBaseEvent & {
   note?: string | null
   updatedAt?: string
   updatedBy?: string
+  mergedStableKeys?: string[]
 }

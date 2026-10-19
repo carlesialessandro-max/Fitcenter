@@ -19,6 +19,8 @@ const MORNING_START_LATEST = 9 * 60 + 30
 const MORNING_END_MIN = 13 * 60
 const MORNING_MIN_DUR = 3 * 60
 const OPEN_FRAGMENT_GAP = 60
+/** Import Excel sala: teneva 08:00 e saltava 08:30, poi 09:00… buco da 30 minuti. */
+const FRAGMENT_GAP_MAX = 30
 
 function activityFromTitle(title: string): string {
   const t = String(title ?? "").trim()
@@ -63,7 +65,7 @@ function isLongMorning(sm: number, em: number): boolean {
   return sm <= MORNING_START_LATEST && em >= MORNING_END_MIN && em - sm >= MORNING_MIN_DUR
 }
 
-/** Stesso operatore: unisce turni che si toccano o si sovrappongono (es. fette Excel da 30 minuti). */
+/** Stesso operatore: unisce turni che si toccano, si sovrappongono o hanno un buco da 30 minuti (Excel). */
 export function mergeOverlappingShifts<T extends ShiftEvent>(laneEvents: T[]): T[] {
   const sorted = [...laneEvents].sort((a, b) => {
     const ar = eventRangeMin(a)
@@ -79,7 +81,7 @@ export function mergeOverlappingShifts<T extends ShiftEvent>(laneEvents: T[]): T
       continue
     }
     const lr = eventRangeMin(last)
-    if (r.sm <= lr.em) {
+    if (r.sm <= lr.em + FRAGMENT_GAP_MAX) {
       out[out.length - 1] = unionLaneShifts(last, e)
       continue
     }
@@ -137,7 +139,8 @@ export function dedupeShiftEvents<T extends ShiftEvent>(dayEvents: T[]): T[] {
   }
   const out: T[] = []
   for (const list of byLane.values()) out.push(...mergeOverlappingShifts(list))
-  const coalesced = coalesceMorningOpenFragments(out)
+  const needsDeskOpen = out.some((e) => e.zona === "reception")
+  const coalesced = needsDeskOpen ? coalesceMorningOpenFragments(out) : out
   coalesced.sort(compareByShiftRange)
   return coalesced
 }

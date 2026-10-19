@@ -220,8 +220,9 @@ function parseSheet(sh, monday) {
     if (prev && prev.dateIso === s.dateIso && prev.staff === s.staff) {
       const [eh, em] = prev.end.split(":").map(Number)
       const prevEnd = eh * 60 + em
-      if (startMin <= prevEnd) {
-        prev.end = `${pad2(Math.floor(Math.max(prevEnd, startMin + 30) / 60))}:${pad2(Math.max(prevEnd, startMin + 30) % 60)}`
+      if (startMin <= prevEnd + 30) {
+        const nextEnd = Math.max(prevEnd, startMin + 30)
+        prev.end = `${pad2(Math.floor(nextEnd / 60))}:${pad2(nextEnd % 60)}`
         continue
       }
     }
