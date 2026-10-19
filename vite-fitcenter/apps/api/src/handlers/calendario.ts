@@ -694,7 +694,9 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     stableKey,
     dow,
     dateIso:
-      MANUAL_ONLY_COMPARTI.includes(raw) || (stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw))
+      MANUAL_ONLY_COMPARTI.includes(raw) ||
+      raw === "sala_fitness" ||
+      (stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw))
         ? dateIso
         : SERVER_SEEDED_COMPARTI.includes(raw)
           ? null

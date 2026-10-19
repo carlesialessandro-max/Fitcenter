@@ -211,16 +211,22 @@ function parseSheet(sh, monday) {
     }
   }
 
-  rawSlots.sort((a, b) => a.dateIso.localeCompare(b.dateIso) || a.start.localeCompare(b.start) || a.staff.localeCompare(b.staff))
+  rawSlots.sort((a, b) => a.dateIso.localeCompare(b.dateIso) || a.staff.localeCompare(b.staff) || a.start.localeCompare(b.start))
   const merged = []
   for (const s of rawSlots) {
+    const [nh, nm] = s.start.split(":").map(Number)
+    const startMin = nh * 60 + nm
     const prev = merged[merged.length - 1]
     if (prev && prev.dateIso === s.dateIso && prev.staff === s.staff) {
-      const [ph, pm] = prev.start.split(":").map(Number)
-      const [nh, nm] = s.start.split(":").map(Number)
-      if (nh * 60 + nm - (ph * 60 + pm) <= 30) continue
+      const [eh, em] = prev.end.split(":").map(Number)
+      const prevEnd = eh * 60 + em
+      if (startMin <= prevEnd) {
+        prev.end = `${pad2(Math.floor(Math.max(prevEnd, startMin + 30) / 60))}:${pad2(Math.max(prevEnd, startMin + 30) % 60)}`
+        continue
+      }
     }
-    merged.push(s)
+    const endMin = startMin + 30
+    merged.push({ ...s, end: `${pad2(Math.floor(endMin / 60))}:${pad2(endMin % 60)}` })
   }
   return merged
 }
@@ -297,7 +303,7 @@ function main() {
       dow: e.dow,
       dateIso: e.dateIso,
       start: e.start,
-      title: "Sala pesi",
+      title: e.end ? `Sala pesi · ${e.start}–${e.end}` : "Sala pesi",
       zona: "sala_fitness",
       staffOverride: e.staff,
       istruttoreId: null,

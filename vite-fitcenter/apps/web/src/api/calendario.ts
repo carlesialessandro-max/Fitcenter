@@ -57,6 +57,8 @@ export type CalendarioMergedEventDto = {
   note?: string | null
   updatedAt?: string
   updatedBy?: string
+  /** Chiavi originali se il turno in UI è l’unione di più slot da 30 minuti. */
+  mergedStableKeys?: string[]
 }
 
 export type CalendarioCompartoResponse = {

@@ -5,6 +5,8 @@ type ShiftEvent = {
   id: string
   title: string
   start: string
+  stableKey?: string
+  mergedStableKeys?: string[]
   staffDisplay?: string | null
   staff?: string | null
   staffOverride?: string | null
@@ -25,10 +27,32 @@ function activityFromTitle(title: string): string {
   return raw || "Sportello"
 }
 
-function withDisplayRange<T extends ShiftEvent>(e: T, sm: number, em: number): T {
+export function shiftRevisionKeys(e: { id?: string; stableKey?: string; mergedStableKeys?: string[] }): string[] {
+  const extra = Array.isArray(e.mergedStableKeys) ? e.mergedStableKeys.filter(Boolean) : []
+  const primary = String(e.stableKey || e.id || "").trim()
+  const keys = extra.length ? extra : primary ? [primary] : []
+  if (primary && !keys.includes(primary)) keys.unshift(primary)
+  return keys
+}
+
+function revisionKeys<T extends ShiftEvent>(e: T): string[] {
+  return shiftRevisionKeys(e)
+}
+
+function withDisplayRange<T extends ShiftEvent>(e: T, sm: number, em: number, keys?: string[]): T {
   const start = formatHm(sm)
   const end = formatHm(em)
-  return { ...e, start, title: buildShiftTitle(activityFromTitle(e.title), start, end) }
+  const mergedStableKeys = keys && keys.length > 1 ? keys : e.mergedStableKeys
+  return { ...e, start, title: buildShiftTitle(activityFromTitle(e.title), start, end), mergedStableKeys }
+}
+
+function unionLaneShifts<T extends ShiftEvent>(a: T, b: T): T {
+  const ar = eventRangeMin(a)
+  const br = eventRangeMin(b)
+  const sm = Math.min(ar.sm, br.sm)
+  const em = Math.max(ar.em, br.em)
+  const keep = ar.sm < br.sm || (ar.sm === br.sm && (ar.em > br.em || a.id.localeCompare(b.id) <= 0)) ? a : b
+  return withDisplayRange(keep, sm, em, [...new Set([...revisionKeys(a), ...revisionKeys(b)])])
 }
 
 function isShortDeskOpen(sm: number, em: number): boolean {
@@ -39,7 +63,7 @@ function isLongMorning(sm: number, em: number): boolean {
   return sm <= MORNING_START_LATEST && em >= MORNING_END_MIN && em - sm >= MORNING_MIN_DUR
 }
 
-/** Stesso operatore, stesso orario o contenuto in un turno più lungo: tiene il turno che copre di più. */
+/** Stesso operatore: unisce turni che si toccano o si sovrappongono (es. fette Excel da 30 minuti). */
 export function mergeOverlappingShifts<T extends ShiftEvent>(laneEvents: T[]): T[] {
   const sorted = [...laneEvents].sort((a, b) => {
     const ar = eventRangeMin(a)
@@ -55,10 +79,8 @@ export function mergeOverlappingShifts<T extends ShiftEvent>(laneEvents: T[]): T
       continue
     }
     const lr = eventRangeMin(last)
-    if (r.sm < lr.em) {
-      const lastDur = lr.em - lr.sm
-      const dur = r.em - r.sm
-      if (dur > lastDur || (dur === lastDur && r.sm < lr.sm)) out[out.length - 1] = e
+    if (r.sm <= lr.em) {
+      out[out.length - 1] = unionLaneShifts(last, e)
       continue
     }
     out.push(e)
@@ -85,6 +107,8 @@ export function coalesceMorningOpenFragments<T extends ShiftEvent>(events: T[]):
       drop.add(open.e.id)
       const prev = extendStart.get(same.e.id)
       extendStart.set(same.e.id, prev == null ? open.r.sm : Math.min(prev, open.r.sm))
+      const keys = [...new Set([...revisionKeys(same.e), ...revisionKeys(open.e)])]
+      if (keys.length) same.e.mergedStableKeys = keys
       continue
     }
     if (longMorning.some((m) => m.key !== open.key || m.r.sm <= DESK_OPEN)) {
@@ -96,7 +120,7 @@ export function coalesceMorningOpenFragments<T extends ShiftEvent>(events: T[]):
   for (const x of tagged) {
     if (drop.has(x.e.id)) continue
     const sm0 = extendStart.get(x.e.id)
-    if (sm0 != null && sm0 < x.r.sm) out.push(withDisplayRange(x.e, sm0, x.r.em))
+    if (sm0 != null && sm0 < x.r.sm) out.push(withDisplayRange(x.e, sm0, x.r.em, revisionKeys(x.e)))
     else out.push(x.e)
   }
   return out

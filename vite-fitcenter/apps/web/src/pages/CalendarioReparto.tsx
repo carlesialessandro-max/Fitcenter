@@ -34,7 +34,7 @@ import {
   normalizeHmInput,
   shiftEventInHour,
 } from "@/lib/reception-shift"
-import { dedupeShiftEvents } from "@/lib/shift-dedupe"
+import { dedupeShiftEvents, shiftRevisionKeys } from "@/lib/shift-dedupe"
 import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
 import {
   CALENDARIO_SEGMENTI,
@@ -984,28 +984,37 @@ function EditEventModal({
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
           <div className="mr-auto flex flex-wrap gap-2">
-            {scheduleFields && !isManual && onHideFromCalendar ? (
+            {isShiftRangeMode ? (
               <button
                 type="button"
-                onClick={onHideFromCalendar}
-                className="rounded-lg border border-amber-600/50 px-3 py-2 text-xs text-amber-200 hover:bg-amber-950/40"
+                onClick={() => {
+                  if (!window.confirm("Eliminare questo turno dal calendario?")) return
+                  ;(onHideFromCalendar ?? onClearRevision)()
+                }}
+                className="rounded-lg border border-red-600/50 px-3 py-2 text-xs text-red-200 hover:bg-red-950/40"
               >
-                Nascondi dal calendario
+                Elimina turno
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={onClearRevision}
-              className="rounded-lg border border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-            >
-              {isManual
-                ? scheduleMode === "corsi"
-                  ? "Elimina corso"
-                  : isShiftRangeMode
-                    ? "Elimina slot"
-                    : "Elimina"
-                : "Ripristina da Excel"}
-            </button>
+            ) : (
+              <>
+                {scheduleFields && !isManual && onHideFromCalendar ? (
+                  <button
+                    type="button"
+                    onClick={onHideFromCalendar}
+                    className="rounded-lg border border-amber-600/50 px-3 py-2 text-xs text-amber-200 hover:bg-amber-950/40"
+                  >
+                    Nascondi dal calendario
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={onClearRevision}
+                  className="rounded-lg border border-zinc-600 px-3 py-2 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                >
+                  {isManual ? (scheduleMode === "corsi" ? "Elimina corso" : "Elimina") : "Ripristina da Excel"}
+                </button>
+              </>
+            )}
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-zinc-600 px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800">
             Annulla
@@ -1471,8 +1480,10 @@ export function CalendarioRepartoPage() {
               : compartoIsManualServer(apiComparto)
                 ? e.dateIso ?? editCalendarDate
                 : undefined
+        const keys = shiftRevisionKeys(e)
+        const primary = keys[0] || e.stableKey
         await calendarioApi.patchSlot(apiComparto, {
-          stableKey: e.stableKey,
+          stableKey: primary,
           dow: p.dow,
           dateIso: dateIso ?? null,
           start: p.start,
@@ -1482,6 +1493,9 @@ export function CalendarioRepartoPage() {
           staffOverride: p.istruttoreId ? null : staffTrim || null,
           note: noteTrim || null,
         })
+        for (const stableKey of keys.slice(1)) {
+          await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
+        }
         await reload()
         setEditEvent(null)
         setEditCalendarDate(null)
@@ -1496,7 +1510,9 @@ export function CalendarioRepartoPage() {
     async (e: CalEvent) => {
       if (!apiComparto || !canWrite) return
       try {
-        await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, clear: true })
+        for (const stableKey of shiftRevisionKeys(e)) {
+          await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
+        }
         await reload()
         setEditEvent(null)
         setEditCalendarDate(null)
@@ -1510,19 +1526,25 @@ export function CalendarioRepartoPage() {
   const hideSlot = useCallback(
     async (e: CalEvent) => {
       if (!apiComparto || !canWrite) return
-      if (compartoIsManualServer(apiComparto)) {
+      const keys = shiftRevisionKeys(e)
+      if (compartoIsManualServer(apiComparto) || compartoIsServerSeeded(apiComparto)) {
         try {
-          await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, clear: true })
+          for (const stableKey of keys) {
+            await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
+          }
           await reload()
           setEditEvent(null)
+          setEditCalendarDate(null)
         } catch (err) {
           alert(err instanceof Error ? err.message : "Operazione fallita")
         }
         return
       }
-      if (apiComparto !== "corsi" && !compartoIsServerSeeded(apiComparto)) return
+      if (apiComparto !== "corsi") return
       try {
-        await calendarioApi.patchSlot(apiComparto, { stableKey: e.stableKey, removed: true })
+        for (const stableKey of keys) {
+          await calendarioApi.patchSlot(apiComparto, { stableKey, removed: true })
+        }
         await reload()
         setEditEvent(null)
       } catch (err) {
