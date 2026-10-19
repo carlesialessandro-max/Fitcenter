@@ -301,6 +301,7 @@ export function LibroPaga() {
             invalidate()
           }}
           createLivello={(body) => libroPagaApi.createLivello(body)}
+          patchLivello={(id, body) => libroPagaApi.patchLivello(id, body)}
           deleteLivello={(id) => libroPagaApi.deleteLivello(id)}
           showTreeDefault
         />

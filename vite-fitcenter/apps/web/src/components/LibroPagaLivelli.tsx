@@ -16,7 +16,18 @@ function Tree({ nodes, depth = 0 }: { nodes: LpagaTreeNode[]; depth?: number }) 
     <ul className={depth ? "ml-4 border-l border-zinc-800 pl-3" : ""}>
       {nodes.map((n) => (
         <li key={n.id} className="py-0.5 text-sm text-zinc-300">
-          <span className={n.retribuibile ? "text-zinc-200" : "italic text-zinc-400"}>{n.nome}</span>
+          <span
+            className={
+              n.attivo === false
+                ? "text-zinc-600 line-through"
+                : n.retribuibile
+                  ? "text-zinc-200"
+                  : "italic text-zinc-400"
+            }
+          >
+            {n.nome}
+          </span>
+          {n.attivo === false ? <span className="ml-2 text-[10px] uppercase tracking-wide text-zinc-600">nascosto</span> : null}
           {n.children?.length ? <Tree nodes={n.children} depth={depth + 1} /> : null}
         </li>
       ))}
@@ -31,6 +42,7 @@ export function LibroPagaLivelliTab({
   onError,
   onDone,
   createLivello,
+  patchLivello,
   deleteLivello,
   showTreeDefault = false,
 }: {
@@ -47,6 +59,7 @@ export function LibroPagaLivelliTab({
     retribuibile?: boolean
     attivo?: boolean
   }) => Promise<unknown>
+  patchLivello: (id: string, body: Partial<LpagaLivello>) => Promise<unknown>
   deleteLivello: (id: string) => Promise<unknown>
   showTreeDefault?: boolean
 }) {
@@ -79,6 +92,16 @@ export function LibroPagaLivelliTab({
   })
   const delMut = useMutation({
     mutationFn: (id: string) => deleteLivello(id),
+    onSuccess: onDone,
+    onError: (e: Error) =>
+      onError(
+        /usato da turni/i.test(e.message)
+          ? `${e.message}. Puoi nasconderlo così non si usa più per i nuovi turni.`
+          : e.message,
+      ),
+  })
+  const hideMut = useMutation({
+    mutationFn: ({ id, attivo }: { id: string; attivo: boolean }) => patchLivello(id, { attivo }),
     onSuccess: onDone,
     onError: (e: Error) => onError(e.message),
   })
@@ -119,6 +142,7 @@ export function LibroPagaLivelliTab({
             {data.livelli.map((l: LpagaLivello) => (
               <option key={l.id} value={l.id}>
                 {l.nome}
+                {l.attivo === false ? " (nascosto)" : ""}
               </option>
             ))}
           </select>
@@ -139,6 +163,10 @@ export function LibroPagaLivelliTab({
           Aggiungi livello
         </button>
       </form>
+      <p className="text-xs text-zinc-500">
+        Se un livello è usato da turni esistenti non si può eliminare: nascondilo. Resta nello storico, ma non compare più
+        tra le mansioni per i nuovi turni.
+      </p>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
@@ -154,17 +182,45 @@ export function LibroPagaLivelliTab({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.nome}</td>
+              <tr key={r.id} className={`border-t border-zinc-800 ${r.attivo === false ? "text-zinc-500" : "text-zinc-200"}`}>
+                <td className="px-3 py-2">
+                  {r.nome}
+                  {r.attivo === false ? (
+                    <span className="ml-2 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                      nascosto
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 text-zinc-400">{r.dominio}</td>
                 <td className="px-3 py-2">{r.retribuibile ? "SI" : "NO"}</td>
                 <td className="px-3 py-2 text-right">{r.retribuibile ? eur(r.retribuzione) : "—"}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.retribuibile ? (r.fissa ? "fissa" : "oraria") : "—"}</td>
                 <td className="px-3 py-2">{r.statistica ? "SI" : "—"}</td>
                 <td className="px-3 py-2 text-right">
-                  <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(r.id)}>
-                    Elimina
-                  </button>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      className="text-xs text-amber-300 hover:underline"
+                      disabled={hideMut.isPending}
+                      onClick={() => {
+                        const next = r.attivo === false
+                        if (
+                          !next &&
+                          !window.confirm(
+                            `Nascondere «${r.nome}»? I turni già inseriti restano, ma il livello non si potrà più usare per i nuovi turni.`,
+                          )
+                        ) {
+                          return
+                        }
+                        hideMut.mutate({ id: r.id, attivo: next })
+                      }}
+                    >
+                      {r.attivo === false ? "Mostra" : "Nascondi"}
+                    </button>
+                    <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(r.id)}>
+                      Elimina
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}

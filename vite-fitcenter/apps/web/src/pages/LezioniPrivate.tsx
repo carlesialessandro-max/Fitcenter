@@ -34,6 +34,31 @@ function tabFromPath(pathname: string): Tab {
 }
 
 type LpTipoPrenota = "prova" | "5" | "10"
+type LpDurataMin = 30 | 45
+
+function parseDurataMin(v: unknown, fallback: LpDurataMin = 30): LpDurataMin {
+  const n = Number(v)
+  if (n === 45) return 45
+  if (n === 30) return 30
+  return fallback === 45 ? 45 : 30
+}
+
+function DurataMinButtons({ value, onChange }: { value: LpDurataMin; onChange: (v: LpDurataMin) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {([30, 45] as const).map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n)}
+          className={`rounded-md px-3 py-1.5 text-sm ${value === n ? "bg-amber-500/20 text-amber-200" : "border border-zinc-700 text-zinc-400"}`}
+        >
+          {n} minuti
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function TipoButtons({ value, onChange }: { value: LpTipoPrenota; onChange: (v: LpTipoPrenota) => void }) {
   return (
@@ -271,7 +296,7 @@ export function LezioniPrivate() {
           {showOrari ? (
             <>
               <p className="mt-2 text-sm text-zinc-500">
-                Ogni lezione dura 30 minuti. 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa). Ludica
+                Lezione da 30 o 45 minuti (si sceglie sulla richiesta). 25 m: 1 persona, lun–ven 8:00–14:30 e 18:30–22:00 (sabato chiusa). Ludica
                 lun–ven: 8:00–15:15 (2 lez.), 15:15–16:15 (6), chiusa 16:15–18:30, 18:30–20:15 (4). Sabato come da tabella.
                 {FUORI_ORARIO_LABEL} possono prenotare anche gli orari chiusi (ludica compresa).
               </p>
@@ -418,6 +443,7 @@ function RichiesteTab({
     prefIstruttore: "",
     note: "",
     createdBy: userNome,
+    durataMin: 30 as LpDurataMin,
   })
   useEffect(() => {
     setForm((f) => (f.createdBy.trim() ? f : { ...f, createdBy: userNome }))
@@ -434,6 +460,7 @@ function RichiesteTab({
         prefIstruttore: "",
         note: "",
         createdBy: userNome,
+        durataMin: 30,
       })
       onDone()
     },
@@ -524,6 +551,10 @@ function RichiesteTab({
                 <option value="femmina">Istruttrice donna</option>
                 <option value="special">Special (ragazzi disabili)</option>
               </select>
+            </label>
+            <label className="grid gap-1 text-sm text-zinc-400">
+              Durata lezione
+              <DurataMinButtons value={form.durataMin} onChange={(durataMin) => setForm((f) => ({ ...f, durataMin }))} />
             </label>
             <label className="grid gap-1 text-sm text-zinc-400 sm:col-span-2">
               Note
@@ -633,6 +664,7 @@ function RichiesteTab({
               <th className="px-3 py-2 font-medium">Telefono</th>
               <th className="px-3 py-2 font-medium">Tutore</th>
               <th className="px-3 py-2 font-medium">Quando</th>
+              <th className="px-3 py-2 font-medium">Durata</th>
               <th className="px-3 py-2 font-medium">Pref. istr.</th>
               <th className="px-3 py-2 font-medium">Note</th>
               <th className="px-3 py-2 font-medium">Istruttore</th>
@@ -642,7 +674,7 @@ function RichiesteTab({
           <tbody>
             {richiesteVista.length === 0 ? (
               <tr>
-                <td colSpan={mostraData ? 12 : 11} className="px-3 py-6 text-zinc-500">
+                <td colSpan={mostraData ? 13 : 12} className="px-3 py-6 text-zinc-500">
                   {vista === "aperte"
                     ? "Nessuna richiesta aperta."
                     : vista === "tutte"
@@ -663,6 +695,7 @@ function RichiesteTab({
                 <td className="px-3 py-2 text-zinc-300">{r.telefono}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.tutore ?? ""}</td>
                 <td className="px-3 py-2 text-zinc-300">{r.quando ?? ""}</td>
+                <td className="px-3 py-2 text-zinc-300">{parseDurataMin(r.durataMin)} min</td>
                 <td className="px-3 py-2 text-zinc-400">{fmtPrefIstr(r.prefIstruttore)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.note ?? ""}</td>
                 <td className="px-3 py-2 text-amber-200">
@@ -773,6 +806,7 @@ function PrendiModal({
   const [vasca, setVasca] = useState<VascaId>("ludica")
   const [corsia, setCorsia] = useState(1)
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
+  const [durataMin, setDurataMin] = useState<LpDurataMin>(() => parseDurataMin(richiesta.durataMin))
   const [ripeti, setRipeti] = useState(false)
   const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
   const nDate = tipo === "prova" || !ripeti ? 1 : tipo === "10" ? 10 : 5
@@ -788,7 +822,7 @@ function PrendiModal({
         ora,
         vasca,
         corsia,
-        durataMin: 30,
+        durataMin,
         tipo,
         ripetiSettimanale: tipo === "prova" ? false : ripeti,
         secondoGiornoSettimana: tipo !== "prova" && ripeti && secondoGiorno !== "" ? secondoGiorno : undefined,
@@ -805,6 +839,10 @@ function PrendiModal({
         </p>
         <div className="mt-3">
           <TipoButtons value={tipo} onChange={setTipo} />
+        </div>
+        <div className="mt-3">
+          <p className="mb-1 text-xs text-zinc-500">Durata</p>
+          <DurataMinButtons value={durataMin} onChange={setDurataMin} />
         </div>
         {tipo !== "prova" ? (
           <>
@@ -842,7 +880,7 @@ function PrendiModal({
             {vasca === "ludica" ? <option value={2}>Corsia 2</option> : null}
           </select>
         </div>
-        {!slotAperto(giorno, ora, vasca, corsia) ? (
+        {!slotAperto(giorno, ora, vasca, corsia, durataMin) ? (
           <p className="mt-2 text-xs text-amber-300">
             Orario fuori fascia ufficiale: solo {FUORI_ORARIO_LABEL} (utente o istruttore).
           </p>
@@ -880,11 +918,12 @@ function PackModal({
   const [vasca, setVasca] = useState<VascaId>(prova?.vasca ?? "ludica")
   const [corsia, setCorsia] = useState(prova?.corsia ?? 1)
   const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
+  const [durataMin, setDurataMin] = useState<LpDurataMin>(() => parseDurataMin(richiesta.durataMin, prova?.durataMin === 45 ? 45 : 30))
   const n = soloUna ? 1 : tipo === "10" ? 10 : 5
   const lezioni = useMemo(() => {
     const giorni = buildWeeklyLessonDates(start, n, soloUna ? null : secondoGiorno || null)
-    return giorni.map((giorno) => ({ giorno, ora, vasca, corsia }))
-  }, [n, start, ora, vasca, corsia, soloUna, secondoGiorno])
+    return giorni.map((giorno) => ({ giorno, ora, vasca, corsia, durataMin }))
+  }, [n, start, ora, vasca, corsia, soloUna, secondoGiorno, durataMin])
   const m = useMutation({
     mutationFn: () => lezioniPrivateApi.pacchetto({ richiestaId: richiesta.id, tipo, lezioni }),
     onSuccess: onDone,
@@ -904,6 +943,10 @@ function PackModal({
           <button type="button" onClick={() => setTipo("10")} className={`rounded-md px-3 py-1.5 text-sm ${tipo === "10" ? "bg-amber-500/20 text-amber-200" : "text-zinc-400"}`}>
             10 lezioni
           </button>
+        </div>
+        <div className="mt-3">
+          <p className="mb-1 text-xs text-zinc-500">Durata</p>
+          <DurataMinButtons value={durataMin} onChange={setDurataMin} />
         </div>
         <label className="mt-2 flex items-start gap-2 text-sm text-zinc-400">
           <input type="checkbox" className="mt-1" checked={!soloUna} onChange={(e) => setSoloUna(!e.target.checked)} />
@@ -931,7 +974,7 @@ function PackModal({
         <ul className="mt-3 max-h-40 overflow-auto text-sm text-zinc-400">
           {lezioni.map((l) => (
             <li key={l.giorno}>
-              {LP_DOW_LABELS[isoDow(l.giorno)]} {fmtDateIt(l.giorno)} {l.ora} · {VASCA_LABEL[l.vasca]} corsia {l.corsia}
+              {LP_DOW_LABELS[isoDow(l.giorno)]} {fmtDateIt(l.giorno)} {l.ora} ({l.durataMin} min) · {VASCA_LABEL[l.vasca]} corsia {l.corsia}
             </li>
           ))}
         </ul>
@@ -976,6 +1019,7 @@ function BookSlotModal({
   const [telefono, setTelefono] = useState("")
   const [eta, setEta] = useState("")
   const [tipo, setTipo] = useState<LpTipoPrenota>("prova")
+  const [durataMin, setDurataMin] = useState<LpDurataMin>(30)
   const [ripeti, setRipeti] = useState(false)
   const [secondoGiorno, setSecondoGiorno] = useState<number | "">("")
   const [richiestaId, setRichiestaId] = useState("")
@@ -994,7 +1038,7 @@ function BookSlotModal({
         ora: slot.ora,
         vasca: slot.vasca,
         corsia: slot.corsia,
-        durataMin: 30,
+        durataMin,
         eta,
         createdBy: userNome,
         tipo,
@@ -1019,6 +1063,10 @@ function BookSlotModal({
         ) : null}
         <div className="mt-3">
           <TipoButtons value={tipo} onChange={setTipo} />
+        </div>
+        <div className="mt-3">
+          <p className="mb-1 text-xs text-zinc-500">Durata</p>
+          <DurataMinButtons value={durataMin} onChange={setDurataMin} />
         </div>
         {tipo !== "prova" ? (
           <>
@@ -1047,6 +1095,7 @@ function BookSlotModal({
                 if (r) {
                   setClienteNome(r.clienteNome)
                   setTelefono(r.telefono)
+                  setDurataMin(parseDurataMin(r.durataMin))
                   if (r.istruttoreId) setIstruttoreId(r.istruttoreId)
                 }
               }}
@@ -1409,7 +1458,7 @@ function LaneCell({
         >
           <div className="truncate text-[11px] font-semibold">{hit.clienteNome}</div>
           <div className="truncate text-[10px] opacity-80">
-            {hit.istruttoreNome.split(" ")[0]} · {hit.tipo === "prova" ? "prova" : hit.tipo}
+            {hit.ora !== slot.ora ? "continua" : `${hit.istruttoreNome.split(" ")[0]} · ${hit.tipo === "prova" ? "prova" : hit.tipo}${hit.durataMin === 45 ? " · 45′" : ""}`}
           </div>
         </button>
       ))}

@@ -18,7 +18,10 @@ import { enrichPersonaleHr } from "./libro-paga-hr.js"
 import { personaleLivelloRadici } from "./libro-paga-scope.js"
 import { buildRiepilogoConvalide, mapTurnoConvalide } from "./libro-paga-convalida.js"
 
-function buildLivelloTreeNodes(livelli: LpagaLivello[], parentId?: string): { id: string; nome: string; retribuibile: boolean; children?: ReturnType<typeof buildLivelloTreeNodes> }[] {
+function buildLivelloTreeNodes(
+  livelli: LpagaLivello[],
+  parentId?: string
+): { id: string; nome: string; retribuibile: boolean; attivo: boolean; children?: ReturnType<typeof buildLivelloTreeNodes> }[] {
   const pid = (parentId ?? "").trim()
   return livelli
     .filter((l) => {
@@ -33,6 +36,7 @@ function buildLivelloTreeNodes(livelli: LpagaLivello[], parentId?: string): { id
         id: l.id,
         nome: l.nome,
         retribuibile: l.retribuibile,
+        attivo: l.attivo !== false,
         ...(children.length ? { children } : {}),
       }
     })

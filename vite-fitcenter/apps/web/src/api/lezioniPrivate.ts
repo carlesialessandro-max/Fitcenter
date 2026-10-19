@@ -17,6 +17,7 @@ export type LpRichiesta = {
   quando?: string
   prefIstruttore?: string
   note?: string
+  durataMin?: 30 | 45
   status: "aperta" | "assegnata" | "annullata"
   istruttoreId?: string
   istruttoreNome?: string
@@ -107,6 +108,7 @@ export const lezioniPrivateApi = {
     prefIstruttore?: string
     note?: string
     createdBy: string
+    durataMin?: 30 | 45
   }) =>
     api.post<{
       ok: boolean

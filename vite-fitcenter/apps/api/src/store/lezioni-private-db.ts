@@ -31,6 +31,15 @@ export type LpIstruttore = {
   special?: boolean
 }
 
+export type LpDurataMin = 30 | 45
+
+export function parseLpDurataMin(v: unknown, fallback: number = 30): LpDurataMin {
+  const n = Math.round(Number(v))
+  if (n === 45) return 45
+  if (n === 30) return 30
+  return fallback === 45 ? 45 : 30
+}
+
 export type LpRichiesta = {
   id: string
   createdAt: string
@@ -42,6 +51,8 @@ export type LpRichiesta = {
   quando?: string
   prefIstruttore?: string
   note?: string
+  /** Durata della lezione richiesta (30 o 45). Default 30. */
+  durataMin?: LpDurataMin
   status: "aperta" | "assegnata" | "annullata"
   istruttoreId?: string
   istruttoreNome?: string

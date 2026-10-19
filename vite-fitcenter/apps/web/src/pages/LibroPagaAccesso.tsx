@@ -245,6 +245,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
               void qc.invalidateQueries({ queryKey: ["lpaga"] })
             }}
             createLivello={(body) => lpagaApi.createLivello(body)}
+            patchLivello={(id, body) => lpagaApi.patchLivello(id, body)}
             deleteLivello={(id) => lpagaApi.deleteLivello(id)}
             showTreeDefault
           />

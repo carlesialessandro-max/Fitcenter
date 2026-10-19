@@ -19,6 +19,7 @@ import {
   lpOreSlotsTutti,
   newLpId,
   oreCoperteLezioneLp,
+  parseLpDurataMin,
   postiGiorno,
   readLezioniPrivateDb,
   writeLezioniPrivateDb,
@@ -234,8 +235,9 @@ function clienteWaText(r: LpRichiesta): string {
   const allievo = r.clienteNome.trim().split(/\s+/)[0] || r.clienteNome
   const chi = (r.tutore ?? "").trim() || allievo
   const quando = r.quando?.trim() || "l'orario richiesto"
+  const durata = parseLpDurataMin(r.durataMin)
   return (
-    `Ciao ${chi}, abbiamo preso in carico la richiesta per la lezione privata di ${allievo}. ` +
+    `Ciao ${chi}, abbiamo preso in carico la richiesta per la lezione privata di ${allievo} (${durata} minuti). ` +
     `Stiamo verificando la disponibilita dell'acqua e dell'istruttore per ${quando}. ` +
     `Ti contatteremo a breve per confermare il giorno e l'orario definitivo. ` +
     `In base alla situazione concorderemo prova o pacchetto 5/10. Per annullare o spostare, accordati con l'istruttore. Lo staff H2SPORT`
@@ -252,9 +254,10 @@ function istruttoriWaText(r: LpRichiesta, by: string): string {
     .filter(Boolean)
     .join(" ")
   const chi = by.trim() || "reception"
+  const durata = parseLpDurataMin(r.durataMin)
   return (
     `Nuova richiesta lezione privata inserita da ${chi}. Chi e disponibile? ` +
-    `Allievo ${allievo}. ` +
+    `Allievo ${allievo}. Lezione ${durata} minuti. ` +
     (r.tutore?.trim() ? `Tutore ${r.tutore.trim()}. ` : "") +
     (orario ? `Orario ${orario}. ` : "") +
     (r.note?.trim() ? `Note: ${r.note.trim().slice(0, 80)}. ` : "") +
@@ -471,6 +474,7 @@ export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
     prefIstruttore?: string
     note?: string
     createdBy?: string
+    durataMin?: number
   }
   const clienteNome = String(b.clienteNome ?? "").trim()
   const telefono = String(b.telefono ?? "").trim()
@@ -489,6 +493,7 @@ export async function postLezioniPrivateRichiesta(req: Request, res: Response) {
     quando: String(b.quando ?? "").trim() || undefined,
     prefIstruttore: String(b.prefIstruttore ?? "").trim() || undefined,
     note: String(b.note ?? "").trim() || undefined,
+    durataMin: parseLpDurataMin(b.durataMin),
     status: "aperta",
   }
   const db = readLezioniPrivateDb()
@@ -533,7 +538,6 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
   const vasca = asVasca(b.vasca)
   const giorno = String(b.giorno ?? "").trim()
   const ora = String(b.ora ?? "").trim()
-  const durataMin = Number(b.durataMin) > 0 ? Math.round(Number(b.durataMin)) : 30
   const corsia = Number(b.corsia)
   const tipo = asTipo(b.tipo) ?? "prova"
   if (!vasca) return res.status(400).json({ message: "Vasca obbligatoria (v25 o ludica)" })
@@ -542,6 +546,7 @@ export function postLezioniPrivatePrendi(req: Request, res: Response) {
 
   const db = readLezioniPrivateDb()
   const r = db.richieste.find((x) => x.id === id)
+  const durataMin = parseLpDurataMin(b.durataMin, r?.durataMin ?? 30)
   if (!r) return res.status(404).json({ message: "Richiesta non trovata" })
   if (r.status === "annullata") return res.status(400).json({ message: "Richiesta annullata" })
 
@@ -591,7 +596,6 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
   const vasca = asVasca(b.vasca)
   const giorno = String(b.giorno ?? "").trim()
   const ora = String(b.ora ?? "").trim()
-  const durataMin = Number(b.durataMin) > 0 ? Math.round(Number(b.durataMin)) : 30
   const corsia = Number(b.corsia)
   const tipo = asTipo(b.tipo) ?? "prova"
   if (!vasca) return res.status(400).json({ message: "Vasca obbligatoria (v25 o ludica)" })
@@ -599,6 +603,9 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
   if (!Number.isFinite(corsia)) return res.status(400).json({ message: "Corsia obbligatoria" })
 
   const db = readLezioniPrivateDb()
+  const richiestaIdPrenota = String(b.richiestaId ?? "").trim()
+  const richPrenota = richiestaIdPrenota ? db.richieste.find((x) => x.id === richiestaIdPrenota) : undefined
+  const durataMin = parseLpDurataMin(b.durataMin, richPrenota?.durataMin ?? 30)
   let istr = db.instructors.find((i) => i.id === String(b.istruttoreId ?? "").trim())
   if (!istr && u.role === "istruttore") {
     const n = (u.nome || "").trim().toLowerCase()
@@ -619,14 +626,12 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
   const busy = assertLiberiCamilla(db, lezioni, u, istr.nome)
   if (busy) return res.status(409).json({ message: busy })
 
-  const richiestaId = String(b.richiestaId ?? "").trim()
-  if (richiestaId) {
-    const r = db.richieste.find((x) => x.id === richiestaId)
-    if (!r) return res.status(404).json({ message: "Richiesta non trovata" })
-    if (r.status === "annullata") return res.status(400).json({ message: "Richiesta annullata" })
-    const pac = attachLezioniToRichiesta({ db, r, istr, tipo, lezioni })
+  if (richiestaIdPrenota) {
+    if (!richPrenota) return res.status(404).json({ message: "Richiesta non trovata" })
+    if (richPrenota.status === "annullata") return res.status(400).json({ message: "Richiesta annullata" })
+    const pac = attachLezioniToRichiesta({ db, r: richPrenota, istr, tipo, lezioni })
     writeLezioniPrivateDb(db)
-    return res.json({ ok: true, richiesta: r, pacchetto: pac })
+    return res.json({ ok: true, richiesta: richPrenota, pacchetto: pac })
   }
 
   const clienteNome = String(b.clienteNome ?? "").trim()
@@ -642,6 +647,7 @@ export function postLezioniPrivatePrenota(req: Request, res: Response) {
     clienteNome,
     eta: String(b.eta ?? "").trim() || undefined,
     telefono,
+    durataMin,
     status: "assegnata",
     istruttoreId: istr.id,
     istruttoreNome: istr.nome,
@@ -678,7 +684,7 @@ export function postLezioniPrivatePacchetto(req: Request, res: Response) {
     const giorno = String(row.giorno ?? "").trim()
     const ora = String(row.ora ?? "").trim()
     const corsia = Number(row.corsia)
-    const durataMin = Number(row.durataMin) > 0 ? Math.round(Number(row.durataMin)) : 30
+    const durataMin = parseLpDurataMin(row.durataMin, r.durataMin ?? 30)
     if (!vasca || !isYmd(giorno) || !isHm(ora)) return res.status(400).json({ message: "Ogni lezione serve giorno, ora, vasca" })
     lezioni.push(newLezioneRow({ giorno, ora, vasca, corsia, durataMin }))
   }
@@ -715,7 +721,7 @@ export async function patchLezioniPrivateLezione(req: Request, res: Response) {
     const nextOra = (b.ora != null ? String(b.ora).trim() : l.ora).slice(0, 5)
     const nextVasca = b.vasca != null ? asVasca(b.vasca) : l.vasca
     const nextCorsia = b.corsia != null ? Number(b.corsia) : l.corsia
-    const nextDurata = b.durataMin != null && Number(b.durataMin) > 0 ? Math.round(Number(b.durataMin)) : l.durataMin
+    const nextDurata = b.durataMin != null ? parseLpDurataMin(b.durataMin, l.durataMin) : parseLpDurataMin(l.durataMin)
     if (!nextVasca) return res.status(400).json({ message: "Vasca non valida" })
     if (!isYmd(nextGiorno) || !isHm(nextOra)) return res.status(400).json({ message: "Giorno e ora non validi" })
     if (!Number.isFinite(nextCorsia)) return res.status(400).json({ message: "Corsia non valida" })

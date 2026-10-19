@@ -1059,6 +1059,9 @@ export async function insertTurno(input: {
   const livelli = await listLivelli()
   const livello = livelli.find((x) => x.id === input.livelloId)
   if (!livello) throw Object.assign(new Error("Livello non trovato"), { status: 400 })
+  if (livello.attivo === false) {
+    throw Object.assign(new Error("Livello nascosto: non si può più usare per nuovi turni"), { status: 400 })
+  }
   const personale = (await listPersonale()).find((x) => x.id === input.personaleId)
   if (!personale) throw Object.assign(new Error("Persona non trovata"), { status: 400 })
   const row: LpagaTurno = {

@@ -147,6 +147,7 @@ export type LpagaTreeNode = {
   id: string
   nome: string
   retribuibile?: boolean
+  attivo?: boolean
   children?: LpagaTreeNode[]
 }
 

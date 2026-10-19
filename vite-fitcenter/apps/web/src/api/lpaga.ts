@@ -145,6 +145,11 @@ export const lpagaApi = {
     retribuibile?: boolean
     attivo?: boolean
   }) => lpagaRequest<{ livello: LpagaLivello }>("/lpaga/livelli", { method: "POST", body: JSON.stringify(body) }),
+  patchLivello: (id: string, body: Partial<LpagaLivello>) =>
+    lpagaRequest<{ livello: LpagaLivello }>(`/lpaga/livelli/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   deleteLivello: (id: string) =>
     lpagaRequest<{ ok: boolean }>(`/lpaga/livelli/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
