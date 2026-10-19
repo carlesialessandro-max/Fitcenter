@@ -1289,15 +1289,6 @@
         "staff": "sempre"
       },
       {
-        "id": "scuola_nuoto-S.N._Bambini-9-25-17:00-LAURENNE",
-        "zona": "scuola_nuoto",
-        "sheet": "S.N. Bambini",
-        "dow": 1,
-        "start": "17:00",
-        "title": "BIANCO · S.N. Bambini",
-        "staff": "LAURENNE"
-      },
-      {
         "id": "scuola_nuoto-S.N._Bambini-9-28-17:00-POLI",
         "zona": "scuola_nuoto",
         "sheet": "S.N. Bambini",

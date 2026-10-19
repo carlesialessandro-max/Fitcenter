@@ -16,6 +16,7 @@ import {
   postLezioniPrivateRichiesta,
   postLezioniPrivateSpostaPacchetto,
   putLezioniPrivateRegole,
+  putLezioniPrivateOrari,
 } from "../handlers/lezioniPrivate.js"
 
 export const lezioniPrivateRouter = Router()
@@ -25,6 +26,7 @@ lezioniPrivateRouter.get("/", getLezioniPrivate)
 lezioniPrivateRouter.get("/occupazione", getLezioniPrivateOccupazione)
 lezioniPrivateRouter.get("/abbonamenti-check", getLezioniPrivateAbbonamentiCheck)
 lezioniPrivateRouter.put("/regole", putLezioniPrivateRegole)
+lezioniPrivateRouter.put("/orari", putLezioniPrivateOrari)
 lezioniPrivateRouter.post("/istruttori", postLezioniPrivateIstruttore)
 lezioniPrivateRouter.patch("/istruttori/:id", patchLezioniPrivateIstruttore)
 lezioniPrivateRouter.delete("/istruttori/:id", deleteLezioniPrivateIstruttore)

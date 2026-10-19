@@ -10,6 +10,10 @@ import {
   lpOreSlotsTutti,
   postiGiorno,
   slotAperto,
+  applyLpOrari,
+  sanitizeLpOrari,
+  DEFAULT_ORARI,
+  type LpOrarioRiga,
 } from "../services/lp-vasche-orari.js"
 
 const FILE = "lezioni-private.json"
@@ -80,6 +84,7 @@ export type LezioniPrivateDb = {
   richieste: LpRichiesta[]
   pacchetti: LpPacchetto[]
   regole: LpRegoleDow
+  orari: LpOrarioRiga[]
 }
 
 export function defaultRegole(): LpRegoleDow {
@@ -88,7 +93,13 @@ export function defaultRegole(): LpRegoleDow {
   return r
 }
 
-const DEFAULT: LezioniPrivateDb = { instructors: [], richieste: [], pacchetti: [], regole: defaultRegole() }
+const DEFAULT: LezioniPrivateDb = {
+  instructors: [],
+  richieste: [],
+  pacchetti: [],
+  regole: defaultRegole(),
+  orari: [...DEFAULT_ORARI],
+}
 
 function asVasca(v: unknown): VascaId | null {
   return v === "v25" || v === "ludica" ? v : null
@@ -100,15 +111,19 @@ export function readLezioniPrivateDb(): LezioniPrivateDb {
     const sesso = i.sesso === "M" || i.sesso === "F" ? i.sesso : inferSessoDaNome(i.nome) ?? undefined
     return { ...i, sesso }
   })
+  const orari = sanitizeLpOrari(raw.orari)
+  applyLpOrari(orari)
   return {
     instructors,
     richieste: Array.isArray(raw.richieste) ? raw.richieste : [],
     pacchetti: Array.isArray(raw.pacchetti) ? raw.pacchetti : [],
     regole: raw.regole && typeof raw.regole === "object" ? { ...defaultRegole(), ...raw.regole } : defaultRegole(),
+    orari,
   }
 }
 
 export function writeLezioniPrivateDb(db: LezioniPrivateDb): void {
+  applyLpOrari(db.orari)
   writeJson(FILE, db)
 }
 

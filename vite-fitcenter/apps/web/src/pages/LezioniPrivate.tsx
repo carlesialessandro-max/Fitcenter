@@ -6,7 +6,7 @@ import { lezioniPrivateApi, type LpIstruttore, type LpLezioneFlat, type LpRichie
 import { useAuth } from "@/contexts/AuthContext"
 import { fmtDateIt, isoToday, monthRangeFromDay } from "@/pages/Corsi"
 import { weekMondaySunday } from "@/lib/tabella-oraria"
-import { LP_VASCHE_LEGENDA, lpOreSlotsTutti, slotAperto } from "@/lib/lp-vasche-orari"
+import { applyLpOrari, DEFAULT_ORARI, lpOrariLegenda, lpOreSlotsTutti, postiLabelOrario, slotAperto, type LpOrarioRiga } from "@/lib/lp-vasche-orari"
 import { addDaysIso, buildWeeklyLessonDates, isoDow, LP_DOW_LABELS } from "@/lib/lp-pacchetto-date"
 import { canBookClosedNome, canBookClosedUser, FUORI_ORARIO_LABEL } from "@/lib/lp-camilla"
 import { LezioniPrivateAbbonamentiTab } from "@/pages/LezioniPrivateAbbonamentiTab"
@@ -114,10 +114,16 @@ export function LezioniPrivate() {
   const location = useLocation()
   const navigate = useNavigate()
   const tab = tabFromPath(location.pathname)
+  const isSara = String(user?.username ?? "").toLowerCase() === "sara"
   const enabled =
-    role === "admin" || role === "scuola_nuoto" || role === "istruttore" || role === "operatore" || role === "firme"
+    role === "admin" ||
+    role === "scuola_nuoto" ||
+    role === "istruttore" ||
+    role === "operatore" ||
+    role === "firme" ||
+    isSara
   const canDesk = role === "admin" || role === "scuola_nuoto" || role === "operatore" || role === "firme"
-  const canRoster = role === "admin" || role === "scuola_nuoto"
+  const canRoster = role === "admin" || role === "scuola_nuoto" || isSara
   const qc = useQueryClient()
   const [day, setDay] = useState(() => isoToday())
   const [periodo, setPeriodo] = useState<Periodo>("giorno")
@@ -150,8 +156,13 @@ export function LezioniPrivate() {
     void qc.invalidateQueries({ queryKey: ["lezioni-private-occ"] })
   }
 
+  useEffect(() => {
+    applyLpOrari(q.data?.orari)
+  }, [q.data?.orari])
+
   if (!enabled) return <div className="p-6 text-red-400">Permessi insufficienti.</div>
 
+  const canEditOrari = role === "admin" || isSara || Boolean(q.data?.canEditOrari)
   const instructors = q.data?.instructors ?? []
   const richieste = q.data?.richieste ?? []
   const lezioni = q.data?.lezioni ?? []
@@ -275,8 +286,8 @@ export function LezioniPrivate() {
                     </tr>
                   </thead>
                   <tbody>
-                    {LP_VASCHE_LEGENDA.map((r) => (
-                      <tr key={`${r.giorni}-${r.vasca}-${r.orari}`} className="border-b border-zinc-800/50">
+                    {lpOrariLegenda(q.data?.orari ?? DEFAULT_ORARI).map((r) => (
+                      <tr key={r.id} className="border-b border-zinc-800/50">
                         <td className="px-3 py-1.5 text-zinc-300">{r.giorni}</td>
                         <td className="px-3 py-1.5">{r.vasca}</td>
                         <td className="px-3 py-1.5">{r.orari}</td>
@@ -321,7 +332,13 @@ export function LezioniPrivate() {
       ) : null}
 
       {tab === "istruttori" ? (
-        <IstruttoriTab canRoster={canRoster} instructors={instructors} onDone={invalidate} />
+        <IstruttoriTab
+          canRoster={canRoster}
+          canEditOrari={canEditOrari}
+          instructors={instructors}
+          orari={q.data?.orari ?? DEFAULT_ORARI}
+          onDone={invalidate}
+        />
       ) : null}
 
       {tab === "abbonamenti" ? <LezioniPrivateAbbonamentiTab /> : null}
@@ -1446,13 +1463,211 @@ function MeseGrid({
   )
 }
 
+function postiSelectValue(r: LpOrarioRiga): string {
+  if (r.corsie <= 0) return "0"
+  return String(r.corsie * r.capCorsia)
+}
+
+function applyPosti(r: LpOrarioRiga, posti: number): LpOrarioRiga {
+  if (posti <= 0) return { ...r, corsie: 0, capCorsia: 1 }
+  if (r.vasca === "v25") return { ...r, corsie: 1, capCorsia: Math.max(1, posti) }
+  if (posti <= 2) return { ...r, corsie: 2, capCorsia: 1 }
+  if (posti <= 4) return { ...r, corsie: 2, capCorsia: 2 }
+  return { ...r, corsie: 2, capCorsia: 3 }
+}
+
+function OrariVascheEditor({
+  canEdit,
+  orari,
+  onDone,
+}: {
+  canEdit: boolean
+  orari: LpOrarioRiga[]
+  onDone: () => void
+}) {
+  const [rows, setRows] = useState<LpOrarioRiga[]>(orari)
+  const [msg, setMsg] = useState("")
+  useEffect(() => {
+    setRows(orari)
+  }, [orari])
+  const saveM = useMutation({
+    mutationFn: () => lezioniPrivateApi.putOrari(rows),
+    onSuccess: (r) => {
+      applyLpOrari(r.orari)
+      setRows(r.orari)
+      setMsg("Orari salvati.")
+      onDone()
+    },
+    onError: (e: Error) => setMsg(e.message),
+  })
+  const inputCls = "rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-100"
+  return (
+    <div className="rounded-2xl border border-zinc-800 p-4">
+      <h2 className="font-semibold text-zinc-100">Orari vasche (ufficiali)</h2>
+      <p className="mt-1 text-sm text-zinc-500">
+        Il calendario prenota solo in queste fasce. Posti 0 = chiusa. Solo admin e Sara possono modificare.
+      </p>
+      <table className="mt-3 w-full text-sm">
+        <thead>
+          <tr className="text-zinc-500">
+            <th className="py-1 text-left">Giorni</th>
+            <th className="py-1 text-left">Vasca</th>
+            <th className="py-1 text-left">Da</th>
+            <th className="py-1 text-left">A</th>
+            <th className="py-1 text-left">Posti</th>
+            {canEdit ? <th className="py-1 text-left" /> : null}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, idx) => (
+            <tr key={r.id} className="text-zinc-300">
+              <td className="py-1.5 pr-2">
+                {canEdit ? (
+                  <select
+                    className={inputCls}
+                    value={r.giorni}
+                    onChange={(e) =>
+                      setRows((cur) =>
+                        cur.map((x, i) => (i === idx ? { ...x, giorni: e.target.value as LpOrarioRiga["giorni"] } : x)),
+                      )
+                    }
+                  >
+                    <option value="lunven">Lun–Ven</option>
+                    <option value="sabato">Sabato</option>
+                  </select>
+                ) : (
+                  r.giorni === "sabato" ? "Sabato" : "Lun–Ven"
+                )}
+              </td>
+              <td className="py-1.5 pr-2">
+                {canEdit ? (
+                  <select
+                    className={inputCls}
+                    value={r.vasca}
+                    onChange={(e) =>
+                      setRows((cur) =>
+                        cur.map((x, i) => (i === idx ? { ...x, vasca: e.target.value as LpOrarioRiga["vasca"] } : x)),
+                      )
+                    }
+                  >
+                    <option value="v25">25 m</option>
+                    <option value="ludica">Ludica</option>
+                  </select>
+                ) : r.vasca === "v25" ? (
+                  "25 m"
+                ) : (
+                  "Ludica"
+                )}
+              </td>
+              <td className="py-1.5 pr-2">
+                {canEdit ? (
+                  <input
+                    type="time"
+                    className={inputCls}
+                    value={r.from}
+                    onChange={(e) => setRows((cur) => cur.map((x, i) => (i === idx ? { ...x, from: e.target.value } : x)))}
+                  />
+                ) : (
+                  r.from
+                )}
+              </td>
+              <td className="py-1.5 pr-2">
+                {canEdit ? (
+                  <input
+                    type="time"
+                    className={inputCls}
+                    value={r.to}
+                    onChange={(e) => setRows((cur) => cur.map((x, i) => (i === idx ? { ...x, to: e.target.value } : x)))}
+                  />
+                ) : (
+                  r.to
+                )}
+              </td>
+              <td className="py-1.5 pr-2">
+                {canEdit ? (
+                  <select
+                    className={inputCls}
+                    value={postiSelectValue(r)}
+                    onChange={(e) =>
+                      setRows((cur) => cur.map((x, i) => (i === idx ? applyPosti(x, Number(e.target.value)) : x)))
+                    }
+                  >
+                    <option value="0">chiusa</option>
+                    <option value="1">1 persona</option>
+                    <option value="2">2 lez.</option>
+                    <option value="4">4 lez.</option>
+                    <option value="6">6 lez.</option>
+                  </select>
+                ) : (
+                  postiLabelOrario(r)
+                )}
+              </td>
+              {canEdit ? (
+                <td className="py-1.5">
+                  <button
+                    type="button"
+                    className="text-xs text-red-400 underline"
+                    onClick={() => setRows((cur) => cur.filter((_, i) => i !== idx))}
+                  >
+                    togli
+                  </button>
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {canEdit ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+            onClick={() =>
+              setRows((cur) => [
+                ...cur,
+                {
+                  id: `new-${Date.now().toString(36)}`,
+                  giorni: "lunven",
+                  vasca: "ludica",
+                  from: "08:00",
+                  to: "09:00",
+                  corsie: 2,
+                  capCorsia: 1,
+                },
+              ])
+            }
+          >
+            Aggiungi fascia
+          </button>
+          <button
+            type="button"
+            className="rounded-md bg-amber-500/20 px-3 py-1.5 text-sm text-amber-200 disabled:opacity-50"
+            disabled={saveM.isPending}
+            onClick={() => {
+              setMsg("")
+              saveM.mutate()
+            }}
+          >
+            {saveM.isPending ? "Salvataggio…" : "Salva orari"}
+          </button>
+          {msg ? <span className="text-xs text-zinc-400">{msg}</span> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function IstruttoriTab({
   canRoster,
+  canEditOrari,
   instructors,
+  orari,
   onDone,
 }: {
   canRoster: boolean
+  canEditOrari: boolean
   instructors: LpIstruttore[]
+  orari: LpOrarioRiga[]
   onDone: () => void
 }) {
   const [nome, setNome] = useState("")
@@ -1562,33 +1777,7 @@ function IstruttoriTab({
           ) : null}
         </div>
       </div>
-      <div className="rounded-2xl border border-zinc-800 p-4">
-        <h2 className="font-semibold text-zinc-100">Orari vasche (ufficiali)</h2>
-        <p className="mt-1 text-sm text-zinc-500">
-          Il calendario prenota solo in queste fasce. 25 m sabato chiusa. Ludica: 2 / 4 / 6 lezioni in contemporanea.
-          Mar/ven in ludica solo 7:30–8:15, 1 persona per corsia.
-        </p>
-        <table className="mt-3 w-full text-sm">
-          <thead>
-            <tr className="text-zinc-500">
-              <th className="py-1 text-left">Giorni</th>
-              <th className="py-1 text-left">Vasca</th>
-              <th className="py-1 text-left">Orari</th>
-              <th className="py-1 text-left">Posti</th>
-            </tr>
-          </thead>
-          <tbody>
-            {LP_VASCHE_LEGENDA.map((r) => (
-              <tr key={`${r.giorni}-${r.vasca}`} className="text-zinc-300">
-                <td className="py-1.5">{r.giorni}</td>
-                <td className="py-1.5">{r.vasca}</td>
-                <td className="py-1.5 text-zinc-400">{r.orari}</td>
-                <td className="py-1.5 text-zinc-400">{r.posti}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <OrariVascheEditor canEdit={canEditOrari} orari={orari} onDone={onDone} />
     </div>
   )
 }

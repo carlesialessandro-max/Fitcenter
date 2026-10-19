@@ -313,6 +313,12 @@ function parsePiscinaSheet(rows, comparto, sheetName) {
         const lab = String(lastLabels[c] ?? "").trim()
         const labN = normCell(lab)
         if (labN === "SOSTITUZIONI" || labN.startsWith("SOSTITUZION") || labN === "RESP") continue
+        if (
+          comparto === "scuola_nuoto" &&
+          /^(BIANCO|NERO|ROSSO|GIALLO|BLU|VERDE|AZZURRO|ARANCIO|ARANCIONE|GRIGIO|VIOLA)$/.test(labN)
+        ) {
+          continue
+        }
         if (comparto === "acquaticita" && lab && !isAquaticitaLaneLabel(lab)) continue
 
         const staff = String(row[c] ?? "").trim()

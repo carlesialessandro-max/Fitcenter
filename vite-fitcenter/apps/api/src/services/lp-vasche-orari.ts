@@ -17,37 +17,81 @@ export type LpFasciaVasca = {
   capCorsia: number
 }
 
-function hm(h: number, m = 0): number {
-  return h * 60 + m
+export type LpOrarioRiga = {
+  id: string
+  giorni: "lunven" | "sabato"
+  vasca: VascaId
+  from: string
+  to: string
+  corsie: number
+  capCorsia: number
+}
+
+export const DEFAULT_ORARI: LpOrarioRiga[] = [
+  { id: "lv-v25-a", giorni: "lunven", vasca: "v25", from: "08:00", to: "14:30", corsie: 1, capCorsia: 1 },
+  { id: "lv-v25-b", giorni: "lunven", vasca: "v25", from: "18:30", to: "22:00", corsie: 1, capCorsia: 1 },
+  { id: "sa-v25", giorni: "sabato", vasca: "v25", from: "08:00", to: "22:00", corsie: 0, capCorsia: 1 },
+  { id: "lv-lud-a", giorni: "lunven", vasca: "ludica", from: "08:00", to: "15:15", corsie: 2, capCorsia: 1 },
+  { id: "lv-lud-b", giorni: "lunven", vasca: "ludica", from: "15:15", to: "16:15", corsie: 2, capCorsia: 3 },
+  { id: "lv-lud-x", giorni: "lunven", vasca: "ludica", from: "16:15", to: "18:30", corsie: 0, capCorsia: 1 },
+  { id: "lv-lud-c", giorni: "lunven", vasca: "ludica", from: "18:30", to: "20:15", corsie: 2, capCorsia: 2 },
+  { id: "sa-lud-a", giorni: "sabato", vasca: "ludica", from: "09:00", to: "09:45", corsie: 2, capCorsia: 3 },
+  { id: "sa-lud-x1", giorni: "sabato", vasca: "ludica", from: "09:45", to: "12:00", corsie: 0, capCorsia: 1 },
+  { id: "sa-lud-b", giorni: "sabato", vasca: "ludica", from: "12:00", to: "13:30", corsie: 2, capCorsia: 3 },
+  { id: "sa-lud-c", giorni: "sabato", vasca: "ludica", from: "13:30", to: "14:15", corsie: 2, capCorsia: 1 },
+  { id: "sa-lud-d", giorni: "sabato", vasca: "ludica", from: "14:15", to: "15:30", corsie: 2, capCorsia: 3 },
+  { id: "sa-lud-x2", giorni: "sabato", vasca: "ludica", from: "15:30", to: "17:45", corsie: 0, capCorsia: 1 },
+  { id: "sa-lud-e", giorni: "sabato", vasca: "ludica", from: "17:45", to: "19:30", corsie: 2, capCorsia: 3 },
+]
+
+let orariAttivi: LpOrarioRiga[] = DEFAULT_ORARI
+
+export function applyLpOrari(orari?: LpOrarioRiga[] | null): void {
+  orariAttivi = orari?.length ? orari : DEFAULT_ORARI
+}
+
+export function getLpOrari(): LpOrarioRiga[] {
+  return orariAttivi
+}
+
+export function sanitizeLpOrari(raw: unknown): LpOrarioRiga[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_ORARI]
+  const out: LpOrarioRiga[] = []
+  const seen = new Set<string>()
+  for (const row of raw) {
+    if (!row || typeof row !== "object") continue
+    const r = row as Record<string, unknown>
+    const giorni = r.giorni === "sabato" ? "sabato" : r.giorni === "lunven" ? "lunven" : null
+    const vasca = r.vasca === "v25" || r.vasca === "ludica" ? r.vasca : null
+    const from = parseHm(String(r.from ?? ""))
+    const to = parseHm(String(r.to ?? ""))
+    if (!giorni || !vasca || from == null || to == null || to <= from) continue
+    const corsie = Math.max(0, Math.min(4, Math.round(Number(r.corsie) || 0)))
+    const capCorsia = Math.max(1, Math.min(6, Math.round(Number(r.capCorsia) || 1)))
+    const id = String(r.id ?? `${giorni}-${vasca}-${formatHm(from)}`).trim() || `r${out.length}`
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, giorni, vasca, from: formatHm(from), to: formatHm(to), corsie, capCorsia })
+  }
+  return out.length ? out : [...DEFAULT_ORARI]
+}
+
+function matchGiorni(giorni: LpOrarioRiga["giorni"], dow: number): boolean {
+  if (giorni === "lunven") return dow >= 1 && dow <= 5
+  if (giorni === "sabato") return dow === 6
+  return false
 }
 
 function fasceDow(dow: number, vasca: VascaId): LpFasciaVasca[] {
-  if (vasca === "v25") {
-    if (dow >= 1 && dow <= 5) {
-      return [
-        { from: hm(8), to: hm(14, 30), corsie: 1, capCorsia: 1 },
-        { from: hm(18, 30), to: hm(22), corsie: 1, capCorsia: 1 },
-      ]
-    }
-    return []
+  const out: LpFasciaVasca[] = []
+  for (const r of orariAttivi) {
+    if (r.vasca !== vasca || !matchGiorni(r.giorni, dow) || r.corsie <= 0) continue
+    const from = parseHm(r.from)
+    const to = parseHm(r.to)
+    if (from == null || to == null || to <= from) continue
+    out.push({ from, to, corsie: r.corsie, capCorsia: r.capCorsia })
   }
-  if (dow >= 1 && dow <= 5) {
-    return [
-      { from: hm(8), to: hm(15, 15), corsie: 2, capCorsia: 1 },
-      { from: hm(15, 15), to: hm(16, 15), corsie: 2, capCorsia: 3 },
-      { from: hm(18, 30), to: hm(20, 15), corsie: 2, capCorsia: 2 },
-    ]
-  }
-  if (dow === 6) {
-    return [
-      { from: hm(9), to: hm(9, 45), corsie: 2, capCorsia: 3 },
-      { from: hm(12), to: hm(13, 30), corsie: 2, capCorsia: 3 },
-      { from: hm(13, 30), to: hm(14, 15), corsie: 2, capCorsia: 1 },
-      { from: hm(14, 15), to: hm(15, 30), corsie: 2, capCorsia: 3 },
-      { from: hm(17, 45), to: hm(19, 30), corsie: 2, capCorsia: 3 },
-    ]
-  }
-  return []
+  return out.sort((a, b) => a.from - b.from)
 }
 
 export function dowFromIso(giornoIso: string): number {

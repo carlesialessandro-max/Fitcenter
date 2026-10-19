@@ -98,7 +98,9 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   const j = loadPlanningJson()
   if (!j) return []
   if (comparto === "corsi") return j.events ?? []
-  return j.eventsByComparto?.[comparto] ?? []
+  const rows = j.eventsByComparto?.[comparto] ?? []
+  if (comparto === "scuola_nuoto") return rows.filter((e) => !isGhostScuolaNuoto(e))
+  return rows
 }
 
 const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi", "pulizie"]
@@ -291,10 +293,15 @@ function projectDatedEventsForward(events: CalendarioMergedEvent[]): CalendarioM
 }
 
 /** Tutte le revisioni del comparto (scuola nuoto dopo import una tantum). */
+function isGhostScuolaNuoto(r: { title?: string }): boolean {
+  return /^BIANCO\b/i.test(String(r.title ?? "").trim())
+}
+
 function mergeServerSeededFromDb(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   const out: CalendarioMergedEvent[] = []
   for (const r of db.revisions) {
     if (r.comparto !== comparto || r.removed) continue
+    if (comparto === "scuola_nuoto" && isGhostScuolaNuoto(r)) continue
     out.push(revisionToMergedEvent(comparto, r))
   }
   const order = (d: number) => (d === 0 ? 7 : d)

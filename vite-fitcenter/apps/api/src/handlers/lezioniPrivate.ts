@@ -28,7 +28,7 @@ import {
   type LpRichiesta,
   type VascaId,
 } from "../store/lezioni-private-db.js"
-import { fasciaPerInizio, slotAperto } from "../services/lp-vasche-orari.js"
+import { fasciaPerInizio, sanitizeLpOrari, slotAperto } from "../services/lp-vasche-orari.js"
 import { allowClosedSlots } from "../services/lp-camilla.js"
 import { addDaysIso, buildWeeklyLessonDates, parseSecondoGiornoSettimana } from "../services/lp-pacchetto-date.js"
 import * as gestionaleSql from "../services/gestionale-sql.js"
@@ -48,8 +48,14 @@ function asTipo(v: unknown): "prova" | "5" | "10" | null {
 function canDesk(u: User): boolean {
   return u.role === "admin" || u.role === "scuola_nuoto" || u.role === "operatore" || u.role === "firme"
 }
+function isSara(u: User): boolean {
+  return String(u.username ?? "").toLowerCase() === "sara"
+}
 function canManageRoster(u: User): boolean {
-  return u.role === "admin" || u.role === "scuola_nuoto"
+  return u.role === "admin" || u.role === "scuola_nuoto" || isSara(u)
+}
+function canManageOrari(u: User): boolean {
+  return u.role === "admin" || isSara(u)
 }
 
 function flattenLezioni(db: ReturnType<typeof readLezioniPrivateDb>) {
@@ -358,6 +364,8 @@ export function getLezioniPrivate(req: Request, res: Response) {
     pacchetti: db.pacchetti,
     lezioni: flattenLezioni(db),
     regole: db.regole,
+    orari: db.orari,
+    canEditOrari: canManageOrari(req.user!),
     ore: lpOreSlotsSettimanaTipo(),
   })
 }
@@ -379,6 +387,16 @@ export function putLezioniPrivateRegole(req: Request, res: Response) {
   }
   writeLezioniPrivateDb({ ...db, regole: next })
   res.json({ ok: true, regole: next })
+}
+
+export function putLezioniPrivateOrari(req: Request, res: Response) {
+  const u = req.user!
+  if (!canManageOrari(u)) return res.status(403).json({ message: "Solo admin o Sara possono modificare gli orari vasche" })
+  const raw = (req.body as { orari?: unknown })?.orari
+  const orari = sanitizeLpOrari(raw)
+  const db = readLezioniPrivateDb()
+  writeLezioniPrivateDb({ ...db, orari })
+  res.json({ ok: true, orari })
 }
 
 export function postLezioniPrivateIstruttore(req: Request, res: Response) {
@@ -871,6 +889,7 @@ export function getLezioniPrivateOccupazione(req: Request, res: Response) {
     ore,
     prenotaFuoriOrario,
     regole: db.regole,
+    orari: db.orari,
     byDay,
     booked: booked.filter((l) => l.giorno >= from && l.giorno <= to),
   })

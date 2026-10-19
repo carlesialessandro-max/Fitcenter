@@ -1,4 +1,5 @@
 import { api } from "./client"
+import type { LpOrarioRiga } from "@/lib/lp-vasche-orari"
 
 export type VascaId = "v25" | "ludica"
 export type LpLezioneStato = "prenotata" | "svolta" | "annullata_istruttore" | "annullata_cliente" | "tolta"
@@ -73,6 +74,8 @@ export const lezioniPrivateApi = {
       richieste: LpRichiesta[]
       lezioni: LpLezioneFlat[]
       regole: LpRegole
+      orari?: LpOrarioRiga[]
+      canEditOrari?: boolean
       ore: string[]
     }>("/lezioni-private"),
   occupazione: (from: string, to: string) =>
@@ -179,4 +182,5 @@ export const lezioniPrivateApi = {
     api.patch<{ ok: boolean }>(`/lezioni-private/istruttori/${encodeURIComponent(id)}`, body),
   deleteIstruttore: (id: string) => api.delete<{ ok: boolean }>(`/lezioni-private/istruttori/${encodeURIComponent(id)}`),
   putRegole: (regole: LpRegole) => api.put<{ ok: boolean; regole: LpRegole }>("/lezioni-private/regole", { regole }),
+  putOrari: (orari: LpOrarioRiga[]) => api.put<{ ok: boolean; orari: LpOrarioRiga[] }>("/lezioni-private/orari", { orari }),
 }
