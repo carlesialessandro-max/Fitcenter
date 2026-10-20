@@ -39,6 +39,19 @@ dataRouter.get("/calendario/piano-operativo", getCalendarioPianoOperativo)
 dataRouter.get("/calendario/:comparto", getCalendarioComparto)
 dataRouter.patch("/calendario/:comparto/slot", patchCalendarioSlot)
 dataRouter.post("/calendario/:comparto/duplica", postCalendarioDuplica)
+// Route alternative per Express che decodifica underscore come spazio
+dataRouter.get("/calendario/sala fitness", (req, res, next) => {
+  req.params.comparto = "sala_fitness"
+  getCalendarioComparto(req, res, next)
+})
+dataRouter.patch("/calendario/sala fitness/slot", (req, res, next) => {
+  req.params.comparto = "sala_fitness"
+  patchCalendarioSlot(req, res, next)
+})
+dataRouter.post("/calendario/sala fitness/duplica", (req, res, next) => {
+  req.params.comparto = "sala_fitness"
+  postCalendarioDuplica(req, res, next)
+})
 dataRouter.get("/corsi/gestione", getCorsiGestione)
 dataRouter.patch("/corsi/gestione", patchCorsiGestione)
 dataRouter.get("/corsi/clienti-search", getCorsiClientiSearch)
