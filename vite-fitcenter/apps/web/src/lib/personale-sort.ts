@@ -4,10 +4,45 @@ function normalizza(s: string): string {
 
 const collator = new Intl.Collator("it", { sensitivity: "base", ignorePunctuation: true, numeric: false })
 
+const NOME_PLACEHOLDER = /^x+$/i
+
+/** Per tabella personale: celle Nome / Cognome (nome, cognome) anche se in DB è invertito o «X» + «Cognome Nome». */
+export function displayNomeCognome(p: {
+  nome?: string
+  cognome?: string
+  nominativo?: string
+}): { nome: string; cognome: string } {
+  let nome = normalizza(p.nome ?? "")
+  let cognome = normalizza(p.cognome ?? "")
+
+  const splitCognomeNome = (full: string) => {
+    const parts = full.split(" ").filter(Boolean)
+    if (parts.length < 2) return null
+    return { cognome: parts[0]!, nome: parts.slice(1).join(" ") }
+  }
+
+  if (NOME_PLACEHOLDER.test(nome) && cognome.includes(" ")) {
+    const s = splitCognomeNome(cognome)
+    if (s) return s
+  }
+
+  if (!nome && cognome.includes(" ")) {
+    const s = splitCognomeNome(cognome)
+    if (s) return s
+  }
+
+  const nom = normalizza(p.nominativo ?? "")
+  if (nom.includes(" ") && (NOME_PLACEHOLDER.test(nome) || !nome)) {
+    const s = splitCognomeNome(nom)
+    if (s) return s
+  }
+
+  return { nome, cognome }
+}
+
 function chiaveNomeCognome(p: { nome?: string; cognome?: string; nominativo?: string }): string {
-  const n = normalizza(p.nome ?? "")
-  const c = normalizza(p.cognome ?? "")
-  if (n || c) return `${c} ${n}`.trim()
+  const { nome, cognome } = displayNomeCognome(p)
+  if (nome || cognome) return `${cognome} ${nome}`.trim()
   return normalizza(p.nominativo ?? "")
 }
 

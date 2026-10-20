@@ -1250,7 +1250,7 @@ export function cmpPersonaleNomeCognome(
   const chiave = (p: { nome?: string; cognome?: string; nominativo?: string }) => {
     const n = (p.nome ?? "").trim().replace(/\s+/g, " ")
     const c = (p.cognome ?? "").trim().replace(/\s+/g, " ")
-    if (n || c) return `${n} ${c}`.trim()
+    if (n || c) return `${c} ${n}`.trim()
     return (p.nominativo ?? "").trim().replace(/\s+/g, " ")
   }
   return collatorPersonale.compare(chiave(a), chiave(b))

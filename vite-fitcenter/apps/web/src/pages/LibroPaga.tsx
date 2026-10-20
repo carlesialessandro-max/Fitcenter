@@ -32,7 +32,7 @@ import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personal
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
-import { cmpNomeCognome } from "@/lib/personale-sort"
+import { cmpNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 
 type Tab = "home" | "livelli" | "personale" | "turni" | "convalide" | "mensilita" | "report" | "collaboratori"
@@ -510,10 +510,12 @@ function PersonaleTab({
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const { nome: nomeVis, cognome: cognomeVis } = displayNomeCognome(r)
+              return (
               <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="px-3 py-2">{r.nome}</td>
-                <td className="px-3 py-2">{r.cognome ?? "—"}</td>
+                <td className="px-3 py-2">{nomeVis || "—"}</td>
+                <td className="px-3 py-2">{cognomeVis || "—"}</td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{r.username ?? "—"}</td>
                 <td className="px-3 py-2">
                   <select
@@ -562,7 +564,8 @@ function PersonaleTab({
                   </button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

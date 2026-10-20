@@ -14,7 +14,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
-import { cmpNomeCognome, cmpRuoloNomeCognome } from "@/lib/personale-sort"
+import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 
 const inputCls =
@@ -953,10 +953,11 @@ function Personale({
                     </td>
                   </tr>
                 ) : null
+              const { nome: nomeVis, cognome: cognomeVis } = displayNomeCognome(p)
               const row = (
                 <tr key={p.id} className="border-t border-zinc-800 text-zinc-200">
-                  <td className="px-3 py-2">{p.nome}</td>
-                  <td className="px-3 py-2">{p.cognome ?? "—"}</td>
+                  <td className="px-3 py-2">{nomeVis || "—"}</td>
+                  <td className="px-3 py-2">{cognomeVis || "—"}</td>
                   <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
                   <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
                   <td className="px-3 py-2">{p.repartoNome}</td>
