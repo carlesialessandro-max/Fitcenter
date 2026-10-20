@@ -224,6 +224,9 @@ function eventsMatchingCalendarDay(events: CalendarioMergedEvent[], d: Date): Ca
   const iso = isoYmdFromDate(d)
   const dated = events.filter((e) => eventDateIso(e) === iso)
   if (dated.length) return dated
+  // Disabilita fallback per date dopo il 9 novembre 2026 (la sala fitness non ripropone l'anno precedente)
+  const cutoff = new Date(2026, 10, 9) // 9 novembre 2026 (mese 10 = novembre in JS)
+  if (d >= cutoff) return []
   return events.filter((e) => !eventDateIso(e) && e.dow === d.getDay())
 }
 
