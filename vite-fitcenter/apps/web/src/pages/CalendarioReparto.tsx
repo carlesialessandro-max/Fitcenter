@@ -1132,7 +1132,7 @@ function CreateSlotModal({
         title: tit,
         zona: zonaOut,
         istruttoreId: istruttoreId || null,
-        staffOverride: istruttoreId ? null : staffText.trim() || null,
+        staffOverride: staffText.trim() || null,
         note: note.trim() || null,
       })
       onCreated()

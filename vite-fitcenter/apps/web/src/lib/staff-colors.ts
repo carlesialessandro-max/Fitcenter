@@ -164,15 +164,15 @@ export function staffLaneLabel(e: {
   staff?: string | null
   staffOverride?: string | null
 }): string {
-  const display = String(e.staffDisplay ?? "").trim()
   const raw = excelStaffName(e)
-  const alias = staffAliasKey(raw) ?? staffAliasKey(display)
-  if (alias && STAFF_LANE_LABEL[alias]) return STAFF_LANE_LABEL[alias]
-  const t = (display && display !== "—" ? display : raw || "").trim()
+  const display = String(e.staffDisplay ?? "").trim()
+  const t = (raw && raw !== "—" ? raw : display).trim()
   if (!t || t === "—") return "—"
+  const alias = staffAliasKey(t)
+  if (alias && STAFF_LANE_LABEL[alias] && !/\s/.test(t)) return STAFF_LANE_LABEL[alias]
   const parts = t.split(/\s+/).filter(Boolean)
   if (parts.length >= 2 && parts[0]!.length <= 2) return `${parts[0]} ${parts[1]}`
-  return parts[0] ?? t
+  return t
 }
 
 export function staffPillClasses(key: string): string {

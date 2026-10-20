@@ -643,11 +643,12 @@ function staffOverrideFromRevision(rev: string | null | undefined, baseStaff: st
 }
 
 function displayStaff(e: CalendarioMergedEvent, instructors: CalendarioIstruttore[]): string {
+  const libero = e.staffOverride != null ? String(e.staffOverride).trim() : ""
+  if (libero && !isPlaceholderStaff(libero)) return libero
   if (e.istruttoreId) {
     const ins = instructors.find((x) => x.id === e.istruttoreId)
     if (ins) return `${ins.cognome} ${ins.nome}`.trim()
   }
-  if (e.staffOverride != null && String(e.staffOverride).trim()) return String(e.staffOverride).trim()
   return e.staff.trim() || "—"
 }
 
