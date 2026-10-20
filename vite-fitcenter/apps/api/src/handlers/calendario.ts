@@ -600,7 +600,7 @@ export function getCalendarioPianoOperativo(req: Request, res: Response) {
 
 export function getCalendarioComparto(req: Request, res: Response) {
   const u = req.user!
-  const raw = String(req.params.comparto ?? "").trim()
+  const raw = normalizeCompartoParam(String(req.params.comparto ?? ""))
   if (!isComparto(raw)) return res.status(400).json({ message: "Comparto non valido" })
   if (!canReadComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
 
@@ -615,7 +615,7 @@ export function getCalendarioComparto(req: Request, res: Response) {
 
 export function patchCalendarioSlot(req: Request, res: Response) {
   const u = req.user!
-  const raw = String(req.params.comparto ?? "").trim()
+  const raw = normalizeCompartoParam(String(req.params.comparto ?? ""))
   if (!isComparto(raw)) return res.status(400).json({ message: "Comparto non valido" })
   if (!canWriteComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
 
@@ -832,10 +832,15 @@ function slotCopyFingerprint(e: {
 
 const DUPLICABLE_COMPARTI: CalendarioComparto[] = [...MANUAL_ONLY_COMPARTI, "sala_fitness"]
 
+/** Normalizza il comparto dal parametro URL (Express decodifica underscore come spazio). */
+function normalizeCompartoParam(raw: string): string {
+  return raw.trim().replace(/\s+/g, "_")
+}
+
 /** Copia tutti i turni di un giorno o di una settimana su un'altra data. */
 export function postCalendarioDuplica(req: Request, res: Response) {
   const u = req.user!
-  const raw = String(req.params.comparto ?? "").trim()
+  const raw = normalizeCompartoParam(String(req.params.comparto ?? ""))
   if (!isComparto(raw)) return res.status(400).json({ message: "Comparto non valido" })
   if (!canWriteComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
   if (!DUPLICABLE_COMPARTI.includes(raw)) {
@@ -1103,7 +1108,7 @@ function formatTurnoLine(e: CalendarioMergedEvent): string {
 /** Invia via email i turni settimana tipo al bagnino (solo calendario piscina). */
 export async function postCalendarioSendTurni(req: Request, res: Response) {
   const u = req.user!
-  const raw = String(req.params.comparto ?? "").trim()
+  const raw = normalizeCompartoParam(String(req.params.comparto ?? ""))
   if (raw !== "piscina") return res.status(400).json({ message: "Invio email disponibile solo per il calendario bagnini" })
   if (!canWriteComparto(u, "piscina")) return res.status(403).json({ message: "Permessi insufficienti" })
 
