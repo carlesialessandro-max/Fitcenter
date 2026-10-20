@@ -7,11 +7,11 @@ const collator = new Intl.Collator("it", { sensitivity: "base", ignorePunctuatio
 function chiaveNomeCognome(p: { nome?: string; cognome?: string; nominativo?: string }): string {
   const n = normalizza(p.nome ?? "")
   const c = normalizza(p.cognome ?? "")
-  if (n || c) return `${n} ${c}`.trim()
+  if (n || c) return `${c} ${n}`.trim()
   return normalizza(p.nominativo ?? "")
 }
 
-/** Dentro ogni ruolo: nome, poi cognome. */
+/** Dentro ogni ruolo: cognome, poi nome (ordinamento alfabetico standard). */
 export function cmpNomeCognome(
   a: { nome?: string; cognome?: string; nominativo?: string },
   b: { nome?: string; cognome?: string; nominativo?: string }
