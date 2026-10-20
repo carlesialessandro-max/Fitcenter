@@ -553,7 +553,7 @@ function PersonaleTab({
                     type="button"
                     className="text-xs text-red-400 hover:underline"
                     onClick={() => {
-                      const nome = r.nominativo ?? `${r.cognome ?? ""} ${r.nome}`.trim()
+                      const nome = r.nominativo ?? `${r.nome} ${r.cognome ?? ""}`.trim()
                       if (!window.confirm(`Eliminare ${nome} dal libro paga? Vengono cancellati anche i suoi turni.`)) return
                       delMut.mutate(r.id)
                     }}
@@ -757,7 +757,7 @@ function TurniTab({
         .sort(cmpNomeCognome)
         .map((p) => ({
           id: p.id,
-          label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim(),
+          label: p.nominativo ?? `${p.nome} ${p.cognome ?? ""}`.trim(),
         })),
     [attiviP]
   )
@@ -932,7 +932,7 @@ function PersonaleDelegheAdmin({
     .sort(cmpNomeCognome)
     .map((p) => ({
       id: p.id,
-      label: `${p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
+      label: `${p.nominativo ?? `${p.nome} ${p.cognome ?? ""}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
     }))
   if (!managers.length) return null
   return (
@@ -947,7 +947,7 @@ function PersonaleDelegheAdmin({
           <select value={managerId} onChange={(e) => setManagerId(e.target.value)} className={inputCls}>
             {managers.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.nominativo ?? `${m.cognome ?? ""} ${m.nome}`.trim()}
+                {m.nominativo ?? `${m.nome} ${m.cognome ?? ""}`.trim()}
                 {m.repartoNome ? ` · ${m.repartoNome}` : ""}
               </option>
             ))}
