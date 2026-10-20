@@ -328,14 +328,37 @@ function addDaysIso(iso: string, days: number): string | null {
   return isoYmdFromDate(d)
 }
 
-/** L'Excel sala pesi termina ad aprile 2026: ripete solo l'ultimo anno (52 settimane) in avanti. */
-function projectDatedEventsForward(events: CalendarioMergedEvent[]): CalendarioMergedEvent[] {
+function mondayIsoOfToday(): string {
+  const now = new Date()
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const js = d.getDay()
+  d.setDate(d.getDate() - (js === 0 ? 6 : js - 1))
+  return isoYmdFromDate(d)
+}
+
+/** Chiave scritta dall'import Excel, non da «Aggiungi turno» / duplica. */
+function isExcelSalaStableKey(stableKey: string): boolean {
+  return /^sala_fitness\|\d{4}-\d{2}-\d{2}\|/.test(String(stableKey ?? ""))
+}
+
+function salaManualStableKey(e: {
+  zona?: string
+  start: string
+  title: string
+  dateIso: string
+  staff: string
+}): string {
+  const zona = String(e.zona ?? "sala_fitness").trim() || "sala_fitness"
+  return stableKeyFromParts(zona, 0, e.start, `${e.title}|${e.dateIso}|${e.staff}`)
+}
+
+/** L'Excel sala pesi termina ad aprile 2026: ripete l'ultimo anno, ma non dalla settimana attuale in poi. */
+function projectDatedEventsForward(events: CalendarioMergedEvent[], beforeIso?: string): CalendarioMergedEvent[] {
   const dated = events.filter((e) => isIsoDate(String(e.dateIso ?? "")))
   if (!dated.length) return events
   const maxIso = dated.map((e) => String(e.dateIso)).sort()[dated.length - 1]!
-  const now = new Date()
-  const horizonIso = isoYmdFromDate(new Date(now.getFullYear(), now.getMonth() + 18, 1))
-  if (maxIso >= horizonIso) return events
+  const cutIso = beforeIso && isIsoDate(beforeIso) ? beforeIso : mondayIsoOfToday()
+  if (maxIso >= cutIso) return events
   const minSourceIso = addDaysIso(maxIso, -52 * 7) ?? maxIso
   const existing = new Set(
     dated.map((e) => `${e.dateIso}|${e.start}|${String(e.staffOverride ?? e.staff ?? "").trim()}`)
@@ -350,7 +373,7 @@ function projectDatedEventsForward(events: CalendarioMergedEvent[]): CalendarioM
       if (!next) break
       iso = next
       if (next <= maxIso) continue
-      if (next > horizonIso) break
+      if (next >= cutIso) break
       const staff = String(e.staffOverride ?? e.staff ?? "").trim()
       const key = `${next}|${e.start}|${staff}`
       if (existing.has(key)) continue
@@ -369,6 +392,88 @@ function projectDatedEventsForward(events: CalendarioMergedEvent[]): CalendarioM
   return extra.length ? [...events, ...extra] : events
 }
 
+/** Trasforma la settimana in corso in turni reali (modificabili) e toglie l'Excel da oggi in poi. */
+function materializeCurrentSalaFitnessWeek(db: CalendarioDb): CalendarioDb {
+  const monday = mondayIsoOfToday()
+  const nextMonday = addDaysIso(monday, 7)
+  if (!nextMonday) return db
+  const sentinel = `sala_fitness|cutoff|${monday}`
+  const existingCutoff = db.revisions
+    .filter((r) => r.comparto === "sala_fitness" && String(r.stableKey).startsWith("sala_fitness|cutoff|"))
+    .map((r) => String(r.dateIso ?? "").trim())
+    .filter((d) => isIsoDate(d))
+    .sort()[0]
+  const alreadyCut = Boolean(existingCutoff)
+  const source = alreadyCut
+    ? []
+    : coalesceSalaFitnessShifts(
+        projectDatedEventsForward(mergeServerSeededFromDb("sala_fitness", db), nextMonday),
+      )
+  let next = db
+  let changed = false
+  const now = new Date().toISOString()
+
+  if (!alreadyCut) {
+  for (let i = 0; i < 7; i++) {
+    const iso = addDaysIso(monday, i)
+    if (!iso) continue
+    for (const e of source.filter((x) => eventDateIso(x) === iso)) {
+      const staff = String(e.staffOverride ?? e.staff ?? "").trim()
+      if (!staff || staff === "—") continue
+      const start = normalizeHm(e.start)
+      const title = String(e.title ?? "Sala pesi").trim() || "Sala pesi"
+      const zona = String(e.zona ?? "sala_fitness").trim() || "sala_fitness"
+      const stableKey = salaManualStableKey({ zona, start, title, dateIso: iso, staff })
+      if (next.revisions.some((r) => r.comparto === "sala_fitness" && r.stableKey === stableKey && !r.removed)) continue
+      next = upsertRevision(next, {
+        comparto: "sala_fitness",
+        stableKey,
+        dow: e.dow,
+        dateIso: iso,
+        start,
+        title,
+        zona,
+        istruttoreId: e.istruttoreId ?? null,
+        staffOverride: staff,
+        note: e.note ?? null,
+        updatedAt: now,
+        updatedBy: "sala-fitness-materialize",
+      })
+      changed = true
+    }
+  }
+  }
+
+  const kept = next.revisions.filter((r) => {
+    if (r.comparto !== "sala_fitness") return true
+    if (r.stableKey === sentinel) return true
+    const d = String(r.dateIso ?? "").trim()
+    const from = existingCutoff && existingCutoff < monday ? existingCutoff : monday
+    if (!d || d < from) return true
+    return !isExcelSalaStableKey(r.stableKey)
+  })
+  if (kept.length !== next.revisions.length) {
+    next = { ...next, revisions: kept }
+    changed = true
+  }
+  if (!alreadyCut && !next.revisions.some((r) => r.comparto === "sala_fitness" && r.stableKey === sentinel)) {
+    next = upsertRevision(next, {
+      comparto: "sala_fitness",
+      stableKey: sentinel,
+      dow: 1,
+      dateIso: monday,
+      start: "00:00",
+      title: "cutoff",
+      zona: "sala_fitness",
+      updatedAt: now,
+      updatedBy: "sala-fitness-materialize",
+    })
+    changed = true
+  }
+  if (changed) writeCalendarioDb(next)
+  return next
+}
+
 /** Tutte le revisioni del comparto (scuola nuoto dopo import una tantum). */
 function isGhostScuolaNuoto(r: { title?: string }): boolean {
   return /^BIANCO\b/i.test(String(r.title ?? "").trim())
@@ -379,6 +484,7 @@ function mergeServerSeededFromDb(comparto: CalendarioComparto, db: CalendarioDb)
   for (const r of db.revisions) {
     if (r.comparto !== comparto || r.removed) continue
     if (comparto === "scuola_nuoto" && isGhostScuolaNuoto(r)) continue
+    if (comparto === "sala_fitness" && String(r.stableKey).startsWith("sala_fitness|cutoff|")) continue
     out.push(revisionToMergedEvent(comparto, r))
   }
   const order = (d: number) => (d === 0 ? 7 : d)
@@ -454,7 +560,12 @@ function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): Calen
       events = mergeServerSeededFromDb(comparto, seededDb)
       if (events.length > 0) writeCalendarioDb(seededDb)
     }
-    if (comparto === "sala_fitness") events = coalesceSalaFitnessShifts(projectDatedEventsForward(events))
+    if (comparto === "sala_fitness") {
+      seededDb = materializeCurrentSalaFitnessWeek(seededDb)
+      events = coalesceSalaFitnessShifts(
+        projectDatedEventsForward(mergeServerSeededFromDb(comparto, seededDb), mondayIsoOfToday()),
+      )
+    }
     return events
   }
 
@@ -632,6 +743,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     staffOverride?: string | null
     note?: string | null
     clear?: boolean
+    mergedStableKeys?: string[]
   }
 
   let db = readCalendarioDb()
@@ -639,7 +751,9 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   if (body.clear) {
     const stableKey = String(body.stableKey ?? "").trim()
     if (!stableKey) return res.status(400).json({ message: "stableKey obbligatorio" })
-    db = deleteRevision(db, raw, stableKey)
+    const extra = Array.isArray(body.mergedStableKeys) ? body.mergedStableKeys : []
+    const keys = [...new Set([stableKey, ...extra.map((k) => String(k ?? "").trim()).filter(Boolean)])]
+    for (const k of keys) db = deleteRevision(db, raw, k)
     writeCalendarioDb(db)
     return res.json({ ok: true })
   }
@@ -659,7 +773,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     const start = normalizeHm(String(body.start ?? "").trim())
     const dateIsoRaw = body.dateIso != null ? String(body.dateIso).trim() : ""
     const dateIso = dateIsoRaw && isIsoDate(dateIsoRaw) ? dateIsoRaw : null
-    if (MANUAL_ONLY_COMPARTI.includes(raw) && !dateIso) {
+    if ((MANUAL_ONLY_COMPARTI.includes(raw) || raw === "sala_fitness") && !dateIso) {
       return res.status(400).json({ message: "dateIso obbligatorio (YYYY-MM-DD) per slot su un giorno specifico" })
     }
     const defaultZona =
@@ -722,8 +836,12 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     const deleteFromDb =
       stableKey.startsWith("manual-") || MANUAL_ONLY_COMPARTI.includes(raw) || SERVER_SEEDED_COMPARTI.includes(raw)
     if (deleteFromDb) {
-      if (!prevRev && !stableKey.startsWith("manual-")) return res.status(404).json({ message: "Slot non trovato" })
-      db = deleteRevision(db, raw, stableKey)
+      if (!prevRev && !stableKey.startsWith("manual-") && raw !== "sala_fitness") {
+        return res.status(404).json({ message: "Slot non trovato" })
+      }
+      const extra = Array.isArray(body.mergedStableKeys) ? body.mergedStableKeys : []
+      const keys = [...new Set([stableKey, ...extra.map((k) => String(k ?? "").trim()).filter(Boolean)])]
+      for (const k of keys) db = deleteRevision(db, raw, k)
       writeCalendarioDb(db)
       return res.json({ ok: true })
     }
@@ -748,7 +866,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     return res.status(404).json({ message: "Slot non trovato" })
   }
 
-  if (SERVER_SEEDED_COMPARTI.includes(raw) && !prevRev && !stableKey.startsWith("manual-")) {
+  if (SERVER_SEEDED_COMPARTI.includes(raw) && !prevRev && !stableKey.startsWith("manual-") && raw !== "sala_fitness") {
     return res.status(404).json({ message: "Slot non trovato" })
   }
 
@@ -766,13 +884,45 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     return res.status(400).json({ message: "dow, start, title obbligatori per salvataggio" })
   }
 
+  const zonaOut = String(body.zona ?? baseEv?.zona ?? prevRev?.zona ?? defaultZonaManual(raw))
+  const istruttoreIdOut = body.istruttoreId === undefined ? prevRev?.istruttoreId ?? null : body.istruttoreId
+  const staffOverrideOut = body.staffOverride === undefined ? prevRev?.staffOverride : body.staffOverride
+
+  if (raw === "sala_fitness") {
+    if (!dateIso) return res.status(400).json({ message: "dateIso obbligatorio" })
+    const staffName = String(staffOverrideOut ?? "").trim() || String(prevRev?.staffOverride ?? "").trim()
+    const staffForKey = staffName || String(istruttoreIdOut ?? "").trim() || "turno"
+    const nextKey = salaManualStableKey({ zona: zonaOut, start, title, dateIso, staff: staffForKey })
+    const extra = Array.isArray(body.mergedStableKeys) ? body.mergedStableKeys : []
+    const stale = [...new Set([stableKey, ...extra.map((k) => String(k ?? "").trim()).filter(Boolean)])].filter(
+      (k) => k !== nextKey,
+    )
+    for (const k of stale) db = deleteRevision(db, raw, k)
+    db = upsertRevision(db, {
+      comparto: raw,
+      stableKey: nextKey,
+      dow,
+      dateIso,
+      start,
+      title,
+      zona: zonaOut,
+      istruttoreId: istruttoreIdOut,
+      staffOverride: staffName || null,
+      note: body.note === undefined ? prevRev?.note : body.note,
+      removed: false,
+      updatedAt: now,
+      updatedBy: by,
+    })
+    writeCalendarioDb(db)
+    return res.json({ ok: true, stableKey: nextKey })
+  }
+
   const rev: CalendarioSlotRevision = {
     comparto: raw,
     stableKey,
     dow,
     dateIso:
       MANUAL_ONLY_COMPARTI.includes(raw) ||
-      raw === "sala_fitness" ||
       (stableKey.startsWith("manual-") && !SERVER_SEEDED_COMPARTI.includes(raw))
         ? dateIso
         : SERVER_SEEDED_COMPARTI.includes(raw)
@@ -780,9 +930,9 @@ export function patchCalendarioSlot(req: Request, res: Response) {
           : undefined,
     start,
     title,
-    zona: String(body.zona ?? baseEv?.zona ?? prevRev?.zona ?? defaultZonaManual(raw)),
-    istruttoreId: body.istruttoreId === undefined ? prevRev?.istruttoreId ?? null : body.istruttoreId,
-    staffOverride: body.staffOverride === undefined ? prevRev?.staffOverride : body.staffOverride,
+    zona: zonaOut,
+    istruttoreId: istruttoreIdOut,
+    staffOverride: staffOverrideOut,
     note: body.note === undefined ? prevRev?.note : body.note,
     removed: false,
     updatedAt: now,
@@ -877,6 +1027,7 @@ export function postCalendarioDuplica(req: Request, res: Response) {
 
   let db = readCalendarioDb()
   const events = mergeForComparto(raw, db)
+  db = readCalendarioDb()
   const now = new Date().toISOString()
   const by = u.nome || u.username
   let copied = 0
@@ -889,7 +1040,19 @@ export function postCalendarioDuplica(req: Request, res: Response) {
     const destDow = destDate.getDay()
     // Per duplicazione: usa solo eventi con data specifica, niente fallback per giorno della settimana
     const srcEvents = events.filter((e) => eventDateIso(e) === src)
-    const destKeys = new Set(events.filter((e) => eventDateIso(e) === dest).map(slotCopyFingerprint))
+    if (raw === "sala_fitness") {
+      db = {
+        ...db,
+        revisions: db.revisions.filter(
+          (r) => !(r.comparto === raw && r.dateIso === dest && isExcelSalaStableKey(r.stableKey)),
+        ),
+      }
+    }
+    const destKeys = new Set(
+      events
+        .filter((e) => eventDateIso(e) === dest && (raw !== "sala_fitness" || !isExcelSalaStableKey(e.stableKey)))
+        .map(slotCopyFingerprint),
+    )
 
     for (const e of srcEvents) {
       const fp = slotCopyFingerprint(e)

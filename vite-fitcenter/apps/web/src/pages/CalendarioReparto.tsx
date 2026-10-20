@@ -1324,8 +1324,8 @@ function DuplicatePeriodModal({
       >
         <h2 className="text-base font-semibold text-zinc-100">Duplica turni</h2>
         <p className="text-sm text-zinc-400">
-          Copia tutti gli slot su un altro giorno o sulla settimana successiva. I turni già presenti in destinazione
-          (stesso orario, titolo e persona) non vengono sovrascritti.
+          Copia i turni della settimana (o del giorno) che stai vedendo. Destinazione consigliata: la settimana
+          successiva. I turni già presenti in destinazione (stesso orario, titolo e persona) non vengono sovrascritti.
         </p>
         <div className="grid grid-cols-2 gap-1">
           {(
@@ -1484,18 +1484,16 @@ export function CalendarioRepartoPage() {
         const primary = keys[0] || e.stableKey
         await calendarioApi.patchSlot(apiComparto, {
           stableKey: primary,
+          mergedStableKeys: keys,
           dow: p.dow,
           dateIso: dateIso ?? null,
           start: p.start,
           title: p.title,
           zona: p.zona,
           istruttoreId: p.istruttoreId || null,
-          staffOverride: p.istruttoreId ? null : staffTrim || null,
+          staffOverride: staffTrim || null,
           note: noteTrim || null,
         })
-        for (const stableKey of keys.slice(1)) {
-          await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
-        }
         await reload()
         setEditEvent(null)
         setEditCalendarDate(null)
@@ -1510,9 +1508,8 @@ export function CalendarioRepartoPage() {
     async (e: CalEvent) => {
       if (!apiComparto || !canWrite) return
       try {
-        for (const stableKey of shiftRevisionKeys(e)) {
-          await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
-        }
+        const keys = shiftRevisionKeys(e)
+        await calendarioApi.patchSlot(apiComparto, { stableKey: keys[0] || e.stableKey, mergedStableKeys: keys, clear: true })
         await reload()
         setEditEvent(null)
         setEditCalendarDate(null)
@@ -1529,9 +1526,11 @@ export function CalendarioRepartoPage() {
       const keys = shiftRevisionKeys(e)
       if (compartoIsManualServer(apiComparto) || compartoIsServerSeeded(apiComparto)) {
         try {
-          for (const stableKey of keys) {
-            await calendarioApi.patchSlot(apiComparto, { stableKey, clear: true })
-          }
+          await calendarioApi.patchSlot(apiComparto, {
+            stableKey: keys[0] || e.stableKey,
+            mergedStableKeys: keys,
+            clear: true,
+          })
           await reload()
           setEditEvent(null)
           setEditCalendarDate(null)

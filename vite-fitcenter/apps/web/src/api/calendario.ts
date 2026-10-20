@@ -81,6 +81,7 @@ export type PatchCalendarioSlotBody = {
   istruttoreId?: string | null
   staffOverride?: string | null
   note?: string | null
+  mergedStableKeys?: string[]
 }
 
 export const calendarioApi = {
