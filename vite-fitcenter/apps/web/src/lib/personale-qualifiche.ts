@@ -5,6 +5,7 @@ export const PERSONALE_QUALIFICHE = [
   { id: "rls", label: "RLS" },
   { id: "responsabile_piscina", label: "Responsabile piscina e impianti tecnologici" },
   { id: "blsd", label: "BLSD" },
+  { id: "brevetto_assistente_bagnante", label: "Brevetto assistente bagnante" },
   { id: "visita_medica", label: "Visita medica" },
 ] as const
 
@@ -18,6 +19,7 @@ export const VALIDITA_ANNI_QUALIFICA: Record<PersonaleQualificaId, number> = {
   rls: 1,
   responsabile_piscina: 5,
   blsd: 2,
+  brevetto_assistente_bagnante: 5,
   visita_medica: 1,
 }
 

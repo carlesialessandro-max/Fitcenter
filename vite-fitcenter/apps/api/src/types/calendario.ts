@@ -26,7 +26,7 @@ export type CalendarioIstruttore = {
   tesseramento?: string
   /** Scadenza tessera YYYY-MM-DD. */
   tesseramentoScadenza?: string | null
-  /** Corsi sicurezza: sicurezza_luogo_lavoro, antincendio, primo_soccorso, rls, responsabile_piscina, blsd. */
+  /** Corsi sicurezza: sicurezza_luogo_lavoro, antincendio, primo_soccorso, rls, responsabile_piscina, blsd, brevetto_assistente_bagnante. */
   qualifiche?: string[]
   createdAt: string
   updatedAt: string

@@ -240,6 +240,7 @@ const QUALIFICHE_PERSONALE = [
   "rls",
   "responsabile_piscina",
   "blsd",
+  "brevetto_assistente_bagnante",
 ] as const
 
 function parseTesseramentoScadenza(v: unknown): string | null {

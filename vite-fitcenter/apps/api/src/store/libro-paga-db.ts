@@ -27,6 +27,7 @@ export const LPAGA_QUALIFICHE = [
   "rls",
   "responsabile_piscina",
   "blsd",
+  "brevetto_assistente_bagnante",
   "visita_medica",
 ] as const
 
