@@ -259,9 +259,7 @@ function main() {
   const lastIso = datesExcel[datesExcel.length - 1]
   const today = new Date()
   const horizon = ymdFromDate(new Date(today.getFullYear(), today.getMonth() + 18, 1))
-  // Disabilita proiezione oltre il 9 novembre 2026 - la sala fitness non ripropone l'anno precedente
-  const cutoff = ymdFromDate(new Date(2026, 10, 9)) // 9 novembre 2026
-  if (lastIso && lastIso < horizon && lastIso < cutoff) {
+  if (lastIso && lastIso < horizon) {
     const minSource = (() => {
       const d = new Date(Number(lastIso.slice(0, 4)), Number(lastIso.slice(5, 7)) - 1, Number(lastIso.slice(8, 10)))
       d.setDate(d.getDate() - 52 * 7)
@@ -277,7 +275,6 @@ function main() {
         const next = ymdFromDate(d0)
         if (next <= lastIso) continue
         if (next > horizon) break
-        if (next >= cutoff) break // Non proiettare oltre il 9 novembre 2026
         const k = `${next}|${e.start}|${e.staff}`
         if (seen.has(k)) continue
         seen.add(k)
