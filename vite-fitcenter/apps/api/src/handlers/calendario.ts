@@ -882,8 +882,9 @@ export function postCalendarioDuplica(req: Request, res: Response) {
     const destDate = parseIsoLocal(dest)
     if (!srcDate || !destDate) continue
     const destDow = destDate.getDay()
-    const srcEvents = eventsMatchingCalendarDay(events, srcDate)
-    const destKeys = new Set(eventsMatchingCalendarDay(events, destDate).map(slotCopyFingerprint))
+    // Per duplicazione: usa solo eventi con data specifica, niente fallback per giorno della settimana
+    const srcEvents = events.filter((e) => eventDateIso(e) === src)
+    const destKeys = new Set(events.filter((e) => eventDateIso(e) === dest).map(slotCopyFingerprint))
 
     for (const e of srcEvents) {
       const fp = slotCopyFingerprint(e)
