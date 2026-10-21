@@ -628,6 +628,8 @@ function PersonaleTab({
           {previewReparti && (
             <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-300">
+                <span>Personale attivo (tutti i ruoli): {previewReparti.personaleAttivo}</span>
+                <span>Persone con turni mappati: {previewReparti.personeConTurniMappati}</span>
                 <span>Turni esaminati: {previewReparti.turniConsiderati}</span>
                 <span>Persone con reparti da aggiungere: {previewReparti.personeConModifiche}</span>
                 <span>Turni senza personale attivo: {previewReparti.turniSenzaPersonale}</span>
@@ -640,6 +642,7 @@ function PersonaleTab({
                         <th className="px-3 py-2">Personale</th>
                         <th className="px-3 py-2">Reparti risultanti</th>
                         <th className="px-3 py-2">Turni</th>
+                        <th className="px-3 py-2">Turni senza reparto</th>
                         <th className="px-3 py-2">Esito</th>
                       </tr>
                     </thead>
@@ -651,6 +654,7 @@ function PersonaleTab({
                             {person.repartiSuggeriti.length > 0 ? person.repartiSuggeriti.join(", ") : "—"}
                           </td>
                           <td className="px-3 py-2">{person.turniConsiderati}</td>
+                          <td className="px-3 py-2">{person.turniSenzaReparto}</td>
                           <td className="px-3 py-2">{person.modifiche ? "Da assegnare" : "Già presente"}</td>
                         </tr>
                       ))}
@@ -668,6 +672,39 @@ function PersonaleTab({
                 <p className="text-xs text-amber-300">
                   I turni associati a personale non attivo o non più presente non verranno usati.
                 </p>
+              )}
+              {previewReparti.personaleEscluso.length > 0 && (
+                <details className="rounded border border-zinc-800">
+                  <summary className="cursor-pointer px-3 py-2 text-sm text-zinc-300">
+                    Esclusi dai suggerimenti: {previewReparti.personaleEscluso.length} persone
+                  </summary>
+                  <div className="max-h-72 overflow-auto border-t border-zinc-800">
+                    <table className="min-w-full text-left text-sm">
+                      <thead className="sticky top-0 bg-zinc-900 text-xs uppercase text-zinc-500">
+                        <tr>
+                          <th className="px-3 py-2">Personale</th>
+                          <th className="px-3 py-2">Motivo</th>
+                          <th className="px-3 py-2">Turni</th>
+                          <th className="px-3 py-2">Turni senza reparto</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {previewReparti.personaleEscluso.map((person) => (
+                          <tr key={person.personaleId} className="border-t border-zinc-800 text-zinc-300">
+                            <td className="px-3 py-2">{person.nominativo}</td>
+                            <td className="px-3 py-2">
+                              {person.motivo === "nessun_turno"
+                                ? "Nessun turno nel mese selezionato"
+                                : "Nessuna mansione mappata"}
+                            </td>
+                            <td className="px-3 py-2">{person.turniConsiderati}</td>
+                            <td className="px-3 py-2">{person.turniSenzaReparto}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
               )}
               <button
                 type="button"

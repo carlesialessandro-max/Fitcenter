@@ -23,15 +23,27 @@ type AssignmentSuggestion = {
   livelloIdsSuggeriti: string[]
   repartiSuggeriti: string[]
   turniConsiderati: number
+  turniSenzaReparto: number
   modifiche: boolean
+}
+
+type ExcludedPerson = {
+  personaleId: string
+  nominativo: string
+  motivo: "nessun_turno" | "nessuna_mansione_mappata"
+  turniConsiderati: number
+  turniSenzaReparto: number
 }
 
 export type LibroPagaRepartiPreview = {
   mese: string
+  personaleAttivo: number
+  personeConTurniMappati: number
   turniConsiderati: number
   turniSenzaPersonale: number
   attivitaSenzaReparto: { attivita: string; turni: number }[]
   personale: AssignmentSuggestion[]
+  personaleEscluso: ExcludedPerson[]
   personeConModifiche: number
 }
 
@@ -279,9 +291,10 @@ export function buildLibroPagaRepartiPreview(
   const peopleById = new Map(allPeople.filter((person) => person.attivo).map((person) => [person.id, person]))
   const levelsById = new Map(levels.map((level) => [level.id, level]))
   const suggestionByPerson = new Map<
-    string,
-    { person: LpagaPersonale; current: string[]; targets: Set<string>; count: number }
+    string, { person: LpagaPersonale; current: string[]; targets: Set<string>; count: number }
   >()
+  const turnsByPerson = new Map<string, number>()
+  const unmappedByPerson = new Map<string, number>()
   const unmapped = new Map<string, number>()
   let unmatched = 0
 
@@ -291,6 +304,7 @@ export function buildLibroPagaRepartiPreview(
       unmatched += 1
       continue
     }
+    turnsByPerson.set(person.id, (turnsByPerson.get(person.id) ?? 0) + 1)
 
     const activity = levelPath(shift.livelloId, levelsById).join(" ")
     const target = targetForActivity(activity)
@@ -298,6 +312,7 @@ export function buildLibroPagaRepartiPreview(
     if (!target || !level) {
       const label = target ? `${activity} -> ${target.key}` : activity || "Mansione senza nome"
       unmapped.set(label, (unmapped.get(label) ?? 0) + 1)
+      unmappedByPerson.set(person.id, (unmappedByPerson.get(person.id) ?? 0) + 1)
       continue
     }
 
@@ -323,19 +338,39 @@ export function buildLibroPagaRepartiPreview(
         livelloIdsSuggeriti: suggested,
         repartiSuggeriti: suggested.map((id) => levelsById.get(id)?.nome ?? id),
         turniConsiderati: count,
+        turniSenzaReparto: unmappedByPerson.get(person.id) ?? 0,
         modifiche: suggested.some((id) => !current.includes(id)),
+      }
+    })
+    .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+
+  const personnelWithMappedShifts = new Set(suggestionByPerson.keys())
+  const excluded = [...peopleById.values()]
+    .filter((person) => !personnelWithMappedShifts.has(person.id))
+    .map((person): ExcludedPerson => {
+      const turniConsiderati = turnsByPerson.get(person.id) ?? 0
+      const turniSenzaReparto = unmappedByPerson.get(person.id) ?? 0
+      return {
+        personaleId: person.id,
+        nominativo: person.cognome ? `${person.cognome} ${person.nome}` : person.nome,
+        motivo: turniConsiderati === 0 ? "nessun_turno" : "nessuna_mansione_mappata",
+        turniConsiderati,
+        turniSenzaReparto,
       }
     })
     .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
 
   return {
     mese: month,
+    personaleAttivo: peopleById.size,
+    personeConTurniMappati: suggestions.length,
     turniConsiderati: shifts.length,
     turniSenzaPersonale: unmatched,
     attivitaSenzaReparto: [...unmapped.entries()]
       .map(([attivita, turni]) => ({ attivita, turni }))
       .sort((a, b) => a.attivita.localeCompare(b.attivita, "it")),
     personale: suggestions,
+    personaleEscluso: excluded,
     personeConModifiche: suggestions.filter((suggestion) => suggestion.modifiche).length,
   }
 }

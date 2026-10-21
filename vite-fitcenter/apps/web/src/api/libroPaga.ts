@@ -188,6 +188,8 @@ export type LibroPagaSnapshot = {
 
 export type LibroPagaRepartiPreview = {
   mese: string
+  personaleAttivo: number
+  personeConTurniMappati: number
   turniConsiderati: number
   turniSenzaPersonale: number
   attivitaSenzaReparto: { attivita: string; turni: number }[]
@@ -198,7 +200,15 @@ export type LibroPagaRepartiPreview = {
     livelloIdsSuggeriti: string[]
     repartiSuggeriti: string[]
     turniConsiderati: number
+    turniSenzaReparto: number
     modifiche: boolean
+  }[]
+  personaleEscluso: {
+    personaleId: string
+    nominativo: string
+    motivo: "nessun_turno" | "nessuna_mansione_mappata"
+    turniConsiderati: number
+    turniSenzaReparto: number
   }[]
   personeConModifiche: number
 }
