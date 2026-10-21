@@ -3,6 +3,8 @@ import multer from "multer"
 import { requireAdmin, requireAuth } from "../middleware/auth.js"
 import {
   getLibroPaga,
+  getLibroPagaRepartiDaTurniPreview,
+  postLibroPagaRepartiDaTurni,
   patchLivello,
   patchPersonale,
   postImportDump,
@@ -41,6 +43,8 @@ export const libroPagaRouter = Router()
 libroPagaRouter.use(requireAuth, requireAdmin)
 
 libroPagaRouter.get("/", getLibroPaga)
+libroPagaRouter.get("/reparti-da-turni/preview", getLibroPagaRepartiDaTurniPreview)
+libroPagaRouter.post("/reparti-da-turni", postLibroPagaRepartiDaTurni)
 libroPagaRouter.post("/import-dump", dumpUpload.single("file"), postImportDump)
 libroPagaRouter.get("/snapshots", getLibroPagaSnapshots)
 libroPagaRouter.post("/snapshots", postLibroPagaSnapshotNow)

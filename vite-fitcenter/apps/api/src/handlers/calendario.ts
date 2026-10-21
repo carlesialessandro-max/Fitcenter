@@ -725,6 +725,20 @@ const CONVALIDA_COMPARTI: CalendarioComparto[] = [
   "campus",
 ]
 
+const ASSEGNAZIONE_COMPARTI: CalendarioComparto[] = [
+  "corsi",
+  "scuola_nuoto",
+  "piscina",
+  "reception",
+  "danza",
+  "campus",
+  "sala_fitness",
+  "acquaticita",
+  "spogliatoi",
+  "pulizie",
+  "consulenti",
+]
+
 /** Eventi calendario (orari + istruttore) per confrontare i turni Libro paga. */
 export function listCalendarioPerConvalida(): {
   instructors: CalendarioIstruttore[]
@@ -733,6 +747,21 @@ export function listCalendarioPerConvalida(): {
   const db = readCalendarioDb()
   const events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[] = []
   for (const comparto of CONVALIDA_COMPARTI) {
+    for (const e of mergeForComparto(comparto, db)) {
+      events.push({ ...e, comparto, staffDisplay: displayStaff(e, db.instructors) })
+    }
+  }
+  return { instructors: db.instructors, events }
+}
+
+/** Eventi di tutti i comparti, usati per proporre i reparti del Libro paga. */
+export function listCalendarioPerAssegnazione(): {
+  instructors: CalendarioIstruttore[]
+  events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[]
+} {
+  const db = readCalendarioDb()
+  const events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[] = []
+  for (const comparto of ASSEGNAZIONE_COMPARTI) {
     for (const e of mergeForComparto(comparto, db)) {
       events.push({ ...e, comparto, staffDisplay: displayStaff(e, db.instructors) })
     }

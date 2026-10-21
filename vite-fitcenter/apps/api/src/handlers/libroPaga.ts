@@ -49,6 +49,10 @@ function livelliFromBody(body: Record<string, unknown>) {
   return mergePersonaleLivelli(livelloId, ids)
 }
 import { enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
+import {
+  applyLibroPagaRepartiDaTurni,
+  previewLibroPagaRepartiDaTurni,
+} from "../services/libro-paga-reparti-da-turni.js"
 
 function statusOf(e: unknown): number {
   const n = (e as { status?: number })?.status
@@ -101,6 +105,34 @@ export async function postImportDump(req: Request, res: Response) {
 export async function getLibroPagaSnapshots(_req: Request, res: Response) {
   try {
     res.json({ snapshots: listLibroPagaSnapshots() })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function getLibroPagaRepartiDaTurniPreview(req: Request, res: Response) {
+  try {
+    const month = String(req.query.mese ?? "2026-09").trim()
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ message: "Mese non valido (YYYY-MM)" })
+    }
+    res.json(await previewLibroPagaRepartiDaTurni(month))
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLibroPagaRepartiDaTurni(req: Request, res: Response) {
+  try {
+    const month = String(req.body?.mese ?? "").trim()
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return res.status(400).json({ message: "Mese non valido (YYYY-MM)" })
+    }
+    const snapshot = saveLibroPagaSnapshot(
+      await exportFullFileDb(),
+      `prima assegnazione reparti da turni ${month}`,
+    )
+    res.json({ ...(await applyLibroPagaRepartiDaTurni(month)), snapshotId: snapshot.id })
   } catch (e) {
     fail(res, e)
   }

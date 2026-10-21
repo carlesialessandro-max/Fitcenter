@@ -186,12 +186,39 @@ export type LibroPagaSnapshot = {
   me?: { id: string; nominativo: string; ruolo: LpagaRuolo; repartoNome: string } | null
 }
 
+export type LibroPagaRepartiPreview = {
+  mese: string
+  turniConsiderati: number
+  turniSenzaAbbinamento: number
+  abbinamentiAmbigui: number
+  attivitaSenzaReparto: { attivita: string; turni: number }[]
+  personale: {
+    personaleId: string
+    nominativo: string
+    livelloIdsAttuali: string[]
+    livelloIdsSuggeriti: string[]
+    repartiSuggeriti: string[]
+    turniConsiderati: number
+    modifiche: boolean
+  }[]
+  personeConModifiche: number
+}
+
 export const libroPagaApi = {
   get: (mese: string, reparto?: string) => {
     const q = new URLSearchParams({ mese })
     if (reparto) q.set("reparto", reparto)
     return api.get<LibroPagaSnapshot>(`/libro-paga?${q.toString()}`)
   },
+  previewRepartiDaTurni: (mese: string) => {
+    const q = new URLSearchParams({ mese })
+    return api.get<LibroPagaRepartiPreview>(`/libro-paga/reparti-da-turni/preview?${q.toString()}`)
+  },
+  applyRepartiDaTurni: (mese: string) =>
+    api.post<{ preview: LibroPagaRepartiPreview; updated: number; snapshotId: string }>(
+      "/libro-paga/reparti-da-turni",
+      { mese },
+    ),
   importDump: (file: File) => {
     const fd = new FormData()
     fd.append("file", file)

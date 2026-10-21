@@ -858,6 +858,57 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
   return [...readFile().personale].sort(cmpPersonaleNomeCognome)
 }
 
+export async function setPersonaleLivelliBatch(
+  assignments: { id: string; livelloIds: string[] }[],
+): Promise<number> {
+  const normalized = assignments.map(({ id, livelloIds }) => ({
+    id: id.trim(),
+    livelloIds: [...new Set(livelloIds.map((x) => x.trim()).filter(Boolean))],
+  }))
+  if (normalized.some((x) => !x.id || !x.livelloIds.length) || new Set(normalized.map((x) => x.id)).size !== normalized.length) {
+    throw Object.assign(new Error("Assegnazioni dei reparti non valide"), { status: 400 })
+  }
+  if (!normalized.length) return 0
+
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (!p) throw new Error("SQL non disponibile")
+    const transaction = new sql.Transaction(p)
+    await transaction.begin()
+    try {
+      for (const assignment of normalized) {
+        const levels = mergePersonaleLivelli(undefined, assignment.livelloIds)
+        const req = new sql.Request(transaction)
+        req.input("Id", sql.NVarChar(64), assignment.id)
+        req.input("LivelloId", sql.NVarChar(64), levels.livelloId ?? null)
+        req.input("LivelloIds", sql.NVarChar(4000), JSON.stringify(levels.livelloIds ?? []))
+        const result = await req.query(`
+          UPDATE dbo.FcLibroPagaPersonale
+          SET LivelloId=@LivelloId, LivelloIds=@LivelloIds
+          WHERE Id=@Id
+        `)
+        if (result.rowsAffected[0] !== 1) {
+          throw Object.assign(new Error(`Persona non trovata: ${assignment.id}`), { status: 404 })
+        }
+      }
+      await transaction.commit()
+      return normalized.length
+    } catch (error) {
+      await transaction.rollback()
+      throw error
+    }
+  }
+
+  const db = readFile()
+  for (const assignment of normalized) {
+    const person = db.personale.find((x) => x.id === assignment.id)
+    if (!person) throw Object.assign(new Error(`Persona non trovata: ${assignment.id}`), { status: 404 })
+    Object.assign(person, mergePersonaleLivelli(undefined, assignment.livelloIds))
+  }
+  writeFile(db)
+  return normalized.length
+}
+
 export async function upsertPersonale(input: {
   id?: string
   nome: string

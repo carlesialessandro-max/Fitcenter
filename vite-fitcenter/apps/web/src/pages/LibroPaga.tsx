@@ -17,6 +17,7 @@ import {
 import {
   libroPagaApi,
   type LibroPagaSnapshot,
+  type LibroPagaRepartiPreview,
   type LpagaPersonale,
   type LpagaRuolo,
 } from "@/api/libroPaga"
@@ -435,6 +436,8 @@ function PersonaleTab({
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
   const [dettaglioId, setDettaglioId] = useState<string | null>(null)
+  const [meseTurni, setMeseTurni] = useState("2026-09")
+  const [previewReparti, setPreviewReparti] = useState<LibroPagaRepartiPreview | null>(null)
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
@@ -490,6 +493,26 @@ function PersonaleTab({
   const ruoloMut = useMutation({
     mutationFn: ({ id, ruolo }: { id: string; ruolo: LpagaRuolo }) => libroPagaApi.patchPersonale(id, { ruolo }),
     onSuccess: onDone,
+    onError: (e: Error) => onError(e.message),
+  })
+  const previewRepartiMut = useMutation({
+    mutationFn: () => libroPagaApi.previewRepartiDaTurni(meseTurni),
+    onSuccess: (preview) => {
+      setPreviewReparti(preview)
+      onError("")
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const applyRepartiMut = useMutation({
+    mutationFn: () => libroPagaApi.applyRepartiDaTurni(meseTurni),
+    onSuccess: ({ updated, snapshotId }) => {
+      setPreviewReparti(null)
+      onError("")
+      onDone()
+      alert(
+        `Assegnazioni completate per ${updated} persone. I ruoli di accesso non sono stati modificati. Snapshot di sicurezza: ${snapshotId}.`,
+      )
+    },
     onError: (e: Error) => onError(e.message),
   })
 
@@ -574,6 +597,97 @@ function PersonaleTab({
 
   return (
     <div className="mt-4 space-y-4">
+      <Card title="Assegna reparti dai turni">
+        <div className="space-y-3">
+          <p className="text-sm text-zinc-400">
+            Analizza i turni del mese scelto e propone i reparti per gli istruttori abbinati. Le assegnazioni esistenti
+            vengono mantenute; i ruoli di accesso (Istruttore, Responsabile, Amministratore) non vengono modificati.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="text-sm text-zinc-400" htmlFor="reparti-turni-mese">Mese dei turni</label>
+            <input
+              id="reparti-turni-mese"
+              type="month"
+              value={meseTurni}
+              disabled={previewRepartiMut.isPending || applyRepartiMut.isPending}
+              onChange={(e) => {
+                setMeseTurni(e.target.value)
+                setPreviewReparti(null)
+              }}
+              className={inputCls}
+            />
+            <button
+              type="button"
+              className={btnGhost}
+              disabled={!meseTurni || previewRepartiMut.isPending || applyRepartiMut.isPending}
+              onClick={() => previewRepartiMut.mutate()}
+            >
+              {previewRepartiMut.isPending ? "Analisi…" : "Mostra anteprima"}
+            </button>
+          </div>
+          {previewReparti && (
+            <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-950/30 p-3">
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-300">
+                <span>Turni esaminati: {previewReparti.turniConsiderati}</span>
+                <span>Persone con reparti da aggiungere: {previewReparti.personeConModifiche}</span>
+                <span>Nominativi non abbinati: {previewReparti.turniSenzaAbbinamento}</span>
+                <span>Abbinamenti ambigui: {previewReparti.abbinamentiAmbigui}</span>
+              </div>
+              {previewReparti.personale.length > 0 && (
+                <div className="max-h-80 overflow-auto rounded border border-zinc-800">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-zinc-900 text-xs uppercase text-zinc-500">
+                      <tr>
+                        <th className="px-3 py-2">Personale</th>
+                        <th className="px-3 py-2">Reparti risultanti</th>
+                        <th className="px-3 py-2">Turni</th>
+                        <th className="px-3 py-2">Esito</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewReparti.personale.map((person) => (
+                        <tr key={person.personaleId} className="border-t border-zinc-800 text-zinc-200">
+                          <td className="px-3 py-2">{person.nominativo}</td>
+                          <td className="px-3 py-2">
+                            {person.repartiSuggeriti.length > 0 ? person.repartiSuggeriti.join(", ") : "—"}
+                          </td>
+                          <td className="px-3 py-2">{person.turniConsiderati}</td>
+                          <td className="px-3 py-2">{person.modifiche ? "Da assegnare" : "Già presente"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {previewReparti.attivitaSenzaReparto.length > 0 && (
+                <p className="text-xs text-amber-300">
+                  Attività senza un reparto corrispondente:{" "}
+                  {previewReparti.attivitaSenzaReparto.map((item) => `${item.attivita} (${item.turni})`).join(", ")}
+                </p>
+              )}
+              {previewReparti.turniSenzaAbbinamento > 0 && (
+                <p className="text-xs text-amber-300">
+                  I turni con nominativo non abbinato o ambiguo non verranno assegnati. Verifica i nomi prima di
+                  applicare.
+                </p>
+              )}
+              <button
+                type="button"
+                className={btnAmber}
+                disabled={!previewReparti.personeConModifiche || applyRepartiMut.isPending}
+                onClick={() => {
+                  if (!window.confirm(
+                    `Aggiungere i reparti suggeriti a ${previewReparti.personeConModifiche} persone per ${previewReparti.mese}? I ruoli di accesso resteranno invariati.`,
+                  )) return
+                  applyRepartiMut.mutate()
+                }}
+              >
+                {applyRepartiMut.isPending ? "Assegnazione…" : "Applica reparti suggeriti"}
+              </button>
+            </div>
+          )}
+        </div>
+      </Card>
       <PersonaleDelegheAdmin data={data} onError={onError} />
       <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
       {dettaglioId && (() => {
