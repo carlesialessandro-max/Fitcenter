@@ -12,6 +12,7 @@ type ShiftEvent = {
   staffOverride?: string | null
   istruttoreId?: string | null
   zona?: string | null
+  seasonal?: { from: string; to: string }
 }
 
 const DESK_OPEN = 8 * 60
