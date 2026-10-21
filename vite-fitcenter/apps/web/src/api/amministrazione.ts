@@ -239,6 +239,8 @@ export const amministrazioneApi = {
       : api.post<{ busta: AmmBusta }>("/amministrazione/buste", body),
   deleteBusta: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/buste/${encodeURIComponent(id)}`),
   importBuste: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/buste/import", { righe }),
+  importBustaConsuntivo: (riga: AmmStipendiPdfRiga) =>
+    api.post<AmmImportEsito & { busta: AmmBusta }>("/amministrazione/buste/consuntivo/import", { riga }),
   parseStipendiPdf: (text: string, filename: string, mese: string) =>
     api.post<{
       mese: string

@@ -13,7 +13,7 @@ import {
   type AmmStipendiPdfRiga,
   type AmmTipoCosto,
 } from "@/api/amministrazione"
-import { extractPdfText } from "@/lib/pdf-fattura-text"
+import { extractPdfText, extractPdfTextWithOcr } from "@/lib/pdf-fattura-text"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
 import { macroSplitLabel, macroSplitTargets, normalizeMacroSplitQuote } from "@/lib/amm-macro-split"
 import { downloadAmmMastrinoTemplate, parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
@@ -1380,12 +1380,7 @@ function StipendiTab() {
     onError: (e: Error) => setError(e.message),
   })
   const importMut = useMutation({
-    mutationFn: (righe: AmmMastrinoPreview[] | AmmStipendiPdfRiga[]) =>
-      amministrazioneApi.importBuste(
-        (righe as AmmStipendiPdfRiga[]).some((x) => "tipo" in x && x.tipo === "dipendente")
-          ? (righe as AmmStipendiPdfRiga[]).map((x) => ({ ...x, origine: "pdf" }))
-          : righe
-      ),
+    mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
     onSuccess: (r) => {
       setPreview(null)
       setBustePdfPreview(null)
@@ -1394,6 +1389,20 @@ function StipendiTab() {
           (r.saltate ? `, ${r.saltate} già presenti` : "") +
           (r.errori.length ? `, ${r.errori.length} errori` : "") +
           "."
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const importConsuntivoMut = useMutation({
+    mutationFn: (riga: AmmStipendiPdfRiga) => amministrazioneApi.importBustaConsuntivo(riga),
+    onSuccess: (r) => {
+      setBustePdfPreview(null)
+      setImportMsg(
+        `Consuntivo importato: ${eur(r.busta.totale)}` +
+          (r.sostituite ? `; sostituite ${r.sostituite} vecchie righe PDF` : "") +
+          ".",
       )
       void qc.invalidateQueries({ queryKey: ["amm-buste"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
@@ -1419,9 +1428,17 @@ function StipendiTab() {
     setError("")
     setImportMsg("")
     try {
-      const text = await extractPdfText(file, kind === "buste" ? 20 : 80, {
+      let text = await extractPdfText(file, kind === "buste" ? 20 : 80, {
         preferTail: kind === "buste",
       })
+      const isCostSummary = file.name.toLowerCase().includes("costo dipendenti")
+      if (kind === "buste" && (!text.trim() || isCostSummary)) {
+        setImportMsg("PDF scansito: OCR locale in corso…")
+        const ocrText = await extractPdfTextWithOcr(file, 5, (progress) => {
+          setImportMsg(`Lettura OCR del riepilogo: ${Math.round(progress * 100)}%`)
+        })
+        if (ocrText.trim()) text = ocrText
+      }
       const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
       if (kind === "sportivi") {
         const righe = [...parsed.sportivi, ...parsed.gestionali]
@@ -1430,7 +1447,10 @@ function StipendiTab() {
         setBustePdfPreview(null)
         setPreview(null)
       } else {
-        if (!parsed.dipendenti.length) throw new Error("Nessuna busta paga nel PDF. Serve il file Teamsystem delle buste.")
+        if (parsed.dipendenti.length !== 1) {
+          throw new Error("Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo”.")
+        }
+        setImportMsg("")
         setBustePdfPreview(parsed.dipendenti)
         setCollabPreview(null)
         setPreview(null)
@@ -1557,13 +1577,14 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
             <p className="text-xs text-zinc-500">
-              PDF Teamsystem: dal riepilogo paghe in fondo si importa il costo azienda del mese (retribuzione + INPS/Inail
-              a carico ditta), non il netto busta. In alternativa mastrino Excel con colonna «Costo azienda».
+              Importa il totale aziendale dal PDF “Costo consuntivo del periodo”, non i singoli cedolini. I PDF scansiti
+              vengono letti con OCR nel browser (al primo utilizzo scarica le risorse linguistiche); le vecchie righe PDF
+              dello stesso mese saranno sostituite da un solo totale.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className={`${btnAmber} cursor-pointer`}>
-              Importa buste PDF
+              Importa consuntivo PDF
               <input type="file" accept=".pdf" className="hidden" onChange={(e) => void onStipendiPdf(e.target.files?.[0] ?? null, "buste")} />
             </label>
             <button type="button" className={btnGhost} onClick={() => downloadAmmMastrinoTemplate()}>
@@ -1583,9 +1604,7 @@ function StipendiTab() {
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-zinc-400">
-                Anteprima costo azienda: {bustePdfPreview.length}{" "}
-                {bustePdfPreview.length === 1 ? "riga" : "righe"},{" "}
-                {eur(bustePdfPreview.reduce((s, x) => s + x.totale, 0))}
+                Totale consuntivo del mese: {eur(bustePdfPreview[0]?.totale ?? 0)} · viene registrato come un’unica riga aziendale
               </p>
               <div className="flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setBustePdfPreview(null)}>
@@ -1594,19 +1613,22 @@ function StipendiTab() {
                 <button
                   type="button"
                   className={btnAmber}
-                  disabled={importMut.isPending}
-                  onClick={() => importMut.mutate(bustePdfPreview)}
+                  disabled={importConsuntivoMut.isPending}
+                  onClick={() => {
+                    const riga = bustePdfPreview[0]
+                    if (riga) importConsuntivoMut.mutate(riga)
+                  }}
                 >
-                  {importMut.isPending ? "Caricamento…" : `Importa ${bustePdfPreview.length}`}
+                  {importConsuntivoMut.isPending ? "Caricamento…" : "Importa totale"}
                 </button>
               </div>
             </div>
             <div className="max-h-48 overflow-auto text-xs">
-              {bustePdfPreview.map((p, i) => (
-                <p key={`${p.nominativo}-${i}`} className="text-zinc-300">
-                  {p.nominativo} · {eur(p.totale)} · {nomeReparto(attivi, p.quote[0]?.repartoId ?? "")}
+              {bustePdfPreview[0] && (
+                <p className="text-zinc-300">
+                  {bustePdfPreview[0].descrizione} · {nomeReparto(attivi, bustePdfPreview[0].quote[0]?.repartoId ?? "")}
                 </p>
-              ))}
+              )}
             </div>
           </div>
         )}

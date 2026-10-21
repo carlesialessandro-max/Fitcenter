@@ -768,6 +768,24 @@ export const ammCostiStore = {
     d.buste = d.buste.filter((b) => b.id !== id)
     save(d)
   },
+  replacePdfBusteMese(
+    body: Partial<AmmBusta> & { nominativo: string; mese: string; totale: number; quote: AmmQuota[] },
+  ): { busta: AmmBusta; sostituite: number } {
+    const mese = String(body.mese ?? "").slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    const aggregate = load().buste.find(
+      (b) =>
+        b.mese === mese &&
+        b.origine === "pdf" &&
+        b.nominativo.trim().toLowerCase() === "dipendenti fissi (costo azienda)",
+    )
+    const busta = this.upsertBusta({ ...body, id: aggregate?.id, mese, origine: "pdf" })
+    const d = load()
+    const before = d.buste.filter((b) => b.mese === mese && b.origine === "pdf" && b.id !== busta.id).length
+    d.buste = d.buste.filter((b) => b.mese !== mese || b.origine !== "pdf" || b.id === busta.id)
+    save(d)
+    return { busta, sostituite: before }
+  },
   listCollaboratori(): AmmCollaboratore[] {
     return load()
       .collaboratori.slice()

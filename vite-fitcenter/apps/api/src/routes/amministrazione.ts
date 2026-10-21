@@ -12,6 +12,7 @@ import {
   getAmmSpesaPdf,
   getAmmSpese,
   postAmmBusta,
+  postAmmBusteConsuntivoImport,
   postAmmBusteImport,
   postAmmImport,
   postAmmOcr,
@@ -59,6 +60,7 @@ amministrazioneRouter.post("/collaboratori/import", postAmmCollaboratoriImport)
 amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
 amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
 amministrazioneRouter.get("/buste", getAmmBuste)
+amministrazioneRouter.post("/buste/consuntivo/import", postAmmBusteConsuntivoImport)
 amministrazioneRouter.post("/buste/import", postAmmBusteImport)
 amministrazioneRouter.post("/buste", postAmmBusta)
 amministrazioneRouter.put("/buste/:id", putAmmBusta)

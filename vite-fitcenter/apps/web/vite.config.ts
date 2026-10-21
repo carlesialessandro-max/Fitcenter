@@ -23,6 +23,7 @@ export default defineConfig({
           if (id.includes("/@tanstack/")) return "vendor-query"
           if (id.includes("/recharts/") || id.includes("/d3-")) return "vendor-charts"
           if (id.includes("/pdfjs-dist/")) return "vendor-pdfjs"
+          if (id.includes("/tesseract.js/") || id.includes("/tesseract.js-core/")) return "vendor-tesseract"
           if (id.includes("/jspdf") || id.includes("/jspdf-autotable/")) return "vendor-jspdf"
           if (id.includes("/@workspace/ui/")) return "vendor-ui"
           if (id.includes("/@floating-ui/") || id.includes("/radix-ui/") || id.includes("/@radix-ui/")) return "vendor-ui2"

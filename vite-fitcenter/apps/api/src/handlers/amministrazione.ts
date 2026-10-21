@@ -336,6 +336,25 @@ export function postAmmBusteImport(req: Request, res: Response) {
   }
 }
 
+export function postAmmBusteConsuntivoImport(req: Request, res: Response) {
+  try {
+    const raw = req.body?.riga
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return res.status(400).json({ message: "Riga del consuntivo mancante" })
+    }
+    const riga = raw as Record<string, unknown>
+    if (riga.tipo !== "dipendente") {
+      return res.status(400).json({ message: "Il PDF non contiene un consuntivo dei dipendenti fissi" })
+    }
+    const { busta, sostituite } = ammCostiStore.replacePdfBusteMese(
+      bustaFromBody({ ...riga, origine: "pdf" }),
+    )
+    res.json({ inserite: 1, saltate: 0, sostituite, errori: [], busta })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export async function getAmmCollaboratori(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno) || new Date().getFullYear()

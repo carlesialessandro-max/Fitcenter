@@ -107,22 +107,6 @@ function parseMattonai(text: string, mese: string): AmmPdfRiga[] {
   return rows
 }
 
-const MESE_RE =
-  /\b(GENNAIO|FEBBRAIO|MARZO|APRILE|MAGGIO|GIUGNO|LUGLIO|AGOSTO|SETTEMBRE|OTTOBRE|NOVEMBRE|DICEMBRE)\s+(\d{4})\s+(?:\d+\s+){2,8}([A-ZÀÈÉÌÒÙ'][A-ZÀÈÉÌÒÙ'\s]+?)\s+(\d{2}\/\d{2}\/\d{4})/i
-
-function qualificaRepartoHint(chunk: string): string {
-  const s = chunk.toLowerCase()
-  if (/puliz/.test(s)) return "pulizie"
-  if (/manutenz|operaio|idraulic|elettric/.test(s)) return "manutenzione-impianti"
-  if (/bagnin/.test(s)) return "piscina-coperta"
-  if (/\bdesk\b|reception|segreter/.test(s)) return "amministrazione-uffici"
-  if (/impiegat|amminist|direzion/.test(s)) return "amministrazione-uffici"
-  return "amministrazione-uffici"
-}
-
-const SKIP_RIEPILOGO =
-  /totale|matricola|cognome|nominativo|retribuz|trattenut|competenze|costo az|inps|inail|tfr|irpef|addizional|ditta|periodo|mese di|pagina|stampa|teamsystem|codice fiscale|cf\b|qualifica|netto busta/i
-
 /** Nel riepilogo paghe il costo per l’azienda è di solito la colonna più alta (lordo + INPS/Inail ditta), non il netto. */
 function costoAziendaFromLine(line: string): number | null {
   const amts = amountsOn(line).filter((n) => n > 0)
@@ -131,130 +115,47 @@ function costoAziendaFromLine(line: string): number | null {
   return Math.max(...amts)
 }
 
-function parseCostoAziendaCedolino(chunk: string): number | null {
-  const patterns = [
-    /costo\s*a\s*z\s*\.?\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
-    /costo\s*azienda\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
-    /costo\s*del\s*lavoro\s*:?\s*((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
-    /costo\s*azienda[^\d\n]{0,48}((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/i,
-  ]
-  for (const re of patterns) {
-    const m = re.exec(chunk)
-    if (!m) continue
-    const n = parseEuro(m[1] ?? "")
-    if (n != null && n > 0) return n
-  }
-  return null
+function normalizeLabel(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
 }
 
-/** In fondo al PDF Teamsystem: non sommare i cedolini, usare il riepilogo paghe. */
-function parseTeamsystemRiepilogo(text: string, mese: string): AmmPdfRiga[] {
-  const header = /r\s*i\s*e\s*p\s*i\s*l\s*o\s*g\s*o\s*[\s\n]*p\s*a\s*g\s*h\s*e|riepilogo\s+paghe/i.exec(text)
-  if (!header || header.index == null) return []
-  let section = text.slice(header.index)
-  const cut = section.search(/\n(?=DISTINTA CONTANTI|STAMPA VERSAMENTI|VERSAMENTI CONTRIBUTI)/i)
-  if (cut > 80) section = section.slice(0, cut)
-  const ym = meseFromText(section, mese)
-  const rows: AmmPdfRiga[] = []
-  const seen = new Set<string>()
-  let totRiepilogo: number | null = null
-  for (const raw of section.split(/\r?\n/)) {
-    const line = raw.replace(/\t/g, " ").replace(/[ \t]+/g, " ").trim()
-    if (!line) continue
-    if (/costo\s*(?:a\s*z|azienda|del\s*lavoro)\b/i.test(line) && /totale\b/i.test(line)) {
-      const n = costoAziendaFromLine(line)
-      if (n != null && n > 0) totRiepilogo = n
-      continue
-    }
-    if (/^totale\b/i.test(line)) {
-      const n = costoAziendaFromLine(line)
-      if (n != null && n > 0) totRiepilogo = n
-      continue
-    }
-    if (SKIP_RIEPILOGO.test(line) && amountsOn(line).length < 1) continue
-    const nameM =
-      /^(?:\d{1,6}\s+)?([A-ZÀ-Ùa-zà-ù'][A-ZÀ-Ùa-zà-ù'\s]{3,55}?)(?:\s+)((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2})/.exec(line)
-    if (!nameM) continue
-    const nominativo = titleName(nameM[1] ?? "")
-    if (nominativo.split(" ").length < 2) continue
-    if (/totale|riepilogo|paghe|ditta/i.test(nominativo)) continue
-    const tot = costoAziendaFromLine(line)
-    if (tot == null || tot <= 0) continue
-    const key = nominativo.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    rows.push({
-      nominativo,
-      mese: ym,
-      totale: tot,
-      descrizione: "Costo azienda (riepilogo paghe)",
+function aggregateDipendenti(mese: string, totale: number, descrizione: string): AmmPdfRiga[] {
+  return [
+    {
+      nominativo: "Dipendenti fissi (costo azienda)",
+      mese,
+      totale,
+      descrizione,
       tipo: "dipendente",
       qualifica: "amministrazione-uffici",
-    })
-  }
-  const sommaNomi = Math.round(rows.reduce((s, r) => s + r.totale, 0) * 100) / 100
-  if (totRiepilogo != null && totRiepilogo > 0) {
-    if (rows.length >= 3 && Math.abs(sommaNomi - totRiepilogo) / totRiepilogo < 0.02) return rows
-    if (!rows.length || sommaNomi < totRiepilogo * 0.95) {
-      return [
-        {
-          nominativo: "Dipendenti fissi (costo azienda)",
-          mese: ym,
-          totale: totRiepilogo,
-          descrizione: "Costo azienda mese — riepilogo paghe Teamsystem (lordo + contributi ditta)",
-          tipo: "dipendente",
-          qualifica: "amministrazione-uffici",
-        },
-      ]
-    }
-    return [
-      {
-        nominativo: "Dipendenti fissi (costo azienda)",
-        mese: ym,
-        totale: totRiepilogo,
-        descrizione: "Costo azienda mese — riepilogo paghe Teamsystem",
-        tipo: "dipendente",
-        qualifica: "amministrazione-uffici",
-      },
-    ]
-  }
-  if (rows.length >= 3) return rows
-  return []
+    },
+  ]
 }
 
-function parseTeamsystemBuste(text: string, mese: string): AmmPdfRiga[] {
-  const ym = meseFromText(text, mese)
-  const pages = text.split(/\n--- PAGE \d+ ---\n/i)
-  const chunks = pages.length > 1 ? pages : text.split(/\n(?=Ditta\b)/)
-  const byName = new Map<string, AmmPdfRiga>()
-  for (const chunk of chunks) {
-    if (/R\s*I\s*E\s*P\s*I\s*L\s*O\s*G\s*O\s*P\s*A\s*G\s*H\s*E|riepilogo\s+paghe/i.test(chunk)) continue
-    if (/DISTINTA CONTANTI/i.test(chunk)) continue
-    if (/STAMPA VERSAMENTI CONTRIBUTI/i.test(chunk)) continue
-    const hm = MESE_RE.exec(chunk)
-    if (!hm) continue
-    const nominativo = titleName(hm[3] ?? "")
-    if (nominativo.split(" ").length < 2) continue
-    const costoAz = parseCostoAziendaCedolino(chunk)
-    if (costoAz == null || costoAz <= 0) continue
-    const key = nominativo.toLowerCase()
-    if (byName.has(key)) continue
-    byName.set(key, {
-      nominativo,
-      mese: ym,
-      totale: costoAz,
-      descrizione: "Costo azienda (cedolino)",
-      tipo: "dipendente",
-      qualifica: qualificaRepartoHint(chunk),
-    })
-  }
-  return [...byName.values()]
+function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
+  const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
+  const totals = pages.flatMap((page) => {
+    if (!normalizeLabel(page).includes("costoconsuntivodelperiodo")) return []
+    return page
+      .split(/\r?\n/)
+      .filter((line) => /^(?:totale|totali)azienda/.test(normalizeLabel(line)))
+      .map(costoAziendaFromLine)
+      .filter((value): value is number => value != null && value > 0)
+  })
+  if (!totals.length) return []
+  return aggregateDipendenti(
+    meseFromText(text, mese),
+    Math.max(...totals),
+    "Costo azienda mese — totale consuntivo del periodo",
+  )
 }
 
 function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {
-  const riep = parseTeamsystemRiepilogo(text, mese)
-  if (riep.length) return riep
-  return parseTeamsystemBuste(text, mese)
+  return parseCostoConsuntivo(text, mese)
 }
 
 export function parseStipendiPdf(text: string, filename: string, mese: string): AmmPdfRiga[] {
@@ -268,9 +169,12 @@ export function parseStipendiPdf(text: string, filename: string, mese: string): 
   }
   const sport = parseMattonai(t, mese)
   if (sport.length >= 5) return sport
-  const buste = parseTeamsystem(t, mese)
-  if (buste.length) return buste
-  throw Object.assign(new Error("PDF non riconosciuto: serve il riepilogo istruttori o le buste paga"), { status: 400 })
+  const riepilogoDipendenti = parseTeamsystem(t, mese)
+  if (riepilogoDipendenti.length) return riepilogoDipendenti
+  throw Object.assign(
+    new Error("Riepilogo costi dipendenti non trovato. Importa il PDF “Costo consuntivo del periodo”, non i cedolini individuali."),
+    { status: 400 },
+  )
 }
 
 export function defaultRepartoFor(row: AmmPdfRiga): string {
