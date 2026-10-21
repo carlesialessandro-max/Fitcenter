@@ -295,6 +295,7 @@ function romeHm(d: Date): { hour: number; minute: number } {
 
 type DaySection = {
   label: string
+  sheetTitle: string
   /** 1-based sheet row of day title */
   titleRow: number
   year: number
@@ -309,7 +310,46 @@ type DaySection = {
   slotRows: number[]
 }
 
-function parseDayHeader(cell: string, defaultYear: number): Omit<DaySection, "nameCol" | "timeCol" | "ageCol" | "phoneCol" | "slotRows" | "titleRow"> | null {
+function monthFromSheetTitle(title: string, day: number): number | null {
+  const normalized = normCell(title)
+  const monthAliases: Record<string, number> = {
+    gen: 1,
+    feb: 2,
+    mar: 3,
+    apr: 4,
+    mag: 5,
+    giu: 6,
+    lug: 7,
+    ago: 8,
+    set: 9,
+    sett: 9,
+    ott: 10,
+    nov: 11,
+    dic: 12,
+  }
+  const months = Object.entries(MONTHS_IT).flatMap(([name, month]) => [
+    [name, month] as const,
+    [name.slice(0, 3), month] as const,
+  ])
+  const aliases = new Map([...months, ...Object.entries(monthAliases)])
+  const matches = [...normalized.matchAll(/\b(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre|gen|feb|mar|apr|mag|giu|lug|ago|set|sett|ott|nov|dic)\b/g)]
+    .map((match) => aliases.get(match[1] ?? ""))
+    .filter((month): month is number => month != null)
+  if (!matches.length) return null
+  if (matches.length === 1) return matches[0]!
+
+  const crossMonthRange = normalized.match(/\b(\d{1,2})\s*(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre|gen|feb|mar|apr|mag|giu|lug|ago|set|sett|ott|nov|dic)\s*(?:-|–|al)\s*(\d{1,2})\s*(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre|gen|feb|mar|apr|mag|giu|lug|ago|set|sett|ott|nov|dic)\b/)
+  if (crossMonthRange && matches.length >= 2) {
+    return day < Number(crossMonthRange[1]) ? matches[1]! : matches[0]!
+  }
+  return matches[0]!
+}
+
+export function parseProveSheetDayHeader(
+  cell: string,
+  defaultYear: number,
+  sheetTitle = "",
+): Omit<DaySection, "nameCol" | "timeCol" | "ageCol" | "phoneCol" | "slotRows" | "titleRow" | "sheetTitle"> | null {
   const t = normCell(cell)
   // es. "lunedi' 14 settembre" / "lunedi 14 settembre 2026"
   const mName = t.match(
@@ -340,6 +380,16 @@ function parseDayHeader(cell: string, defaultYear: number): Omit<DaySection, "na
     if (weekday >= 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
       return { label: String(cell).trim(), year, month, day, weekday }
     }
+  }
+  const mWeekdayDay = t.match(/\b(domenica|lunedi|martedi|mercoledi|giovedi|venerdi|sabato)\b['’]?\s+(\d{1,2})\b/)
+  if (mWeekdayDay) {
+    const weekday = WEEKDAY_IT[mWeekdayDay[1] ?? ""] ?? -1
+    const day = Number(mWeekdayDay[2])
+    const month = monthFromSheetTitle(sheetTitle, day)
+    if (weekday < 0 || !month || day < 1 || day > 31) return null
+    const date = new Date(defaultYear, month - 1, day)
+    if (date.getMonth() !== month - 1 || date.getDate() !== day || date.getDay() !== weekday) return null
+    return { label: String(cell).trim(), year: defaultYear, month, day, weekday }
   }
   return null
 }
@@ -447,12 +497,12 @@ function refineColsFromData(
   return { nameCol, timeCol: bestTime, ageCol, phoneCol }
 }
 
-function buildSections(values: unknown[][], defaultYear: number): DaySection[] {
+function buildSections(values: unknown[][], defaultYear: number, sheetTitle: string): DaySection[] {
   const sections: DaySection[] = []
   for (let r = 0; r < values.length; r++) {
     const row = values[r] ?? []
     for (let c = 0; c < row.length; c++) {
-      const parsed = parseDayHeader(String(row[c] ?? ""), defaultYear)
+      const parsed = parseProveSheetDayHeader(String(row[c] ?? ""), defaultYear, sheetTitle)
       if (!parsed) continue
       // header colonne: cerca nelle prossime 3 righe
       let cols: ReturnType<typeof detectCols> | null = null
@@ -472,7 +522,7 @@ function buildSections(values: unknown[][], defaultYear: number): DaySection[] {
         // nuovo giorno → stop
         let nextDay = false
         for (const cell of srow) {
-          if (parseDayHeader(String(cell ?? ""), defaultYear)) {
+          if (parseProveSheetDayHeader(String(cell ?? ""), defaultYear, sheetTitle)) {
             nextDay = true
             break
           }
@@ -489,6 +539,7 @@ function buildSections(values: unknown[][], defaultYear: number): DaySection[] {
       }
       sections.push({
         ...parsed,
+        sheetTitle,
         titleRow: r + 1,
         nameCol: cols.nameCol,
         timeCol: cols.timeCol,
@@ -506,26 +557,61 @@ function quoteSheetTitle(title: string): string {
   return `'${title.replace(/'/g, "''")}'`
 }
 
+async function listSheetTabs(
+  sa: ServiceAccount,
+  spreadsheetId: string,
+): Promise<Array<{ title: string; gid: number }>> {
+  const url =
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}` +
+    `?fields=sheets.properties`
+  const res = await sheetsFetch(sa, url)
+  const body = (await res.json()) as {
+    sheets?: Array<{ properties?: { sheetId?: number; title?: string } }>
+    error?: { message?: string }
+  }
+  if (!res.ok) throw new Error(body.error?.message ?? `meta ${res.status}`)
+  return (body.sheets ?? []).flatMap((sheet) => {
+    const title = sheet.properties?.title
+    const gid = sheet.properties?.sheetId
+    return title && gid != null ? [{ title, gid }] : []
+  })
+}
+
 export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<ProveSlotBookResult> {
   const sa = loadServiceAccount()
   if (!sa) return { ok: false, reason: "not_configured" }
 
   try {
     const target = sheetTarget(req.corso)
-    const title = await resolveSheetTitle(sa, target)
     const id = target.spreadsheetId
-    const range = `${quoteSheetTitle(title)}!A1:H300`
-    const getUrl =
-      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values/` +
-      `${encodeURIComponent(range)}?valueRenderOption=FORMATTED_VALUE`
+    const allTabs =
+      req.corso === "scuola_nuoto"
+        ? await listSheetTabs(sa, id)
+        : [{ title: await resolveSheetTitle(sa, target), gid: target.sheetGid }]
+    const tabs =
+      req.corso === "scuola_nuoto"
+        ? allTabs.filter((tab) => monthFromSheetTitle(tab.title, 1) != null)
+        : allTabs
+    if (tabs.length === 0) throw new Error("Non trovo schede settimanali con date nel Google Sheet")
+    const ranges = tabs.map(({ title }) => `${quoteSheetTitle(title)}!A1:H300`)
+    const query = new URLSearchParams({ valueRenderOption: "FORMATTED_VALUE" })
+    for (const range of ranges) query.append("ranges", range)
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchGet?${query}`
     const getRes = await sheetsFetch(sa, getUrl)
-    const getBody = (await getRes.json()) as { values?: unknown[][]; error?: { message?: string } }
+    const getBody = (await getRes.json()) as {
+      valueRanges?: Array<{ values?: unknown[][] }>
+      error?: { message?: string }
+    }
     if (!getRes.ok) {
       return { ok: false, reason: "api_error", detail: getBody.error?.message ?? String(getRes.status) }
     }
-    const values = getBody.values ?? []
+    const valuesByTitle = new Map(
+      tabs.map((tab, index) => [tab.title, getBody.valueRanges?.[index]?.values ?? []] as const),
+    )
     const nowParts = romeYmd(new Date())
-    const sections = buildSections(values, nowParts.y)
+    const sections = tabs.flatMap((tab) =>
+      buildSections(valuesByTitle.get(tab.title) ?? [], nowParts.y, tab.title),
+    )
 
     let hm = { hour: req.hour, minute: req.minute }
     let daySec: DaySection | undefined
@@ -571,6 +657,7 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
       }
     }
 
+    const values = valuesByTitle.get(daySec.sheetTitle) ?? []
     const wanted = `${hm.hour}:${String(hm.minute).padStart(2, "0")}`
     const freeAlt: string[] = []
     let targetRowIdx: number | null = null
@@ -638,9 +725,9 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
     }
 
     const sheetRow = targetRowIdx + 1 // 1-based
-    const nameA1 = `${quoteSheetTitle(title)}!${colLetter(daySec.nameCol)}${sheetRow}`
-    const ageA1 = `${quoteSheetTitle(title)}!${colLetter(daySec.ageCol)}${sheetRow}`
-    const phoneA1 = `${quoteSheetTitle(title)}!${colLetter(daySec.phoneCol)}${sheetRow}`
+    const nameA1 = `${quoteSheetTitle(daySec.sheetTitle)}!${colLetter(daySec.nameCol)}${sheetRow}`
+    const ageA1 = `${quoteSheetTitle(daySec.sheetTitle)}!${colLetter(daySec.ageCol)}${sheetRow}`
+    const phoneA1 = `${quoteSheetTitle(daySec.sheetTitle)}!${colLetter(daySec.phoneCol)}${sheetRow}`
 
     const batchUrl =
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}/values:batchUpdate`
@@ -665,7 +752,7 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
       dayLabel: daySec.label,
       orario: targetOrario || formatOrario(hm.hour, hm.minute),
       row: sheetRow,
-      sheetTitle: title,
+      sheetTitle: daySec.sheetTitle,
     }
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e)

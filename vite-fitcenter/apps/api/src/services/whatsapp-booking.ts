@@ -339,10 +339,7 @@ export async function sendBambiniInfoDocsWhatsapp(
   }
   const provaHint = isProveSnbSheetConfigured()
     ? `📅 Per prenotare la prova da WhatsApp rispondi così:\n` +
-      (corso === "acquaticita"
-        ? `👉 PRENOTA PROVA mercoledì 16/09 ore 16:15 età 12 mesi\n`
-        : `👉 PRENOTA PROVA lunedì 14 settembre ore 17:00 età 7\n`) +
-      `(giorno + data + orario + età)\n` +
+      `👉 PRENOTA PROVA + giorno + data + orario + età\n` +
       `Se indichi solo il giorno (es. mercoledì) uso la prossima data disponibile sul foglio.\n\n` +
       `In alternativa puoi chiamare il 0573 572649.`
     : `📞 Per prenotare la prova puoi contattarci al 0573 572649.`
@@ -824,13 +821,9 @@ function provaGuideMsg(corso?: BambiniCorso | null): string {
       `Ti aspettiamo a H2Sport! 💙`
     )
   }
-  const ex =
-    corso === "acquaticita"
-      ? `👉 PRENOTA PROVA mercoledì 16/09 ore 16:15 età 12 mesi`
-      : `👉 PRENOTA PROVA lunedì 14 settembre ore 17:00 età 7`
   return (
     `Per la prova in acqua (circa 10 minuti) rispondi con giorno, data, orario ed età, ad esempio:\n` +
-    `${ex}\n` +
+    `👉 PRENOTA PROVA + giorno + data + orario + età\n` +
     `Se manca la data e scrivi solo «mercoledì», prendo la prossima data disponibile sul foglio (non per forza la settimana dopo).\n\n` +
     (corso
       ? `Foglio: ${corsoLabel(corso)}.\n`
@@ -2003,7 +1996,7 @@ export async function handleWhatsappInboundBooking(params: {
       from,
       `Per la prova in acqua usa:\n` +
         `PRENOTA PROVA + giorno + orario + età\n` +
-        `es. PRENOTA PROVA lunedì 14 settembre ore 17:00 età 5\n\n` +
+        `Aggiungi la data del calendario settimanale, se la conosci.\n\n` +
         `Per un appuntamento in sede con consulente scrivi «appuntamento» + giorno/ora.`
     )
     if (lead) appendLeadNote(lead.id, `WA: slot senza «prova» → guida prova («${text}»)`)
