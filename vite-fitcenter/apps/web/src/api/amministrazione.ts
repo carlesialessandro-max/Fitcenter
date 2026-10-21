@@ -79,8 +79,12 @@ export type AmmDashboard = {
   nSpese: number
   nBuste: number
   ricaviDisponibili?: boolean
+  ricaviErrore?: string
   totRicavi?: number
   totRicaviAltri?: number
+  totRicaviDanza?: number
+  nFattureDanza?: number
+  totRecuperiUtenze?: number
   totRicaviAzienda: number
   totCostiAzienda: number
   totCostiFuoriReparti: number

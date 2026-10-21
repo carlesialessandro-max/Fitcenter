@@ -17,6 +17,7 @@ import {
   isMacroCommerciale,
   isMacroStruttura,
   MACRO_COMMERCIALI,
+  periodoIso,
   queryRicaviAmm,
   quoteRipartoFissi,
   type MacroCommerciale,
@@ -24,7 +25,15 @@ import {
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
 import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
-import { listAcquistiMese, listCompanies, pickCompany, publicStatus, resolvedConfig } from "../services/fattureincloud.js"
+import {
+  listAcquistiMese,
+  listCompanies,
+  listFattureEmessePeriodo,
+  pickCompany,
+  publicStatus,
+  resolvedConfig,
+  riepilogoFattureAmm,
+} from "../services/fattureincloud.js"
 
 function fail(res: Response, e: unknown) {
   const status = (e as { status?: number })?.status
@@ -744,6 +753,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
     const repartoId = String(req.query.reparto ?? "").trim()
     const reparti = ammCostiStore.listReparti(true)
+    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
     const nomeOf = (id: string) => reparti.find((r) => r.id === id)?.nome ?? id
     const filtroIds = (() => {
       if (!repartoId) return null as Set<string> | null
@@ -827,7 +837,62 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
 
-    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices]
+    const ricavi = await queryRicaviAmm(anno, mese || undefined)
+    let fattureEmesseDisponibili = false
+    let ricaviErrore = ""
+    let fattureAmm = {
+      ricaviDanza: 0,
+      nFattureDanza: 0,
+      recuperiUtenze: 0,
+      recuperiUtenzePerMese: {} as Record<string, number>,
+    }
+    let fattureAmmAnno = fattureAmm
+    const ficCfg = resolvedConfig().cfg
+    if (!ficCfg?.accessToken || !ficCfg.companyId) {
+      ricaviErrore = "Collega Fatture in Cloud per leggere le fatture emesse."
+    } else {
+      try {
+        const periodoAnno = periodoIso(anno)
+        const docsAnno = await listFattureEmessePeriodo(ficCfg, periodoAnno.from, periodoAnno.to)
+        fattureAmmAnno = riepilogoFattureAmm(docsAnno)
+        fattureAmm = riepilogoFattureAmm(
+          docsAnno.filter((doc) => doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to)
+        )
+        fattureEmesseDisponibili = true
+      } catch (e) {
+        ricaviErrore = (e as Error)?.message ?? "Lettura delle fatture emesse da Fatture in Cloud non riuscita."
+      }
+    }
+    if (fattureEmesseDisponibili) {
+      if (fattureAmm.ricaviDanza) {
+        ricavi.byMacro.fitness = round2(ricavi.byMacro.fitness + fattureAmm.ricaviDanza)
+        ricavi.dettaglio.push({
+          voce: "Fatture Danza · Fatture in Cloud",
+          macro: "fitness",
+          importo: fattureAmm.ricaviDanza,
+          n: fattureAmm.nFattureDanza,
+        })
+      }
+      ricavi.dettaglio = ricavi.dettaglio.sort((a, b) => b.importo - a.importo).slice(0, 40)
+      ricavi.totCommerciali = round2(MACRO_COMMERCIALI.reduce((sum, id) => sum + ricavi.byMacro[id], 0))
+      ricavi.tot = round2(ricavi.totCommerciali + ricavi.totAltri)
+    }
+    const ricaviDisponibili = ricavi.disponibile && fattureEmesseDisponibili
+    const recuperoUtenze = fattureEmesseDisponibili ? fattureAmm.recuperiUtenze : 0
+    const recoverySlices: Slice[] =
+      recuperoUtenze && inFiltro("utenze-generali")
+        ? [
+            {
+              repartoId: "utenze-generali",
+              nome: nomeOf("utenze-generali"),
+              importo: -recuperoUtenze,
+              fonte: "spesa",
+            },
+          ]
+        : []
+    if (recuperoUtenze) pnlAlloc.push({ repartoId: "utenze-generali", importo: -recuperoUtenze })
+
+    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices, ...recoverySlices]
     const tot = Math.round(allSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
 
     let totFisso = bustaSlices.reduce((s, x) => s + x.importo, 0)
@@ -838,6 +903,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       if (s.tipoCosto === "fisso") totFisso += sub
       else totVariabile += sub
     }
+    if (inFiltro("utenze-generali")) totFisso -= recuperoUtenze
     totFisso = Math.round(totFisso * 100) / 100
     totVariabile = Math.round(totVariabile * 100) / 100
 
@@ -889,6 +955,15 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const sub = allocateQuote(b.totale, b.quote).filter((a) => inFiltro(a.repartoId)).reduce((n, a) => n + a.importo, 0)
       byMeseMap.set(b.mese, Math.round(((byMeseMap.get(b.mese) ?? 0) + sub) * 100) / 100)
     }
+    if (inFiltro("utenze-generali")) {
+      for (const [meseRecupero, importo] of Object.entries(fattureAmmAnno.recuperiUtenzePerMese)) {
+        if (!meseRecupero.startsWith(String(anno))) continue
+        byMeseMap.set(
+          meseRecupero,
+          round2((byMeseMap.get(meseRecupero) ?? 0) - importo)
+        )
+      }
+    }
     const byMese = [...byMeseMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([meseKey, importo]) => ({
       mese: meseKey,
       label: meseKey.slice(5),
@@ -899,7 +974,6 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const totBuste = Math.round(bustaSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
     const totSpese = Math.round((tot - totLpaga - totBuste) * 100) / 100
 
-    const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
     const diretti: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
     let totStruttura = 0
     const strutturaByMacro = new Map<string, number>()
@@ -911,7 +985,6 @@ export async function getAmmDashboard(req: Request, res: Response) {
         strutturaByMacro.set(mid, round2((strutturaByMacro.get(mid) ?? 0) + x.importo))
       }
     }
-    const ricavi = await queryRicaviAmm(anno, mese || undefined)
     const ripartoPct = quoteRipartoFissi(ricavi.byMacro)
     const risultato = MACRO_COMMERCIALI.map((id) => {
       const ricavo = round2(ricavi.byMacro[id])
@@ -937,7 +1010,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const totUtile = round2(totRicavi - totCostoPnl)
     const totRicaviAzienda = round2(ricavi.tot)
     const totCostiAzienda = round2(
-      spese.reduce((sum, s) => sum + (Number(s.totale) || 0), 0) +
+      spese.reduce((sum, s) => sum + (Number(s.totale) || 0), 0) -
+        recuperoUtenze +
         busteAll.reduce((sum, b) => sum + (Number(b.totale) || 0), 0) +
         totCollaboratoriAziendaRaw,
     )
@@ -978,7 +1052,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byBuste,
       nSpese: spese.length,
       nBuste: busteAll.length,
-      ricaviDisponibili: ricavi.disponibile,
+      ricaviDisponibili,
+      ricaviErrore: ricavi.disponibile ? ricaviErrore : "Incassi del gestionale non disponibili.",
+      nFattureDanza: fattureAmm.nFattureDanza,
+      totRicaviDanza: fattureEmesseDisponibili ? fattureAmm.ricaviDanza : 0,
+      totRecuperiUtenze: recuperoUtenze,
       totRicavi,
       totRicaviAltri: ricavi.totAltri,
       totRicaviAzienda,

@@ -236,8 +236,55 @@ function DashboardTab() {
               I costi di altri centri (per esempio Manutenzione, Pulizie o Varie) sono mostrati nella riga dedicata e
               inclusi nel totale e nel risultato dell’impresa: il riparto non li elimina.
             </p>
+            <p className="mt-1">
+              I ricavi ordinari arrivano dagli incassi del gestionale. Gli incassi Danza sono esclusi: per il Centro
+              Arte Danza si considerano solo le fatture emesse in Fatture in Cloud. Le fatture a Big Food con
+              descrizione energia/gas riducono automaticamente le utenze.
+            </p>
             <p className="mt-1">I totali aziendali restano complessivi anche quando si seleziona un reparto nel filtro.</p>
           </div>
+          {d.ricaviErrore && (
+            <p className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-200">
+              Ricavi e risultato non completi: {d.ricaviErrore}
+            </p>
+          )}
+          {d.ricaviDisponibili && (d.ricaviDettaglio?.length ?? 0) > 0 && (
+            <details className="rounded-xl border border-zinc-800 px-3 py-2">
+              <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="text-left text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1">Voce</th>
+                      <th className="px-2 py-1">Reparto</th>
+                      <th className="px-2 py-1 text-right">Movimenti/fatture</th>
+                      <th className="px-2 py-1 text-right">Importo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.ricaviDettaglio?.map((r, index) => (
+                      <tr key={`${r.voce}-${r.macro}-${index}`} className="border-t border-zinc-800 text-zinc-300">
+                        <td className="px-2 py-1">{r.voce}</td>
+                        <td className="px-2 py-1">{r.macro}</td>
+                        <td className="px-2 py-1 text-right">{r.n}</td>
+                        <td className="px-2 py-1 text-right">{eur(r.importo)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {(d.totRecuperiUtenze ?? 0) > 0.009 && (
+                <p className="mt-2 text-xs text-zinc-400">
+                  Recuperi Big Food sottratti alle utenze: {eur(d.totRecuperiUtenze ?? 0)}.
+                </p>
+              )}
+              {(d.totRicaviDanza ?? 0) > 0.009 && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  Fatture Danza al Centro Arte Danza incluse: {eur(d.totRicaviDanza ?? 0)} ({d.nFattureDanza ?? 0} documenti).
+                </p>
+              )}
+            </details>
+          )}
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
               Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Sono inclusi nel risultato dell’impresa.
@@ -728,6 +775,7 @@ function RegistroTab() {
       setFicToken("")
       setError("")
       void qc.invalidateQueries({ queryKey: ["amm-fic"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -736,6 +784,7 @@ function RegistroTab() {
     onSuccess: () => {
       setError("")
       void qc.invalidateQueries({ queryKey: ["amm-fic"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -879,8 +928,9 @@ function RegistroTab() {
           <p className="text-zinc-400">
             In Fatture in Cloud: Impostazioni → Applicazioni collegate → Collega una nuova applicazione. Crea prima
             un’app su developers.fattureincloud.it, copia l’identificativo applicazione, autorizza la lettura degli
-            acquisti e incolla qui il token. In alternativa si può mettere il token e l’id azienda nel file di
-            configurazione dell’API.
+            acquisti e delle fatture emesse, quindi incolla qui il token. La dashboard legge dal cloud le fatture al
+            Centro Arte Danza e i recuperi utenze a Big Food. In alternativa si può mettere il token e l’id azienda
+            nel file di configurazione dell’API.
           </p>
           {fic.data?.connected ? (
             <p className="text-emerald-300">
