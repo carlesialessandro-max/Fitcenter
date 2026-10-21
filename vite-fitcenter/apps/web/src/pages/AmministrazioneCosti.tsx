@@ -145,6 +145,8 @@ function DashboardTab() {
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
   const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
+  const ricaviAltriCentri = d?.totRicaviAltri ?? 0
+  const costiAltriCentri = d?.totCostiFuoriReparti ?? 0
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -194,54 +196,66 @@ function DashboardTab() {
       {d && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Kpi title="Ricavi" value={eur(d.totRicavi ?? 0)} hint={d.ricaviDisponibili ? "Incassi gestionale del periodo" : "Gestionale non disponibile"} />
+            <Kpi
+              title="Ricavi totali"
+              value={d.ricaviDisponibili ? eur(d.totRicaviAzienda) : "—"}
+              hint={
+                d.ricaviDisponibili
+                  ? `${eur(d.totRicavi ?? 0)} Piscina/Fitness/SPA + ${eur(d.totRicaviAltri ?? 0)} altri incassi`
+                  : "Incassi gestionali non disponibili"
+              }
+            />
             <Kpi
               title="Costi attribuiti ai reparti"
               value={eur(d.totCostoPnl ?? d.tot)}
               hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totStruttura ?? 0)} quota fissi ripartiti`}
             />
             <Kpi
-              title="Risultato"
-              value={eur(d.totUtile ?? 0)}
-              hint={d.marginePct == null ? "Serve almeno un ricavo" : `${d.marginePct}% sui ricavi`}
-              tone={(d.totUtile ?? 0) >= 0 ? "ok" : "ko"}
+              title="Risultato impresa"
+              value={d.ricaviDisponibili ? eur(d.totUtileAzienda) : "—"}
+              hint={
+                d.ricaviDisponibili
+                  ? `Ricavi totali ${eur(d.totRicaviAzienda)} − tutti i costi ${eur(d.totCostiAzienda)}`
+                  : "Incassi gestionali non disponibili: risultato non calcolabile"
+              }
+              tone={d.ricaviDisponibili ? (d.totUtileAzienda >= 0 ? "ok" : "ko") : undefined}
             />
             <Kpi
-              title="Totale costi registrati"
-              value={eur(d.tot)}
-              hint={`Spese ${eur(d.totSpese)} + collaboratori ${eur(d.totCollaboratori)} + buste paga ${eur(d.totBuste)}`}
+              title="Totale costi azienda"
+              value={eur(d.totCostiAzienda)}
+              hint={`${eur(d.totCostiFuoriReparti)} in altri centri, oltre ai tre reparti commerciali`}
             />
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
             <p>
-              <span className="font-medium text-zinc-200">Come leggere i totali:</span> il totale dei costi registrati
-              comprende tutte le spese, i collaboratori e le buste paga del periodo. I costi attribuiti ai reparti
-              comprendono invece solo i costi assegnati a Piscina, Palestra/Fitness e SPA: ai costi diretti di questi
-              reparti si aggiunge la loro quota dei costi fissi di struttura, ripartita in base ai ricavi.
+              <span className="font-medium text-zinc-200">Come leggere i totali:</span> il risultato impresa è dato da
+              tutti i ricavi gestionali meno tutti i costi registrati. I costi attribuiti a Piscina, Fitness e SPA
+              comprendono i costi diretti più la quota dei fissi di struttura ripartita in base ai ricavi.
             </p>
             <p className="mt-1">
-              La differenza resta fuori dal risultato dei tre reparti perché appartiene ad altri centri di costo, per
-              esempio Manutenzione, Pulizie o Varie; non è un costo mancante.
+              I costi di altri centri (per esempio Manutenzione, Pulizie o Varie) sono mostrati nella riga dedicata e
+              inclusi nel totale e nel risultato dell’impresa: il riparto non li elimina.
             </p>
+            <p className="mt-1">I totali aziendali restano complessivi anche quando si seleziona un reparto nel filtro.</p>
           </div>
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
-              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Non entrano nel risultato dei tre reparti.
+              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Sono inclusi nel risultato dell’impresa.
             </p>
           )}
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
             <table className="min-w-full text-sm">
               <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
                 <tr>
-                  <th className="px-3 py-2 font-medium">Reparto</th>
+                  <th className="px-3 py-2 font-medium">Reparto / centro</th>
                   <th className="px-3 py-2 font-medium text-right">Ricavi</th>
-                  <th className="px-3 py-2 font-medium text-right" title="Costi assegnati direttamente al reparto, prima del riparto dei costi fissi">
+                  <th className="px-3 py-2 font-medium text-right" title="Costi assegnati direttamente al reparto o centro, prima del riparto dei costi fissi">
                     Costi diretti
                   </th>
                   <th className="px-3 py-2 font-medium text-right" title="Quota dei costi fissi di struttura assegnata al reparto in base ai ricavi">
                     Quota fissi
                   </th>
-                  <th className="px-3 py-2 font-medium text-right" title="Costi diretti del reparto più la quota dei costi fissi ripartiti">
+                  <th className="px-3 py-2 font-medium text-right" title="Costi diretti più quota dei fissi; per gli altri centri comprende tutti i costi non inclusi nei tre reparti">
                     Costo totale
                   </th>
                   <th className="px-3 py-2 font-medium text-right">Risultato</th>
@@ -250,24 +264,41 @@ function DashboardTab() {
               </thead>
               <tbody>
                 {pnl.length ? (
-                  pnl.map((r) => (
-                    <tr key={r.id} className="border-t border-zinc-800">
-                      <td className="px-3 py-2 text-zinc-100">
-                        {r.nome}
-                        <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoFissiPct}%</span>
+                  <>
+                    {pnl.map((r) => (
+                      <tr key={r.id} className="border-t border-zinc-800">
+                        <td className="px-3 py-2 text-zinc-100">
+                          {r.nome}
+                          <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoFissiPct}%</span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaFissi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili ? eur(r.utile) : "—"}
+                        </td>
+                        <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili && r.marginePct != null ? `${r.marginePct}%` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t border-zinc-800 bg-zinc-900/20">
+                      <td className="px-3 py-2 text-zinc-100">Altri centri (Manutenzione, Pulizie, Varie...)</td>
+                      <td className="px-3 py-2 text-right text-zinc-200">{eur(ricaviAltriCentri)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                      <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
+                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : ricaviAltriCentri >= costiAltriCentri ? "text-emerald-400" : "text-red-400"}`}>
+                        {d.ricaviDisponibili ? eur(ricaviAltriCentri - costiAltriCentri) : "—"}
                       </td>
-                      <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
-                      <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
-                      <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaFissi)}</td>
-                      <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {eur(r.utile)}
-                      </td>
-                      <td className={`px-3 py-2 text-right ${r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                        {r.marginePct == null ? "—" : `${r.marginePct}%`}
+                      <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : ricaviAltriCentri >= costiAltriCentri ? "text-emerald-400" : "text-red-400"}`}>
+                        {d.ricaviDisponibili && ricaviAltriCentri > 0.009
+                          ? `${Math.round(((ricaviAltriCentri - costiAltriCentri) / ricaviAltriCentri) * 1000) / 10}%`
+                          : "—"}
                       </td>
                     </tr>
-                  ))
+                  </>
                 ) : (
                   <tr>
                     <td className="px-3 py-4 text-zinc-500" colSpan={7}>
@@ -280,18 +311,18 @@ function DashboardTab() {
               {pnl.length ? (
                 <tfoot>
                   <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
-                    <td className="px-3 py-2 text-zinc-100">Totale</td>
-                    <td className="px-3 py-2 text-right">{eur(d.totRicavi ?? 0)}</td>
+                    <td className="px-3 py-2 text-zinc-100">Totale impresa</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(d.totRicaviAzienda) : "—"}</td>
                     <td className="px-3 py-2 text-right text-zinc-400">
-                      {eur(pnl.reduce((s, r) => s + r.costiDiretti, 0))}
+                      {eur(costiDirettiReparti + costiAltriCentri)}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totStruttura ?? 0)}</td>
-                    <td className="px-3 py-2 text-right">{eur(d.totCostoPnl ?? 0)}</td>
-                    <td className={`px-3 py-2 text-right ${(d.totUtile ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {eur(d.totUtile ?? 0)}
+                    <td className="px-3 py-2 text-right">{eur(d.totCostiAzienda)}</td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(d.totUtileAzienda) : "—"}
                     </td>
-                    <td className={`px-3 py-2 text-right ${(d.totUtile ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {d.marginePct == null ? "—" : `${d.marginePct}%`}
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili && d.margineAziendaPct != null ? `${d.margineAziendaPct}%` : "—"}
                     </td>
                   </tr>
                 </tfoot>
@@ -299,10 +330,9 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Esempio: 100.000 € di costi piscina su 200.000 € di ricavi è un utile; 100.000 € di costi palestra su 50.000 € di
-            incassi è una perdita, e va tagliato il budget o spinta la vendita. I fissi di struttura (Gestione & Direzione +
-            Spese generali & Utenze) sono spalmati sui tre reparti in proporzione ai ricavi, altrimenti il risultato
-            sarebbe gonfiato. Pulizie e manutenzione restano costi operativi, fuori da questo riparto.
+            Il totale impresa considera tutti i centri di costo. Solo i fissi di struttura sono ripartiti tra Piscina,
+            Fitness e SPA in proporzione ai ricavi; gli altri costi restano nella riga “Altri centri” e concorrono
+            comunque al risultato complessivo.
           </p>
           {(d.strutturaByMacro ?? []).length > 0 && (
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">

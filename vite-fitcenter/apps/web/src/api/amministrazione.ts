@@ -81,6 +81,11 @@ export type AmmDashboard = {
   ricaviDisponibili?: boolean
   totRicavi?: number
   totRicaviAltri?: number
+  totRicaviAzienda: number
+  totCostiAzienda: number
+  totCostiFuoriReparti: number
+  totUtileAzienda: number
+  margineAziendaPct: number | null
   totStruttura?: number
   totCostoPnl?: number
   totUtile?: number

@@ -751,12 +751,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const collabAll = ammCostiStore.listCollaboratori()
     const lpAnno = await costiCollaboratoriAnno(anno)
     const lpSlices: Slice[] = []
+    let totCollaboratoriAziendaRaw = 0
     const mesiTarget = mese
       ? [mese]
       : Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
     for (const ym of mesiTarget) {
       const stored = collabAll.filter((c) => c.mese === ym)
       if (stored.length) {
+        totCollaboratoriAziendaRaw += stored.reduce((sum, c) => sum + (Number(c.totale) || 0), 0)
         for (const c of stored) {
           const alloc = allocateQuote(c.totale, c.quote)
           pnlAlloc.push(...alloc)
@@ -773,6 +775,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
       const m = lpAnno.find((x) => x.mese === ym)
       if (!m) continue
+      totCollaboratoriAziendaRaw += m.righe.reduce((sum, row) => sum + (Number(row.importo) || 0), 0)
       for (const r of m.righe) {
         pnlAlloc.push({ repartoId: r.repartoId, importo: r.importo })
         if (!inFiltro(r.repartoId)) continue
@@ -893,6 +896,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const totRicavi = round2(risultato.reduce((s, r) => s + r.ricavi, 0))
     const totCostoPnl = round2(risultato.reduce((s, r) => s + r.costoTotale, 0))
     const totUtile = round2(totRicavi - totCostoPnl)
+    const totRicaviAzienda = round2(ricavi.tot)
+    const totCostiAzienda = round2(
+      spese.reduce((sum, s) => sum + (Number(s.totale) || 0), 0) +
+        busteAll.reduce((sum, b) => sum + (Number(b.totale) || 0), 0) +
+        totCollaboratoriAziendaRaw,
+    )
+    const totCostiFuoriReparti = round2(totCostiAzienda - totCostoPnl)
+    const totUtileAzienda = round2(totRicaviAzienda - totCostiAzienda)
     const byCollaboratoriMap = new Map<string, number>()
     for (const x of lpSlices) {
       byCollaboratoriMap.set(x.repartoId, Math.round(((byCollaboratoriMap.get(x.repartoId) ?? 0) + x.importo) * 100) / 100)
@@ -931,6 +942,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
       ricaviDisponibili: ricavi.disponibile,
       totRicavi,
       totRicaviAltri: ricavi.totAltri,
+      totRicaviAzienda,
+      totCostiAzienda,
+      totCostiFuoriReparti,
+      totUtileAzienda,
+      margineAziendaPct: totRicaviAzienda > 0.009 ? Math.round((totUtileAzienda / totRicaviAzienda) * 1000) / 10 : null,
       totStruttura,
       totCostoPnl,
       totUtile,
