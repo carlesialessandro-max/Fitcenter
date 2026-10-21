@@ -1428,15 +1428,15 @@ function StipendiTab() {
     setError("")
     setImportMsg("")
     try {
+      const isCostSummary = file.name.toLowerCase().includes("costo dipendenti")
       let text = await extractPdfText(file, kind === "buste" ? 20 : 80, {
         preferTail: kind === "buste",
       })
-      const isCostSummary = file.name.toLowerCase().includes("costo dipendenti")
       if (kind === "buste" && (!text.trim() || isCostSummary)) {
         setImportMsg("PDF scansito: OCR locale in corso…")
         const ocrText = await extractPdfTextWithOcr(file, 5, (progress) => {
           setImportMsg(`Lettura OCR del riepilogo: ${Math.round(progress * 100)}%`)
-        })
+        }, { rotateForConsuntivo: isCostSummary })
         if (ocrText.trim()) text = ocrText
       }
       const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)

@@ -136,6 +136,11 @@ function aggregateDipendenti(mese: string, totale: number, descrizione: string):
   ]
 }
 
+function isCostoConsuntivoPage(text: string): boolean {
+  const label = normalizeLabel(text)
+  return label.includes("costoconsuntivo") && label.includes("periodo")
+}
+
 function totaleDaRigaConsuntivo(line: string): number | null {
   const amounts = amountsOn(line).filter((value) => value > 0)
   if (amounts.length >= 2) {
@@ -155,16 +160,18 @@ function totaleDaRigaConsuntivo(line: string): number | null {
 function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
   const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
   const totals = pages.flatMap((page) => {
-    if (!normalizeLabel(page).includes("costoconsuntivodelperiodo")) return []
+    if (!isCostoConsuntivoPage(page)) return []
     const lines = page.split(/\r?\n/)
     const values: number[] = []
     for (let i = 0; i < lines.length; i++) {
       const label = normalizeLabel(lines[i] ?? "")
       if (/^(?:totale|totali)azienda/.test(label)) {
-        const value = totaleDaRigaConsuntivo(lines[i] ?? "")
+        const value = totaleDaRigaConsuntivo(lines.slice(i, i + 5).join(" "))
         if (value != null) values.push(value)
-      } else if (/^(?:totale|totali)$/.test(label) && /^azienda/.test(normalizeLabel(lines[i + 1] ?? ""))) {
-        const value = totaleDaRigaConsuntivo(`${lines[i]} ${lines[i + 1]}`)
+      } else if (/^(?:totale|totali)$/.test(label)) {
+        const nearby = lines.slice(i, i + 6)
+        if (!nearby.some((line) => /^azienda/.test(normalizeLabel(line)))) continue
+        const value = totaleDaRigaConsuntivo(nearby.join(" "))
         if (value != null) values.push(value)
       }
     }
