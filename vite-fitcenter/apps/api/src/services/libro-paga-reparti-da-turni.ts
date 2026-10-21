@@ -63,9 +63,8 @@ function findLevel(
   ancestorAliases: string[] = [],
 ): LpagaLivello | undefined {
   const levelsById = new Map(levels.map((level) => [level.id, level]))
-  const active = levels.filter((level) => level.attivo)
   for (const alias of aliases) {
-    const idMatch = active.find(
+    const idMatch = levels.find(
       (level) =>
         normalize(level.id) === normalize(alias) &&
         (!ancestorAliases.length || hasAncestor(level, ancestorAliases, levelsById)),
@@ -73,7 +72,7 @@ function findLevel(
     if (idMatch) return idMatch
   }
   for (const alias of aliases) {
-    const nameMatches = active.filter(
+    const nameMatches = levels.filter(
       (level) =>
         normalize(level.nome) === normalize(alias) &&
         (!ancestorAliases.length || hasAncestor(level, ancestorAliases, levelsById)),
@@ -100,9 +99,30 @@ function targetForActivity(activity: string): RepartoTarget | null {
   const text = normalize(activity)
 
   if (/lez(?:ione|ioni)?\s*priv|privat/.test(text)) {
+    const privateAliases = /disabil/.test(text)
+      ? [
+          "lezioni private disabili nardi",
+          "lezioni private disabili",
+          "lez private disabili",
+          "lezione private disabili",
+        ]
+      : /bimb|bambin/.test(text)
+        ? [
+            "lezioni private bimbi",
+            "lezione private bimbi super",
+            "lezioni priv bimbi",
+            "2 bimbi privata",
+            "2 bimbi private super",
+          ]
+        : [
+            "lez priv 30 min",
+            "lezioni priv adulti",
+            "lezioni priv adulti pro",
+            "lezioni private",
+          ]
     return {
       key: "lezioni private",
-      aliases: ["lezioni private", "lez private", "private acqua"],
+      aliases: [...privateAliases, "lezioni private", "lez private", "private acqua"],
       ancestorAliases: ["piscina"],
     }
   }
