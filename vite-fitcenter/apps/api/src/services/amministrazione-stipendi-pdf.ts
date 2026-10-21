@@ -58,7 +58,7 @@ const SKIP_MATTONAI =
 
 function amountsOn(line: string): number[] {
   const out: number[] = []
-  const re = /(?:€\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|-)\s*€?/g
+  const re = /(?:€\s*)?((?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}|-)\s*€?(?![\d.,])/g
   let m: RegExpExecArray | null
   while ((m = re.exec(line))) {
     const n = parseEuro(m[1] ?? "")
@@ -136,15 +136,39 @@ function aggregateDipendenti(mese: string, totale: number, descrizione: string):
   ]
 }
 
+function totaleDaRigaConsuntivo(line: string): number | null {
+  const amounts = amountsOn(line).filter((value) => value > 0)
+  if (amounts.length >= 2) {
+    const values = amounts.slice()
+    if (values[0]! <= 5000 && Math.abs(values[0]! - Math.round(values[0]!)) < 0.01) values.shift()
+    if (values.length > 1 && values[values.length - 1]! < 100) values.pop()
+    if (values.length >= 2) {
+      const largest = Math.max(...values)
+      const components = values.reduce((sum, value) => sum + value, 0) - largest
+      if (Math.abs(largest - components) < 0.03) return largest
+    }
+    if (values.length >= 4) return Math.round(values.reduce((sum, value) => sum + value, 0) * 100) / 100
+  }
+  return null
+}
+
 function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
   const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
   const totals = pages.flatMap((page) => {
     if (!normalizeLabel(page).includes("costoconsuntivodelperiodo")) return []
-    return page
-      .split(/\r?\n/)
-      .filter((line) => /^(?:totale|totali)azienda/.test(normalizeLabel(line)))
-      .map(costoAziendaFromLine)
-      .filter((value): value is number => value != null && value > 0)
+    const lines = page.split(/\r?\n/)
+    const values: number[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const label = normalizeLabel(lines[i] ?? "")
+      if (/^(?:totale|totali)azienda/.test(label)) {
+        const value = totaleDaRigaConsuntivo(lines[i] ?? "")
+        if (value != null) values.push(value)
+      } else if (/^(?:totale|totali)$/.test(label) && /^azienda/.test(normalizeLabel(lines[i + 1] ?? ""))) {
+        const value = totaleDaRigaConsuntivo(`${lines[i]} ${lines[i + 1]}`)
+        if (value != null) values.push(value)
+      }
+    }
+    return values
   })
   if (!totals.length) return []
   return aggregateDipendenti(
