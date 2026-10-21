@@ -144,6 +144,7 @@ function DashboardTab() {
   const pie = d?.byMacro?.length ? d.byMacro : (d?.byReparto ?? [])
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
+  const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -194,14 +195,34 @@ function DashboardTab() {
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Kpi title="Ricavi" value={eur(d.totRicavi ?? 0)} hint={d.ricaviDisponibili ? "Incassi gestionale del periodo" : "Gestionale non disponibile"} />
-            <Kpi title="Costi dopo riparto" value={eur(d.totCostoPnl ?? d.tot)} hint={`Di cui fissi di struttura ${eur(d.totStruttura ?? 0)}`} />
+            <Kpi
+              title="Costi attribuiti ai reparti"
+              value={eur(d.totCostoPnl ?? d.tot)}
+              hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totStruttura ?? 0)} quota fissi ripartiti`}
+            />
             <Kpi
               title="Risultato"
               value={eur(d.totUtile ?? 0)}
               hint={d.marginePct == null ? "Serve almeno un ricavo" : `${d.marginePct}% sui ricavi`}
               tone={(d.totUtile ?? 0) >= 0 ? "ok" : "ko"}
             />
-            <Kpi title="Costi diretti" value={eur(d.tot)} hint={`${d.nSpese} documenti · ${d.nBuste ?? 0} buste · collaboratori ${eur(d.totCollaboratori)}`} />
+            <Kpi
+              title="Totale costi registrati"
+              value={eur(d.tot)}
+              hint={`Spese ${eur(d.totSpese)} + collaboratori ${eur(d.totCollaboratori)} + buste paga ${eur(d.totBuste)}`}
+            />
+          </div>
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
+            <p>
+              <span className="font-medium text-zinc-200">Come leggere i totali:</span> il totale dei costi registrati
+              comprende tutte le spese, i collaboratori e le buste paga del periodo. I costi attribuiti ai reparti
+              comprendono invece solo i costi assegnati a Piscina, Palestra/Fitness e SPA: ai costi diretti di questi
+              reparti si aggiunge la loro quota dei costi fissi di struttura, ripartita in base ai ricavi.
+            </p>
+            <p className="mt-1">
+              La differenza resta fuori dal risultato dei tre reparti perché appartiene ad altri centri di costo, per
+              esempio Manutenzione, Pulizie o Varie; non è un costo mancante.
+            </p>
           </div>
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
@@ -214,9 +235,15 @@ function DashboardTab() {
                 <tr>
                   <th className="px-3 py-2 font-medium">Reparto</th>
                   <th className="px-3 py-2 font-medium text-right">Ricavi</th>
-                  <th className="px-3 py-2 font-medium text-right">Costi diretti</th>
-                  <th className="px-3 py-2 font-medium text-right">Quota fissi</th>
-                  <th className="px-3 py-2 font-medium text-right">Costo totale</th>
+                  <th className="px-3 py-2 font-medium text-right" title="Costi assegnati direttamente al reparto, prima del riparto dei costi fissi">
+                    Costi diretti
+                  </th>
+                  <th className="px-3 py-2 font-medium text-right" title="Quota dei costi fissi di struttura assegnata al reparto in base ai ricavi">
+                    Quota fissi
+                  </th>
+                  <th className="px-3 py-2 font-medium text-right" title="Costi diretti del reparto più la quota dei costi fissi ripartiti">
+                    Costo totale
+                  </th>
                   <th className="px-3 py-2 font-medium text-right">Risultato</th>
                   <th className="px-3 py-2 font-medium text-right">% su ricavi</th>
                 </tr>
