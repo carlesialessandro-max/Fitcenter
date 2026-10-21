@@ -222,9 +222,17 @@ function eventDateIso(e: { dateIso?: string | null }): string {
 
 function eventsMatchingCalendarDay(events: CalendarioMergedEvent[], d: Date): CalendarioMergedEvent[] {
   const iso = isoYmdFromDate(d)
+  const monthDay = iso.slice(5)
+  const seasonal = events.filter(
+    (e) =>
+      e.seasonal &&
+      e.dow === d.getDay() &&
+      monthDay >= e.seasonal.from &&
+      monthDay <= e.seasonal.to,
+  )
   const dated = events.filter((e) => eventDateIso(e) === iso)
-  if (dated.length) return dated
-  return events.filter((e) => !eventDateIso(e) && e.dow === d.getDay())
+  if (dated.length) return [...dated, ...seasonal]
+  return [...events.filter((e) => !eventDateIso(e) && !e.seasonal && e.dow === d.getDay()), ...seasonal]
 }
 
 function parseCostoOrario(v: unknown): number | null {
@@ -310,6 +318,7 @@ function revisionToMergedEvent(comparto: CalendarioComparto, r: CalendarioSlotRe
     sheet: r.stableKey.startsWith("manual-") ? "Manuale" : "Calendario",
     dow: r.dow,
     dateIso: r.dateIso ?? null,
+    seasonal: r.seasonal,
     start: r.start,
     title: r.title,
     staff,
@@ -533,6 +542,7 @@ function mergeManualOnlyFromDb(comparto: CalendarioComparto, db: CalendarioDb): 
       sheet: "Calendario",
       dow: r.dow,
       dateIso: r.dateIso ?? null,
+      seasonal: r.seasonal,
       start: r.start,
       title: r.title,
       staff: r.staffOverride?.trim() || "—",
@@ -550,8 +560,59 @@ function mergeManualOnlyFromDb(comparto: CalendarioComparto, db: CalendarioDb): 
   )
 }
 
+const SUMMER_POOL_SEED_KEY = "piscina|seed|summer-defaults"
+
+function ensureSummerPoolShifts(db: CalendarioDb): CalendarioDb {
+  if (db.revisions.some((r) => r.comparto === "piscina" && r.stableKey === SUMMER_POOL_SEED_KEY)) return db
+
+  const now = new Date().toISOString()
+  let next = db
+  const shifts = [
+    { start: "08:30", end: "14:00" },
+    { start: "14:30", end: "19:30" },
+  ]
+
+  for (let dow = 0; dow < 7; dow++) {
+    for (const shift of shifts) {
+      const stableKey = `piscina|summer|${dow}|esterna|${shift.start}`
+      if (next.revisions.some((r) => r.comparto === "piscina" && r.stableKey === stableKey)) continue
+      next = upsertRevision(next, {
+        comparto: "piscina",
+        stableKey,
+        dow,
+        seasonal: { from: "06-01", to: "09-15" },
+        start: shift.start,
+        title: `Copertura · ${shift.start}–${shift.end}`,
+        zona: "esterna",
+        staffOverride: null,
+        istruttoreId: null,
+        updatedAt: now,
+        updatedBy: "seed-turni-estivi",
+      })
+    }
+  }
+
+  next = upsertRevision(next, {
+    comparto: "piscina",
+    stableKey: SUMMER_POOL_SEED_KEY,
+    dow: 0,
+    dateIso: null,
+    start: "00:00",
+    title: "Turni estivi inizializzati",
+    zona: "esterna",
+    removed: true,
+    updatedAt: now,
+    updatedBy: "seed-turni-estivi",
+  })
+  writeCalendarioDb(next)
+  return next
+}
+
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
-  if (MANUAL_ONLY_COMPARTI.includes(comparto)) return mergeManualOnlyFromDb(comparto, db)
+  if (MANUAL_ONLY_COMPARTI.includes(comparto)) {
+    const manualDb = comparto === "piscina" ? ensureSummerPoolShifts(db) : db
+    return mergeManualOnlyFromDb(comparto, manualDb)
+  }
 
   if (SERVER_SEEDED_COMPARTI.includes(comparto)) {
     let seededDb = db
@@ -930,6 +991,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
         : SERVER_SEEDED_COMPARTI.includes(raw)
           ? null
           : undefined,
+    seasonal: prevRev?.seasonal,
     start,
     title,
     zona: zonaOut,

@@ -132,7 +132,8 @@ export function dedupeShiftEvents<T extends ShiftEvent>(dayEvents: T[]): T[] {
   const byLane = new Map<string, T[]>()
   const sorted = [...dayEvents].sort((a, b) => eventRangeMin(a).sm - eventRangeMin(b).sm || a.id.localeCompare(b.id))
   for (const e of sorted) {
-    const key = staffColorKey(e)
+    const staffKey = staffColorKey(e)
+    const key = e.seasonal && staffKey === "unknown" ? `${staffKey}:${e.id}` : staffKey
     const list = byLane.get(key)
     if (list) list.push(e)
     else byLane.set(key, [e])

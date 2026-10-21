@@ -381,7 +381,10 @@ export function proponeConvalidaMese(opts: {
     const dow = new Date(`${date}T12:00:00`).getDay()
     for (const e of cal.events) {
       const dateIso = String(e.dateIso ?? "").trim()
-      if (dateIso) {
+      if (e.seasonal) {
+        const monthDay = date.slice(5)
+        if (e.dow !== dow || monthDay < e.seasonal.from || monthDay > e.seasonal.to) continue
+      } else if (dateIso) {
         if (dateIso !== date) continue
       } else if (e.dow !== dow) continue
       occ.push({

@@ -852,7 +852,11 @@ function EditEventModal({
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <SlotDayPicker valueIso={slotDateIso} onChange={setSlotDayFromIso} />
-              {isCorsiLikeEdit ? (
+              {event.seasonal ? (
+                <p className="mt-1 text-xs text-zinc-500">
+                  Turno ricorrente ogni anno dal {event.seasonal.from} al {event.seasonal.to}.
+                </p>
+              ) : isCorsiLikeEdit ? (
                 <p className="mt-1 text-xs text-zinc-500">
                   Ripetizione settimanale: ogni <span className="font-medium text-zinc-300">{dowLabel(dow)}</span>
                 </p>
@@ -1472,8 +1476,9 @@ export function CalendarioRepartoPage() {
       const staffTrim = p.staffText.trim()
       const noteTrim = p.note.trim()
       try {
-        const dateIso =
-          p.dateIso !== undefined
+        const dateIso = e.seasonal
+          ? null
+          : p.dateIso !== undefined
             ? p.dateIso
             : compartoIsManualServer(apiComparto) && editCalendarDate
               ? editCalendarDate
@@ -1627,7 +1632,8 @@ export function CalendarioRepartoPage() {
                 </>
               ) : apiComparto === "piscina" ? (
                 <>
-                  Orario bagnini da Excel invernale (settimane datate). Puoi aggiungere o modificare un turno{" "}
+                  Turni vasca esterna 08:30–14:00 e 14:30–19:30, ricorrenti ogni anno dal 1° giugno al 15 settembre.
+                  In inverno resta l&apos;orario bagnini da Excel (settimane datate). Puoi aggiungere o modificare un turno{" "}
                   <strong className="font-medium text-zinc-400">solo per quel giorno</strong>. Zone: invernale, interna, esterna.
                 </>
               ) : apiComparto === "reception" ? (

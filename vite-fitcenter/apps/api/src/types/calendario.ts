@@ -49,6 +49,8 @@ export type CalendarioSlotRevision = {
   dow: number
   /** Se valorizzato (YYYY-MM-DD), lo slot vale solo per quel giorno di calendario. */
   dateIso?: string | null
+  /** Ricorrenza annuale limitata a un intervallo MM-DD inclusivo. */
+  seasonal?: { from: string; to: string }
   start: string
   title: string
   zona?: string
@@ -71,6 +73,7 @@ export type CalendarioDb = {
 export type CalendarioMergedEvent = CalendarioBaseEvent & {
   stableKey: string
   dateIso?: string | null
+  seasonal?: { from: string; to: string }
   istruttoreId?: string | null
   staffOverride?: string | null
   note?: string | null

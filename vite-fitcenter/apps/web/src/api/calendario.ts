@@ -47,6 +47,8 @@ export type CalendarioMergedEventDto = {
   dow: number
   /** YYYY-MM-DD: slot solo per quel giorno (calendari server). */
   dateIso?: string | null
+  /** Ricorrenza annuale limitata a un intervallo MM-DD inclusivo. */
+  seasonal?: { from: string; to: string }
   start: string
   title: string
   staff: string
