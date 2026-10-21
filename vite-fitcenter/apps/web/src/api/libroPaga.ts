@@ -189,8 +189,7 @@ export type LibroPagaSnapshot = {
 export type LibroPagaRepartiPreview = {
   mese: string
   turniConsiderati: number
-  turniSenzaAbbinamento: number
-  abbinamentiAmbigui: number
+  turniSenzaPersonale: number
   attivitaSenzaReparto: { attivita: string; turni: number }[]
   personale: {
     personaleId: string

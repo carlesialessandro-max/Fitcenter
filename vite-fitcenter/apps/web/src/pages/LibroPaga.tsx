@@ -600,8 +600,8 @@ function PersonaleTab({
       <Card title="Assegna reparti dai turni">
         <div className="space-y-3">
           <p className="text-sm text-zinc-400">
-            Analizza i turni del mese scelto e propone i reparti per gli istruttori abbinati. Le assegnazioni esistenti
-            vengono mantenute; i ruoli di accesso (Istruttore, Responsabile, Amministratore) non vengono modificati.
+            Analizza le mansioni dei turni effettivamente inseriti nel Libro paga e propone i reparti per il personale
+            attivo. Le assegnazioni esistenti vengono mantenute; i ruoli di accesso non vengono modificati.
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-sm text-zinc-400" htmlFor="reparti-turni-mese">Mese dei turni</label>
@@ -630,8 +630,7 @@ function PersonaleTab({
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-300">
                 <span>Turni esaminati: {previewReparti.turniConsiderati}</span>
                 <span>Persone con reparti da aggiungere: {previewReparti.personeConModifiche}</span>
-                <span>Nominativi non abbinati: {previewReparti.turniSenzaAbbinamento}</span>
-                <span>Abbinamenti ambigui: {previewReparti.abbinamentiAmbigui}</span>
+                <span>Turni senza personale attivo: {previewReparti.turniSenzaPersonale}</span>
               </div>
               {previewReparti.personale.length > 0 && (
                 <div className="max-h-80 overflow-auto rounded border border-zinc-800">
@@ -665,10 +664,9 @@ function PersonaleTab({
                   {previewReparti.attivitaSenzaReparto.map((item) => `${item.attivita} (${item.turni})`).join(", ")}
                 </p>
               )}
-              {previewReparti.turniSenzaAbbinamento > 0 && (
+              {previewReparti.turniSenzaPersonale > 0 && (
                 <p className="text-xs text-amber-300">
-                  I turni con nominativo non abbinato o ambiguo non verranno assegnati. Verifica i nomi prima di
-                  applicare.
+                  I turni associati a personale non attivo o non più presente non verranno usati.
                 </p>
               )}
               <button

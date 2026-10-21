@@ -1,24 +1,18 @@
-import type { CalendarioComparto, CalendarioMergedEvent, CalendarioIstruttore } from "../types/calendario.js"
-import { listCalendarioPerAssegnazione } from "../handlers/calendario.js"
 import {
   listLivelli,
   listPersonale,
+  listTurni,
   mergePersonaleLivelli,
   setPersonaleLivelliBatch,
   type LpagaLivello,
   type LpagaPersonale,
+  type LpagaTurno,
 } from "../store/libro-paga-db.js"
-import { namesMatchPersonale } from "./libro-paga-convalida.js"
-
-type CalendarAssignmentEvent = CalendarioMergedEvent & {
-  comparto: CalendarioComparto
-  staffDisplay: string
-}
 
 type RepartoTarget = {
-  id: string
-  labels: string[]
-  fallbackLabels: string[]
+  key: string
+  aliases: string[]
+  fallbackAliases?: string[]
 }
 
 type AssignmentSuggestion = {
@@ -34,8 +28,7 @@ type AssignmentSuggestion = {
 export type LibroPagaRepartiPreview = {
   mese: string
   turniConsiderati: number
-  turniSenzaAbbinamento: number
-  abbinamentiAmbigui: number
+  turniSenzaPersonale: number
   attivitaSenzaReparto: { attivita: string; turni: number }[]
   personale: AssignmentSuggestion[]
   personeConModifiche: number
@@ -49,171 +42,6 @@ function normalize(value: string): string {
     .replace(/\p{M}/gu, "")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
-}
-
-function personNameForms(person: LpagaPersonale): Set<string> {
-  const nome = normalize(person.nome)
-  const cognome = normalize(person.cognome ?? "")
-  const forms = new Set<string>()
-  if (nome && cognome) {
-    forms.add(`${nome} ${cognome}`)
-    forms.add(`${cognome} ${nome}`)
-  }
-  forms.add(normalize(person.nome))
-  return forms
-}
-
-function staffNames(
-  event: CalendarAssignmentEvent,
-  instructorsById: Map<string, CalendarioIstruttore>,
-): string[] {
-  const names = [event.staffDisplay, event.staffOverride ?? ""]
-  const instructor = event.istruttoreId ? instructorsById.get(event.istruttoreId) : undefined
-  if (instructor) names.push(`${instructor.cognome} ${instructor.nome}`)
-  names.push(event.staff)
-  return [...new Set(names.map((x) => x.trim()).filter((x) => {
-    const n = normalize(x)
-    return n && n !== "-" && n !== "corso" && n !== "trainer" && n !== "training" && n !== "trainers"
-  }))]
-}
-
-function findPerson(
-  names: string[],
-  people: LpagaPersonale[],
-): { person?: LpagaPersonale; ambiguous: boolean } {
-  for (const name of names) {
-    const normalized = normalize(name)
-    const exact = people.filter((person) => personNameForms(person).has(normalized))
-    if (exact.length === 1) return { person: exact[0], ambiguous: false }
-    if (exact.length > 1) return { ambiguous: true }
-  }
-
-  const matches = people.filter((person) => names.some((name) => namesMatchPersonale(person, name)))
-  if (matches.length === 1) return { person: matches[0], ambiguous: false }
-  return { ambiguous: matches.length > 1 }
-}
-
-function eventAppliesToDate(event: CalendarAssignmentEvent, dateIso: string, dow: number): boolean {
-  if (event.dateIso) return event.dateIso === dateIso
-  if (event.seasonal) {
-    const mmdd = dateIso.slice(5)
-    return event.seasonal.from <= event.seasonal.to
-      ? mmdd >= event.seasonal.from && mmdd <= event.seasonal.to
-      : mmdd >= event.seasonal.from || mmdd <= event.seasonal.to
-  }
-  return event.dow === dow
-}
-
-function eventsForMonth(events: CalendarAssignmentEvent[], month: string): CalendarAssignmentEvent[] {
-  const [year, monthNumber] = month.split("-").map(Number)
-  const days = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()
-  const relevant: CalendarAssignmentEvent[] = []
-  for (let day = 1; day <= days; day += 1) {
-    const date = new Date(Date.UTC(year, monthNumber - 1, day))
-    const dateIso = `${month}-${String(day).padStart(2, "0")}`
-    for (const event of events) {
-      if (eventAppliesToDate(event, dateIso, date.getUTCDay())) relevant.push(event)
-    }
-  }
-  return relevant
-}
-
-function targetForEvent(
-  event: CalendarAssignmentEvent,
-  activityText: string,
-): RepartoTarget | null {
-  const text = normalize(activityText)
-  const zona = normalize(event.zona)
-  if (/\bspa\b|benessere|wellness/.test(text)) {
-    return { id: "spa-benessere", labels: ["spa benessere", "spa", "benessere"], fallbackLabels: ["spa"] }
-  }
-  if (/pole dance/.test(text)) {
-    return { id: "pole-dance", labels: ["pole dance", "pole"], fallbackLabels: ["palestra", "fitness"] }
-  }
-  if (event.comparto === "piscina") {
-    if (/esterna|estiva|vasca esterna/.test(zona)) {
-      return {
-        id: "piscina-estiva",
-        labels: ["piscina estiva", "piscina esterna", "vasca esterna"],
-        fallbackLabels: ["piscina"],
-      }
-    }
-    return {
-      id: "piscina-coperta",
-      labels: ["piscina coperta", "piscina interna", "vasca interna", "bagnini"],
-      fallbackLabels: ["piscina"],
-    }
-  }
-  if (event.comparto === "acquaticita" || /acquagym|acquafitness|acqua fitness|corsi in acqua/.test(text) || zona === "acqua") {
-    return {
-      id: "corsi-fit-acqua",
-      labels: ["corsi fit acqua", "corsi acqua", "acquaticita", "acqua fitness", "acquagym"],
-      fallbackLabels: ["piscina", "fitness", "palestra"],
-    }
-  }
-  if (event.comparto === "scuola_nuoto") {
-    if (/adult|master/.test(text)) {
-      return {
-        id: "scuola-nuoto-adulti",
-        labels: ["scuola nuoto adulti", "scuola nuoto master", "nuoto adulti"],
-        fallbackLabels: ["scuola nuoto", "piscina"],
-      }
-    }
-    if (/bamb|bimb|baby|junior|ragazz/.test(text)) {
-      return {
-        id: "scuola-nuoto-bambini",
-        labels: ["scuola nuoto bambini", "scuola nuoto bimbi", "scuola nuoto baby", "scuola nuoto"],
-        fallbackLabels: ["piscina"],
-      }
-    }
-    return {
-      id: "scuola-nuoto",
-      labels: ["scuola nuoto"],
-      fallbackLabels: ["piscina"],
-    }
-  }
-  if (event.comparto === "sala_fitness") {
-    return {
-      id: "sala-pesi",
-      labels: ["sala pesi", "sala fitness", "sala attrezzi", "palestra sala pesi"],
-      fallbackLabels: ["palestra", "fitness"],
-    }
-  }
-  if (event.comparto === "corsi" || event.comparto === "danza") {
-    if (event.comparto === "danza" || zona === "terra") {
-      return {
-        id: "corsi-fit-terra",
-        labels: ["corsi fit terra", "corsi fitness", "corsi fit", "danza"],
-        fallbackLabels: ["palestra", "fitness"],
-      }
-    }
-    return {
-      id: "corsi-fit-terra",
-      labels: ["corsi fit terra", "corsi fitness", "corsi fit"],
-      fallbackLabels: ["palestra", "fitness"],
-    }
-  }
-  if (event.comparto === "pulizie") {
-    return { id: "pulizie", labels: ["pulizie"], fallbackLabels: ["servizi", "gestione"] }
-  }
-  if (event.comparto === "reception") {
-    return {
-      id: "reception",
-      labels: ["reception", "desk", "segreteria", "amministrazione uffici"],
-      fallbackLabels: ["gestione", "amministrazione"],
-    }
-  }
-  if (event.comparto === "spogliatoi") {
-    return {
-      id: "spogliatoi",
-      labels: ["spogliatoi", "servizi", "custodia"],
-      fallbackLabels: ["servizi", "gestione"],
-    }
-  }
-  if (event.comparto === "campus") {
-    return { id: "campus", labels: ["campus"], fallbackLabels: [] }
-  }
-  return null
 }
 
 function findLevel(levels: LpagaLivello[], aliases: string[]): LpagaLivello | undefined {
@@ -230,8 +58,116 @@ function findLevel(levels: LpagaLivello[], aliases: string[]): LpagaLivello | un
   return undefined
 }
 
+function levelPath(levelId: string, levelsById: Map<string, LpagaLivello>): string[] {
+  const path: string[] = []
+  const visited = new Set<string>()
+  let current = levelsById.get(levelId)
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id)
+    path.unshift(current.nome)
+    current = current.parentId ? levelsById.get(current.parentId) : undefined
+  }
+  return path
+}
+
+function targetForActivity(activity: string): RepartoTarget | null {
+  const text = normalize(activity)
+
+  if (/lez(?:ione|ioni)?\s*priv|privat/.test(text)) {
+    return { key: "lezioni private", aliases: ["lezioni private", "lez private", "private acqua"] }
+  }
+  if (/controllo.*vasca|piano vasca|bagnin/.test(text)) {
+    return {
+      key: "controllo vasca",
+      aliases: ["bagnini", "controllo piano vasca", "piano vasca"],
+      fallbackAliases: ["piscina coperta", "piscina"],
+    }
+  }
+  if (/puliz|manutenz/.test(text) && /piscin|vasca|spogliato/.test(text)) {
+    return { key: "manutenzione piscina", aliases: ["manutenzione piscina", "pulizie piscina", "pulizie"] }
+  }
+  if (/agonistic|squadra categoria/.test(text)) {
+    return {
+      key: "agonismo",
+      aliases: ["squadra agonistica", "agonismo", "nuoto agonistico", "master piscina"],
+      fallbackAliases: ["scuola nuoto"],
+    }
+  }
+  if (/scuola nuoto|sn bambini|bimb|bambin|baby|junior|ragazz/.test(text)) {
+    if (/adult|master/.test(text)) {
+      return {
+        key: "scuola nuoto adulti",
+        aliases: ["scuola nuoto adulti", "scuola nuoto master", "nuoto adulti"],
+        fallbackAliases: ["scuola nuoto"],
+      }
+    }
+    return {
+      key: "scuola nuoto bambini",
+      aliases: ["scuola nuoto bimbi", "scuola nuoto bambini", "scuola nuoto baby", "scuola nuoto"],
+    }
+  }
+  if (/master piscina/.test(text)) {
+    return {
+      key: "agonismo",
+      aliases: ["squadra agonistica", "agonismo", "nuoto agonistico", "master piscina"],
+      fallbackAliases: ["scuola nuoto"],
+    }
+  }
+  if (/\bh ?2 ?[o0]\b|\bacquagym\b|\bacquafitness\b|\bacqua fitness\b/.test(text)) {
+    return {
+      key: "corsi fit acqua",
+      aliases: ["corsi fit acqua", "corsi fit h2o", "corsi fit h20", "corsi acqua"],
+    }
+  }
+  if (/acquaticita/.test(text)) {
+    return { key: "acquaticita", aliases: ["acquaticita"] }
+  }
+  if (/sala pesi|sala fitness|sala attrezzi/.test(text)) {
+    return {
+      key: "sala pesi",
+      aliases: ["sala pesi", "sala fitness", "sala attrezzi"],
+      fallbackAliases: ["palestra"],
+    }
+  }
+  if (/corsi fit terra|corsi fit|corso fit|corsi fitness|corso fitness/.test(text)) {
+    return {
+      key: "corsi fit terra",
+      aliases: ["corsi fit terra", "corsi fit", "corsi fitness"],
+      fallbackAliases: ["palestra"],
+    }
+  }
+  if (/reception|desk|segreteri|accoglienza/.test(text)) {
+    return {
+      key: "reception",
+      aliases: ["reception", "desk", "segreteria"],
+      fallbackAliases: ["amministrazione", "uffici"],
+    }
+  }
+  if (/spogliato/.test(text)) {
+    return { key: "spogliatoi", aliases: ["spogliatoi"], fallbackAliases: ["servizi"] }
+  }
+  if (/campus/.test(text)) return { key: "campus", aliases: ["campus"] }
+  if (/spa|benessere|wellness/.test(text)) {
+    return { key: "spa", aliases: ["spa", "benessere", "wellness"] }
+  }
+  if (/danza|pole dance/.test(text)) {
+    return { key: "danza", aliases: ["danza", "pole dance"], fallbackAliases: ["corsi fit terra", "palestra"] }
+  }
+  if (/bagn|piscin|vasca|nuoto libero/.test(text)) {
+    return {
+      key: "piscina",
+      aliases: ["piscina coperta", "piscina", "bagnini"],
+    }
+  }
+  if (/puliz/.test(text)) return { key: "pulizie", aliases: ["pulizie"] }
+  return null
+}
+
 function resolveLevel(levels: LpagaLivello[], target: RepartoTarget): LpagaLivello | undefined {
-  return findLevel(levels, [target.id, ...target.labels]) ?? findLevel(levels, target.fallbackLabels)
+  return (
+    findLevel(levels, target.aliases) ??
+    (target.fallbackAliases?.length ? findLevel(levels, target.fallbackAliases) : undefined)
+  )
 }
 
 function isCoveredByCurrent(
@@ -239,69 +175,57 @@ function isCoveredByCurrent(
   currentIds: string[],
   levelsById: Map<string, LpagaLivello>,
 ): boolean {
-  return currentIds.some((id) => {
-    let current = levelsById.get(id)
-    while (current) {
-      if (current.id === targetId) return true
-      current = current.parentId ? levelsById.get(current.parentId) : undefined
-    }
-    return false
-  })
+  const current = new Set(currentIds)
+  let target = levelsById.get(targetId)
+  const visited = new Set<string>()
+  while (target && !visited.has(target.id)) {
+    if (current.has(target.id)) return true
+    visited.add(target.id)
+    target = target.parentId ? levelsById.get(target.parentId) : undefined
+  }
+  return false
 }
 
 export async function previewLibroPagaRepartiDaTurni(month: string): Promise<LibroPagaRepartiPreview> {
-  const [people, levels, calendar] = await Promise.all([
+  const [people, levels, shifts] = await Promise.all([
     listPersonale(),
     listLivelli(),
-    Promise.resolve(listCalendarioPerAssegnazione()),
+    listTurni(month),
   ])
-  return buildLibroPagaRepartiPreview(month, people, levels, calendar.events, calendar.instructors)
+  return buildLibroPagaRepartiPreview(month, people, levels, shifts)
 }
 
 export function buildLibroPagaRepartiPreview(
   month: string,
   allPeople: LpagaPersonale[],
   levels: LpagaLivello[],
-  calendarEvents: CalendarAssignmentEvent[],
-  instructors: CalendarioIstruttore[],
+  shifts: LpagaTurno[],
 ): LibroPagaRepartiPreview {
-  const activePeople = allPeople.filter((person) => person.attivo)
-  const instructorsById = new Map(instructors.map((instructor) => [instructor.id, instructor]))
+  const peopleById = new Map(allPeople.filter((person) => person.attivo).map((person) => [person.id, person]))
   const levelsById = new Map(levels.map((level) => [level.id, level]))
-  const suggestionByPerson = new Map<string, {
-    person: LpagaPersonale
-    current: string[]
-    targets: Set<string>
-    count: number
-  }>()
+  const suggestionByPerson = new Map<
+    string,
+    { person: LpagaPersonale; current: string[]; targets: Set<string>; count: number }
+  >()
   const unmapped = new Map<string, number>()
   let unmatched = 0
-  let ambiguous = 0
-  let considered = 0
 
-  for (const event of eventsForMonth(calendarEvents, month)) {
-    considered += 1
-    const names = staffNames(event, instructorsById)
-    const match = findPerson(names, activePeople)
-    if (!match.person) {
-      if (match.ambiguous) ambiguous += 1
-      else unmatched += 1
+  for (const shift of shifts) {
+    const person = peopleById.get(shift.personaleId)
+    if (!person) {
+      unmatched += 1
       continue
     }
 
-    const instructorActivity = event.istruttoreId
-      ? instructorsById.get(event.istruttoreId)?.attivitaSvolta ?? ""
-      : ""
-    const activity = [event.title, event.zona, instructorActivity].join(" ")
-    const target = targetForEvent(event, activity)
+    const activity = levelPath(shift.livelloId, levelsById).join(" ")
+    const target = targetForActivity(activity)
     const level = target ? resolveLevel(levels, target) : undefined
     if (!target || !level) {
-      const key = target?.id ?? event.comparto
-      unmapped.set(key, (unmapped.get(key) ?? 0) + 1)
+      const label = target ? `${activity} -> ${target.key}` : activity || "Mansione senza nome"
+      unmapped.set(label, (unmapped.get(label) ?? 0) + 1)
       continue
     }
 
-    const person = match.person
     const current = mergePersonaleLivelli(person.livelloId, person.livelloIds).livelloIds ?? []
     const suggestion = suggestionByPerson.get(person.id) ?? {
       person,
@@ -331,9 +255,8 @@ export function buildLibroPagaRepartiPreview(
 
   return {
     mese: month,
-    turniConsiderati: considered,
-    turniSenzaAbbinamento: unmatched,
-    abbinamentiAmbigui: ambiguous,
+    turniConsiderati: shifts.length,
+    turniSenzaPersonale: unmatched,
     attivitaSenzaReparto: [...unmapped.entries()]
       .map(([attivita, turni]) => ({ attivita, turni }))
       .sort((a, b) => a.attivita.localeCompare(b.attivita, "it")),
