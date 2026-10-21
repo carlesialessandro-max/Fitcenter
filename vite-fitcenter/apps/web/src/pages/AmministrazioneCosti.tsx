@@ -1401,6 +1401,9 @@ function StipendiTab() {
       setBustePdfPreview(null)
       setImportMsg(
         `Consuntivo importato: ${eur(r.busta.totale)}` +
+          (r.busta.dettaglioDipendenti?.length
+            ? ` con dettaglio di ${r.busta.dettaglioDipendenti.length} dipendenti`
+            : "") +
           (r.sostituite ? `; sostituite ${r.sostituite} vecchie righe PDF` : "") +
           ".",
       )
@@ -1429,9 +1432,7 @@ function StipendiTab() {
     setImportMsg("")
     try {
       const isCostSummary = file.name.toLowerCase().includes("costo dipendenti")
-      let text = await extractPdfText(file, kind === "buste" ? 20 : 80, {
-        preferTail: kind === "buste",
-      })
+      let text = await extractPdfText(file, kind === "buste" ? 250 : 80)
       if (kind === "buste" && (!text.trim() || isCostSummary)) {
         setImportMsg("PDF scansito: OCR locale in corso…")
         const ocrText = await extractPdfTextWithOcr(file, 5, (progress) => {
@@ -1577,14 +1578,14 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Dipendenti fissi · buste paga</h3>
             <p className="text-xs text-zinc-500">
-              Importa il totale aziendale dal PDF “Costo consuntivo del periodo”, non i singoli cedolini. I PDF scansiti
-              vengono letti con OCR nel browser (al primo utilizzo scarica le risorse linguistiche); le vecchie righe PDF
-              dello stesso mese saranno sostituite da un solo totale.
+              Per vedere i nominativi, carica il PDF completo con tutte le buste: il totale aziendale resta quello del
+              consuntivo e i costi individuali sono salvati come dettaglio, senza sommarli una seconda volta. Il PDF del
+              solo consuntivo importa invece il totale senza nominativi. I PDF scansiti vengono letti con OCR nel browser.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <label className={`${btnAmber} cursor-pointer`}>
-              Importa consuntivo PDF
+              Importa PDF paghe
               <input type="file" accept=".pdf" className="hidden" onChange={(e) => void onStipendiPdf(e.target.files?.[0] ?? null, "buste")} />
             </label>
             <button type="button" className={btnGhost} onClick={() => downloadAmmMastrinoTemplate()}>
@@ -1604,7 +1605,10 @@ function StipendiTab() {
           <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-xs text-zinc-400">
-                Totale consuntivo del mese: {eur(bustePdfPreview[0]?.totale ?? 0)} · viene registrato come un’unica riga aziendale
+                Totale consuntivo del mese: {eur(bustePdfPreview[0]?.totale ?? 0)}
+                {bustePdfPreview[0]?.dettaglioDipendenti?.length
+                  ? ` · dettaglio di ${bustePdfPreview[0].dettaglioDipendenti.length} dipendenti`
+                  : " · questo PDF non contiene il dettaglio nominativo"}
               </p>
               <div className="flex gap-2">
                 <button type="button" className={btnGhost} onClick={() => setBustePdfPreview(null)}>
@@ -1625,9 +1629,17 @@ function StipendiTab() {
             </div>
             <div className="max-h-48 overflow-auto text-xs">
               {bustePdfPreview[0] && (
-                <p className="text-zinc-300">
-                  {bustePdfPreview[0].descrizione} · {nomeReparto(attivi, bustePdfPreview[0].quote[0]?.repartoId ?? "")}
-                </p>
+                <>
+                  <p className="mb-2 text-zinc-300">
+                    {bustePdfPreview[0].descrizione} · {nomeReparto(attivi, bustePdfPreview[0].quote[0]?.repartoId ?? "")}
+                  </p>
+                  {bustePdfPreview[0].dettaglioDipendenti?.map((dipendente, index) => (
+                    <p key={`${dipendente.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
+                      <span>{dipendente.nominativo}</span>
+                      <span>{eur(dipendente.totale)}</span>
+                    </p>
+                  ))}
+                </>
               )}
             </div>
           </div>
@@ -1727,6 +1739,21 @@ function StipendiTab() {
                   <td className="py-1.5 pr-3">
                     {b.nominativo}
                     {b.descrizione && <span className="block text-xs text-zinc-500">{b.descrizione}</span>}
+                    {b.dettaglioDipendenti?.length ? (
+                      <details className="mt-1 text-xs">
+                        <summary className="cursor-pointer text-amber-300">
+                          Dettaglio di {b.dettaglioDipendenti.length} dipendenti
+                        </summary>
+                        <div className="mt-2 max-h-64 space-y-1 overflow-auto pr-2">
+                          {b.dettaglioDipendenti.map((dipendente, index) => (
+                            <p key={`${dipendente.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
+                              <span>{dipendente.nominativo}</span>
+                              <span>{eur(dipendente.totale)}</span>
+                            </p>
+                          ))}
+                        </div>
+                      </details>
+                    ) : null}
                   </td>
                   <td className="py-1.5 pr-3 text-xs text-zinc-400">
                     {b.quote.map((q) => `${nomeReparto(attivi, q.repartoId)} ${q.percentuale}%`).join(" · ")}

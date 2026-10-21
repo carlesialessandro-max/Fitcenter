@@ -103,6 +103,7 @@ export type AmmBusta = {
   totale: number
   quote: AmmQuota[]
   origine: "manuale" | "mastrino" | "pdf"
+  dettaglioDipendenti?: { nominativo: string; totale: number }[]
   createdAt: string
   updatedAt: string
 }
@@ -114,6 +115,7 @@ export type AmmStipendiPdfRiga = {
   descrizione: string
   tipo: "sportivo" | "gestionale" | "dipendente"
   quote: AmmQuota[]
+  dettaglioDipendenti?: { nominativo: string; totale: number }[]
 }
 
 export type AmmOcrParsed = {

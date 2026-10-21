@@ -96,6 +96,7 @@ export type AmmBusta = {
   totale: number
   quote: AmmQuota[]
   origine: AmmBustaOrigine
+  dettaglioDipendenti?: { nominativo: string; totale: number }[]
   createdAt: string
   updatedAt: string
 }
@@ -744,6 +745,23 @@ export const ammCostiStore = {
     if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
     const id = String(body.id ?? "").trim() || randomUUID()
     const cur = d.buste.find((b) => b.id === id)
+    if (body.dettaglioDipendenti != null && !Array.isArray(body.dettaglioDipendenti)) {
+      throw Object.assign(new Error("Dettaglio dipendenti non valido"), { status: 400 })
+    }
+    const dettaglioDipendenti = (body.dettaglioDipendenti ?? cur?.dettaglioDipendenti)?.map((riga) => {
+      const detailName = String(riga?.nominativo ?? "").trim()
+      const detailTotal = Number(String(riga?.totale ?? "").replace(",", "."))
+      if (!detailName || !Number.isFinite(detailTotal) || detailTotal <= 0) {
+        throw Object.assign(new Error("Riga di dettaglio dipendente non valida"), { status: 400 })
+      }
+      return { nominativo: detailName, totale: Math.round(detailTotal * 100) / 100 }
+    })
+    if (
+      dettaglioDipendenti?.length &&
+      Math.abs(dettaglioDipendenti.reduce((sum, riga) => sum + riga.totale, 0) - totale) > 0.03
+    ) {
+      throw Object.assign(new Error("Il totale del dettaglio dipendenti non coincide con il consuntivo"), { status: 400 })
+    }
     const row: AmmBusta = {
       id,
       nominativo,
@@ -755,6 +773,7 @@ export const ammCostiStore = {
         body.origine === "mastrino" || body.origine === "manuale" || body.origine === "pdf"
           ? body.origine
           : (cur?.origine ?? "manuale"),
+      dettaglioDipendenti,
       createdAt: cur?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     }
@@ -779,7 +798,13 @@ export const ammCostiStore = {
         b.origine === "pdf" &&
         b.nominativo.trim().toLowerCase() === "dipendenti fissi (costo azienda)",
     )
-    const busta = this.upsertBusta({ ...body, id: aggregate?.id, mese, origine: "pdf" })
+    const busta = this.upsertBusta({
+      ...body,
+      id: aggregate?.id,
+      mese,
+      origine: "pdf",
+      dettaglioDipendenti: body.dettaglioDipendenti ?? [],
+    })
     const d = load()
     const before = d.buste.filter((b) => b.mese === mese && b.origine === "pdf" && b.id !== busta.id).length
     d.buste = d.buste.filter((b) => b.mese !== mese || b.origine !== "pdf" || b.id === busta.id)

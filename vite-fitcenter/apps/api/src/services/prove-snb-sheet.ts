@@ -1,13 +1,12 @@
 /**
  * Prenotazione prove bambini → Google Sheet
- * - Scuola nuoto: «PROVE SNB DA SETTEMBRE 26»
- * - Acquaticità: foglio livelli 1–3 (mesi → 3,5 anni)
+ * - Scuola nuoto e Acquaticità: schede settimanali nei rispettivi Google Sheet
  *
  * Auth: service account Google (condividere entrambi i fogli con l'email del SA, Editor).
  * Env:
  *   GOOGLE_SERVICE_ACCOUNT_JSON
- *   PROVE_SNB_SPREADSHEET_ID / PROVE_SNB_SHEET_GID
- *   PROVE_ACQ_SPREADSHEET_ID / PROVE_ACQ_SHEET_GID
+ *   PROVE_SNB_SPREADSHEET_ID
+ *   PROVE_ACQ_SPREADSHEET_ID
  */
 import fs from "fs"
 import crypto from "crypto"
@@ -17,11 +16,9 @@ export type BambiniCorso = "acquaticita" | "scuola_nuoto"
 
 const DEFAULT_SNB = {
   spreadsheetId: "1U2oUhD6THjNV8NjGK6vX_xOKOAqpjDlPQUhrrdaFSDc",
-  sheetGid: 913046247,
 }
 const DEFAULT_ACQ = {
   spreadsheetId: "1Gg2Itl0SODAayDBrmXt9vUox5UYy76kcugm68IWNy_8",
-  sheetGid: 1077421861,
 }
 
 const MONTHS_IT: Record<string, number> = {
@@ -93,7 +90,6 @@ export type ProveSlotBookResult =
     }
 
 let cachedToken: { accessToken: string; expiresAt: number } | null = null
-let cachedSheetTitle: { gid: number; title: string; spreadsheetId: string } | null = null
 
 function stripAccents(s: string): string {
   return s.normalize("NFD").replace(/\p{M}/gu, "")
@@ -135,20 +131,18 @@ export function isProveSnbSheetConfigured(): boolean {
   return loadServiceAccount() != null
 }
 
-function sheetTarget(corso: BambiniCorso): { spreadsheetId: string; sheetGid: number } {
+function sheetTarget(corso: BambiniCorso): { spreadsheetId: string } {
   if (corso === "acquaticita") {
     return {
       spreadsheetId:
         (process.env.PROVE_ACQ_SPREADSHEET_ID ?? DEFAULT_ACQ.spreadsheetId).trim() ||
         DEFAULT_ACQ.spreadsheetId,
-      sheetGid: Number(process.env.PROVE_ACQ_SHEET_GID ?? DEFAULT_ACQ.sheetGid) || DEFAULT_ACQ.sheetGid,
     }
   }
   return {
     spreadsheetId:
       (process.env.PROVE_SNB_SPREADSHEET_ID ?? DEFAULT_SNB.spreadsheetId).trim() ||
       DEFAULT_SNB.spreadsheetId,
-    sheetGid: Number(process.env.PROVE_SNB_SHEET_GID ?? DEFAULT_SNB.sheetGid) || DEFAULT_SNB.sheetGid,
   }
 }
 
@@ -204,30 +198,6 @@ async function sheetsFetch(sa: ServiceAccount, url: string, init?: RequestInit):
       ...(init?.headers ?? {}),
     },
   })
-}
-
-async function resolveSheetTitle(
-  sa: ServiceAccount,
-  target: { spreadsheetId: string; sheetGid: number }
-): Promise<string> {
-  const { spreadsheetId: id, sheetGid: gid } = target
-  if (cachedSheetTitle && cachedSheetTitle.spreadsheetId === id && cachedSheetTitle.gid === gid) {
-    return cachedSheetTitle.title
-  }
-  const url =
-    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}` +
-    `?fields=sheets.properties`
-  const res = await sheetsFetch(sa, url)
-  const data = (await res.json()) as {
-    sheets?: Array<{ properties?: { sheetId?: number; title?: string } }>
-    error?: { message?: string }
-  }
-  if (!res.ok) throw new Error(data.error?.message ?? `meta ${res.status}`)
-  const hit = data.sheets?.find((s) => s.properties?.sheetId === gid)
-  const title = hit?.properties?.title
-  if (!title) throw new Error(`foglio gid=${gid} non trovato nello spreadsheet`)
-  cachedSheetTitle = { gid, title, spreadsheetId: id }
-  return title
 }
 
 function colLetter(index0: number): string {
@@ -584,14 +554,8 @@ export async function bookProveSnbSlot(req: ProveSlotBookRequest): Promise<Prove
   try {
     const target = sheetTarget(req.corso)
     const id = target.spreadsheetId
-    const allTabs =
-      req.corso === "scuola_nuoto"
-        ? await listSheetTabs(sa, id)
-        : [{ title: await resolveSheetTitle(sa, target), gid: target.sheetGid }]
-    const tabs =
-      req.corso === "scuola_nuoto"
-        ? allTabs.filter((tab) => monthFromSheetTitle(tab.title, 1) != null)
-        : allTabs
+    const allTabs = await listSheetTabs(sa, id)
+    const tabs = allTabs.filter((tab) => monthFromSheetTitle(tab.title, 1) != null)
     if (tabs.length === 0) throw new Error("Non trovo schede settimanali con date nel Google Sheet")
     const ranges = tabs.map(({ title }) => `${quoteSheetTitle(title)}!A1:H300`)
     const query = new URLSearchParams({ valueRenderOption: "FORMATTED_VALUE" })

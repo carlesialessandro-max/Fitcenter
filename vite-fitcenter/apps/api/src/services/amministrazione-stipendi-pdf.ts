@@ -5,6 +5,7 @@ export type AmmPdfRiga = {
   descrizione: string
   tipo: "sportivo" | "gestionale" | "dipendente"
   qualifica?: string
+  dettaglioDipendenti?: { nominativo: string; totale: number }[]
 }
 
 const MESI: Record<string, string> = {
@@ -136,6 +137,47 @@ function aggregateDipendenti(mese: string, totale: number, descrizione: string):
   ]
 }
 
+export function parseDettaglioCostiDipendenti(text: string): {
+  righe: { nominativo: string; totale: number }[]
+  totale: number | null
+} {
+  const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
+  for (const page of pages) {
+    const lines = page.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+    const headerAt = lines.findIndex((line) => {
+      const label = normalizeLabel(line)
+      return label.includes("cognomeenome") && label.includes("lorda") && (label.includes("costo") || label.includes("tfr"))
+    })
+    if (headerAt < 0) continue
+
+    const righe: { nominativo: string; totale: number }[] = []
+    let totale: number | null = null
+    for (const line of lines.slice(headerAt + 1)) {
+      const importi = amountsOn(line)
+      const firstAmount = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?![\d.,])/.exec(line)
+      if (!firstAmount) continue
+      const name = titleName(line.slice(0, firstAmount.index).replace(/^\s*\d+\s+/, ""))
+      if (name.split(" ").some((word) => normalizeLabel(word).startsWith("total"))) {
+        if (importi.length) totale = importi[importi.length - 1]!
+        break
+      }
+      if (importi.length < 3) continue
+      const lastAmount = importi[importi.length - 1]!
+      const precedingAmount = importi[importi.length - 2]!
+      if (lastAmount >= 1000 && lastAmount > precedingAmount * 2) {
+        totale = lastAmount
+        break
+      }
+      if (name.split(" ").length < 2 || !/[a-zàèéìòù]/i.test(name)) continue
+      const costo = importi[importi.length - 2]
+      if (costo == null || costo <= 0) continue
+      righe.push({ nominativo: name, totale: costo })
+    }
+    if (righe.length) return { righe, totale }
+  }
+  return { righe: [], totale: null }
+}
+
 function isCostoConsuntivoPage(text: string): boolean {
   const label = normalizeLabel(text)
   return label.includes("costoconsuntivo") && label.includes("periodo")
@@ -159,6 +201,7 @@ function totaleDaRigaConsuntivo(line: string): number | null {
 
 function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
   const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
+  const dettaglio = parseDettaglioCostiDipendenti(text)
   const totals = pages.flatMap((page) => {
     if (!isCostoConsuntivoPage(page)) return []
     const lines = page.split(/\r?\n/)
@@ -177,12 +220,22 @@ function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
     }
     return values
   })
-  if (!totals.length) return []
-  return aggregateDipendenti(
+  if (!totals.length && dettaglio.totale == null && !dettaglio.righe.length) return []
+  const dettaglioTotal = Math.round(dettaglio.righe.reduce((sum, row) => sum + row.totale, 0) * 100) / 100
+  const totaleUfficiale = dettaglio.totale ?? (totals.length ? Math.max(...totals) : dettaglioTotal)
+  if (dettaglio.righe.length && Math.abs(dettaglioTotal - totaleUfficiale) > 0.03) {
+    throw Object.assign(
+      new Error("Il dettaglio dei dipendenti non coincide con il totale del consuntivo. Verifica il PDF prima di importarlo."),
+      { status: 400 },
+    )
+  }
+  const [riga] = aggregateDipendenti(
     meseFromText(text, mese),
-    Math.max(...totals),
+    totaleUfficiale,
     "Costo azienda mese — totale consuntivo del periodo",
   )
+  if (riga && dettaglio.righe.length) riga.dettaglioDipendenti = dettaglio.righe
+  return riga ? [riga] : []
 }
 
 function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {

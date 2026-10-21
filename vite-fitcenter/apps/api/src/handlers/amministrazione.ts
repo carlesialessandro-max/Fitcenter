@@ -244,6 +244,25 @@ export function getAmmSpesaPdf(req: Request, res: Response) {
   }
 }
 
+function dettaglioBusteFromBody(
+  value: unknown,
+): { nominativo: string; totale: number }[] | undefined {
+  if (value == null) return undefined
+  if (!Array.isArray(value)) {
+    throw Object.assign(new Error("Dettaglio dipendenti non valido"), { status: 400 })
+  }
+  return value.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      throw Object.assign(new Error("Riga di dettaglio dipendente non valida"), { status: 400 })
+    }
+    const row = raw as Record<string, unknown>
+    return {
+      nominativo: String(row.nominativo ?? ""),
+      totale: Number(String(row.totale ?? "").replace(",", ".")),
+    }
+  })
+}
+
 function bustaFromBody(b: Record<string, unknown>, id?: string): Parameters<typeof ammCostiStore.upsertBusta>[0] {
   let quote = quoteFrom(b.quote)
   if (!quote.length && b.repartoId) {
@@ -258,6 +277,7 @@ function bustaFromBody(b: Record<string, unknown>, id?: string): Parameters<type
     totale: Number(String(b.totale ?? "").replace(",", ".")),
     quote,
     origine: b.origine === "mastrino" ? "mastrino" : b.origine === "pdf" ? "pdf" : "manuale",
+    dettaglioDipendenti: dettaglioBusteFromBody(b.dettaglioDipendenti),
   }
 }
 
