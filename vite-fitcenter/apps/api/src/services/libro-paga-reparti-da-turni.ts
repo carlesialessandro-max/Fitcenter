@@ -13,6 +13,7 @@ type RepartoTarget = {
   key: string
   aliases: string[]
   fallbackAliases?: string[]
+  ancestorAliases?: string[]
 }
 
 type AssignmentSuggestion = {
@@ -44,14 +45,39 @@ function normalize(value: string): string {
     .trim()
 }
 
-function findLevel(levels: LpagaLivello[], aliases: string[]): LpagaLivello | undefined {
+function hasAncestor(level: LpagaLivello, aliases: string[], levelsById: Map<string, LpagaLivello>): boolean {
+  const wanted = new Set(aliases.map(normalize))
+  const visited = new Set<string>()
+  let current: LpagaLivello | undefined = level
+  while (current && !visited.has(current.id)) {
+    if (wanted.has(normalize(current.nome)) || wanted.has(normalize(current.id))) return true
+    visited.add(current.id)
+    current = current.parentId ? levelsById.get(current.parentId) : undefined
+  }
+  return false
+}
+
+function findLevel(
+  levels: LpagaLivello[],
+  aliases: string[],
+  ancestorAliases: string[] = [],
+): LpagaLivello | undefined {
+  const levelsById = new Map(levels.map((level) => [level.id, level]))
   const active = levels.filter((level) => level.attivo)
   for (const alias of aliases) {
-    const idMatch = active.find((level) => normalize(level.id) === normalize(alias))
+    const idMatch = active.find(
+      (level) =>
+        normalize(level.id) === normalize(alias) &&
+        (!ancestorAliases.length || hasAncestor(level, ancestorAliases, levelsById)),
+    )
     if (idMatch) return idMatch
   }
   for (const alias of aliases) {
-    const nameMatches = active.filter((level) => normalize(level.nome) === normalize(alias))
+    const nameMatches = active.filter(
+      (level) =>
+        normalize(level.nome) === normalize(alias) &&
+        (!ancestorAliases.length || hasAncestor(level, ancestorAliases, levelsById)),
+    )
     if (nameMatches.length === 1) return nameMatches[0]
     if (nameMatches.length > 1) return undefined
   }
@@ -74,13 +100,35 @@ function targetForActivity(activity: string): RepartoTarget | null {
   const text = normalize(activity)
 
   if (/lez(?:ione|ioni)?\s*priv|privat/.test(text)) {
-    return { key: "lezioni private", aliases: ["lezioni private", "lez private", "private acqua"] }
+    return {
+      key: "lezioni private",
+      aliases: ["lezioni private", "lez private", "private acqua"],
+      ancestorAliases: ["piscina"],
+    }
+  }
+  if (/miscellanea.*manutenz|manutenz.*miscellanea/.test(text)) {
+    return { key: "manutenzione", aliases: ["manutenzione"], ancestorAliases: ["miscellanea"] }
+  }
+  if (/miscellanea.*varie|varie.*miscellanea/.test(text)) {
+    return { key: "varie", aliases: ["varie"], ancestorAliases: ["miscellanea"] }
+  }
+  if (/corsi terra|walking|spinning|spin\b|sbarra a terra/.test(text)) {
+    return {
+      key: "corsi fit terra",
+      aliases: ["corsi fit terra", "corsi terra"],
+      fallbackAliases: ["palestra"],
+      ancestorAliases: ["palestra"],
+    }
+  }
+  if (/inserimento libero fitness|p t fitness/.test(text)) {
+    return { key: "palestra", aliases: ["palestra"] }
   }
   if (/controllo.*vasca|piano vasca|bagnin/.test(text)) {
     return {
       key: "controllo vasca",
       aliases: ["bagnini", "controllo piano vasca", "piano vasca"],
       fallbackAliases: ["piscina coperta", "piscina"],
+      ancestorAliases: ["piscina"],
     }
   }
   if (/puliz|manutenz/.test(text) && /piscin|vasca|spogliato/.test(text)) {
@@ -99,11 +147,13 @@ function targetForActivity(activity: string): RepartoTarget | null {
         key: "scuola nuoto adulti",
         aliases: ["scuola nuoto adulti", "scuola nuoto master", "nuoto adulti"],
         fallbackAliases: ["scuola nuoto"],
+        ancestorAliases: ["piscina"],
       }
     }
     return {
       key: "scuola nuoto bambini",
       aliases: ["scuola nuoto bimbi", "scuola nuoto bambini", "scuola nuoto baby", "scuola nuoto"],
+      ancestorAliases: ["piscina"],
     }
   }
   if (/master piscina/.test(text)) {
@@ -111,12 +161,13 @@ function targetForActivity(activity: string): RepartoTarget | null {
       key: "agonismo",
       aliases: ["squadra agonistica", "agonismo", "nuoto agonistico", "master piscina"],
       fallbackAliases: ["scuola nuoto"],
+      ancestorAliases: ["piscina"],
     }
   }
   if (/\bh ?2 ?[o0]\b|\bacquagym\b|\bacquafitness\b|\bacqua fitness\b/.test(text)) {
     return {
       key: "corsi fit acqua",
-      aliases: ["corsi fit acqua", "corsi fit h2o", "corsi fit h20", "corsi acqua"],
+      aliases: ["corsi fit acqua", "corsi fit h2o", "corsi fit h20", "corsi acqua", "acquaticita"],
     }
   }
   if (/acquaticita/.test(text)) {
@@ -127,6 +178,7 @@ function targetForActivity(activity: string): RepartoTarget | null {
       key: "sala pesi",
       aliases: ["sala pesi", "sala fitness", "sala attrezzi"],
       fallbackAliases: ["palestra"],
+      ancestorAliases: ["palestra"],
     }
   }
   if (/corsi fit terra|corsi fit|corso fit|corsi fitness|corso fitness/.test(text)) {
@@ -134,6 +186,7 @@ function targetForActivity(activity: string): RepartoTarget | null {
       key: "corsi fit terra",
       aliases: ["corsi fit terra", "corsi fit", "corsi fitness"],
       fallbackAliases: ["palestra"],
+      ancestorAliases: ["palestra"],
     }
   }
   if (/reception|desk|segreteri|accoglienza/.test(text)) {
@@ -165,8 +218,10 @@ function targetForActivity(activity: string): RepartoTarget | null {
 
 function resolveLevel(levels: LpagaLivello[], target: RepartoTarget): LpagaLivello | undefined {
   return (
-    findLevel(levels, target.aliases) ??
-    (target.fallbackAliases?.length ? findLevel(levels, target.fallbackAliases) : undefined)
+    findLevel(levels, target.aliases, target.ancestorAliases) ??
+    (target.fallbackAliases?.length
+      ? findLevel(levels, target.fallbackAliases, target.ancestorAliases)
+      : undefined)
   )
 }
 
