@@ -392,14 +392,15 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     const stored = ammCostiStore
       .listCollaboratori()
       .filter((c) => (mese ? c.mese === mese : c.mese.startsWith(String(anno))))
-    if (stored.length) {
-      const tot = Math.round(stored.reduce((s, c) => s + c.totale, 0) * 100) / 100
+    const riepilogo = stored.filter((c) => c.origine === "riepilogo" && c.totale > 0)
+    if (riepilogo.length) {
+      const tot = Math.round(riepilogo.reduce((s, c) => s + c.totale, 0) * 100) / 100
       res.json({
         anno,
         mese: mese || null,
         tot,
         fonte: "riepilogo",
-        righe: stored.map((c) => ({
+        righe: riepilogo.map((c) => ({
           id: c.id,
           nome: c.nominativo,
           importo: c.totale,
@@ -412,13 +413,34 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     }
     if (mese) {
       const righe = await collaboratoriDaMensilita(mese)
-      const tot = Math.round(righe.reduce((sum, row) => sum + row.importo, 0) * 100) / 100
+      if (righe.length) {
+        const tot = Math.round(righe.reduce((sum, row) => sum + row.importo, 0) * 100) / 100
+        res.json({
+          anno,
+          mese,
+          tot,
+          fonte: "libro-paga-mensilita",
+          righe,
+        })
+        return
+      }
+    }
+    const manuali = stored.filter((c) => c.origine !== "riepilogo" && c.totale > 0)
+    if (manuali.length) {
+      const tot = Math.round(manuali.reduce((s, c) => s + c.totale, 0) * 100) / 100
       res.json({
         anno,
-        mese,
+        mese: mese || null,
         tot,
-        fonte: "libro-paga-mensilita",
-        righe,
+        fonte: "riepilogo",
+        righe: manuali.map((c) => ({
+          id: c.id,
+          nome: c.nominativo,
+          importo: c.totale,
+          nTurni: 0,
+          tipo: c.tipo,
+          descrizione: c.descrizione,
+        })),
       })
       return
     }

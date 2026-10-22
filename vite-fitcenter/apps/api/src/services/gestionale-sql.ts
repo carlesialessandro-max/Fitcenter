@@ -6527,7 +6527,13 @@ function pickExistingCol(colsLower: string[], candidates: string[]): string | nu
 }
 
 function selectExistingCols(colsLower: string[], wanted: string[]): string {
-  const have = wanted.filter((c) => colsLower.includes(c.toLowerCase()))
+  const seen = new Set<string>()
+  const have = wanted.filter((column) => {
+    const key = column.toLowerCase()
+    if (!colsLower.includes(key) || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
   if (!have.length) return "*"
   return have.map((c) => bracketCol(c)).join(", ")
 }
@@ -6558,6 +6564,106 @@ function incassiDateCol(cols: string[]): string {
   )
 }
 
+function incassiAmount(row: Record<string, unknown>): number {
+  const value =
+    row.CassaMovimentiImporto ?? row.Importo ?? row.Totale ?? row.importo ?? row.totale ?? 0
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0
+  const text = String(value ?? "").trim()
+  if (!text) return 0
+  const parsed = Number(
+    text
+      .replace(/[€\s]/g, "")
+      .replace(/\.(?=\d{3}(\D|$))/g, "")
+      .replace(",", ".")
+  )
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function incassiRowId(row: Record<string, unknown>): string | null {
+  for (const key of [
+    "IdCassaMovimento",
+    "IDCassaMovimento",
+    "idCassaMovimento",
+    "CassaMovimentiID",
+    "CassaMovimentiId",
+    "IDCassaMovimenti",
+    "IdCassaMovimenti",
+    "IDMovimento",
+    "IdMovimento",
+    "MovimentoID",
+    "MovimentoId",
+    "ID",
+    "Id",
+  ]) {
+    const value = String(row[key] ?? "").trim()
+    if (value && value !== "0" && value.toLowerCase() !== "null" && value.toLowerCase() !== "undefined") {
+      return `${key}:${value}`
+    }
+  }
+  return null
+}
+
+function incassiFallbackKey(row: Record<string, unknown>): string {
+  const rawDate = String(
+    row.CassaMovimentiDataOperazione ??
+      row.CassaMovimentiData ??
+      row.DataOperazione ??
+      row.Data ??
+      ""
+  ).trim()
+  const date = rawDate.replace(" ", "T")
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(date)
+  const dateKey = match
+    ? `${match[1]}T${match[2]}`
+    : rawDate.replace(/\.\d+Z?$/i, "").replace(/\.\d+$/i, "")
+  return [
+    dateKey,
+    incassiAmount(row).toFixed(2),
+    String(row.Cognome ?? row.cognome ?? "").trim().toLowerCase(),
+    String(row.Nome ?? row.nome ?? "").trim().toLowerCase(),
+    String(row.CassaMovimentiCausale ?? row.Causale ?? "").trim().toLowerCase(),
+  ].join("|")
+}
+
+function incassiHasCategory(row: Record<string, unknown>): boolean {
+  const value = String(row.CategoriaDescrizione ?? "").trim()
+  return Boolean(value) && value !== "—"
+}
+
+function incassiRowScore(row: Record<string, unknown>): number {
+  return [
+    row.NomeVenditore,
+    row.VenditoreNome,
+    row.Venditore,
+    row.Operatore,
+    row.Cognome,
+    row.Nome,
+    row.CassaMovimentiCausale,
+  ].filter((value) => String(value ?? "").trim()).length
+}
+
+export function dedupeIncassiRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  const bestByKey = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    if (incassiAmount(row) === 0) continue
+    const key = incassiRowId(row) ?? incassiFallbackKey(row)
+    const previous = bestByKey.get(key)
+    if (!previous) {
+      bestByKey.set(key, row)
+      continue
+    }
+    const previousHasCategory = incassiHasCategory(previous)
+    const currentHasCategory = incassiHasCategory(row)
+    if (
+      (!previousHasCategory && currentHasCategory) ||
+      (previousHasCategory === currentHasCategory && incassiRowScore(row) > incassiRowScore(previous))
+    ) {
+      bestByKey.set(key, row)
+    }
+  }
+  return [...bestByKey.values()]
+}
+
 export async function queryIncassiRange(params: {
   from: string
   to: string
@@ -6571,6 +6677,18 @@ export async function queryIncassiRange(params: {
   const dateCol = incassiDateCol(cols)
   const selectList = selectExistingCols(cols, [
     "IdCassaMovimento",
+    "IDCassaMovimento",
+    "idCassaMovimento",
+    "CassaMovimentiID",
+    "CassaMovimentiId",
+    "IDCassaMovimenti",
+    "IdCassaMovimenti",
+    "IDMovimento",
+    "IdMovimento",
+    "MovimentoID",
+    "MovimentoId",
+    "ID",
+    "Id",
     "CassaMovimentiImporto",
     "CassaMovimentiCausale",
     "CassaMovimentiDataOperazione",
@@ -6580,6 +6698,9 @@ export async function queryIncassiRange(params: {
     "Nome",
     "AbbonamentiDescrizione",
     "AbbonamentiCategorieDescrizione",
+    "AbbonamentoDescrizione",
+    "AbbonamentiCategoriaDescrizione",
+    "CategoriaAbbonamentoDescrizione",
     "AbbonamentiDurataDescrizioneLunga",
     "VenditoreAbbonamento",
     "NomeVenditore",
@@ -6609,77 +6730,16 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
   segments: Record<Exclude<IncassiSegment, "all">, { total: number; count: number }>
 }> {
   const empty = { total: 0, count: 0, segments: emptyIncassiSegTotals() }
-  const p = await getPool()
-  if (!p) return empty
-  const view = getIncassiViewName()
-  const vq = qualifySqlObject(view).query
-  const cols = await prenGetCols(view)
-  const dateCol = incassiDateCol(cols)
-  const idCol = pickExistingCol(cols, ["IdCassaMovimento", "IDCassaMovimento", "idCassaMovimento"])
-  const importoCol = pickExistingCol(cols, ["CassaMovimentiImporto", "Importo"]) ?? "CassaMovimentiImporto"
-  const causaleCol = pickExistingCol(cols, ["CassaMovimentiCausale", "Causale"])
-  const catCol = pickExistingCol(cols, ["CategoriaDescrizione"])
-  const nomeCol = pickExistingCol(cols, ["Nome"])
-  const cognomeCol = pickExistingCol(cols, ["Cognome"])
-  const idExpr = idCol
-    ? bracketCol(idCol)
-    : `CONVERT(nvarchar(80), ${bracketCol(dateCol)}, 126) + N'|' + CONVERT(nvarchar(40), ${bracketCol(importoCol)})`
-  const causaleExpr = causaleCol ? `CONVERT(nvarchar(400), ${bracketCol(causaleCol)})` : "CAST(NULL AS nvarchar(400))"
-  const catExpr = catCol ? `CONVERT(nvarchar(200), ${bracketCol(catCol)})` : "CAST(NULL AS nvarchar(200))"
-  const nomeExpr = nomeCol ? `CONVERT(nvarchar(200), ${bracketCol(nomeCol)})` : "CAST(NULL AS nvarchar(200))"
-  const cognomeExpr = cognomeCol ? `CONVERT(nvarchar(200), ${bracketCol(cognomeCol)})` : "CAST(NULL AS nvarchar(200))"
-
-  const r = await p
-    .request()
-    .input("from", sql.VarChar(10), params.from)
-    .input("to", sql.VarChar(10), params.to)
-    .query(
-      `WITH d AS (
-         SELECT
-           ${idExpr} AS movId,
-           MAX(TRY_CONVERT(float, ${bracketCol(importoCol)})) AS euro,
-           MAX(${causaleExpr}) AS causale,
-           MAX(NULLIF(LTRIM(RTRIM(${catExpr})), N'')) AS cat,
-           MAX(${nomeExpr}) AS nome,
-           MAX(${cognomeExpr}) AS cognome
-         FROM ${vq}
-         WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
-           AND COALESCE(TRY_CONVERT(float, ${bracketCol(importoCol)}), 0) <> 0
-         GROUP BY ${idExpr}
-       ),
-       c AS (
-         SELECT
-           euro,
-           CASE
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'TICKETING%' THEN N'ticket'
-             WHEN LOWER(LTRIM(RTRIM(COALESCE(nome, N'')))) = N'ticketing' THEN N'ticket'
-             WHEN LOWER(LTRIM(RTRIM(COALESCE(cognome, N'') + N' ' + COALESCE(nome, N'')))) = N'ticketing' THEN N'ticket'
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'CLIENTE' THEN N'adulti'
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'KIDS' THEN N'bambini'
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(cat, N'')))) = N'DANZA' THEN N'danza'
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%BRACCIALE%' THEN N'adulti'
-             WHEN UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%BADGE%'
-               AND UPPER(LTRIM(RTRIM(COALESCE(causale, N'')))) LIKE N'%MERCHANDISING%' THEN N'adulti'
-             ELSE N'altro'
-           END AS seg
-         FROM d
-       )
-       SELECT seg, COUNT_BIG(*) AS n, SUM(euro) AS euro
-       FROM c
-       GROUP BY seg;`
-    )
-
+  const rows = dedupeIncassiRows(await queryIncassiRange(params))
   const segments = emptyIncassiSegTotals()
   let total = 0
   let count = 0
-  for (const row of r.recordset ?? []) {
-    const seg = String((row as any).seg ?? "altro").trim().toLowerCase()
-    const n = Number((row as any).n ?? 0) || 0
-    const euro = Number((row as any).euro ?? 0) || 0
-    const key = (seg === "adulti" || seg === "bambini" || seg === "danza" || seg === "ticket" || seg === "altro" ? seg : "altro") as Exclude<IncassiSegment, "all">
-    segments[key].count += n
-    segments[key].total += euro
-    count += n
+  for (const row of rows) {
+    const seg = classifyIncassiSegment(row)
+    const euro = incassiAmount(row)
+    segments[seg].count += 1
+    segments[seg].total += euro
+    count += 1
     total += euro
   }
   return { total, count, segments }
@@ -6687,65 +6747,29 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
 
 /** Incassi di cassa aggregati per voce (categoria abbonamento / causale), per il P&L amministrazione. */
 export async function queryIncassiPerVoce(params: { from: string; to: string }): Promise<{ voce: string; euro: number; n: number }[]> {
-  const p = await getPool()
-  if (!p) return []
-  const view = getIncassiViewName()
-  const vq = qualifySqlObject(view).query
-  const cols = await prenGetCols(view)
-  const dateCol = incassiDateCol(cols)
-  const idCol = pickExistingCol(cols, ["IdCassaMovimento", "IDCassaMovimento", "idCassaMovimento"])
-  const importoCol = pickExistingCol(cols, ["CassaMovimentiImporto", "Importo"]) ?? "CassaMovimentiImporto"
-  const causaleCol = pickExistingCol(cols, ["CassaMovimentiCausale", "Causale"])
-  const catAbbCol = pickExistingCol(cols, [
-    "AbbonamentiCategorieDescrizione",
-    "CategoriaAbbonamentoDescrizione",
-    "AbbonamentiCategoriaDescrizione",
-  ])
-  const abbCol = pickExistingCol(cols, ["AbbonamentiDescrizione", "AbbonamentoDescrizione"])
-  const catUtenteCol = pickExistingCol(cols, ["CategoriaDescrizione"])
-  const idExpr = idCol
-    ? bracketCol(idCol)
-    : `CONVERT(nvarchar(80), ${bracketCol(dateCol)}, 126) + N'|' + CONVERT(nvarchar(40), ${bracketCol(importoCol)})`
-  const causaleExpr = causaleCol ? `CONVERT(nvarchar(400), ${bracketCol(causaleCol)})` : "CAST(NULL AS nvarchar(400))"
-  const catAbbExpr = catAbbCol ? `CONVERT(nvarchar(200), ${bracketCol(catAbbCol)})` : "CAST(NULL AS nvarchar(200))"
-  const abbExpr = abbCol ? `CONVERT(nvarchar(200), ${bracketCol(abbCol)})` : "CAST(NULL AS nvarchar(200))"
-  const catUtenteExpr = catUtenteCol ? `CONVERT(nvarchar(200), ${bracketCol(catUtenteCol)})` : "CAST(NULL AS nvarchar(200))"
-  try {
-    const r = await p
-      .request()
-      .input("from", sql.VarChar(10), params.from)
-      .input("to", sql.VarChar(10), params.to)
-      .query(
-        `WITH d AS (
-           SELECT
-             ${idExpr} AS movId,
-             MAX(TRY_CONVERT(float, ${bracketCol(importoCol)})) AS euro,
-             MAX(${causaleExpr}) AS causale,
-             MAX(NULLIF(LTRIM(RTRIM(${catAbbExpr})), N'')) AS catAbb,
-             MAX(NULLIF(LTRIM(RTRIM(${abbExpr})), N'')) AS abbDesc,
-             MAX(NULLIF(LTRIM(RTRIM(${catUtenteExpr})), N'')) AS catUtente
-           FROM ${vq}
-           WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
-             AND COALESCE(TRY_CONVERT(float, ${bracketCol(importoCol)}), 0) <> 0
-           GROUP BY ${idExpr}
-         )
-         SELECT
-           COALESCE(catAbb, abbDesc, causale, catUtente, N'Altro') AS voce,
-           COUNT_BIG(*) AS n,
-           SUM(euro) AS euro
-         FROM d
-         GROUP BY COALESCE(catAbb, abbDesc, causale, catUtente, N'Altro')
-         ORDER BY SUM(euro) DESC;`
-      )
-    return ((r.recordset ?? []) as { voce?: unknown; euro?: unknown; n?: unknown }[]).map((row) => ({
-      voce: String(row.voce ?? "Altro").trim() || "Altro",
-      euro: Number(row.euro ?? 0) || 0,
-      n: Number(row.n ?? 0) || 0,
-    }))
-  } catch (e) {
-    console.warn("[amm] incassi per voce:", (e as Error)?.message ?? e)
-    return []
+  const grouped = new Map<string, { euro: number; n: number }>()
+  for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
+    const voce =
+      [
+        row.AbbonamentiCategorieDescrizione,
+        row.CategoriaAbbonamentoDescrizione,
+        row.AbbonamentiCategoriaDescrizione,
+        row.AbbonamentiDescrizione,
+        row.AbbonamentoDescrizione,
+        row.CassaMovimentiCausale,
+        row.Causale,
+        row.CategoriaDescrizione,
+      ]
+        .map((value) => String(value ?? "").trim())
+        .find(Boolean) || "Altro"
+    const current = grouped.get(voce) ?? { euro: 0, n: 0 }
+    current.euro = Math.round((current.euro + incassiAmount(row)) * 100) / 100
+    current.n += 1
+    grouped.set(voce, current)
   }
+  return [...grouped.entries()]
+    .map(([voce, value]) => ({ voce, ...value }))
+    .sort((a, b) => b.euro - a.euro)
 }
 
 function isTicketingIncasso(row: Record<string, unknown>): boolean {

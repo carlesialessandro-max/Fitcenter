@@ -37,89 +37,9 @@ function amountOf(r: any): number {
   return parseMoney(x)
 }
 
-function rowId(r: any): string | null {
-  const candidates = [
-    "IdCassaMovimento",
-    "IDCassaMovimento",
-    "idCassaMovimento",
-    "CassaMovimentiID",
-    "CassaMovimentiId",
-    "IDCassaMovimenti",
-    "IdCassaMovimenti",
-    "IDMovimento",
-    "IdMovimento",
-    "MovimentoID",
-    "MovimentoId",
-    "ID",
-    "Id",
-  ]
-  for (const k of candidates) {
-    const v = r?.[k]
-    const s = String(v ?? "").trim()
-    if (s && s !== "0" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined") return `${k}:${s}`
-  }
-  return null
-}
-
-function rowKeyFallback(r: any): string {
-  const dtRaw = String(r?.CassaMovimentiDataOperazione ?? r?.CassaMovimentiData ?? r?.DataOperazione ?? r?.Data ?? "").trim()
-  const dtSec = (() => {
-    if (!dtRaw) return ""
-    const iso = dtRaw.replace(" ", "T")
-    const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(iso)
-    if (m) return `${m[1]}T${m[2]}`
-    return dtRaw.replace(/\.\d+Z?$/i, "").replace(/\.\d+$/i, "")
-  })()
-  const imp = amountOf(r).toFixed(2)
-  const cognome = String(r?.Cognome ?? r?.cognome ?? "").trim().toLowerCase()
-  const nome = String(r?.Nome ?? r?.nome ?? "").trim().toLowerCase()
-  const caus = String(r?.CassaMovimentiCausale ?? r?.Causale ?? "").trim().toLowerCase()
-  return [dtSec, imp, cognome, nome, caus].join("|")
-}
-
-function hasCategoria(r: any): boolean {
-  const s = String(r?.CategoriaDescrizione ?? "").trim()
-  return Boolean(s) && s !== "—"
-}
-
-function dedupeIncassi(allRows: Record<string, unknown>[]): Record<string, unknown>[] {
-  const nonZero = allRows.filter((r) => amountOf(r) !== 0)
-  const bestByKey = new Map<string, any>()
-  for (const r of nonZero) {
-    const k = rowId(r) ?? rowKeyFallback(r)
-    const prev = bestByKey.get(k)
-    if (!prev) {
-      bestByKey.set(k, r)
-      continue
-    }
-    const prevHas = hasCategoria(prev)
-    const curHas = hasCategoria(r)
-    if (!prevHas && curHas) {
-      bestByKey.set(k, r)
-      continue
-    }
-    if (prevHas === curHas) {
-      const score = (x: any) => {
-        const fields = [
-          x?.NomeVenditore,
-          x?.VenditoreNome,
-          x?.Venditore,
-          x?.Operatore,
-          x?.Cognome,
-          x?.Nome,
-          x?.CassaMovimentiCausale,
-        ]
-        return fields.reduce((s: number, v: any) => s + (String(v ?? "").trim() ? 1 : 0), 0)
-      }
-      if (score(r) > score(prev)) bestByKey.set(k, r)
-    }
-  }
-  return Array.from(bestByKey.values())
-}
-
 async function loadDeduped(from: string, to: string): Promise<Record<string, unknown>[]> {
   const allRows = await gestionaleSql.queryIncassiRange({ from, to, segment: "all" })
-  return dedupeIncassi(allRows)
+  return gestionaleSql.dedupeIncassiRows(allRows)
 }
 
 export async function getIncassi(req: Request, res: Response) {
