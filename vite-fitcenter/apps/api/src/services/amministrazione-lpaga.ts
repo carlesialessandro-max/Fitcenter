@@ -172,6 +172,26 @@ export async function collaboratoriDaMensilita(mese: string): Promise<AmmLpagaCo
   return (await datiMese(mese)).righe
 }
 
+export async function centriCostoPredefinitiCollaboratori(): Promise<Map<string, string>> {
+  const [livelli, personale] = await Promise.all([listLivelli(), listPersonale()])
+  const result = new Map<string, string>()
+  for (const persona of personale) {
+    const livelloId = persona.livelloId || persona.livelloIds?.[0] || ""
+    const livello = livelli.find((item) => item.id === livelloId)
+    if (!livello) continue
+    const repartoId = codiceRepartoDaMansione(dominioLivello(livelli, livelloId), livello.nome)
+    if (!repartoId) continue
+    const key = nominativo(persona)
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^a-z0-9]+/gi, " ")
+      .trim()
+      .toLowerCase()
+    if (key) result.set(key, repartoId)
+  }
+  return result
+}
+
 export async function costiCollaboratoriSportivi(mese: string): Promise<AmmLpagaRiga[]> {
   if (!/^\d{4}-\d{2}$/.test(mese)) return []
   return (await datiMese(mese)).reparti

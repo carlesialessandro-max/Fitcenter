@@ -1658,8 +1658,8 @@ function StipendiTab() {
               , visibile solo ad admin e Alberto.
             </p>
             <p className="mt-1 text-xs text-zinc-500">
-              Imposta il centro di costo predefinito nella tabella: verrà riutilizzato per i mesi successivi e per i
-              rimborsi. Se non è impostato, resta l’attribuzione attualmente fornita dal Libro paga o dal riepilogo.
+              Il centro di costo viene letto dal reparto principale assegnato nel Libro paga e vale anche per i
+              rimborsi. Se manca un reparto in Libro paga, puoi impostare un centro predefinito dalla tabella.
             </p>
           </div>
           <label className={`${btnAmber} cursor-pointer`}>
@@ -1812,24 +1812,29 @@ function StipendiTab() {
                     </td>
                     {fonteNominativi && (
                       <td className="py-1.5">
-                        <select
-                          value={r.repartoId ?? ""}
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              centroCostoMut.mutate({ nominativo: r.nome, repartoId: e.target.value })
-                            }
-                          }}
-                          className={`${inputCls} py-1`}
-                          disabled={centroCostoMut.isPending}
-                          aria-label={`Centro di costo predefinito per ${r.nome}`}
-                        >
-                          <option value="">
-                            {r.repartoId ? "Seleziona centro di costo" : "Da turni / non assegnato"}
-                          </option>
-                          {macros.map((reparto) => (
-                            <option key={reparto.id} value={reparto.id}>{reparto.nome}</option>
-                          ))}
-                        </select>
+                        {r.repartoDaLibroPaga ? (
+                          <span className="text-zinc-300">
+                            {nomeReparto(attivi, r.repartoId ?? "personale-condiviso")}
+                            <span className="ml-2 text-xs text-emerald-400">Libro paga</span>
+                          </span>
+                        ) : (
+                          <select
+                            value={r.repartoId ?? ""}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                centroCostoMut.mutate({ nominativo: r.nome, repartoId: e.target.value })
+                              }
+                            }}
+                            className={`${inputCls} py-1`}
+                            disabled={centroCostoMut.isPending}
+                            aria-label={`Centro di costo predefinito per ${r.nome}`}
+                          >
+                            <option value="">{r.repartoId ? "Seleziona centro di costo" : "Non assegnato"}</option>
+                            {macros.map((reparto) => (
+                              <option key={reparto.id} value={reparto.id}>{reparto.nome}</option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                     )}
                     {!fonteNominativi && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}

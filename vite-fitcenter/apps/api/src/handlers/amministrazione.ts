@@ -12,7 +12,11 @@ import {
   type AmmTipoCosto,
 } from "../store/amministrazione-costi.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
-import { collaboratoriDaMensilita, costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
+import {
+  centriCostoPredefinitiCollaboratori,
+  collaboratoriDaMensilita,
+  costiCollaboratoriAnno,
+} from "../services/amministrazione-lpaga.js"
 import {
   isMacroCommerciale,
   isMacroStruttura,
@@ -54,9 +58,38 @@ function normalizeNominativo(value: string): string {
     .toLowerCase()
 }
 
-function quoteOfCollaboratore(nominativo: string, quote: AmmQuota[] = []): AmmQuota[] {
-  const repartoId = ammCostiStore.repartoCollaboratore(nominativo)
+function quoteOfCollaboratore(
+  nominativo: string,
+  quote: AmmQuota[] = [],
+  centriCostoLibroPaga?: Map<string, string>
+): AmmQuota[] {
+  const repartoId = repartoOfCollaboratore(nominativo, centriCostoLibroPaga)
   return repartoId ? [{ repartoId, percentuale: 100 }] : quote
+}
+
+function repartoLibroPagaCollaboratore(
+  nominativo: string,
+  centriCostoLibroPaga?: Map<string, string>
+): string | undefined {
+  return centriCostoLibroPaga?.get(normalizeNominativo(nominativo))
+}
+
+function repartoOfCollaboratore(
+  nominativo: string,
+  centriCostoLibroPaga?: Map<string, string>
+): string | undefined {
+  return (
+    repartoLibroPagaCollaboratore(nominativo, centriCostoLibroPaga) ??
+    ammCostiStore.repartoCollaboratore(nominativo)
+  )
+}
+
+async function centriCostoCollaboratoriDaLibroPaga(): Promise<Map<string, string>> {
+  const reparti = ammCostiStore.listReparti(true)
+  const dettagli = await centriCostoPredefinitiCollaboratori()
+  return new Map(
+    [...dettagli].map(([nominativo, repartoId]) => [nominativo, macroIdOf(reparti, repartoId)])
+  )
 }
 
 function bodyOf(req: Request): Record<string, unknown> {
@@ -403,10 +436,14 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const meseQ = String(req.query.mese ?? "").trim()
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
+    const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const rimborsi = ammCostiStore
       .listCollaboratoriRimborsi()
       .filter((r) => (mese ? r.mese === mese : r.mese.startsWith(String(anno))))
-      .map((r) => ({ ...r, quote: quoteOfCollaboratore(r.nominativo, r.quote) }))
+      .map((r) => ({
+        ...r,
+        quote: quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga),
+      }))
     const totRimborsi = Math.round(rimborsi.reduce((sum, r) => sum + r.totale, 0) * 100) / 100
     const stored = ammCostiStore
       .listCollaboratori()
@@ -428,8 +465,9 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           nTurni: 0,
           tipo: c.tipo,
           descrizione: c.descrizione,
-          quote: quoteOfCollaboratore(c.nominativo, c.quote),
-          repartoId: ammCostiStore.repartoCollaboratore(c.nominativo),
+          quote: quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
+          repartoId: repartoOfCollaboratore(c.nominativo, centriCostoLibroPaga),
+          repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(c.nominativo, centriCostoLibroPaga)),
         })),
       })
       return
@@ -446,8 +484,13 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           rimborsi,
           fonte: "libro-paga-mensilita",
           righe: righe.map((row) => {
-            const quote = quoteOfCollaboratore(row.nome, row.quote)
-            return { ...row, quote, repartoId: ammCostiStore.repartoCollaboratore(row.nome) }
+            const quote = quoteOfCollaboratore(row.nome, row.quote, centriCostoLibroPaga)
+            return {
+              ...row,
+              quote,
+              repartoId: repartoOfCollaboratore(row.nome, centriCostoLibroPaga),
+              repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(row.nome, centriCostoLibroPaga)),
+            }
           }),
         })
         return
@@ -470,8 +513,9 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           nTurni: 0,
           tipo: c.tipo,
           descrizione: c.descrizione,
-          quote: quoteOfCollaboratore(c.nominativo, c.quote),
-          repartoId: ammCostiStore.repartoCollaboratore(c.nominativo),
+          quote: quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
+          repartoId: repartoOfCollaboratore(c.nominativo, centriCostoLibroPaga),
+          repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(c.nominativo, centriCostoLibroPaga)),
         })),
       })
       return
@@ -528,10 +572,11 @@ export async function postAmmCollaboratoreRimborso(req: Request, res: Response) 
     if (!Number.isFinite(totale) || totale <= 0) return res.status(400).json({ message: "Importo non valido" })
 
     const target = normalizeNominativo(nominativo)
+    const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese === mese && c.totale > 0)
     const riepilogo = stored.filter((c) => c.origine === "riepilogo")
     let quote: AmmQuota[] | undefined
-    const assignedReparto = ammCostiStore.repartoCollaboratore(nominativo)
+    const assignedReparto = repartoOfCollaboratore(nominativo, centriCostoLibroPaga)
     if (assignedReparto) quote = [{ repartoId: assignedReparto, percentuale: 100 }]
     if (riepilogo.length) {
       quote ??= riepilogo.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
@@ -936,6 +981,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const collabAll = ammCostiStore.listCollaboratori()
     const lpAnno = await costiCollaboratoriAnno(anno)
+    const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const lpSlices: Slice[] = []
     function lpagaAllocazioniMese(ym: string): { repartoId: string; importo: number; nTurni: number }[] {
       const meseLp = lpAnno.find((item) => item.mese === ym)
@@ -943,7 +989,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       if (!meseLp.collaboratori.length) return meseLp.righe
       const byReparto = new Map<string, { repartoId: string; importo: number; nTurni: number }>()
       for (const collaboratore of meseLp.collaboratori) {
-        const quote = quoteOfCollaboratore(collaboratore.nome, collaboratore.quote)
+        const quote = quoteOfCollaboratore(collaboratore.nome, collaboratore.quote, centriCostoLibroPaga)
         for (const alloc of allocateQuote(collaboratore.importo, quote)) {
           const current = byReparto.get(alloc.repartoId) ?? {
             repartoId: alloc.repartoId,
@@ -966,7 +1012,10 @@ export async function getAmmDashboard(req: Request, res: Response) {
       if (stored.length) {
         totCollaboratoriAziendaRaw += stored.reduce((sum, c) => sum + (Number(c.totale) || 0), 0)
         for (const c of stored) {
-          const alloc = allocateQuote(c.totale, quoteOfCollaboratore(c.nominativo, c.quote))
+          const alloc = allocateQuote(
+            c.totale,
+            quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
+          )
           pnlAlloc.push(...alloc)
           for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
             lpSlices.push({
@@ -998,7 +1047,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       .filter((r) => r.mese.startsWith(String(anno)))
     const rimborsiAll = rimborsiAnno.filter((r) => !mese || r.mese === mese)
     const rimborsoSlices: Slice[] = rimborsiAll.flatMap((r) =>
-      allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote))
+      allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga))
         .filter((a) => inFiltro(a.repartoId))
         .map((a) => ({
           repartoId: a.repartoId,
@@ -1009,7 +1058,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
     )
     pnlAlloc.push(
       ...rimborsiAll.flatMap((r) =>
-        allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote))
+        allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga))
       )
     )
 
@@ -1151,7 +1200,10 @@ export async function getAmmDashboard(req: Request, res: Response) {
         sub = stored.reduce(
           (n, c) =>
             n +
-            allocateQuote(c.totale, quoteOfCollaboratore(c.nominativo, c.quote))
+            allocateQuote(
+              c.totale,
+              quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
+            )
               .filter((a) => inFiltro(a.repartoId))
               .reduce((x, a) => x + a.importo, 0),
           0,
@@ -1164,7 +1216,10 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byMeseMap.set(ym, Math.round(((byMeseMap.get(ym) ?? 0) + sub) * 100) / 100)
     }
     for (const r of rimborsiAnno) {
-      const sub = allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote))
+      const sub = allocateQuote(
+        r.totale,
+        quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
+      )
         .filter((a) => inFiltro(a.repartoId))
         .reduce((sum, a) => sum + a.importo, 0)
       byMeseMap.set(r.mese, round2((byMeseMap.get(r.mese) ?? 0) + sub))
