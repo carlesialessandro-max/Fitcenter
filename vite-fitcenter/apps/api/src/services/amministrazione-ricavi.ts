@@ -89,6 +89,29 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
 }
 
 export type AmmRicavoVoce = { voce: string; macro: string; importo: number; n: number }
+type RicavoVoceGestionale = { voce: string; contesto: string; euro: number; n: number; danza: boolean }
+
+export function raggruppaDettaglioRicavi(voci: RicavoVoceGestionale[]): AmmRicavoVoce[] {
+  const grouped = new Map<string, { voce: string; macro: Set<string>; importo: number; n: number }>()
+  for (const v of voci) {
+    if (v.danza) continue
+    const dest = classificaRicavo(v.voce, v.contesto)
+    if (dest.length === 0) continue
+    const current = grouped.get(v.voce) ?? { voce: v.voce, macro: new Set<string>(), importo: 0, n: 0 }
+    current.n += v.n
+    for (const d of dest) {
+      current.macro.add(d.macro)
+      current.importo = round2(current.importo + Number(v.euro || 0) * d.peso)
+    }
+    grouped.set(v.voce, current)
+  }
+  return [...grouped.values()].map((row) => ({
+    voce: row.voce,
+    macro: [...row.macro].join(" + "),
+    importo: row.importo,
+    n: row.n,
+  }))
+}
 
 export type AmmRicaviPeriodo = {
   from: string
@@ -131,7 +154,6 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
     const voci = await queryIncassiPerVoce({ from, to })
     const byMacro: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
     let totAltri = 0
-    const dettaglioByKey = new Map<string, AmmRicavoVoce>()
     for (const v of voci) {
       if (v.danza) continue
       const dest = classificaRicavo(v.voce, v.contesto)
@@ -140,14 +162,9 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
         const quota = round2(euro * d.peso)
         if (d.macro === "altro") totAltri += quota
         else byMacro[d.macro] += quota
-        const key = `${v.voce}\u001f${d.macro}`
-        const current = dettaglioByKey.get(key) ?? { voce: v.voce, macro: d.macro, importo: 0, n: 0 }
-        current.importo = round2(current.importo + quota)
-        current.n += v.n
-        dettaglioByKey.set(key, current)
       }
     }
-    const dettaglio = [...dettaglioByKey.values()]
+    const dettaglio = raggruppaDettaglioRicavi(voci)
     for (const k of MACRO_COMMERCIALI) byMacro[k] = round2(byMacro[k])
     totAltri = round2(totAltri)
     const totCommerciali = round2(MACRO_COMMERCIALI.reduce((s, k) => s + byMacro[k], 0))
