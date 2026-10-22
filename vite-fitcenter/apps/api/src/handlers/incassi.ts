@@ -38,8 +38,7 @@ function amountOf(r: any): number {
 }
 
 async function loadDeduped(from: string, to: string): Promise<Record<string, unknown>[]> {
-  const allRows = await gestionaleSql.queryIncassiRange({ from, to, segment: "all" })
-  return gestionaleSql.dedupeIncassiRows(allRows)
+  return gestionaleSql.queryIncassiCassaDedup({ from, to })
 }
 
 export async function getIncassi(req: Request, res: Response) {

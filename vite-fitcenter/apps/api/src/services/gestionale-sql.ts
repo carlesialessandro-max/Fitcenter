@@ -6504,13 +6504,9 @@ export async function queryAnagraficaStaff(
 }
 
 function getIncassiViewName(): string {
-  // Default: movimenti di cassa (coerente con griglia "Movimenti di Cassa" del gestionale).
-  // Override via env se necessario.
-  const fallback = "RVW_CassaMovimentiUtenti"
-  const raw = (process.env.GESTIONALE_VIEW_ABBONAMENTI_PAGAMENTI ?? fallback).trim()
-  if (!raw) return fallback
-  if (!isSafeSqlIdentifierLoose(raw)) return fallback
-  return raw
+  // Sempre allineato alla griglia «Movimenti di cassa» (non RVW_AbbonamentiPagamentiUtenti:
+  // quella vista può esporre rate pianificate senza movimento di cassa nel periodo).
+  return getCassaMovimentiViewName()
 }
 
 function sqlDateRangeSargable(col: string, fromParam: string, toParam: string): string {
@@ -6731,6 +6727,51 @@ export function dedupeIncassiRows(rows: Record<string, unknown>[]): Record<strin
   return out
 }
 
+function hasAbbonamentoHierarchyIncasso(row: Record<string, unknown>): boolean {
+  return Boolean(
+    String(
+      row.AbbonamentiCategorieDescrizione ??
+        row.CategoriaAbbonamentoDescrizione ??
+        row.AbbonamentiCategoriaDescrizione ??
+        row.AbbonamentiDescrizione ??
+        row.AbbonamentoDescrizione ??
+        ""
+    ).trim()
+  )
+}
+
+/** Estrae il prodotto da causale «PAGAMENTO RATA del …: …» (senza data rata né periodo abbonamento). */
+export function titoloProdottoDaCausaleIncasso(causale: string): string | null {
+  const m = /^PAGAMENTO\s+RATA\s+del\s+\d{1,2}\/\d{1,2}\/\d{4}\s*:\s*(.+)$/i.exec(causale.trim())
+  if (!m?.[1]) return null
+  const body = m[1].trim()
+  const senzaPeriodo = body.replace(/\s+dal\s+\d{1,2}\/\d{1,2}\/\d{4}\s+al\s+\d{1,2}\/\d{1,2}\/\d{4}\s*$/i, "").trim()
+  return senzaPeriodo || body
+}
+
+/**
+ * Incassi P&L / API: solo movimenti di cassa effettivi (data operazione nel filtro).
+ * Esclude rate «orfane» dalla view (causale rata senza ID movimento né categoria abbonamento).
+ */
+export function isIncassoConteggiabileCassa(row: Record<string, unknown>): boolean {
+  if (incassiAmount(row) <= 0) return false
+  if (!isPagamentoRataIncassoRow(row)) return true
+  if (incassiRowId(row)) return true
+  if (hasAbbonamentoHierarchyIncasso(row)) return true
+  return false
+}
+
+export function filterIncassiCassaConteggiabili(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.filter(isIncassoConteggiabileCassa)
+}
+
+export async function queryIncassiCassaDedup(params: {
+  from: string
+  to: string
+}): Promise<Record<string, unknown>[]> {
+  return filterIncassiCassaConteggiabili(dedupeIncassiRows(await queryIncassiRange({ ...params, segment: "all" })))
+}
+
 export async function queryIncassiRange(params: {
   from: string
   to: string
@@ -6738,7 +6779,7 @@ export async function queryIncassiRange(params: {
 }): Promise<Record<string, unknown>[]> {
   const p = await getPool()
   if (!p) return []
-  const view = getIncassiViewName()
+  const view = await resolveCassaMovimentiViewName()
   const vq = qualifySqlObject(view).query
   const cols = await prenGetCols(view)
   const dateCol = incassiDateCol(cols)
@@ -6797,7 +6838,7 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
   segments: Record<Exclude<IncassiSegment, "all">, { total: number; count: number }>
 }> {
   const empty = { total: 0, count: 0, segments: emptyIncassiSegTotals() }
-  const rows = dedupeIncassiRows(await queryIncassiRange(params))
+  const rows = await queryIncassiCassaDedup(params)
   const segments = emptyIncassiSegTotals()
   let total = 0
   let count = 0
@@ -6864,7 +6905,7 @@ export async function queryIncassiPerVoce(
   params: { from: string; to: string }
 ): Promise<{ voce: string; contesto: string; euro: number; n: number; danza: boolean }[]> {
   const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
-  for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
+  for (const row of await queryIncassiCassaDedup(params)) {
     const ticketing = isTicketingIncasso(row)
     const causale = String(
       firstNonEmpty(row, [
@@ -6888,8 +6929,10 @@ export async function queryIncassiPerVoce(
     const hierarchy = [...categoryFields, ...subscriptionFields]
       .map((value) => String(value ?? "").trim())
       .filter((value, index, values) => value && values.indexOf(value) === index)
+    const prodottoRata = !ticketing ? titoloProdottoDaCausaleIncasso(causale) : null
     const voce =
       (ticketing ? causale : hierarchy.join(" › ")) ||
+      prodottoRata ||
       causale ||
       String(row.CategoriaDescrizione ?? "").trim() ||
       "Altro"

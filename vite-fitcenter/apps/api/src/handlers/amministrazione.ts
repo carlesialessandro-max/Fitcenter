@@ -22,6 +22,7 @@ import {
   isMacroStruttura,
   MACRO_COMMERCIALI,
   periodoIso,
+  ordinaDettaglioRicavi,
   queryRicaviAmm,
   quoteRipartoFissi,
   type MacroCommerciale,
@@ -1167,7 +1168,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
           n: fattureAmm.nFattureDanza,
         })
       }
-      ricavi.dettaglio = ricavi.dettaglio.sort((a, b) => b.importo - a.importo).slice(0, 40)
+      ricavi.dettaglio = ordinaDettaglioRicavi(ricavi.dettaglio).slice(0, 80)
       ricavi.totCommerciali = round2(MACRO_COMMERCIALI.reduce((sum, id) => sum + ricavi.byMacro[id], 0))
       ricavi.tot = round2(ricavi.totCommerciali + ricavi.totAltri)
     }

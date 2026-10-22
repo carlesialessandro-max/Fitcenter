@@ -100,12 +100,67 @@ export type AmmRicavoVoce = {
 }
 type RicavoVoceGestionale = { voce: string; contesto: string; euro: number; n: number; danza: boolean }
 
-function chiaveRaggruppamento(voce: string): string {
-  const normalized = blob(voce)
+function titoloVocePerRaggruppamento(voce: string, contesto: string): string {
+  const v = voce.trim()
+  const rata = /^PAGAMENTO\s+RATA\s+del\s+\d{1,2}\/\d{1,2}\/\d{4}\s*:\s*(.+)$/i.exec(v)
+  if (rata?.[1]) {
+    return rata[1].replace(/\s+dal\s+\d{1,2}\/\d{1,2}\/\d{4}\s+al\s+\d{1,2}\/\d{1,2}\/\d{4}\s*$/i, "").trim()
+  }
+  if (v && v !== "Altro") return v
+  const ctx = contesto.trim()
+  if (!ctx) return v || "Altro"
+  const senzaRata = ctx.replace(/^PAGAMENTO\s+RATA\s+del\s+\d{1,2}\/\d{1,2}\/\d{4}\s*:\s*/i, "").trim()
+  return senzaRata.split(/\s{2,}/)[0]?.trim() || ctx.slice(0, 120)
+}
+
+function chiaveRaggruppamento(voce: string, contesto = ""): string {
+  const titolo = titoloVocePerRaggruppamento(voce, contesto)
+  const normalized = blob(titolo)
+  if (!normalized) return "Altro"
   if (/^ROSSI ORARIO LIBERO\b/.test(normalized)) return "ROSSI - orario libero"
   if (/^SCUOLA NUOTO\b/.test(normalized)) return "SCUOLA NUOTO"
   if (/^TICKETING\b/.test(normalized)) return "TICKETING"
-  return voce
+  if (/^GYM\b/.test(normalized) || /\bGIN\b/.test(normalized)) return "GYM - abbonamenti palestra"
+  if (/\bSMILE FIT\b/.test(normalized)) return "SMILE FIT"
+  if (/\bSMILE H2O\b/.test(normalized)) return "SMILE H2O"
+  if (/\bOPEN\b/.test(normalized) && /\bFIT\b/.test(normalized)) return "OPEN FIT"
+  if (/\b1\s*M MENSILE 3VS\b/.test(normalized)) return "1 M MENSILE 3VS"
+  if (/\b1\s*M MENSILE 2VS\b/.test(normalized)) return "1 M MENSILE 2VS"
+  if (/\bLEZIONI PRIVATE\b/.test(normalized)) return "Lezioni private"
+  if (/\bTESSERAMENT\b/.test(normalized)) return "Tesseramenti"
+  if (/^PACCHETTI INGRESSI\b/.test(normalized)) return "Pacchetti ingressi"
+  if (/^CAMPUS\b/.test(normalized)) return "Campus"
+  const catAbb = /^([A-Z0-9][A-Z0-9 \-]+?)(?:\s+›|\s+\d|\s+MENSILE|\s+SETTIMAN)/.exec(normalized)
+  if (catAbb?.[1] && catAbb[1].length >= 4 && catAbb[1].length <= 48) return catAbb[1].trim()
+  return titolo.length > 96 ? `${titolo.slice(0, 93)}…` : titolo
+}
+
+const ORDINE_MACRO_DETTAGLIO = ["piscina", "fitness", "spa", "altro"] as const
+
+export function macroPrimarioDettaglioRicavo(row: {
+  macro: string
+  ripartizione?: { macro: string; importo: number }[]
+}): string {
+  if (row.ripartizione?.length === 1) return row.ripartizione[0]!.macro
+  if (row.ripartizione?.length) {
+    return row.ripartizione.reduce((best, q) => (q.importo > best.importo ? q : best)).macro
+  }
+  const first = row.macro.split("+")[0]?.trim().toLowerCase()
+  return first || "altro"
+}
+
+export function ordinaDettaglioRicavi(rows: AmmRicavoVoce[]): AmmRicavoVoce[] {
+  const rank = (m: string) => {
+    const i = ORDINE_MACRO_DETTAGLIO.indexOf(m as (typeof ORDINE_MACRO_DETTAGLIO)[number])
+    return i >= 0 ? i : ORDINE_MACRO_DETTAGLIO.length
+  }
+  return [...rows].sort((a, b) => {
+    const ma = macroPrimarioDettaglioRicavo(a)
+    const mb = macroPrimarioDettaglioRicavo(b)
+    const dr = rank(ma) - rank(mb)
+    if (dr !== 0) return dr
+    return b.importo - a.importo
+  })
 }
 
 export function raggruppaDettaglioRicavi(voci: RicavoVoceGestionale[]): AmmRicavoVoce[] {
@@ -117,7 +172,7 @@ export function raggruppaDettaglioRicavi(voci: RicavoVoceGestionale[]): AmmRicav
     if (v.danza) continue
     const dest = classificaRicavo(v.voce, v.contesto)
     if (dest.length === 0) continue
-    const key = chiaveRaggruppamento(v.voce)
+    const key = chiaveRaggruppamento(v.voce, v.contesto)
     const current = grouped.get(key) ?? {
       voce: key,
       importo: 0,
@@ -192,7 +247,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
         else byMacro[d.macro] += quota
       }
     }
-    const dettaglio = raggruppaDettaglioRicavi(voci)
+    const dettaglio = ordinaDettaglioRicavi(raggruppaDettaglioRicavi(voci))
     for (const k of MACRO_COMMERCIALI) byMacro[k] = round2(byMacro[k])
     totAltri = round2(totAltri)
     const totCommerciali = round2(MACRO_COMMERCIALI.reduce((s, k) => s + byMacro[k], 0))
@@ -203,7 +258,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
       totCommerciali,
       totAltri,
       byMacro,
-      dettaglio: dettaglio.sort((a, b) => b.importo - a.importo),
+      dettaglio,
       disponibile: true,
     }
   } catch (e) {

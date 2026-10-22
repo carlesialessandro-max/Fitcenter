@@ -28,6 +28,38 @@ function eur(n: number): string {
   return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
 }
 
+function macroPrimarioRicavo(r: {
+  macro: string
+  ripartizione?: { macro: string; importo: number }[]
+}): string {
+  if (r.ripartizione?.length === 1) return r.ripartizione[0]!.macro
+  if (r.ripartizione?.length) {
+    return r.ripartizione.reduce((best, q) => (q.importo > best.importo ? q : best)).macro
+  }
+  return r.macro.split("+")[0]?.trim().toLowerCase() || "altro"
+}
+
+function macroDettaglioLabel(id: string): string {
+  if (id === "piscina") return "Piscina"
+  if (id === "fitness") return "Fitness"
+  if (id === "spa") return "SPA"
+  return "Altri incassi"
+}
+
+function repartoDettaglioLabel(r: {
+  macro: string
+  ripartizione?: { macro: string; importo: number }[]
+}): string {
+  if (r.ripartizione?.length) {
+    return r.ripartizione.map((quota) => `${macroDettaglioLabel(quota.macro)} ${eur(quota.importo)}`).join(" · ")
+  }
+  const parts = r.macro.split("+").map((s) => s.trim()).filter(Boolean)
+  if (parts.length > 1) {
+    return parts.map((p) => macroDettaglioLabel(p.toLowerCase())).join(" · ")
+  }
+  return macroDettaglioLabel(macroPrimarioRicavo(r))
+}
+
 function fmtDateIt(iso: string): string {
   const s = String(iso ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—"
@@ -250,6 +282,11 @@ function DashboardTab() {
           {d.ricaviDisponibili && (d.ricaviDettaglio?.length ?? 0) > 0 && (
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
+              <p className="mt-2 text-[11px] text-zinc-500">
+                Solo movimenti di cassa con data operazione nel periodo (come «Movimenti di cassa»). Rate senza ID movimento
+                non vengono conteggiate; le rate reali compaiono sotto il nome prodotto (es. 1 M MENSILE 3VS), non con la data
+                scadenza rata.
+              </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">
                   <thead className="text-left text-zinc-500">
@@ -261,18 +298,28 @@ function DashboardTab() {
                     </tr>
                   </thead>
                   <tbody>
-                    {d.ricaviDettaglio?.map((r, index) => (
-                      <tr key={`${r.voce}-${r.macro}-${index}`} className="border-t border-zinc-800 text-zinc-300">
-                        <td className="px-2 py-1">{r.voce}</td>
-                        <td className="px-2 py-1">
-                          {r.ripartizione?.length
-                            ? r.ripartizione.map((quota) => `${quota.macro} ${eur(quota.importo)}`).join(" + ")
-                            : r.macro}
-                        </td>
-                        <td className="px-2 py-1 text-right">{r.n}</td>
-                        <td className="px-2 py-1 text-right">{eur(r.importo)}</td>
-                      </tr>
-                    ))}
+                    {d.ricaviDettaglio?.flatMap((r, index) => {
+                      const macroId = macroPrimarioRicavo(r)
+                      const prevMacro =
+                        index > 0 ? macroPrimarioRicavo(d.ricaviDettaglio![index - 1]!) : null
+                      const header =
+                        index === 0 || macroId !== prevMacro ? (
+                          <tr key={`hdr-${macroId}-${index}`} className="border-t border-zinc-700 bg-zinc-900/60">
+                            <td colSpan={4} className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                              {macroDettaglioLabel(macroId)}
+                            </td>
+                          </tr>
+                        ) : null
+                      const row = (
+                        <tr key={`${r.voce}-${macroId}-${index}`} className="border-t border-zinc-800/80 text-zinc-300">
+                          <td className="px-2 py-1 pl-4">{r.voce}</td>
+                          <td className="px-2 py-1 text-zinc-400">{repartoDettaglioLabel(r)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{r.n}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{eur(r.importo)}</td>
+                        </tr>
+                      )
+                      return header ? [header, row] : [row]
+                    })}
                   </tbody>
                 </table>
               </div>
