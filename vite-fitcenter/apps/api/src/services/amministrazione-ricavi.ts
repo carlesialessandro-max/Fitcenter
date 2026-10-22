@@ -50,9 +50,10 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   if (/\bSMILE FIT\b/.test(u)) return [{ macro: "fitness", peso: 1 }]
   if (/\bSMILE H2O\b/.test(u)) return [{ macro: "piscina", peso: 1 }]
   const childPiscina = /PISCIN|NUOTO|VASCA|SCUOLA NUOTO|BAGNIN|IDRO|ACQUATIC|ACQUAGYM|ACQUA FITNESS|H2O|CAMPUS|AGONISM/.test(child)
-  const childFitness = /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|PACCHETTI INGRESSI/.test(
-    child
-  )
+  const childFitness =
+    /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|PACCHETTI INGRESSI/.test(
+      child
+    ) || /\bFIT\b/.test(child)
   if (childPiscina && childFitness) {
     return [
       { macro: "piscina", peso: 0.5 },
@@ -130,7 +131,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
     const voci = await queryIncassiPerVoce({ from, to })
     const byMacro: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
     let totAltri = 0
-    const dettaglio: AmmRicavoVoce[] = []
+    const dettaglioByKey = new Map<string, AmmRicavoVoce>()
     for (const v of voci) {
       if (v.danza) continue
       const dest = classificaRicavo(v.voce, v.contesto)
@@ -139,9 +140,14 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
         const quota = round2(euro * d.peso)
         if (d.macro === "altro") totAltri += quota
         else byMacro[d.macro] += quota
-        dettaglio.push({ voce: v.voce, macro: d.macro, importo: quota, n: v.n })
+        const key = `${v.voce}\u001f${d.macro}`
+        const current = dettaglioByKey.get(key) ?? { voce: v.voce, macro: d.macro, importo: 0, n: 0 }
+        current.importo = round2(current.importo + quota)
+        current.n += v.n
+        dettaglioByKey.set(key, current)
       }
     }
+    const dettaglio = [...dettaglioByKey.values()]
     for (const k of MACRO_COMMERCIALI) byMacro[k] = round2(byMacro[k])
     totAltri = round2(totAltri)
     const totCommerciali = round2(MACRO_COMMERCIALI.reduce((s, k) => s + byMacro[k], 0))
