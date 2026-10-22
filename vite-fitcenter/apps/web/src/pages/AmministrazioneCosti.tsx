@@ -1624,8 +1624,8 @@ function StipendiTab() {
         {collab.isLoading && <p className="text-sm text-zinc-500">Caricamento…</p>}
         <details className="rounded-xl border border-zinc-800 px-3 py-2">
           <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-zinc-300">
-              Collaboratori sportivi · {(collab.data?.righe ?? []).length} nominativi
+            <span className="text-amber-300">
+              Dettaglio collaboratori sportivi ({(collab.data?.righe ?? []).length} nominativi)
             </span>
             <span className="font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</span>
           </summary>
