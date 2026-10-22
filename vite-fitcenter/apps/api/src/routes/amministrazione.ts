@@ -20,6 +20,7 @@ import {
   postAmmStipendiPdf,
   postAmmCollaboratoriImport,
   postAmmCollaboratoriReportImport,
+  postAmmCollaboratoreCentroCosto,
   postAmmCollaboratoreImporto,
   postAmmCollaboratoreRimanenze,
   postAmmCollaboratoreRimborso,
@@ -59,6 +60,7 @@ amministrazioneRouter.put("/reparti", putAmmReparto)
 amministrazioneRouter.put("/reparti/:id", putAmmReparto)
 amministrazioneRouter.get("/collaboratori", getAmmCollaboratori)
 amministrazioneRouter.post("/collaboratori/import", postAmmCollaboratoriImport)
+amministrazioneRouter.put("/collaboratori/centro-costo", postAmmCollaboratoreCentroCosto)
 amministrazioneRouter.post("/collaboratori/rimborsi", postAmmCollaboratoreRimborso)
 amministrazioneRouter.delete("/collaboratori/rimborsi/:id", deleteAmmCollaboratoreRimborso)
 amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)

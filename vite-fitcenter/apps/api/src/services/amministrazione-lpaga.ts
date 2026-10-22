@@ -177,7 +177,9 @@ export async function costiCollaboratoriSportivi(mese: string): Promise<AmmLpaga
   return (await datiMese(mese)).reparti
 }
 
-export async function costiCollaboratoriAnno(anno: number): Promise<{ mese: string; righe: AmmLpagaRiga[] }[]> {
+export async function costiCollaboratoriAnno(
+  anno: number
+): Promise<{ mese: string; righe: AmmLpagaRiga[]; collaboratori: AmmLpagaCollaboratoreRiga[] }[]> {
   const [livelli, personale, turni, mensilitaByMese] = await Promise.all([
     listLivelli(),
     listPersonale(),
@@ -190,6 +192,7 @@ export async function costiCollaboratoriAnno(anno: number): Promise<{ mese: stri
   ])
   return mensilitaByMese.map((mensilita, index) => {
     const mese = `${anno}-${String(index + 1).padStart(2, "0")}`
-    return { mese, righe: ripartoMese(mese, livelli, personale, turni, mensilita).reparti }
+    const dati = ripartoMese(mese, livelli, personale, turni, mensilita)
+    return { mese, righe: dati.reparti, collaboratori: dati.righe }
   })
 }

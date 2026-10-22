@@ -1506,6 +1506,16 @@ function StipendiTab() {
     },
     onError: (e: Error) => setError(e.message),
   })
+  const centroCostoMut = useMutation({
+    mutationFn: ({ nominativo, repartoId }: { nominativo: string; repartoId: string }) =>
+      amministrazioneApi.setCentroCostoCollaboratore(nominativo, repartoId),
+    onSuccess: () => {
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
   const importMut = useMutation({
     mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
     onSuccess: (r) => {
@@ -1647,6 +1657,10 @@ function StipendiTab() {
               </Link>
               , visibile solo ad admin e Alberto.
             </p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Imposta il centro di costo predefinito nella tabella: verrà riutilizzato per i mesi successivi e per i
+              rimborsi. Se non è impostato, resta l’attribuzione attualmente fornita dal Libro paga o dal riepilogo.
+            </p>
           </div>
           <label className={`${btnAmber} cursor-pointer`}>
             Importa riepilogo PDF
@@ -1781,6 +1795,7 @@ function StipendiTab() {
               <thead className="text-xs uppercase text-zinc-500">
                 <tr>
                   <th className="py-1">{fonteNominativi ? "Nominativo" : "Reparto"}</th>
+                  {fonteNominativi && <th className="py-1">Centro di costo predefinito</th>}
                   {!fonteNominativi && <th className="py-1 text-right">Turni</th>}
                   <th className="py-1 text-right">Importo</th>
                   {fonteRiepilogo && <th className="py-1" />}
@@ -1795,6 +1810,28 @@ function StipendiTab() {
                         <span className="ml-2 text-xs text-zinc-500">amm/gest</span>
                       )}
                     </td>
+                    {fonteNominativi && (
+                      <td className="py-1.5">
+                        <select
+                          value={r.repartoId ?? ""}
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              centroCostoMut.mutate({ nominativo: r.nome, repartoId: e.target.value })
+                            }
+                          }}
+                          className={`${inputCls} py-1`}
+                          disabled={centroCostoMut.isPending}
+                          aria-label={`Centro di costo predefinito per ${r.nome}`}
+                        >
+                          <option value="">
+                            {r.repartoId ? "Seleziona centro di costo" : "Da turni / non assegnato"}
+                          </option>
+                          {macros.map((reparto) => (
+                            <option key={reparto.id} value={reparto.id}>{reparto.nome}</option>
+                          ))}
+                        </select>
+                      </td>
+                    )}
                     {!fonteNominativi && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
                     <td className="py-1.5 text-right">{eur(r.importo)}</td>
                     {fonteRiepilogo && (
@@ -1814,7 +1851,7 @@ function StipendiTab() {
                 ))}
                 {!collaboratoriVisibili.length && (
                   <tr>
-                    <td className="py-4 text-zinc-500" colSpan={3}>
+                    <td className="py-4 text-zinc-500" colSpan={fonteNominativi ? (fonteRiepilogo ? 4 : 3) : 3}>
                       {searchTerms.length
                         ? "Nessun collaboratore corrisponde alla ricerca."
                         : "Nessun importo mensile nel Libro paga. Puoi caricare il riepilogo PDF di fine mese."}

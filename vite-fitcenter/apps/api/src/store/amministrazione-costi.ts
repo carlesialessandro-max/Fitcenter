@@ -126,6 +126,12 @@ export type AmmCollaboratoreRimborso = {
   updatedAt: string
 }
 
+export type AmmCollaboratoreCentroCosto = {
+  nominativo: string
+  repartoId: string
+  updatedAt: string
+}
+
 type FileShape = {
   reparti: AmmReparto[]
   fornitori: AmmFornitore[]
@@ -134,6 +140,7 @@ type FileShape = {
   buste: AmmBusta[]
   collaboratori: AmmCollaboratore[]
   collaboratoriRimborsi: AmmCollaboratoreRimborso[]
+  collaboratoriCentriCosto: AmmCollaboratoreCentroCosto[]
   collaboratoriAudit: AmmCollabAudit[]
   collaboratoriRimanenze: AmmCollabRimanenza[]
 }
@@ -202,6 +209,7 @@ function empty(): FileShape {
     buste: [],
     collaboratori: [],
     collaboratoriRimborsi: [],
+    collaboratoriCentriCosto: [],
     collaboratoriAudit: [],
     collaboratoriRimanenze: [],
   }
@@ -302,6 +310,15 @@ function migrate(raw: Partial<FileShape>): FileShape {
       updatedAt: String(r.updatedAt ?? ""),
     }))
     .filter((r) => r.id && r.nominativo && /^\d{4}-\d{2}$/.test(r.mese) && r.totale > 0)
+  const collaboratoriCentriCosto: AmmCollaboratoreCentroCosto[] = (
+    Array.isArray(raw.collaboratoriCentriCosto) ? raw.collaboratoriCentriCosto : []
+  )
+    .map((item) => ({
+      nominativo: String(item.nominativo ?? "").trim(),
+      repartoId: remapRepartoId(String(item.repartoId ?? "").trim()),
+      updatedAt: String(item.updatedAt ?? ""),
+    }))
+    .filter((item) => item.nominativo && item.repartoId && byId.has(item.repartoId))
   const collaboratoriRimanenze: AmmCollabRimanenza[] = (
     Array.isArray(raw.collaboratoriRimanenze) ? raw.collaboratoriRimanenze : []
   )
@@ -347,6 +364,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     buste,
     collaboratori,
     collaboratoriRimborsi,
+    collaboratoriCentriCosto,
     collaboratoriAudit,
     collaboratoriRimanenze,
   }
@@ -850,6 +868,33 @@ export const ammCostiStore = {
       .collaboratoriRimborsi.filter((r) => !mese || r.mese === mese)
       .slice()
       .sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  listCollaboratoriCentriCosto(): AmmCollaboratoreCentroCosto[] {
+    return load().collaboratoriCentriCosto.slice().sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  repartoCollaboratore(nominativo: string): string | undefined {
+    const key = nominativo.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+    return load().collaboratoriCentriCosto.find(
+      (item) =>
+        item.nominativo.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase() === key
+    )?.repartoId
+  },
+  setRepartoCollaboratore(nominativo: string, repartoId: string): AmmCollaboratoreCentroCosto {
+    const name = nominativo.trim()
+    const key = name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+    if (!name) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    const d = load()
+    if (!d.reparti.some((r) => r.id === repartoId)) {
+      throw Object.assign(new Error("Centro di costo sconosciuto"), { status: 400 })
+    }
+    const row = { nominativo: name, repartoId, updatedAt: nowIso() }
+    const index = d.collaboratoriCentriCosto.findIndex(
+      (item) => item.nominativo.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase() === key
+    )
+    if (index >= 0) d.collaboratoriCentriCosto[index] = row
+    else d.collaboratoriCentriCosto.push(row)
+    save(d)
+    return row
   },
   upsertCollaboratoreRimborso(
     body: Omit<Partial<AmmCollaboratoreRimborso>, "quote"> & {

@@ -276,6 +276,11 @@ export const amministrazioneApi = {
     }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
   importCollaboratori: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/collaboratori/import", { righe }),
   deleteCollaboratore: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/${encodeURIComponent(id)}`),
+  setCentroCostoCollaboratore: (nominativo: string, repartoId: string) =>
+    api.put<{ row: { nominativo: string; repartoId: string; updatedAt: string } }>(
+      "/amministrazione/collaboratori/centro-costo",
+      { nominativo, repartoId },
+    ),
   saveCollaboratoreRimborso: (body: { nominativo: string; mese: string; descrizione: string; totale: number }) =>
     api.post<{ rimborso: AmmCollaboratoreRimborso }>("/amministrazione/collaboratori/rimborsi", body),
   deleteCollaboratoreRimborso: (id: string) =>
@@ -314,6 +319,7 @@ export const amministrazioneApi = {
         tipo?: string
         descrizione?: string
         quote?: AmmQuota[]
+        repartoId?: string
       }[]
     }>(`/amministrazione/collaboratori?${q}`)
   },
