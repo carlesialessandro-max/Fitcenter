@@ -200,7 +200,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
       totCommerciali,
       totAltri,
       byMacro,
-      dettaglio: dettaglio.sort((a, b) => b.importo - a.importo).slice(0, 40),
+      dettaglio: dettaglio.sort((a, b) => b.importo - a.importo),
       disponibile: true,
     }
   } catch (e) {

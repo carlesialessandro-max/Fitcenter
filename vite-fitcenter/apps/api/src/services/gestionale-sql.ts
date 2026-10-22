@@ -6797,6 +6797,17 @@ export async function queryIncassiPerVoce(
 ): Promise<{ voce: string; contesto: string; euro: number; n: number; danza: boolean }[]> {
   const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
   for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
+    const ticketing = isTicketingIncasso(row)
+    const causale = String(
+      firstNonEmpty(row, [
+        "CassaMovimentiCausale",
+        "Causale",
+        "Descrizione",
+        "CasseMovimentiCausale",
+        "CassaMovimentiCausa",
+        "CassaMovimentiDescrizione",
+      ]) ?? ""
+    ).trim()
     const categoryFields = [
       row.AbbonamentiCategorieDescrizione,
       row.CategoriaAbbonamentoDescrizione,
@@ -6810,23 +6821,23 @@ export async function queryIncassiPerVoce(
       .map((value) => String(value ?? "").trim())
       .filter((value, index, values) => value && values.indexOf(value) === index)
     const voce =
-      hierarchy.join(" › ") ||
-      [row.CassaMovimentiCausale, row.Causale, row.CategoriaDescrizione]
-        .map((value) => String(value ?? "").trim())
-        .find(Boolean) ||
+      (ticketing ? causale : hierarchy.join(" › ")) ||
+      causale ||
+      String(row.CategoriaDescrizione ?? "").trim() ||
       "Altro"
-    const contesto = [
-      row.AbbonamentiDurataDescrizioneLunga,
-      ...subscriptionFields,
-      ...categoryFields.slice(1),
-      row.CategoriaDescrizione,
-      row.CassaMovimentiCausale,
-      row.Causale,
-    ]
-      .map((value) => String(value ?? "").trim())
-      .filter((value, index, values) => value && values.indexOf(value) === index)
-      .join(" ")
-    const danza = isDanzaIncassoRow(row)
+    const contesto = ticketing
+      ? causale
+      : [
+          row.AbbonamentiDurataDescrizioneLunga,
+          ...subscriptionFields,
+          ...categoryFields.slice(1),
+          row.CategoriaDescrizione,
+          causale,
+        ]
+          .map((value) => String(value ?? "").trim())
+          .filter((value, index, values) => value && values.indexOf(value) === index)
+          .join(" ")
+    const danza = !ticketing && isDanzaIncassoRow(row)
     const key = `${voce}\u001f${contesto}\u001f${danza ? "danza" : "altro"}`
     const current = grouped.get(key) ?? { euro: 0, n: 0, danza }
     current.euro = Math.round((current.euro + incassiAmount(row)) * 100) / 100
