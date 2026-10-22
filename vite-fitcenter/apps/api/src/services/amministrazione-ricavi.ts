@@ -32,7 +32,14 @@ export type DestRicavo = { macro: MacroCommerciale | "altro"; peso: number }
 export function classificaRicavo(voce: string): DestRicavo[] {
   const u = blob(voce)
   if (!u) return [{ macro: "altro", peso: 1 }]
-  if (/\bDANZA\b/.test(u)) return []
+  if (
+    /\bDANZA\b/.test(u) ||
+    /\bPROFESSIONALE\b/.test(u) ||
+    /\b1M MENSILE 2VS\b/.test(u) ||
+    (/\b3 GRADO\b/.test(u) && /\b1M MENSILE\b/.test(u))
+  ) {
+    return []
+  }
   if (/\bSTAFF\b/.test(u) || u.includes("TESSERAMENT")) return [{ macro: "altro", peso: 1 }]
   if (/SPA|BENESSER|MASSAGG|ESTETIC|SAUNA|IDROMASSAGGIO/.test(u)) return [{ macro: "spa", peso: 1 }]
   if (/TICKET|ESTIVA|PARCO ACQU/.test(u)) return [{ macro: "piscina", peso: 1 }]
@@ -55,7 +62,7 @@ export function classificaRicavo(voce: string): DestRicavo[] {
     ]
   }
   if (/\bKIDS\b/.test(u)) return [{ macro: "piscina", peso: 1 }]
-  if (/\bCLIENTE\b/.test(u) || /LEZIONI PRIVATE|PROFESSIONALE/.test(u)) return [{ macro: "fitness", peso: 1 }]
+  if (/\bCLIENTE\b/.test(u) || /LEZIONI PRIVATE/.test(u)) return [{ macro: "fitness", peso: 1 }]
   return [{ macro: "altro", peso: 1 }]
 }
 
