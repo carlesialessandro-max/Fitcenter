@@ -22,7 +22,9 @@ import {
   postAmmCollaboratoriReportImport,
   postAmmCollaboratoreImporto,
   postAmmCollaboratoreRimanenze,
+  postAmmCollaboratoreRimborso,
   deleteAmmCollaboratore,
+  deleteAmmCollaboratoreRimborso,
   getFicStatus,
   postFicConnect,
   postFicDisconnect,
@@ -57,6 +59,8 @@ amministrazioneRouter.put("/reparti", putAmmReparto)
 amministrazioneRouter.put("/reparti/:id", putAmmReparto)
 amministrazioneRouter.get("/collaboratori", getAmmCollaboratori)
 amministrazioneRouter.post("/collaboratori/import", postAmmCollaboratoriImport)
+amministrazioneRouter.post("/collaboratori/rimborsi", postAmmCollaboratoreRimborso)
+amministrazioneRouter.delete("/collaboratori/rimborsi/:id", deleteAmmCollaboratoreRimborso)
 amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
 amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
 amministrazioneRouter.get("/buste", getAmmBuste)

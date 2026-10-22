@@ -146,6 +146,15 @@ export type AmmCollaboratoreRiga = {
   tipo: "sportivo" | "gestionale"
 }
 
+export type AmmCollaboratoreRimborso = {
+  id: string
+  nominativo: string
+  mese: string
+  descrizione: string
+  totale: number
+  quote: AmmQuota[]
+}
+
 export type AmmCollabReportRiga = {
   nominativo: string
   tipo: "sportivo" | "gestionale"
@@ -267,6 +276,10 @@ export const amministrazioneApi = {
     }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
   importCollaboratori: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/collaboratori/import", { righe }),
   deleteCollaboratore: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/${encodeURIComponent(id)}`),
+  saveCollaboratoreRimborso: (body: { nominativo: string; mese: string; descrizione: string; totale: number }) =>
+    api.post<{ rimborso: AmmCollaboratoreRimborso }>("/amministrazione/collaboratori/rimborsi", body),
+  deleteCollaboratoreRimborso: (id: string) =>
+    api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/rimborsi/${encodeURIComponent(id)}`),
   reportCollaboratori: (anno: number) =>
     api.get<AmmCollabReport>(`/amministrazione/collaboratori/report?anno=${encodeURIComponent(String(anno))}`),
   setImportoCollaboratore: (body: { nominativo: string; mese: string; totale: number; tipo?: "sportivo" | "gestionale" }) =>
@@ -289,8 +302,19 @@ export const amministrazioneApi = {
       anno: number
       mese: string | null
       tot: number
+      totRimborsi: number
+      rimborsi: AmmCollaboratoreRimborso[]
       fonte?: "riepilogo" | "libro-paga" | "libro-paga-mensilita"
-      righe: { id: string; nome: string; macroId?: string; importo: number; nTurni: number; tipo?: string; descrizione?: string }[]
+      righe: {
+        id: string
+        nome: string
+        macroId?: string
+        importo: number
+        nTurni: number
+        tipo?: string
+        descrizione?: string
+        quote?: AmmQuota[]
+      }[]
     }>(`/amministrazione/collaboratori?${q}`)
   },
   deleteSpesa: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/spese/${encodeURIComponent(id)}`),

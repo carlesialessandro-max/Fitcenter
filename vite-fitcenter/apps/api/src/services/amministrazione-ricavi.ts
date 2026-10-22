@@ -111,6 +111,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
     let totAltri = 0
     const dettaglio: AmmRicavoVoce[] = []
     for (const v of voci) {
+      if (v.danza) continue
       const dest = classificaRicavo(v.voce)
       const euro = Number(v.euro) || 0
       for (const d of dest) {

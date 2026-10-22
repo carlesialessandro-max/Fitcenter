@@ -56,6 +56,7 @@ export type AmmLpagaCollaboratoreRiga = {
   nome: string
   importo: number
   nTurni: number
+  quote: { repartoId: string; percentuale: number }[]
 }
 
 type MeseCollaboratoriLpaga = {
@@ -111,13 +112,6 @@ function ripartoMese(
     const importo = Math.round((saved?.bonifico ?? agg?.importoTurni ?? 0) * 100) / 100
     if (!importo) continue
     const persona = personaleById.get(id)
-    collaboratori.push({
-      id,
-      nome: persona ? nominativo(persona) : id,
-      importo,
-      nTurni: agg?.nTurni ?? 0,
-    })
-
     const quote = [...(agg?.reparti ?? new Map()).entries()]
       .filter(([, row]) => row.importo !== 0)
       .map(([repartoId, row]) => ({ repartoId, importo: row.importo, nTurni: row.nTurni }))
@@ -130,6 +124,22 @@ function ripartoMese(
       quote.push({ repartoId, importo: 1, nTurni: 0 })
     }
     const pesoTotale = quote.reduce((sum, row) => sum + Math.abs(row.importo), 0)
+    let percentualeAssegnata = 0
+    const quoteCollaboratore = quote.map((row, index) => {
+      const percentuale =
+        index === quote.length - 1
+          ? Math.round((100 - percentualeAssegnata) * 100) / 100
+          : Math.round(((Math.abs(row.importo) / pesoTotale) * 100) * 100) / 100
+      percentualeAssegnata = Math.round((percentualeAssegnata + percentuale) * 100) / 100
+      return { repartoId: row.repartoId, percentuale }
+    })
+    collaboratori.push({
+      id,
+      nome: persona ? nominativo(persona) : id,
+      importo,
+      nTurni: agg?.nTurni ?? 0,
+      quote: quoteCollaboratore,
+    })
     let allocato = 0
     quote.forEach((row, index) => {
       const quota = index === quote.length - 1

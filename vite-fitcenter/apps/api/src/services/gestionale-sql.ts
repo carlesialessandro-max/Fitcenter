@@ -6745,9 +6745,57 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
   return { total, count, segments }
 }
 
+/** Riconosce gli abbonamenti Danza anche quando il nome della voce non contiene la parola Danza. */
+export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
+  const descriptors = [
+    row.CategoriaDescrizione,
+    row.AbbonamentiCategorieDescrizione,
+    row.CategoriaAbbonamentoDescrizione,
+    row.AbbonamentiCategoriaDescrizione,
+    row.AbbonamentiDescrizione,
+    row.AbbonamentoDescrizione,
+    row.AbbonamentiDurataDescrizioneLunga,
+    row.CassaMovimentiCausale,
+  ]
+    .map((value) =>
+      String(value ?? "")
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/[^A-Z0-9]+/g, " ")
+        .trim()
+    )
+    .join(" ")
+  const danceCategories = [
+    row.AbbonamentiCategorieDescrizione,
+    row.CategoriaAbbonamentoDescrizione,
+    row.AbbonamentiCategoriaDescrizione,
+    row.CategoriaDescrizione,
+  ]
+    .map((value) =>
+      String(value ?? "")
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, "")
+        .replace(/[^A-Z0-9]+/g, " ")
+        .trim()
+    )
+    .join(" ")
+  return (
+    /\bDANZA\b|\bGIOCODANZA\b/.test(descriptors) ||
+    /\b1M MENSILE 2VS\b/.test(descriptors) ||
+    (/\b3 GRADO\b/.test(descriptors) && /\b1M MENSILE\b/.test(descriptors)) ||
+    /\b(PROFESSIONALE|PREPROFESSIONALE|ALTA FORMAZIONE|CORSO ACCADEMICO|CORSO INTERMEDIO|PROPEDEUTICA|HEEL)\b/.test(
+      danceCategories
+    )
+  )
+}
+
 /** Incassi di cassa aggregati per voce (categoria abbonamento / causale), per il P&L amministrazione. */
-export async function queryIncassiPerVoce(params: { from: string; to: string }): Promise<{ voce: string; euro: number; n: number }[]> {
-  const grouped = new Map<string, { euro: number; n: number }>()
+export async function queryIncassiPerVoce(
+  params: { from: string; to: string }
+): Promise<{ voce: string; euro: number; n: number; danza: boolean }[]> {
+  const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
   for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
     const voce =
       [
@@ -6762,13 +6810,15 @@ export async function queryIncassiPerVoce(params: { from: string; to: string }):
       ]
         .map((value) => String(value ?? "").trim())
         .find(Boolean) || "Altro"
-    const current = grouped.get(voce) ?? { euro: 0, n: 0 }
+    const danza = isDanzaIncassoRow(row)
+    const key = `${voce}\u001f${danza ? "danza" : "altro"}`
+    const current = grouped.get(key) ?? { euro: 0, n: 0, danza }
     current.euro = Math.round((current.euro + incassiAmount(row)) * 100) / 100
     current.n += 1
-    grouped.set(voce, current)
+    grouped.set(key, current)
   }
   return [...grouped.entries()]
-    .map(([voce, value]) => ({ voce, ...value }))
+    .map(([key, value]) => ({ voce: key.split("\u001f")[0], ...value }))
     .sort((a, b) => b.euro - a.euro)
 }
 

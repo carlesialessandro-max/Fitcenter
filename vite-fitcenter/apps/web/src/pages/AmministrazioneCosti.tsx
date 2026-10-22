@@ -1394,6 +1394,11 @@ function StipendiTab() {
   const [descrizione, setDescrizione] = useState("Busta paga")
   const [repartoId, setRepartoId] = useState("amministrazione-uffici")
   const [formMese, setFormMese] = useState(now)
+  const [filtroCollaboratore, setFiltroCollaboratore] = useState("")
+  const [rimborsoOpen, setRimborsoOpen] = useState(false)
+  const [rimborsoNominativo, setRimborsoNominativo] = useState("")
+  const [rimborsoDescrizione, setRimborsoDescrizione] = useState("")
+  const [rimborsoImporto, setRimborsoImporto] = useState("")
   const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
   const buste = useQuery({
     queryKey: ["amm-buste", mese],
@@ -1469,6 +1474,32 @@ function StipendiTab() {
   })
   const delCollabMut = useMutation({
     mutationFn: (id: string) => amministrazioneApi.deleteCollaboratore(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const saveRimborsoMut = useMutation({
+    mutationFn: () =>
+      amministrazioneApi.saveCollaboratoreRimborso({
+        nominativo: rimborsoNominativo,
+        mese,
+        descrizione: rimborsoDescrizione,
+        totale: Number(rimborsoImporto.replace(",", ".")),
+      }),
+    onSuccess: () => {
+      setRimborsoOpen(false)
+      setRimborsoDescrizione("")
+      setRimborsoImporto("")
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const delRimborsoMut = useMutation({
+    mutationFn: (id: string) => amministrazioneApi.deleteCollaboratoreRimborso(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["amm-collab"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
@@ -1569,13 +1600,34 @@ function StipendiTab() {
       : collab.data?.fonte === "libro-paga"
         ? "Fonte: turni del Libro paga."
         : ""
+  const searchTerms = filtroCollaboratore
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("it")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  const matchesCollaboratore = (name: string) => {
+    const normalized = name.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("it")
+    return searchTerms.every((term) => normalized.includes(term))
+  }
+  const collaboratoriVisibili = (collab.data?.righe ?? []).filter((r) => matchesCollaboratore(r.nome))
+  const rimborsiVisibili = (collab.data?.rimborsi ?? []).filter((r) => matchesCollaboratore(r.nominativo))
 
   return (
     <div className="mt-4 space-y-6">
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-xs text-zinc-500">
           Mese competenza
-          <input type="month" value={mese} onChange={(e) => setMese(e.target.value)} className={inputCls} />
+          <input
+            type="month"
+            value={mese}
+            onChange={(e) => {
+              setMese(e.target.value)
+              setRimborsoOpen(false)
+            }}
+            className={inputCls}
+          />
         </label>
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -1637,8 +1689,93 @@ function StipendiTab() {
             <span className="text-amber-300">
               Dettaglio collaboratori sportivi ({(collab.data?.righe ?? []).length} nominativi)
             </span>
-            <span className="font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</span>
+            <span className="font-semibold text-zinc-100">
+              Compensi {eur(collab.data?.tot ?? 0)} · Rimborsi {eur(collab.data?.totRimborsi ?? 0)}
+            </span>
           </summary>
+          <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+            <label className="grid gap-1 text-xs text-zinc-500">
+              Cerca collaboratore
+              <input
+                type="search"
+                value={filtroCollaboratore}
+                onChange={(e) => setFiltroCollaboratore(e.target.value)}
+                placeholder="Nome o cognome"
+                className={inputCls}
+              />
+            </label>
+            <button
+              type="button"
+              className={btnAmber}
+              disabled={!fonteNominativi || !collab.data?.righe.length}
+              onClick={() => {
+                setRimborsoNominativo(collab.data?.righe[0]?.nome ?? "")
+                setRimborsoDescrizione("")
+                setRimborsoImporto("")
+                setRimborsoOpen(true)
+              }}
+            >
+              Inserisci rimborso spese
+            </button>
+          </div>
+          {!fonteNominativi && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Per associare un rimborso serve il dettaglio nominativo del collaboratore per il mese selezionato.
+            </p>
+          )}
+          {rimborsoOpen && (
+            <form
+              className="mt-3 grid gap-3 rounded-xl border border-zinc-800 p-3 sm:grid-cols-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                saveRimborsoMut.mutate()
+              }}
+            >
+              <label className="grid gap-1 text-xs text-zinc-500">
+                Collaboratore
+                <select
+                  value={rimborsoNominativo}
+                  onChange={(e) => setRimborsoNominativo(e.target.value)}
+                  className={inputCls}
+                  required
+                >
+                  {(collab.data?.righe ?? []).map((r) => (
+                    <option key={r.id} value={r.nome}>{r.nome}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs text-zinc-500">
+                Importo rimborso
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={rimborsoImporto}
+                  onChange={(e) => setRimborsoImporto(e.target.value)}
+                  className={inputCls}
+                  required
+                />
+              </label>
+              <label className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+                Descrizione spesa
+                <input
+                  value={rimborsoDescrizione}
+                  onChange={(e) => setRimborsoDescrizione(e.target.value)}
+                  placeholder="Es. trasferta, materiale, parcheggio"
+                  className={inputCls}
+                  required
+                />
+              </label>
+              <div className="flex gap-2 sm:col-span-2">
+                <button type="submit" className={btnAmber} disabled={saveRimborsoMut.isPending}>
+                  {saveRimborsoMut.isPending ? "Salvataggio…" : "Salva rimborso"}
+                </button>
+                <button type="button" className={btnGhost} onClick={() => setRimborsoOpen(false)}>
+                  Annulla
+                </button>
+              </div>
+            </form>
+          )}
           <div className="mt-2 overflow-x-auto">
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-zinc-500">
@@ -1650,7 +1787,7 @@ function StipendiTab() {
                 </tr>
               </thead>
               <tbody>
-                {(collab.data?.righe ?? []).map((r) => (
+                {collaboratoriVisibili.map((r) => (
                   <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
                     <td className="py-1.5">
                       {r.nome}
@@ -1675,16 +1812,61 @@ function StipendiTab() {
                     )}
                   </tr>
                 ))}
-                {!collab.data?.righe.length && (
+                {!collaboratoriVisibili.length && (
                   <tr>
                     <td className="py-4 text-zinc-500" colSpan={3}>
-                      Nessun importo mensile nel Libro paga. Puoi caricare il riepilogo PDF di fine mese.
+                      {searchTerms.length
+                        ? "Nessun collaboratore corrisponde alla ricerca."
+                        : "Nessun importo mensile nel Libro paga. Puoi caricare il riepilogo PDF di fine mese."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {(collab.data?.rimborsi ?? []).length > 0 && (
+            <div className="mt-4 overflow-x-auto border-t border-zinc-800 pt-3">
+              <h4 className="mb-2 text-xs font-semibold uppercase text-zinc-500">
+                Rimborsi spese · {eur(collab.data?.totRimborsi ?? 0)}
+              </h4>
+              <table className="min-w-full text-left text-sm">
+                <thead className="text-xs uppercase text-zinc-500">
+                  <tr>
+                    <th className="py-1">Nominativo</th>
+                    <th className="py-1">Descrizione</th>
+                    <th className="py-1 text-right">Importo</th>
+                    <th className="py-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rimborsiVisibili.map((r) => (
+                    <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
+                      <td className="py-1.5">{r.nominativo}</td>
+                      <td className="py-1.5">{r.descrizione}</td>
+                      <td className="py-1.5 text-right">{eur(r.totale)}</td>
+                      <td className="py-1.5 text-right">
+                        <button
+                          type="button"
+                          className="text-xs text-red-400 hover:underline"
+                          disabled={delRimborsoMut.isPending}
+                          onClick={() => {
+                            if (confirm(`Eliminare il rimborso di ${r.nominativo}?`)) delRimborsoMut.mutate(r.id)
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!rimborsiVisibili.length && (
+                    <tr>
+                      <td className="py-3 text-zinc-500" colSpan={4}>Nessun rimborso corrisponde alla ricerca.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </details>
       </section>
 

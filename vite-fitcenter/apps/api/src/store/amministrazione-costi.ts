@@ -115,6 +115,17 @@ export type AmmCollaboratore = {
   updatedAt: string
 }
 
+export type AmmCollaboratoreRimborso = {
+  id: string
+  nominativo: string
+  mese: string
+  descrizione: string
+  totale: number
+  quote: AmmQuota[]
+  createdAt: string
+  updatedAt: string
+}
+
 type FileShape = {
   reparti: AmmReparto[]
   fornitori: AmmFornitore[]
@@ -122,6 +133,7 @@ type FileShape = {
   spese: AmmSpesa[]
   buste: AmmBusta[]
   collaboratori: AmmCollaboratore[]
+  collaboratoriRimborsi: AmmCollaboratoreRimborso[]
   collaboratoriAudit: AmmCollabAudit[]
   collaboratoriRimanenze: AmmCollabRimanenza[]
 }
@@ -189,6 +201,7 @@ function empty(): FileShape {
     spese: [],
     buste: [],
     collaboratori: [],
+    collaboratoriRimborsi: [],
     collaboratoriAudit: [],
     collaboratoriRimanenze: [],
   }
@@ -274,6 +287,21 @@ function migrate(raw: Partial<FileShape>): FileShape {
       }
     })
     .filter((a) => a.id && a.at)
+  const collaboratoriRimborsi: AmmCollaboratoreRimborso[] = (
+    Array.isArray(raw.collaboratoriRimborsi) ? raw.collaboratoriRimborsi : []
+  )
+    .map((r) => ({
+      ...r,
+      id: String(r.id ?? ""),
+      nominativo: String(r.nominativo ?? "").trim(),
+      mese: String(r.mese ?? "").slice(0, 7),
+      descrizione: String(r.descrizione ?? "").trim(),
+      totale: Math.round((Number(r.totale) || 0) * 100) / 100,
+      quote: normalizeQuoteList(r.quote ?? []),
+      createdAt: String(r.createdAt ?? ""),
+      updatedAt: String(r.updatedAt ?? ""),
+    }))
+    .filter((r) => r.id && r.nominativo && /^\d{4}-\d{2}$/.test(r.mese) && r.totale > 0)
   const collaboratoriRimanenze: AmmCollabRimanenza[] = (
     Array.isArray(raw.collaboratoriRimanenze) ? raw.collaboratoriRimanenze : []
   )
@@ -318,6 +346,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     spese,
     buste,
     collaboratori,
+    collaboratoriRimborsi,
     collaboratoriAudit,
     collaboratoriRimanenze,
   }
@@ -815,6 +844,60 @@ export const ammCostiStore = {
     return load()
       .collaboratori.slice()
       .sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  listCollaboratoriRimborsi(mese?: string): AmmCollaboratoreRimborso[] {
+    return load()
+      .collaboratoriRimborsi.filter((r) => !mese || r.mese === mese)
+      .slice()
+      .sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
+  },
+  upsertCollaboratoreRimborso(
+    body: Omit<Partial<AmmCollaboratoreRimborso>, "quote"> & {
+      nominativo: string
+      mese: string
+      descrizione: string
+      totale: number
+      quote: AmmQuota[]
+    }
+  ): AmmCollaboratoreRimborso {
+    const mese = String(body.mese ?? "").slice(0, 7)
+    if (!/^\d{4}-\d{2}$/.test(mese)) throw Object.assign(new Error("Mese non valido"), { status: 400 })
+    const nominativo = String(body.nominativo ?? "").trim()
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    const descrizione = String(body.descrizione ?? "").trim()
+    if (!descrizione) throw Object.assign(new Error("Descrizione obbligatoria"), { status: 400 })
+    const totale = Number(String(body.totale).replace(",", "."))
+    if (!Number.isFinite(totale) || totale <= 0) {
+      throw Object.assign(new Error("L'importo del rimborso deve essere maggiore di zero"), { status: 400 })
+    }
+    const quote = normalizeQuoteList(body.quote ?? [])
+    if (!quoteValide(quote)) throw Object.assign(new Error("Ripartizione non valida"), { status: 400 })
+    const ids = new Set(load().reparti.map((r) => r.id))
+    if (quote.some((q) => !ids.has(q.repartoId))) {
+      throw Object.assign(new Error("Reparto sconosciuto nella ripartizione"), { status: 400 })
+    }
+    const d = load()
+    const now = nowIso()
+    const row: AmmCollaboratoreRimborso = {
+      id: String(body.id ?? "").trim() || randomUUID(),
+      nominativo,
+      mese,
+      descrizione,
+      totale: Math.round(totale * 100) / 100,
+      quote,
+      createdAt: d.collaboratoriRimborsi.find((r) => r.id === body.id)?.createdAt ?? now,
+      updatedAt: now,
+    }
+    const index = d.collaboratoriRimborsi.findIndex((r) => r.id === row.id)
+    if (index >= 0) d.collaboratoriRimborsi[index] = row
+    else d.collaboratoriRimborsi.push(row)
+    save(d)
+    return row
+  },
+  deleteCollaboratoreRimborso(id: string): void {
+    const d = load()
+    d.collaboratoriRimborsi = d.collaboratoriRimborsi.filter((r) => r.id !== id)
+    save(d)
   },
   findCollabDup(nominativo: string, mese: string, totale: number): AmmCollaboratore | undefined {
     const n = nominativo.trim().toLowerCase()

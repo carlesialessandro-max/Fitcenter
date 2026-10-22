@@ -45,6 +45,15 @@ function meseOf(iso: string): string {
   return String(iso ?? "").slice(0, 7)
 }
 
+function normalizeNominativo(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim()
+    .toLowerCase()
+}
+
 function bodyOf(req: Request): Record<string, unknown> {
   if (req.body && typeof req.body === "object" && !Buffer.isBuffer(req.body)) {
     const b = req.body as Record<string, unknown>
@@ -389,6 +398,10 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const meseQ = String(req.query.mese ?? "").trim()
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
+    const rimborsi = ammCostiStore
+      .listCollaboratoriRimborsi()
+      .filter((r) => (mese ? r.mese === mese : r.mese.startsWith(String(anno))))
+    const totRimborsi = Math.round(rimborsi.reduce((sum, r) => sum + r.totale, 0) * 100) / 100
     const stored = ammCostiStore
       .listCollaboratori()
       .filter((c) => (mese ? c.mese === mese : c.mese.startsWith(String(anno))))
@@ -399,6 +412,8 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
         anno,
         mese: mese || null,
         tot,
+        totRimborsi,
+        rimborsi,
         fonte: "riepilogo",
         righe: riepilogo.map((c) => ({
           id: c.id,
@@ -407,6 +422,7 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           nTurni: 0,
           tipo: c.tipo,
           descrizione: c.descrizione,
+          quote: c.quote,
         })),
       })
       return
@@ -419,6 +435,8 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           anno,
           mese,
           tot,
+          totRimborsi,
+          rimborsi,
           fonte: "libro-paga-mensilita",
           righe,
         })
@@ -432,6 +450,8 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
         anno,
         mese: mese || null,
         tot,
+        totRimborsi,
+        rimborsi,
         fonte: "riepilogo",
         righe: manuali.map((c) => ({
           id: c.id,
@@ -462,7 +482,55 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
       .filter((r) => r.importo)
       .sort((a, b) => b.importo - a.importo)
     const tot = Math.round(righe.reduce((s, r) => s + r.importo, 0) * 100) / 100
-    res.json({ anno, mese: mese || null, tot, fonte: "libro-paga", righe })
+    res.json({ anno, mese: mese || null, tot, totRimborsi, rimborsi, fonte: "libro-paga", righe })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postAmmCollaboratoreRimborso(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const mese = String(req.body?.mese ?? "").slice(0, 7)
+    const totale = Number(String(req.body?.totale ?? "").replace(",", "."))
+    const descrizione = String(req.body?.descrizione ?? "").trim()
+    if (!nominativo) return res.status(400).json({ message: "Seleziona il collaboratore" })
+    if (!/^\d{4}-\d{2}$/.test(mese)) return res.status(400).json({ message: "Mese non valido" })
+    if (!descrizione) return res.status(400).json({ message: "Inserisci la descrizione del rimborso" })
+    if (!Number.isFinite(totale) || totale <= 0) return res.status(400).json({ message: "Importo non valido" })
+
+    const target = normalizeNominativo(nominativo)
+    const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese === mese && c.totale > 0)
+    const riepilogo = stored.filter((c) => c.origine === "riepilogo")
+    let quote: AmmQuota[] | undefined
+    if (riepilogo.length) {
+      quote = riepilogo.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
+    } else {
+      const mensilita = await collaboratoriDaMensilita(mese)
+      quote = mensilita.length
+        ? mensilita.find((c) => normalizeNominativo(c.nome) === target)?.quote
+        : stored.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
+    }
+    if (!quote?.length) {
+      return res.status(400).json({ message: "Collaboratore non trovato nel riepilogo del mese selezionato" })
+    }
+    const rimborso = ammCostiStore.upsertCollaboratoreRimborso({
+      nominativo,
+      mese,
+      descrizione,
+      totale,
+      quote,
+    })
+    res.status(201).json({ rimborso })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function deleteAmmCollaboratoreRimborso(req: Request, res: Response) {
+  try {
+    ammCostiStore.deleteCollaboratoreRimborso(String(req.params.id ?? ""))
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }
@@ -776,7 +844,12 @@ export function postAmmOcr(req: Request, res: Response) {
   }
 }
 
-type Slice = { repartoId: string; nome: string; importo: number; fonte: "spesa" | "libro-paga" | "busta" }
+type Slice = {
+  repartoId: string
+  nome: string
+  importo: number
+  fonte: "spesa" | "libro-paga" | "busta" | "rimborso"
+}
 
 export async function getAmmDashboard(req: Request, res: Response) {
   try {
@@ -870,6 +943,21 @@ export async function getAmmDashboard(req: Request, res: Response) {
         })
       }
     }
+    const rimborsiAnno = ammCostiStore
+      .listCollaboratoriRimborsi()
+      .filter((r) => r.mese.startsWith(String(anno)))
+    const rimborsiAll = rimborsiAnno.filter((r) => !mese || r.mese === mese)
+    const rimborsoSlices: Slice[] = rimborsiAll.flatMap((r) =>
+      allocateQuote(r.totale, r.quote)
+        .filter((a) => inFiltro(a.repartoId))
+        .map((a) => ({
+          repartoId: a.repartoId,
+          nome: nomeOf(a.repartoId),
+          importo: a.importo,
+          fonte: "rimborso" as const,
+        })),
+    )
+    pnlAlloc.push(...rimborsiAll.flatMap((r) => allocateQuote(r.totale, r.quote)))
 
     const ricavi = await queryRicaviAmm(anno, mese || undefined)
     let fattureEmesseDisponibili = false
@@ -954,11 +1042,12 @@ export async function getAmmDashboard(req: Request, res: Response) {
         : []
     if (recuperoUtenze) pnlAlloc.push({ repartoId: "utenze-generali", importo: -recuperoUtenze })
 
-    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices, ...recoverySlices]
+    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices, ...rimborsoSlices, ...recoverySlices]
     const tot = Math.round(allSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
 
     let totFisso = bustaSlices.reduce((s, x) => s + x.importo, 0)
-    let totVariabile = lpSlices.reduce((s, x) => s + x.importo, 0)
+    let totVariabile =
+      lpSlices.reduce((s, x) => s + x.importo, 0) + rimborsoSlices.reduce((s, x) => s + x.importo, 0)
     for (const s of spese) {
       const alloc = allocateQuote(s.totale, s.quote).filter((a) => inFiltro(a.repartoId))
       const sub = alloc.reduce((n, a) => n + a.importo, 0)
@@ -1012,6 +1101,12 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
       byMeseMap.set(ym, Math.round(((byMeseMap.get(ym) ?? 0) + sub) * 100) / 100)
     }
+    for (const r of rimborsiAnno) {
+      const sub = allocateQuote(r.totale, r.quote)
+        .filter((a) => inFiltro(a.repartoId))
+        .reduce((sum, a) => sum + a.importo, 0)
+      byMeseMap.set(r.mese, round2((byMeseMap.get(r.mese) ?? 0) + sub))
+    }
     for (const b of ammCostiStore.listBuste()) {
       if (!b.mese.startsWith(String(anno))) continue
       const sub = allocateQuote(b.totale, b.quote).filter((a) => inFiltro(a.repartoId)).reduce((n, a) => n + a.importo, 0)
@@ -1034,7 +1129,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const totLpaga = Math.round(lpSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
     const totBuste = Math.round(bustaSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
-    const totSpese = Math.round((tot - totLpaga - totBuste) * 100) / 100
+    const totRimborsi = round2(rimborsiAll.reduce((sum, r) => sum + r.totale, 0))
+    const totSpese = Math.round((tot - totLpaga - totBuste - totRimborsi) * 100) / 100
 
     const diretti: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
     let totStruttura = 0
@@ -1075,7 +1171,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
       spese.reduce((sum, s) => sum + (Number(s.totale) || 0), 0) -
         recuperoUtenze +
         busteAll.reduce((sum, b) => sum + (Number(b.totale) || 0), 0) +
-        totCollaboratoriAziendaRaw,
+        totCollaboratoriAziendaRaw +
+        totRimborsi,
     )
     const totCostiFuoriReparti = round2(totCostiAzienda - totCostoPnl)
     const totUtileAzienda = round2(totRicaviAzienda - totCostiAzienda)
@@ -1105,6 +1202,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       totVariabile,
       totSpese: Math.round(totSpese * 100) / 100,
       totCollaboratori: totLpaga,
+      totRimborsi,
       totBuste,
       totPersonale: Math.round((totLpaga + totBuste) * 100) / 100,
       byMacro,
