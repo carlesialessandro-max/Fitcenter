@@ -186,12 +186,12 @@ export async function postLpagaTurno(req: Request, res: Response) {
 export async function postLpagaImportTurniExcel(req: Request, res: Response) {
   try {
     const sess = viewer(req)
-    if (sess.ruolo !== "admin" && sess.ruolo !== "manager") {
-      return res.status(403).json({ message: "Importazione riservata ad amministratori e responsabili" })
-    }
     const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
     const me = scopeMe(sess, personale)
+    if (me.ruolo !== "admin" && me.ruolo !== "manager") {
+      return res.status(403).json({ message: "Importazione riservata ad amministratori e responsabili" })
+    }
     const tree = resolveLivelloTree(me, livelli)
     const scope = me.ruolo === "admin"
       ? undefined
