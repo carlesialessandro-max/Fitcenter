@@ -254,7 +254,7 @@ function DashboardTab() {
                 <table className="min-w-full text-xs">
                   <thead className="text-left text-zinc-500">
                     <tr>
-                      <th className="px-2 py-1">Voce</th>
+                      <th className="px-2 py-1">Categoria / abbonamento</th>
                       <th className="px-2 py-1">Reparto</th>
                       <th className="px-2 py-1 text-right">Movimenti/fatture</th>
                       <th className="px-2 py-1 text-right">Importo</th>

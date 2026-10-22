@@ -31,6 +31,7 @@ export type DestRicavo = { macro: MacroCommerciale | "altro"; peso: number }
 /** Voce incasso gestionale → macro commerciale (o split full). */
 export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   const u = blob(`${voce} ${contesto}`)
+  const child = blob(contesto)
   if (!u) return [{ macro: "altro", peso: 1 }]
   if (
     /\bDANZA\b/.test(u) ||
@@ -40,6 +41,26 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   ) {
     return []
   }
+  if (/\bOPEN\b/.test(u)) {
+    return [
+      { macro: "piscina", peso: 0.5 },
+      { macro: "fitness", peso: 0.5 },
+    ]
+  }
+  if (/\bSMILE FIT\b/.test(u)) return [{ macro: "fitness", peso: 1 }]
+  if (/\bSMILE H2O\b/.test(u)) return [{ macro: "piscina", peso: 1 }]
+  const childPiscina = /PISCIN|NUOTO|VASCA|SCUOLA NUOTO|BAGNIN|IDRO|ACQUATIC|ACQUAGYM|ACQUA FITNESS|H2O|CAMPUS|AGONISM/.test(child)
+  const childFitness = /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|PACCHETTI INGRESSI/.test(
+    child
+  )
+  if (childPiscina && childFitness) {
+    return [
+      { macro: "piscina", peso: 0.5 },
+      { macro: "fitness", peso: 0.5 },
+    ]
+  }
+  if (childPiscina) return [{ macro: "piscina", peso: 1 }]
+  if (childFitness) return [{ macro: "fitness", peso: 1 }]
   if (/SPA|BENESSER|MASSAGG|ESTETIC|SAUNA|IDROMASSAGGIO/.test(u)) return [{ macro: "spa", peso: 1 }]
   if (/TICKET|ESTIVA|PARCO ACQU/.test(u)) return [{ macro: "piscina", peso: 1 }]
   if (
@@ -48,14 +69,14 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
     return [{ macro: "piscina", peso: 1 }]
   }
   if (
-    /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|ROSSI|VERDI|PACCHETTI INGRESSI/.test(u)
+    /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|PACCHETTI INGRESSI/.test(u)
   ) {
     return [{ macro: "fitness", peso: 1 }]
   }
   if (/\bSTAFF\b/.test(u) || u.includes("TESSERAMENT") || /BE ?ACTIVE|SOSPENSIONI AGGIUNT/.test(u)) {
     return [{ macro: "altro", peso: 1 }]
   }
-  if (/FULL|PREMIUM|OPEN|TUTTO INCLUSO/.test(u)) {
+  if (/FULL|PREMIUM|TUTTO INCLUSO/.test(u)) {
     return [
       { macro: "piscina", peso: 0.5 },
       { macro: "fitness", peso: 0.5 },

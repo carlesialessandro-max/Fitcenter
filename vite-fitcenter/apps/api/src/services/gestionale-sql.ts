@@ -6797,32 +6797,34 @@ export async function queryIncassiPerVoce(
 ): Promise<{ voce: string; contesto: string; euro: number; n: number; danza: boolean }[]> {
   const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
   for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
-    const voceFields = [
+    const categoryFields = [
       row.AbbonamentiCategorieDescrizione,
       row.CategoriaAbbonamentoDescrizione,
       row.AbbonamentiCategoriaDescrizione,
-      row.AbbonamentiDescrizione,
-      row.AbbonamentoDescrizione,
-      row.CassaMovimentiCausale,
-      row.Causale,
-      row.CategoriaDescrizione,
     ]
-    const voce =
-      voceFields
-        .map((value) => String(value ?? "").trim())
-        .find(Boolean) || "Altro"
-    const contesto = [
+    const subscriptionFields = [
       row.AbbonamentiDescrizione,
       row.AbbonamentoDescrizione,
+    ]
+    const hierarchy = [...categoryFields, ...subscriptionFields]
+      .map((value) => String(value ?? "").trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index)
+    const voce =
+      hierarchy.join(" › ") ||
+      [row.CassaMovimentiCausale, row.Causale, row.CategoriaDescrizione]
+        .map((value) => String(value ?? "").trim())
+        .find(Boolean) ||
+      "Altro"
+    const contesto = [
       row.AbbonamentiDurataDescrizioneLunga,
-      row.CategoriaAbbonamentoDescrizione,
-      row.AbbonamentiCategoriaDescrizione,
+      ...subscriptionFields,
+      ...categoryFields.slice(1),
       row.CategoriaDescrizione,
       row.CassaMovimentiCausale,
       row.Causale,
     ]
       .map((value) => String(value ?? "").trim())
-      .filter((value, index, values) => value && values.indexOf(value) === index && value !== voce)
+      .filter((value, index, values) => value && values.indexOf(value) === index)
       .join(" ")
     const danza = isDanzaIncassoRow(row)
     const key = `${voce}\u001f${contesto}\u001f${danza ? "danza" : "altro"}`
