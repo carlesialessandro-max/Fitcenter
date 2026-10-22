@@ -85,6 +85,14 @@ export type AmmDashboard = {
   totRicaviDanza?: number
   nFattureDanza?: number
   totRecuperiUtenze?: number
+  fattureEmesseDettaglio?: {
+    numeroDocumento: string
+    dataDocumento: string
+    cliente: string
+    descrizione: string
+    tipo: "Danza" | "Recupero utenze"
+    totale: number
+  }[]
   totRicaviAzienda: number
   totCostiAzienda: number
   totCostiFuoriReparti: number

@@ -847,6 +847,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
       recuperiUtenzePerMese: {} as Record<string, number>,
     }
     let fattureAmmAnno = fattureAmm
+    let fattureEmesseDettaglio: {
+      numeroDocumento: string
+      dataDocumento: string
+      cliente: string
+      descrizione: string
+      tipo: "Danza" | "Recupero utenze"
+      totale: number
+    }[] = []
     const ficCfg = resolvedConfig().cfg
     if (!ficCfg?.accessToken || !ficCfg.companyId) {
       ricaviErrore = "Collega Fatture in Cloud per leggere le fatture emesse."
@@ -858,6 +866,26 @@ export async function getAmmDashboard(req: Request, res: Response) {
         fattureAmm = riepilogoFattureAmm(
           docsAnno.filter((doc) => doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to)
         )
+        fattureEmesseDettaglio = docsAnno
+          .filter((doc) => doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to)
+          .flatMap((doc) => {
+            const cliente = doc.cliente.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
+            const descrizione = doc.descrizione.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
+            const isDanza = cliente.includes("CENTRO ARTE DANZA")
+            const isRecuperoUtenze =
+              cliente.includes("BIG FOOD") && /\b(ENERGIA|ENERGY|GAS)\b/.test(descrizione)
+            if (!isDanza && !isRecuperoUtenze) return []
+            return [
+              {
+                numeroDocumento: doc.numeroDocumento,
+                dataDocumento: doc.dataDocumento,
+                cliente: doc.cliente,
+                descrizione: doc.descrizione,
+                tipo: isDanza ? ("Danza" as const) : ("Recupero utenze" as const),
+                totale: doc.totale,
+              },
+            ]
+          })
         fattureEmesseDisponibili = true
       } catch (e) {
         ricaviErrore = (e as Error)?.message ?? "Lettura delle fatture emesse da Fatture in Cloud non riuscita."
@@ -1057,6 +1085,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       nFattureDanza: fattureAmm.nFattureDanza,
       totRicaviDanza: fattureEmesseDisponibili ? fattureAmm.ricaviDanza : 0,
       totRecuperiUtenze: recuperoUtenze,
+      fattureEmesseDettaglio,
       totRicavi,
       totRicaviAltri: ricavi.totAltri,
       totRicaviAzienda,

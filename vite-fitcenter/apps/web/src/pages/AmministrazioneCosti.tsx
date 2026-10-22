@@ -285,6 +285,52 @@ function DashboardTab() {
               )}
             </details>
           )}
+          {d.ricaviDisponibili && (
+            <details className="rounded-xl border border-zinc-800 px-3 py-2">
+              <summary className="cursor-pointer text-sm text-zinc-300">
+                Fatture emesse considerate ({d.fattureEmesseDettaglio?.length ?? 0})
+              </summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead className="text-left text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1">Data</th>
+                      <th className="px-2 py-1">N. documento</th>
+                      <th className="px-2 py-1">Cliente</th>
+                      <th className="px-2 py-1">Descrizione</th>
+                      <th className="px-2 py-1">Considerata come</th>
+                      <th className="px-2 py-1 text-right">Importo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.fattureEmesseDettaglio?.map((doc, index) => (
+                      <tr
+                        key={`${doc.dataDocumento}-${doc.numeroDocumento}-${index}`}
+                        className="border-t border-zinc-800 text-zinc-300"
+                      >
+                        <td className="px-2 py-1">{fmtDateIt(doc.dataDocumento)}</td>
+                        <td className="px-2 py-1">{doc.numeroDocumento}</td>
+                        <td className="px-2 py-1">{doc.cliente}</td>
+                        <td className="px-2 py-1">{doc.descrizione || "—"}</td>
+                        <td className="px-2 py-1">{doc.tipo}</td>
+                        <td className="px-2 py-1 text-right">{eur(doc.totale)}</td>
+                      </tr>
+                    ))}
+                    {!d.fattureEmesseDettaglio?.length && (
+                      <tr>
+                        <td className="px-2 py-3 text-zinc-500" colSpan={6}>
+                          Nessuna fattura Danza o recupero utenze Big Food nel periodo selezionato.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="mt-2 text-xs text-zinc-500">
+                Le fatture Danza concorrono ai ricavi; i recuperi Big Food sono sottratti dai costi utenze.
+              </p>
+            </details>
+          )}
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
               Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Sono inclusi nel risultato dell’impresa.
@@ -1576,51 +1622,60 @@ function StipendiTab() {
           </div>
         )}
         {collab.isLoading && <p className="text-sm text-zinc-500">Caricamento…</p>}
-        <p className="text-lg font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</p>
-        <table className="min-w-full text-left text-sm">
-          <thead className="text-xs uppercase text-zinc-500">
-            <tr>
-              <th className="py-1">{fonteRiepilogo ? "Nominativo" : "Reparto"}</th>
-              {!fonteRiepilogo && <th className="py-1 text-right">Turni</th>}
-              <th className="py-1 text-right">Importo</th>
-              {fonteRiepilogo && <th className="py-1" />}
-            </tr>
-          </thead>
-          <tbody>
-            {(collab.data?.righe ?? []).map((r) => (
-              <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
-                <td className="py-1.5">
-                  {r.nome}
-                  {fonteRiepilogo && r.tipo === "gestionale" && (
-                    <span className="ml-2 text-xs text-zinc-500">amm/gest</span>
-                  )}
-                </td>
-                {!fonteRiepilogo && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
-                <td className="py-1.5 text-right">{eur(r.importo)}</td>
-                {fonteRiepilogo && (
-                  <td className="py-1.5 text-right">
-                    <button
-                      type="button"
-                      className="text-xs text-red-400 hover:underline"
-                      onClick={() => {
-                        if (confirm("Eliminare questa riga?")) delCollabMut.mutate(r.id)
-                      }}
-                    >
-                      Elimina
-                    </button>
-                  </td>
+        <details className="rounded-xl border border-zinc-800 px-3 py-2">
+          <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-zinc-300">
+              Collaboratori sportivi · {(collab.data?.righe ?? []).length} nominativi
+            </span>
+            <span className="font-semibold text-zinc-100">{eur(collab.data?.tot ?? 0)}</span>
+          </summary>
+          <div className="mt-2 overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-xs uppercase text-zinc-500">
+                <tr>
+                  <th className="py-1">{fonteRiepilogo ? "Nominativo" : "Reparto"}</th>
+                  {!fonteRiepilogo && <th className="py-1 text-right">Turni</th>}
+                  <th className="py-1 text-right">Importo</th>
+                  {fonteRiepilogo && <th className="py-1" />}
+                </tr>
+              </thead>
+              <tbody>
+                {(collab.data?.righe ?? []).map((r) => (
+                  <tr key={r.id} className="border-t border-zinc-800 text-zinc-200">
+                    <td className="py-1.5">
+                      {r.nome}
+                      {fonteRiepilogo && r.tipo === "gestionale" && (
+                        <span className="ml-2 text-xs text-zinc-500">amm/gest</span>
+                      )}
+                    </td>
+                    {!fonteRiepilogo && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
+                    <td className="py-1.5 text-right">{eur(r.importo)}</td>
+                    {fonteRiepilogo && (
+                      <td className="py-1.5 text-right">
+                        <button
+                          type="button"
+                          className="text-xs text-red-400 hover:underline"
+                          onClick={() => {
+                            if (confirm("Eliminare questa riga?")) delCollabMut.mutate(r.id)
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {!collab.data?.righe.length && (
+                  <tr>
+                    <td className="py-4 text-zinc-500" colSpan={3}>
+                      Nessun collaboratore in questo mese. Importa il riepilogo PDF di fine mese.
+                    </td>
+                  </tr>
                 )}
-              </tr>
-            ))}
-            {!collab.data?.righe.length && (
-              <tr>
-                <td className="py-4 text-zinc-500" colSpan={fonteRiepilogo ? 3 : 3}>
-                  Nessun collaboratore in questo mese. Importa il riepilogo PDF di fine mese.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              </tbody>
+            </table>
+          </div>
+        </details>
       </section>
 
       <section className="space-y-3 rounded-2xl border border-zinc-800 p-4">
