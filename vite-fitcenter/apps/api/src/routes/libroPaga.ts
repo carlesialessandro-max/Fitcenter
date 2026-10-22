@@ -15,6 +15,7 @@ import {
   postLivello,
   postPersonale,
   postTurno,
+  postImportTurniExcel,
   putMensilita,
   putPersonalePassword,
   putPresenza,
@@ -58,6 +59,7 @@ libroPagaRouter.patch("/personale/:id", patchPersonale)
 libroPagaRouter.put("/personale/:id/password", putPersonalePassword)
 libroPagaRouter.delete("/personale/:id", removePersonale)
 libroPagaRouter.post("/turni", postTurno)
+libroPagaRouter.post("/turni/import-excel", postImportTurniExcel)
 libroPagaRouter.delete("/turni/:id", removeTurno)
 libroPagaRouter.put("/turni/:id/presenza", putPresenza)
 libroPagaRouter.put("/mensilita", putMensilita)

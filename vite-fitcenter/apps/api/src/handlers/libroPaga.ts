@@ -382,6 +382,105 @@ export async function postTurno(req: Request, res: Response) {
   }
 }
 
+export async function postImportTurniExcel(req: Request, res: Response) {
+  try {
+    const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
+    if (!rows.length) return res.status(400).json({ message: "Nessun turno valido da importare" })
+    if (rows.length > 1000) return res.status(400).json({ message: "Puoi importare al massimo 1000 turni per volta" })
+
+    const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
+    const peopleById = new Map(personale.filter((row) => row.attivo).map((row) => [row.id, row]))
+    const levelsById = new Map(livelli.filter((row) => row.attivo && row.retribuibile).map((row) => [row.id, row]))
+    const duplicateKey = (row: {
+      giorno: string
+      personaleId: string
+      livelloId: string
+      quantita: number
+      note?: string
+    }) =>
+      [
+        row.giorno.slice(0, 10),
+        row.personaleId,
+        row.livelloId,
+        row.quantita.toFixed(2),
+        String(row.note ?? "")
+          .trim()
+          .toLocaleLowerCase("it")
+          .normalize("NFD")
+          .replace(/\p{M}/gu, "")
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim(),
+      ].join("|")
+    const seen = new Set(turni.map(duplicateKey))
+    const pronte: {
+      riga: number
+      personaleId: string
+      livelloId: string
+      giorno: string
+      quantita: number
+      note: string
+    }[] = []
+    const errori: { riga: number; message: string }[] = []
+    let saltati = 0
+
+    rows.forEach((raw: Record<string, unknown>, index: number) => {
+      const riga = Number(raw.riga) || index + 2
+      const input = raw && typeof raw === "object" ? raw : {}
+      const personaleId = String(input.personaleId ?? "").trim()
+      const livelloId = String(input.livelloId ?? "").trim()
+      const giorno = String(input.giorno ?? "").trim()
+      const quantita = Number(String(input.quantita ?? "").replace(",", "."))
+      const note = String(input.note ?? "").trim()
+      const errors: string[] = []
+      if (!peopleById.has(personaleId)) errors.push("Collaboratore non attivo o non trovato")
+      if (!levelsById.has(livelloId)) errors.push("Mansione non attiva o non retribuibile")
+      const parsedDate = isYmd(giorno) ? new Date(`${giorno}T12:00:00`) : null
+      if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== giorno) {
+        errors.push("Data non valida")
+      }
+      if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) errors.push("Quantità non valida (0–24)")
+      if (note.length > 500) errors.push("Le note superano il limite di 500 caratteri")
+      if (errors.length) {
+        errori.push({ riga, message: errors.join("; ") })
+        return
+      }
+      const row = { personaleId, livelloId, giorno, quantita, note }
+      const key = duplicateKey(row)
+      if (seen.has(key)) {
+        saltati += 1
+        return
+      }
+      seen.add(key)
+      pronte.push({ riga, ...row })
+    })
+
+    if (!pronte.length) {
+      return res.json({ inseriti: 0, saltati, errori, snapshotId: null })
+    }
+
+    const snapshot = saveLibroPagaSnapshot(await exportFullFileDb(), "prima import turni Excel")
+    let inseriti = 0
+    for (const row of pronte) {
+      try {
+        await insertTurno({
+          personaleId: row.personaleId,
+          livelloId: row.livelloId,
+          giorno: row.giorno,
+          quantita: row.quantita,
+          note: row.note,
+          creatoDa: req.user?.nome || req.user?.username || "admin",
+        })
+        inseriti += 1
+      } catch (e) {
+        errori.push({ riga: row.riga, message: (e as Error)?.message ?? "Turno non importato" })
+      }
+    }
+    res.json({ inseriti, saltati, errori, snapshotId: snapshot.id })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export async function removeTurno(req: Request, res: Response) {
   try {
     await deleteTurno(String(req.params.id ?? "").trim())

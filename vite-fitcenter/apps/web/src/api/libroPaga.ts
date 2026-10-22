@@ -285,6 +285,22 @@ export const libroPagaApi = {
   deletePersonale: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}`),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     api.post<{ turno: unknown }>("/libro-paga/turni", body),
+  importTurniExcel: (
+    righe: {
+      riga: number
+      personaleId: string
+      livelloId: string
+      giorno: string
+      quantita: number
+      note?: string
+    }[]
+  ) =>
+    api.post<{
+      inseriti: number
+      saltati: number
+      errori: { riga: number; message: string }[]
+      snapshotId: string | null
+    }>("/libro-paga/turni/import-excel", { righe }),
   deleteTurno: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/turni/${encodeURIComponent(id)}`),
   putPresenza: (turnoId: string, valore: number) =>
     api.put<{ presenza: unknown }>(`/libro-paga/turni/${encodeURIComponent(turnoId)}/presenza`, { valore }),
