@@ -104,7 +104,13 @@ export type AmmDashboard = {
   marginePct?: number | null
   strutturaByMacro?: AmmDashRiga[]
   risultato?: AmmRisultatoReparto[]
-  ricaviDettaglio?: { voce: string; macro: string; importo: number; n: number }[]
+  ricaviDettaglio?: {
+    voce: string
+    macro: string
+    importo: number
+    n: number
+    ripartizione: { macro: string; importo: number }[]
+  }[]
 }
 
 export type AmmBusta = {

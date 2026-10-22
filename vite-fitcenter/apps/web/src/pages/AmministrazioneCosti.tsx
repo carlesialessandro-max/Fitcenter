@@ -264,7 +264,11 @@ function DashboardTab() {
                     {d.ricaviDettaglio?.map((r, index) => (
                       <tr key={`${r.voce}-${r.macro}-${index}`} className="border-t border-zinc-800 text-zinc-300">
                         <td className="px-2 py-1">{r.voce}</td>
-                        <td className="px-2 py-1">{r.macro}</td>
+                        <td className="px-2 py-1">
+                          {r.ripartizione?.length
+                            ? r.ripartizione.map((quota) => `${quota.macro} ${eur(quota.importo)}`).join(" + ")
+                            : r.macro}
+                        </td>
                         <td className="px-2 py-1 text-right">{r.n}</td>
                         <td className="px-2 py-1 text-right">{eur(r.importo)}</td>
                       </tr>

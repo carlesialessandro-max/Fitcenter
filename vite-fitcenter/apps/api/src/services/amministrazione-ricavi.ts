@@ -88,28 +88,53 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   return [{ macro: "altro", peso: 1 }]
 }
 
-export type AmmRicavoVoce = { voce: string; macro: string; importo: number; n: number }
+export type AmmRicavoVoce = {
+  voce: string
+  macro: string
+  importo: number
+  n: number
+  ripartizione?: { macro: string; importo: number }[]
+}
 type RicavoVoceGestionale = { voce: string; contesto: string; euro: number; n: number; danza: boolean }
 
+function chiaveRaggruppamento(voce: string): string {
+  const normalized = blob(voce)
+  if (/^ROSSI ORARIO LIBERO\b/.test(normalized)) return "ROSSI - orario libero"
+  if (/^SCUOLA NUOTO\b/.test(normalized)) return "SCUOLA NUOTO"
+  if (/^TICKETING\b/.test(normalized)) return "TICKETING"
+  return voce
+}
+
 export function raggruppaDettaglioRicavi(voci: RicavoVoceGestionale[]): AmmRicavoVoce[] {
-  const grouped = new Map<string, { voce: string; macro: Set<string>; importo: number; n: number }>()
+  const grouped = new Map<
+    string,
+    { voce: string; importo: number; n: number; ripartizione: Map<string, number> }
+  >()
   for (const v of voci) {
     if (v.danza) continue
     const dest = classificaRicavo(v.voce, v.contesto)
     if (dest.length === 0) continue
-    const current = grouped.get(v.voce) ?? { voce: v.voce, macro: new Set<string>(), importo: 0, n: 0 }
+    const key = chiaveRaggruppamento(v.voce)
+    const current = grouped.get(key) ?? {
+      voce: key,
+      importo: 0,
+      n: 0,
+      ripartizione: new Map<string, number>(),
+    }
     current.n += v.n
     for (const d of dest) {
-      current.macro.add(d.macro)
-      current.importo = round2(current.importo + Number(v.euro || 0) * d.peso)
+      const quota = round2(Number(v.euro || 0) * d.peso)
+      current.importo = round2(current.importo + quota)
+      current.ripartizione.set(d.macro, round2((current.ripartizione.get(d.macro) ?? 0) + quota))
     }
-    grouped.set(v.voce, current)
+    grouped.set(key, current)
   }
   return [...grouped.values()].map((row) => ({
     voce: row.voce,
-    macro: [...row.macro].join(" + "),
+    macro: [...row.ripartizione.keys()].join(" + "),
     importo: row.importo,
     n: row.n,
+    ripartizione: [...row.ripartizione.entries()].map(([macro, importo]) => ({ macro, importo })),
   }))
 }
 
