@@ -6783,8 +6783,8 @@ export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
     .join(" ")
   return (
     /\bDANZA\b|\bGIOCODANZA\b/.test(descriptors) ||
-    /\b1M MENSILE 2VS\b/.test(descriptors) ||
-    (/\b3 GRADO\b/.test(descriptors) && /\b1M MENSILE\b/.test(descriptors)) ||
+    /\b1\s*M MENSILE 2VS\b/.test(descriptors) ||
+    (/\b3 GRADO\b/.test(descriptors) && /\b1\s*M MENSILE\b/.test(descriptors)) ||
     /\b(PROFESSIONALE|PREPROFESSIONALE|ALTA FORMAZIONE|CORSO ACCADEMICO|CORSO INTERMEDIO|PROPEDEUTICA|HEEL)\b/.test(
       danceCategories
     )
@@ -6794,31 +6794,48 @@ export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
 /** Incassi di cassa aggregati per voce (categoria abbonamento / causale), per il P&L amministrazione. */
 export async function queryIncassiPerVoce(
   params: { from: string; to: string }
-): Promise<{ voce: string; euro: number; n: number; danza: boolean }[]> {
+): Promise<{ voce: string; contesto: string; euro: number; n: number; danza: boolean }[]> {
   const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
   for (const row of dedupeIncassiRows(await queryIncassiRange(params))) {
+    const voceFields = [
+      row.AbbonamentiCategorieDescrizione,
+      row.CategoriaAbbonamentoDescrizione,
+      row.AbbonamentiCategoriaDescrizione,
+      row.AbbonamentiDescrizione,
+      row.AbbonamentoDescrizione,
+      row.CassaMovimentiCausale,
+      row.Causale,
+      row.CategoriaDescrizione,
+    ]
     const voce =
-      [
-        row.AbbonamentiCategorieDescrizione,
-        row.CategoriaAbbonamentoDescrizione,
-        row.AbbonamentiCategoriaDescrizione,
-        row.AbbonamentiDescrizione,
-        row.AbbonamentoDescrizione,
-        row.CassaMovimentiCausale,
-        row.Causale,
-        row.CategoriaDescrizione,
-      ]
+      voceFields
         .map((value) => String(value ?? "").trim())
         .find(Boolean) || "Altro"
+    const contesto = [
+      row.AbbonamentiDescrizione,
+      row.AbbonamentoDescrizione,
+      row.AbbonamentiDurataDescrizioneLunga,
+      row.CategoriaAbbonamentoDescrizione,
+      row.AbbonamentiCategoriaDescrizione,
+      row.CategoriaDescrizione,
+      row.CassaMovimentiCausale,
+      row.Causale,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter((value, index, values) => value && values.indexOf(value) === index && value !== voce)
+      .join(" ")
     const danza = isDanzaIncassoRow(row)
-    const key = `${voce}\u001f${danza ? "danza" : "altro"}`
+    const key = `${voce}\u001f${contesto}\u001f${danza ? "danza" : "altro"}`
     const current = grouped.get(key) ?? { euro: 0, n: 0, danza }
     current.euro = Math.round((current.euro + incassiAmount(row)) * 100) / 100
     current.n += 1
     grouped.set(key, current)
   }
   return [...grouped.entries()]
-    .map(([key, value]) => ({ voce: key.split("\u001f")[0], ...value }))
+    .map(([key, value]) => {
+      const [voce, contesto] = key.split("\u001f")
+      return { voce: voce ?? "Altro", contesto: contesto ?? "", ...value }
+    })
     .sort((a, b) => b.euro - a.euro)
 }
 

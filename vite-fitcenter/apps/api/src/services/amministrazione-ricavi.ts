@@ -29,18 +29,17 @@ function blob(s: string): string {
 export type DestRicavo = { macro: MacroCommerciale | "altro"; peso: number }
 
 /** Voce incasso gestionale → macro commerciale (o split full). */
-export function classificaRicavo(voce: string): DestRicavo[] {
-  const u = blob(voce)
+export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
+  const u = blob(`${voce} ${contesto}`)
   if (!u) return [{ macro: "altro", peso: 1 }]
   if (
     /\bDANZA\b/.test(u) ||
     /\bPROFESSIONALE\b/.test(u) ||
-    /\b1M MENSILE 2VS\b/.test(u) ||
-    (/\b3 GRADO\b/.test(u) && /\b1M MENSILE\b/.test(u))
+    /\b1\s*M MENSILE 2VS\b/.test(u) ||
+    (/\b3 GRADO\b/.test(u) && /\b1\s*M MENSILE\b/.test(u))
   ) {
     return []
   }
-  if (/\bSTAFF\b/.test(u) || u.includes("TESSERAMENT")) return [{ macro: "altro", peso: 1 }]
   if (/SPA|BENESSER|MASSAGG|ESTETIC|SAUNA|IDROMASSAGGIO/.test(u)) return [{ macro: "spa", peso: 1 }]
   if (/TICKET|ESTIVA|PARCO ACQU/.test(u)) return [{ macro: "piscina", peso: 1 }]
   if (
@@ -49,11 +48,12 @@ export function classificaRicavo(voce: string): DestRicavo[] {
     return [{ macro: "piscina", peso: 1 }]
   }
   if (
-    /GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|ROSSI|VERDI|PACCHETTI INGRESSI/.test(
-      u
-    )
+    /MAMME FIT|ABBONAMENTI STAFF FITNESS|GYM|PALESTR|FITNESS|POLE|PERSONAL|YOGA|PILATES|SPINNING|TRX|SALA PESI|ROSSI|VERDI|PACCHETTI INGRESSI/.test(u)
   ) {
     return [{ macro: "fitness", peso: 1 }]
+  }
+  if (/\bSTAFF\b/.test(u) || u.includes("TESSERAMENT") || /BE ?ACTIVE|SOSPENSIONI AGGIUNT/.test(u)) {
+    return [{ macro: "altro", peso: 1 }]
   }
   if (/FULL|PREMIUM|OPEN|TUTTO INCLUSO/.test(u)) {
     return [
@@ -112,7 +112,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
     const dettaglio: AmmRicavoVoce[] = []
     for (const v of voci) {
       if (v.danza) continue
-      const dest = classificaRicavo(v.voce)
+      const dest = classificaRicavo(v.voce, v.contesto)
       const euro = Number(v.euro) || 0
       for (const d of dest) {
         const quota = round2(euro * d.peso)
