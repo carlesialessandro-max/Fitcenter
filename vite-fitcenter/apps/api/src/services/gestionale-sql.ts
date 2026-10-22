@@ -6603,7 +6603,7 @@ function incassiRowId(row: Record<string, unknown>): string | null {
   return null
 }
 
-function incassiFallbackKey(row: Record<string, unknown>): string {
+function incassiDateKey(row: Record<string, unknown>): string {
   const rawDate = String(
     row.CassaMovimentiDataOperazione ??
       row.CassaMovimentiData ??
@@ -6613,16 +6613,40 @@ function incassiFallbackKey(row: Record<string, unknown>): string {
   ).trim()
   const date = rawDate.replace(" ", "T")
   const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})/.exec(date)
-  const dateKey = match
+  return match
     ? `${match[1]}T${match[2]}`
     : rawDate.replace(/\.\d+Z?$/i, "").replace(/\.\d+$/i, "")
+}
+
+/** Stesso movimento di cassa anche se la view duplica la riga (causale diversa). */
+function incassiNaturalKey(row: Record<string, unknown>): string {
   return [
-    dateKey,
+    incassiDateKey(row),
     incassiAmount(row).toFixed(2),
     String(row.Cognome ?? row.cognome ?? "").trim().toLowerCase(),
     String(row.Nome ?? row.nome ?? "").trim().toLowerCase(),
-    String(row.CassaMovimentiCausale ?? row.Causale ?? "").trim().toLowerCase(),
   ].join("|")
+}
+
+function incassiFallbackKey(row: Record<string, unknown>): string {
+  return incassiNaturalKey(row)
+}
+
+function incassiCausale(row: Record<string, unknown>): string {
+  return String(
+    firstNonEmpty(row, [
+      "CassaMovimentiCausale",
+      "Causale",
+      "Descrizione",
+      "CasseMovimentiCausale",
+      "CassaMovimentiCausa",
+      "CassaMovimentiDescrizione",
+    ]) ?? ""
+  ).trim()
+}
+
+function isPagamentoRataIncassoRow(row: Record<string, unknown>): boolean {
+  return /^PAGAMENTO\s+RATA\b/i.test(incassiCausale(row))
 }
 
 function incassiHasCategory(row: Record<string, unknown>): boolean {
@@ -6639,7 +6663,34 @@ function incassiRowScore(row: Record<string, unknown>): number {
     row.Cognome,
     row.Nome,
     row.CassaMovimentiCausale,
+    row.AbbonamentiCategorieDescrizione,
+    row.AbbonamentoDescrizione,
+    row.AbbonamentiDescrizione,
   ].filter((value) => String(value ?? "").trim()).length
+}
+
+function incassiRowQuality(row: Record<string, unknown>): number {
+  let score = incassiRowScore(row)
+  if (incassiHasCategory(row)) score += 10
+  if (
+    String(row.AbbonamentiCategorieDescrizione ?? row.AbbonamentoDescrizione ?? row.AbbonamentiDescrizione ?? "").trim()
+  ) {
+    score += 5
+  }
+  if (isPagamentoRataIncassoRow(row)) score -= 8
+  return score
+}
+
+function preferIncassoRow(current: Record<string, unknown>, previous: Record<string, unknown>): boolean {
+  const previousHasCategory = incassiHasCategory(previous)
+  const currentHasCategory = incassiHasCategory(current)
+  if (!previousHasCategory && currentHasCategory) return true
+  if (previousHasCategory && !currentHasCategory) return false
+  return incassiRowQuality(current) > incassiRowQuality(previous)
+}
+
+function pickBestIncassoRow(rows: Record<string, unknown>[]): Record<string, unknown> {
+  return rows.reduce((best, row) => (preferIncassoRow(row, best) ? row : best))
 }
 
 export function dedupeIncassiRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
@@ -6652,16 +6703,32 @@ export function dedupeIncassiRows(rows: Record<string, unknown>[]): Record<strin
       bestByKey.set(key, row)
       continue
     }
-    const previousHasCategory = incassiHasCategory(previous)
-    const currentHasCategory = incassiHasCategory(row)
-    if (
-      (!previousHasCategory && currentHasCategory) ||
-      (previousHasCategory === currentHasCategory && incassiRowScore(row) > incassiRowScore(previous))
-    ) {
-      bestByKey.set(key, row)
-    }
+    if (preferIncassoRow(row, previous)) bestByKey.set(key, row)
   }
-  return [...bestByKey.values()]
+
+  const byNatural = new Map<string, Record<string, unknown>[]>()
+  for (const row of bestByKey.values()) {
+    const nk = incassiNaturalKey(row)
+    const list = byNatural.get(nk) ?? []
+    list.push(row)
+    byNatural.set(nk, list)
+  }
+
+  const out: Record<string, unknown>[] = []
+  for (const group of byNatural.values()) {
+    if (group.length === 1) {
+      out.push(group[0]!)
+      continue
+    }
+    const hasRata = group.some(isPagamentoRataIncassoRow)
+    if (!hasRata) {
+      out.push(...group)
+      continue
+    }
+    const nonRata = group.filter((r) => !isPagamentoRataIncassoRow(r))
+    out.push(nonRata.length ? pickBestIncassoRow(nonRata) : pickBestIncassoRow(group))
+  }
+  return out
 }
 
 export async function queryIncassiRange(params: {
