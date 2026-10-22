@@ -381,8 +381,8 @@ function DashboardTab() {
                       <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
                       <td className="px-3 py-2 text-right text-zinc-400">—</td>
                       <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-red-400"}`}>
-                        {d.ricaviDisponibili ? eur(-costiAltriCentri) : "—"}
+                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili || costiAltriCentri <= 0 ? "text-zinc-400" : "text-red-400"}`}>
+                        {d.ricaviDisponibili ? eur(costiAltriCentri > 0 ? -costiAltriCentri : 0) : "—"}
                       </td>
                       <td className="px-3 py-2 text-right text-zinc-400">—</td>
                     </tr>
