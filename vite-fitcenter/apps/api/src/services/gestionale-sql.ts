@@ -6738,11 +6738,32 @@ export function titoloProdottoDaCausaleIncasso(causale: string): string | null {
   return senzaPeriodo || body
 }
 
+/**
+ * Rate «fantasma» della view SQL: causale compilata solo con la durata
+ * (es. «3 VOLTE A SETTIMANA - 1 M MENSILE 3VS»), assente da Movimenti di cassa.
+ * Le rate vere hanno un prodotto (GYM, ACQUATICITA, BAMBINI, AGONISMO, …).
+ */
+export function isPagamentoRataSoloDurata(causale: string): boolean {
+  const prodotto = titoloProdottoDaCausaleIncasso(causale)
+  if (!prodotto) return false
+  const u = prodotto
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+  if (/^\d+\s*VOLTE A SETTIMANA\b/.test(u)) return true
+  if (/^(1\s*)?M MENSILE 3VS\b/.test(u)) return true
+  return false
+}
+
 export async function queryIncassiCassaDedup(params: {
   from: string
   to: string
 }): Promise<Record<string, unknown>[]> {
-  return dedupeIncassiRows(await queryIncassiRange({ ...params, segment: "all" }))
+  return dedupeIncassiRows(await queryIncassiRange({ ...params, segment: "all" })).filter(
+    (row) => !isPagamentoRataSoloDurata(incassiCausale(row))
+  )
 }
 
 export async function queryIncassiRange(params: {
