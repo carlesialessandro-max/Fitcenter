@@ -283,9 +283,9 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Allineato a «Movimenti di cassa»: data operazione e importo cassa nel periodo. La data nel testo «PAGAMENTO
-                RATA del …» è la scadenza, non l’incasso: una rata di gennaio pagata a dicembre (o non pagata) non entra
-                qui. Le rate incassate nel mese stanno sotto il prodotto (es. 1 M MENSILE 3VS).
+                Stessi movimenti della griglia «Movimenti di cassa» nel periodo. Le causali «PAGAMENTO RATA del …» restano
+                se sono incassi veri (es. rata di febbraio pagata a gennaio); in elenco si raggruppano per prodotto, senza
+                la data di scadenza nel titolo.
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">

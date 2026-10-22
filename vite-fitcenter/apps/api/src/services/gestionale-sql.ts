@@ -6504,9 +6504,11 @@ export async function queryAnagraficaStaff(
 }
 
 function getIncassiViewName(): string {
-  // Come la griglia «Movimenti di cassa». Non usare RVW_AbbonamentiPagamentiUtenti:
-  // quella vista ha DataRata (scadenza) e può gonfiare il mese con rate non incassate.
-  return getCassaMovimentiViewName()
+  const fallback = "RVW_CassaMovimentiUtenti"
+  const raw = (process.env.GESTIONALE_VIEW_CASSA_MOVIMENTI_UTENTI ?? fallback).trim()
+  if (!raw) return fallback
+  if (!isSafeSqlIdentifierLoose(raw)) return fallback
+  return raw
 }
 
 function sqlDateRangeSargable(col: string, fromParam: string, toParam: string): string {
@@ -6549,27 +6551,22 @@ function emptyIncassiSegTotals(): Record<Exclude<IncassiSegment, "all">, { total
 function incassiDateCol(cols: string[]): string {
   return (
     pickExistingCol(cols, [
-      "CassaMovimentiDataOperazione",
       "CassaMovimentiDataOperazioneData",
-      "CassaMovimentiDataPagato",
-      "CassaMovimentiDataPagamento",
-      "DataPagato",
-      "DataPagamento",
-      "DataOperazione",
+      "CassaMovimentiDataOperazione",
       "CassaMovimentiData",
+      "DataOperazione",
+      "DataPagamento",
+      "Data",
+      "DataOra",
     ]) ?? "CassaMovimentiDataOperazione"
   )
 }
 
-function incassiImportoCol(cols: string[]): string | null {
-  return pickExistingCol(cols, ["CassaMovimentiImporto"]) ?? pickExistingCol(cols, ["Importo"])
-}
-
-function parseIncassiMoney(value: unknown): number {
-  if (value == null || value === "") return 0
+function incassiAmount(row: Record<string, unknown>): number {
+  const value =
+    row.CassaMovimentiImporto ?? row.Importo ?? row.importo ?? row.Totale ?? row.totale ?? 0
   if (typeof value === "number") return Number.isFinite(value) ? value : 0
-  if (typeof value === "boolean") return 0
-  const text = String(value).trim()
+  const text = String(value ?? "").trim()
   if (!text) return 0
   const parsed = Number(
     text
@@ -6578,13 +6575,6 @@ function parseIncassiMoney(value: unknown): number {
       .replace(",", ".")
   )
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-function incassiAmount(row: Record<string, unknown>): number {
-  if (Object.prototype.hasOwnProperty.call(row, "CassaMovimentiImporto")) {
-    return parseIncassiMoney(row.CassaMovimentiImporto)
-  }
-  return parseIncassiMoney(row.Importo ?? row.importo ?? 0)
 }
 
 function incassiRowId(row: Record<string, unknown>): string | null {
@@ -6600,6 +6590,8 @@ function incassiRowId(row: Record<string, unknown>): string | null {
     "IdMovimento",
     "MovimentoID",
     "MovimentoId",
+    "ID",
+    "Id",
   ]) {
     const value = String(row[key] ?? "").trim()
     if (value && value !== "0" && value.toLowerCase() !== "null" && value.toLowerCase() !== "undefined") {
@@ -6746,60 +6738,11 @@ export function titoloProdottoDaCausaleIncasso(causale: string): string | null {
   return senzaPeriodo || body
 }
 
-function ymdFromUnknown(value: unknown): string {
-  const raw = String(value ?? "").trim()
-  if (!raw) return ""
-  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(raw.replace(" ", "T"))
-  if (iso?.[1]) return iso[1]
-  const it = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(raw)
-  if (!it) return ""
-  return `${it[3]}-${it[2]!.padStart(2, "0")}-${it[1]!.padStart(2, "0")}`
-}
-
-function pagamentoRataDueYmd(causale: string): string {
-  const m = /^PAGAMENTO\s+RATA\s+del\s+(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(causale.trim())
-  return m?.[1] ? ymdFromUnknown(m[1]) : ""
-}
-
-function incassiCashYmd(row: Record<string, unknown>): string {
-  return ymdFromUnknown(
-    row.CassaMovimentiDataOperazione ??
-      row.CassaMovimentiDataOperazioneData ??
-      row.CassaMovimentiDataPagato ??
-      row.CassaMovimentiDataPagamento ??
-      row.DataPagato ??
-      row.DataPagamento ??
-      row.DataOperazione ??
-      row.CassaMovimentiData ??
-      ""
-  )
-}
-
-/**
- * Incassi P&L: solo cassa del periodo (data operazione / pagato).
- * «PAGAMENTO RATA del gg/mm/aaaa» è la scadenza rata, non la data cassa: senza ID movimento
- * o senza importo cassa non si conta (evita rate di gennaio pagate in un altro mese).
- */
-export function isIncassoConteggiabileCassa(row: Record<string, unknown>): boolean {
-  if (incassiAmount(row) <= 0) return false
-  if (!isPagamentoRataIncassoRow(row)) return true
-  if (!incassiRowId(row)) return false
-  const due = pagamentoRataDueYmd(incassiCausale(row))
-  const cash = incassiCashYmd(row)
-  if (due && cash && due !== cash) return true
-  if (due && !cash) return false
-  return true
-}
-
-export function filterIncassiCassaConteggiabili(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  return rows.filter(isIncassoConteggiabileCassa)
-}
-
 export async function queryIncassiCassaDedup(params: {
   from: string
   to: string
 }): Promise<Record<string, unknown>[]> {
-  return filterIncassiCassaConteggiabili(dedupeIncassiRows(await queryIncassiRange({ ...params, segment: "all" })))
+  return dedupeIncassiRows(await queryIncassiRange({ ...params, segment: "all" }))
 }
 
 export async function queryIncassiRange(params: {
@@ -6813,7 +6756,6 @@ export async function queryIncassiRange(params: {
   const vq = qualifySqlObject(view).query
   const cols = await prenGetCols(view)
   const dateCol = incassiDateCol(cols)
-  const importoCol = incassiImportoCol(cols)
   const selectList = selectExistingCols(cols, [
     "IdCassaMovimento",
     "IDCassaMovimento",
@@ -6826,14 +6768,13 @@ export async function queryIncassiRange(params: {
     "IdMovimento",
     "MovimentoID",
     "MovimentoId",
+    "ID",
+    "Id",
     "CassaMovimentiImporto",
+    "Importo",
     "CassaMovimentiCausale",
     "CassaMovimentiDataOperazione",
     "CassaMovimentiDataOperazioneData",
-    "CassaMovimentiDataPagato",
-    "CassaMovimentiDataPagamento",
-    "DataPagato",
-    "DataPagamento",
     "CategoriaDescrizione",
     "Cognome",
     "Nome",
@@ -6850,9 +6791,6 @@ export async function queryIncassiRange(params: {
     "Operatore",
   ])
 
-  const amountPred = importoCol
-    ? ` AND TRY_CONVERT(float, ${bracketCol(importoCol)}) IS NOT NULL AND TRY_CONVERT(float, ${bracketCol(importoCol)}) <> 0`
-    : ""
   const r = await p
     .request()
     .input("from", sql.VarChar(10), params.from)
@@ -6860,7 +6798,6 @@ export async function queryIncassiRange(params: {
     .query(
       `SELECT ${selectList} FROM ${vq}
        WHERE ${sqlDateRangeSargable(dateCol, "@from", "@to")}
-         ${amountPred}
        ORDER BY ${bracketCol(dateCol)} DESC;`
     )
   const rows = (r.recordset ?? []) as Record<string, unknown>[]
