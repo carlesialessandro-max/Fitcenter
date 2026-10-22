@@ -145,7 +145,6 @@ function DashboardTab() {
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
   const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
-  const ricaviAltriCentri = d?.totRicaviAltri ?? 0
   const costiAltriCentri = d?.totCostiFuoriReparti ?? 0
   return (
     <div className="mt-4 space-y-4">
@@ -377,19 +376,15 @@ function DashboardTab() {
                       </tr>
                     ))}
                     <tr className="border-t border-zinc-800 bg-zinc-900/20">
-                      <td className="px-3 py-2 text-zinc-100">Altri centri (Manutenzione, Pulizie, Varie...)</td>
-                      <td className="px-3 py-2 text-right text-zinc-200">{eur(ricaviAltriCentri)}</td>
+                      <td className="px-3 py-2 text-zinc-100">Altri centri di costo (Manutenzione, Pulizie, Varie...)</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
                       <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
                       <td className="px-3 py-2 text-right text-zinc-400">—</td>
                       <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : ricaviAltriCentri >= costiAltriCentri ? "text-emerald-400" : "text-red-400"}`}>
-                        {d.ricaviDisponibili ? eur(ricaviAltriCentri - costiAltriCentri) : "—"}
+                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-red-400"}`}>
+                        {d.ricaviDisponibili ? eur(-costiAltriCentri) : "—"}
                       </td>
-                      <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : ricaviAltriCentri >= costiAltriCentri ? "text-emerald-400" : "text-red-400"}`}>
-                        {d.ricaviDisponibili && ricaviAltriCentri > 0.009
-                          ? `${Math.round(((ricaviAltriCentri - costiAltriCentri) / ricaviAltriCentri) * 1000) / 10}%`
-                          : "—"}
-                      </td>
+                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
                     </tr>
                   </>
                 ) : (
