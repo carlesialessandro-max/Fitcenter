@@ -283,9 +283,9 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Stessi movimenti della griglia «Movimenti di cassa». Tesseramenti, ASI, badge, UISP/FIN/FITRI e BeActive
-                seguono l’abbonamento dello stesso cliente nel mese (piscina, fitness, o metà/metà se OPEN); se non c’è
-                abbonamento restano tra gli altri incassi.
+                Stessi movimenti della griglia «Movimenti di cassa». I corsi BAMBINI vanno in piscina (scuola nuoto).
+                Tesseramenti FIN/FITRI: 60% piscina e 40% fitness. ASI, badge, BeActive e ricarica Phon seguono
+                l’abbonamento dello stesso cliente nel mese; se manca restano tra gli altri incassi.
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">

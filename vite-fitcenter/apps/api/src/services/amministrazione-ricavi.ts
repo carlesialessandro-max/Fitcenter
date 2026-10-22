@@ -41,6 +41,15 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   ) {
     return []
   }
+  if (/\bFITRI\b/.test(u) || (/\bFIN\b/.test(u) && /(ISCRIZIONE|QUOTA|TESSER)/.test(u))) {
+    return [
+      { macro: "piscina", peso: 0.6 },
+      { macro: "fitness", peso: 0.4 },
+    ]
+  }
+  if (/\bBAMBINI\b/.test(u) || /SCUOLA NUOTO/.test(u)) {
+    return [{ macro: "piscina", peso: 1 }]
+  }
   if (/\bOPEN\b/.test(u)) {
     return [
       { macro: "piscina", peso: 0.5 },
