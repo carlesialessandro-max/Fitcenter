@@ -283,9 +283,9 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Stessi movimenti della griglia «Movimenti di cassa». Le rate pagate (GYM, corsi, agonismo…) restano anche se
-                la scadenza nel testo è di un altro mese. Si escludono solo rate «fantasma» della vista SQL (solo durata, es.
-                1 M MENSILE 3VS) che in cassa non esistono.
+                Stessi movimenti della griglia «Movimenti di cassa». Tesseramenti, ASI, badge, UISP/FIN/FITRI e BeActive
+                seguono l’abbonamento dello stesso cliente nel mese (piscina, fitness, o metà/metà se OPEN); se non c’è
+                abbonamento restano tra gli altri incassi.
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">

@@ -33,9 +33,6 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   const u = blob(`${voce} ${contesto}`)
   const child = blob(contesto)
   if (!u) return [{ macro: "altro", peso: 1 }]
-  if (/\bBADGE\b/.test(u) && /\bMERCHANDISING\b/.test(u)) {
-    return [{ macro: "altro", peso: 1 }]
-  }
   if (
     /\bDANZA\b/.test(u) ||
     /\bPROFESSIONALE\b/.test(u) ||
@@ -77,17 +74,29 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   ) {
     return [{ macro: "fitness", peso: 1 }]
   }
-  if (/\bSTAFF\b/.test(u) || u.includes("TESSERAMENT") || /BE ?ACTIVE|SOSPENSIONI AGGIUNT/.test(u)) {
-    return [{ macro: "altro", peso: 1 }]
-  }
   if (/FULL|PREMIUM|TUTTO INCLUSO/.test(u)) {
     return [
       { macro: "piscina", peso: 0.5 },
       { macro: "fitness", peso: 0.5 },
     ]
   }
-  if (/\bKIDS\b/.test(u)) return [{ macro: "piscina", peso: 1 }]
-  if (/\bCLIENTE\b/.test(u) || /LEZIONI PRIVATE/.test(u)) return [{ macro: "fitness", peso: 1 }]
+  if (/\bKIDS\b/.test(u) && !/TESSERAMENT|BE ?ACTIVE|SOSPENSIONI AGGIUNT|\bASI\b|\bUISP\b|\bFITRI\b/.test(u)) {
+    return [{ macro: "piscina", peso: 1 }]
+  }
+  if (
+    (/\bCLIENTE\b/.test(u) || /LEZIONI PRIVATE/.test(u)) &&
+    !/TESSERAMENT|BE ?ACTIVE|SOSPENSIONI AGGIUNT|\bASI\b|\bUISP\b|\bFITRI\b/.test(u)
+  ) {
+    return [{ macro: "fitness", peso: 1 }]
+  }
+  if (
+    /\bSTAFF\b/.test(u) ||
+    u.includes("TESSERAMENT") ||
+    /BE ?ACTIVE|SOSPENSIONI AGGIUNT/.test(u) ||
+    (/\bBADGE\b/.test(u) && /\bMERCHANDISING\b/.test(u))
+  ) {
+    return [{ macro: "altro", peso: 1 }]
+  }
   return [{ macro: "altro", peso: 1 }]
 }
 

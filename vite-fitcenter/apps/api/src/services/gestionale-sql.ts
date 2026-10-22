@@ -6799,6 +6799,12 @@ export async function queryIncassiRange(params: {
     "CategoriaDescrizione",
     "Cognome",
     "Nome",
+    "IDUtente",
+    "IdUtente",
+    "IDCliente",
+    "IdCliente",
+    "MacroCategoriaAbbonamentoDescrizione",
+    "MacroCategoriaDescrizione",
     "AbbonamentiDescrizione",
     "AbbonamentiCategorieDescrizione",
     "AbbonamentoDescrizione",
@@ -6895,11 +6901,50 @@ export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
   )
 }
 
+function incassiClienteKey(row: Record<string, unknown>): string {
+  for (const key of ["IDUtente", "IdUtente", "IDCliente", "IdCliente"]) {
+    const value = String(row[key] ?? "").trim()
+    if (value && value !== "0" && value.toLowerCase() !== "null") return `id:${value}`
+  }
+  const cognome = String(row.Cognome ?? row.cognome ?? "").trim().toLowerCase()
+  const nome = String(row.Nome ?? row.nome ?? "").trim().toLowerCase()
+  if (cognome || nome) return `n:${cognome}|${nome}`
+  return ""
+}
+
+/** Tesseramenti / ASI / badge / BeActive: da attribuire al reparto dell’abbonamento dello stesso cliente. */
+export function isIncassoVoceAccessoria(voce: string, contesto: string, causale = ""): boolean {
+  const u = `${voce} ${contesto} ${causale}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+  if (!u) return false
+  if (/TESSERAMENT/.test(u)) return true
+  if (/\bBADGE\b/.test(u) && /MERCHANDISING/.test(u)) return true
+  if (/BE ?ACTIVE/.test(u)) return true
+  if (/SOSPENSIONI AGGIUNT/.test(u)) return true
+  if (/\bASI\b/.test(u) && /ISCRIZIONE/.test(u)) return true
+  if (/\bUISP\b/.test(u)) return true
+  if (/\bFITRI\b/.test(u)) return true
+  if (/\bFIN\b/.test(u) && /(ISCRIZIONE|QUOTA)/.test(u)) return true
+  return false
+}
+
 /** Incassi di cassa aggregati per voce (categoria abbonamento / causale), per il P&L amministrazione. */
 export async function queryIncassiPerVoce(
   params: { from: string; to: string }
 ): Promise<{ voce: string; contesto: string; euro: number; n: number; danza: boolean }[]> {
-  const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
+  const parsed: {
+    voce: string
+    contesto: string
+    causale: string
+    cliente: string
+    accessoria: boolean
+    danza: boolean
+    euro: number
+  }[] = []
   for (const row of await queryIncassiCassaDedup(params)) {
     const ticketing = isTicketingIncasso(row)
     const causale = String(
@@ -6916,6 +6961,8 @@ export async function queryIncassiPerVoce(
       row.AbbonamentiCategorieDescrizione,
       row.CategoriaAbbonamentoDescrizione,
       row.AbbonamentiCategoriaDescrizione,
+      row.MacroCategoriaAbbonamentoDescrizione,
+      row.MacroCategoriaDescrizione,
     ]
     const subscriptionFields = [
       row.AbbonamentiDescrizione,
@@ -6936,17 +6983,44 @@ export async function queryIncassiPerVoce(
       : [
           row.AbbonamentiDurataDescrizioneLunga,
           ...subscriptionFields,
-          ...categoryFields.slice(1),
-          row.CategoriaDescrizione,
+          ...categoryFields,
           causale,
         ]
           .map((value) => String(value ?? "").trim())
           .filter((value, index, values) => value && values.indexOf(value) === index)
           .join(" ")
     const danza = !ticketing && isDanzaIncassoRow(row)
-    const key = `${voce}\u001f${contesto}\u001f${danza ? "danza" : "altro"}`
-    const current = grouped.get(key) ?? { euro: 0, n: 0, danza }
-    current.euro = Math.round((current.euro + incassiAmount(row)) * 100) / 100
+    parsed.push({
+      voce,
+      contesto,
+      causale,
+      cliente: incassiClienteKey(row),
+      accessoria: !ticketing && isIncassoVoceAccessoria(voce, contesto, causale),
+      danza,
+      euro: incassiAmount(row),
+    })
+  }
+
+  const prodottiPerCliente = new Map<string, string[]>()
+  for (const row of parsed) {
+    if (row.danza || row.accessoria || !row.cliente) continue
+    const blob = `${row.voce} ${row.contesto}`.trim()
+    if (!blob) continue
+    const list = prodottiPerCliente.get(row.cliente) ?? []
+    list.push(blob)
+    prodottiPerCliente.set(row.cliente, list)
+  }
+  for (const row of parsed) {
+    if (!row.accessoria || !row.cliente) continue
+    const linked = prodottiPerCliente.get(row.cliente)
+    if (linked?.length) row.contesto = `${row.contesto} ${linked.join(" ")}`.trim()
+  }
+
+  const grouped = new Map<string, { euro: number; n: number; danza: boolean }>()
+  for (const row of parsed) {
+    const key = `${row.voce}\u001f${row.contesto}\u001f${row.danza ? "danza" : "altro"}`
+    const current = grouped.get(key) ?? { euro: 0, n: 0, danza: row.danza }
+    current.euro = Math.round((current.euro + row.euro) * 100) / 100
     current.n += 1
     grouped.set(key, current)
   }
