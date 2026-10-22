@@ -33,6 +33,9 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   const u = blob(`${voce} ${contesto}`)
   const child = blob(contesto)
   if (!u) return [{ macro: "altro", peso: 1 }]
+  if (/\bBADGE\b/.test(u) && /\bMERCHANDISING\b/.test(u)) {
+    return [{ macro: "altro", peso: 1 }]
+  }
   if (
     /\bDANZA\b/.test(u) ||
     /\bPROFESSIONALE\b/.test(u) ||

@@ -6781,6 +6781,7 @@ export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
         .trim()
     )
     .join(" ")
+  if (/\bBADGE\b/.test(descriptors) && /\bMERCHANDISING\b/.test(descriptors)) return false
   return (
     /\bDANZA\b|\bGIOCODANZA\b/.test(descriptors) ||
     /\b1\s*M MENSILE 2VS\b/.test(descriptors) ||
