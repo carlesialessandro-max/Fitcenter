@@ -301,6 +301,7 @@ function ShiftDayTrack({
   subtitle,
   lanePx,
   grow,
+  fitWidth,
   grid,
   compact,
 }: {
@@ -313,6 +314,7 @@ function ShiftDayTrack({
   subtitle?: ReactNode
   lanePx: number
   grow?: boolean
+  fitWidth?: boolean
   grid: ShiftGrid
   compact?: boolean
 }) {
@@ -324,8 +326,13 @@ function ShiftDayTrack({
   const gridEnd = grid.startMin + grid.slots.length * grid.slotMin
   return (
     <div
-      className={cn("flex shrink-0 flex-col border-l border-zinc-800", isToday && "bg-[#46A6D9]/5", grow && "min-w-0 flex-1")}
-      style={grow ? { minWidth: n * lanePx } : { width: n * lanePx }}
+      className={cn(
+        fitWidth ? "flex min-w-0 flex-1 flex-col" : "flex shrink-0 flex-col border-l border-zinc-800",
+        fitWidth && "border-l border-zinc-800",
+        isToday && "bg-[#46A6D9]/5",
+        grow && !fitWidth && "min-w-0 flex-1"
+      )}
+      style={fitWidth ? undefined : grow ? { minWidth: n * lanePx } : { width: n * lanePx }}
     >
       <div className="sticky top-0 z-20">
         <div className="flex h-11 flex-col items-center justify-center border-b border-zinc-800 bg-zinc-900 px-1 text-center sm:h-12">
@@ -1922,8 +1929,8 @@ export function CalendarioRepartoPage() {
         {view === "week" && hasPlanningGrid(apiComparto) ? (
           <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
             {shiftRangeGrid ? (
-              <div className="overflow-x-auto">
-                <div className="flex min-w-max">
+              <div className={apiComparto === "piscina" ? "overflow-hidden" : "overflow-x-auto"}>
+                <div className={cn("flex", apiComparto === "piscina" ? "min-w-0" : "min-w-max")}>
                   <ShiftTimeGutter
                     grid={weekShiftGrid}
                     header={
@@ -1945,6 +1952,7 @@ export function CalendarioRepartoPage() {
                       }}
                       isToday={isTodayCell(d)}
                       lanePx={SHIFT_LANE_PX_WEEK}
+                      fitWidth={apiComparto === "piscina"}
                       grid={weekShiftGrid}
                       compact
                       title={
