@@ -1,4 +1,15 @@
-import { dominioLivello, listLivelli, listTurni } from "../store/libro-paga-db.js"
+import {
+  dominioLivello,
+  listLivelli,
+  listMensilita,
+  listPersonale,
+  listTurni,
+  nominativo,
+  type LpagaLivello,
+  type LpagaMensilita,
+  type LpagaPersonale,
+  type LpagaTurno,
+} from "../store/libro-paga-db.js"
 
 function norm(s: string): string {
   return s
@@ -40,34 +51,135 @@ export type AmmLpagaRiga = {
   nTurni: number
 }
 
-function aggrega(turni: Awaited<ReturnType<typeof listTurni>>, livelli: Awaited<ReturnType<typeof listLivelli>>, mese: string): AmmLpagaRiga[] {
-  const by = new Map<string, AmmLpagaRiga>()
-  for (const t of turni) {
-    if (t.giorno.slice(0, 7) !== mese) continue
-    const liv = livelli.find((l) => l.id === t.livelloId)
-    const dominio = dominioLivello(livelli, t.livelloId)
-    const codice = codiceRepartoDaMansione(dominio, liv?.nome ?? "")
-    if (!codice) continue
-    const cur = by.get(codice) ?? { repartoId: codice, importo: 0, nTurni: 0 }
-    cur.importo = Math.round((cur.importo + Number(t.importo || 0)) * 100) / 100
-    cur.nTurni += 1
-    by.set(codice, cur)
+export type AmmLpagaCollaboratoreRiga = {
+  id: string
+  nome: string
+  importo: number
+  nTurni: number
+}
+
+type MeseCollaboratoriLpaga = {
+  righe: AmmLpagaCollaboratoreRiga[]
+  reparti: AmmLpagaRiga[]
+}
+
+function ripartoMese(
+  mese: string,
+  livelli: LpagaLivello[],
+  personale: LpagaPersonale[],
+  turni: LpagaTurno[],
+  mensilita: LpagaMensilita[]
+): MeseCollaboratoriLpaga {
+  const livelliById = new Map(livelli.map((livello) => [livello.id, livello]))
+  const byPerson = new Map<
+    string,
+    { importoTurni: number; nTurni: number; reparti: Map<string, { importo: number; nTurni: number }> }
+  >()
+  for (const turno of turni) {
+    if (turno.giorno.slice(0, 7) !== mese) continue
+    const persona = byPerson.get(turno.personaleId) ?? {
+      importoTurni: 0,
+      nTurni: 0,
+      reparti: new Map<string, { importo: number; nTurni: number }>(),
+    }
+    const importo = Number(turno.importo || 0)
+    persona.importoTurni = Math.round((persona.importoTurni + importo) * 100) / 100
+    persona.nTurni += 1
+    const livello = livelliById.get(turno.livelloId)
+    const codice = codiceRepartoDaMansione(
+      dominioLivello(livelli, turno.livelloId),
+      livello?.nome ?? ""
+    )
+    if (codice) {
+      const reparto = persona.reparti.get(codice) ?? { importo: 0, nTurni: 0 }
+      reparto.importo = Math.round((reparto.importo + importo) * 100) / 100
+      reparto.nTurni += 1
+      persona.reparti.set(codice, reparto)
+    }
+    byPerson.set(turno.personaleId, persona)
   }
-  return [...by.values()]
+
+  const savedByPerson = new Map(mensilita.map((row) => [row.personaleId, row]))
+  const personaleById = new Map(personale.map((row) => [row.id, row]))
+  const ids = new Set([...byPerson.keys(), ...savedByPerson.keys()])
+  const collaboratori: AmmLpagaCollaboratoreRiga[] = []
+  const byReparto = new Map<string, AmmLpagaRiga>()
+
+  for (const id of ids) {
+    const agg = byPerson.get(id)
+    const saved = savedByPerson.get(id)
+    const importo = Math.round((saved?.bonifico ?? agg?.importoTurni ?? 0) * 100) / 100
+    if (!importo) continue
+    const persona = personaleById.get(id)
+    collaboratori.push({
+      id,
+      nome: persona ? nominativo(persona) : id,
+      importo,
+      nTurni: agg?.nTurni ?? 0,
+    })
+
+    const quote = [...(agg?.reparti ?? new Map()).entries()]
+      .filter(([, row]) => row.importo !== 0)
+      .map(([repartoId, row]) => ({ repartoId, importo: row.importo, nTurni: row.nTurni }))
+    if (!quote.length) {
+      const livelloId = persona?.livelloId || persona?.livelloIds?.[0] || ""
+      const livello = livelliById.get(livelloId)
+      const repartoId =
+        codiceRepartoDaMansione(dominioLivello(livelli, livelloId), livello?.nome ?? "") ??
+        "personale-condiviso"
+      quote.push({ repartoId, importo: 1, nTurni: 0 })
+    }
+    const pesoTotale = quote.reduce((sum, row) => sum + Math.abs(row.importo), 0)
+    let allocato = 0
+    quote.forEach((row, index) => {
+      const quota = index === quote.length - 1
+        ? Math.round((importo - allocato) * 100) / 100
+        : Math.round((importo * (Math.abs(row.importo) / pesoTotale)) * 100) / 100
+      allocato = Math.round((allocato + quota) * 100) / 100
+      const reparto = byReparto.get(row.repartoId) ?? { repartoId: row.repartoId, importo: 0, nTurni: 0 }
+      reparto.importo = Math.round((reparto.importo + quota) * 100) / 100
+      reparto.nTurni += row.nTurni
+      byReparto.set(row.repartoId, reparto)
+    })
+  }
+
+  collaboratori.sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+  return { righe: collaboratori, reparti: [...byReparto.values()] }
+}
+
+async function datiMese(mese: string) {
+  const [livelli, personale, turni, mensilita] = await Promise.all([
+    listLivelli(),
+    listPersonale(),
+    listTurni(),
+    listMensilita(mese),
+  ])
+  return ripartoMese(mese, livelli, personale, turni, mensilita)
+}
+
+export async function collaboratoriDaMensilita(mese: string): Promise<AmmLpagaCollaboratoreRiga[]> {
+  if (!/^\d{4}-\d{2}$/.test(mese)) return []
+  return (await datiMese(mese)).righe
 }
 
 export async function costiCollaboratoriSportivi(mese: string): Promise<AmmLpagaRiga[]> {
   if (!/^\d{4}-\d{2}$/.test(mese)) return []
-  const [livelli, turni] = await Promise.all([listLivelli(), listTurni()])
-  return aggrega(turni, livelli, mese)
+  return (await datiMese(mese)).reparti
 }
 
 export async function costiCollaboratoriAnno(anno: number): Promise<{ mese: string; righe: AmmLpagaRiga[] }[]> {
-  const [livelli, turni] = await Promise.all([listLivelli(), listTurni()])
-  const out: { mese: string; righe: AmmLpagaRiga[] }[] = []
-  for (let m = 1; m <= 12; m++) {
-    const mese = `${anno}-${String(m).padStart(2, "0")}`
-    out.push({ mese, righe: aggrega(turni, livelli, mese) })
-  }
-  return out
+  const [livelli, personale, turni, mensilitaByMese] = await Promise.all([
+    listLivelli(),
+    listPersonale(),
+    listTurni(),
+    Promise.all(
+      Array.from({ length: 12 }, (_, index) =>
+        listMensilita(`${anno}-${String(index + 1).padStart(2, "0")}`)
+      )
+    ),
+  ])
+  return mensilitaByMese.map((mensilita, index) => {
+    const mese = `${anno}-${String(index + 1).padStart(2, "0")}`
+    return { mese, righe: ripartoMese(mese, livelli, personale, turni, mensilita).reparti }
+  })
 }

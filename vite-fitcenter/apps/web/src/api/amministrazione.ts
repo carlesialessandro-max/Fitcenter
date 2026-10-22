@@ -289,7 +289,7 @@ export const amministrazioneApi = {
       anno: number
       mese: string | null
       tot: number
-      fonte?: "riepilogo" | "libro-paga"
+      fonte?: "riepilogo" | "libro-paga" | "libro-paga-mensilita"
       righe: { id: string; nome: string; macroId?: string; importo: number; nTurni: number; tipo?: string; descrizione?: string }[]
     }>(`/amministrazione/collaboratori?${q}`)
   },

@@ -12,7 +12,7 @@ import {
   type AmmTipoCosto,
 } from "../store/amministrazione-costi.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
-import { costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
+import { collaboratoriDaMensilita, costiCollaboratoriAnno } from "../services/amministrazione-lpaga.js"
 import {
   isMacroCommerciale,
   isMacroStruttura,
@@ -407,6 +407,18 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           tipo: c.tipo,
           descrizione: c.descrizione,
         })),
+      })
+      return
+    }
+    if (mese) {
+      const righe = await collaboratoriDaMensilita(mese)
+      const tot = Math.round(righe.reduce((sum, row) => sum + row.importo, 0) * 100) / 100
+      res.json({
+        anno,
+        mese,
+        tot,
+        fonte: "libro-paga-mensilita",
+        righe,
       })
       return
     }

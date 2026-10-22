@@ -1560,6 +1560,8 @@ function StipendiTab() {
   const okPreview = (preview ?? []).filter((p) => !p.errore)
   const totBusteMese = (buste.data?.buste ?? []).reduce((s, b) => s + b.totale, 0)
   const fonteRiepilogo = collab.data?.fonte === "riepilogo"
+  const fonteMensilita = collab.data?.fonte === "libro-paga-mensilita"
+  const fonteNominativi = fonteRiepilogo || fonteMensilita
 
   return (
     <div className="mt-4 space-y-6">
@@ -1577,9 +1579,9 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
             <p className="text-xs text-zinc-500">
-              Il PDF dello Studio Mattonai è la fonte: nominativi e importi di quel file. Chi emette fattura è già
-              escluso lì; chi ha anche busta resta in lista se fa funzioni fuori dal libro paga. All’import si
-              sostituisce tutto il mese (via la stima dei turni). Il report annuale (tutte le mensilità, modifica
+              Di default mostra i nominativi e gli importi bonifico delle mensilità del Libro paga (se il bonifico non è
+              ancora registrato, usa il totale dei turni). Il riepilogo PDF dello Studio Mattonai resta disponibile e,
+              se caricato, sostituisce i dati del mese selezionato. Il report annuale (tutte le mensilità, modifica
               importo, aggiungi istruttore) è nel{" "}
               <Link to="/libro-paga?tab=collaboratori" className="underline">
                 libro paga
@@ -1633,8 +1635,8 @@ function StipendiTab() {
             <table className="min-w-full text-left text-sm">
               <thead className="text-xs uppercase text-zinc-500">
                 <tr>
-                  <th className="py-1">{fonteRiepilogo ? "Nominativo" : "Reparto"}</th>
-                  {!fonteRiepilogo && <th className="py-1 text-right">Turni</th>}
+                  <th className="py-1">{fonteNominativi ? "Nominativo" : "Reparto"}</th>
+                  {!fonteNominativi && <th className="py-1 text-right">Turni</th>}
                   <th className="py-1 text-right">Importo</th>
                   {fonteRiepilogo && <th className="py-1" />}
                 </tr>
@@ -1648,7 +1650,7 @@ function StipendiTab() {
                         <span className="ml-2 text-xs text-zinc-500">amm/gest</span>
                       )}
                     </td>
-                    {!fonteRiepilogo && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
+                    {!fonteNominativi && <td className="py-1.5 text-right text-zinc-400">{r.nTurni}</td>}
                     <td className="py-1.5 text-right">{eur(r.importo)}</td>
                     {fonteRiepilogo && (
                       <td className="py-1.5 text-right">
@@ -1668,7 +1670,7 @@ function StipendiTab() {
                 {!collab.data?.righe.length && (
                   <tr>
                     <td className="py-4 text-zinc-500" colSpan={3}>
-                      Nessun collaboratore in questo mese. Importa il riepilogo PDF di fine mese.
+                      Nessun importo mensile nel Libro paga. Puoi caricare il riepilogo PDF di fine mese.
                     </td>
                   </tr>
                 )}
