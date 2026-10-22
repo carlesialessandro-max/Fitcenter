@@ -283,9 +283,9 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Solo movimenti di cassa con data operazione nel periodo (come «Movimenti di cassa»). Rate senza ID movimento
-                non vengono conteggiate; le rate reali compaiono sotto il nome prodotto (es. 1 M MENSILE 3VS), non con la data
-                scadenza rata.
+                Allineato a «Movimenti di cassa»: data operazione e importo cassa nel periodo. La data nel testo «PAGAMENTO
+                RATA del …» è la scadenza, non l’incasso: una rata di gennaio pagata a dicembre (o non pagata) non entra
+                qui. Le rate incassate nel mese stanno sotto il prodotto (es. 1 M MENSILE 3VS).
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">

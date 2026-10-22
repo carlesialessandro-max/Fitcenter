@@ -123,15 +123,12 @@ function chiaveRaggruppamento(voce: string, contesto = ""): string {
   if (/^GYM\b/.test(normalized) || /\bGIN\b/.test(normalized)) return "GYM - abbonamenti palestra"
   if (/\bSMILE FIT\b/.test(normalized)) return "SMILE FIT"
   if (/\bSMILE H2O\b/.test(normalized)) return "SMILE H2O"
-  if (/\bOPEN\b/.test(normalized) && /\bFIT\b/.test(normalized)) return "OPEN FIT"
   if (/\b1\s*M MENSILE 3VS\b/.test(normalized)) return "1 M MENSILE 3VS"
   if (/\b1\s*M MENSILE 2VS\b/.test(normalized)) return "1 M MENSILE 2VS"
   if (/\bLEZIONI PRIVATE\b/.test(normalized)) return "Lezioni private"
   if (/\bTESSERAMENT\b/.test(normalized)) return "Tesseramenti"
   if (/^PACCHETTI INGRESSI\b/.test(normalized)) return "Pacchetti ingressi"
   if (/^CAMPUS\b/.test(normalized)) return "Campus"
-  const catAbb = /^([A-Z0-9][A-Z0-9 \-]+?)(?:\s+›|\s+\d|\s+MENSILE|\s+SETTIMAN)/.exec(normalized)
-  if (catAbb?.[1] && catAbb[1].length >= 4 && catAbb[1].length <= 48) return catAbb[1].trim()
   return titolo.length > 96 ? `${titolo.slice(0, 93)}…` : titolo
 }
 
