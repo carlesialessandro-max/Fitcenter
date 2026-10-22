@@ -321,6 +321,7 @@ export const amministrazioneApi = {
         quote?: AmmQuota[]
         repartoId?: string
         repartoDaLibroPaga?: boolean
+        ripartizioneDaTurni?: boolean
       }[]
     }>(`/amministrazione/collaboratori?${q}`)
   },

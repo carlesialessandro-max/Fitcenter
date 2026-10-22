@@ -1812,7 +1812,14 @@ function StipendiTab() {
                     </td>
                     {fonteNominativi && (
                       <td className="py-1.5">
-                        {r.repartoDaLibroPaga ? (
+                        {r.ripartizioneDaTurni && r.quote?.length ? (
+                          <span className="text-zinc-300">
+                            {r.quote
+                              .map((q) => `${nomeReparto(attivi, q.repartoId)} ${q.percentuale}%`)
+                              .join(" · ")}
+                            <span className="ml-2 text-xs text-emerald-400">da turni del mese</span>
+                          </span>
+                        ) : r.repartoDaLibroPaga ? (
                           <span className="text-zinc-300">
                             {nomeReparto(attivi, r.repartoId ?? "personale-condiviso")}
                             <span className="ml-2 text-xs text-emerald-400">Libro paga</span>

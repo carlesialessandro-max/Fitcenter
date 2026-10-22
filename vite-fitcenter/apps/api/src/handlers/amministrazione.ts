@@ -67,6 +67,15 @@ function quoteOfCollaboratore(
   return repartoId ? [{ repartoId, percentuale: 100 }] : quote
 }
 
+function quoteTurniCollaboratore(
+  nominativo: string,
+  righe: { nome: string; quote: AmmQuota[]; nTurni: number }[]
+): AmmQuota[] | undefined {
+  const key = normalizeNominativo(nominativo)
+  const row = righe.find((item) => normalizeNominativo(item.nome) === key && item.nTurni > 0)
+  return row?.quote
+}
+
 function repartoLibroPagaCollaboratore(
   nominativo: string,
   centriCostoLibroPaga?: Map<string, string>
@@ -437,12 +446,15 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
     const meseQ = String(req.query.mese ?? "").trim()
     const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
     const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
+    const righeTurniMese = mese ? await collaboratoriDaMensilita(mese) : []
     const rimborsi = ammCostiStore
       .listCollaboratoriRimborsi()
       .filter((r) => (mese ? r.mese === mese : r.mese.startsWith(String(anno))))
       .map((r) => ({
         ...r,
-        quote: quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga),
+        quote:
+          quoteTurniCollaboratore(r.nominativo, righeTurniMese) ??
+          quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga),
       }))
     const totRimborsi = Math.round(rimborsi.reduce((sum, r) => sum + r.totale, 0) * 100) / 100
     const stored = ammCostiStore
@@ -465,15 +477,18 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           nTurni: 0,
           tipo: c.tipo,
           descrizione: c.descrizione,
-          quote: quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
+          quote:
+            quoteTurniCollaboratore(c.nominativo, righeTurniMese) ??
+            quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
           repartoId: repartoOfCollaboratore(c.nominativo, centriCostoLibroPaga),
           repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(c.nominativo, centriCostoLibroPaga)),
+          ripartizioneDaTurni: Boolean(quoteTurniCollaboratore(c.nominativo, righeTurniMese)),
         })),
       })
       return
     }
     if (mese) {
-      const righe = await collaboratoriDaMensilita(mese)
+      const righe = righeTurniMese
       if (righe.length) {
         const tot = Math.round(righe.reduce((sum, row) => sum + row.importo, 0) * 100) / 100
         res.json({
@@ -484,12 +499,15 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           rimborsi,
           fonte: "libro-paga-mensilita",
           righe: righe.map((row) => {
-            const quote = quoteOfCollaboratore(row.nome, row.quote, centriCostoLibroPaga)
+            const quote =
+              (row.nTurni > 0 ? row.quote : undefined) ??
+              quoteOfCollaboratore(row.nome, row.quote, centriCostoLibroPaga)
             return {
               ...row,
               quote,
               repartoId: repartoOfCollaboratore(row.nome, centriCostoLibroPaga),
               repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(row.nome, centriCostoLibroPaga)),
+              ripartizioneDaTurni: row.nTurni > 0,
             }
           }),
         })
@@ -513,9 +531,12 @@ export async function getAmmCollaboratori(req: Request, res: Response) {
           nTurni: 0,
           tipo: c.tipo,
           descrizione: c.descrizione,
-          quote: quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
+          quote:
+            quoteTurniCollaboratore(c.nominativo, righeTurniMese) ??
+            quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga),
           repartoId: repartoOfCollaboratore(c.nominativo, centriCostoLibroPaga),
           repartoDaLibroPaga: Boolean(repartoLibroPagaCollaboratore(c.nominativo, centriCostoLibroPaga)),
+          ripartizioneDaTurni: Boolean(quoteTurniCollaboratore(c.nominativo, righeTurniMese)),
         })),
       })
       return
@@ -573,17 +594,22 @@ export async function postAmmCollaboratoreRimborso(req: Request, res: Response) 
 
     const target = normalizeNominativo(nominativo)
     const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
+    const righeTurni = await collaboratoriDaMensilita(mese)
+    const quoteTurni = quoteTurniCollaboratore(
+      nominativo,
+      righeTurni
+    )
     const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese === mese && c.totale > 0)
     const riepilogo = stored.filter((c) => c.origine === "riepilogo")
     let quote: AmmQuota[] | undefined
+    if (quoteTurni) quote = quoteTurni
     const assignedReparto = repartoOfCollaboratore(nominativo, centriCostoLibroPaga)
-    if (assignedReparto) quote = [{ repartoId: assignedReparto, percentuale: 100 }]
+    if (!quote && assignedReparto) quote = [{ repartoId: assignedReparto, percentuale: 100 }]
     if (riepilogo.length) {
       quote ??= riepilogo.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
     } else if (!quote) {
-      const mensilita = await collaboratoriDaMensilita(mese)
-      quote = mensilita.length
-        ? mensilita.find((c) => normalizeNominativo(c.nome) === target)?.quote
+      quote = righeTurni.length
+        ? righeTurni.find((c) => normalizeNominativo(c.nome) === target)?.quote
         : stored.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
     }
     if (!quote?.length) {
@@ -983,13 +1009,19 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const lpAnno = await costiCollaboratoriAnno(anno)
     const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const lpSlices: Slice[] = []
+    function quoteTurniDelMese(ym: string, nominativo: string): AmmQuota[] | undefined {
+      const meseLp = lpAnno.find((item) => item.mese === ym)
+      return meseLp ? quoteTurniCollaboratore(nominativo, meseLp.collaboratori) : undefined
+    }
     function lpagaAllocazioniMese(ym: string): { repartoId: string; importo: number; nTurni: number }[] {
       const meseLp = lpAnno.find((item) => item.mese === ym)
       if (!meseLp) return []
       if (!meseLp.collaboratori.length) return meseLp.righe
       const byReparto = new Map<string, { repartoId: string; importo: number; nTurni: number }>()
       for (const collaboratore of meseLp.collaboratori) {
-        const quote = quoteOfCollaboratore(collaboratore.nome, collaboratore.quote, centriCostoLibroPaga)
+        const quote =
+          (collaboratore.nTurni > 0 ? collaboratore.quote : undefined) ??
+          quoteOfCollaboratore(collaboratore.nome, collaboratore.quote, centriCostoLibroPaga)
         for (const alloc of allocateQuote(collaboratore.importo, quote)) {
           const current = byReparto.get(alloc.repartoId) ?? {
             repartoId: alloc.repartoId,
@@ -1014,7 +1046,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
         for (const c of stored) {
           const alloc = allocateQuote(
             c.totale,
-            quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
+            quoteTurniDelMese(ym, c.nominativo) ??
+              quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
           )
           pnlAlloc.push(...alloc)
           for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
@@ -1047,7 +1080,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
       .filter((r) => r.mese.startsWith(String(anno)))
     const rimborsiAll = rimborsiAnno.filter((r) => !mese || r.mese === mese)
     const rimborsoSlices: Slice[] = rimborsiAll.flatMap((r) =>
-      allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga))
+      allocateQuote(
+        r.totale,
+        quoteTurniDelMese(r.mese, r.nominativo) ??
+          quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
+      )
         .filter((a) => inFiltro(a.repartoId))
         .map((a) => ({
           repartoId: a.repartoId,
@@ -1058,7 +1095,11 @@ export async function getAmmDashboard(req: Request, res: Response) {
     )
     pnlAlloc.push(
       ...rimborsiAll.flatMap((r) =>
-        allocateQuote(r.totale, quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga))
+        allocateQuote(
+          r.totale,
+          quoteTurniDelMese(r.mese, r.nominativo) ??
+            quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
+        )
       )
     )
 
@@ -1202,7 +1243,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
             n +
             allocateQuote(
               c.totale,
-              quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
+              quoteTurniDelMese(ym, c.nominativo) ??
+                quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
             )
               .filter((a) => inFiltro(a.repartoId))
               .reduce((x, a) => x + a.importo, 0),
@@ -1218,7 +1260,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
     for (const r of rimborsiAnno) {
       const sub = allocateQuote(
         r.totale,
-        quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
+        quoteTurniDelMese(r.mese, r.nominativo) ??
+          quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
       )
         .filter((a) => inFiltro(a.repartoId))
         .reduce((sum, a) => sum + a.importo, 0)
