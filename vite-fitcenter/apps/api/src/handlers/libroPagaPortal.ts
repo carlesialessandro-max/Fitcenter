@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { importaTurniExcel } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
@@ -177,6 +178,29 @@ export async function postLpagaTurno(req: Request, res: Response) {
       creatoDa: me.username || me.id,
     })
     res.status(201).json({ turno: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postLpagaImportTurniExcel(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    if (sess.ruolo !== "admin" && sess.ruolo !== "manager") {
+      return res.status(403).json({ message: "Importazione riservata ad amministratori e responsabili" })
+    }
+    const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
+    const tree = resolveLivelloTree(me, livelli)
+    const scope = me.ruolo === "admin"
+      ? undefined
+      : {
+          personaleIds: personaleVisibile(me, personale, livelli),
+          livelloIds: new Set(livelliInseribili(me, livelli, tree).map((livello) => livello.id)),
+        }
+    const result = await importaTurniExcel(rows, me.username || me.id, scope)
+    res.json(result)
   } catch (e) {
     fail(res, e)
   }

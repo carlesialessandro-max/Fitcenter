@@ -16,6 +16,11 @@ import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
+import {
+  downloadLibroPagaTurniTemplate,
+  parseLibroPagaTurniExcel,
+  type ImportTurnoExcelPreview,
+} from "@/lib/libro-paga-turni-excel"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -481,6 +486,10 @@ function Turni({
   const [cercaTurni, setCercaTurni] = useState("")
   const [cercaData, setCercaData] = useState("")
   const [nuovoTurno, setNuovoTurno] = useState(false)
+  const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
+  const [importMessage, setImportMessage] = useState("")
+  const [importHasErrors, setImportHasErrors] = useState(false)
+  const canImport = me?.ruolo === "admin" || me?.ruolo === "manager"
   useEffect(() => {
     if (!canChangeDay) setGiorno(todayIso())
   }, [canChangeDay, mese])
@@ -517,6 +526,53 @@ function Turni({
     onSuccess: onDone,
     onError: (e: Error) => onError(e.message),
   })
+  const importTurniMut = useMutation({
+    mutationFn: (righe: ImportTurnoExcelPreview[]) =>
+      lpagaApi.importTurniExcel(
+        righe.flatMap((row) =>
+          !row.errore && !row.duplicato && row.personaleId && row.livelloId
+            ? [{
+                riga: row.riga,
+                personaleId: row.personaleId,
+                livelloId: row.livelloId,
+                giorno: row.giorno,
+                quantita: row.quantita,
+                note: row.note,
+              }]
+            : []
+        )
+      ),
+    onSuccess: (result) => {
+      const summary =
+        `Importati ${result.inseriti} turni` +
+        (result.saltati ? `, ${result.saltati} duplicati saltati` : "") +
+        (result.errori.length ? `, ${result.errori.length} righe con errori` : "") +
+        "."
+      setImportMessage(
+        result.errori.length
+          ? `${summary} ${result.errori.map((error) => `Riga ${error.riga}: ${error.message}`).join(" ")}`
+          : summary
+      )
+      setImportHasErrors(result.errori.length > 0)
+      setImportPreview(null)
+      onDone()
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const importValidRows = (importPreview ?? []).filter((row) => !row.errore && !row.duplicato)
+  async function onTurniExcel(file: File | null) {
+    if (!file) return
+    onError("")
+    setImportMessage("")
+    setImportHasErrors(false)
+    try {
+      const buffer = await file.arrayBuffer()
+      setImportPreview(parseLibroPagaTurniExcel(buffer, data.personale, data.livelliInseribili, data.turni))
+    } catch (e) {
+      setImportPreview(null)
+      onError((e as Error).message || "File Excel non leggibile")
+    }
+  }
   const rows = useMemo(() => {
     const n = cercaTurni.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     return [...data.turni]
@@ -534,10 +590,95 @@ function Turni({
 
   return (
     <div className="mt-4 space-y-4">
-      {!nuovoTurno && (
-        <button type="button" className={btnGhost} onClick={() => setNuovoTurno(true)}>
-          + Aggiungi turno di lavoro
-        </button>
+      <div className="flex flex-wrap gap-2">
+        {!nuovoTurno && (
+          <button type="button" className={btnGhost} onClick={() => setNuovoTurno(true)}>
+            + Aggiungi turno di lavoro
+          </button>
+        )}
+        {canImport && (
+          <>
+            <button type="button" className={btnGhost} onClick={downloadLibroPagaTurniTemplate}>
+              Modello Excel turni
+            </button>
+            <label className={`${btnAmber} cursor-pointer ${importTurniMut.isPending ? "pointer-events-none opacity-50" : ""}`}>
+              {importTurniMut.isPending ? "Importazioneâ€¦" : "Importa turni da Excel"}
+              <input
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                disabled={importTurniMut.isPending}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null
+                  e.target.value = ""
+                  void onTurniExcel(file)
+                }}
+              />
+            </label>
+          </>
+        )}
+      </div>
+      {canImport && (
+        <>
+          <p className="text-xs text-zinc-500">
+            Importazione Excel disponibile per amministratori e responsabili; i responsabili possono importare solo per il personale e le mansioni delle proprie deleghe.
+          </p>
+          {importMessage && (
+            <p className={`text-sm ${importHasErrors ? "text-amber-300" : "text-emerald-300"}`}>{importMessage}</p>
+          )}
+          {importPreview && (
+            <div className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/30 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-zinc-300">
+                  Anteprima: {importValidRows.length} da importare, {importPreview.filter((row) => row.duplicato).length} duplicati,{" "}
+                  {importPreview.filter((row) => row.errore).length} con errori.
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" className={btnGhost} onClick={() => setImportPreview(null)}>
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    className={btnAmber}
+                    disabled={!importValidRows.length || importTurniMut.isPending}
+                    onClick={() => importTurniMut.mutate(importPreview)}
+                  >
+                    {importTurniMut.isPending ? "Importazioneâ€¦" : `Importa ${importValidRows.length} turni`}
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-72 overflow-auto rounded-lg border border-zinc-800">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-zinc-900 text-zinc-500">
+                    <tr>
+                      <th className="px-2 py-1">Riga</th>
+                      <th className="px-2 py-1">Data</th>
+                      <th className="px-2 py-1">Collaboratore</th>
+                      <th className="px-2 py-1">Mansione</th>
+                      <th className="px-2 py-1 text-right">QuantitÃ </th>
+                      <th className="px-2 py-1">Note / esito</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importPreview.map((row) => (
+                      <tr
+                        key={row.riga}
+                        className={`border-t border-zinc-800 ${row.errore ? "text-red-300" : row.duplicato ? "text-amber-300" : "text-zinc-200"}`}
+                      >
+                        <td className="px-2 py-1">{row.riga}</td>
+                        <td className="px-2 py-1">{row.giorno ? fmtDateIt(row.giorno) : "â€”"}</td>
+                        <td className="px-2 py-1">{row.personale || "â€”"}</td>
+                        <td className="px-2 py-1">{row.mansione || "â€”"}</td>
+                        <td className="px-2 py-1 text-right">{Number.isFinite(row.quantita) ? row.quantita : "â€”"}</td>
+                        <td className="px-2 py-1">{row.errore || (row.duplicato ? "Duplicato: verrÃ  saltato" : row.note || "ok")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
       {nuovoTurno && (
         <LibroPagaSlot title="Nuovo turno di lavoro">

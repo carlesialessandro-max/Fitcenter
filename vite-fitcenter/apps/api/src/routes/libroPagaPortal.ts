@@ -13,6 +13,7 @@ import {
   postLpagaPersonale,
   removeLpagaPersonale,
   postLpagaTurno,
+  postLpagaImportTurniExcel,
   putLpagaConvalidaTurno,
   putLpagaDeleghe,
   putLpagaMensilita,
@@ -46,6 +47,7 @@ libroPagaPortalRouter.post("/livelli", requireLpaga, requireLpagaAdmin, postLive
 libroPagaPortalRouter.patch("/livelli/:id", requireLpaga, requireLpagaAdmin, patchLivello)
 libroPagaPortalRouter.delete("/livelli/:id", requireLpaga, requireLpagaAdmin, removeLivello)
 libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
+libroPagaPortalRouter.post("/turni/import-excel", requireLpaga, postLpagaImportTurniExcel)
 libroPagaPortalRouter.delete("/turni/:id", requireLpaga, removeLpagaTurno)
 libroPagaPortalRouter.put("/mensilita", requireLpaga, putLpagaMensilita)
 libroPagaPortalRouter.post("/personale", requireLpaga, postLpagaPersonale)

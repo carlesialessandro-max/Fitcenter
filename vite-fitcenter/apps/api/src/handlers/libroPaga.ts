@@ -382,12 +382,21 @@ export async function postTurno(req: Request, res: Response) {
   }
 }
 
-export async function postImportTurniExcel(req: Request, res: Response) {
-  try {
-    const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
-    if (!rows.length) return res.status(400).json({ message: "Nessun turno valido da importare" })
-    if (rows.length > 1000) return res.status(400).json({ message: "Puoi importare al massimo 1000 turni per volta" })
-
+export async function importaTurniExcel(
+  rows: unknown[],
+  createdBy: string,
+  scope?: { personaleIds?: ReadonlySet<string>; livelloIds?: ReadonlySet<string> }
+) {
+    if (!rows.length) {
+      const error = new Error("Nessun turno valido da importare") as Error & { status?: number }
+      error.status = 400
+      throw error
+    }
+    if (rows.length > 1000) {
+      const error = new Error("Puoi importare al massimo 1000 turni per volta") as Error & { status?: number }
+      error.status = 400
+      throw error
+    }
     const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const peopleById = new Map(personale.filter((row) => row.attivo).map((row) => [row.id, row]))
     const levelsById = new Map(livelli.filter((row) => row.attivo && row.retribuibile).map((row) => [row.id, row]))
@@ -423,9 +432,9 @@ export async function postImportTurniExcel(req: Request, res: Response) {
     const errori: { riga: number; message: string }[] = []
     let saltati = 0
 
-    rows.forEach((raw: Record<string, unknown>, index: number) => {
-      const riga = Number(raw.riga) || index + 2
-      const input = raw && typeof raw === "object" ? raw : {}
+    rows.forEach((raw: unknown, index: number) => {
+      const input = raw && typeof raw === "object" ? raw as Record<string, unknown> : {}
+      const riga = Number(input.riga) || index + 2
       const personaleId = String(input.personaleId ?? "").trim()
       const livelloId = String(input.livelloId ?? "").trim()
       const giorno = String(input.giorno ?? "").trim()
@@ -434,6 +443,8 @@ export async function postImportTurniExcel(req: Request, res: Response) {
       const errors: string[] = []
       if (!peopleById.has(personaleId)) errors.push("Collaboratore non attivo o non trovato")
       if (!levelsById.has(livelloId)) errors.push("Mansione non attiva o non retribuibile")
+      if (scope?.personaleIds && !scope.personaleIds.has(personaleId)) errors.push("Collaboratore fuori dalle deleghe")
+      if (scope?.livelloIds && !scope.livelloIds.has(livelloId)) errors.push("Mansione fuori dalle deleghe")
       const parsedDate = isYmd(giorno) ? new Date(`${giorno}T12:00:00`) : null
       if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== giorno) {
         errors.push("Data non valida")
@@ -454,9 +465,7 @@ export async function postImportTurniExcel(req: Request, res: Response) {
       pronte.push({ riga, ...row })
     })
 
-    if (!pronte.length) {
-      return res.json({ inseriti: 0, saltati, errori, snapshotId: null })
-    }
+    if (!pronte.length) return { inseriti: 0, saltati, errori, snapshotId: null }
 
     const snapshot = saveLibroPagaSnapshot(await exportFullFileDb(), "prima import turni Excel")
     let inseriti = 0
@@ -468,14 +477,20 @@ export async function postImportTurniExcel(req: Request, res: Response) {
           giorno: row.giorno,
           quantita: row.quantita,
           note: row.note,
-          creatoDa: req.user?.nome || req.user?.username || "admin",
+          creatoDa: createdBy,
         })
         inseriti += 1
       } catch (e) {
         errori.push({ riga: row.riga, message: (e as Error)?.message ?? "Turno non importato" })
       }
     }
-    res.json({ inseriti, saltati, errori, snapshotId: snapshot.id })
+    return { inseriti, saltati, errori, snapshotId: snapshot.id }
+}
+
+export async function postImportTurniExcel(req: Request, res: Response) {
+  try {
+    const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
+    res.json(await importaTurniExcel(rows, req.user?.nome || req.user?.username || "admin"))
   } catch (e) {
     fail(res, e)
   }

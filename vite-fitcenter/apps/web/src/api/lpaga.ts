@@ -154,6 +154,18 @@ export const lpagaApi = {
     lpagaRequest<{ ok: boolean }>(`/lpaga/livelli/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     lpagaRequest<{ turno: unknown }>("/lpaga/turni", { method: "POST", body: JSON.stringify(body) }),
+  importTurniExcel: (righe: {
+    riga: number
+    personaleId: string
+    livelloId: string
+    giorno: string
+    quantita: number
+    note: string
+  }[]) =>
+    lpagaRequest<{ inseriti: number; saltati: number; errori: { riga: number; message: string }[]; snapshotId: string | null }>(
+      "/lpaga/turni/import-excel",
+      { method: "POST", body: JSON.stringify({ righe }) }
+    ),
   deleteTurno: (id: string) => lpagaRequest<{ ok: boolean }>(`/lpaga/turni/${encodeURIComponent(id)}`, { method: "DELETE" }),
   putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
     lpagaRequest<{ mensilita: unknown }>("/lpaga/mensilita", { method: "PUT", body: JSON.stringify(body) }),
