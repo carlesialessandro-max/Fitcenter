@@ -226,6 +226,8 @@ export const signaturesApi = {
       customerSmsMasked?: string
       linkSmsSent?: boolean
       linkSmsDetail?: string
+      linkMailSent?: boolean
+      linkMailDetail?: string
       smsSandbox?: boolean
     }>
   },

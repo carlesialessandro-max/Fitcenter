@@ -1878,6 +1878,7 @@ function StipendiTab() {
                             className={`${inputCls} py-1`}
                             disabled={centroCostoMut.isPending}
                             aria-label={`Centro di costo predefinito per ${r.nome}`}
+                            title="Nessun reparto trovato nel Libro paga per questo nominativo: assegna il reparto in Libro paga oppure sceglilo qui."
                           >
                             <option value="">{r.repartoId ? "Seleziona centro di costo" : "Non assegnato"}</option>
                             {macros.map((reparto) => (

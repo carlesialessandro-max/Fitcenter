@@ -33,5 +33,5 @@ const admins = parseAdmins(process.argv.slice(2))
 
 const r = await repairLibroPagaRuoliFromDeleghe({ adminUsernames: admins })
 console.log(
-  `SQL (dbgym) admin=${r.sqlAdmins} manager=${r.sqlManagers}; copiati sul JSON=${r.fromSql}; deleghe=${r.deleghe}; responsabili=${r.managers}; admin=${r.admins}; invariati=${r.skipped}`
+  `SQL righe=${r.sqlRows} admin=${r.sqlAdmins} manager=${r.sqlManagers} conDateCorsi=${r.sqlWithDates}; copiati=${r.fromSql} dateRipristinate=${r.dates}; deleghe=${r.deleghe}; responsabili=${r.managers}; invariati=${r.skipped}`
 )

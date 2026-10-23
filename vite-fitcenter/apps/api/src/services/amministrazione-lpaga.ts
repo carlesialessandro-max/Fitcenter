@@ -175,7 +175,9 @@ export async function collaboratoriDaMensilita(mese: string): Promise<AmmLpagaCo
 export async function centriCostoPredefinitiCollaboratori(): Promise<Map<string, string>> {
   const [livelli, personale] = await Promise.all([listLivelli(), listPersonale()])
   const result = new Map<string, string>()
-  for (const persona of personale) {
+  // I non attivi vengono letti per primi: se un nominativo è doppio vince la scheda attiva.
+  const ordinati = [...personale].sort((a, b) => Number(a.attivo !== false) - Number(b.attivo !== false))
+  for (const persona of ordinati) {
     const livelloId = persona.livelloId || persona.livelloIds?.[0] || ""
     const livello = livelli.find((item) => item.id === livelloId)
     if (!livello) continue

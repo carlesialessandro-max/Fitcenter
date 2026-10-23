@@ -271,9 +271,17 @@ export function FirmaDaCassa() {
         sms: sendSmsAlso ? selected.sms ?? undefined : undefined,
       })
       setAssistOtp(null)
-      setOk(
-        `Link inviato a ${email}${linkSmsPart}. Il cliente firma dal telefono.${smsHint} Usa il riquadro giallo sotto per mostrare l'OTP in reception.`
-      )
+      if (out.linkMailSent === false) {
+        const det = out.linkMailDetail ? ` — ${out.linkMailDetail}` : ""
+        setErr(
+          `Richiesta creata ma email NON inviata a ${email}${det}. Controlla SMTP in apps/api/.env (host/porta/credenziali) e riavvia l'API. Link firmabile: ${out.signingUrl}`
+        )
+        setOk(null)
+      } else {
+        setOk(
+          `Link inviato a ${email}${linkSmsPart}. Il cliente firma dal telefono.${smsHint} Usa il riquadro giallo sotto per mostrare l'OTP in reception.`
+        )
+      }
       setCreatedKeys((prev) => ({ ...prev, [selected.key]: true }))
     } catch (e) {
       setErr((e as Error).message)

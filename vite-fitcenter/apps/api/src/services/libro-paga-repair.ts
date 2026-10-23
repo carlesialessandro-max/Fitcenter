@@ -1,13 +1,13 @@
 import { listDelegheManagerIds } from "./libro-paga-convalida.js"
 import {
-  copyPersonaleRuoliFromSql,
+  copyPersonaleHrFromSql,
   listPersonale,
   resetLibroPagaSqlReady,
   upsertPersonale,
   type LpagaRuolo,
 } from "../store/libro-paga-db.js"
 
-/** Ripristina ruolo manager per chi ha deleghe in convalida; opzionale lista username admin. */
+/** Ripristina ruoli e date corsi da SQL; poi manager da deleghe convalida. */
 export async function repairLibroPagaRuoliFromDeleghe(opts?: {
   adminUsernames?: string[]
 }): Promise<{
@@ -15,13 +15,15 @@ export async function repairLibroPagaRuoliFromDeleghe(opts?: {
   admins: number
   skipped: number
   fromSql: number
+  dates: number
   sqlManagers: number
   sqlAdmins: number
+  sqlWithDates: number
+  sqlRows: number
   deleghe: number
 }> {
   resetLibroPagaSqlReady()
-  const sqlRuoli = await copyPersonaleRuoliFromSql()
-  const fromSql = sqlRuoli.copied
+  const sqlHr = await copyPersonaleHrFromSql()
   resetLibroPagaSqlReady()
   const managerIds = new Set(listDelegheManagerIds())
   const adminUsernames = new Set(
@@ -64,9 +66,12 @@ export async function repairLibroPagaRuoliFromDeleghe(opts?: {
     managers,
     admins,
     skipped,
-    fromSql,
-    sqlManagers: sqlRuoli.sqlManagers,
-    sqlAdmins: sqlRuoli.sqlAdmins,
+    fromSql: sqlHr.copied,
+    dates: sqlHr.dates,
+    sqlManagers: sqlHr.sqlManagers,
+    sqlAdmins: sqlHr.sqlAdmins,
+    sqlWithDates: sqlHr.sqlWithDates,
+    sqlRows: sqlHr.sqlRows,
     deleghe: managerIds.size,
   }
 }

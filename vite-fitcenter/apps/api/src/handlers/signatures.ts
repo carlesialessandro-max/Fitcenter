@@ -606,6 +606,8 @@ export async function createSignatureRequest(req: Request, res: Response) {
     const smsConfigured = isSmsConfigured()
     let linkSmsSent = false
     let linkSmsDetail: string | undefined
+    let linkMailSent = false
+    let linkMailDetail: string | undefined
     if (deliveryMode === "email") {
       if (sendSmsRequested && customerSms && smsConfigured) {
         const linkSms = await sendSms({
@@ -615,7 +617,7 @@ export async function createSignatureRequest(req: Request, res: Response) {
         linkSmsSent = linkSms.sent
         linkSmsDetail = linkSms.detail
       }
-      await sendMail({
+      const mailRes = await sendMail({
         to: customerEmail,
         subject: `Documento da firmare - ${FIRMA_BRAND}`,
         text:
@@ -626,6 +628,8 @@ export async function createSignatureRequest(req: Request, res: Response) {
           }), accetta i termini e firma.\n\n` +
           `Il link scade il ${new Date(row.expiresAt).toLocaleString("it-IT")}.\n`,
       })
+      linkMailSent = mailRes.sent
+      linkMailDetail = mailRes.detail
     }
 
     res.json({
@@ -644,6 +648,8 @@ export async function createSignatureRequest(req: Request, res: Response) {
       customerSmsMasked: customerSms ? maskPhone(customerSms) : undefined,
       linkSmsSent,
       linkSmsDetail,
+      linkMailSent,
+      linkMailDetail,
       smsSandbox: isSmsSandboxMode(),
     })
   } catch (e) {

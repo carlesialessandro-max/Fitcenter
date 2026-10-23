@@ -11,6 +11,7 @@ import {
   type AmmSpesa,
   type AmmTipoCosto,
 } from "../store/amministrazione-costi.js"
+import { trovaPerNominativo } from "../lib/nominativo-match.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import {
   centriCostoPredefinitiCollaboratori,
@@ -81,7 +82,7 @@ function repartoLibroPagaCollaboratore(
   nominativo: string,
   centriCostoLibroPaga?: Map<string, string>
 ): string | undefined {
-  return centriCostoLibroPaga?.get(normalizeNominativo(nominativo))
+  return trovaPerNominativo(centriCostoLibroPaga, nominativo)
 }
 
 function repartoOfCollaboratore(
