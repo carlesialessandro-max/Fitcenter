@@ -10,6 +10,7 @@ import {
   type LpagaPersonale,
   type LpagaTurno,
 } from "../store/libro-paga-db.js"
+import { normalizzaNominativo } from "../lib/nominativo-match.js"
 
 function norm(s: string): string {
   return s
@@ -172,24 +173,43 @@ export async function collaboratoriDaMensilita(mese: string): Promise<AmmLpagaCo
   return (await datiMese(mese)).righe
 }
 
+function chiaviPersona(persona: LpagaPersonale): string[] {
+  const keys = new Set<string>()
+  const add = (value: string) => {
+    const key = normalizzaNominativo(value)
+    if (key.split(" ").filter(Boolean).length >= 2) keys.add(key)
+  }
+  add(nominativo(persona))
+  const nome = (persona.nome ?? "").trim()
+  const cognome = (persona.cognome ?? "").trim()
+  if (nome && cognome) {
+    add(`${cognome} ${nome}`)
+    add(`${nome} ${cognome}`)
+  }
+  return [...keys]
+}
+
+function repartoAssegnatoPersona(persona: LpagaPersonale, livelli: LpagaLivello[]): string | null {
+  const ids = [...new Set([persona.livelloId, ...(persona.livelloIds ?? [])].map((id) => String(id ?? "").trim()).filter(Boolean))]
+  const mapped: string[] = []
+  for (const livelloId of ids) {
+    const livello = livelli.find((item) => item.id === livelloId)
+    if (!livello) continue
+    const repartoId = codiceRepartoDaMansione(dominioLivello(livelli, livelloId), livello.nome)
+    if (repartoId) mapped.push(repartoId)
+  }
+  return mapped.find((id) => id !== "personale-condiviso") ?? mapped[0] ?? null
+}
+
 export async function centriCostoPredefinitiCollaboratori(): Promise<Map<string, string>> {
   const [livelli, personale] = await Promise.all([listLivelli(), listPersonale()])
   const result = new Map<string, string>()
   // I non attivi vengono letti per primi: se un nominativo è doppio vince la scheda attiva.
   const ordinati = [...personale].sort((a, b) => Number(a.attivo !== false) - Number(b.attivo !== false))
   for (const persona of ordinati) {
-    const livelloId = persona.livelloId || persona.livelloIds?.[0] || ""
-    const livello = livelli.find((item) => item.id === livelloId)
-    if (!livello) continue
-    const repartoId = codiceRepartoDaMansione(dominioLivello(livelli, livelloId), livello.nome)
+    const repartoId = repartoAssegnatoPersona(persona, livelli)
     if (!repartoId) continue
-    const key = nominativo(persona)
-      .normalize("NFD")
-      .replace(/\p{M}/gu, "")
-      .replace(/[^a-z0-9]+/gi, " ")
-      .trim()
-      .toLowerCase()
-    if (key) result.set(key, repartoId)
+    for (const key of chiaviPersona(persona)) result.set(key, repartoId)
   }
   return result
 }

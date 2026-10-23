@@ -11,7 +11,7 @@ import {
   type AmmSpesa,
   type AmmTipoCosto,
 } from "../store/amministrazione-costi.js"
-import { trovaPerNominativo } from "../lib/nominativo-match.js"
+import { trovaPerNominativo, trovaRigaPerNominativo } from "../lib/nominativo-match.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import {
   centriCostoPredefinitiCollaboratori,
@@ -51,15 +51,6 @@ function meseOf(iso: string): string {
   return String(iso ?? "").slice(0, 7)
 }
 
-function normalizeNominativo(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/[^a-z0-9]+/gi, " ")
-    .trim()
-    .toLowerCase()
-}
-
 function quoteOfCollaboratore(
   nominativo: string,
   quote: AmmQuota[] = [],
@@ -73,9 +64,11 @@ function quoteTurniCollaboratore(
   nominativo: string,
   righe: { nome: string; quote: AmmQuota[]; nTurni: number }[]
 ): AmmQuota[] | undefined {
-  const key = normalizeNominativo(nominativo)
-  const row = righe.find((item) => normalizeNominativo(item.nome) === key && item.nTurni > 0)
-  return row?.quote
+  return trovaRigaPerNominativo(
+    righe.filter((item) => item.nTurni > 0 && item.quote?.length),
+    (item) => item.nome,
+    nominativo
+  )?.quote
 }
 
 function repartoLibroPagaCollaboratore(
@@ -517,7 +510,6 @@ export async function postAmmCollaboratoreRimborso(req: Request, res: Response) 
     if (!descrizione) return res.status(400).json({ message: "Inserisci la descrizione del rimborso" })
     if (!Number.isFinite(totale) || totale <= 0) return res.status(400).json({ message: "Importo non valido" })
 
-    const target = normalizeNominativo(nominativo)
     const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const righeTurni = await collaboratoriDaMensilita(mese)
     const quoteTurni = quoteTurniCollaboratore(
@@ -531,11 +523,11 @@ export async function postAmmCollaboratoreRimborso(req: Request, res: Response) 
     const assignedReparto = repartoOfCollaboratore(nominativo, centriCostoLibroPaga)
     if (!quote && assignedReparto) quote = [{ repartoId: assignedReparto, percentuale: 100 }]
     if (riepilogo.length) {
-      quote ??= riepilogo.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
+      quote ??= trovaRigaPerNominativo(riepilogo, (c) => c.nominativo, nominativo)?.quote
     } else if (!quote) {
       quote = righeTurni.length
-        ? righeTurni.find((c) => normalizeNominativo(c.nome) === target)?.quote
-        : stored.find((c) => normalizeNominativo(c.nominativo) === target)?.quote
+        ? trovaRigaPerNominativo(righeTurni, (c) => c.nome, nominativo)?.quote
+        : trovaRigaPerNominativo(stored, (c) => c.nominativo, nominativo)?.quote
     }
     if (!quote?.length) {
       return res.status(400).json({ message: "Collaboratore non trovato nel riepilogo del mese selezionato" })

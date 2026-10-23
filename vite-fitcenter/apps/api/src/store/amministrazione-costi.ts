@@ -2,6 +2,7 @@ import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { getDataDir, readJson, writeJson } from "./persist.js"
+import { normalizzaNominativo, trovaPerNominativo } from "../lib/nominativo-match.js"
 import {
   FORNITORI_QUOTE_SEED,
   isQuoteDumpDefault,
@@ -873,11 +874,10 @@ export const ammCostiStore = {
     return load().collaboratoriCentriCosto.slice().sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it"))
   },
   repartoCollaboratore(nominativo: string): string | undefined {
-    const key = nominativo.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
-    return load().collaboratoriCentriCosto.find(
-      (item) =>
-        item.nominativo.trim().normalize("NFD").replace(/\p{M}/gu, "").toLowerCase() === key
-    )?.repartoId
+    const map = new Map(
+      load().collaboratoriCentriCosto.map((item) => [normalizzaNominativo(item.nominativo), item.repartoId])
+    )
+    return trovaPerNominativo(map, nominativo)
   },
   setRepartoCollaboratore(nominativo: string, repartoId: string): AmmCollaboratoreCentroCosto {
     const name = nominativo.trim()

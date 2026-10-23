@@ -65,3 +65,17 @@ export function trovaPerNominativo<T>(map: Map<string, T> | undefined, nominativ
   if (parziali.length === 1) return map.get(parziali[0]!.key)
   return undefined
 }
+
+/** Indice una lista di righe per nominativo e applica lo stesso abbinamento tollerante. */
+export function trovaRigaPerNominativo<T>(
+  righe: T[],
+  nomeOf: (r: T) => string,
+  nominativo: string
+): T | undefined {
+  const map = new Map<string, T>()
+  for (const r of righe) {
+    const k = normalizzaNominativo(nomeOf(r))
+    if (k && !map.has(k)) map.set(k, r)
+  }
+  return trovaPerNominativo(map, nominativo)
+}
