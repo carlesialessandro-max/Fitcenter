@@ -1,8 +1,9 @@
 import { Fragment, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { amministrazioneApi, type AmmCollabReport, type AmmCollabReportRiga } from "@/api/amministrazione"
+import { amministrazioneApi, type AmmCollabReport, type AmmCollabReportRiga, type AmmStipendiPdfRiga } from "@/api/amministrazione"
 import { lpagaApi } from "@/api/lpaga"
 import { parseCollabReportExcel, type CollabReportExcelRiga, type CollabReportExcelRimanenza } from "@/lib/collab-report-excel"
+import { extractPdfText } from "@/lib/pdf-fattura-text"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
@@ -116,6 +117,7 @@ export function ReportCollaboratori({
     righe: CollabReportExcelRiga[]
     rimanenze: CollabReportExcelRimanenza[]
   } | null>(null)
+  const [pdfPreview, setPdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
 
   const report = useQuery({
     queryKey: ["amm-collab-report", source, anno],
@@ -190,6 +192,27 @@ export function ReportCollaboratori({
   }, [filtered, mesi])
   const totAnno = Math.round(filtered.reduce((s, r) => s + r.tot, 0) * 100) / 100
 
+  const importPdfMut = useMutation({
+    mutationFn: (righe: AmmStipendiPdfRiga[]) =>
+      source === "lpaga" ? lpagaApi.importCollaboratori(righe) : amministrazioneApi.importCollaboratori(righe),
+    onSuccess: (r) => {
+      setPdfPreview(null)
+      setErr("")
+      setMsg(
+        `PDF importato: ${r.inserite} nominativi del mese` +
+          (r.sostituite ? ` (sostituiti ${r.sostituite} importi precedenti)` : "") +
+          ". Ripartizioni e centri di costo invariati.",
+      )
+      void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => {
+      setMsg("")
+      setErr(e.message)
+    },
+  })
+
   const importMut = useMutation({
     mutationFn: (body: { righe: CollabReportExcelRiga[]; rimanenze: CollabReportExcelRimanenza[] }) =>
       source === "lpaga"
@@ -212,6 +235,26 @@ export function ReportCollaboratori({
       setErr(e.message)
     },
   })
+
+  async function onPdf(file: File | null) {
+    if (!file) return
+    setErr("")
+    setMsg("")
+    setPreview(null)
+    try {
+      const text = await extractPdfText(file, 80)
+      const parsed =
+        source === "lpaga"
+          ? await lpagaApi.parseStipendiPdf(text, file.name, meseNew)
+          : await amministrazioneApi.parseStipendiPdf(text, file.name, meseNew)
+      const righe = [...parsed.sportivi, ...parsed.gestionali]
+      if (!righe.length) throw new Error("Nessun collaboratore nel PDF. Serve il riepilogo Studio Mattonai.")
+      setPdfPreview(righe)
+    } catch (e) {
+      setPdfPreview(null)
+      setErr((e as Error).message || "PDF non leggibile")
+    }
+  }
 
   async function onExcel(file: File | null) {
     if (!file) return
@@ -269,13 +312,29 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Come il REPORT GENERALE: tutte le mensilità, rimanenze anni precedenti, importo modificabile, oltre 5.000 € e
-            oltre 15.000 €. Elenco ordinato per reparto del libro paga. Importa l’Excel, correggi gli importi o aggiungi
-            un istruttore. Ogni modifica è tracciata. Solo admin e Alberto.
+            Fonte importi: PDF del commercialista (lordo + INPS a carico società se presente). Il PDF sostituisce gli
+            importi di quel mese, non solo i mancanti; le ripartizioni e i centri di costo restano quelli del Libro paga
+            (turni/reparto). L’Excel annuale resta un’opzione. Solo admin e Alberto.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="grid gap-1 text-xs text-zinc-500">
+            Mese PDF
+            <input type="month" value={meseNew} onChange={(e) => setMeseNew(e.target.value)} className={inputCls} />
+          </label>
           <label className={`${btnAmber} cursor-pointer`}>
+            Importa PDF
+            <input
+              type="file"
+              accept=".pdf"
+              className="hidden"
+              onChange={(e) => {
+                void onPdf(e.target.files?.[0] ?? null)
+                e.target.value = ""
+              }}
+            />
+          </label>
+          <label className={`${btnGhost} cursor-pointer`}>
             Importa Excel
             <input
               type="file"
@@ -330,6 +389,29 @@ export function ReportCollaboratori({
 
       {err ? <p className="mt-3 text-sm text-red-400 print:hidden">{err}</p> : null}
       {msg ? <p className="mt-3 text-sm text-emerald-300 print:hidden">{msg}</p> : null}
+      {pdfPreview ? (
+        <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-zinc-300">
+              PDF: {pdfPreview.length} persone, {eur(pdfPreview.reduce((s, r) => s + r.totale, 0))} · mese{" "}
+              {pdfPreview[0]?.mese ?? meseNew}. Sostituisce gli importi di quel mese; ripartizioni invariate.
+            </p>
+            <div className="flex gap-2">
+              <button type="button" className={btnGhost} onClick={() => setPdfPreview(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className={btnAmber}
+                disabled={importPdfMut.isPending}
+                onClick={() => importPdfMut.mutate(pdfPreview)}
+              >
+                {importPdfMut.isPending ? "Importazione…" : `Importa ${pdfPreview.length}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {preview ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
           <p className="text-sm text-zinc-300">
@@ -425,8 +507,7 @@ export function ReportCollaboratori({
             {!report.isLoading && filtered.length === 0 ? (
               <tr>
                 <td colSpan={17} className="px-3 py-6 text-zinc-500">
-                  Nessun collaboratore in questo anno. Importa i riepiloghi mensili in Stipendi, oppure aggiungi un
-                  istruttore qui.
+                  Nessun collaboratore in questo anno. Importa il PDF del commercialista, oppure aggiungi un istruttore.
                 </td>
               </tr>
             ) : null}

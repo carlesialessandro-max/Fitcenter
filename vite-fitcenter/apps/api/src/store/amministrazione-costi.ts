@@ -1061,7 +1061,7 @@ export const ammCostiStore = {
     save(d2)
     return row
   },
-  /** Sostituisce tutto il mese: il riepilogo Mattonai è la fonte, libro paga e import precedenti non restano. */
+  /** Sostituisce gli importi di quel mese (non solo i mancanti). Conserva le quote già salvate per nominativo. */
   replaceCollaboratoriMese(
     mese: string,
     righe: (Partial<AmmCollaboratore> & { nominativo: string; totale: number; quote: AmmQuota[] })[]

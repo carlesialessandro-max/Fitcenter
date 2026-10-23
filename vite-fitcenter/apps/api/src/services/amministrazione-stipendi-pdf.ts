@@ -68,6 +68,20 @@ function amountsOn(line: string): number[] {
   return out
 }
 
+/** Compenso mensile da riga Mattonai: lordo + INPS (e altri contributi) a carico società, se presenti. */
+export function totaleMensileMattonai(amts: number[]): number {
+  const pos = amts.filter((n) => Number.isFinite(n) && n > 0)
+  if (!pos.length) return 0
+  if (pos.length === 1) return pos[0]!
+  const lordo = pos[1]!
+  const rest = pos.slice(2)
+  if (!rest.length) return lordo
+  const last = rest[rest.length - 1]!
+  if (last >= lordo - 0.009) return last
+  const contributi = rest.filter((n) => n < lordo)
+  return Math.round((lordo + contributi.reduce((s, n) => s + n, 0)) * 100) / 100
+}
+
 function parseMattonai(text: string, mese: string): AmmPdfRiga[] {
   const ym = meseFromText(text, mese)
   let sezione: "sportivo" | "gestionale" = "sportivo"
@@ -92,15 +106,15 @@ function parseMattonai(text: string, mese: string): AmmPdfRiga[] {
     if (nominativo.split(" ").length < 2) continue
     const amts = amountsOn(line)
     if (!amts.length) continue
-    const lordo = amts.length >= 2 ? amts[1]! : amts[0]!
-    if (lordo <= 0) continue
+    const totale = totaleMensileMattonai(amts)
+    if (totale <= 0) continue
     const key = `${sezione}:${nominativo.toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)
     rows.push({
       nominativo,
       mese: ym,
-      totale: lordo,
+      totale,
       descrizione: sezione === "gestionale" ? "Riepilogo amm/gest" : "Riepilogo istruttori",
       tipo: sezione,
     })

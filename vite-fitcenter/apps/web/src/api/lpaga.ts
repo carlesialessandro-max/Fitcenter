@@ -240,4 +240,22 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify({ anno, righe, rimanenze }),
     }),
+  parseStipendiPdf: (text: string, filename: string, mese: string) =>
+    lpagaRequest<{
+      mese: string
+      sportivi: import("./amministrazione").AmmStipendiPdfRiga[]
+      gestionali: import("./amministrazione").AmmStipendiPdfRiga[]
+      dipendenti: import("./amministrazione").AmmStipendiPdfRiga[]
+      totSportivi: number
+      totGestionali: number
+      totDipendenti: number
+    }>("/lpaga/stipendi/pdf", {
+      method: "POST",
+      body: JSON.stringify({ text, filename, mese }),
+    }),
+  importCollaboratori: (righe: unknown[]) =>
+    lpagaRequest<import("./amministrazione").AmmImportEsito>("/lpaga/collaboratori/import", {
+      method: "POST",
+      body: JSON.stringify({ righe }),
+    }),
 }

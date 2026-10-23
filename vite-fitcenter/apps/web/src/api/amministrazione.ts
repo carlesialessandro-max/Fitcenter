@@ -315,7 +315,7 @@ export const amministrazioneApi = {
       tot: number
       totRimborsi: number
       rimborsi: AmmCollaboratoreRimborso[]
-      fonte?: "riepilogo" | "libro-paga" | "libro-paga-mensilita"
+      fonte?: "riepilogo" | "nessuno" | "libro-paga" | "libro-paga-mensilita"
       righe: {
         id: string
         nome: string

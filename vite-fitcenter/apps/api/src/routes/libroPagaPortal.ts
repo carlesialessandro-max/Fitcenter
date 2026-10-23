@@ -28,7 +28,9 @@ import {
   getAmmCollaboratoriReport,
   postAmmCollaboratoreImporto,
   postAmmCollaboratoreRimanenze,
+  postAmmCollaboratoriImport,
   postAmmCollaboratoriReportImport,
+  postAmmStipendiPdf,
 } from "../handlers/amministrazione.js"
 
 const loginLimiter = rateLimit({
@@ -64,3 +66,5 @@ libroPagaPortalRouter.get("/collaboratori/report", requireLpaga, requireLpagaAlb
 libroPagaPortalRouter.post("/collaboratori/importo", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreImporto)
 libroPagaPortalRouter.post("/collaboratori/rimanenze", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreRimanenze)
 libroPagaPortalRouter.post("/collaboratori/report/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriReportImport)
+libroPagaPortalRouter.post("/stipendi/pdf", requireLpaga, requireLpagaAlberto, postAmmStipendiPdf)
+libroPagaPortalRouter.post("/collaboratori/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriImport)

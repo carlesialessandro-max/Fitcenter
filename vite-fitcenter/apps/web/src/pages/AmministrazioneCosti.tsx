@@ -1647,15 +1647,12 @@ function StipendiTab() {
   const okPreview = (preview ?? []).filter((p) => !p.errore)
   const totBusteMese = (buste.data?.buste ?? []).reduce((s, b) => s + b.totale, 0)
   const fonteRiepilogo = collab.data?.fonte === "riepilogo"
-  const fonteMensilita = collab.data?.fonte === "libro-paga-mensilita"
-  const fonteNominativi = fonteRiepilogo || fonteMensilita
-  const fonteCollaboratoriLabel = fonteMensilita
-    ? "Fonte: mensilità del Libro paga."
-    : fonteRiepilogo
-      ? "Fonte: dati importati in Amministrazione."
-      : collab.data?.fonte === "libro-paga"
-        ? "Fonte: turni del Libro paga."
-        : ""
+  const fonteNominativi = fonteRiepilogo
+  const fonteCollaboratoriLabel = fonteRiepilogo
+    ? "Fonte: PDF del commercialista. Ripartizioni e centri di costo dal Libro paga (turni/reparto)."
+    : collab.data?.fonte === "nessuno"
+      ? "Nessun PDF caricato per questo mese. Importa il riepilogo del commercialista."
+      : ""
   const searchTerms = filtroCollaboratore
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
@@ -1694,14 +1691,14 @@ function StipendiTab() {
           <div>
             <h3 className="text-sm font-medium text-zinc-100">Collaboratori sportivi</h3>
             <p className="text-xs text-zinc-500">
-              Di default mostra i nominativi e gli importi bonifico delle mensilità del Libro paga (se il bonifico non è
-              ancora registrato, usa il totale dei turni). Il riepilogo PDF dello Studio Mattonai resta disponibile e,
-              se caricato, sostituisce i dati del mese selezionato. Il report annuale (tutte le mensilità, modifica
-              importo, aggiungi istruttore) è nel{" "}
+              Gli importi arrivano dal PDF del commercialista (Studio Mattonai), non dalle mensilità del Libro paga.
+              Il caricamento sostituisce gli importi di quel mese; le ripartizioni e i centri di costo restano quelli
+              già impostati (turni/reparto Libro paga). Se nel PDF c’è INPS a carico società, viene sommata al totale.
+              Il report annuale è nel{" "}
               <Link to="/libro-paga?tab=collaboratori" className="underline">
                 libro paga
               </Link>
-              , visibile solo ad admin e Alberto.
+              .
             </p>
             <p className="mt-1 text-xs text-zinc-500">
               Il centro di costo viene letto dal reparto principale assegnato nel Libro paga e vale anche per i
@@ -1912,7 +1909,7 @@ function StipendiTab() {
                     <td className="py-4 text-zinc-500" colSpan={fonteNominativi ? (fonteRiepilogo ? 4 : 3) : 3}>
                       {searchTerms.length
                         ? "Nessun collaboratore corrisponde alla ricerca."
-                        : "Nessun importo mensile nel Libro paga. Puoi caricare il riepilogo PDF di fine mese."}
+                        : "Nessun riepilogo PDF per questo mese. Carica il file del commercialista."}
                     </td>
                   </tr>
                 )}
