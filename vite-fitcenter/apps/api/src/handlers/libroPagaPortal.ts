@@ -284,7 +284,7 @@ function livelliFromBody(body: Record<string, unknown>) {
 }
 
 function assertLivelliAnagraficaConsentiti(
-  me: { ruolo: string; livelloId?: string; livelloIds?: string[] },
+  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
   livelli: Awaited<ReturnType<typeof listLivelli>>,
   assigned: { livelloId?: string; livelloIds?: string[] }
 ) {
