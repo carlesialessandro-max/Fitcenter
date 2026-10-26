@@ -54,6 +54,7 @@ export type AmmRisultatoReparto = {
   ricavi: number
   costiDiretti: number
   quotaFissi: number
+  quotaServizi?: number
   costoTotale: number
   utile: number
   marginePct: number | null
@@ -90,7 +91,7 @@ export type AmmDashboard = {
     dataDocumento: string
     cliente: string
     descrizione: string
-    tipo: "Danza" | "Recupero utenze"
+    tipo: "Danza" | "Recupero utenze" | "Affitto spazi" | "Convenzione"
     totale: number
   }[]
   totRicaviAzienda: number
@@ -99,10 +100,12 @@ export type AmmDashboard = {
   totUtileAzienda: number
   margineAziendaPct: number | null
   totStruttura?: number
+  totServizi?: number
   totCostoPnl?: number
   totUtile?: number
   marginePct?: number | null
   strutturaByMacro?: AmmDashRiga[]
+  serviziByMacro?: AmmDashRiga[]
   risultato?: AmmRisultatoReparto[]
   ricaviDettaglio?: {
     voce: string

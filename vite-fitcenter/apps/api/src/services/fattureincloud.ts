@@ -1,7 +1,7 @@
 import { FIC_DEFAULT_REPARTO, ficStore, maskToken, type FicConfig } from "../store/fattureincloud.js"
 
 const BASE = "https://api-v2.fattureincloud.it"
-const TYPES = ["expense", "self_invoice"] as const
+const TYPES = ["expense", "self_invoice", "invoice", "receipt", "credit_note", "other", "received_self_invoice", "passive_credit_note"] as const
 
 export type FicCompany = {
   id: number
@@ -27,11 +27,18 @@ export type FicIssuedDoc = {
   dataDocumento: string
   descrizione: string
   totale: number
+  competenzaMese: string
 }
+
+export type FicIssuedTipo = "Danza" | "Recupero utenze" | "Affitto spazi" | "Convenzione"
 
 export type FicAmmIssuedTotals = {
   ricaviDanza: number
   nFattureDanza: number
+  ricaviAffitti: number
+  nFattureAffitti: number
+  ricaviConvenzioni: number
+  nFattureConvenzioni: number
   recuperiUtenze: number
   recuperiUtenzePerMese: Record<string, number>
 }
@@ -158,6 +165,75 @@ function inMonth(iso: string, from: string, to: string): boolean {
   return d >= from && d <= to
 }
 
+export function shiftIsoDays(iso: string, days: number): string {
+  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00Z`)
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+const MESI_IT: Record<string, string> = {
+  GENNAIO: "01",
+  GENN: "01",
+  FEBBRAIO: "02",
+  FEBB: "02",
+  MARZO: "03",
+  APRILE: "04",
+  MAGGIO: "05",
+  GIUGNO: "06",
+  LUGLIO: "07",
+  AGOSTO: "08",
+  SETTEMBRE: "09",
+  SETT: "09",
+  OTTOBRE: "10",
+  NOVEMBRE: "11",
+  DICEMBRE: "12",
+  DIC: "12",
+}
+
+export function meseCompetenzaDaTesto(text: string, dataDocumento: string): string {
+  const fallback = String(dataDocumento ?? "").slice(0, 7)
+  const t = normalizedText(text)
+  if (!t) return fallback
+  const names = Object.keys(MESI_IT).sort((a, b) => b.length - a.length)
+  for (const nome of names) {
+    const mm = MESI_IT[nome]
+    const re = new RegExp(`\\b${nome}\\s+(20\\d{2})\\b`)
+    const m = t.match(re)
+    if (m?.[1] && mm) return `${m[1]}-${mm}`
+  }
+  const periodoNum = t.match(/\b(?:PERIODO|COMPETENZA|COMP)\s+(\d{1,2})\s+(20\d{2})\b/)
+  if (periodoNum) {
+    const month = Number(periodoNum[1])
+    if (month >= 1 && month <= 12) return `${periodoNum[2]}-${String(month).padStart(2, "0")}`
+  }
+  return fallback
+}
+
+function ymInPeriodo(ym: string, from: string, to: string): boolean {
+  const start = `${ym}-01`
+  if (!/^\d{4}-\d{2}-01$/.test(start)) return false
+  const [y, m] = ym.split("-").map(Number)
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  const end = `${ym}-${String(last).padStart(2, "0")}`
+  return end >= from && start <= to
+}
+
+function docDescriptions(o: FicJson): string {
+  const items = Array.isArray(o.items_list) ? o.items_list : []
+  return [
+    o.description,
+    ...items.flatMap((item) => {
+      if (!item || typeof item !== "object") return []
+      const row = item as FicJson
+      return [row.name, row.description]
+    }),
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join(" · ")
+}
+
 function normalizedText(value: string): string {
   return value
     .toUpperCase()
@@ -177,27 +253,19 @@ function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
   const dataDocumento = String(o.date ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) return null
   const entity = o.entity && typeof o.entity === "object" ? (o.entity as FicJson) : {}
-  const items = Array.isArray(o.items_list) ? o.items_list : []
-  const descriptions = [
-    o.description,
-    ...items.flatMap((item) => {
-      if (!item || typeof item !== "object") return []
-      const row = item as FicJson
-      return [row.name, row.description]
-    }),
-  ]
-    .map((value) => String(value ?? "").trim())
-    .filter(Boolean)
+  const descrizione = docDescriptions(o)
   const type = String(o.type ?? "invoice")
   const sign = /credit.?note/i.test(type) ? -1 : 1
+  const cliente = String(entity.name ?? "").trim()
   return {
     id,
     type,
-    cliente: String(entity.name ?? "").trim(),
+    cliente,
     numeroDocumento: String(o.invoice_number ?? o.number ?? "").trim() || `FIC-${id}`,
     dataDocumento,
-    descrizione: descriptions.join(" · "),
+    descrizione,
     totale: Math.round(amount * sign * 100) / 100,
+    competenzaMese: meseCompetenzaDaTesto(`${cliente} ${descrizione}`, dataDocumento),
   }
 }
 
@@ -206,15 +274,16 @@ function mapDoc(raw: unknown): FicDoc | null {
   const o = raw as FicJson
   const id = Number(o.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const totale = Number(o.amount_gross ?? o.amount_net ?? 0)
-  if (!Number.isFinite(totale) || totale <= 0) return null
+  const amount = Number(o.amount_gross ?? o.amount_net ?? 0)
+  if (!Number.isFinite(amount) || amount <= 0) return null
   const dataDocumento = String(o.date ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) return null
   const entity = o.entity && typeof o.entity === "object" ? (o.entity as FicJson) : {}
   const fornitore = String(entity.name ?? "").trim() || "Fornitore sconosciuto"
   const numero = String(o.invoice_number ?? o.number ?? "").trim()
   const type = String(o.type ?? "expense")
-  const descrizione = String(o.description ?? "").trim() || `Acquisto Fatture in Cloud (${type})`
+  const sign = /credit.?note/i.test(type) ? -1 : 1
+  const descrizione = docDescriptions(o) || `Acquisto Fatture in Cloud (${type})`
   return {
     id,
     type,
@@ -222,8 +291,19 @@ function mapDoc(raw: unknown): FicDoc | null {
     numeroDocumento: numero || `FIC-${id}`,
     dataDocumento,
     descrizione,
-    totale: Math.round(totale * 100) / 100,
+    totale: Math.round(amount * sign * 100) / 100,
   }
+}
+
+export function classificaFatturaEmessa(doc: Pick<FicIssuedDoc, "cliente" | "descrizione">): FicIssuedTipo | null {
+  const cliente = normalizedText(doc.cliente)
+  const descrizione = normalizedText(doc.descrizione)
+  const blob = `${cliente} ${descrizione}`
+  if (cliente.includes("CENTRO ARTE DANZA")) return "Danza"
+  if (cliente.includes("BIG FOOD") && /\b(ENERGIA|ENERGY|GAS|ELETTRIC|UTENZ)\b/.test(descrizione)) return "Recupero utenze"
+  if (/\bCONVENZION/.test(blob)) return "Convenzione"
+  if (/AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA|CANONE LOCAT/.test(blob)) return "Affitto spazi"
+  return null
 }
 
 async function listType(token: string, companyId: number, type: string, from: string, to: string): Promise<FicDoc[]> {
@@ -249,15 +329,16 @@ async function listType(token: string, companyId: number, type: string, from: st
       }
       lastPage = Number(json.last_page) || 1
       page += 1
-    } catch (e) {
-      const st = (e as { status?: number }).status
-      if (useQ && page === 1 && (st === 400 || st === 422)) {
-        useQ = false
-        lastPage = 1
-        continue
+      } catch (e) {
+        const st = (e as { status?: number }).status
+        if (useQ && page === 1 && (st === 400 || st === 422)) {
+          useQ = false
+          lastPage = 1
+          continue
+        }
+        if (page === 1 && (st === 400 || st === 404 || st === 422)) return docs
+        throw e
       }
-      throw e
-    }
   }
   return docs
 }
@@ -336,31 +417,48 @@ export async function listFattureEmessePeriodo(
     .sort((a, b) => b.dataDocumento.localeCompare(a.dataDocumento) || a.cliente.localeCompare(b.cliente, "it"))
 }
 
-export function riepilogoFattureAmm(docs: FicIssuedDoc[]): FicAmmIssuedTotals {
+export function riepilogoFattureAmm(
+  docs: FicIssuedDoc[],
+  periodo?: { from: string; to: string }
+): FicAmmIssuedTotals {
   let ricaviDanza = 0
   let nFattureDanza = 0
+  let ricaviAffitti = 0
+  let nFattureAffitti = 0
+  let ricaviConvenzioni = 0
+  let nFattureConvenzioni = 0
   let recuperiUtenze = 0
   const recuperiUtenzePerMese: Record<string, number> = {}
   for (const doc of docs) {
-    const cliente = normalizedText(doc.cliente)
-    const descrizione = normalizedText(doc.descrizione)
-    if (cliente.includes("CENTRO ARTE DANZA")) {
+    const tipo = classificaFatturaEmessa(doc)
+    if (!tipo) continue
+    const competenza = doc.competenzaMese || meseCompetenzaDaTesto(`${doc.cliente} ${doc.descrizione}`, doc.dataDocumento)
+    if (tipo === "Recupero utenze") {
+      if (periodo && !ymInPeriodo(competenza, periodo.from, periodo.to)) continue
+      recuperiUtenze += doc.totale
+      recuperiUtenzePerMese[competenza] = (recuperiUtenzePerMese[competenza] ?? 0) + doc.totale
+      continue
+    }
+    if (periodo && (doc.dataDocumento < periodo.from || doc.dataDocumento > periodo.to)) continue
+    if (tipo === "Danza") {
       ricaviDanza += doc.totale
       nFattureDanza += 1
-    }
-    if (
-      cliente.includes("BIG FOOD") &&
-      /\b(ENERGIA|ENERGY|GAS)\b/.test(descrizione)
-    ) {
-      recuperiUtenze += doc.totale
-      const mese = doc.dataDocumento.slice(0, 7)
-      recuperiUtenzePerMese[mese] = (recuperiUtenzePerMese[mese] ?? 0) + doc.totale
+    } else if (tipo === "Affitto spazi") {
+      ricaviAffitti += doc.totale
+      nFattureAffitti += 1
+    } else if (tipo === "Convenzione") {
+      ricaviConvenzioni += doc.totale
+      nFattureConvenzioni += 1
     }
   }
   const round2 = (n: number) => Math.round(n * 100) / 100
   return {
     ricaviDanza: round2(ricaviDanza),
     nFattureDanza,
+    ricaviAffitti: round2(ricaviAffitti),
+    nFattureAffitti,
+    ricaviConvenzioni: round2(ricaviConvenzioni),
+    nFattureConvenzioni,
     recuperiUtenze: round2(recuperiUtenze),
     recuperiUtenzePerMese: Object.fromEntries(
       Object.entries(recuperiUtenzePerMese).map(([mese, importo]) => [mese, round2(importo)])

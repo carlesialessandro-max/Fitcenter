@@ -20,6 +20,7 @@ import {
 } from "../services/amministrazione-lpaga.js"
 import {
   isMacroCommerciale,
+  isMacroServizi,
   isMacroStruttura,
   MACRO_COMMERCIALI,
   periodoIso,
@@ -32,6 +33,7 @@ import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione
 import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import {
+  classificaFatturaEmessa,
   listAcquistiMese,
   listCompanies,
   listFattureEmessePeriodo,
@@ -39,6 +41,7 @@ import {
   publicStatus,
   resolvedConfig,
   riepilogoFattureAmm,
+  shiftIsoDays,
 } from "../services/fattureincloud.js"
 
 function fail(res: Response, e: unknown) {
@@ -992,6 +995,10 @@ export async function getAmmDashboard(req: Request, res: Response) {
     let fattureAmm = {
       ricaviDanza: 0,
       nFattureDanza: 0,
+      ricaviAffitti: 0,
+      nFattureAffitti: 0,
+      ricaviConvenzioni: 0,
+      nFattureConvenzioni: 0,
       recuperiUtenze: 0,
       recuperiUtenzePerMese: {} as Record<string, number>,
     }
@@ -1001,7 +1008,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       dataDocumento: string
       cliente: string
       descrizione: string
-      tipo: "Danza" | "Recupero utenze"
+      tipo: "Danza" | "Recupero utenze" | "Affitto spazi" | "Convenzione"
       totale: number
     }[] = []
     const ficCfg = resolvedConfig().cfg
@@ -1010,31 +1017,33 @@ export async function getAmmDashboard(req: Request, res: Response) {
     } else {
       try {
         const periodoAnno = periodoIso(anno)
-        const docsAnno = await listFattureEmessePeriodo(ficCfg, periodoAnno.from, periodoAnno.to)
-        fattureAmmAnno = riepilogoFattureAmm(docsAnno)
-        fattureAmm = riepilogoFattureAmm(
-          docsAnno.filter((doc) => doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to)
+        const docsAnno = await listFattureEmessePeriodo(
+          ficCfg,
+          shiftIsoDays(periodoAnno.from, -45),
+          shiftIsoDays(periodoAnno.to, 45)
         )
-        fattureEmesseDettaglio = docsAnno
-          .filter((doc) => doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to)
-          .flatMap((doc) => {
-            const cliente = doc.cliente.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
-            const descrizione = doc.descrizione.toUpperCase().normalize("NFD").replace(/\p{M}/gu, "")
-            const isDanza = cliente.includes("CENTRO ARTE DANZA")
-            const isRecuperoUtenze =
-              cliente.includes("BIG FOOD") && /\b(ENERGIA|ENERGY|GAS)\b/.test(descrizione)
-            if (!isDanza && !isRecuperoUtenze) return []
-            return [
-              {
-                numeroDocumento: doc.numeroDocumento,
-                dataDocumento: doc.dataDocumento,
-                cliente: doc.cliente,
-                descrizione: doc.descrizione,
-                tipo: isDanza ? ("Danza" as const) : ("Recupero utenze" as const),
-                totale: doc.totale,
-              },
-            ]
-          })
+        fattureAmmAnno = riepilogoFattureAmm(docsAnno, periodoAnno)
+        fattureAmm = riepilogoFattureAmm(docsAnno, { from: ricavi.from, to: ricavi.to })
+        fattureEmesseDettaglio = docsAnno.flatMap((doc) => {
+          const tipo = classificaFatturaEmessa(doc)
+          if (!tipo) return []
+          const competenza = doc.competenzaMese || doc.dataDocumento.slice(0, 7)
+          const inPeriodo =
+            tipo === "Recupero utenze"
+              ? competenza >= ricavi.from.slice(0, 7) && competenza <= ricavi.to.slice(0, 7)
+              : doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to
+          if (!inPeriodo) return []
+          return [
+            {
+              numeroDocumento: doc.numeroDocumento,
+              dataDocumento: doc.dataDocumento,
+              cliente: doc.cliente,
+              descrizione: doc.descrizione,
+              tipo,
+              totale: doc.totale,
+            },
+          ]
+        })
         fattureEmesseDisponibili = true
       } catch (e) {
         ricaviErrore = (e as Error)?.message ?? "Lettura delle fatture emesse da Fatture in Cloud non riuscita."
@@ -1048,6 +1057,24 @@ export async function getAmmDashboard(req: Request, res: Response) {
           macro: "fitness",
           importo: fattureAmm.ricaviDanza,
           n: fattureAmm.nFattureDanza,
+        })
+      }
+      if (fattureAmm.ricaviAffitti) {
+        ricavi.totAltri = round2(ricavi.totAltri + fattureAmm.ricaviAffitti)
+        ricavi.dettaglio.push({
+          voce: "Affitti spazi · Fatture in Cloud",
+          macro: "altro",
+          importo: fattureAmm.ricaviAffitti,
+          n: fattureAmm.nFattureAffitti,
+        })
+      }
+      if (fattureAmm.ricaviConvenzioni) {
+        ricavi.totAltri = round2(ricavi.totAltri + fattureAmm.ricaviConvenzioni)
+        ricavi.dettaglio.push({
+          voce: "Convenzioni · Fatture in Cloud",
+          macro: "altro",
+          importo: fattureAmm.ricaviConvenzioni,
+          n: fattureAmm.nFattureConvenzioni,
         })
       }
       ricavi.dettaglio = ordinaDettaglioRicavi(ricavi.dettaglio).slice(0, 80)
@@ -1173,13 +1200,18 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const diretti: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
     let totStruttura = 0
+    let totServizi = 0
     const strutturaByMacro = new Map<string, number>()
+    const serviziByMacro = new Map<string, number>()
     for (const x of pnlAlloc) {
       const mid = macroIdOf(reparti, x.repartoId)
       if (isMacroCommerciale(mid)) diretti[mid] = round2(diretti[mid] + x.importo)
       else if (isMacroStruttura(mid)) {
         totStruttura = round2(totStruttura + x.importo)
         strutturaByMacro.set(mid, round2((strutturaByMacro.get(mid) ?? 0) + x.importo))
+      } else if (isMacroServizi(mid)) {
+        totServizi = round2(totServizi + x.importo)
+        serviziByMacro.set(mid, round2((serviziByMacro.get(mid) ?? 0) + x.importo))
       }
     }
     const ripartoPct = quoteRipartoFissi(ricavi.byMacro)
@@ -1187,7 +1219,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const ricavo = round2(ricavi.byMacro[id])
       const costoDiretto = round2(diretti[id])
       const quotaFissi = round2((totStruttura * (ripartoPct[id] || 0)) / 100)
-      const costoTotale = round2(costoDiretto + quotaFissi)
+      const quotaServizi = round2((totServizi * (ripartoPct[id] || 0)) / 100)
+      const costoTotale = round2(costoDiretto + quotaFissi + quotaServizi)
       const utile = round2(ricavo - costoTotale)
       const marginePct = ricavo > 0.009 ? Math.round((utile / ricavo) * 1000) / 10 : null
       return {
@@ -1196,6 +1229,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
         ricavi: ricavo,
         costiDiretti: costoDiretto,
         quotaFissi,
+        quotaServizi,
         costoTotale,
         utile,
         marginePct,
@@ -1265,10 +1299,15 @@ export async function getAmmDashboard(req: Request, res: Response) {
       totUtileAzienda,
       margineAziendaPct: totRicaviAzienda > 0.009 ? Math.round((totUtileAzienda / totRicaviAzienda) * 1000) / 10 : null,
       totStruttura,
+      totServizi,
       totCostoPnl,
       totUtile,
       marginePct: totRicavi > 0.009 ? Math.round((totUtile / totRicavi) * 1000) / 10 : null,
       strutturaByMacro: [...strutturaByMacro.entries()]
+        .map(([id, importo]) => ({ id, nome: nomeOf(id), importo }))
+        .filter((r) => r.importo)
+        .sort((a, b) => b.importo - a.importo),
+      serviziByMacro: [...serviziByMacro.entries()]
         .map(([id, importo]) => ({ id, nome: nomeOf(id), importo }))
         .filter((r) => r.importo)
         .sort((a, b) => b.importo - a.importo),
@@ -1370,7 +1409,7 @@ export async function postFicSync(req: Request, res: Response) {
           descrizione: doc.descrizione,
           totale: doc.totale,
           tipoCosto: "fisso",
-          quote: ammCostiStore.quoteForFornitore(doc.fornitore, doc.dataDocumento, repartoId),
+          quote: ammCostiStore.quoteForFornitore(doc.fornitore, doc.dataDocumento, repartoId, doc.descrizione),
           origine: "fattureincloud",
           ficId: doc.id,
         })

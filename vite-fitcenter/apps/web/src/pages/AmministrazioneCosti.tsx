@@ -132,9 +132,9 @@ export function AmministrazioneCosti() {
     <div className="p-4 sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura sono la somma di Gestione
-        & Direzione e Spese generali & Utenze (non imputabili ai singoli reparti) e vengono ripartiti su Piscina,
-        Fitness e SPA in base ai ricavi del periodo.
+        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura (Gestione & Direzione,
+        Spese generali & Utenze) e i servizi da fatture (manutenzione, pulizie, personale condiviso) vengono ripartiti
+        su Piscina, Fitness e SPA in base ai ricavi del periodo.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -239,7 +239,7 @@ function DashboardTab() {
             <Kpi
               title="Costi attribuiti ai reparti"
               value={eur(d.totCostoPnl ?? d.tot)}
-              hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totStruttura ?? 0)} quota fissi ripartiti`}
+              hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totStruttura ?? 0)} quota fissi + ${eur(d.totServizi ?? 0)} servizi ripartiti`}
             />
             <Kpi
               title="Risultato impresa"
@@ -254,23 +254,25 @@ function DashboardTab() {
             <Kpi
               title="Totale costi azienda"
               value={eur(d.totCostiAzienda)}
-              hint={`${eur(d.totCostiFuoriReparti)} in altri centri, oltre ai tre reparti commerciali`}
+              hint={
+                (d.totCostiFuoriReparti ?? 0) > 0.009
+                  ? `${eur(d.totCostiFuoriReparti)} ancora fuori dai tre reparti commerciali`
+                  : "Tutti i costi sono attribuiti ai tre reparti o ripartiti"
+              }
             />
           </div>
           <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 text-xs leading-relaxed text-zinc-400">
             <p>
               <span className="font-medium text-zinc-200">Come leggere i totali:</span> il risultato impresa è dato da
               tutti i ricavi gestionali meno tutti i costi registrati. I costi attribuiti a Piscina, Fitness e SPA
-              comprendono i costi diretti più la quota dei fissi di struttura ripartita in base ai ricavi.
+              comprendono i costi diretti, la quota dei fissi di struttura e i servizi da fatture (manutenzione,
+              pulizie) ripartiti in base ai ricavi.
             </p>
             <p className="mt-1">
-              I costi di altri centri (per esempio Manutenzione, Pulizie o Varie) sono mostrati nella riga dedicata e
-              inclusi nel totale e nel risultato dell’impresa: il riparto non li elimina.
-            </p>
-            <p className="mt-1">
-              I ricavi ordinari arrivano dagli incassi del gestionale. Gli incassi Danza sono esclusi: per il Centro
-              Arte Danza si considerano solo le fatture emesse in Fatture in Cloud. Le fatture a Big Food con
-              descrizione energia/gas riducono automaticamente le utenze.
+              I ricavi ordinari arrivano dagli incassi del gestionale. Danza, affitti spazi e convenzioni si prendono
+              sempre dalle fatture emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
+              di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
+              dicembre 2025 resta sul 2025.
             </p>
             <p className="mt-1">I totali aziendali restano complessivi anche quando si seleziona un reparto nel filtro.</p>
           </div>
@@ -333,6 +335,28 @@ function DashboardTab() {
                   Fatture Danza al Centro Arte Danza incluse: {eur(d.totRicaviDanza ?? 0)} ({d.nFattureDanza ?? 0} documenti).
                 </p>
               )}
+              {(d.fattureEmesseDettaglio ?? []).some((doc) => doc.tipo === "Affitto spazi") && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  Affitti spazi da Fatture in Cloud:{" "}
+                  {eur(
+                    (d.fattureEmesseDettaglio ?? [])
+                      .filter((doc) => doc.tipo === "Affitto spazi")
+                      .reduce((sum, doc) => sum + doc.totale, 0)
+                  )}
+                  .
+                </p>
+              )}
+              {(d.fattureEmesseDettaglio ?? []).some((doc) => doc.tipo === "Convenzione") && (
+                <p className="mt-1 text-xs text-zinc-400">
+                  Convenzioni da Fatture in Cloud:{" "}
+                  {eur(
+                    (d.fattureEmesseDettaglio ?? [])
+                      .filter((doc) => doc.tipo === "Convenzione")
+                      .reduce((sum, doc) => sum + doc.totale, 0)
+                  )}
+                  .
+                </p>
+              )}
             </details>
           )}
           {d.ricaviDisponibili && (
@@ -369,7 +393,7 @@ function DashboardTab() {
                     {!d.fattureEmesseDettaglio?.length && (
                       <tr>
                         <td className="px-2 py-3 text-zinc-500" colSpan={6}>
-                          Nessuna fattura Danza o recupero utenze Big Food nel periodo selezionato.
+                          Nessuna fattura Danza, affitto spazi, convenzione o recupero utenze nel periodo selezionato.
                         </td>
                       </tr>
                     )}
@@ -377,7 +401,8 @@ function DashboardTab() {
                 </table>
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                Le fatture Danza concorrono ai ricavi; i recuperi Big Food sono sottratti dai costi utenze.
+                Danza, affitti spazi e convenzioni concorrono ai ricavi. I recuperi Big Food sono sottratti dalle utenze
+                nel mese di competenza della fattura.
               </p>
             </details>
           )}
@@ -398,7 +423,10 @@ function DashboardTab() {
                   <th className="px-3 py-2 font-medium text-right" title="Quota dei costi fissi di struttura assegnata al reparto in base ai ricavi">
                     Quota fissi
                   </th>
-                  <th className="px-3 py-2 font-medium text-right" title="Costi diretti più quota dei fissi; per gli altri centri comprende tutti i costi non inclusi nei tre reparti">
+                  <th className="px-3 py-2 font-medium text-right" title="Manutenzione, pulizie e altri servizi da fatture, ripartiti sui reparti in base ai ricavi">
+                    Quota servizi
+                  </th>
+                  <th className="px-3 py-2 font-medium text-right" title="Costi diretti più quota dei fissi e dei servizi">
                     Costo totale
                   </th>
                   <th className="px-3 py-2 font-medium text-right">Risultato</th>
@@ -417,6 +445,7 @@ function DashboardTab() {
                         <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
                         <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
                         <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaFissi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaServizi ?? 0)}</td>
                         <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
                         <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                           {d.ricaviDisponibili ? eur(r.utile) : "—"}
@@ -426,21 +455,24 @@ function DashboardTab() {
                         </td>
                       </tr>
                     ))}
-                    <tr className="border-t border-zinc-800 bg-zinc-900/20">
-                      <td className="px-3 py-2 text-zinc-100">Altri centri di costo (Manutenzione, Pulizie, Varie...)</td>
-                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
-                      <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
-                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
-                      <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
-                      <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili || costiAltriCentri <= 0 ? "text-zinc-400" : "text-red-400"}`}>
-                        {d.ricaviDisponibili ? eur(costiAltriCentri > 0 ? -costiAltriCentri : 0) : "—"}
-                      </td>
-                      <td className="px-3 py-2 text-right text-zinc-400">—</td>
-                    </tr>
+                    {costiAltriCentri > 0.009 ? (
+                      <tr className="border-t border-zinc-800 bg-zinc-900/20">
+                        <td className="px-3 py-2 text-zinc-100">Altri centri di costo</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili ? eur(-costiAltriCentri) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                      </tr>
+                    ) : null}
                   </>
                 ) : (
                   <tr>
-                    <td className="px-3 py-4 text-zinc-500" colSpan={7}>
+                    <td className="px-3 py-4 text-zinc-500" colSpan={8}>
                       Nessun dato nel periodo. Inserisci i costi nel registro: il risultato ha senso quando ci sono ricavi e
                       costi dello stesso mese.
                     </td>
@@ -456,6 +488,7 @@ function DashboardTab() {
                       {eur(costiDirettiReparti + costiAltriCentri)}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totStruttura ?? 0)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totServizi ?? 0)}</td>
                     <td className="px-3 py-2 text-right">{eur(d.totCostiAzienda)}</td>
                     <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                       {d.ricaviDisponibili ? eur(d.totUtileAzienda) : "—"}
@@ -469,9 +502,8 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Il totale impresa considera tutti i centri di costo. Solo i fissi di struttura sono ripartiti tra Piscina,
-            Fitness e SPA in proporzione ai ricavi; gli altri costi restano nella riga “Altri centri” e concorrono
-            comunque al risultato complessivo.
+            Il totale impresa considera tutti i centri di costo. Fissi di struttura e servizi da fatture (manutenzione,
+            pulizie) sono ripartiti tra Piscina, Fitness e SPA in proporzione ai ricavi.
           </p>
           {(d.strutturaByMacro ?? []).length > 0 && (
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
@@ -479,6 +511,18 @@ function DashboardTab() {
                 Fissi di struttura da ripartire {eur(d.totStruttura ?? 0)}:
               </li>
               {(d.strutturaByMacro ?? []).map((r) => (
+                <li key={r.id}>
+                  {r.nome} {eur(r.importo)}
+                </li>
+              ))}
+            </ul>
+          )}
+          {(d.serviziByMacro ?? []).length > 0 && (
+            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
+              <li className="font-medium text-zinc-400">
+                Servizi da fatture da ripartire {eur(d.totServizi ?? 0)}:
+              </li>
+              {(d.serviziByMacro ?? []).map((r) => (
                 <li key={r.id}>
                   {r.nome} {eur(r.importo)}
                 </li>
@@ -1020,8 +1064,8 @@ function RegistroTab() {
           <p className="text-zinc-400">
             In Fatture in Cloud: Impostazioni → Applicazioni collegate → Collega una nuova applicazione. Crea prima
             un’app su developers.fattureincloud.it, copia l’identificativo applicazione, autorizza la lettura degli
-            acquisti e delle fatture emesse, quindi incolla qui il token. La dashboard legge dal cloud le fatture al
-            Centro Arte Danza e i recuperi utenze a Big Food. In alternativa si può mettere il token e l’id azienda
+            acquisti e delle fatture emesse, quindi incolla qui il token.             La dashboard legge dal cloud le fatture al
+            Centro Arte Danza, gli affitti spazi, le convenzioni e i recuperi utenze a Big Food. In alternativa si può mettere il token e l’id azienda
             nel file di configurazione dell’API.
           </p>
           {fic.data?.connected ? (

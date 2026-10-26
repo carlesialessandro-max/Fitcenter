@@ -152,9 +152,37 @@ export function isQuoteDumpDefault(quote: AmmQuota[] | undefined | null): boolea
   return q0.repartoId === "altri-costi" && Math.abs(Number(q0.percentuale) - 100) < 0.05
 }
 
+export function inferQuoteDaTesto(nome: string, descrizione = ""): AmmQuota[] | null {
+  const n = normFornitoreKey(`${nome} ${descrizione}`)
+  if (!n) return null
+  if (/affitt|locazion|canone locat|convenzion/.test(n)) return q("costi-generali-struttura")
+  const piscina = /piscin|vasca|nuoto|idro|acquatic|cloro|filtri/.test(n)
+  const fitness = /palestr|fitness|\bgym\b|sala pesi|pole/.test(n)
+  const spa = /\bspa\b|benesser|sauna/.test(n)
+  const pulizie = /puliz/.test(n)
+  const manutenzione = /manutenz|riparaz|impiant|caldaia|elettric|idraulic/.test(n)
+  if (pulizie || manutenzione) {
+    const hits: AmmQuota[] = []
+    if (piscina) hits.push({ repartoId: "piscina-coperta", percentuale: 0 })
+    if (fitness) hits.push({ repartoId: "palestra-sala-pesi", percentuale: 0 })
+    if (spa) hits.push({ repartoId: "spa-benessere", percentuale: 0 })
+    if (hits.length === 1) return [{ repartoId: hits[0]!.repartoId, percentuale: 100 }]
+    if (hits.length > 1) {
+      const pct = Math.round((100 / hits.length) * 100) / 100
+      return hits.map((h, i) => ({
+        repartoId: h.repartoId,
+        percentuale: i === hits.length - 1 ? Math.round((100 - pct * (hits.length - 1)) * 100) / 100 : pct,
+      }))
+    }
+    return q(pulizie ? "pulizie" : "manutenzione-impianti")
+  }
+  return null
+}
+
 export function resolveQuoteFornitore(opts: {
   nome: string
   dataDocumento: string
+  descrizione?: string
   remembered?: AmmQuota[] | null
   spese?: AmmSpesaQuoteCtx[]
   excludeSpesaId?: string
@@ -172,5 +200,5 @@ export function resolveQuoteFornitore(opts: {
     return mem.map((x) => ({ repartoId: x.repartoId, percentuale: Number(x.percentuale) }))
   }
   if (seed?.quote?.length) return seed.quote.map((x) => ({ ...x }))
-  return null
+  return inferQuoteDaTesto(opts.nome, opts.descrizione)
 }

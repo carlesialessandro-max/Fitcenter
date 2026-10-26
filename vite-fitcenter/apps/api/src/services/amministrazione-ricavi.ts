@@ -4,9 +4,15 @@ export const MACRO_COMMERCIALI = ["piscina", "fitness", "spa"] as const
 export type MacroCommerciale = (typeof MACRO_COMMERCIALI)[number]
 /** Solo questi due centri: la somma è il pool dei fissi di struttura da ripartire sui reparti. */
 export const MACRO_STRUTTURA = ["gestione", "generali"] as const
+/** Manutenzione, pulizie e personale condiviso: ripartiti sui tre reparti in base ai ricavi. */
+export const MACRO_SERVIZI = ["servizi"] as const
 
 export function isMacroStruttura(macroId: string): boolean {
   return (MACRO_STRUTTURA as readonly string[]).includes(macroId)
+}
+
+export function isMacroServizi(macroId: string): boolean {
+  return (MACRO_SERVIZI as readonly string[]).includes(macroId)
 }
 
 export function isMacroCommerciale(id: string): id is MacroCommerciale {
@@ -37,7 +43,9 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
     /\bDANZA\b/.test(u) ||
     /\bPROFESSIONALE\b/.test(u) ||
     /\b1\s*M MENSILE 2VS\b/.test(u) ||
-    (/\b3 GRADO\b/.test(u) && /\b1\s*M MENSILE\b/.test(u))
+    (/\b3 GRADO\b/.test(u) && /\b1\s*M MENSILE\b/.test(u)) ||
+    /\bCONVENZION/.test(u) ||
+    /AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA/.test(u)
   ) {
     return []
   }

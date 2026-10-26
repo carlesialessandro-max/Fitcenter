@@ -540,6 +540,7 @@ export const ammCostiStore = {
       const q = resolveQuoteFornitore({
         nome: s.fornitore,
         dataDocumento: s.dataDocumento,
+        descrizione: s.descrizione,
         remembered: null,
         spese: d.spese,
         excludeSpesaId: s.id,
@@ -582,11 +583,12 @@ export const ammCostiStore = {
     if (n) save(d)
     return n
   },
-  quoteForFornitore(nome: string, dataDocumento: string, fallbackRepartoId?: string): AmmQuota[] {
+  quoteForFornitore(nome: string, dataDocumento: string, fallbackRepartoId?: string, descrizione?: string): AmmQuota[] {
     const d = load()
     const resolved = resolveQuoteFornitore({
       nome,
       dataDocumento,
+      descrizione,
       remembered: this.rememberedQuote(nome),
       spese: d.spese,
     })
