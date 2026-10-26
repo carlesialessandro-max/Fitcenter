@@ -56,6 +56,44 @@ export function isYmLpaga(s: string): boolean {
   return /^\d{4}-\d{2}$/.test(s)
 }
 
+export function roundLpaga2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100
+}
+
+/**
+ * Bonifico visibile nel perimetro del responsabile: quota delle lezioni del suo reparto.
+ * Il valore salvato è della persona intera (tutti i reparti).
+ */
+export function bonificoNelPerimetro(
+  importoPerimetro: number,
+  importoPersonaMese: number,
+  bonificoSalvato?: number | null
+): number {
+  const scoped = roundLpaga2(importoPerimetro)
+  const full = roundLpaga2(importoPersonaMese)
+  if (bonificoSalvato == null || !Number.isFinite(Number(bonificoSalvato))) return scoped
+  const saved = roundLpaga2(bonificoSalvato)
+  if (full <= 0 || Math.abs(full - scoped) < 0.005) return saved
+  return roundLpaga2(saved * (scoped / full))
+}
+
+/** Reintegra la quota degli altri reparti quando il responsabile salva il bonifico del suo perimetro. */
+export function fondereBonificoPerimetro(
+  importoPerimetro: number,
+  importoPersonaMese: number,
+  bonificoSalvato: number | null | undefined,
+  bonificoInserito: number
+): number {
+  const scoped = roundLpaga2(importoPerimetro)
+  const full = roundLpaga2(importoPersonaMese)
+  const inserted = roundLpaga2(bonificoInserito)
+  if (full <= 0 || Math.abs(full - scoped) < 0.005) return inserted
+  const prev =
+    bonificoSalvato != null && Number.isFinite(Number(bonificoSalvato)) ? roundLpaga2(bonificoSalvato) : full
+  const prevShare = roundLpaga2(prev * (scoped / full))
+  return roundLpaga2(prev - prevShare + inserted)
+}
+
 export function oggiRomaYmd(): string {
   try {
     return new Intl.DateTimeFormat("en-CA", {
@@ -120,6 +158,13 @@ export async function buildLibroPagaSnapshot(opts?: {
     totAnnoBy.set(t.personaleId, Math.round(((totAnnoBy.get(t.personaleId) ?? 0) + t.importo) * 100) / 100)
   }
   const turni = scopedTurni.filter((t) => t.giorno.slice(0, 7) === mese)
+  const fullMeseByPerson = new Map<string, number>()
+  if (livelloTree) {
+    for (const t of turniTutti) {
+      if (t.giorno.slice(0, 7) !== mese) continue
+      fullMeseByPerson.set(t.personaleId, (fullMeseByPerson.get(t.personaleId) ?? 0) + t.importo)
+    }
+  }
   const presenze = await listPresenze(turni.map((t) => t.id))
   const presenzaByTurno = new Map(presenze.map((p) => [p.turnoId, p]))
   const livById = new Map(livelli.map((l) => [l.id, l]))
@@ -181,17 +226,21 @@ export async function buildLibroPagaSnapshot(opts?: {
     .map(([personaleId, agg]) => {
       const saved = savedMens.find((m) => m.personaleId === personaleId)
       const pe = perById.get(personaleId)
+      const scopedImporto = roundLpaga2(agg.importo)
+      const fullImporto = roundLpaga2(fullMeseByPerson.get(personaleId) ?? scopedImporto)
       return {
         personaleId,
         personaleNome: pe ? nominativo(pe) : "—",
         iban: opts?.hideIban && personaleId !== opts.viewerId ? "" : pe?.iban ?? "",
         mese,
-        ore: Math.round(agg.ore * 100) / 100,
-        importo: Math.round(agg.importo * 100) / 100,
-        presenzaOre: Math.round(agg.presenzaOre * 100) / 100,
+        ore: roundLpaga2(agg.ore),
+        importo: scopedImporto,
+        presenzaOre: roundLpaga2(agg.presenzaOre),
         nTurni: agg.nTurni,
         nControllati: agg.nControllati,
-        bonifico: saved?.bonifico ?? Math.round(agg.importo * 100) / 100,
+        bonifico: livelloTree
+          ? bonificoNelPerimetro(scopedImporto, fullImporto, saved?.bonifico)
+          : saved?.bonifico ?? scopedImporto,
         nota: saved?.nota ?? "",
         chiuso: saved?.chiuso ?? false,
         totAnno: totAnnoBy.get(personaleId) ?? Math.round(agg.importo * 100) / 100,

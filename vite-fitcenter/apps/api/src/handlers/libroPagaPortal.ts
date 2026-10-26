@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -21,7 +21,7 @@ import {
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
-import { buildLibroPagaSnapshot, defaultMeseLpaga, isYmLpaga, oggiRomaYmd } from "../services/libro-paga-snapshot.js"
+import { buildLibroPagaSnapshot, defaultMeseLpaga, fondereBonificoPerimetro, isYmLpaga, oggiRomaYmd, roundLpaga2 } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 import { canVedereReportCollaboratoriLpaga } from "../lib/report-collaboratori-access.js"
@@ -248,12 +248,25 @@ export async function putLpagaMensilita(req: Request, res: Response) {
       })
     }
     const mese = String(req.body?.mese ?? "").trim()
-    const bonifico = Number(req.body?.bonifico)
+    const bonificoInserito = Number(req.body?.bonifico)
     if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
     if (!isYmLpaga(mese)) return res.status(400).json({ message: "Mese non valido" })
-    if (!Number.isFinite(bonifico) || bonifico < 0) {
+    if (!Number.isFinite(bonificoInserito) || bonificoInserito < 0) {
       return res.status(400).json({ message: "Importo bonifico non valido" })
     }
+    const perimetro = resolveLivelloTree(me, livelli)
+    const meseTurni = turni.filter((t) => t.personaleId === personaleId && t.giorno.slice(0, 7) === mese)
+    const importoPersonaMese = roundLpaga2(meseTurni.reduce((s, t) => s + t.importo, 0))
+    const importoPerimetro = perimetro
+      ? roundLpaga2(meseTurni.filter((t) => perimetro.has(t.livelloId)).reduce((s, t) => s + t.importo, 0))
+      : importoPersonaMese
+    const saved = (await listMensilita(mese)).find((m) => m.personaleId === personaleId)
+    const bonifico = fondereBonificoPerimetro(
+      importoPerimetro,
+      importoPersonaMese,
+      saved?.bonifico,
+      bonificoInserito
+    )
     const row = await upsertMensilita({
       personaleId,
       mese,

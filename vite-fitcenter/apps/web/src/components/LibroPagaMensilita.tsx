@@ -132,6 +132,7 @@ export function LibroPagaMensilitaTab({
   onDone,
   onConvalida,
   onConvalidaMese,
+  perimetroReparto,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -142,6 +143,7 @@ export function LibroPagaMensilitaTab({
   onDone: () => void
   onConvalida?: (personaleId: string) => void
   onConvalidaMese?: () => void
+  perimetroReparto?: boolean
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -256,6 +258,9 @@ export function LibroPagaMensilitaTab({
         <p className="text-xs text-zinc-500">
           Seleziona uno o più nominativi, poi usa i pulsanti in alto.
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
+          {perimetroReparto
+            ? " Importo totale e bonifico riguardano solo i turni del tuo reparto."
+            : ""}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input

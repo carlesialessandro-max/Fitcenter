@@ -1362,6 +1362,7 @@ function Mensilita({
         mese={mese}
         canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager" || Boolean(data.canValidate)}
         hideIban={me?.ruolo === "user"}
+        perimetroReparto={me?.ruolo === "manager"}
         onSave={(body) => lpagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}
