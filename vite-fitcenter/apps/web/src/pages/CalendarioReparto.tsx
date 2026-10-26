@@ -190,7 +190,7 @@ function buildShiftGrid(startMin: number, endMin: number, slotPx: number): Shift
 
 function shiftGridCovering(days: Date[], events: CalEvent[], slotPx: number, defaultMinS = 8 * 60): ShiftGrid {
   let minS = defaultMinS
-  let maxE = 21 * 60
+  let maxE = 22 * 60
   for (const d of days) {
     for (const e of eventsForDay(events, d)) {
       const { sm, em } = eventRangeMin(e)
@@ -1408,7 +1408,7 @@ export function CalendarioRepartoPage() {
   const { role } = useAuth()
   const apiComparto = segmento ? segmentoToApi(segmento) : null
 
-  const [view, setView] = useState<CalView>("month")
+  const [view, setView] = useState<CalView>(() => (segmento === "scuola-nuoto" ? "week" : "month"))
   const [cursor, setCursor] = useState(() => new Date())
   const [events, setEvents] = useState<CalEvent[]>([])
   const [instructors, setInstructors] = useState<CalendarioIstruttore[]>([])
@@ -1572,15 +1572,18 @@ export function CalendarioRepartoPage() {
   }, [cursor])
   const dayOnly = useMemo(() => startOfDay(cursor), [cursor])
   const slotAnchorDate = useMemo(() => (view === "day" ? dayOnly : startOfDay(cursor)), [view, dayOnly, cursor])
-  const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), [])
+  const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), []) // 06:00–22:00
+  const weekFitWidth = apiComparto === "piscina" || apiComparto === "scuola_nuoto"
   const cells = view === "month" ? monthMatrix(cursor) : []
   const weekShiftGrid = useMemo(() => {
-    const defaultMinS = apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" ? 6 * 60 : 8 * 60
+    const defaultMinS =
+      apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" || apiComparto === "scuola_nuoto" ? 6 * 60 : 8 * 60
     const probe = shiftGridCovering(weekDays, events, 16, defaultMinS)
     return shiftGridCovering(weekDays, events, weekSlotPx(probe.slots.length), defaultMinS)
   }, [weekDays, events, apiComparto])
   const dayShiftGrid = useMemo(() => {
-    const defaultMinS = apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" ? 6 * 60 : 8 * 60
+    const defaultMinS =
+      apiComparto === "pulizie" ? 5 * 60 : apiComparto === "piscina" || apiComparto === "scuola_nuoto" ? 6 * 60 : 8 * 60
     return shiftGridCovering([dayOnly], events, 22, defaultMinS)
   }, [dayOnly, events, apiComparto])
   const weekHours = useMemo(() => {
@@ -1901,8 +1904,8 @@ export function CalendarioRepartoPage() {
                     style={isTodayCell(date) ? { boxShadow: `inset 0 0 0 1px ${H2.blue}` } : undefined}
                   >
                     <div className="text-sm font-medium text-zinc-200">{date.getDate()}</div>
-                    <div className="mt-1 flex max-h-[4.5rem] flex-col gap-0.5 overflow-y-auto">
-                      {dayEv.slice(0, 8).map((e) => (
+                    <div className="mt-1 flex max-h-[8.5rem] flex-col gap-0.5 overflow-y-auto">
+                      {dayEv.slice(0, 16).map((e) => (
                         <EventPill
                           key={e.id}
                           e={e}
@@ -1917,7 +1920,7 @@ export function CalendarioRepartoPage() {
                           colorByStaff={shiftRangeGrid}
                         />
                       ))}
-                      {dayEv.length > 8 ? <div className="text-[10px] text-zinc-500">+{dayEv.length - 8}…</div> : null}
+                      {dayEv.length > 16 ? <div className="text-[10px] text-zinc-500">+{dayEv.length - 16}…</div> : null}
                     </div>
                   </div>
                 )
@@ -1927,10 +1930,10 @@ export function CalendarioRepartoPage() {
         ) : null}
 
         {view === "week" && hasPlanningGrid(apiComparto) ? (
-          <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950/40">
+          <div className="max-h-[85vh] overflow-auto rounded-2xl border border-zinc-800 bg-zinc-950/40">
             {shiftRangeGrid ? (
-              <div className={apiComparto === "piscina" ? "overflow-hidden" : "overflow-x-auto"}>
-                <div className={cn("flex", apiComparto === "piscina" ? "min-w-0" : "min-w-max")}>
+              <div className={weekFitWidth ? "overflow-hidden" : "overflow-x-auto"}>
+                <div className={cn("flex", weekFitWidth ? "min-w-0" : "min-w-max")}>
                   <ShiftTimeGutter
                     grid={weekShiftGrid}
                     header={
@@ -1952,7 +1955,7 @@ export function CalendarioRepartoPage() {
                       }}
                       isToday={isTodayCell(d)}
                       lanePx={SHIFT_LANE_PX_WEEK}
-                      fitWidth={apiComparto === "piscina"}
+                      fitWidth={weekFitWidth}
                       grid={weekShiftGrid}
                       compact
                       title={
@@ -2106,7 +2109,7 @@ export function CalendarioRepartoPage() {
               <div className={cn("border-b border-zinc-800 bg-zinc-900/80 px-4 py-3 text-center text-sm font-medium", isTodayCell(dayOnly) && "text-[#46A6D9]")}>
                 {IT_DOW_SHORT[mondayIndex(dayOnly)]} {pad2(dayOnly.getDate())} {IT_MONTHS[dayOnly.getMonth()]}
               </div>
-              <div className="max-h-[75vh] overflow-y-auto">
+              <div className="max-h-[85vh] overflow-y-auto">
                 {hours.map((h) => {
                   const evs = eventsForDayAndHour(events, dayOnly, h, false)
                   return (

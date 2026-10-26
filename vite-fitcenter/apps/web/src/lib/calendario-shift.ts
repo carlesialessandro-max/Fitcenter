@@ -3,7 +3,7 @@ import type { CalendarioComparto } from "@/api/calendario"
 import { MANUAL_SERVER_COMPARTI } from "@/lib/calendario-manual"
 
 /** Comparti con turni a fascia oraria (solo DB, senza Excel in build). */
-export const SHIFT_RANGE_COMPARTI: CalendarioComparto[] = [...MANUAL_SERVER_COMPARTI]
+export const SHIFT_RANGE_COMPARTI: CalendarioComparto[] = [...MANUAL_SERVER_COMPARTI, "scuola_nuoto"]
 
 export function compartoUsesShiftRange(comparto: CalendarioComparto | null | undefined): boolean {
   return comparto != null && SHIFT_RANGE_COMPARTI.includes(comparto)

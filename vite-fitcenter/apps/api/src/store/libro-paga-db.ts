@@ -388,7 +388,8 @@ IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
-IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(500) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(4000) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN LivelloIds NVARCHAR(4000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -976,7 +977,7 @@ export async function upsertPersonale(input: {
     req.input("Username", sql.NVarChar(120), row.username ?? null)
     req.input("Ruolo", sql.NVarChar(20), row.ruolo)
     req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
-    req.input("LivelloIds", sql.NVarChar(500), hasLivelloIds ? JSON.stringify(row.livelloIds ?? []) : null)
+    req.input("LivelloIds", sql.NVarChar(4000), hasLivelloIds ? JSON.stringify(row.livelloIds ?? []) : null)
     req.input("LivelloIdsSet", sql.Bit, hasLivelloIds)
     req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)

@@ -43,7 +43,8 @@ IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NULL ALTER TABLE dbo.F
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Qualifiche') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN Qualifiche NVARCHAR(1000) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','Email') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD Email NVARCHAR(200) NULL;
 IF COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
-IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(500) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(4000) NULL;
+IF COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN LivelloIds NVARCHAR(4000) NULL;
 GO
 
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL

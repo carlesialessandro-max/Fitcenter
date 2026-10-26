@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -275,6 +275,33 @@ function assertGestionePersonale(me: LpagaSessionUser) {
   }
 }
 
+function livelliFromBody(body: Record<string, unknown>) {
+  const ids = Array.isArray(body.livelloIds)
+    ? body.livelloIds.map((x) => String(x).trim()).filter(Boolean)
+    : undefined
+  const livelloId = body.livelloId != null ? String(body.livelloId).trim() : undefined
+  return mergePersonaleLivelli(livelloId, ids)
+}
+
+function assertLivelliAnagraficaConsentiti(
+  me: { ruolo: string; livelloId?: string; livelloIds?: string[] },
+  livelli: Awaited<ReturnType<typeof listLivelli>>,
+  assigned: { livelloId?: string; livelloIds?: string[] }
+) {
+  if (me.ruolo !== "manager") return
+  const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
+  const ids = assigned.livelloIds?.length
+    ? assigned.livelloIds
+    : assigned.livelloId
+      ? [assigned.livelloId]
+      : []
+  if (!ids.length || ids.some((id) => !consentiti.has(id))) {
+    const err = new Error("Puoi modificare utenti solo nel tuo reparto")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
+  }
+}
+
 export async function postLpagaPersonale(req: Request, res: Response) {
   try {
     const me = viewer(req)
@@ -292,12 +319,16 @@ export async function postLpagaPersonale(req: Request, res: Response) {
     let ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
     if (me.ruolo === "manager") ruoloRaw = "user"
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
-    let livelloId = String(req.body?.livelloId ?? "").trim()
+    const livelliAssegnati = livelliFromBody(req.body ?? {})
+    const livelliFinali =
+      livelliAssegnati.livelloId || (livelliAssegnati.livelloIds && livelliAssegnati.livelloIds.length)
+        ? livelliAssegnati
+        : mergePersonaleLivelli(me.livelloId, me.livelloIds)
     if (me.ruolo === "manager") {
-      const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
-      if (!livelloId) livelloId = me.livelloId ?? ""
-      if (!livelloId || !consentiti.has(livelloId)) {
-        return res.status(403).json({ message: "Puoi aggiungere utenti solo nel tuo reparto" })
+      try {
+        assertLivelliAnagraficaConsentiti(me, livelli, livelliFinali)
+      } catch (e) {
+        return res.status(403).json({ message: (e as Error).message })
       }
     }
     const row = await upsertPersonale({
@@ -305,7 +336,7 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       cognome: String(req.body?.cognome ?? "").trim(),
       username,
       ruolo,
-      livelloId: livelloId || me.livelloId,
+      ...livelliFinali,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
       email: normalizeLpagaEmail(req.body?.email),
@@ -351,6 +382,7 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
         username: cur.username,
         ruolo: cur.ruolo,
         livelloId: cur.livelloId,
+        livelloIds: cur.livelloIds,
         contratto: cur.contratto,
         iban,
         email,
@@ -370,11 +402,17 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
     const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
     assertPuoModificarePersonale(me, cur, ruolo)
+    const livelliPatch =
+      req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
     if (me.ruolo === "manager") {
-      const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
-      const nextLivello = req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId ?? ""
-      if (nextLivello && !consentiti.has(nextLivello)) {
-        return res.status(403).json({ message: "Puoi modificare utenti solo nel tuo reparto" })
+      const nextLivelli =
+        livelliPatch.livelloId || (livelliPatch.livelloIds && livelliPatch.livelloIds.length)
+          ? livelliPatch
+          : mergePersonaleLivelli(cur.livelloId, cur.livelloIds)
+      try {
+        assertLivelliAnagraficaConsentiti(me, livelli, nextLivelli)
+      } catch (e) {
+        return res.status(403).json({ message: (e as Error).message })
       }
     }
     const nome = req.body?.nome != null ? String(req.body.nome).trim() : cur.nome
@@ -392,7 +430,7 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
       cognome: req.body?.cognome != null ? String(req.body.cognome).trim() : cur.cognome,
       username,
       ruolo: me.ruolo === "manager" ? (ruolo === "admin" ? cur.ruolo : ruolo) : ruolo,
-      livelloId: req.body?.livelloId != null ? String(req.body.livelloId).trim() : cur.livelloId,
+      ...livelliPatch,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
       email: req.body?.email != null ? normalizeLpagaEmail(req.body.email) : cur.email,
