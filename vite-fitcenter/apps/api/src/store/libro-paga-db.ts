@@ -1095,9 +1095,40 @@ function filterTurniFile(mese?: string): LpagaTurno[] {
   return filtered.sort((a, b) => (a.giorno < b.giorno ? 1 : a.giorno > b.giorno ? -1 : 0))
 }
 
-export function calcolaImporto(livello: LpagaLivello, quantita: number): number {
-  if (livello.fissa) return round2(livello.retribuzione)
-  return round2(quantita * livello.retribuzione)
+export type ModalitaValoreTurno = "ore" | "servizi" | "importo"
+
+type LivelloValoreTurno = Pick<LpagaLivello, "nome" | "fissa" | "retribuzione">
+
+/** Stessa regola in apps/web/src/lib/libro-paga-quantita.ts */
+export function modalitaValoreTurno(livello: LivelloValoreTurno): ModalitaValoreTurno {
+  const nome = livello.nome
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+  if (/inserim\w*\s+libero/.test(nome)) return "importo"
+  // Paga unitaria 1 € e fissa (P.T., gestioni): il numero inserito è già l'importo.
+  if (livello.fissa && Math.round(Number(livello.retribuzione) * 100) === 100) return "importo"
+  if (livello.fissa) return "servizi"
+  return "ore"
+}
+
+export function messaggioQuantitaTurno(livello: LivelloValoreTurno, quantita: number): string | null {
+  const mode = modalitaValoreTurno(livello)
+  if (!Number.isFinite(quantita) || quantita <= 0) {
+    if (mode === "importo") return "Importo non valido"
+    if (mode === "servizi") return "Numero servizi non valido (1–24)"
+    return "Ore non valide (fino a 24, es. 1,5 o 2,25)"
+  }
+  if (mode === "ore" && quantita > 24) return "Ore non valide (fino a 24, es. 1,5 o 2,25)"
+  if (mode === "servizi" && quantita > 24) return "Numero servizi non valido (1–24)"
+  if (mode === "importo" && quantita > 10000) return "Importo non valido (massimo 10.000 €)"
+  return null
+}
+
+export function calcolaImporto(livello: LivelloValoreTurno, quantita: number): number {
+  const q = round2(quantita)
+  if (modalitaValoreTurno(livello) === "importo") return q
+  return round2(q * Number(livello.retribuzione))
 }
 
 export async function insertTurno(input: {
@@ -1111,6 +1142,8 @@ export async function insertTurno(input: {
   const livelli = await listLivelli()
   const livello = livelli.find((x) => x.id === input.livelloId)
   if (!livello) throw Object.assign(new Error("Livello non trovato"), { status: 400 })
+  const qErr = messaggioQuantitaTurno(livello, input.quantita)
+  if (qErr) throw Object.assign(new Error(qErr), { status: 400 })
   if (livello.attivo === false) {
     throw Object.assign(new Error("Livello nascosto: non si può più usare per nuovi turni"), { status: 400 })
   }

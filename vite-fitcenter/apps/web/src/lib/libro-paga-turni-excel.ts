@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx"
 import type { LpagaPersonale, LpagaTurnoRow, LpagaLivello } from "@/api/libroPaga"
+import { messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 
 export type ImportTurnoExcelPreview = {
   riga: number
@@ -77,7 +78,7 @@ export function downloadLibroPagaTurniTemplate() {
   sheet["!cols"] = [{ wch: 14 }, { wch: 28 }, { wch: 32 }, { wch: 14 }, { wch: 40 }]
   XLSX.utils.book_append_sheet(workbook, sheet, "Turni")
   const example = XLSX.utils.aoa_to_sheet([
-    ["gg/mm/aaaa", "Nome Cognome come in anagrafica", "Nome mansione come in libro paga", "ore o servizi (max 24)", "opzionale"],
+    ["gg/mm/aaaa", "Nome Cognome come in anagrafica", "Nome mansione come in libro paga", "ore (max 24), servizi (1-2-3) o importo € se inserimento libero", "opzionale"],
   ])
   XLSX.utils.book_append_sheet(workbook, example, "Istruzioni")
   XLSX.writeFile(workbook, "modello-import-turni-libro-paga.xlsx")
@@ -139,7 +140,12 @@ export function parseLibroPagaTurniExcel(
     if (!giorno) errors.push("Data non valida (usa gg/mm/aaaa)")
     if (!person) errors.push(personaleName ? "Collaboratore non trovato o nome non univoco" : "Collaboratore mancante")
     if (!level) errors.push(livelloName ? "Mansione non trovata o non retribuibile" : "Mansione mancante")
-    if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) errors.push("Quantità non valida (0–24)")
+    const qErr = level
+      ? messaggioQuantitaTurno(level, quantita)
+      : !Number.isFinite(quantita) || quantita <= 0
+        ? "Quantità non valida"
+        : null
+    if (qErr) errors.push(qErr)
     const preview: ImportTurnoExcelPreview = {
       riga: index + 2,
       giorno,

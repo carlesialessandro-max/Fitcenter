@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, insertTurno, listLivelli, listPersonale, listTurni, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -164,11 +164,12 @@ export async function postLpagaTurno(req: Request, res: Response) {
     if (me.ruolo === "user" && isYmd(giornoRaw) && giornoRaw !== oggi) {
       return res.status(403).json({ message: "Puoi inserire turni solo per la data odierna (entro mezzanotte)" })
     }
-    const quantita = Number(req.body?.quantita)
+    const quantita = Number(String(req.body?.quantita ?? "").replace(",", "."))
     if (!isYmd(giorno)) return res.status(400).json({ message: "Data non valida" })
-    if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) {
-      return res.status(400).json({ message: "Quantità non valida (1–24)" })
-    }
+    const livello = livelli.find((x) => x.id === livelloId)
+    if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
+    const qErr = messaggioQuantitaTurno(livello, quantita)
+    if (qErr) return res.status(400).json({ message: qErr })
     const row = await insertTurno({
       personaleId,
       livelloId,

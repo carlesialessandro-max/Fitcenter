@@ -5,6 +5,7 @@ import {
   deleteTurno,
   insertTurno,
   listLivelli,
+  messaggioQuantitaTurno,
   listPersonale,
   listTurni,
   nominativo,
@@ -362,12 +363,13 @@ export async function postTurno(req: Request, res: Response) {
     const personaleId = String(req.body?.personaleId ?? "").trim()
     const livelloId = String(req.body?.livelloId ?? "").trim()
     const giorno = String(req.body?.giorno ?? "").trim()
-    const quantita = Number(req.body?.quantita)
+    const quantita = Number(String(req.body?.quantita ?? "").replace(",", "."))
     if (!personaleId || !livelloId) return res.status(400).json({ message: "Persona e livello obbligatori" })
     if (!isYmd(giorno)) return res.status(400).json({ message: "Data non valida" })
-    if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) {
-      return res.status(400).json({ message: "Quantità non valida (1–24)" })
-    }
+    const livello = (await listLivelli()).find((x) => x.id === livelloId)
+    if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
+    const qErr = messaggioQuantitaTurno(livello, quantita)
+    if (qErr) return res.status(400).json({ message: qErr })
     const row = await insertTurno({
       personaleId,
       livelloId,
@@ -449,7 +451,13 @@ export async function importaTurniExcel(
       if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== giorno) {
         errors.push("Data non valida")
       }
-      if (!Number.isFinite(quantita) || quantita <= 0 || quantita > 24) errors.push("Quantità non valida (0–24)")
+      const level = levelsById.get(livelloId)
+      const qErr = level
+        ? messaggioQuantitaTurno(level, quantita)
+        : !Number.isFinite(quantita) || quantita <= 0
+          ? "Quantità non valida"
+          : null
+      if (qErr) errors.push(qErr)
       if (note.length > 500) errors.push("Le note superano il limite di 500 caratteri")
       if (errors.length) {
         errori.push({ riga, message: errors.join("; ") })

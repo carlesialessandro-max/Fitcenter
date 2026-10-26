@@ -16,6 +16,7 @@ import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
+import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 import {
   downloadLibroPagaTurniTemplate,
   parseLibroPagaTurniExcel,
@@ -560,6 +561,14 @@ function Turni({
     onError: (e: Error) => onError(e.message),
   })
   const importValidRows = (importPreview ?? []).filter((row) => !row.errore && !row.duplicato)
+  const livelloSel = livelli.find((l) => l.id === livelloId)
+  const valoreUi = etichettaValoreTurno(livelloSel)
+  const quantitaNum = Number(quantita.replace(",", "."))
+  const quantitaErr = livelloSel && quantita.trim() ? messaggioQuantitaTurno(livelloSel, quantitaNum) : null
+  const importoAnteprima =
+    livelloSel && quantitaErr == null && Number.isFinite(quantitaNum) && quantitaNum > 0
+      ? calcolaImportoTurno(livelloSel, quantitaNum)
+      : null
   async function onTurniExcel(file: File | null) {
     if (!file) return
     onError("")
@@ -686,6 +695,11 @@ function Turni({
             className="grid gap-3 sm:grid-cols-2"
             onSubmit={(e) => {
               e.preventDefault()
+              if (quantitaErr) {
+                onError(quantitaErr)
+                return
+              }
+              onError("")
               createMut.mutate()
             }}
           >
@@ -718,9 +732,13 @@ function Turni({
               />
             </label>
             <label className="grid gap-1 text-xs text-zinc-400">
-              <span>Valore</span>
-              <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} required />
-              <span className="text-[11px] text-zinc-500">Ore se paga oraria, servizi se paga fissa</span>
+              <span>{valoreUi.label}</span>
+              <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} inputMode="decimal" required />
+              <span className="text-[11px] text-zinc-500">{valoreUi.hint}</span>
+              {quantitaErr ? <span className="text-[11px] text-red-400">{quantitaErr}</span> : null}
+              {importoAnteprima != null ? (
+                <span className="text-[11px] text-zinc-300">Importo {eur(importoAnteprima)}</span>
+              ) : null}
             </label>
             <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
               <span>Note</span>
@@ -740,7 +758,7 @@ function Turni({
               <button type="button" className={btnGhost} onClick={() => setNuovoTurno(false)}>
                 Annulla
               </button>
-              <button type="submit" className={btnAmber} disabled={createMut.isPending}>
+              <button type="submit" className={btnAmber} disabled={createMut.isPending || Boolean(quantitaErr)}>
                 {createMut.isPending ? "Salvataggio…" : "Salva"}
               </button>
             </div>
