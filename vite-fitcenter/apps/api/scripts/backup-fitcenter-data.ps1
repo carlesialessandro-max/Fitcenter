@@ -1,4 +1,4 @@
-# Backup giornaliero dati FitCenter (Windows Task Scheduler).
+# Backup giornaliero dati FitCenter (Windows Task Scheduler). Tiene gli ultimi 3 giorni.
 # Esempio attività pianificata:
 #   Programma: powershell.exe
 #   Argomenti: -ExecutionPolicy Bypass -File "C:\percorso\FitCenter\vite-fitcenter\apps\api\scripts\backup-fitcenter-data.ps1"
@@ -16,7 +16,7 @@ Set-Location $ApiRoot
 
 # Copia anche .env (credenziali gestionale) — NON committare questi backup su git pubblico
 $env:FITCENTER_BACKUP_INCLUDE_ENV = "1"
-$env:FITCENTER_BACKUP_KEEP = if ($env:FITCENTER_BACKUP_KEEP) { $env:FITCENTER_BACKUP_KEEP } else { "14" }
+$env:FITCENTER_BACKUP_KEEP = if ($env:FITCENTER_BACKUP_KEEP) { $env:FITCENTER_BACKUP_KEEP } else { "3" }
 
 node "$ScriptDir\backup-fitcenter-data.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

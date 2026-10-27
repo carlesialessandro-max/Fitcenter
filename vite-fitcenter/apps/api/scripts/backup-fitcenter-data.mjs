@@ -9,7 +9,7 @@
  *
  * Variabili ambiente (o riga in apps/api/.env):
  *   FITCENTER_BACKUP_DIR   cartella destinazione backup (default: ../backups accanto a data/)
- *   FITCENTER_BACKUP_KEEP  quanti backup tenere (default: 2)
+ *   FITCENTER_BACKUP_KEEP  giorni da tenere (default: 3). I più vecchi si cancellano dopo ogni backup.
  *   FITCENTER_BACKUP_INCLUDE_ENV=1  copia anche apps/api/.env nel backup (consigliato, fuori da git)
  */
 import fs from "fs"
@@ -68,25 +68,43 @@ function listBackupDirs(backupRoot) {
     .sort()
 }
 
-function pruneOldBackups(backupRoot, keep) {
-  const dirs = listBackupDirs(backupRoot)
-  const excess = dirs.length - keep
-  if (excess <= 0) return
-  for (let i = 0; i < excess; i++) {
-    fs.rmSync(dirs[i], { recursive: true, force: true })
-    console.log(`Rimosso backup vecchio: ${dirs[i]}`)
+function keepDays() {
+  return Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 3) || 3)
+}
+
+function backupDayLabel(dirPath) {
+  const m = /^fitcenter-data-(\d{4}-\d{2}-\d{2})_/.exec(path.basename(dirPath))
+  return m?.[1] ?? null
+}
+
+function pruneOldBackups(backupRoot, days) {
+  const cutoff = new Date()
+  cutoff.setHours(0, 0, 0, 0)
+  cutoff.setDate(cutoff.getDate() - (days - 1))
+  const cutoffStr = ymdOf(cutoff)
+  for (const dir of listBackupDirs(backupRoot)) {
+    const day = backupDayLabel(dir)
+    if (day && day >= cutoffStr) continue
+    fs.rmSync(dir, { recursive: true, force: true })
+    console.log(`Rimosso backup vecchio: ${dir}`)
   }
 }
 
-function copyDirFiles(srcDir, destDir) {
+function copyTree(srcDir, destDir, skipNames = new Set()) {
   fs.mkdirSync(destDir, { recursive: true })
   if (!fs.existsSync(srcDir)) return []
   const copied = []
   for (const name of fs.readdirSync(srcDir)) {
+    if (skipNames.has(name)) continue
     const src = path.join(srcDir, name)
+    const dest = path.join(destDir, name)
     const st = fs.statSync(src)
+    if (st.isDirectory()) {
+      copied.push(...copyTree(src, dest).map((rel) => path.join(name, rel)))
+      continue
+    }
     if (!st.isFile()) continue
-    fs.copyFileSync(src, path.join(destDir, name))
+    fs.copyFileSync(src, dest)
     copied.push(name)
   }
   return copied
@@ -95,7 +113,7 @@ function copyDirFiles(srcDir, destDir) {
 function runBackup() {
   const dataDir = resolveDataDir()
   const backupRoot = resolveBackupRoot(dataDir)
-  const keep = Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 2) || 2)
+  const keep = keepDays()
   const dest = path.join(backupRoot, `fitcenter-data-${timestampLabel()}`)
 
   if (!fs.existsSync(dataDir)) {
@@ -114,7 +132,7 @@ function runBackup() {
 
   let files
   try {
-    files = copyDirFiles(dataDir, dest)
+    files = copyTree(dataDir, dest)
   } catch (e) {
     console.error(`Errore copia verso: ${dest}`)
     console.error(e instanceof Error ? e.message : String(e))
@@ -141,7 +159,7 @@ function runBackup() {
   console.log(`  Origine:  ${dataDir}`)
   console.log(`  Destino:  ${dest}`)
   console.log(`  File:     ${files.length}`)
-  console.log(`  Conservati ultimi ${keep} backup in ${backupRoot}`)
+  console.log(`  Conservati gli ultimi ${keep} giorni in ${backupRoot}`)
 }
 
 function runRestore(restorePath, yes) {
@@ -167,7 +185,7 @@ function runRestore(restorePath, yes) {
   }
 
   fs.mkdirSync(dataDir, { recursive: true })
-  const copied = copyDirFiles(src, dataDir)
+  const copied = copyTree(src, dataDir, new Set(["backup-manifest.json", "env.backup"]))
   const envBackup = path.join(src, "env.backup")
   const withEnv = process.argv.includes("--with-env")
   if (withEnv && fs.existsSync(envBackup)) {
@@ -240,12 +258,12 @@ function runList() {
 function runPruneOnly() {
   const dataDir = resolveDataDir()
   const backupRoot = resolveBackupRoot(dataDir)
-  const keep = Math.max(1, Number(process.env.FITCENTER_BACKUP_KEEP ?? 2) || 2)
+  const keep = keepDays()
   const before = listBackupDirs(backupRoot).length
   pruneOldBackups(backupRoot, keep)
   const after = listBackupDirs(backupRoot).length
   console.log(`Pulizia backup in: ${backupRoot}`)
-  console.log(`  Conservati: ${after} (max ${keep})`)
+  console.log(`  Conservati: ${after} (ultimi ${keep} giorni)`)
   if (before > after) console.log(`  Rimossi:     ${before - after}`)
   else console.log("  Nessun backup da rimuovere.")
 }
