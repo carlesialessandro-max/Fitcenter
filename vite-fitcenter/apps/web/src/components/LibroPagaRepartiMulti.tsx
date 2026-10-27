@@ -150,6 +150,10 @@ function selectionCopre(livelli: LpagaLivello[], value: string[], nodeId: string
   return value.some((id) => sottoAlberoUi(livelli, id).has(nodeId))
 }
 
+function coveringAncestor(livelli: LpagaLivello[], value: string[], nodeId: string): string | undefined {
+  return value.find((id) => id !== nodeId && sottoAlberoUi(livelli, id).has(nodeId))
+}
+
 function toggleNodo(
   all: LpagaLivello[],
   attivi: LpagaLivello[],
@@ -157,15 +161,22 @@ function toggleNodo(
   nodeId: string,
   on: boolean
 ): string[] {
-  const rootId = repartoRootId(all, nodeId)
-  const rootSubtree = repartoSubtreeIds(all, attivi, rootId)
-  let next = value.filter((x) => x !== rootId)
-  if (on) {
-    if (!next.includes(nodeId)) next.push(nodeId)
-  } else {
-    next = next.filter((x) => x !== nodeId)
+  let next = [...value]
+  const covering = coveringAncestor(attivi, next, nodeId)
+  if (covering && !on) {
+    const coveringSub = pickerSubtree(all, attivi, covering)
+    next = next.filter((x) => x !== covering)
+    for (const id of coveringSub) {
+      if (id !== covering) next.push(id)
+    }
   }
-  next = next.filter((x) => rootSubtree.has(x))
+  const nodeSub = pickerSubtree(all, attivi, nodeId)
+  if (on) {
+    next = next.filter((x) => !nodeSub.has(x))
+    next.push(nodeId)
+  } else {
+    next = next.filter((x) => !nodeSub.has(x))
+  }
   return compattaLivelloIds(attivi, next)
 }
 
@@ -203,8 +214,7 @@ function LivelloRow({
   const checked = coperto
   const subtree = pickerSubtree(allLivelli, livelli, node.id)
   const selectedUnder = value.filter((x) => subtree.has(x) && x !== node.id)
-  const indeterminate = root && !interoReparto && selectedUnder.length > 0
-  const disabled = !root && coperto && !esplicito
+  const indeterminate = hasKids && !checked && selectedUnder.length > 0
 
   return (
     <div className={depth > 0 ? "ml-3 border-l border-zinc-800 pl-2" : ""}>
@@ -228,13 +238,11 @@ function LivelloRow({
             ref={(el) => {
               if (el) el.indeterminate = indeterminate
             }}
-            disabled={disabled}
             onChange={() => {
-              if (disabled) return
               if (root) onChange(toggleRepartoIntero(allLivelli, livelli, value, node.id, !interoReparto))
-              else onChange(toggleNodo(allLivelli, livelli, value, node.id, !esplicito))
+              else onChange(toggleNodo(allLivelli, livelli, value, node.id, !checked))
             }}
-            className="mt-0.5 accent-amber-500 disabled:opacity-60"
+            className="mt-0.5 accent-amber-500"
           />
           <span className="min-w-0">
             <span className={node.retribuibile ? "" : hasKids ? "font-medium text-zinc-200" : "text-zinc-300"}>
@@ -299,8 +307,8 @@ export function LibroPagaRepartiMulti({
   return (
     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950/40 p-2">
       <p className="text-[11px] leading-snug text-zinc-500">
-        Seleziona il reparto principale per vedere tutto, oppure
-        apri la gerarchia (▸) e spunta solo le mansioni ammesse (es. solo assistenza scuola nuoto sotto piscina).
+        Spunta il reparto per prendere tutte le mansioni, poi togli i sotto-reparti che non servono.
+        Oppure apri la gerarchia (▸) e spunta solo alcune voci.
       </p>
       {roots.map((r) => (
         <LivelloRow

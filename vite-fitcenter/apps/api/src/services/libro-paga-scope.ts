@@ -234,17 +234,28 @@ export function livelliInseribili(
   return scoped
 }
 
-/** Reparti (nodi non retribuiti) in cui il viewer può creare anagrafiche. */
+/** Albero (reparti + mansioni) in cui il viewer può assegnare anagrafiche. */
+export function alberoAssegnabileAnagrafica(
+  viewer: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
+  livelli: LpagaLivello[]
+): Set<string> {
+  const attivi = livelli.filter((l) => l.attivo !== false)
+  if (viewer.ruolo === "admin") return new Set(attivi.map((l) => l.id))
+  const roots = personaleLivelloRadici(viewer)
+  if (!roots.length) return new Set()
+  return expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
+}
+
+/** Nodi (reparti e mansioni) in cui il viewer può creare/modificare anagrafiche. */
 export function livelliAssegnabiliAnagrafica(
   viewer: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
   livelli: LpagaLivello[]
 ): LpagaLivello[] {
   const attivi = livelli.filter((l) => l.attivo !== false)
-  if (viewer.ruolo === "admin") return attivi.filter((l) => !l.retribuibile)
-  const roots = personaleLivelloRadici(viewer)
-  if (!roots.length) return []
-  const tree = livelloAlberoUnion(livelli, roots)
-  const inTree = attivi.filter((l) => tree.has(l.id) && !l.retribuibile)
+  if (viewer.ruolo === "admin") return attivi
+  const tree = alberoAssegnabileAnagrafica(viewer, livelli)
+  const inTree = attivi.filter((l) => tree.has(l.id))
   if (inTree.length) return inTree
+  const roots = personaleLivelloRadici(viewer)
   return attivi.filter((l) => roots.includes(l.id))
 }

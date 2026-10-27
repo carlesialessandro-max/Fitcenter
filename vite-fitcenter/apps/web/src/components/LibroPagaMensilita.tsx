@@ -567,7 +567,7 @@ function DettaglioMese({
           <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
             <span>Reparti / sotto-reparti</span>
             <p className="text-[11px] text-zinc-600">
-              Reparto intero oppure, aprendo la gerarchia, solo alcune mansioni (es. assistenza scuola nuoto in piscina).
+              Spunta il reparto per tutte le mansioni, poi deseleziona i sotto-reparti da escludere.
             </p>
             <LibroPagaRepartiMulti reparti={reparti} value={livelloIds} onChange={setLivelloIds} />
           </div>

@@ -20,7 +20,7 @@ import {
   viewerPuoConvalidare,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { alberoAssegnabileAnagrafica, livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, fondereBonificoPerimetro, isYmLpaga, oggiRomaYmd, roundLpaga2 } from "../services/libro-paga-snapshot.js"
 import type { LpagaRuolo } from "../store/libro-paga-db.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
@@ -296,23 +296,40 @@ function livelliFromBody(body: Record<string, unknown>) {
   return mergePersonaleLivelli(livelloId, ids)
 }
 
+function idsLivelli(assigned: { livelloId?: string; livelloIds?: string[] }): string[] {
+  if (assigned.livelloIds?.length) return assigned.livelloIds
+  return assigned.livelloId ? [assigned.livelloId] : []
+}
+
 function assertLivelliAnagraficaConsentiti(
   me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
   livelli: Awaited<ReturnType<typeof listLivelli>>,
-  assigned: { livelloId?: string; livelloIds?: string[] }
+  assigned: { livelloId?: string; livelloIds?: string[] },
+  giaAssegnati: string[] = []
 ) {
   if (me.ruolo !== "manager") return
-  const consentiti = new Set(livelliAssegnabiliAnagrafica(me, livelli).map((l) => l.id))
-  const ids = assigned.livelloIds?.length
-    ? assigned.livelloIds
-    : assigned.livelloId
-      ? [assigned.livelloId]
-      : []
-  if (!ids.length || ids.some((id) => !consentiti.has(id))) {
+  const tree = alberoAssegnabileAnagrafica(me, livelli)
+  const ids = idsLivelli(assigned)
+  const gia = new Set(giaAssegnati)
+  if (!ids.length || ids.some((id) => !tree.has(id) && !gia.has(id))) {
     const err = new Error("Puoi modificare utenti solo nel tuo reparto")
     ;(err as Error & { status?: number }).status = 403
     throw err
   }
+}
+
+function livelliPatchNelPerimetro(
+  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
+  livelli: Awaited<ReturnType<typeof listLivelli>>,
+  cur: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
+  incoming: { livelloId?: string; livelloIds?: string[] }
+): { livelloId?: string; livelloIds?: string[] } {
+  const tree = alberoAssegnabileAnagrafica(me, livelli)
+  const esistenti = idsLivelli(mergePersonaleLivelli(cur.livelloId, cur.livelloIds))
+  const scelti = idsLivelli(incoming)
+  const fuori = esistenti.filter((id) => !tree.has(id))
+  const dentro = scelti.filter((id) => tree.has(id))
+  return mergePersonaleLivelli(undefined, [...fuori, ...dentro])
 }
 
 export async function postLpagaPersonale(req: Request, res: Response) {
@@ -415,17 +432,21 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
     const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
     const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
     assertPuoModificarePersonale(me, cur, ruolo)
-    const livelliPatch =
+    let livelliPatch =
       req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
     if (me.ruolo === "manager") {
+      const esistenti = idsLivelli(mergePersonaleLivelli(cur.livelloId, cur.livelloIds))
       const nextLivelli =
         livelliPatch.livelloId || (livelliPatch.livelloIds && livelliPatch.livelloIds.length)
-          ? livelliPatch
+          ? livelliPatchNelPerimetro(me, livelli, cur, livelliPatch)
           : mergePersonaleLivelli(cur.livelloId, cur.livelloIds)
       try {
-        assertLivelliAnagraficaConsentiti(me, livelli, nextLivelli)
+        assertLivelliAnagraficaConsentiti(me, livelli, nextLivelli, esistenti)
       } catch (e) {
         return res.status(403).json({ message: (e as Error).message })
+      }
+      if (livelliPatch.livelloId || (livelliPatch.livelloIds && livelliPatch.livelloIds.length)) {
+        livelliPatch = nextLivelli
       }
     }
     const nome = req.body?.nome != null ? String(req.body.nome).trim() : cur.nome

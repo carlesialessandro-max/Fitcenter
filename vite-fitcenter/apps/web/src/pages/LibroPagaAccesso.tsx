@@ -954,7 +954,13 @@ function Personale({
           onClose={() => setDettaglioId(null)}
           canEdit={me?.ruolo === "admin" || (me?.ruolo === "manager" && detPersona.ruolo !== "admin")}
           allowAdminRole={me?.ruolo === "admin"}
-          livelli={data.livelli}
+          livelli={
+            me?.ruolo === "admin"
+              ? data.livelli
+              : data.livelliAssegnabili?.length
+                ? data.livelliAssegnabili
+                : data.livelli
+          }
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
           onDone={onDone}
