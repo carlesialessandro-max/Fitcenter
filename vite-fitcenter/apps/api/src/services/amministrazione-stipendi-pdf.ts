@@ -69,11 +69,11 @@ function amountsOn(line: string): number[] {
 }
 
 /**
- * Costo collaboratore da riga Mattonai:
- * - sempre il compenso netto (prima colonna, quanto paghiamo allo sportivo);
- * - se c’è anche il lordo, si aggiunge solo l’INPS (e analoghi) a carico società.
- * L’INPS a carico collaboratore è già dentro il netto e non va sommata di nuovo.
- * Es. Pagnini: 405 netto + 39,24 INPS società = 444,24 (non 405+19,62+39,24 = 463,86).
+ * Colonne Mattonai istruttori: netto | lordo | INPS carico collaboratore | INPS carico società.
+ * - solo netto compilato → si usa il netto;
+ * - se c’è anche il lordo → lordo + INPS carico società.
+ * L’INPS collaboratore è già nel lordo (es. Pagnini 405) e non si somma.
+ * Pagnini: 385,38 | 405 | 19,62 | 39,24 → 405 + 39,24 = 444,24 (non 385,38+39,24 = 424,62).
  */
 export function totaleMensileMattonai(amts: number[]): number {
   const pos = amts.filter((n) => Number.isFinite(n) && n > 0)
@@ -90,10 +90,33 @@ export function totaleMensileMattonai(amts: number[]): number {
 
   const maybeLordo = cols[1]
   const hasLordo = maybeLordo != null && maybeLordo >= netto - 0.009
-  const extras = (hasLordo ? cols.slice(2) : cols.slice(1)).filter((n) => n < netto)
-  if (!extras.length) return netto
-  const societa = extras.length >= 2 ? extras.slice(1) : extras
-  return Math.round((netto + societa.reduce((s, n) => s + n, 0)) * 100) / 100
+  const base = hasLordo ? maybeLordo! : netto
+  const extras = (hasLordo ? cols.slice(2) : cols.slice(1)).filter((n) => n < base)
+  if (!extras.length) return base
+  return Math.round((base + inpsCaricoSocieta(extras)) * 100) / 100
+}
+
+/** INPS (o analogo 1/3+2/3) a carico società: la cifra doppia di quella collaboratore. */
+function inpsCaricoSocieta(extras: number[]): number {
+  const used = new Set<number>()
+  let societa = 0
+  for (let i = 0; i < extras.length; i++) {
+    if (used.has(i)) continue
+    for (let j = i + 1; j < extras.length; j++) {
+      if (used.has(j)) continue
+      const lo = Math.min(extras[i]!, extras[j]!)
+      const hi = Math.max(extras[i]!, extras[j]!)
+      if (Math.abs(hi - lo * 2) < 0.08) {
+        societa += hi
+        used.add(i)
+        used.add(j)
+        break
+      }
+    }
+  }
+  if (societa > 0) return Math.round(societa * 100) / 100
+  if (extras.length >= 2) return extras[extras.length - 1]!
+  return 0
 }
 
 function parseMattonai(text: string, mese: string): AmmPdfRiga[] {

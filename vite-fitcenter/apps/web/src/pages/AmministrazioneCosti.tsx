@@ -1737,8 +1737,8 @@ function StipendiTab() {
             <p className="text-xs text-zinc-500">
               Gli importi arrivano dal PDF del commercialista (Studio Mattonai), non dalle mensilità del Libro paga.
               Il caricamento sostituisce gli importi di quel mese; le ripartizioni e i centri di costo restano quelli
-              già impostati (turni/reparto Libro paga). Si usa il compenso netto; se c’è anche il lordo si aggiunge
-              solo l’INPS a carico società (non quella a carico collaboratore, già nel netto).
+              già impostati (turni/reparto Libro paga). Si usa il compenso netto; se c’è anche il lordo si prende
+              il lordo e si aggiunge solo l’INPS a carico società (non quella a carico collaboratore, già nel lordo).
               Il report annuale è nel{" "}
               <Link to="/libro-paga?tab=collaboratori" className="underline">
                 libro paga
