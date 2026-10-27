@@ -312,7 +312,7 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Fonte importi: PDF del commercialista (lordo + INPS a carico società se presente). Il PDF sostituisce gli
+            Fonte importi: PDF Mattonai (compenso netto; se c’è il lordo si aggiunge solo l’INPS a carico società). Il PDF sostituisce gli
             importi di quel mese, non solo i mancanti; le ripartizioni e i centri di costo restano quelli del Libro paga
             (turni/reparto). L’Excel annuale resta un’opzione. Solo admin e Alberto.
           </p>

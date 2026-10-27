@@ -68,18 +68,32 @@ function amountsOn(line: string): number[] {
   return out
 }
 
-/** Compenso mensile da riga Mattonai: lordo + INPS (e altri contributi) a carico società, se presenti. */
+/**
+ * Costo collaboratore da riga Mattonai:
+ * - sempre il compenso netto (prima colonna, quanto paghiamo allo sportivo);
+ * - se c’è anche il lordo, si aggiunge solo l’INPS (e analoghi) a carico società.
+ * L’INPS a carico collaboratore è già dentro il netto e non va sommata di nuovo.
+ * Es. Pagnini: 405 netto + 39,24 INPS società = 444,24 (non 405+19,62+39,24 = 463,86).
+ */
 export function totaleMensileMattonai(amts: number[]): number {
   const pos = amts.filter((n) => Number.isFinite(n) && n > 0)
   if (!pos.length) return 0
-  if (pos.length === 1) return pos[0]!
-  const lordo = pos[1]!
-  const rest = pos.slice(2)
-  if (!rest.length) return lordo
-  const last = rest[rest.length - 1]!
-  if (last >= lordo - 0.009) return last
-  const contributi = rest.filter((n) => n < lordo)
-  return Math.round((lordo + contributi.reduce((s, n) => s + n, 0)) * 100) / 100
+  const netto = pos[0]!
+  if (pos.length === 1) return netto
+
+  let cols = pos.slice()
+  if (cols.length >= 3) {
+    const last = cols[cols.length - 1]!
+    const restSum = Math.round(cols.slice(0, -1).reduce((s, n) => s + n, 0) * 100) / 100
+    if (Math.abs(last - restSum) < 0.05) cols = cols.slice(0, -1)
+  }
+
+  const maybeLordo = cols[1]
+  const hasLordo = maybeLordo != null && maybeLordo >= netto - 0.009
+  const extras = (hasLordo ? cols.slice(2) : cols.slice(1)).filter((n) => n < netto)
+  if (!extras.length) return netto
+  const societa = extras.length >= 2 ? extras.slice(1) : extras
+  return Math.round((netto + societa.reduce((s, n) => s + n, 0)) * 100) / 100
 }
 
 function parseMattonai(text: string, mese: string): AmmPdfRiga[] {
