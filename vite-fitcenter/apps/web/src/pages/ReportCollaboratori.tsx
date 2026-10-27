@@ -4,6 +4,7 @@ import { amministrazioneApi, type AmmCollabReport, type AmmCollabReportRiga, typ
 import { lpagaApi } from "@/api/lpaga"
 import { parseCollabReportExcel, type CollabReportExcelRiga, type CollabReportExcelRimanenza } from "@/lib/collab-report-excel"
 import { extractPdfText } from "@/lib/pdf-fattura-text"
+import { defaultRepartoMattonai, parseMattonaiPdf } from "@/lib/mattonai-stipendi"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
@@ -243,11 +244,11 @@ export function ReportCollaboratori({
     setPreview(null)
     try {
       const text = await extractPdfText(file, 80)
-      const parsed =
-        source === "lpaga"
-          ? await lpagaApi.parseStipendiPdf(text, file.name, meseNew)
-          : await amministrazioneApi.parseStipendiPdf(text, file.name, meseNew)
-      const righe = [...parsed.sportivi, ...parsed.gestionali]
+      const parsed = parseMattonaiPdf(text, meseNew)
+      const righe: AmmStipendiPdfRiga[] = parsed.map((r) => ({
+        ...r,
+        quote: [{ repartoId: defaultRepartoMattonai(r), percentuale: 100 }],
+      }))
       if (!righe.length) throw new Error("Nessun collaboratore nel PDF. Serve il riepilogo Studio Mattonai.")
       setPdfPreview(righe)
     } catch (e) {

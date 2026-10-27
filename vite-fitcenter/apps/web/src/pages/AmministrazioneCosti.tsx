@@ -14,6 +14,7 @@ import {
   type AmmTipoCosto,
 } from "@/api/amministrazione"
 import { extractPdfText, extractPdfTextWithOcr } from "@/lib/pdf-fattura-text"
+import { defaultRepartoMattonai, parseMattonaiPdf } from "@/lib/mattonai-stipendi"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
 import { macroSplitLabel, macroSplitTargets, normalizeMacroSplitQuote } from "@/lib/amm-macro-split"
 import { downloadAmmMastrinoTemplate, parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
@@ -1667,22 +1668,26 @@ function StipendiTab() {
         }, { rotateForConsuntivo: isCostSummary })
         if (ocrText.trim()) text = ocrText
       }
-      const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
       if (kind === "sportivi") {
-        const righe = [...parsed.sportivi, ...parsed.gestionali]
+        const parsed = parseMattonaiPdf(text, mese)
+        const righe: AmmStipendiPdfRiga[] = parsed.map((r) => ({
+          ...r,
+          quote: [{ repartoId: defaultRepartoMattonai(r), percentuale: 100 }],
+        }))
         if (!righe.length) throw new Error("Nessun collaboratore nel PDF. Serve il riepilogo Studio Mattonai.")
         setCollabPreview(righe)
         setBustePdfPreview(null)
         setPreview(null)
-      } else {
-        if (parsed.dipendenti.length !== 1) {
-          throw new Error("Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo”.")
-        }
-        setImportMsg("")
-        setBustePdfPreview(parsed.dipendenti)
-        setCollabPreview(null)
-        setPreview(null)
+        return
       }
+      const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
+      if (parsed.dipendenti.length !== 1) {
+        throw new Error("Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo”.")
+      }
+      setImportMsg("")
+      setBustePdfPreview(parsed.dipendenti)
+      setCollabPreview(null)
+      setPreview(null)
     } catch (e) {
       setError((e as Error).message || "PDF non leggibile")
     }
