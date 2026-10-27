@@ -144,7 +144,16 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const [mese, setMese] = useState(currentMese)
   const [reparto, setReparto] = useState("")
   const [tab, setTab] = useState<
-    "home" | "anagrafica" | "livelli" | "turni" | "personale" | "mensilita" | "convalide" | "report" | "collaboratori"
+    | "home"
+    | "anagrafica"
+    | "area"
+    | "livelli"
+    | "turni"
+    | "personale"
+    | "mensilita"
+    | "convalide"
+    | "report"
+    | "collaboratori"
   >("home")
   const [q, setQ] = useState("")
   const [error, setError] = useState("")
@@ -183,8 +192,9 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const tabs: { id: typeof tab; label: string }[] = [
     { id: "home", label: "Home" },
     { id: "anagrafica", label: "Anagrafica" },
+    { id: "area", label: "Area personale" },
     ...(isAdmin ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
-    { id: "turni", label: isUser ? "I miei turni" : "Turnazioni" },
+    ...(!isUser ? ([{ id: "turni" as const, label: "Turnazioni" }] as const) : []),
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
@@ -268,7 +278,19 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             }}
           />
         )}
-        {data && tab === "turni" && (
+        {data && tab === "area" && me && (
+          <AreaPersonale
+            data={data}
+            me={me}
+            mese={mese}
+            onError={setError}
+            onDone={() => {
+              setError("")
+              void qc.invalidateQueries({ queryKey: ["lpaga"] })
+            }}
+          />
+        )}
+        {data && tab === "turni" && !isUser && (
           <Turni
             data={data}
             me={me}
@@ -461,6 +483,200 @@ function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
   )
 }
 
+function AreaPersonale({
+  data,
+  me,
+  mese,
+  onError,
+  onDone,
+}: {
+  data: LpagaPortalSnapshot
+  me: LpagaMe
+  mese: string
+  onError: (s: string) => void
+  onDone: () => void
+}) {
+  const persona = data.personale.find((p) => p.id === me.id)
+  const mens = data.mensilita.find((r) => r.personaleId === me.id)
+  const canChangeDay = me.ruolo === "admin" || me.ruolo === "manager"
+  const oggi = todayIso()
+  const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
+  const preferito =
+    livelli.find((l) => l.id === me.livelloId) ??
+    livelli.find((l) => (me.livelloIds ?? []).includes(l.id)) ??
+    livelli[0]
+  const [livelloId, setLivelloId] = useState(preferito?.id ?? "")
+  const [giorno, setGiorno] = useState(oggi)
+  const [quantita, setQuantita] = useState("1")
+  const [note, setNote] = useState("")
+  useEffect(() => {
+    if (!canChangeDay) setGiorno(todayIso())
+  }, [canChangeDay, mese])
+  const createMut = useMutation({
+    mutationFn: () =>
+      lpagaApi.createTurno({
+        personaleId: me.id,
+        livelloId,
+        giorno: canChangeDay ? giorno : oggi,
+        quantita: Number(quantita.replace(",", ".")),
+        note,
+      }),
+    onSuccess: () => {
+      setNote("")
+      setQuantita("1")
+      onDone()
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+  const delMut = useMutation({
+    mutationFn: (id: string) => lpagaApi.deleteTurno(id),
+    onSuccess: onDone,
+    onError: (e: Error) => onError(e.message),
+  })
+  const livelloSel = livelli.find((l) => l.id === livelloId)
+  const valoreUi = etichettaValoreTurno(livelloSel)
+  const quantitaNum = Number(quantita.replace(",", "."))
+  const quantitaErr = livelloSel && quantita.trim() ? messaggioQuantitaTurno(livelloSel, quantitaNum) : null
+  const importoAnteprima =
+    livelloSel && quantitaErr == null && Number.isFinite(quantitaNum) && quantitaNum > 0
+      ? calcolaImportoTurno(livelloSel, quantitaNum)
+      : null
+  const mieiTurni = useMemo(
+    () =>
+      data.turni
+        .filter((t) => t.personaleId === me.id)
+        .slice()
+        .sort((a, b) => b.giorno.localeCompare(a.giorno)),
+    [data.turni, me.id]
+  )
+  const info: { k: string; v: string }[] = [
+    { k: "Cognome", v: persona?.cognome || me.cognome || "" },
+    { k: "Nome", v: persona?.nome || me.nome },
+    { k: "Username", v: me.username },
+    { k: "Ruolo", v: ruoloLabel(me.ruolo) },
+    { k: `Tot. progr. ${mese.slice(0, 4)}`, v: eur(mens?.totAnno ?? mens?.importo ?? 0) },
+    { k: "Scad. contratto", v: fmtDateIt(persona?.contratto) },
+    { k: "Iban", v: persona?.iban || "—" },
+  ]
+  return (
+    <div className="mt-4 max-w-3xl space-y-4">
+      <Card title="Informazioni utente">
+        <dl className="grid gap-y-1.5 text-sm sm:grid-cols-2 sm:gap-x-8">
+          {info.map((r) => (
+            <div key={r.k} className="flex justify-between gap-4 sm:justify-start sm:gap-6">
+              <dt className="text-zinc-500">{r.k}</dt>
+              <dd className="text-zinc-100">{r.v.trim() ? r.v : "—"}</dd>
+            </div>
+          ))}
+        </dl>
+      </Card>
+      <LibroPagaSlot title="Nuovo turno di lavoro">
+        <p className="mb-3 text-xs text-zinc-500">
+          I turni che inserisci qui sono i tuoi, senza cercare il nominativo.
+          {me.ruolo === "user" ? "" : " Per il resto del reparto usa Turnazioni."}
+        </p>
+        <form
+          className="grid gap-3 sm:grid-cols-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (quantitaErr) {
+              onError(quantitaErr)
+              return
+            }
+            onError("")
+            createMut.mutate()
+          }}
+        >
+          <label className="grid gap-1 text-xs text-zinc-400">
+            <span>Data</span>
+            <input
+              type="date"
+              value={canChangeDay ? giorno : oggi}
+              onChange={(e) => canChangeDay && setGiorno(e.target.value)}
+              className={inputCls}
+              disabled={!canChangeDay}
+              min={canChangeDay ? undefined : oggi}
+              max={canChangeDay ? undefined : oggi}
+              required
+            />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+            <span>Mansione</span>
+            <MansioneSearchSelect items={livelli} value={livelloId} onChange={setLivelloId} required />
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-400">
+            <span>{valoreUi.label}</span>
+            <input value={quantita} onChange={(e) => setQuantita(e.target.value)} className={inputCls} inputMode="decimal" required />
+            <span className="text-[11px] text-zinc-500">{valoreUi.hint}</span>
+            {quantitaErr ? <span className="text-[11px] text-red-400">{quantitaErr}</span> : null}
+            {importoAnteprima != null ? (
+              <span className="text-[11px] text-zinc-300">Importo {eur(importoAnteprima)}</span>
+            ) : null}
+          </label>
+          <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+            <span>Note</span>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Orario / sostituzioni / altro"
+              className={inputCls}
+            />
+          </label>
+          {!canChangeDay ? (
+            <p className="text-xs text-zinc-500 sm:col-span-2">
+              Puoi inserire turni solo per oggi ({fmtDateIt(oggi)}), entro mezzanotte.
+            </p>
+          ) : null}
+          <div className="sm:col-span-2">
+            <button type="submit" className={btnAmber} disabled={createMut.isPending || Boolean(quantitaErr) || !livelloId}>
+              {createMut.isPending ? "Salvataggio…" : "Salva turno"}
+            </button>
+          </div>
+        </form>
+      </LibroPagaSlot>
+      <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+        <table className="min-w-full text-left text-sm">
+          <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
+            <tr>
+              <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Mansione</th>
+              <th className="px-3 py-2 text-right">Valore</th>
+              <th className="px-3 py-2 text-right">Importo</th>
+              <th className="px-3 py-2">Note</th>
+              <th className="px-3 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {mieiTurni.map((t) => (
+              <tr key={t.id} className="border-t border-zinc-800 text-zinc-200">
+                <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(t.giorno)}</td>
+                <td className="px-3 py-2">{t.livelloNome}</td>
+                <td className="px-3 py-2 text-right">{t.quantita}</td>
+                <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
+                <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
+                <td className="px-3 py-2 text-right">
+                  {(canChangeDay || t.giorno === oggi) && (
+                    <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
+                      Elimina
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {!mieiTurni.length && (
+              <tr>
+                <td className="px-3 py-6 text-zinc-500" colSpan={6}>
+                  Nessun turno tuo in questo mese.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function Turni({
   data,
   me,
@@ -479,7 +695,7 @@ function Turni({
   const oggi = todayIso()
   const persone = data.personale.filter((p) => p.attivo)
   const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
-  const [personaleId, setPersonaleId] = useState(isUser ? me?.id ?? "" : persone[0]?.id ?? "")
+  const [personaleId, setPersonaleId] = useState(isUser ? me?.id ?? "" : "")
   const [livelloId, setLivelloId] = useState(livelli[0]?.id ?? "")
   const [giorno, setGiorno] = useState(oggi)
   const [quantita, setQuantita] = useState("1")
