@@ -47,10 +47,14 @@ function macroDettaglioLabel(id: string): string {
   return "Altri incassi"
 }
 
-function repartoDettaglioLabel(r: {
+function sottoDettaglioLabel(r: {
   macro: string
   ripartizione?: { macro: string; importo: number }[]
+  ripartizioneSotto?: { id: string; nome: string; importo: number }[]
 }): string {
+  if (r.ripartizioneSotto?.length) {
+    return r.ripartizioneSotto.map((quota) => `${quota.nome} ${eur(quota.importo)}`).join(" · ")
+  }
   if (r.ripartizione?.length) {
     return r.ripartizione.map((quota) => `${macroDettaglioLabel(quota.macro)} ${eur(quota.importo)}`).join(" · ")
   }
@@ -59,6 +63,51 @@ function repartoDettaglioLabel(r: {
     return parts.map((p) => macroDettaglioLabel(p.toLowerCase())).join(" · ")
   }
   return macroDettaglioLabel(macroPrimarioRicavo(r))
+}
+
+function vociPerSotto(
+  dettaglio: { voce: string; ripartizioneSotto?: { id: string; nome: string; importo: number }[] }[] | undefined,
+  sottoId: string,
+): { voce: string; importo: number }[] {
+  return (dettaglio ?? [])
+    .map((v) => {
+      const quota = v.ripartizioneSotto?.find((s) => s.id === sottoId)
+      return quota && Math.abs(quota.importo) > 0.009 ? { voce: v.voce, importo: quota.importo } : null
+    })
+    .filter((x): x is { voce: string; importo: number } => x != null)
+    .sort((a, b) => Math.abs(b.importo) - Math.abs(a.importo))
+}
+
+function vociAltriIncassi(
+  dettaglio:
+    | {
+        voce: string
+        importo: number
+        macro: string
+        ripartizione?: { macro: string; importo: number }[]
+      }[]
+    | undefined,
+): { voce: string; importo: number }[] {
+  return (dettaglio ?? [])
+    .filter((r) => macroPrimarioRicavo(r) === "altro")
+    .map((r) => ({ voce: r.voce, importo: r.importo }))
+    .sort((a, b) => Math.abs(b.importo) - Math.abs(a.importo))
+}
+
+function AltriIncassiNome({ voci }: { voci: { voce: string; importo: number }[] }) {
+  if (!voci.length) return <>Altri incassi</>
+  return (
+    <details>
+      <summary className="cursor-pointer hover:text-amber-200">Altri incassi</summary>
+      <ul className="mt-1 space-y-0.5 text-[11px] font-normal text-zinc-500">
+        {voci.map((v) => (
+          <li key={v.voce}>
+            {v.voce} · {eur(v.importo)}
+          </li>
+        ))}
+      </ul>
+    </details>
+  )
 }
 
 function fmtDateIt(iso: string): string {
@@ -315,9 +364,12 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Stessi movimenti della griglia «Movimenti di cassa». I corsi BAMBINI vanno in piscina (scuola nuoto).
-                Tesseramenti FIN/FITRI: 60% piscina e 40% fitness. ASI, badge, BeActive e ricarica Phon seguono
-                l’abbonamento dello stesso cliente nel mese; se manca restano tra gli altri incassi.
+                Stessi movimenti della griglia «Movimenti di cassa». I ticket giornalieri (TICKETING) vanno tutti in
+                Piscina estiva e parco acquatico, non tra gli altri incassi. PREMIUM: 10% SPA, 10% piscina estiva, 80%
+                OPEN / SMILE FIT / SMILE H2O / GYM / NUOTO LIBERO. GOLD ESTIVO: 10% piscina estiva e 90% tipologia.
+                ESTIVO ADD-ON: 100% piscina estiva. Pacchetti ingressi per natura. Tesseramenti, badge e quote seguono
+                l’abbonamento dello stesso cliente. «Altri incassi» è il residuo: prove/inviti, shop, tesseramenti senza
+                abbonamento collegato, affitti e convenzioni da Fatture in Cloud. Clicca una voce per vedere i centri.
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">
@@ -344,8 +396,23 @@ function DashboardTab() {
                         ) : null
                       const row = (
                         <tr key={`${r.voce}-${macroId}-${index}`} className="border-t border-zinc-800/80 text-zinc-300">
-                          <td className="px-2 py-1 pl-4">{r.voce}</td>
-                          <td className="px-2 py-1 text-zinc-400">{repartoDettaglioLabel(r)}</td>
+                          <td className="px-2 py-1 pl-4">
+                            {(r.ripartizioneSotto?.length ?? 0) > 1 ? (
+                              <details>
+                                <summary className="cursor-pointer text-zinc-200 hover:text-amber-200">{r.voce}</summary>
+                                <ul className="mt-1 space-y-0.5 text-[11px] text-zinc-500">
+                                  {r.ripartizioneSotto!.map((s) => (
+                                    <li key={s.id}>
+                                      {s.nome}: {eur(s.importo)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            ) : (
+                              r.voce
+                            )}
+                          </td>
+                          <td className="px-2 py-1 text-zinc-400">{sottoDettaglioLabel(r)}</td>
                           <td className="px-2 py-1 text-right tabular-nums">{r.n}</td>
                           <td className="px-2 py-1 text-right tabular-nums">{eur(r.importo)}</td>
                         </tr>
@@ -438,7 +505,9 @@ function DashboardTab() {
           )}
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
-              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Sono inclusi nel risultato dell’impresa.
+              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. I ticket giornalieri
+              stanno in Piscina estiva. Questa riga è il residuo (prove, shop, tesseramenti senza abbonamento, affitti e
+              convenzioni) ed entra nel risultato dell’impresa.
             </p>
           )}
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
@@ -487,7 +556,9 @@ function DashboardTab() {
                     ))}
                     {totRicaviAltri > 0.009 ? (
                       <tr className="border-t border-zinc-800 bg-zinc-900/20">
-                        <td className="px-3 py-2 text-zinc-100">Altri incassi</td>
+                        <td className="px-3 py-2 text-zinc-100">
+                          <AltriIncassiNome voci={vociAltriIncassi(d.ricaviDettaglio)} />
+                        </td>
                         <td className="px-3 py-2 text-right text-zinc-200">{eur(totRicaviAltri)}</td>
                         <td className="px-3 py-2 text-right text-zinc-400">—</td>
                         <td className="px-3 py-2 text-right text-zinc-400">—</td>
@@ -563,6 +634,7 @@ function DashboardTab() {
             sia sopra sia sotto, così torna anche il totale impresa.
           </p>
           <h3 className="text-sm font-medium text-zinc-200">Dettaglio centri (stessi totali di sopra)</h3>
+          <p className="text-xs text-zinc-500">Clicca un centro per vedere le voci che lo alimentano.</p>
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
             <table className="min-w-full text-sm">
               <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
@@ -581,12 +653,33 @@ function DashboardTab() {
                 {pnlDettaglioByMacro.length ? (
                   pnlDettaglioByMacro.map(({ macro, righe }) => (
                     <Fragment key={macro.id}>
-                      {righe.map((r) => (
+                      {righe.map((r) => {
+                        const vociSotto = vociPerSotto(d.ricaviDettaglio, r.id)
+                        return (
                         <tr key={r.id} className="border-t border-zinc-800">
                           <td className="px-3 py-2 text-zinc-100">
-                            {r.nome}
-                            {r.corso ? <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-500/80">corso</span> : null}
-                            <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoPct}%</span>
+                            {vociSotto.length ? (
+                              <details>
+                                <summary className="cursor-pointer hover:text-amber-200">
+                                  {r.nome}
+                                  {r.corso ? <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-500/80">corso</span> : null}
+                                  <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoPct}%</span>
+                                </summary>
+                                <ul className="mt-1 space-y-0.5 text-[11px] font-normal text-zinc-500">
+                                  {vociSotto.map((v) => (
+                                    <li key={v.voce}>
+                                      {v.voce} · {eur(v.importo)}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </details>
+                            ) : (
+                              <>
+                                {r.nome}
+                                {r.corso ? <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-500/80">corso</span> : null}
+                                <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoPct}%</span>
+                              </>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
                           <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
@@ -600,7 +693,8 @@ function DashboardTab() {
                             {d.ricaviDisponibili && r.marginePct != null ? `${r.marginePct}%` : "—"}
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                       <tr key={`${macro.id}-sub`} className="border-t border-zinc-800 bg-zinc-900/30 text-sm">
                         <td className="px-3 py-2 font-medium text-zinc-200">Totale {macro.nome}</td>
                         <td className="px-3 py-2 text-right font-medium text-zinc-200">{eur(macro.ricavi)}</td>
@@ -626,7 +720,9 @@ function DashboardTab() {
                 )}
                 {totRicaviAltri > 0.009 ? (
                   <tr className="border-t border-zinc-800 bg-zinc-900/20">
-                    <td className="px-3 py-2 text-zinc-100">Altri incassi</td>
+                    <td className="px-3 py-2 text-zinc-100">
+                      <AltriIncassiNome voci={vociAltriIncassi(d.ricaviDettaglio)} />
+                    </td>
                     <td className="px-3 py-2 text-right text-zinc-200">{eur(totRicaviAltri)}</td>
                     <td className="px-3 py-2 text-right text-zinc-400">—</td>
                     <td className="px-3 py-2 text-right text-zinc-400">—</td>

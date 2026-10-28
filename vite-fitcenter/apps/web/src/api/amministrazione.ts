@@ -134,6 +134,7 @@ export type AmmDashboard = {
     importo: number
     n: number
     ripartizione: { macro: string; importo: number }[]
+    ripartizioneSotto?: { id: string; nome: string; importo: number }[]
   }[]
 }
 

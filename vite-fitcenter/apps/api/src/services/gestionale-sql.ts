@@ -6925,7 +6925,9 @@ export function isIncassoVoceAccessoria(voce: string, contesto: string, causale 
   if (/\bBADGE\b/.test(u) && /MERCHANDISING/.test(u)) return true
   if (/BE ?ACTIVE/.test(u)) return true
   if (/SOSPENSIONI AGGIUNT/.test(u)) return true
-  if (/\bASI\b/.test(u) && /ISCRIZIONE/.test(u)) return true
+  if (/QUOTA ASSOCIATIVA/.test(u)) return true
+  if (/GYMPAY/.test(u)) return true
+  if (/\bASI\b/.test(u) && /ISCRIZIONE|STAFF/.test(u)) return true
   if (/\bUISP\b/.test(u)) return true
   if (/\bFITRI\b/.test(u)) return true
   if (/\bFIN\b/.test(u) && /(ISCRIZIONE|QUOTA)/.test(u)) return true
