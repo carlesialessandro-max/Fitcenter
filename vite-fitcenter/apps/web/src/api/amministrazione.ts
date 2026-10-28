@@ -44,6 +44,9 @@ export type AmmSpesa = {
   ficId?: number
   createdAt: string
   updatedAt: string
+  competenzaMesi?: string[]
+  competenzaLabel?: string
+  importoNelMese?: number
 }
 
 export type AmmDashRiga = { id: string; nome: string; importo: number; macroId?: string }

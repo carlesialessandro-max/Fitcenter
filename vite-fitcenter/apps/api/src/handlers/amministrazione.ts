@@ -30,6 +30,12 @@ import {
   type MacroCommerciale,
 } from "../services/amministrazione-ricavi.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
+import {
+  labelCompetenza,
+  ripartoCompetenza,
+  spesaNellAnno,
+  spesaNelMese,
+} from "../services/amministrazione-utenze-competenza.js"
 import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import {
@@ -50,8 +56,18 @@ function fail(res: Response, e: unknown) {
   return res.status(code).json({ message: (e as Error)?.message ?? "Errore" })
 }
 
-function meseOf(iso: string): string {
-  return String(iso ?? "").slice(0, 7)
+function withCompetenza(s: AmmSpesa, meseFiltro = "") {
+  const parts = ripartoCompetenza(s)
+  const mesi = parts.map((p) => p.mese)
+  const importoNelMese = /^\d{4}-\d{2}$/.test(meseFiltro)
+    ? Math.round(parts.filter((p) => p.mese === meseFiltro).reduce((n, p) => n + p.importo, 0) * 100) / 100
+    : s.totale
+  return {
+    ...s,
+    competenzaMesi: mesi,
+    competenzaLabel: labelCompetenza(mesi),
+    importoNelMese,
+  }
 }
 
 function quoteOfCollaboratore(
@@ -160,8 +176,8 @@ export function getAmmSpese(req: Request, res: Response) {
     const mese = String(req.query.mese ?? "").trim()
     const q = String(req.query.q ?? "").trim().toLowerCase()
     let rows = ammCostiStore.listSpese()
-    if (/^\d{4}-\d{2}$/.test(mese)) rows = rows.filter((s) => meseOf(s.dataDocumento) === mese)
-    else if (/^\d{4}$/.test(mese)) rows = rows.filter((s) => s.dataDocumento.startsWith(mese))
+    if (/^\d{4}-\d{2}$/.test(mese)) rows = rows.filter((s) => spesaNelMese(s, mese))
+    else if (/^\d{4}$/.test(mese)) rows = rows.filter((s) => spesaNellAnno(s, mese))
     if (q) {
       rows = rows.filter(
         (s) =>
@@ -170,7 +186,7 @@ export function getAmmSpese(req: Request, res: Response) {
           s.descrizione.toLowerCase().includes(q)
       )
     }
-    res.json({ spese: rows })
+    res.json({ spese: rows.map((s) => withCompetenza(s, mese)) })
   } catch (e) {
     fail(res, e)
   }
@@ -893,14 +909,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
       return new Set([repartoId])
     })()
     const inFiltro = (id: string) => !filtroIds || filtroIds.has(id)
-    const spese = ammCostiStore.listSpese().filter((s) => {
-      const ym = meseOf(s.dataDocumento)
-      if (mese) return ym === mese
-      return ym.startsWith(String(anno))
-    })
+    const speseParti = ammCostiStore.listSpese().flatMap((s) =>
+      ripartoCompetenza(s)
+        .filter((p) => (mese ? p.mese === mese : p.mese.startsWith(String(anno))))
+        .map((p) => ({ spesa: s, mese: p.mese, importo: p.importo }))
+    )
 
-    function slicesOf(s: AmmSpesa): Slice[] {
-      return allocateQuote(s.totale, s.quote)
+    function slicesOf(s: AmmSpesa, importo = s.totale): Slice[] {
+      return allocateQuote(importo, s.quote)
         .filter((a) => inFiltro(a.repartoId))
         .map((a) => ({
           repartoId: a.repartoId,
@@ -912,7 +928,9 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const busteAll = ammCostiStore.listBuste().filter((b) => (mese ? b.mese === mese : b.mese.startsWith(String(anno))))
     const bustaSlices: Slice[] = []
-    const pnlAlloc: { repartoId: string; importo: number }[] = spese.flatMap((s) => allocateQuote(s.totale, s.quote))
+    const pnlAlloc: { repartoId: string; importo: number }[] = speseParti.flatMap((p) =>
+      allocateQuote(p.importo, p.spesa.quote)
+    )
     for (const b of busteAll) {
       const alloc = allocateQuote(b.totale, b.quote)
       pnlAlloc.push(...alloc)
@@ -1096,16 +1114,22 @@ export async function getAmmDashboard(req: Request, res: Response) {
         : []
     if (recuperoUtenze) pnlAlloc.push({ repartoId: "utenze-generali", importo: -recuperoUtenze })
 
-    const allSlices = [...spese.flatMap(slicesOf), ...lpSlices, ...bustaSlices, ...rimborsoSlices, ...recoverySlices]
+    const allSlices = [
+      ...speseParti.flatMap((p) => slicesOf(p.spesa, p.importo)),
+      ...lpSlices,
+      ...bustaSlices,
+      ...rimborsoSlices,
+      ...recoverySlices,
+    ]
     const tot = Math.round(allSlices.reduce((s, x) => s + x.importo, 0) * 100) / 100
 
     let totFisso = bustaSlices.reduce((s, x) => s + x.importo, 0)
     let totVariabile =
       lpSlices.reduce((s, x) => s + x.importo, 0) + rimborsoSlices.reduce((s, x) => s + x.importo, 0)
-    for (const s of spese) {
-      const alloc = allocateQuote(s.totale, s.quote).filter((a) => inFiltro(a.repartoId))
+    for (const p of speseParti) {
+      const alloc = allocateQuote(p.importo, p.spesa.quote).filter((a) => inFiltro(a.repartoId))
       const sub = alloc.reduce((n, a) => n + a.importo, 0)
-      if (s.tipoCosto === "fisso") totFisso += sub
+      if (p.spesa.tipoCosto === "fisso") totFisso += sub
       else totVariabile += sub
     }
     if (inFiltro("utenze-generali")) totFisso -= recuperoUtenze
@@ -1138,11 +1162,12 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const byMeseMap = new Map<string, number>()
     for (let i = 1; i <= 12; i++) byMeseMap.set(`${anno}-${String(i).padStart(2, "0")}`, 0)
     for (const s of ammCostiStore.listSpese()) {
-      const ym = meseOf(s.dataDocumento)
-      if (!ym.startsWith(String(anno))) continue
-      const alloc = allocateQuote(s.totale, s.quote).filter((a) => inFiltro(a.repartoId))
-      const sub = alloc.reduce((n, a) => n + a.importo, 0)
-      byMeseMap.set(ym, Math.round(((byMeseMap.get(ym) ?? 0) + sub) * 100) / 100)
+      for (const p of ripartoCompetenza(s)) {
+        if (!p.mese.startsWith(String(anno))) continue
+        const alloc = allocateQuote(p.importo, s.quote).filter((a) => inFiltro(a.repartoId))
+        const sub = alloc.reduce((n, a) => n + a.importo, 0)
+        byMeseMap.set(p.mese, Math.round(((byMeseMap.get(p.mese) ?? 0) + sub) * 100) / 100)
+      }
     }
     for (const ym of Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)) {
       const stored = collabAll.filter((c) => c.mese === ym)
@@ -1241,7 +1266,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const totUtile = round2(totRicavi - totCostoPnl)
     const totRicaviAzienda = round2(ricavi.tot)
     const totCostiAzienda = round2(
-      spese.reduce((sum, s) => sum + (Number(s.totale) || 0), 0) -
+      speseParti.reduce((sum, p) => sum + (Number(p.importo) || 0), 0) -
         recuperoUtenze +
         busteAll.reduce((sum, b) => sum + (Number(b.totale) || 0), 0) +
         totCollaboratoriAziendaRaw +
@@ -1283,7 +1308,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byMese,
       byCollaboratori,
       byBuste,
-      nSpese: spese.length,
+      nSpese: new Set(speseParti.map((p) => p.spesa.id)).size,
       nBuste: busteAll.length,
       ricaviDisponibili,
       ricaviErrore: ricavi.disponibile ? ricaviErrore : "Incassi del gestionale non disponibili.",

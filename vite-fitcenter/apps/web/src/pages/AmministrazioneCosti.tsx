@@ -273,7 +273,8 @@ function DashboardTab() {
               I ricavi ordinari arrivano dagli incassi del gestionale. Danza, affitti spazi e convenzioni si prendono
               sempre dalle fatture emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
               di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
-              dicembre 2025 resta sul 2025.
+              dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, Tres Energia e Sima energia stanno sul
+              mese prima della fattura; Publiacqua si spezza sui mesi di consumo.
             </p>
             <p className="mt-1">I totali aziendali restano complessivi anche quando si seleziona un reparto nel filtro.</p>
           </div>
@@ -1059,6 +1060,9 @@ function RegistroTab() {
         eccezione del mese (i prossimi scarichi tengono la regola precedente). RA.MO, Diversey e Toscochimica: fino a
         maggio e dopo la prima fornitura di settembre 100% piscina coperta; da giugno fino a quella fornitura
         (apertura piscina esterna) 75% piscina esterna / 25% coperta. Si ricalcola anche sulle fatture già scaricate.
+        Utenze: Italpower, Tip energia, Tres Energia e Sima energia vanno nel mese prima della fattura (febbraio →
+        gennaio). Publiacqua, se in descrizione c’è il periodo, spezza l’importo su quei mesi; altrimenti sui due mesi
+        precedenti la fattura.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
@@ -1412,6 +1416,7 @@ function RegistroTab() {
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
             <tr>
               <th className="px-3 py-2">Data</th>
+              <th className="px-3 py-2">Competenza</th>
               <th className="px-3 py-2">Fornitore</th>
               <th className="px-3 py-2">N. doc</th>
               <th className="px-3 py-2">Tipo</th>
@@ -1425,6 +1430,12 @@ function RegistroTab() {
             {(list.data?.spese ?? []).map((s) => (
               <tr key={s.id} className="border-t border-zinc-800 text-zinc-200">
                 <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(s.dataDocumento)}</td>
+                <td className="px-3 py-2 text-xs text-zinc-400">
+                  {s.competenzaLabel || "—"}
+                  {s.importoNelMese != null && Math.abs(s.importoNelMese - s.totale) > 0.009 ? (
+                    <span className="mt-0.5 block text-amber-300/90">in questo mese {eur(s.importoNelMese)}</span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2">{s.fornitore}</td>
                 <td className="px-3 py-2">{s.numeroDocumento || "—"}</td>
                 <td className="px-3 py-2 capitalize">{s.tipoCosto}</td>
@@ -1457,7 +1468,7 @@ function RegistroTab() {
             ))}
             {!list.data?.spese.length && (
               <tr>
-                <td className="px-3 py-6 text-zinc-500" colSpan={8}>
+                <td className="px-3 py-6 text-zinc-500" colSpan={9}>
                   Nessuna spesa in questo mese. I collaboratori sportivi non si inseriscono qui: restano nel libro paga.
                 </td>
               </tr>
