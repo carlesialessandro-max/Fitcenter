@@ -200,6 +200,13 @@ function DashboardTab() {
   const totSpeseGenerali = d?.totSpeseGeneraliStruttura ?? totFissiPie
   const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
   const costiAltriCentri = d?.totCostiFuoriReparti ?? 0
+  const totPnlRicavi = pnl.reduce((s, r) => s + r.ricavi, 0)
+  const totPnlDiretti = pnl.reduce((s, r) => s + r.costiDiretti, 0)
+  const totPnlFissi = pnl.reduce((s, r) => s + r.quotaFissi, 0)
+  const totPnlServizi = pnl.reduce((s, r) => s + (r.quotaServizi ?? 0), 0)
+  const totPnlCosto = pnl.reduce((s, r) => s + r.costoTotale, 0)
+  const totPnlUtile = pnl.reduce((s, r) => s + r.utile, 0)
+  const totRicaviAltri = d?.totRicaviAltri ?? 0
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap items-end gap-3">
@@ -478,6 +485,20 @@ function DashboardTab() {
                         </td>
                       </tr>
                     ))}
+                    {totRicaviAltri > 0.009 ? (
+                      <tr className="border-t border-zinc-800 bg-zinc-900/20">
+                        <td className="px-3 py-2 text-zinc-100">Altri incassi</td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(totRicaviAltri)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-emerald-400"}`}>
+                          {d.ricaviDisponibili ? eur(totRicaviAltri) : "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                      </tr>
+                    ) : null}
                     {costiAltriCentri > 0.009 ? (
                       <tr className="border-t border-zinc-800 bg-zinc-900/20">
                         <td className="px-3 py-2 text-zinc-100">Altri centri di costo</td>
@@ -504,14 +525,26 @@ function DashboardTab() {
               </tbody>
               {pnl.length ? (
                 <tfoot>
+                  <tr className="border-t border-zinc-800 bg-zinc-900/30 font-medium">
+                    <td className="px-3 py-2 text-zinc-200">Totale Piscina + Fitness + SPA</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(totPnlRicavi) : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlDiretti)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlFissi)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlServizi)}</td>
+                    <td className="px-3 py-2 text-right">{eur(totPnlCosto)}</td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : totPnlUtile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(totPnlUtile) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                  </tr>
                   <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
                     <td className="px-3 py-2 text-zinc-100">Totale impresa</td>
                     <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(d.totRicaviAzienda) : "—"}</td>
                     <td className="px-3 py-2 text-right text-zinc-400">
-                      {eur(costiDirettiReparti + costiAltriCentri)}
+                      {eur(totPnlDiretti + costiAltriCentri)}
                     </td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totStruttura ?? 0)}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{eur(d.totServizi ?? 0)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlFissi)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlServizi)}</td>
                     <td className="px-3 py-2 text-right">{eur(d.totCostiAzienda)}</td>
                     <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                       {d.ricaviDisponibili ? eur(d.totUtileAzienda) : "—"}
@@ -525,9 +558,9 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Il totale impresa considera tutti i centri di costo. «Spese generali struttura» viene imputata in % sui
-            ricavi di Piscina, Fitness e SPA. Lo specchietto sotto è la stessa tabella, esplosa sui centri: gym, open,
-            ticket, SPA e corsi stanno tutti dentro, e i totali coincidono con le tre righe sopra.
+            Le tre righe Piscina, Fitness e SPA e i loro totali coincidono con lo specchietto sotto, riga per riga.
+            «Spese generali struttura» sta tutta dentro quelle tre quote. Gli altri incassi e gli altri centri stanno
+            sia sopra sia sotto, così torna anche il totale impresa.
           </p>
           <h3 className="text-sm font-medium text-zinc-200">Dettaglio centri (stessi totali di sopra)</h3>
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
@@ -591,20 +624,64 @@ function DashboardTab() {
                     </td>
                   </tr>
                 )}
+                {totRicaviAltri > 0.009 ? (
+                  <tr className="border-t border-zinc-800 bg-zinc-900/20">
+                    <td className="px-3 py-2 text-zinc-100">Altri incassi</td>
+                    <td className="px-3 py-2 text-right text-zinc-200">{eur(totRicaviAltri)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-emerald-400"}`}>
+                      {d.ricaviDisponibili ? eur(totRicaviAltri) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                  </tr>
+                ) : null}
+                {costiAltriCentri > 0.009 ? (
+                  <tr className="border-t border-zinc-800 bg-zinc-900/20">
+                    <td className="px-3 py-2 text-zinc-100">Altri centri di costo</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(costiAltriCentri)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                    <td className="px-3 py-2 text-right text-zinc-200">{eur(costiAltriCentri)}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(-costiAltriCentri) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                  </tr>
+                ) : null}
               </tbody>
               {pnl.length ? (
                 <tfoot>
-                  <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
-                    <td className="px-3 py-2 text-zinc-100">Totale Piscina + Fitness + SPA</td>
-                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(pnl.reduce((s, r) => s + r.ricavi, 0)) : "—"}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + r.costiDiretti, 0))}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + r.quotaFissi, 0))}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + (r.quotaServizi ?? 0), 0))}</td>
-                    <td className="px-3 py-2 text-right">{eur(pnl.reduce((s, r) => s + r.costoTotale, 0))}</td>
-                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : pnl.reduce((s, r) => s + r.utile, 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {d.ricaviDisponibili ? eur(pnl.reduce((s, r) => s + r.utile, 0)) : "—"}
+                  <tr className="border-t border-zinc-800 bg-zinc-900/30 font-medium">
+                    <td className="px-3 py-2 text-zinc-200">Totale Piscina + Fitness + SPA</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(totPnlRicavi) : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlDiretti)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlFissi)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlServizi)}</td>
+                    <td className="px-3 py-2 text-right">{eur(totPnlCosto)}</td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : totPnlUtile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(totPnlUtile) : "—"}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                  </tr>
+                  <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
+                    <td className="px-3 py-2 text-zinc-100">Totale impresa</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(d.totRicaviAzienda) : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">
+                      {eur(totPnlDiretti + costiAltriCentri)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlFissi)}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(totPnlServizi)}</td>
+                    <td className="px-3 py-2 text-right">{eur(d.totCostiAzienda)}</td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(d.totUtileAzienda) : "—"}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : d.totUtileAzienda >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili && d.margineAziendaPct != null ? `${d.margineAziendaPct}%` : "—"}
+                    </td>
                   </tr>
                 </tfoot>
               ) : null}

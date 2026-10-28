@@ -28,6 +28,7 @@ import {
   ordinaDettaglioRicavi,
   queryRicaviAmm,
   quoteRipartoFissi,
+  splitEuro,
   type MacroCommerciale,
 } from "../services/amministrazione-ricavi.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
@@ -1241,11 +1242,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
     const ripartoPct = quoteRipartoFissi(ricavi.byMacro)
-    const risultato = MACRO_COMMERCIALI.map((id) => {
+    const pesiMacro = MACRO_COMMERCIALI.map((id) => ricavi.byMacro[id])
+    const qfMacro = splitEuro(totStruttura, pesiMacro)
+    const qsMacro = splitEuro(totServizi, pesiMacro)
+    const risultato = MACRO_COMMERCIALI.map((id, i) => {
       const ricavo = round2(ricavi.byMacro[id])
       const costoDiretto = round2(diretti[id])
-      const quotaFissi = round2((totStruttura * (ripartoPct[id] || 0)) / 100)
-      const quotaServizi = round2((totServizi * (ripartoPct[id] || 0)) / 100)
+      const quotaFissi = qfMacro[i] ?? 0
+      const quotaServizi = qsMacro[i] ?? 0
       const costoTotale = round2(costoDiretto + quotaFissi + quotaServizi)
       const utile = round2(ricavo - costoTotale)
       const marginePct = ricavo > 0.009 ? Math.round((utile / ricavo) * 1000) / 10 : null
@@ -1267,24 +1271,24 @@ export async function getAmmDashboard(req: Request, res: Response) {
     for (const x of pnlAlloc) {
       costiByReparto.set(x.repartoId, round2((costiByReparto.get(x.repartoId) ?? 0) + x.importo))
     }
-    const splitQuote = (totale: number, pesi: number[], totPesi: number): number[] => {
-      if (!pesi.length) return []
-      if (totPesi <= 0.009) {
-        const out = pesi.map(() => 0)
-        out[out.length - 1] = round2(totale)
-        return out
-      }
-      let acc = 0
-      return pesi.map((p, i) => {
-        const last = i === pesi.length - 1
-        const q = last ? round2(totale - acc) : round2((totale * p) / totPesi)
-        acc = round2(acc + q)
-        return q
-      })
-    }
     const sottoCommerciali = reparti
       .filter((r) => r.livello === "sotto" && r.macroId && isMacroCommerciale(r.macroId))
       .sort((a, b) => a.ordine - b.ordine)
+    const idsSottoByMacro = (macro: MacroCommerciale) => {
+      const seen = new Set<string>()
+      const out: { id: string; nome: string }[] = []
+      for (const s of sottoCommerciali.filter((r) => r.macroId === macro)) {
+        seen.add(s.id)
+        out.push({ id: s.id, nome: s.nome })
+      }
+      for (const id of [...costiByReparto.keys(), ...Object.keys(ricavi.bySotto ?? {})]) {
+        if (seen.has(id) || id === macro) continue
+        if (macroIdOf(reparti, id) !== macro) continue
+        seen.add(id)
+        out.push({ id, nome: nomeOf(id) })
+      }
+      return out
+    }
     const risultatoDettaglio: {
       id: string
       nome: string
@@ -1304,7 +1308,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const parent = risultato.find((r) => r.id === macro)
       if (!parent) continue
       const rows: { id: string; nome: string; ricavi: number; costiDiretti: number }[] = []
-      for (const s of sottoCommerciali.filter((r) => r.macroId === macro)) {
+      for (const s of idsSottoByMacro(macro)) {
         const ricavo = round2(ricavi.bySotto?.[s.id] ?? 0)
         const costo = round2(costiByReparto.get(s.id) ?? 0)
         if (Math.abs(ricavo) > 0.009 || Math.abs(costo) > 0.009) {
@@ -1322,8 +1326,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
         })
       }
       if (!rows.length) continue
-      const qf = splitQuote(parent.quotaFissi, rows.map((r) => r.ricavi), parent.ricavi)
-      const qs = splitQuote(parent.quotaServizi ?? 0, rows.map((r) => r.ricavi), parent.ricavi)
+      const qf = splitEuro(parent.quotaFissi, rows.map((r) => r.ricavi))
+      const qs = splitEuro(parent.quotaServizi ?? 0, rows.map((r) => r.ricavi))
       rows.forEach((r, i) => {
         const quotaFissi = qf[i] ?? 0
         const quotaServizi = qs[i] ?? 0

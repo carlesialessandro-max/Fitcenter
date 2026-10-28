@@ -386,6 +386,36 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
   }
 }
 
+/** Spezza `totale` in euro sui pesi (ultima riga con peso > 0 prende il resto, così la somma torna esatta). */
+export function splitEuro(totale: number, pesi: number[]): number[] {
+  const n = pesi.length
+  if (n === 0) return []
+  const out = pesi.map(() => 0)
+  if (Math.abs(totale) <= 0.009) return out
+  const totPesi = pesi.reduce((s, p) => s + (Number(p) || 0), 0)
+  let lastPos = -1
+  for (let i = n - 1; i >= 0; i--) {
+    if (Math.abs(pesi[i]) > 0.009) {
+      lastPos = i
+      break
+    }
+  }
+  if (totPesi <= 0.009 || lastPos < 0) {
+    out[n - 1] = round2(totale)
+    return out
+  }
+  let acc = 0
+  for (let i = 0; i < n; i++) {
+    if (i === lastPos) {
+      out[i] = round2(totale - acc)
+    } else {
+      out[i] = round2((totale * pesi[i]) / totPesi)
+      acc = round2(acc + out[i])
+    }
+  }
+  return out
+}
+
 export function quoteRipartoFissi(ricavi: Record<MacroCommerciale, number>): Record<MacroCommerciale, number> {
   const tot = MACRO_COMMERCIALI.reduce((s, k) => s + (ricavi[k] || 0), 0)
   if (tot > 0.009) {
