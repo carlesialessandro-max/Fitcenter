@@ -366,7 +366,9 @@ function DashboardTab() {
               <p className="mt-2 text-[11px] text-zinc-500">
                 Stessi movimenti della griglia «Movimenti di cassa». I ticket si spezzano per prodotto: ingresso piscina
                 (coperta, estiva se parco), ingressi corsi, fitness, gestanti, SPA; cuffie e merce restano tra gli altri
-                incassi. PREMIUM: 10% SPA, 10% piscina estiva, 80% OPEN / SMILE FIT / SMILE H2O / GYM / NUOTO LIBERO.
+                incassi. SMILE FIT resta tutto nel Fitness: 70% palestra + 30% corsi terra. SMILE H2O resta tutto nella
+                Piscina: 70% coperta + 30% corsi acqua. I due totali Piscina e Fitness non cambiano. PREMIUM: 10% SPA,
+                10% piscina estiva, 80% sulla tipologia (OPEN / SMILE / GYM / NUOTO LIBERO).
                 GOLD ESTIVO: 10% piscina estiva e 90% tipologia. ESTIVO ADD-ON: 100% piscina estiva. Pacchetti ingressi
                 per natura. Tesseramenti, badge e quote seguono l’abbonamento dello stesso cliente. «Altri incassi» è il
                 residuo: prove/inviti, shop, tesseramenti senza abbonamento, affitti e convenzioni. Clicca una voce per
@@ -635,7 +637,10 @@ function DashboardTab() {
             sia sopra sia sotto, così torna anche il totale impresa.
           </p>
           <h3 className="text-sm font-medium text-zinc-200">Dettaglio centri (stessi totali di sopra)</h3>
-          <p className="text-xs text-zinc-500">Clicca un centro per vedere le voci che lo alimentano.</p>
+          <p className="text-xs text-zinc-500">
+            Clicca un centro per vedere le voci. Corsi terra (SMILE FIT) stanno dentro il Totale Fitness, corsi acqua
+            (SMILE H2O) dentro il Totale Piscina: la somma delle righe coincide con Piscina e Fitness di sopra.
+          </p>
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
             <table className="min-w-full text-sm">
               <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">

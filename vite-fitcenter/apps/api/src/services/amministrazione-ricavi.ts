@@ -107,13 +107,30 @@ function isVoceAccessoriaTesto(u: string): boolean {
   )
 }
 
-/** OPEN 50/50, SMILE FIT palestra, SMILE H2O coperta, GYM palestra, NUOTO LIBERO coperta. */
+/**
+ * SMILE FIT = palestra + corsi terra; SMILE H2O = piscina coperta + corsi acqua.
+ * Quote modificabili: il 70% resta sull'accesso, il 30% va sui corsi di gruppo.
+ */
+export const SMILE_PESO_ACCESSO = 0.7
+export const SMILE_PESO_CORSI = 0.3
+
+/** OPEN 50/50, SMILE FIT/H2O con quota corsi, GYM palestra, NUOTO LIBERO coperta. */
 function tipoAbbonamento(u: string): DestSotto[] | null {
   if (/\bOPEN\b/.test(u)) {
     return [dest("piscina-coperta", "piscina", 0.5), dest("palestra-sala-pesi", "fitness", 0.5)]
   }
-  if (/\bSMILE FIT\b/.test(u)) return [dest("palestra-sala-pesi", "fitness", 1)]
-  if (/\bSMILE H2O\b|\bSMILE H20\b/.test(u)) return [dest("piscina-coperta", "piscina", 1)]
+  if (/\bSMILE FIT\b/.test(u)) {
+    return [
+      dest("palestra-sala-pesi", "fitness", SMILE_PESO_ACCESSO),
+      dest("corsi-fitness", "fitness", SMILE_PESO_CORSI),
+    ]
+  }
+  if (/\bSMILE H2O\b|\bSMILE H20\b/.test(u)) {
+    return [
+      dest("piscina-coperta", "piscina", SMILE_PESO_ACCESSO),
+      dest("corsi-acqua", "piscina", SMILE_PESO_CORSI),
+    ]
+  }
   if (/\bGYM\b/.test(u)) return [dest("palestra-sala-pesi", "fitness", 1)]
   if (/NUOTO LIBERO/.test(u)) return [dest("piscina-coperta", "piscina", 1)]
   return null
@@ -207,6 +224,7 @@ function etichettaTicketing(u: string): string {
 /**
  * Regole da servizi.xlsx + quote adulti:
  * PREMIUM 10 SPA / 10 estiva / 80 tipo (OPEN, SMILE FIT, SMILE H2O, GYM, NUOTO LIBERO).
+ * SMILE FIT 70% palestra + 30% corsi terra; SMILE H2O 70% piscina coperta + 30% corsi acqua.
  * GOLD ESTIVO 10 estiva / 90 tipo (in Excel non include SPA).
  * GOLD 10 SPA / 90 tipo.
  * ESTIVO ADD-ON 100% piscina estiva.
