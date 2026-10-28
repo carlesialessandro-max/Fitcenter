@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
@@ -134,8 +134,8 @@ export function AmministrazioneCosti() {
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
         Si inseriscono i costi per capire se un reparto guadagna o perde. Uffici, utenze, costi generali, manutenzione,
-        pulizie e personale condiviso stanno sotto «Spese generali struttura» e si imputano in % sui ricavi delle
-        macro-aree (Piscina, Fitness, SPA) e sui ricavi dei corsi.
+        pulizie e personale condiviso stanno sotto «Spese generali struttura» e si imputano in % su tutti i ricavi di
+        Piscina, Fitness e SPA (corsi, gym, open, ticket compresi). Lo specchietto sotto esplode le stesse tre righe.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -176,7 +176,11 @@ function DashboardTab() {
   const d = dash.data
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
-  const pnlCorsi = d?.risultatoCorsi ?? []
+  const pnlDettaglio = d?.risultatoDettaglio ?? []
+  const pnlDettaglioByMacro = pnl.map((m) => ({
+    macro: m,
+    righe: pnlDettaglio.filter((r) => r.macroId === m.id),
+  })).filter((g) => g.righe.length > 0)
   const fissiMacros = new Set(["gestione", "generali", "servizi"])
   const pieMacros = (d?.byMacro ?? []).filter((r) => !fissiMacros.has(r.id))
   const totFissiPie = (d?.byMacro ?? [])
@@ -521,83 +525,91 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Il totale impresa considera tutti i centri di costo. «Spese generali struttura» (uffici, utenze, costi
-            generali, manutenzione, pulizie, personale condiviso) viene imputata in % sui ricavi di Piscina, Fitness e
-            SPA. Lo stesso importo si imputa in % sui ricavi dei corsi, per vedere se il corso ci rimette dopo i fissi.
+            Il totale impresa considera tutti i centri di costo. «Spese generali struttura» viene imputata in % sui
+            ricavi di Piscina, Fitness e SPA. Lo specchietto sotto è la stessa tabella, esplosa sui centri: gym, open,
+            ticket, SPA e corsi stanno tutti dentro, e i totali coincidono con le tre righe sopra.
           </p>
-          <h3 className="text-sm font-medium text-zinc-200">Risultato per corso</h3>
+          <h3 className="text-sm font-medium text-zinc-200">Dettaglio centri (stessi totali di sopra)</h3>
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
-              <table className="min-w-full text-sm">
-                <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Corso</th>
-                    <th className="px-3 py-2 font-medium text-right">Ricavi</th>
-                    <th className="px-3 py-2 font-medium text-right" title="Costi istruttori e altri costi assegnati direttamente al corso">
-                      Costi istruttori
-                    </th>
-                    <th
-                      className="px-3 py-2 font-medium text-right"
-                      title="Quota di Spese generali struttura imputata in % sui ricavi dei corsi"
-                    >
-                      Quota spese generali
-                    </th>
-                    <th className="px-3 py-2 font-medium text-right">Costo totale</th>
-                    <th className="px-3 py-2 font-medium text-right">Risultato</th>
-                    <th className="px-3 py-2 font-medium text-right">% su ricavi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pnlCorsi.length ? (
-                    pnlCorsi.map((r) => (
-                      <tr key={r.id} className="border-t border-zinc-800">
-                        <td className="px-3 py-2 text-zinc-100">
-                          {r.nome}
-                          <span className="ml-2 text-xs text-zinc-500">riparto {r.ripartoPct}%</span>
+            <table className="min-w-full text-sm">
+              <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2 font-medium">Centro</th>
+                  <th className="px-3 py-2 font-medium text-right">Ricavi</th>
+                  <th className="px-3 py-2 font-medium text-right">Costi diretti</th>
+                  <th className="px-3 py-2 font-medium text-right">Quota fissi</th>
+                  <th className="px-3 py-2 font-medium text-right">Quota servizi</th>
+                  <th className="px-3 py-2 font-medium text-right">Costo totale</th>
+                  <th className="px-3 py-2 font-medium text-right">Risultato</th>
+                  <th className="px-3 py-2 font-medium text-right">% su ricavi</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pnlDettaglioByMacro.length ? (
+                  pnlDettaglioByMacro.map(({ macro, righe }) => (
+                    <Fragment key={macro.id}>
+                      {righe.map((r) => (
+                        <tr key={r.id} className="border-t border-zinc-800">
+                          <td className="px-3 py-2 text-zinc-100">
+                            {r.nome}
+                            {r.corso ? <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-500/80">corso</span> : null}
+                            <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoPct}%</span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiDiretti)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaFissi)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaServizi)}</td>
+                          <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
+                          <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {d.ricaviDisponibili ? eur(r.utile) : "—"}
+                          </td>
+                          <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {d.ricaviDisponibili && r.marginePct != null ? `${r.marginePct}%` : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr key={`${macro.id}-sub`} className="border-t border-zinc-800 bg-zinc-900/30 text-sm">
+                        <td className="px-3 py-2 font-medium text-zinc-200">Totale {macro.nome}</td>
+                        <td className="px-3 py-2 text-right font-medium text-zinc-200">{eur(macro.ricavi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(macro.costiDiretti)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(macro.quotaFissi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(macro.quotaServizi ?? 0)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-zinc-200">{eur(macro.costoTotale)}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : macro.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili ? eur(macro.utile) : "—"}
                         </td>
-                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiIstruttori)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaSpeseGenerali)}</td>
-                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
-                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {d.ricaviDisponibili ? eur(r.utile) : "—"}
-                        </td>
-                        <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {d.ricaviDisponibili && r.marginePct != null ? `${r.marginePct}%` : "—"}
+                        <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : macro.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili && macro.marginePct != null ? `${macro.marginePct}%` : "—"}
                         </td>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td className="px-3 py-4 text-zinc-500" colSpan={7}>
-                        Nessun dato corsi nel periodo. Gym, open, ticket e SPA restano fuori da questo specchietto: qui
-                        contano solo scuola nuoto e corsi.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                {pnlCorsi.length ? (
+                    </Fragment>
+                  ))
+                ) : (
+                  <tr>
+                    <td className="px-3 py-4 text-zinc-500" colSpan={8}>
+                      Nessun dettaglio nel periodo.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {pnl.length ? (
                 <tfoot>
                   <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
-                    <td className="px-3 py-2 text-zinc-100">Totale corsi</td>
-                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(d.totRicaviCorsi ?? 0) : "—"}</td>
-                    <td className="px-3 py-2 text-right text-zinc-400">
-                      {eur(pnlCorsi.reduce((s, r) => s + r.costiIstruttori, 0))}
-                    </td>
-                    <td className="px-3 py-2 text-right text-zinc-400">
-                      {eur(pnlCorsi.reduce((s, r) => s + r.quotaSpeseGenerali, 0))}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {eur(pnlCorsi.reduce((s, r) => s + r.costoTotale, 0))}
-                    </td>
-                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : pnlCorsi.reduce((s, r) => s + r.utile, 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {d.ricaviDisponibili ? eur(pnlCorsi.reduce((s, r) => s + r.utile, 0)) : "—"}
+                    <td className="px-3 py-2 text-zinc-100">Totale Piscina + Fitness + SPA</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(pnl.reduce((s, r) => s + r.ricavi, 0)) : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + r.costiDiretti, 0))}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + r.quotaFissi, 0))}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">{eur(pnl.reduce((s, r) => s + (r.quotaServizi ?? 0), 0))}</td>
+                    <td className="px-3 py-2 text-right">{eur(pnl.reduce((s, r) => s + r.costoTotale, 0))}</td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : pnl.reduce((s, r) => s + r.utile, 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(pnl.reduce((s, r) => s + r.utile, 0)) : "—"}
                     </td>
                     <td className="px-3 py-2 text-right text-zinc-400">—</td>
                   </tr>
                 </tfoot>
-                ) : null}
-              </table>
-            </div>
+              ) : null}
+            </table>
+          </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-zinc-800 p-4">
               <h3 className="mb-3 text-sm font-medium text-zinc-200">Spese per macro-area</h3>
@@ -665,9 +677,9 @@ function DashboardTab() {
                 </ul>
               )}
               <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-                Lo specchietto elenca i costi dei centri operativi. I fissi (uffici, utenze, costi generali,
-                manutenzione, pulizie, personale condiviso) stanno raggruppati in «Spese generali struttura»: apri la
-                tendina per il dettaglio. Quell’importo si imputa in % sui ricavi delle macro-aree e dei corsi.
+                Lo specchietto elenca i costi dei centri operativi. I fissi stanno raggruppati in «Spese generali
+                struttura»: apri la tendina per il dettaglio. Quell’importo si imputa in % su tutti i ricavi di
+                Piscina, Fitness e SPA.
               </p>
             </div>
             <div className="rounded-2xl border border-zinc-800 p-4">

@@ -64,16 +64,20 @@ export type AmmRisultatoReparto = {
   ripartoFissiPct: number
 }
 
-export type AmmRisultatoCorso = {
+export type AmmRisultatoDettaglio = {
   id: string
   nome: string
+  macroId: string
+  macroNome: string
   ricavi: number
-  costiIstruttori: number
-  quotaSpeseGenerali: number
+  costiDiretti: number
+  quotaFissi: number
+  quotaServizi: number
   costoTotale: number
   utile: number
   marginePct: number | null
   ripartoPct: number
+  corso: boolean
 }
 
 export type AmmDashboard = {
@@ -117,8 +121,7 @@ export type AmmDashboard = {
   totStruttura?: number
   totServizi?: number
   totSpeseGeneraliStruttura?: number
-  totRicaviCorsi?: number
-  risultatoCorsi?: AmmRisultatoCorso[]
+  risultatoDettaglio?: AmmRisultatoDettaglio[]
   totCostoPnl?: number
   totUtile?: number
   marginePct?: number | null

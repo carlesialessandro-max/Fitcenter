@@ -11,6 +11,12 @@ export const CORSI_LABEL: Record<CorsoId, string> = {
   "corsi-acqua": "Corsi in acqua e attività di gruppo",
   "corsi-fitness": "Corsi fitness e attività di gruppo",
 }
+/** Centro di default se l'incasso è della macro ma non si riconosce il sotto-reparto. */
+export const DEFAULT_SOTTO: Record<MacroCommerciale, string> = {
+  piscina: "piscina-coperta",
+  fitness: "palestra-sala-pesi",
+  spa: "spa-benessere",
+}
 /** Solo questi due centri: la somma è il pool dei fissi di struttura da ripartire sui reparti. */
 export const MACRO_STRUTTURA = ["gestione", "generali"] as const
 /** Manutenzione, pulizie e personale condiviso: ripartiti sui tre reparti in base ai ricavi. */
@@ -126,38 +132,73 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   return [{ macro: "altro", peso: 1 }]
 }
 
-/** Incasso di un corso (non gym, open, ticket, spa). Serve per imputare le spese generali in % sui ricavi dei corsi. */
-export function classificaCorso(voce: string, contesto = ""): CorsoId | null {
-  const u = blob(`${voce} ${contesto}`)
-  if (!u) return null
-  if (
+export type DestSotto = { id: string; macro: MacroCommerciale; peso: number }
+
+function skipRicavoCommerciale(u: string): boolean {
+  return (
     /\bDANZA\b/.test(u) ||
     /\bPROFESSIONALE\b/.test(u) ||
+    /\b1\s*M MENSILE 2VS\b/.test(u) ||
+    (/\b3 GRADO\b/.test(u) && /\b1\s*M MENSILE\b/.test(u)) ||
     /\bCONVENZION/.test(u) ||
-    /AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA/.test(u) ||
-    /\bTICKET/.test(u) ||
-    /ESTIVA|PARCO ACQU/.test(u) ||
-    /\bOPEN\b/.test(u) ||
-    /\bSPA\b/.test(u) ||
-    /BENESSER|MASSAGG|ESTETIC/.test(u) ||
-    /^GYM\b/.test(u) ||
-    /SALA PESI|PACCHETTI INGRESSI|ABBONAMENTI STAFF FITNESS/.test(u)
-  ) {
-    return null
+    /AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA/.test(u)
+  )
+}
+
+/** Incasso gestionale → sotto-centro commerciale (gym, open, ticket e SPA compresi). */
+export function classificaSotto(voce: string, contesto = ""): DestSotto[] {
+  const u = blob(`${voce} ${contesto}`)
+  if (!u || skipRicavoCommerciale(u)) return []
+  if (/\bFITRI\b/.test(u) || (/\bFIN\b/.test(u) && /(ISCRIZIONE|QUOTA|TESSER)/.test(u))) {
+    return [
+      { id: "agonismo", macro: "piscina", peso: 0.6 },
+      { id: "palestra-sala-pesi", macro: "fitness", peso: 0.4 },
+    ]
   }
-  if (/SCUOLA NUOTO ADULTI|MASTER ADULTI|SN ADULTI/.test(u)) return "scuola-nuoto-adulti"
+  if (/SCUOLA NUOTO ADULTI|MASTER ADULTI|SN ADULTI/.test(u)) {
+    return [{ id: "scuola-nuoto-adulti", macro: "piscina", peso: 1 }]
+  }
   if (/\bBAMBINI\b/.test(u) || /SCUOLA NUOTO/.test(u) || /ACQUATICIT/.test(u) || (/\bKIDS\b/.test(u) && !/TESSERAMENT/.test(u))) {
-    return "scuola-nuoto-bambini"
+    return [{ id: "scuola-nuoto-bambini", macro: "piscina", peso: 1 }]
   }
-  if (/ACQUAGYM|ACQUA FITNESS|CORSI IN ACQUA|IDROBIKE|ACQUA CYCLE|IDRO/.test(u)) return "corsi-acqua"
+  if (/\bOPEN\b/.test(u)) {
+    return [
+      { id: "piscina-coperta", macro: "piscina", peso: 0.5 },
+      { id: "palestra-sala-pesi", macro: "fitness", peso: 0.5 },
+    ]
+  }
+  if (/\bSMILE FIT\b/.test(u)) return [{ id: "palestra-sala-pesi", macro: "fitness", peso: 1 }]
+  if (/\bSMILE H2O\b/.test(u)) return [{ id: "piscina-coperta", macro: "piscina", peso: 1 }]
+  if (/SPA|BENESSER|MASSAGG|ESTETIC|SAUNA|IDROMASSAGGIO/.test(u)) {
+    return [{ id: "spa-benessere", macro: "spa", peso: 1 }]
+  }
+  if (/TICKET|ESTIVA|PARCO ACQU/.test(u)) return [{ id: "piscina-estiva", macro: "piscina", peso: 1 }]
+  if (/ACQUAGYM|ACQUA FITNESS|CORSI IN ACQUA|IDROBIKE|ACQUA CYCLE|\bIDRO\b/.test(u)) {
+    return [{ id: "corsi-acqua", macro: "piscina", peso: 1 }]
+  }
+  if (/POLE DANCE|\bPOLE\b/.test(u)) return [{ id: "pole-dance", macro: "fitness", peso: 1 }]
+  if (/PERSONAL|LEZIONI PRIVATE/.test(u)) return [{ id: "personal-training", macro: "fitness", peso: 1 }]
   if (
-    /PILATES|YOGA|SPINNING|TRX|FUNCTIONAL|ZUMBA|TOTAL BODY|\bGAG\b|\bSTEP\b|POLE DANCE|CORSI FITNESS|ATTIVITA DI GRUPPO|ATTIVITÀ DI GRUPPO/.test(
+    /PILATES|YOGA|SPINNING|TRX|FUNCTIONAL|ZUMBA|TOTAL BODY|\bGAG\b|\bSTEP\b|CORSI FITNESS|ATTIVITA DI GRUPPO|ATTIVITÀ DI GRUPPO/.test(
       u,
     )
   ) {
-    return "corsi-fitness"
+    return [{ id: "corsi-fitness", macro: "fitness", peso: 1 }]
   }
-  return null
+  if (/^GYM\b/.test(u) || /SALA PESI|PACCHETTI INGRESSI|ABBONAMENTI STAFF FITNESS/.test(u)) {
+    return [{ id: "palestra-sala-pesi", macro: "fitness", peso: 1 }]
+  }
+  if (/AGONISM/.test(u)) return [{ id: "agonismo", macro: "piscina", peso: 1 }]
+  if (/\bCLIENTE\b/.test(u) && !/TESSERAMENT|BE ?ACTIVE|SOSPENSIONI AGGIUNT/.test(u)) {
+    return [{ id: "personal-training", macro: "fitness", peso: 1 }]
+  }
+  return classificaRicavo(voce, contesto).flatMap((d) =>
+    d.macro === "altro" ? [] : [{ id: DEFAULT_SOTTO[d.macro], macro: d.macro, peso: d.peso }],
+  )
+}
+
+export function isCorsoId(id: string): id is CorsoId {
+  return (CORSI_IDS as readonly string[]).includes(id)
 }
 
 export type AmmRicavoVoce = {
@@ -270,7 +311,7 @@ export type AmmRicaviPeriodo = {
   totAltri: number
   totCorsi: number
   byMacro: Record<MacroCommerciale, number>
-  byCorso: Record<CorsoId, number>
+  bySotto: Record<string, number>
   dettaglio: AmmRicavoVoce[]
   disponibile: boolean
 }
@@ -284,7 +325,7 @@ function emptyRicavi(from: string, to: string): AmmRicaviPeriodo {
     totAltri: 0,
     totCorsi: 0,
     byMacro: { piscina: 0, fitness: 0, spa: 0 },
-    byCorso: { "scuola-nuoto-bambini": 0, "scuola-nuoto-adulti": 0, "corsi-acqua": 0, "corsi-fitness": 0 },
+    bySotto: {},
     dettaglio: [],
     disponibile: false,
   }
@@ -306,12 +347,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
   try {
     const voci = await queryIncassiPerVoce({ from, to })
     const byMacro: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
-    const byCorso: Record<CorsoId, number> = {
-      "scuola-nuoto-bambini": 0,
-      "scuola-nuoto-adulti": 0,
-      "corsi-acqua": 0,
-      "corsi-fitness": 0,
-    }
+    const bySotto: Record<string, number> = {}
     let totAltri = 0
     for (const v of voci) {
       if (v.danza) continue
@@ -322,15 +358,16 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
         if (d.macro === "altro") totAltri += quota
         else byMacro[d.macro] += quota
       }
-      const corso = classificaCorso(v.voce, v.contesto)
-      if (corso) byCorso[corso] = round2(byCorso[corso] + euro)
+      for (const d of classificaSotto(v.voce, v.contesto)) {
+        bySotto[d.id] = round2((bySotto[d.id] ?? 0) + euro * d.peso)
+      }
     }
     const dettaglio = ordinaDettaglioRicavi(raggruppaDettaglioRicavi(voci))
     for (const k of MACRO_COMMERCIALI) byMacro[k] = round2(byMacro[k])
-    for (const k of CORSI_IDS) byCorso[k] = round2(byCorso[k])
+    for (const k of Object.keys(bySotto)) bySotto[k] = round2(bySotto[k])
     totAltri = round2(totAltri)
     const totCommerciali = round2(MACRO_COMMERCIALI.reduce((s, k) => s + byMacro[k], 0))
-    const totCorsi = round2(CORSI_IDS.reduce((s, k) => s + byCorso[k], 0))
+    const totCorsi = round2(CORSI_IDS.reduce((s, k) => s + (bySotto[k] ?? 0), 0))
     return {
       from,
       to,
@@ -339,7 +376,7 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
       totAltri,
       totCorsi,
       byMacro,
-      byCorso,
+      bySotto,
       dettaglio,
       disponibile: true,
     }

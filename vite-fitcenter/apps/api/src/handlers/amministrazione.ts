@@ -19,8 +19,7 @@ import {
   costiCollaboratoriAnno,
 } from "../services/amministrazione-lpaga.js"
 import {
-  CORSI_IDS,
-  CORSI_LABEL,
+  isCorsoId,
   isMacroCommerciale,
   isMacroServizi,
   isMacroStruttura,
@@ -1264,32 +1263,89 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     })
     const totSpeseGeneraliStruttura = round2(totStruttura + totServizi)
-    const totRicaviCorsi = ricavi.totCorsi
-    const costiIstruttoriByCorso = new Map<string, number>()
+    const costiByReparto = new Map<string, number>()
     for (const x of pnlAlloc) {
-      if (!(CORSI_IDS as readonly string[]).includes(x.repartoId)) continue
-      costiIstruttoriByCorso.set(x.repartoId, round2((costiIstruttoriByCorso.get(x.repartoId) ?? 0) + x.importo))
+      costiByReparto.set(x.repartoId, round2((costiByReparto.get(x.repartoId) ?? 0) + x.importo))
     }
-    const risultatoCorsi = CORSI_IDS.map((id) => {
-      const ricavo = round2(ricavi.byCorso[id] ?? 0)
-      const costiIstruttori = round2(costiIstruttoriByCorso.get(id) ?? 0)
-      const ripartoPct =
-        totRicaviCorsi > 0.009 ? round2((ricavo / totRicaviCorsi) * 100) : 0
-      const quotaSpeseGenerali = round2((totSpeseGeneraliStruttura * ripartoPct) / 100)
-      const costoTotale = round2(costiIstruttori + quotaSpeseGenerali)
-      const utile = round2(ricavo - costoTotale)
-      return {
-        id,
-        nome: CORSI_LABEL[id],
-        ricavi: ricavo,
-        costiIstruttori,
-        quotaSpeseGenerali,
-        costoTotale,
-        utile,
-        marginePct: ricavo > 0.009 ? Math.round((utile / ricavo) * 1000) / 10 : null,
-        ripartoPct,
+    const splitQuote = (totale: number, pesi: number[], totPesi: number): number[] => {
+      if (!pesi.length) return []
+      if (totPesi <= 0.009) {
+        const out = pesi.map(() => 0)
+        out[out.length - 1] = round2(totale)
+        return out
       }
-    })
+      let acc = 0
+      return pesi.map((p, i) => {
+        const last = i === pesi.length - 1
+        const q = last ? round2(totale - acc) : round2((totale * p) / totPesi)
+        acc = round2(acc + q)
+        return q
+      })
+    }
+    const sottoCommerciali = reparti
+      .filter((r) => r.livello === "sotto" && r.macroId && isMacroCommerciale(r.macroId))
+      .sort((a, b) => a.ordine - b.ordine)
+    const risultatoDettaglio: {
+      id: string
+      nome: string
+      macroId: MacroCommerciale
+      macroNome: string
+      ricavi: number
+      costiDiretti: number
+      quotaFissi: number
+      quotaServizi: number
+      costoTotale: number
+      utile: number
+      marginePct: number | null
+      ripartoPct: number
+      corso: boolean
+    }[] = []
+    for (const macro of MACRO_COMMERCIALI) {
+      const parent = risultato.find((r) => r.id === macro)
+      if (!parent) continue
+      const rows: { id: string; nome: string; ricavi: number; costiDiretti: number }[] = []
+      for (const s of sottoCommerciali.filter((r) => r.macroId === macro)) {
+        const ricavo = round2(ricavi.bySotto?.[s.id] ?? 0)
+        const costo = round2(costiByReparto.get(s.id) ?? 0)
+        if (Math.abs(ricavo) > 0.009 || Math.abs(costo) > 0.009) {
+          rows.push({ id: s.id, nome: s.nome, ricavi: ricavo, costiDiretti: costo })
+        }
+      }
+      const residuoRic = round2(parent.ricavi - rows.reduce((s, r) => s + r.ricavi, 0))
+      const residuoDir = round2(parent.costiDiretti - rows.reduce((s, r) => s + r.costiDiretti, 0))
+      if (Math.abs(residuoRic) > 0.009 || Math.abs(residuoDir) > 0.009) {
+        rows.push({
+          id: `${macro}-altri`,
+          nome: `Altri ${parent.nome}`,
+          ricavi: residuoRic,
+          costiDiretti: residuoDir,
+        })
+      }
+      if (!rows.length) continue
+      const qf = splitQuote(parent.quotaFissi, rows.map((r) => r.ricavi), parent.ricavi)
+      const qs = splitQuote(parent.quotaServizi ?? 0, rows.map((r) => r.ricavi), parent.ricavi)
+      rows.forEach((r, i) => {
+        const quotaFissi = qf[i] ?? 0
+        const quotaServizi = qs[i] ?? 0
+        const costoTotale = round2(r.costiDiretti + quotaFissi + quotaServizi)
+        const utile = round2(r.ricavi - costoTotale)
+        risultatoDettaglio.push({
+          id: r.id,
+          nome: r.nome,
+          macroId: macro,
+          macroNome: parent.nome,
+          ricavi: r.ricavi,
+          costiDiretti: r.costiDiretti,
+          quotaFissi,
+          quotaServizi,
+          costoTotale,
+          utile,
+          marginePct: r.ricavi > 0.009 ? Math.round((utile / r.ricavi) * 1000) / 10 : null,
+          ripartoPct: parent.ricavi > 0.009 ? round2((r.ricavi / parent.ricavi) * parent.ripartoFissiPct) : 0,
+          corso: isCorsoId(r.id),
+        })
+      })
+    }
     const totRicavi = round2(risultato.reduce((s, r) => s + r.ricavi, 0))
     const totCostoPnl = round2(risultato.reduce((s, r) => s + r.costoTotale, 0))
     const totUtile = round2(totRicavi - totCostoPnl)
@@ -1355,8 +1411,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       totStruttura,
       totServizi,
       totSpeseGeneraliStruttura,
-      totRicaviCorsi,
-      risultatoCorsi,
+      risultatoDettaglio,
       totCostoPnl,
       totUtile,
       marginePct: totRicavi > 0.009 ? Math.round((totUtile / totRicavi) * 1000) / 10 : null,
