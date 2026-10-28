@@ -64,6 +64,18 @@ export type AmmRisultatoReparto = {
   ripartoFissiPct: number
 }
 
+export type AmmRisultatoCorso = {
+  id: string
+  nome: string
+  ricavi: number
+  costiIstruttori: number
+  quotaSpeseGenerali: number
+  costoTotale: number
+  utile: number
+  marginePct: number | null
+  ripartoPct: number
+}
+
 export type AmmDashboard = {
   anno: number
   mese: string | null
@@ -104,6 +116,9 @@ export type AmmDashboard = {
   margineAziendaPct: number | null
   totStruttura?: number
   totServizi?: number
+  totSpeseGeneraliStruttura?: number
+  totRicaviCorsi?: number
+  risultatoCorsi?: AmmRisultatoCorso[]
   totCostoPnl?: number
   totUtile?: number
   marginePct?: number | null

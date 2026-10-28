@@ -133,9 +133,9 @@ export function AmministrazioneCosti() {
     <div className="p-4 sm:p-6">
       <h1 className="text-2xl font-semibold text-zinc-100">Amministrazione</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        Si inseriscono i costi per capire se un reparto guadagna o perde. I fissi di struttura (Gestione & Direzione,
-        Spese generali & Utenze) e i servizi da fatture (manutenzione, pulizie, personale condiviso) vengono ripartiti
-        su Piscina, Fitness e SPA in base ai ricavi del periodo.
+        Si inseriscono i costi per capire se un reparto guadagna o perde. Uffici, utenze, costi generali, manutenzione,
+        pulizie e personale condiviso stanno sotto «Spese generali struttura» e si imputano in % sui ricavi delle
+        macro-aree (Piscina, Fitness, SPA) e sui ricavi dei corsi.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {tabs.map((t) => (
@@ -176,26 +176,24 @@ function DashboardTab() {
   const d = dash.data
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
-  const pie =
-    pnl.length > 0
-      ? pnl
-          .filter((r) => Math.abs(r.costoTotale) > 0.009)
-          .map((r) => ({ id: r.id, nome: r.nome, importo: r.costoTotale }))
-      : d?.byMacro?.length
-        ? d.byMacro
-        : (d?.byReparto ?? [])
-  const overheadByMacro = Object.fromEntries(
-    pnl.map((r) => [r.id, (r.quotaFissi || 0) + (r.quotaServizi || 0)]),
-  ) as Record<string, number>
-  const direttiByMacro = Object.fromEntries(pnl.map((r) => [r.id, r.costiDiretti])) as Record<string, number>
-  const centriOperativi = (d?.byReparto ?? [])
-    .filter((r) => r.macroId && r.id !== r.macroId && ["piscina", "fitness", "spa"].includes(r.macroId))
-    .map((r) => {
-      const dirMacro = direttiByMacro[r.macroId!] ?? 0
-      const extra = dirMacro > 0.009 ? (overheadByMacro[r.macroId!] ?? 0) * (r.importo / dirMacro) : 0
-      return { ...r, importo: Math.round((r.importo + extra) * 100) / 100 }
-    })
-    .filter((r) => Math.abs(r.importo) > 0.009)
+  const pnlCorsi = d?.risultatoCorsi ?? []
+  const fissiMacros = new Set(["gestione", "generali", "servizi"])
+  const pieMacros = (d?.byMacro ?? []).filter((r) => !fissiMacros.has(r.id))
+  const totFissiPie = (d?.byMacro ?? [])
+    .filter((r) => fissiMacros.has(r.id))
+    .reduce((s, r) => s + r.importo, 0)
+  const pie = [
+    ...pieMacros,
+    ...(Math.abs(totFissiPie) > 0.009
+      ? [{ id: "spese-generali-struttura", nome: "Spese generali struttura", importo: Math.round(totFissiPie * 100) / 100 }]
+      : []),
+  ]
+  const centriOperativi = (d?.byReparto ?? []).filter(
+    (r) => r.macroId && r.id !== r.macroId && ["piscina", "fitness", "spa"].includes(r.macroId),
+  )
+  const centriFissi = (d?.byReparto ?? []).filter((r) => fissiMacros.has(r.macroId || r.id))
+  const totFissiDettaglio = centriFissi.reduce((s, r) => s + r.importo, 0)
+  const totSpeseGenerali = d?.totSpeseGeneraliStruttura ?? totFissiPie
   const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
   const costiAltriCentri = d?.totCostiFuoriReparti ?? 0
   return (
@@ -259,7 +257,7 @@ function DashboardTab() {
             <Kpi
               title="Costi attribuiti ai reparti"
               value={eur(d.totCostoPnl ?? d.tot)}
-              hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totStruttura ?? 0)} quota fissi + ${eur(d.totServizi ?? 0)} servizi ripartiti`}
+              hint={`${eur(costiDirettiReparti)} costi diretti + ${eur(d.totSpeseGeneraliStruttura ?? (d.totStruttura ?? 0) + (d.totServizi ?? 0))} spese generali struttura`}
             />
             <Kpi
               title="Risultato impresa"
@@ -285,8 +283,8 @@ function DashboardTab() {
             <p>
               <span className="font-medium text-zinc-200">Come leggere i totali:</span> il risultato impresa è dato da
               tutti i ricavi gestionali meno tutti i costi registrati. I costi attribuiti a Piscina, Fitness e SPA
-              comprendono i costi diretti, la quota dei fissi di struttura e i servizi da fatture (manutenzione,
-              pulizie) ripartiti in base ai ricavi.
+              comprendono i costi diretti più la quota di «Spese generali struttura» (uffici, utenze, manutenzione,
+              pulizie, personale condiviso) imputata in % sui ricavi.
             </p>
             <p className="mt-1">
               I ricavi ordinari arrivano dagli incassi del gestionale. Danza, affitti spazi e convenzioni si prendono
@@ -441,10 +439,10 @@ function DashboardTab() {
                   <th className="px-3 py-2 font-medium text-right" title="Costi assegnati direttamente al reparto o centro, prima del riparto dei costi fissi">
                     Costi diretti
                   </th>
-                  <th className="px-3 py-2 font-medium text-right" title="Quota dei costi fissi di struttura assegnata al reparto in base ai ricavi">
+                  <th className="px-3 py-2 font-medium text-right" title="Quota di Spese generali struttura (uffici, utenze, costi generali) imputata in % sui ricavi">
                     Quota fissi
                   </th>
-                  <th className="px-3 py-2 font-medium text-right" title="Manutenzione, pulizie e altri servizi da fatture, ripartiti sui reparti in base ai ricavi">
+                  <th className="px-3 py-2 font-medium text-right" title="Quota di Spese generali struttura da fatture (manutenzione, pulizie, personale condiviso) imputata in % sui ricavi">
                     Quota servizi
                   </th>
                   <th className="px-3 py-2 font-medium text-right" title="Costi diretti più quota dei fissi e dei servizi">
@@ -523,34 +521,83 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Il totale impresa considera tutti i centri di costo. Fissi di struttura (uffici, utenze, costi generali) e
-            servizi (manutenzione, pulizie, personale condiviso) sono ripartiti tra Piscina, Fitness e SPA in
-            proporzione ai ricavi, e sommati anche ai costi istruttori dei corsi.
+            Il totale impresa considera tutti i centri di costo. «Spese generali struttura» (uffici, utenze, costi
+            generali, manutenzione, pulizie, personale condiviso) viene imputata in % sui ricavi di Piscina, Fitness e
+            SPA. Lo stesso importo si imputa in % sui ricavi dei corsi, per vedere se il corso ci rimette dopo i fissi.
           </p>
-          {(d.strutturaByMacro ?? []).length > 0 && (
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-              <li className="font-medium text-zinc-400">
-                Fissi di struttura da ripartire {eur(d.totStruttura ?? 0)}:
-              </li>
-              {(d.strutturaByMacro ?? []).map((r) => (
-                <li key={r.id}>
-                  {r.nome} {eur(r.importo)}
-                </li>
-              ))}
-            </ul>
-          )}
-          {(d.serviziByMacro ?? []).length > 0 && (
-            <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-              <li className="font-medium text-zinc-400">
-                Servizi da fatture da ripartire {eur(d.totServizi ?? 0)}:
-              </li>
-              {(d.serviziByMacro ?? []).map((r) => (
-                <li key={r.id}>
-                  {r.nome} {eur(r.importo)}
-                </li>
-              ))}
-            </ul>
-          )}
+          <h3 className="text-sm font-medium text-zinc-200">Risultato per corso</h3>
+          <div className="overflow-x-auto rounded-2xl border border-zinc-800">
+              <table className="min-w-full text-sm">
+                <thead className="bg-zinc-900/60 text-left text-xs uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Corso</th>
+                    <th className="px-3 py-2 font-medium text-right">Ricavi</th>
+                    <th className="px-3 py-2 font-medium text-right" title="Costi istruttori e altri costi assegnati direttamente al corso">
+                      Costi istruttori
+                    </th>
+                    <th
+                      className="px-3 py-2 font-medium text-right"
+                      title="Quota di Spese generali struttura imputata in % sui ricavi dei corsi"
+                    >
+                      Quota spese generali
+                    </th>
+                    <th className="px-3 py-2 font-medium text-right">Costo totale</th>
+                    <th className="px-3 py-2 font-medium text-right">Risultato</th>
+                    <th className="px-3 py-2 font-medium text-right">% su ricavi</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pnlCorsi.length ? (
+                    pnlCorsi.map((r) => (
+                      <tr key={r.id} className="border-t border-zinc-800">
+                        <td className="px-3 py-2 text-zinc-100">
+                          {r.nome}
+                          <span className="ml-2 text-xs text-zinc-500">riparto {r.ripartoPct}%</span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.ricavi)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.costiIstruttori)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-400">{eur(r.quotaSpeseGenerali)}</td>
+                        <td className="px-3 py-2 text-right text-zinc-200">{eur(r.costoTotale)}</td>
+                        <td className={`px-3 py-2 text-right font-medium ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili ? eur(r.utile) : "—"}
+                        </td>
+                        <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : r.utile >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                          {d.ricaviDisponibili && r.marginePct != null ? `${r.marginePct}%` : "—"}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-4 text-zinc-500" colSpan={7}>
+                        Nessun dato corsi nel periodo. Gym, open, ticket e SPA restano fuori da questo specchietto: qui
+                        contano solo scuola nuoto e corsi.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                {pnlCorsi.length ? (
+                <tfoot>
+                  <tr className="border-t border-zinc-700 bg-zinc-900/40 font-medium">
+                    <td className="px-3 py-2 text-zinc-100">Totale corsi</td>
+                    <td className="px-3 py-2 text-right">{d.ricaviDisponibili ? eur(d.totRicaviCorsi ?? 0) : "—"}</td>
+                    <td className="px-3 py-2 text-right text-zinc-400">
+                      {eur(pnlCorsi.reduce((s, r) => s + r.costiIstruttori, 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">
+                      {eur(pnlCorsi.reduce((s, r) => s + r.quotaSpeseGenerali, 0))}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {eur(pnlCorsi.reduce((s, r) => s + r.costoTotale, 0))}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${!d.ricaviDisponibili ? "text-zinc-400" : pnlCorsi.reduce((s, r) => s + r.utile, 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {d.ricaviDisponibili ? eur(pnlCorsi.reduce((s, r) => s + r.utile, 0)) : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400">—</td>
+                  </tr>
+                </tfoot>
+                ) : null}
+              </table>
+            </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-zinc-800 p-4">
               <h3 className="mb-3 text-sm font-medium text-zinc-200">Spese per macro-area</h3>
@@ -581,19 +628,46 @@ function DashboardTab() {
                   </li>
                 ))}
               </ul>
-              {centriOperativi.length > 0 && (
-                <ul className="mt-3 space-y-1 border-t border-zinc-800 pt-2 text-xs text-zinc-500">
+              {(centriOperativi.length > 0 || centriFissi.length > 0) && (
+                <ul className="mt-3 space-y-1 border-t border-zinc-800 pt-2 text-xs text-zinc-400">
                   {centriOperativi.map((r) => (
                     <li key={r.id} className="flex justify-between gap-3">
                       <span>{r.nome}</span>
                       <span>{eur(r.importo)}</span>
                     </li>
                   ))}
+                  {centriFissi.length > 0 && (
+                    <li>
+                      <details className="group">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 font-medium text-zinc-200 marker:content-none [&::-webkit-details-marker]:hidden">
+                          <span>Spese generali struttura</span>
+                          <span className="flex items-center gap-2">
+                            {eur(totSpeseGenerali || totFissiDettaglio)}
+                            <span className="text-[10px] font-normal uppercase tracking-wide text-zinc-500 group-open:hidden">
+                              apri
+                            </span>
+                            <span className="hidden text-[10px] font-normal uppercase tracking-wide text-zinc-500 group-open:inline">
+                              chiudi
+                            </span>
+                          </span>
+                        </summary>
+                        <ul className="mt-1 space-y-1 border-l border-zinc-800 pl-3 text-zinc-500">
+                          {centriFissi.map((r) => (
+                            <li key={r.id} className="flex justify-between gap-3">
+                              <span>{r.nome}</span>
+                              <span>{eur(r.importo)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    </li>
+                  )}
                 </ul>
               )}
               <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
-                Uffici, costi generali, utenze, manutenzione, pulizie, personale condiviso e altri costi fissi non
-                restano voci a sé: sono già dentro Piscina, Fitness e SPA (e quindi anche nei corsi) in % sui ricavi.
+                Lo specchietto elenca i costi dei centri operativi. I fissi (uffici, utenze, costi generali,
+                manutenzione, pulizie, personale condiviso) stanno raggruppati in «Spese generali struttura»: apri la
+                tendina per il dettaglio. Quell’importo si imputa in % sui ricavi delle macro-aree e dei corsi.
               </p>
             </div>
             <div className="rounded-2xl border border-zinc-800 p-4">

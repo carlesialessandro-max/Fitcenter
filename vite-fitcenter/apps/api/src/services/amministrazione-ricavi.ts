@@ -2,6 +2,15 @@ import { isGestionaleConfigured, queryIncassiPerVoce } from "./gestionale-sql.js
 
 export const MACRO_COMMERCIALI = ["piscina", "fitness", "spa"] as const
 export type MacroCommerciale = (typeof MACRO_COMMERCIALI)[number]
+
+export const CORSI_IDS = ["scuola-nuoto-bambini", "scuola-nuoto-adulti", "corsi-acqua", "corsi-fitness"] as const
+export type CorsoId = (typeof CORSI_IDS)[number]
+export const CORSI_LABEL: Record<CorsoId, string> = {
+  "scuola-nuoto-bambini": "Scuola nuoto bambini",
+  "scuola-nuoto-adulti": "Scuola nuoto adulti",
+  "corsi-acqua": "Corsi in acqua e attività di gruppo",
+  "corsi-fitness": "Corsi fitness e attività di gruppo",
+}
 /** Solo questi due centri: la somma è il pool dei fissi di struttura da ripartire sui reparti. */
 export const MACRO_STRUTTURA = ["gestione", "generali"] as const
 /** Manutenzione, pulizie e personale condiviso: ripartiti sui tre reparti in base ai ricavi. */
@@ -117,6 +126,40 @@ export function classificaRicavo(voce: string, contesto = ""): DestRicavo[] {
   return [{ macro: "altro", peso: 1 }]
 }
 
+/** Incasso di un corso (non gym, open, ticket, spa). Serve per imputare le spese generali in % sui ricavi dei corsi. */
+export function classificaCorso(voce: string, contesto = ""): CorsoId | null {
+  const u = blob(`${voce} ${contesto}`)
+  if (!u) return null
+  if (
+    /\bDANZA\b/.test(u) ||
+    /\bPROFESSIONALE\b/.test(u) ||
+    /\bCONVENZION/.test(u) ||
+    /AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA/.test(u) ||
+    /\bTICKET/.test(u) ||
+    /ESTIVA|PARCO ACQU/.test(u) ||
+    /\bOPEN\b/.test(u) ||
+    /\bSPA\b/.test(u) ||
+    /BENESSER|MASSAGG|ESTETIC/.test(u) ||
+    /^GYM\b/.test(u) ||
+    /SALA PESI|PACCHETTI INGRESSI|ABBONAMENTI STAFF FITNESS/.test(u)
+  ) {
+    return null
+  }
+  if (/SCUOLA NUOTO ADULTI|MASTER ADULTI|SN ADULTI/.test(u)) return "scuola-nuoto-adulti"
+  if (/\bBAMBINI\b/.test(u) || /SCUOLA NUOTO/.test(u) || /ACQUATICIT/.test(u) || (/\bKIDS\b/.test(u) && !/TESSERAMENT/.test(u))) {
+    return "scuola-nuoto-bambini"
+  }
+  if (/ACQUAGYM|ACQUA FITNESS|CORSI IN ACQUA|IDROBIKE|ACQUA CYCLE|IDRO/.test(u)) return "corsi-acqua"
+  if (
+    /PILATES|YOGA|SPINNING|TRX|FUNCTIONAL|ZUMBA|TOTAL BODY|\bGAG\b|\bSTEP\b|POLE DANCE|CORSI FITNESS|ATTIVITA DI GRUPPO|ATTIVITÀ DI GRUPPO/.test(
+      u,
+    )
+  ) {
+    return "corsi-fitness"
+  }
+  return null
+}
+
 export type AmmRicavoVoce = {
   voce: string
   macro: string
@@ -225,7 +268,9 @@ export type AmmRicaviPeriodo = {
   tot: number
   totCommerciali: number
   totAltri: number
+  totCorsi: number
   byMacro: Record<MacroCommerciale, number>
+  byCorso: Record<CorsoId, number>
   dettaglio: AmmRicavoVoce[]
   disponibile: boolean
 }
@@ -237,7 +282,9 @@ function emptyRicavi(from: string, to: string): AmmRicaviPeriodo {
     tot: 0,
     totCommerciali: 0,
     totAltri: 0,
+    totCorsi: 0,
     byMacro: { piscina: 0, fitness: 0, spa: 0 },
+    byCorso: { "scuola-nuoto-bambini": 0, "scuola-nuoto-adulti": 0, "corsi-acqua": 0, "corsi-fitness": 0 },
     dettaglio: [],
     disponibile: false,
   }
@@ -259,6 +306,12 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
   try {
     const voci = await queryIncassiPerVoce({ from, to })
     const byMacro: Record<MacroCommerciale, number> = { piscina: 0, fitness: 0, spa: 0 }
+    const byCorso: Record<CorsoId, number> = {
+      "scuola-nuoto-bambini": 0,
+      "scuola-nuoto-adulti": 0,
+      "corsi-acqua": 0,
+      "corsi-fitness": 0,
+    }
     let totAltri = 0
     for (const v of voci) {
       if (v.danza) continue
@@ -269,18 +322,24 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
         if (d.macro === "altro") totAltri += quota
         else byMacro[d.macro] += quota
       }
+      const corso = classificaCorso(v.voce, v.contesto)
+      if (corso) byCorso[corso] = round2(byCorso[corso] + euro)
     }
     const dettaglio = ordinaDettaglioRicavi(raggruppaDettaglioRicavi(voci))
     for (const k of MACRO_COMMERCIALI) byMacro[k] = round2(byMacro[k])
+    for (const k of CORSI_IDS) byCorso[k] = round2(byCorso[k])
     totAltri = round2(totAltri)
     const totCommerciali = round2(MACRO_COMMERCIALI.reduce((s, k) => s + byMacro[k], 0))
+    const totCorsi = round2(CORSI_IDS.reduce((s, k) => s + byCorso[k], 0))
     return {
       from,
       to,
       tot: round2(totCommerciali + totAltri),
       totCommerciali,
       totAltri,
+      totCorsi,
       byMacro,
+      byCorso,
       dettaglio,
       disponibile: true,
     }

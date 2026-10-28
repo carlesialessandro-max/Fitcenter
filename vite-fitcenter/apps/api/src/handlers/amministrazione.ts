@@ -19,6 +19,8 @@ import {
   costiCollaboratoriAnno,
 } from "../services/amministrazione-lpaga.js"
 import {
+  CORSI_IDS,
+  CORSI_LABEL,
   isMacroCommerciale,
   isMacroServizi,
   isMacroStruttura,
@@ -1261,6 +1263,33 @@ export async function getAmmDashboard(req: Request, res: Response) {
         ripartoFissiPct: ripartoPct[id],
       }
     })
+    const totSpeseGeneraliStruttura = round2(totStruttura + totServizi)
+    const totRicaviCorsi = ricavi.totCorsi
+    const costiIstruttoriByCorso = new Map<string, number>()
+    for (const x of pnlAlloc) {
+      if (!(CORSI_IDS as readonly string[]).includes(x.repartoId)) continue
+      costiIstruttoriByCorso.set(x.repartoId, round2((costiIstruttoriByCorso.get(x.repartoId) ?? 0) + x.importo))
+    }
+    const risultatoCorsi = CORSI_IDS.map((id) => {
+      const ricavo = round2(ricavi.byCorso[id] ?? 0)
+      const costiIstruttori = round2(costiIstruttoriByCorso.get(id) ?? 0)
+      const ripartoPct =
+        totRicaviCorsi > 0.009 ? round2((ricavo / totRicaviCorsi) * 100) : 0
+      const quotaSpeseGenerali = round2((totSpeseGeneraliStruttura * ripartoPct) / 100)
+      const costoTotale = round2(costiIstruttori + quotaSpeseGenerali)
+      const utile = round2(ricavo - costoTotale)
+      return {
+        id,
+        nome: CORSI_LABEL[id],
+        ricavi: ricavo,
+        costiIstruttori,
+        quotaSpeseGenerali,
+        costoTotale,
+        utile,
+        marginePct: ricavo > 0.009 ? Math.round((utile / ricavo) * 1000) / 10 : null,
+        ripartoPct,
+      }
+    })
     const totRicavi = round2(risultato.reduce((s, r) => s + r.ricavi, 0))
     const totCostoPnl = round2(risultato.reduce((s, r) => s + r.costoTotale, 0))
     const totUtile = round2(totRicavi - totCostoPnl)
@@ -1325,6 +1354,9 @@ export async function getAmmDashboard(req: Request, res: Response) {
       margineAziendaPct: totRicaviAzienda > 0.009 ? Math.round((totUtileAzienda / totRicaviAzienda) * 1000) / 10 : null,
       totStruttura,
       totServizi,
+      totSpeseGeneraliStruttura,
+      totRicaviCorsi,
+      risultatoCorsi,
       totCostoPnl,
       totUtile,
       marginePct: totRicavi > 0.009 ? Math.round((totUtile / totRicavi) * 1000) / 10 : null,
