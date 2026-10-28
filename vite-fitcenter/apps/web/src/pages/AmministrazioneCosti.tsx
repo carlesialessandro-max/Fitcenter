@@ -364,12 +364,13 @@ function DashboardTab() {
             <details className="rounded-xl border border-zinc-800 px-3 py-2">
               <summary className="cursor-pointer text-sm text-zinc-300">Dettaglio ricavi per voce</summary>
               <p className="mt-2 text-[11px] text-zinc-500">
-                Stessi movimenti della griglia «Movimenti di cassa». I ticket giornalieri (TICKETING) vanno tutti in
-                Piscina estiva e parco acquatico, non tra gli altri incassi. PREMIUM: 10% SPA, 10% piscina estiva, 80%
-                OPEN / SMILE FIT / SMILE H2O / GYM / NUOTO LIBERO. GOLD ESTIVO: 10% piscina estiva e 90% tipologia.
-                ESTIVO ADD-ON: 100% piscina estiva. Pacchetti ingressi per natura. Tesseramenti, badge e quote seguono
-                l’abbonamento dello stesso cliente. «Altri incassi» è il residuo: prove/inviti, shop, tesseramenti senza
-                abbonamento collegato, affitti e convenzioni da Fatture in Cloud. Clicca una voce per vedere i centri.
+                Stessi movimenti della griglia «Movimenti di cassa». I ticket si spezzano per prodotto: ingresso piscina
+                (coperta, estiva se parco), ingressi corsi, fitness, gestanti, SPA; cuffie e merce restano tra gli altri
+                incassi. PREMIUM: 10% SPA, 10% piscina estiva, 80% OPEN / SMILE FIT / SMILE H2O / GYM / NUOTO LIBERO.
+                GOLD ESTIVO: 10% piscina estiva e 90% tipologia. ESTIVO ADD-ON: 100% piscina estiva. Pacchetti ingressi
+                per natura. Tesseramenti, badge e quote seguono l’abbonamento dello stesso cliente. «Altri incassi» è il
+                residuo: prove/inviti, shop, tesseramenti senza abbonamento, affitti e convenzioni. Clicca una voce per
+                vedere i centri.
               </p>
               <div className="mt-2 overflow-x-auto">
                 <table className="min-w-full text-xs">
@@ -505,9 +506,9 @@ function DashboardTab() {
           )}
           {(d.totRicaviAltri ?? 0) > 0.009 && (
             <p className="text-xs text-zinc-500">
-              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. I ticket giornalieri
-              stanno in Piscina estiva. Questa riga è il residuo (prove, shop, tesseramenti senza abbonamento, affitti e
-              convenzioni) ed entra nel risultato dell’impresa.
+              Altri incassi non attribuiti a Piscina / Fitness / SPA: {eur(d.totRicaviAltri ?? 0)}. Qui restano prove,
+              shop (cuffie e merce da ticketing), tesseramenti senza abbonamento, affitti e convenzioni. I ticket
+              ingresso piscina/corsi/fitness/gestanti/SPA vanno sui rispettivi centri.
             </p>
           )}
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">

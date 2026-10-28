@@ -143,6 +143,67 @@ function etichettaTipo(u: string): string {
   return ""
 }
 
+function isVoceTicketing(u: string): boolean {
+  return /TICKETING/.test(u) || (/\bTICKET\b/.test(u) && !/TESSERAMENT/.test(u))
+}
+
+function isMerceTicketing(u: string): boolean {
+  return /CUFFIE|\bCUFFIA\b|CUFFIETT|OCCHIAL|CIABATT|ASCIUGAMAN|BORRACCIA|CALZIN|BRACCIAL|MERCHAND|ABBIGLIAMENT|\bSHOP\b/.test(
+    u,
+  )
+}
+
+/** Causale «TICKETING: acquistati 5 INGRESSO PISCINA ADULTI € 80,00 .» → prodotto. */
+function testoTicketing(voce: string, contesto: string): string {
+  const raw = `${voce} ${contesto}`.trim()
+  const m = /TICKETING\s*:?\s*(?:acquistat[ieo]\s+\d+\s+)?(.+)/i.exec(raw)
+  let body = (m?.[1] ?? raw).trim()
+  body = body.replace(/\s*€\s*[\d.,]+\s*\.?\s*$/g, "").trim()
+  body = body.replace(/\s+\.\s*$/, "").trim()
+  return body
+}
+
+/**
+ * Ticket da banco: non è un blocco unico.
+ * Ingresso piscina → coperta (estiva solo se parco/esterna); corsi → corsi fitness o acqua;
+ * fitness/gym → palestra; gestanti → corsi in acqua; SPA → spa; cuffie e merce → altri incassi.
+ */
+function classificaTicketing(u: string): DestSotto[] {
+  if (isMerceTicketing(u)) return []
+  if (/GESTANTI/.test(u)) return [dest("corsi-acqua", "piscina", 1)]
+  if (/POLE/.test(u)) return [dest("pole-dance", "fitness", 1)]
+  if (/PERSONAL/.test(u)) return [dest("personal-training", "fitness", 1)]
+  if (/SPA|BENESSER|SAUNA|IDROMASSAGGIO/.test(u)) return [dest("spa-benessere", "spa", 1)]
+  if (/ACQUAGYM|ACQUA FITNESS|IDROBIKE|CORSI IN ACQUA/.test(u)) return [dest("corsi-acqua", "piscina", 1)]
+  if (/SCUOLA NUOTO ADULTI/.test(u)) return [dest("scuola-nuoto-adulti", "piscina", 1)]
+  if (/ACQUATICIT|\bAQ\b|SCUOLA NUOTO|\bBAMBINI\b|\bKIDS\b/.test(u)) {
+    return [dest("scuola-nuoto-bambini", "piscina", 1)]
+  }
+  if (/INGRESSO CORSI|INGRESSI CORSI|\bCORSI\b/.test(u)) {
+    if (/ACQUA|\bH2O\b|\bH20\b|NUOTO/.test(u)) return [dest("corsi-acqua", "piscina", 1)]
+    return [dest("corsi-fitness", "fitness", 1)]
+  }
+  if (/FITNESS|PALESTR|\bGYM\b|SALA PESI|MAMME FIT/.test(u)) {
+    return [dest("palestra-sala-pesi", "fitness", 1)]
+  }
+  if (/ESTIVA|PARCO ACQU|PISCINA ESTERNA/.test(u)) return [dest("piscina-estiva", "piscina", 1)]
+  if (/PISCIN|NUOTO LIBERO|VASCA|\bH2O\b|\bH20\b/.test(u)) return [dest("piscina-coperta", "piscina", 1)]
+  if (/\bOPEN\b/.test(u)) return defaultAdulti()
+  return [dest("piscina-coperta", "piscina", 1)]
+}
+
+function etichettaTicketing(u: string): string {
+  if (isMerceTicketing(u)) return "TICKETING · Shop / merce"
+  if (/GESTANTI/.test(u)) return "TICKETING · Gestanti"
+  if (/INGRESSO CORSI|INGRESSI CORSI|\bCORSI\b/.test(u)) return "TICKETING · Ingressi corsi"
+  if (/FITNESS|PALESTR|\bGYM\b/.test(u)) return "TICKETING · Ingressi fitness"
+  if (/SPA|BENESSER/.test(u)) return "TICKETING · SPA"
+  if (/ESTIVA|PARCO ACQU|PISCINA ESTERNA/.test(u)) return "TICKETING · Piscina estiva"
+  if (/PISCIN|NUOTO/.test(u)) return "TICKETING · Ingressi piscina"
+  if (/\bBAMBINI\b|\bKIDS\b/.test(u)) return "TICKETING · Ingressi bambini"
+  return "TICKETING"
+}
+
 /**
  * Regole da servizi.xlsx + quote adulti:
  * PREMIUM 10 SPA / 10 estiva / 80 tipo (OPEN, SMILE FIT, SMILE H2O, GYM, NUOTO LIBERO).
@@ -150,15 +211,14 @@ function etichettaTipo(u: string): string {
  * GOLD 10 SPA / 90 tipo.
  * ESTIVO ADD-ON 100% piscina estiva.
  * Pacchetti ingressi per natura (FIT/corsi palestra, H2O/nuoto coperta, scuola nuoto adulti, OPEN 50/50, SPA).
+ * Ticket da banco spezzati per prodotto (piscina, corsi, fitness, gestanti, SPA, merce).
  * Tesseramenti / badge / quote seguono l'abbonamento nello stesso blob (già agganciato per cliente).
  */
 export function classificaSotto(voce: string, contesto = ""): DestSotto[] {
   const u = blob(`${voce} ${contesto}`)
   if (!u || skipRicavoCommerciale(u)) return []
 
-  if (/TICKETING/.test(u) || (/\bTICKET\b/.test(u) && !/TESSERAMENT/.test(u))) {
-    return [dest("piscina-estiva", "piscina", 1)]
-  }
+  if (isVoceTicketing(u)) return classificaTicketing(blob(testoTicketing(voce, contesto)))
   if (/ABBIGLIAMENTO|\bSHOP\b/.test(u)) return []
   if (/ESTIVO ADD-ON/.test(u) || (/PISCINA ESTERNA/.test(u) && /ADD-ON/.test(u) && !/\bGOLD\b|\bPREMIUM\b/.test(u))) {
     return [dest("piscina-estiva", "piscina", 1)]
@@ -287,7 +347,9 @@ function chiaveRaggruppamento(voce: string, contesto = ""): string {
   const u = blob(`${titolo} ${contesto}`)
   const tipo = etichettaTipo(u)
   if (!u) return "Altro"
-  if (/TICKETING/.test(blob(titolo)) || (/^TICKET\b/.test(blob(titolo)) && !/TESSERAMENT/.test(u))) return "TICKETING"
+  if (isVoceTicketing(blob(titolo)) || isVoceTicketing(u)) {
+    return etichettaTicketing(blob(testoTicketing(voce, contesto)))
+  }
   if (/ESTIVO ADD-ON/.test(u)) return "ESTIVO ADD-ON"
   if (/PACCHETTI INGRESSI|PACCHETTI CORSI|PACCHETTI NUOTO|PACCHETTI PERCORSO/.test(u)) {
     if (/PACCHETTI PERCORSO SPA|PERCORSO SPA/.test(u)) return "Pacchetti ingressi · SPA"
