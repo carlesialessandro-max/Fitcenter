@@ -174,9 +174,28 @@ function DashboardTab() {
     queryFn: () => amministrazioneApi.dashboard(anno, tuttoAnno ? undefined : `${anno}-${mese}`, reparto || undefined),
   })
   const d = dash.data
-  const pie = d?.byMacro?.length ? d.byMacro : (d?.byReparto ?? [])
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
   const pnl = d?.risultato ?? []
+  const pie =
+    pnl.length > 0
+      ? pnl
+          .filter((r) => Math.abs(r.costoTotale) > 0.009)
+          .map((r) => ({ id: r.id, nome: r.nome, importo: r.costoTotale }))
+      : d?.byMacro?.length
+        ? d.byMacro
+        : (d?.byReparto ?? [])
+  const overheadByMacro = Object.fromEntries(
+    pnl.map((r) => [r.id, (r.quotaFissi || 0) + (r.quotaServizi || 0)]),
+  ) as Record<string, number>
+  const direttiByMacro = Object.fromEntries(pnl.map((r) => [r.id, r.costiDiretti])) as Record<string, number>
+  const centriOperativi = (d?.byReparto ?? [])
+    .filter((r) => r.macroId && r.id !== r.macroId && ["piscina", "fitness", "spa"].includes(r.macroId))
+    .map((r) => {
+      const dirMacro = direttiByMacro[r.macroId!] ?? 0
+      const extra = dirMacro > 0.009 ? (overheadByMacro[r.macroId!] ?? 0) * (r.importo / dirMacro) : 0
+      return { ...r, importo: Math.round((r.importo + extra) * 100) / 100 }
+    })
+    .filter((r) => Math.abs(r.importo) > 0.009)
   const costiDirettiReparti = pnl.reduce((sum, row) => sum + row.costiDiretti, 0)
   const costiAltriCentri = d?.totCostiFuoriReparti ?? 0
   return (
@@ -504,8 +523,9 @@ function DashboardTab() {
             </table>
           </div>
           <p className="text-xs text-zinc-500">
-            Il totale impresa considera tutti i centri di costo. Fissi di struttura e servizi da fatture (manutenzione,
-            pulizie) sono ripartiti tra Piscina, Fitness e SPA in proporzione ai ricavi.
+            Il totale impresa considera tutti i centri di costo. Fissi di struttura (uffici, utenze, costi generali) e
+            servizi (manutenzione, pulizie, personale condiviso) sono ripartiti tra Piscina, Fitness e SPA in
+            proporzione ai ricavi, e sommati anche ai costi istruttori dei corsi.
           </p>
           {(d.strutturaByMacro ?? []).length > 0 && (
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
@@ -561,18 +581,20 @@ function DashboardTab() {
                   </li>
                 ))}
               </ul>
-              {(d.byReparto ?? []).some((r) => r.macroId && r.macroId !== r.id) && (
+              {centriOperativi.length > 0 && (
                 <ul className="mt-3 space-y-1 border-t border-zinc-800 pt-2 text-xs text-zinc-500">
-                  {d.byReparto
-                    .filter((r) => r.id !== r.macroId)
-                    .map((r) => (
-                      <li key={r.id} className="flex justify-between gap-3">
-                        <span>{r.nome}</span>
-                        <span>{eur(r.importo)}</span>
-                      </li>
-                    ))}
+                  {centriOperativi.map((r) => (
+                    <li key={r.id} className="flex justify-between gap-3">
+                      <span>{r.nome}</span>
+                      <span>{eur(r.importo)}</span>
+                    </li>
+                  ))}
                 </ul>
               )}
+              <p className="mt-2 text-[11px] leading-relaxed text-zinc-500">
+                Uffici, costi generali, utenze, manutenzione, pulizie, personale condiviso e altri costi fissi non
+                restano voci a sé: sono già dentro Piscina, Fitness e SPA (e quindi anche nei corsi) in % sui ricavi.
+              </p>
             </div>
             <div className="rounded-2xl border border-zinc-800 p-4">
               <h3 className="mb-3 text-sm font-medium text-zinc-200">Andamento {anno}</h3>
