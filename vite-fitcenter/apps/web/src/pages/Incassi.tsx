@@ -7,8 +7,9 @@ import autoTable from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
-type Segment = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
+type Segment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
 type DetailSeg = Exclude<Segment, "all">
+type IncassiVoce = { voce: string; euro: number; n: number }
 
 type IncassiResponse = {
   from: string
@@ -19,7 +20,7 @@ type IncassiResponse = {
   rows: Record<string, unknown>[]
 }
 
-type SegTot = { total: number; count: number }
+type SegTot = { total: number; count: number; voci?: IncassiVoce[] }
 
 type IncassiRiepilogo = {
   from: string
@@ -47,13 +48,12 @@ const MESI = [
 const SEG_LABEL: Record<DetailSeg, string> = {
   adulti: "Adulti",
   bambini: "Bambini",
-  agonismo: "Agonismo",
   danza: "Danza",
   ticket: "Ticket (giornalieri)",
   altro: "Altro",
 }
 
-const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "agonismo", "danza", "ticket", "altro"]
+const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "danza", "ticket", "altro"]
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0")
@@ -229,13 +229,26 @@ function fmtDateTimeIt(v: unknown): string | null {
 
 function emptySegs(): Record<DetailSeg, SegTot> {
   return {
-    adulti: { total: 0, count: 0 },
-    bambini: { total: 0, count: 0 },
-    agonismo: { total: 0, count: 0 },
-    danza: { total: 0, count: 0 },
-    ticket: { total: 0, count: 0 },
-    altro: { total: 0, count: 0 },
+    adulti: { total: 0, count: 0, voci: [] },
+    bambini: { total: 0, count: 0, voci: [] },
+    danza: { total: 0, count: 0, voci: [] },
+    ticket: { total: 0, count: 0, voci: [] },
+    altro: { total: 0, count: 0, voci: [] },
   }
+}
+
+function mergeVoci(now: IncassiVoce[] | undefined, prev: IncassiVoce[] | undefined) {
+  const map = new Map<string, { voce: string; euro: number; n: number; prevEuro: number; prevN: number }>()
+  for (const v of now ?? []) {
+    map.set(v.voce, { voce: v.voce, euro: v.euro, n: v.n, prevEuro: 0, prevN: 0 })
+  }
+  for (const v of prev ?? []) {
+    const cur = map.get(v.voce) ?? { voce: v.voce, euro: 0, n: 0, prevEuro: 0, prevN: 0 }
+    cur.prevEuro = v.euro
+    cur.prevN = v.n
+    map.set(v.voce, cur)
+  }
+  return [...map.values()].sort((a, b) => b.euro - a.euro || b.prevEuro - a.prevEuro || a.voce.localeCompare(b.voce, "it"))
 }
 
 export function Incassi() {
@@ -338,6 +351,11 @@ export function Incassi() {
       prevCount: Number(segsPrev[seg]?.count ?? 0) || 0,
     }))
   }, [segsNow, segsPrev])
+
+  const vociRows = useMemo(
+    () => (expanded ? mergeVoci(segsNow[expanded]?.voci, segsPrev[expanded]?.voci) : []),
+    [expanded, segsNow, segsPrev]
+  )
 
   const analisi = useMemo(() => {
     const dEuro = totalNow - totalPrev
@@ -477,8 +495,7 @@ export function Incassi() {
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Incassi</h2>
             <p className="text-sm text-zinc-500">
-              Movimenti di cassa univoci, raggruppati per prodotto (centri di ricavo): scuola nuoto, agonismo, danza, ticket, adulti.
-              Quote annuali, badge e shop restano in Altro.
+              Movimenti di cassa univoci, raggruppati per categoria cliente e ticket. Clicca un gruppo per il dettaglio per voce.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -597,7 +614,6 @@ export function Incassi() {
                   ))}
               </select>
             </label>
-            {isGiorno ? (
             <label className="text-xs text-zinc-500">
               Dettaglio
               <div className="mt-1 flex flex-wrap gap-2">
@@ -620,15 +636,14 @@ export function Incassi() {
                 })}
               </div>
             </label>
-            ) : null}
           </div>
         </div>
         <p className="mt-2 text-xs text-zinc-500">
           {isGiorno
             ? `Vista giorno: totali e dettaglio del ${from}. Il confronto usa lo stesso giorno del ${annoConfronto}.`
             : isCurrent
-              ? `Mese in corso: riepilogo dal 1° ${meseLabel.toLowerCase()} fino a oggi, senza elenco dei singoli movimenti. Il confronto usa lo stesso giorno del ${annoConfronto}.`
-              : `Riepilogo ${meseLabel} ${anno}, senza elenco dei singoli movimenti. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}
+              ? `Mese in corso: riepilogo dal 1° ${meseLabel.toLowerCase()} fino a oggi. Clicca un gruppo per il dettaglio per voce. Il confronto usa lo stesso giorno del ${annoConfronto}.`
+              : `Riepilogo ${meseLabel} ${anno}. Clicca un gruppo per il dettaglio per voce. Il confronto usa lo stesso intervallo del ${annoConfronto}.`}
         </p>
 
         {!isGiorno ? (
@@ -702,9 +717,9 @@ export function Incassi() {
             if (g.seg === "altro" && g.total === 0 && g.prevTotal === 0) return null
             const d = g.total - g.prevTotal
             const pct = !qNow.isFetching && g.prevTotal > 0 ? (d / g.prevTotal) * 100 : null
-            const cardClass = `rounded-lg border px-3 py-2 text-left ${
-              isGiorno && expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30"
-            }${isGiorno ? " hover:bg-zinc-900/50" : ""}`
+            const cardClass = `rounded-lg border px-3 py-2 text-left hover:bg-zinc-900/50 ${
+              expanded === g.seg ? "border-amber-500/50 bg-amber-500/10" : "border-zinc-800 bg-zinc-900/30"
+            }`
             const inner = (
               <>
                 <div className="text-xs text-zinc-500">{g.label}</div>
@@ -719,13 +734,6 @@ export function Incassi() {
                 </div>
               </>
             )
-            if (!isGiorno) {
-              return (
-                <div key={g.seg} className={cardClass}>
-                  {inner}
-                </div>
-              )
-            }
             return (
               <button
                 key={g.seg}
@@ -740,6 +748,57 @@ export function Incassi() {
           {qNow.isFetching || qPrev.isFetching ? <div className="text-zinc-500">Aggiornamento…</div> : null}
         </div>
       </div>
+
+      {expanded ? (
+        <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="border-b border-zinc-800 px-3 py-2 text-sm text-zinc-300">
+            Dettaglio {SEG_LABEL[expanded]} per voce
+            {from && to ? ` (${from} → ${to})` : ""}
+          </div>
+          <table className="min-w-[720px] w-full table-auto">
+            <thead className="bg-zinc-950/40">
+              <tr className="text-left text-xs text-zinc-500">
+                <th className="px-3 py-2">Voce</th>
+                <th className="px-3 py-2 text-right">Movimenti {anno}</th>
+                <th className="px-3 py-2 text-right">Totale {anno}</th>
+                <th className="px-3 py-2 text-right">Movimenti {annoConfronto}</th>
+                <th className="px-3 py-2 text-right">Totale {annoConfronto}</th>
+                <th className="px-3 py-2 text-right">Δ €</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vociRows.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-4 text-sm text-zinc-500" colSpan={6}>
+                    Nessuna voce in questo gruppo.
+                  </td>
+                </tr>
+              ) : (
+                vociRows.map((v) => {
+                  const d = v.euro - v.prevEuro
+                  return (
+                    <tr key={v.voce} className="border-t border-zinc-800 text-sm text-zinc-200">
+                      <td className="px-3 py-2">{v.voce}</td>
+                      <td className="px-3 py-2 text-right">{v.n}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-amber-300">{eur(v.euro)}</td>
+                      <td className="px-3 py-2 text-right text-zinc-400">{v.prevN}</td>
+                      <td className="px-3 py-2 text-right text-zinc-300">{eur(v.prevEuro)}</td>
+                      <td className={`px-3 py-2 text-right ${d >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {d >= 0 ? "+" : ""}
+                        {eur(d)}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
+          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio per voce.
+        </div>
+      )}
 
       {isGiorno ? (
         expanded ? (
@@ -793,11 +852,7 @@ export function Incassi() {
             <div className="p-3 text-sm text-red-200">Errore caricamento incassi: {String((qDetail.error as Error)?.message ?? "—")}</div>
           ) : null}
         </div>
-        ) : (
-        <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Agonismo/Danza/Ticket) per vedere il dettaglio righe del giorno.
-        </div>
-        )
+        ) : null
       ) : (
         <div className="mt-4 overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/30">
           <div className="border-b border-zinc-800 px-3 py-2 text-sm text-zinc-300">

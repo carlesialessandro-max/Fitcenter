@@ -2,8 +2,8 @@ import { Request, Response } from "express"
 import * as gestionaleSql from "../services/gestionale-sql.js"
 import { canVedereTotaliCentro, getScopedUser } from "../middleware/auth.js"
 
-type IncassiSeg = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
-const DETAIL_SEGS: Exclude<IncassiSeg, "all">[] = ["adulti", "bambini", "agonismo", "danza", "ticket", "altro"]
+type IncassiSeg = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+const DETAIL_SEGS: Exclude<IncassiSeg, "all">[] = ["adulti", "bambini", "danza", "ticket", "altro"]
 
 function isIsoDate(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
@@ -13,7 +13,6 @@ function segFromRaw(s: string): IncassiSeg {
   const t = s.trim().toLowerCase()
   if (t === "adulti") return "adulti"
   if (t === "bambini") return "bambini"
-  if (t === "agonismo") return "agonismo"
   if (t === "danza") return "danza"
   if (t === "ticket" || t === "ticketing" || t === "tickets") return "ticket"
   if (t === "altro") return "altro"

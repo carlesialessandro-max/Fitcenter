@@ -6536,7 +6536,9 @@ function selectExistingCols(colsLower: string[], wanted: string[]): string {
   return have.map((c) => bracketCol(c)).join(", ")
 }
 
-export type IncassiSegment = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
+export type IncassiSegment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+export type IncassiVoceTot = { voce: string; euro: number; n: number }
+export type IncassiSegTot = { total: number; count: number; voci: IncassiVoceTot[] }
 
 const INCASSI_CENTRO_RICAVO_COLS = [
   "CentroRicavoDescrizione",
@@ -6549,14 +6551,13 @@ const INCASSI_CENTRO_RICAVO_COLS = [
   "CassaMovimentiCentroRicavoDescrizione",
 ]
 
-function emptyIncassiSegTotals(): Record<Exclude<IncassiSegment, "all">, { total: number; count: number }> {
+function emptyIncassiSegTotals(): Record<Exclude<IncassiSegment, "all">, IncassiSegTot> {
   return {
-    adulti: { total: 0, count: 0 },
-    bambini: { total: 0, count: 0 },
-    agonismo: { total: 0, count: 0 },
-    danza: { total: 0, count: 0 },
-    ticket: { total: 0, count: 0 },
-    altro: { total: 0, count: 0 },
+    adulti: { total: 0, count: 0, voci: [] },
+    bambini: { total: 0, count: 0, voci: [] },
+    danza: { total: 0, count: 0, voci: [] },
+    ticket: { total: 0, count: 0, voci: [] },
+    altro: { total: 0, count: 0, voci: [] },
   }
 }
 
@@ -6849,11 +6850,18 @@ export async function queryIncassiRange(params: {
 export async function queryIncassiRiepilogo(params: { from: string; to: string }): Promise<{
   total: number
   count: number
-  segments: Record<Exclude<IncassiSegment, "all">, { total: number; count: number }>
+  segments: Record<Exclude<IncassiSegment, "all">, IncassiSegTot>
 }> {
   const empty = { total: 0, count: 0, segments: emptyIncassiSegTotals() }
   const rows = await queryIncassiCassaDedup(params)
   const segments = emptyIncassiSegTotals()
+  const voceMaps: Record<Exclude<IncassiSegment, "all">, Map<string, { euro: number; n: number }>> = {
+    adulti: new Map(),
+    bambini: new Map(),
+    danza: new Map(),
+    ticket: new Map(),
+    altro: new Map(),
+  }
   let total = 0
   let count = 0
   for (const row of rows) {
@@ -6861,8 +6869,18 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
     const euro = incassiAmount(row)
     segments[seg].count += 1
     segments[seg].total += euro
+    const voce = incassiVoceLabel(row)
+    const cur = voceMaps[seg].get(voce) ?? { euro: 0, n: 0 }
+    cur.euro += euro
+    cur.n += 1
+    voceMaps[seg].set(voce, cur)
     count += 1
     total += euro
+  }
+  for (const seg of Object.keys(voceMaps) as Exclude<IncassiSegment, "all">[]) {
+    segments[seg].voci = [...voceMaps[seg].entries()]
+      .map(([voce, v]) => ({ voce, euro: Math.round(v.euro * 100) / 100, n: v.n }))
+      .sort((a, b) => b.euro - a.euro || a.voce.localeCompare(b.voce, "it"))
   }
   return { total, count, segments }
 }
@@ -7096,131 +7114,37 @@ function isMerchandisingBraccialeIncasso(row: Record<string, unknown>): boolean 
   return false
 }
 
-function incassiNormText(s: string): string {
-  return s
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .replace(/[^A-Z0-9]+/g, " ")
-    .trim()
-}
-
-function incassiCentroRicavoLabel(row: Record<string, unknown>): string {
-  return incassiNormText(firstNonEmpty(row, INCASSI_CENTRO_RICAVO_COLS) ?? "")
-}
-
-function incassiProductBlob(row: Record<string, unknown>): string {
+function incassiVoceLabel(row: Record<string, unknown>): string {
+  const centro = firstNonEmpty(row, INCASSI_CENTRO_RICAVO_COLS)
+  if (centro) return centro.trim()
+  if (isTicketingIncasso(row)) return incassiCausale(row) || "Ticket"
+  const cat = firstNonEmpty(row, [
+    "AbbonamentiCategorieDescrizione",
+    "CategoriaAbbonamentoDescrizione",
+    "AbbonamentiCategoriaDescrizione",
+    "MacroCategoriaAbbonamentoDescrizione",
+    "MacroCategoriaDescrizione",
+  ])
+  if (cat) return cat.trim()
   const causale = incassiCausale(row)
-  const prodottoRata = titoloProdottoDaCausaleIncasso(causale)
-  return incassiNormText(
-    [
-      firstNonEmpty(row, INCASSI_CENTRO_RICAVO_COLS),
-      row.AbbonamentiCategorieDescrizione,
-      row.CategoriaAbbonamentoDescrizione,
-      row.AbbonamentiCategoriaDescrizione,
-      row.MacroCategoriaAbbonamentoDescrizione,
-      row.MacroCategoriaDescrizione,
-      row.AbbonamentiDescrizione,
-      row.AbbonamentoDescrizione,
-      prodottoRata,
-      causale,
-    ]
-      .map((value) => String(value ?? "").trim())
-      .filter(Boolean)
-      .join(" ")
-  )
+  const prodotto = titoloProdottoDaCausaleIncasso(causale)
+  if (prodotto) return prodotto
+  if (causale) return causale
+  const clienteCat = String(row.CategoriaDescrizione ?? "").trim()
+  return clienteCat || "Altro"
 }
 
-/** Quote annuali, tesseramenti, badge, shop: centri di ricavo propri, non scuola nuoto/adulti. */
-function isIncassoQuoteOAccessoria(row: Record<string, unknown>, blob: string): boolean {
-  if (isMerchandisingBraccialeIncasso(row)) return true
-  if (isIncassoVoceAccessoria(blob, "", incassiCausale(row))) return true
-  if (/QUOTE ANNUALI|QUOTA ANNUALE/.test(blob)) return true
-  if (/\bSHOP\b|ABBIGLIAMENTO/.test(blob) && !/TICKETING/.test(blob)) return true
-  return false
-}
-
-function isIncassoBambiniProdotto(blob: string): boolean {
-  if (/NUOTO ADULTI|SCUOLA NUOTO ADULTI|MASTER ADULTI|AGONISMO MASTER/.test(blob)) return false
-  if (/\bAGONISM/.test(blob) && !/SCUOLA NUOTO|ACQUATICIT/.test(blob)) return false
-  if (/\bDANZA\b/.test(blob)) return false
-  return (
-    (/SCUOLA NUOTO/.test(blob) && !/ADULTI/.test(blob)) ||
-    /ACQUATICIT/.test(blob) ||
-    /CAMPUS/.test(blob) ||
-    /PACCHETTO PRIVATE BAMBINI/.test(blob) ||
-    /PRIVATE BAMBINI/.test(blob) ||
-    /\bBAMBIN[IO]\b/.test(blob) ||
-    /\bBIMB[IO]\b/.test(blob) ||
-    (/\bKIDS\b/.test(blob) && !/TESSERAMENT/.test(blob))
-  )
-}
-
-function isIncassoAgonismoProdotto(blob: string): boolean {
-  if (!/\bAGONISM/.test(blob)) return false
-  if (/\b(MASTER|SENIOR)\b/.test(blob)) return false
-  return true
-}
-
-function isIncassoAdultiProdotto(blob: string): boolean {
-  if (/SCUOLA NUOTO/.test(blob) && !/ADULTI|MASTER/.test(blob)) return false
-  if (/\bDANZA\b/.test(blob)) return false
-  if (/\bAGONISM/.test(blob) && !/\b(MASTER|SENIOR)\b/.test(blob)) return false
-  return (
-    /\bGYM\b/.test(blob) ||
-    /SMILE FIT|SMILE H2O|SMILE H20/.test(blob) ||
-    /\bOPEN\b/.test(blob) ||
-    /\bGOLD\b/.test(blob) ||
-    /\bPREMIUM\b/.test(blob) ||
-    /NUOTO LIBERO/.test(blob) ||
-    /ABBONAMENTI ADULTI/.test(blob) ||
-    /PERSONAL TRAIN/.test(blob) ||
-    /GESTANTI/.test(blob) ||
-    /PACCHETTO PRIVATE ADULTI/.test(blob) ||
-    /POLE DANCE/.test(blob) ||
-    /PACCHETTI INGRESSI/.test(blob) ||
-    /PERCORSO SPA/.test(blob)
-  )
-}
-
-function classifyFromCentroRicavoLabel(label: string): Exclude<IncassiSegment, "all"> | null {
-  const u = incassiNormText(label)
-  if (!u) return null
-  if (/DANZA/.test(u)) return "danza"
-  if (/INGRESSI/.test(u) || /TICKETING/.test(u)) return "ticket"
-  if (/SCUOLA NUOTO/.test(u)) return /ADULTI/.test(u) ? "adulti" : "bambini"
-  if (/CAMPUS/.test(u)) return "bambini"
-  if (/AGONISM/.test(u)) return /MASTER/.test(u) ? "adulti" : "agonismo"
-  if (/ABBONAMENTI ADULTI|PERSONAL/.test(u)) return "adulti"
-  if (/QUOTE ANNUALI|BADGE|\bSHOP\b|RICARICH|ESTIVO|BENESSERE|ATTIVITA SPECIALI|NESSUNA/.test(u)) return "altro"
-  return null
-}
-
-/**
- * Classifica un movimento di cassa dopo la deduplica.
- * Priorità: ticket, centro di ricavo/prodotto (come Gymnasium), poi categoria cliente.
- * Così «Bambini» è scuola nuoto, non tutti i pagamenti dei clienti KIDS (agonismo, quote, danza).
- */
+/** Classifica un movimento di cassa dopo la deduplica: ticket, categoria cliente, badge/bracciale, altrimenti altro. */
 export function classifyIncassiSegment(row: Record<string, unknown>): Exclude<IncassiSegment, "all"> {
   if (isTicketingIncasso(row)) return "ticket"
-
-  const fromCentro = classifyFromCentroRicavoLabel(incassiCentroRicavoLabel(row))
-  if (fromCentro) return fromCentro
-
-  if (isDanzaIncassoRow(row)) return "danza"
-
-  const blob = incassiProductBlob(row)
-  if (isIncassoQuoteOAccessoria(row, blob)) return "altro"
-  if (isIncassoAgonismoProdotto(blob)) return "agonismo"
-  if (isIncassoBambiniProdotto(blob)) return "bambini"
-  if (isIncassoAdultiProdotto(blob)) return "adulti"
-
   const cat = String(row.CategoriaDescrizione ?? "")
     .trim()
     .toUpperCase()
   if (cat === "CLIENTE") return "adulti"
   if (cat === "KIDS") return "bambini"
   if (cat === "DANZA") return "danza"
+  // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: restano negli adulti.
+  if (isMerchandisingBraccialeIncasso(row)) return "adulti"
   return "altro"
 }
 
