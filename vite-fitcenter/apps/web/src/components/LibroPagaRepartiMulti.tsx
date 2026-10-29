@@ -189,6 +189,7 @@ function LivelloRow({
   onChange,
   expanded,
   onToggleExpand,
+  visibleIds,
 }: {
   allLivelli: LpagaLivello[]
   livelli: LpagaLivello[]
@@ -198,9 +199,10 @@ function LivelloRow({
   onChange: (ids: string[]) => void
   expanded: Set<string>
   onToggleExpand: (id: string) => void
+  visibleIds?: Set<string>
 }) {
   const root = isRoot(node)
-  const kids = childrenForPicker(allLivelli, livelli, node.id)
+  const kids = childrenForPicker(allLivelli, livelli, node.id).filter((c) => !visibleIds || visibleIds.has(c.id))
   const hasKids = kids.length > 0
   const isExpanded = expanded.has(node.id)
   const esplicito = value.includes(node.id)
@@ -268,6 +270,7 @@ function LivelloRow({
               onChange={onChange}
               expanded={expanded}
               onToggleExpand={onToggleExpand}
+              visibleIds={visibleIds}
             />
           ))
         : null}
@@ -277,17 +280,31 @@ function LivelloRow({
 
 export function LibroPagaRepartiMulti({
   reparti,
+  albero,
   value,
   onChange,
 }: {
   reparti: LpagaLivello[]
+  /** Albero completo (anche livelli nascosti) per risalire i parentId. */
+  albero?: LpagaLivello[]
   value: string[]
   onChange: (ids: string[]) => void
 }) {
-  const allLivelli = reparti
-  const attivi = useMemo(() => allLivelli.filter((l) => l.attivo !== false), [allLivelli])
-  const roots = useMemo(() => attivi.filter(isRoot).sort((a, b) => a.nome.localeCompare(b.nome, "it")), [attivi])
+  const allLivelli = albero?.length ? albero : reparti
+  const attivi = useMemo(() => reparti.filter((l) => l.attivo !== false), [reparti])
+  const roots = useMemo(() => {
+    const declared = attivi.filter(isRoot).sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+    const attached = new Set<string>()
+    for (const r of declared) {
+      for (const id of pickerSubtree(allLivelli, attivi, r.id)) attached.add(id)
+    }
+    const orphans = attivi
+      .filter((l) => !attached.has(l.id))
+      .sort((a, b) => a.nome.localeCompare(b.nome, "it"))
+    return [...declared, ...orphans]
+  }, [allLivelli, attivi])
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(roots.map((r) => r.id)))
+  const [q, setQ] = useState("")
 
   const toggleExpand = (id: string) => {
     setExpanded((prev) => {
@@ -298,11 +315,44 @@ export function LibroPagaRepartiMulti({
     })
   }
 
+  const qn = q.trim().toLowerCase()
+  const { visibleIds, searchExpanded } = useMemo(() => {
+    if (!qn) return { visibleIds: undefined as Set<string> | undefined, searchExpanded: undefined as Set<string> | undefined }
+    const matches = attivi.filter((l) => l.nome.toLowerCase().includes(qn) || (l.dominio ?? "").toLowerCase().includes(qn))
+    const visible = new Set<string>()
+    const open = new Set<string>()
+    const byId = new Map(allLivelli.map((l) => [l.id, l]))
+    const attivoIds = new Set(attivi.map((l) => l.id))
+    for (const m of matches) {
+      visible.add(m.id)
+      let cur = byId.get(m.id)
+      let guard = 0
+      while (cur && guard++ < 50) {
+        const pid = (cur.parentId ?? "").trim()
+        if (!pid || pid === "0") break
+        if (attivoIds.has(pid)) {
+          visible.add(pid)
+          open.add(pid)
+        }
+        cur = byId.get(pid)
+      }
+    }
+    return { visibleIds: visible, searchExpanded: open }
+  }, [allLivelli, attivi, qn])
+
+  const expandedNow = useMemo(() => {
+    if (!searchExpanded?.size) return expanded
+    const next = new Set(expanded)
+    for (const id of searchExpanded) next.add(id)
+    return next
+  }, [expanded, searchExpanded])
+
   if (!attivi.length) {
     return <p className="text-xs text-zinc-500">Nessun reparto disponibile.</p>
   }
 
   const compact = compattaLivelloIds(attivi, value)
+  const rootsShown = roots.filter((r) => !visibleIds || visibleIds.has(r.id))
 
   return (
     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950/40 p-2">
@@ -310,7 +360,13 @@ export function LibroPagaRepartiMulti({
         Spunta il reparto per prendere tutte le mansioni, poi togli i sotto-reparti che non servono.
         Oppure apri la gerarchia (▸) e spunta solo alcune voci.
       </p>
-      {roots.map((r) => (
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Cerca mansione…"
+        className="w-full rounded-lg border border-zinc-700 bg-zinc-950/60 px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600"
+      />
+      {rootsShown.map((r) => (
         <LivelloRow
           key={r.id}
           allLivelli={allLivelli}
@@ -319,10 +375,12 @@ export function LibroPagaRepartiMulti({
           depth={0}
           value={compact}
           onChange={(ids) => onChange(compattaLivelloIds(attivi, ids))}
-          expanded={expanded}
+          expanded={expandedNow}
           onToggleExpand={toggleExpand}
+          visibleIds={visibleIds}
         />
       ))}
+      {qn && !rootsShown.length ? <p className="text-xs text-zinc-500">Nessuna mansione trovata.</p> : null}
     </div>
   )
 }

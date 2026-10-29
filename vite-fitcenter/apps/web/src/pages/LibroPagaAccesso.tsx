@@ -1180,6 +1180,7 @@ function Personale({
                 ? data.livelliAssegnabili
                 : []
           }
+          alberoLivelli={data.livelli}
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
           onDone={onDone}

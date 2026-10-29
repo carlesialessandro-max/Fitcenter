@@ -342,6 +342,7 @@ export function LibroPagaPersonaleDettaglio({
   onClose,
   canEdit,
   livelli,
+  alberoLivelli,
   onSavePersonale,
   allowAdminRole,
   onError,
@@ -354,6 +355,7 @@ export function LibroPagaPersonaleDettaglio({
   onClose: () => void
   canEdit?: boolean
   livelli?: LpagaLivello[]
+  alberoLivelli?: LpagaLivello[]
   onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
   allowAdminRole?: boolean
   onError?: (s: string) => void
@@ -384,6 +386,7 @@ export function LibroPagaPersonaleDettaglio({
       onClose={onClose}
       canEdit={canEdit}
       livelli={livelli}
+      alberoLivelli={alberoLivelli}
       onSavePersonale={onSavePersonale}
       allowAdminRole={allowAdminRole}
       onError={onError}
@@ -401,6 +404,7 @@ function DettaglioMese({
   onClose,
   canEdit,
   livelli,
+  alberoLivelli,
   onSavePersonale,
   allowAdminRole,
   onError,
@@ -415,6 +419,7 @@ function DettaglioMese({
   onClose: () => void
   canEdit?: boolean
   livelli?: LpagaLivello[]
+  alberoLivelli?: LpagaLivello[]
   onSavePersonale?: (id: string, body: Partial<LpagaPersonale> & { password?: string }) => Promise<unknown>
   allowAdminRole?: boolean
   onError?: (s: string) => void
@@ -479,6 +484,7 @@ function DettaglioMese({
     onError: (e: Error) => onError?.(e.message),
   })
   const reparti = livelli ?? []
+  const albero = alberoLivelli?.length ? alberoLivelli : reparti
   const mansioniMese = useMemo(() => {
     const map = new Map<string, string>()
     for (const t of lezioni) {
@@ -569,7 +575,12 @@ function DettaglioMese({
             <p className="text-[11px] text-zinc-600">
               Spunta il reparto per tutte le mansioni, poi deseleziona i sotto-reparti da escludere.
             </p>
-            <LibroPagaRepartiMulti reparti={reparti} value={livelloIds} onChange={setLivelloIds} />
+            <LibroPagaRepartiMulti
+              reparti={reparti}
+              albero={albero}
+              value={livelloIds}
+              onChange={setLivelloIds}
+            />
           </div>
           <label className="grid gap-1 text-xs text-zinc-500">
             Scad. contratto
