@@ -294,3 +294,55 @@ export function eventToBubbles(e: WhatsappLogEvent): ChatBubble[] {
 export function conversationHasClientMessage(events: WhatsappLogEvent[]): boolean {
   return events.some((e) => e.kind === "message_in")
 }
+
+export type WaChannel = "lead" | "lezioni_private" | "altro"
+
+function isLezionePrivataBlob(text: string): boolean {
+  return (
+    /lezione\s*privata/i.test(text) ||
+    /\blp_avviso|\blp_/i.test(text) ||
+    /prendi in carico|calendario vasche/i.test(text) ||
+    /prenota in fitcenter/i.test(text) ||
+    /contatta l['’]istruttore/i.test(text) ||
+    /nuova richiesta di lezione privata/i.test(text) ||
+    /abbiamo preso in carico la richiesta per la lezione privata/i.test(text)
+  )
+}
+
+export function eventChannel(e: WhatsappLogEvent): WaChannel {
+  const raw = String(e.text ?? "")
+  if (e.kind === "lead_request") return "lead"
+  if (e.kind === "booking") return "lead"
+  const tpl = parseTemplate(raw)
+  if (tpl && (/^lp_/i.test(tpl.name) || /lezione|privata/i.test(tpl.name) || isLezionePrivataBlob(tpl.params))) {
+    return "lezioni_private"
+  }
+  if (isLezionePrivataBlob(raw)) return "lezioni_private"
+  if (tpl && /benvenuto|lead_/i.test(tpl.name)) return "lead"
+  if (parseLeadFormDump(tpl?.params || raw)) return "lead"
+  if (/^documento:/i.test(raw)) return "lead"
+  if (/PRENOTA\s+PROVA|RICHIAMATEMI|appuntamento in sede/i.test(raw)) return "lead"
+  return "altro"
+}
+
+export function conversationChannel(events: WhatsappLogEvent[]): Exclude<WaChannel, "altro"> | "misto" {
+  let lead = false
+  let lp = false
+  for (const e of events) {
+    const c = eventChannel(e)
+    if (c === "lead") lead = true
+    if (c === "lezioni_private") lp = true
+  }
+  if (lead && lp) return "misto"
+  if (lp) return "lezioni_private"
+  return "lead"
+}
+
+export function eventMatchesChannel(
+  e: WhatsappLogEvent,
+  channel: "all" | "lead" | "lezioni_private",
+): boolean {
+  if (channel === "all") return true
+  const c = eventChannel(e)
+  return c === channel || c === "altro"
+}

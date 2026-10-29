@@ -1,4 +1,4 @@
-const CACHE = "fitcenter-shell-v1"
+const CACHE = "fitcenter-shell-v2"
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting())
