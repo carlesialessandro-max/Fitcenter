@@ -496,6 +496,14 @@ export function AppLayout() {
   if (mustRedirectCrm) return <Navigate to="/crm" replace />
   if (mustRedirectCalendari) return <Navigate to="/calendario" replace />
   if (mustRedirectPages) return <Navigate to={homePath} replace />
+  const embed = new URLSearchParams(location.search).get("embed") === "1"
+  if (embed) {
+    return (
+      <main className="min-h-svh bg-zinc-950 text-zinc-100">
+        <Outlet />
+      </main>
+    )
+  }
 
   return (
     <div className="flex min-h-svh flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] text-zinc-100 sm:flex-row">

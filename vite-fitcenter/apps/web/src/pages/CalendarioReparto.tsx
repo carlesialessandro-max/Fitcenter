@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react"
-import { Link, Navigate, useParams } from "react-router-dom"
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
 import { cn } from "@workspace/ui/lib/utils"
 import type { CalendarioComparto, CalendarioIstruttore, CalendarioMergedEventDto } from "@/api/calendario"
@@ -1405,11 +1405,17 @@ function DuplicatePeriodModal({
 
 export function CalendarioRepartoPage() {
   const { segmento } = useParams<{ segmento: string }>()
+  const [searchParams] = useSearchParams()
+  const embed = searchParams.get("embed") === "1"
+  const dateParam = searchParams.get("date") ?? ""
   const { role } = useAuth()
   const apiComparto = segmento ? segmentoToApi(segmento) : null
 
-  const [view, setView] = useState<CalView>(() => (segmento === "scuola-nuoto" ? "week" : "month"))
-  const [cursor, setCursor] = useState(() => new Date())
+  const [view, setView] = useState<CalView>(() => (embed || segmento === "scuola-nuoto" ? "week" : "month"))
+  const [cursor, setCursor] = useState(() => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) return new Date(`${dateParam}T12:00:00`)
+    return new Date()
+  })
   const [events, setEvents] = useState<CalEvent[]>([])
   const [instructors, setInstructors] = useState<CalendarioIstruttore[]>([])
   const [loading, setLoading] = useState(true)
@@ -1619,11 +1625,12 @@ export function CalendarioRepartoPage() {
   const hubBack = role === "admin" || role === "calendari" ? "/calendario" : "/"
 
   return (
-    <div className="min-h-full bg-zinc-950 p-4 text-zinc-100 sm:p-6">
-      <div className="mx-auto max-w-7xl space-y-4">
+    <div className={`bg-zinc-950 text-zinc-100 ${embed ? "p-2" : "min-h-full p-4 sm:p-6"}`}>
+      <div className={`space-y-4 ${embed ? "" : "mx-auto max-w-7xl"}`}>
         <header className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">Piano operativo · {compartoLabel}</h1>
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">{embed ? compartoLabel : `Piano operativo · ${compartoLabel}`}</h1>
+            {embed ? null : (
             <p className="mt-1 max-w-xl text-sm text-zinc-500">
               {!canWrite ? (
                 <>Visualizzazione orari. Solo i responsabili possono modificare i turni.</>
@@ -1672,9 +1679,11 @@ export function CalendarioRepartoPage() {
                 <>Calendario reparto: quando importeremo il planning per questo settore, gli slot appariranno qui.</>
               )}
             </p>
+            )}
             {loadErr ? <p className="mt-2 text-xs text-red-400">{loadErr}</p> : null}
             {loading ? <p className="mt-2 text-xs text-zinc-500">Caricamento…</p> : null}
           </div>
+          {embed ? null : (
           <div className="flex flex-wrap items-center gap-2">
             {role === "admin" ? (
               <>
@@ -1696,6 +1705,7 @@ export function CalendarioRepartoPage() {
               </Link>
             ) : null}
           </div>
+          )}
         </header>
 
         {hasPlanningGrid(apiComparto) && events.length === 0 && !loading && !loadErr ? (

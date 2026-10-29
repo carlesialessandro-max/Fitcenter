@@ -5,6 +5,61 @@ import type { TurnoConvalidaStato, LpagaConvalidaPayload, LpagaConvalidaMesePayl
 const btnGhost = "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
 const btnAmber = "rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
 
+const CALENDARI_SPLIT: { id: string; label: string }[] = [
+  { id: "corsi", label: "Corsi fitness" },
+  { id: "scuola-nuoto", label: "Scuola nuoto" },
+  { id: "sala-fitness", label: "Sala pesi" },
+  { id: "piscina", label: "Bagnini" },
+  { id: "reception", label: "Desk" },
+]
+
+function segmentoDaComparto(comparto?: string): string {
+  if (comparto === "scuola_nuoto") return "scuola-nuoto"
+  if (comparto === "sala_fitness") return "sala-fitness"
+  if (comparto === "piscina") return "piscina"
+  if (comparto === "reception") return "reception"
+  if (comparto === "corsi") return "corsi"
+  return "corsi"
+}
+
+function CalendarioSplitFrame({
+  segmento,
+  date,
+  onSegmento,
+  onClose,
+}: {
+  segmento: string
+  date?: string
+  onSegmento: (id: string) => void
+  onClose: () => void
+}) {
+  const src = `/calendario/${segmento}?embed=1${date ? `&date=${encodeURIComponent(date)}` : ""}`
+  return (
+    <div className="flex min-h-[70vh] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 xl:sticky xl:top-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 p-2">
+        <select
+          className="rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-100"
+          value={segmento}
+          onChange={(e) => onSegmento(e.target.value)}
+        >
+          {CALENDARI_SPLIT.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <a className="text-xs text-amber-300 hover:underline" href={`/calendario/${segmento}`} target="_blank" rel="noreferrer">
+          Apri in pagina
+        </a>
+        <button type="button" className={`${btnGhost} ml-auto`} onClick={onClose}>
+          Chiudi split
+        </button>
+      </div>
+      <iframe title="Calendario FitCenter" src={src} className="min-h-[70vh] w-full flex-1 bg-zinc-950" />
+    </div>
+  )
+}
+
 function fmtDateIt(iso: string | null | undefined): string {
   const s = String(iso ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return "—"
@@ -73,8 +128,15 @@ export function LibroPagaConvalidaPanel({
     onSuccess: onClose,
   })
   const nDone = data.rows.filter((r) => r.salvato && r.salvato.stato !== "da_verificare").length
+  const [split, setSplit] = useState(false)
+  const primaRiga = data.rows.find((r) => r.match?.comparto || (r.calendariAttesi?.length ?? 0) > 0)
+  const [segmento, setSegmento] = useState(() =>
+    segmentoDaComparto(primaRiga?.match?.comparto ?? primaRiga?.calendariAttesi?.[0])
+  )
+  const dataSplit = data.rows[0]?.giorno
 
   return (
+    <div className={split ? "xl:grid xl:grid-cols-2 xl:items-start xl:gap-3" : ""}>
     <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -95,6 +157,9 @@ export function LibroPagaConvalidaPanel({
               Chiudi mese
             </button>
           )}
+          <button type="button" className={btnGhost} onClick={() => setSplit((v) => !v)}>
+            {split ? "Chiudi calendario" : "Apri calendario"}
+          </button>
           <button type="button" className={btnGhost} onClick={onClose}>
             Chiudi
           </button>
@@ -252,6 +317,15 @@ export function LibroPagaConvalidaPanel({
         </table>
       </div>
     </div>
+    {split ? (
+      <CalendarioSplitFrame
+        segmento={segmento}
+        date={dataSplit}
+        onSegmento={setSegmento}
+        onClose={() => setSplit(false)}
+      />
+    ) : null}
+    </div>
   )
 }
 
@@ -340,8 +414,15 @@ export function LibroPagaConvalidaMesePanel({
     },
   })
   const riepilogo = data
+  const [split, setSplit] = useState(false)
+  const primaAnomalia = riepilogo.anomalie?.[0]
+  const [segmento, setSegmento] = useState(() =>
+    segmentoDaComparto(primaAnomalia?.match?.comparto ?? primaAnomalia?.calendariAttesi?.[0])
+  )
+  const dataSplit = riepilogo.from || primaAnomalia?.giorno
 
   return (
+    <div className={split ? "xl:grid xl:grid-cols-2 xl:items-start xl:gap-3" : ""}>
     <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -369,6 +450,9 @@ export function LibroPagaConvalidaMesePanel({
               {auto.isPending ? "Conferma in corso…" : `Conferma i ${riepilogo.nConfermabili} allineati`}
             </button>
           )}
+          <button type="button" className={btnGhost} onClick={() => setSplit((v) => !v)}>
+            {split ? "Chiudi calendario" : "Apri calendario"}
+          </button>
           <button type="button" className={btnGhost} onClick={onClose}>
             Chiudi
           </button>
@@ -529,6 +613,15 @@ export function LibroPagaConvalidaMesePanel({
           </table>
         </div>
       )}
+    </div>
+    {split ? (
+      <CalendarioSplitFrame
+        segmento={segmento}
+        date={dataSplit}
+        onSegmento={setSegmento}
+        onClose={() => setSplit(false)}
+      />
+    ) : null}
     </div>
   )
 }
