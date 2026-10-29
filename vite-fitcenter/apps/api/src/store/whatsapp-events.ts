@@ -3,7 +3,13 @@ import { readJson, writeJson } from "./persist.js"
 const FILE = "whatsapp-events.json"
 const MAX = 2000
 
-export type WhatsappEventKind = "message_in" | "message_out" | "status" | "booking" | "other"
+export type WhatsappEventKind =
+  | "message_in"
+  | "message_out"
+  | "status"
+  | "booking"
+  | "lead_request"
+  | "other"
 
 export interface WhatsappStoredEvent {
   id: string
@@ -136,7 +142,11 @@ export const whatsappEventsStore = {
     } else {
       // Default log conversazione: niente ricevute Meta (delivered/read) né "other"
       rows = rows.filter(
-        (e) => e.kind === "message_in" || e.kind === "message_out" || e.kind === "booking"
+        (e) =>
+          e.kind === "message_in" ||
+          e.kind === "message_out" ||
+          e.kind === "booking" ||
+          e.kind === "lead_request"
       )
     }
     if (q) {

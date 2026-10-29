@@ -111,11 +111,19 @@ export function LeadList() {
           <h1 className="text-2xl font-semibold text-zinc-100">CRM Vendita</h1>
           <p className="text-sm text-zinc-400">Gestione lead e pipeline di vendita</p>
         </div>
-        {role !== "crm" && (
-          <Link to="/crm/nuovo">
-            <Button>+ Aggiungi lead (tour spontanei)</Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/crm/whatsapp-log"
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800"
+          >
+            Log WhatsApp
           </Link>
-        )}
+          {role !== "crm" && (
+            <Link to="/crm/nuovo">
+              <Button>+ Aggiungi lead (tour spontanei)</Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Pipeline cards */}

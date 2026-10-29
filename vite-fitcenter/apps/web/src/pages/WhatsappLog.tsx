@@ -3,82 +3,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { whatsappApi, type WhatsappLogEvent } from "@/api/whatsapp"
 import { useAuth } from "@/contexts/AuthContext"
+import { WhatsappThread } from "@/components/WhatsappThread"
+import { customerPhoneOf } from "@/lib/whatsappConversation"
 
-/** Solo conversazione utile: richiesta / risposta / appuntamento. */
-const CONV_KINDS = new Set(["message_in", "message_out", "booking"])
-
-function fmtAt(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString("it-IT", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-  } catch {
-    return iso
-  }
-}
-
-function kindLabel(kind: string, text?: string): string {
-  if (kind === "message_out" && /^template:/i.test(String(text ?? ""))) return "Template"
-  switch (kind) {
-    case "message_in":
-      return "Richiesta"
-    case "message_out":
-      return "Risposta"
-    case "booking":
-      return "Appuntamento"
-    default:
-      return kind
-  }
-}
-
-function kindClass(kind: string, status?: string): string {
-  if (status === "error" || status === "cancelled") {
-    return "border-red-800/60 bg-red-950/30 text-red-200"
-  }
-  if (kind === "message_in") return "border-sky-800/50 bg-sky-950/25 text-sky-100"
-  if (kind === "message_out") return "border-emerald-800/50 bg-emerald-950/25 text-emerald-100"
-  if (kind === "booking") return "border-amber-800/50 bg-amber-950/25 text-amber-100"
-  return "border-zinc-700 bg-zinc-900/40 text-zinc-200"
-}
-
-function displayText(e: WhatsappLogEvent): string {
-  const t = String(e.text ?? "").trim()
-  if (!t) return "—"
-  // Template Meta: template:lead_benvenuto_adulti [Nome]
-  const m = t.match(/^template:([^\s\[]+)\s*(?:\[(.*)\])?$/i)
-  if (m) {
-    const name = m[2]?.trim()
-    const tpl = m[1] ?? ""
-    if (/lezione|privata/i.test(tpl) || /lezione privata|prenota in fitcenter/i.test(name ?? "")) {
-      return name ? `Lezione privata (template) · ${name}` : `Lezione privata (${tpl})`
-    }
-    return name ? `Messaggio di benvenuto (template) · ${name}` : `Messaggio di benvenuto (${tpl})`
-  }
-  if (e.kind === "booking") {
-    if (e.status === "cancelled" || /^annullat/i.test(t)) return t.replace(/^annullato/i, "Annullato")
-    if (e.status === "ok" || /^prenotato/i.test(t)) return t.replace(/^prenotato/i, "Prenotato")
-  }
-  return t
-}
-
-function phoneOf(e: WhatsappLogEvent): string {
-  return (e.from || e.to || "—").replace(/^39/, "")
-}
-
-function statusSuffix(e: WhatsappLogEvent): string {
-  if (e.status === "error") return " · non consegnato"
-  if (e.status === "failed" || e.status === "undelivered") return " · non consegnato"
-  if (e.status === "cancelled") return " · annullato"
-  if (e.status === "none") return " · non trovato"
-  if (e.status === "delivered") return " · consegnato"
-  if (e.status === "read") return " · letto"
-  if (e.status === "sent") return " · accettato da Meta (non è detto che sia sul telefono)"
-  return ""
-}
+const CONV_KINDS = new Set(["message_in", "message_out", "booking", "lead_request"])
 
 export function WhatsappLog() {
   const { role } = useAuth()
@@ -132,7 +60,7 @@ export function WhatsappLog() {
   const byPhone = useMemo(() => {
     const map = new Map<string, WhatsappLogEvent[]>()
     for (const e of events) {
-      const key = phoneOf(e)
+      const key = customerPhoneOf(e)
       const list = map.get(key) ?? []
       list.push(e)
       map.set(key, list)
@@ -150,8 +78,8 @@ export function WhatsappLog() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Log WhatsApp</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            «Non consegnato» = WhatsApp non l’ha messo sul telefono. Sotto compare il motivo Meta (spesso finestra
-            24h o numero non recapitabile, non per forza un blocco).
+            A sinistra: cosa ha chiesto il cliente (form Facebook/sito o messaggio). A destra: cosa ha
+            risposto il bot. «Non consegnato» = WhatsApp non l’ha messo sul telefono.
           </p>
         </div>
         <div className="flex gap-2">
@@ -207,8 +135,9 @@ export function WhatsappLog() {
             className="mt-1 w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
           >
             <option value="all">Tutti</option>
-            <option value="message_in">Richiesta</option>
-            <option value="message_out">Risposta</option>
+            <option value="lead_request">Richiesta dal form</option>
+            <option value="message_in">Cliente ha scritto</option>
+            <option value="message_out">Risposta del bot</option>
             <option value="booking">Appuntamento</option>
           </select>
         </label>
@@ -228,9 +157,7 @@ export function WhatsappLog() {
           >
             Filtra
           </button>
-          <span className="ml-3 text-xs text-zinc-500">
-            {events.length} messaggi
-          </span>
+          <span className="ml-3 text-xs text-zinc-500">{events.length} messaggi</span>
         </div>
       </form>
 
@@ -266,21 +193,7 @@ export function WhatsappLog() {
                 </button>
               ) : null}
             </header>
-            <ul className="divide-y divide-zinc-800/80">
-              {[...rows].reverse().map((e) => (
-                <li key={e.id} className="px-3 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-zinc-500">{fmtAt(e.at)}</span>
-                    <span className={`rounded border px-1.5 py-0.5 text-[11px] ${kindClass(e.kind, e.status)}`}>
-                      {kindLabel(e.kind, e.text)}
-                      {statusSuffix(e)}
-                    </span>
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-zinc-100">{displayText(e)}</p>
-                  {e.errorIt ? <p className="mt-1 text-xs text-red-300">{e.errorIt}</p> : null}
-                </li>
-              ))}
-            </ul>
+            <WhatsappThread events={rows} />
           </section>
         ))}
       </div>

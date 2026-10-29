@@ -5,6 +5,7 @@
 import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import { welcomeTextFromWebsiteRequest } from "./whatsapp-site-topics.js"
 import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
+import { firstNameFromLeadNome, formatLeadFormDumpNote, parseLeadFormDump } from "../lib/lead-form-dump.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
 
@@ -618,7 +619,31 @@ export async function notifyLeadWelcomeWhatsapp(params: {
   if (!isWhatsappSendConfigured()) return { sent: false, skipped: "whatsapp non configurato" }
   const phone = String(params.telefono ?? "").trim()
   if (!phone || phone === "—") return { sent: false, skipped: "telefono mancante" }
-  const nome = String(params.nome ?? "").trim() || "Ciao"
+  const nomeRaw = String(params.nome ?? "").trim() || "Ciao"
+  const nome = firstNameFromLeadNome(nomeRaw)
+  const dump = parseLeadFormDump(nomeRaw) || parseLeadFormDump(String(params.note ?? ""))
+  const requestLines = [
+    dump ? formatLeadFormDumpNote(dump) : "",
+    params.interesseDettaglio && params.interesseDettaglio !== "—"
+      ? `Dettaglio: ${params.interesseDettaglio}`
+      : "",
+    !dump && params.note && params.note !== "—" ? String(params.note) : "",
+    params.fonte ? `Fonte: ${params.fonte}` : "",
+    params.bambini ? "Corsi bambini" : "",
+  ].filter(Boolean)
+  const hasRequest = Boolean(
+    dump ||
+      (params.note && params.note !== "—") ||
+      (params.interesseDettaglio && params.interesseDettaglio !== "—")
+  )
+  if (hasRequest && requestLines.length > 0) {
+    whatsappEventsStore.append({
+      kind: "lead_request",
+      from: phone,
+      text: requestLines.join("\n"),
+      raw: { fonte: params.fonte, note: params.note, interesseDettaglio: params.interesseDettaglio },
+    })
+  }
   try {
     if (isOpenDay) {
       const adultText = openDaySpaReplyMsg({ nome, fromSite: String(params.fonte ?? "").toLowerCase() === "website" })

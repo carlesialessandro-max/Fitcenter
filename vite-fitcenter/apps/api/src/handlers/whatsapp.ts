@@ -17,6 +17,7 @@ import {
   whatsappConfig,
 } from "../services/whatsapp.js"
 import { store as leadsStore } from "../store/leads.js"
+import { firstNameFromLeadNome } from "../lib/lead-form-dump.js"
 
 function resolveWhatsappDataDirHint(): string {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -336,7 +337,9 @@ export async function whatsappSendLead(req: Request, res: Response) {
       toRaw: to,
       templateName,
       languageCode,
-      ...(hasNameParam ? { bodyParams: body.bodyParams ?? [nome || "Ciao"] } : {}),
+      ...(hasNameParam
+        ? { bodyParams: body.bodyParams ?? [firstNameFromLeadNome(nome || "Ciao")] }
+        : {}),
     })
     return res.json({ ok: true, templateName, languageCode, result })
   } catch (e) {

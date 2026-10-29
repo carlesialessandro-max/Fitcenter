@@ -6,6 +6,7 @@ import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 import { notifyLeadWelcomeWhatsapp } from "../services/whatsapp.js"
 import { applyOpenDaySpaLeadFields, isOpenDaySpaText } from "../services/open-day-spa.js"
+import { firstNameFromLeadNome, formatLeadFormDumpNote, parseLeadFormDump } from "../lib/lead-form-dump.js"
 
 /** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. Open Day SPA no. */
 export function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
@@ -348,6 +349,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
 
   let nome = nomePick || labeled.nome || parsed.nome || ""
   let cognome = cognomePick || labeled.cognome || parsed.cognome || ""
+  const formDump = parseLeadFormDump(nomePick) || parseLeadFormDump(rawCandidate)
   const splitIfNeeded = () => {
     const n = nome.trim()
     const c = cognome.trim()
@@ -366,7 +368,14 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
     splitIfNeeded()
   }
   const email = fd?.email || emailPick || labeled.email || parsed.email || ""
-  const telefonoRaw = fd?.telefono || telefonoPick || labeled.telefono || parsed.telefono || ""
+  let telefonoRaw = fd?.telefono || telefonoPick || labeled.telefono || parsed.telefono || ""
+  if (formDump && (/,/.test(nome) || /\(\s*\d+\s*anni?/i.test(`${nome} ${cognome}`))) {
+    nome = firstNameFromLeadNome(formDump.referente) || nome
+    if (!cognome || cognome === "—" || /,/.test(cognome) || /\(\s*\d+\s*anni?/i.test(cognome)) {
+      cognome = formDump.allievo.replace(/\s*\(\s*\d+\s*anni?\.?\s*\)/i, "").trim() || cognome
+    }
+    if (!telefonoRaw || telefonoRaw === "—") telefonoRaw = formDump.telefono
+  }
   const telefonoDigits = telefonoRaw.replace(/\D/g, "")
   const telefono = telefonoDigits.length >= 8 ? telefonoDigits : telefonoRaw
   let fonte: LeadSource = "zapier"
@@ -447,6 +456,7 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   if (!fonteRaw && (tipologiaRaw || oggetto || messaggio)) fonte = "website"
 
   const noteParts: string[] = []
+  if (formDump) noteParts.push(formatLeadFormDumpNote(formDump))
   if (tipologiaRaw) noteParts.push(`Tipologia: ${tipologiaRaw}`)
   if (oggetto) noteParts.push(`Oggetto: ${oggetto}`)
   if (messaggio) noteParts.push(messaggio)

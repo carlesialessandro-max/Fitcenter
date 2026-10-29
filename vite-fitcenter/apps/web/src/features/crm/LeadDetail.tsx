@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, Link } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import { leadsApi } from "@/api/leads"
@@ -15,6 +15,7 @@ import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 import { isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
+import { WhatsappThread } from "@/components/WhatsappThread"
 
 function waErr(e: unknown): string {
   if (e instanceof Error && e.message.trim()) return e.message
@@ -75,6 +76,13 @@ export function LeadDetail() {
   })
   const crmAppuntamenti = useMemo(() => crmClienteQ.data?.rows ?? [], [crmClienteQ.data])
   const loadingCrm = crmClienteQ.isLoading
+  const waLogQ = useQuery({
+    queryKey: ["whatsapp", "events", lead?.telefono ?? ""],
+    queryFn: () => whatsappApi.listEvents({ phone: lead!.telefono, limit: 80 }),
+    enabled: !!lead?.telefono && lead.telefono !== "—",
+    refetchInterval: 20_000,
+  })
+  const waEvents = waLogQ.data?.events ?? []
 
   const updateMutation = useMutation({
     mutationFn: (updates: LeadUpdate) => leadsApi.update(id!, updates),
@@ -421,6 +429,30 @@ export function LeadDetail() {
           </div>
         </div>
       </div>
+
+      {lead.telefono && lead.telefono !== "—" ? (
+        <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-zinc-400">Chat WhatsApp (cliente ↔ bot)</h2>
+            <Link to="/crm/whatsapp-log" className="text-xs text-zinc-500 hover:text-zinc-300">
+              Apri log completo
+            </Link>
+          </div>
+          <p className="mt-1 text-xs text-zinc-500">
+            A sinistra cosa ha chiesto il cliente, a destra cosa ha risposto il bot.
+          </p>
+          {waLogQ.isLoading ? (
+            <div className="mt-3 text-sm text-zinc-500">Caricamento chat…</div>
+          ) : (
+            <div className="mt-3 overflow-hidden rounded-md border border-zinc-800">
+              <WhatsappThread
+                events={waEvents}
+                emptyHint="Nessun messaggio WhatsApp per questo numero."
+              />
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {canQueryCrm ? (
         <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/30 p-4">
