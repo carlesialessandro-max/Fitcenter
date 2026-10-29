@@ -1184,6 +1184,10 @@ function Personale({
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
           onDone={onDone}
+          canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
+          livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
+          onCreateTurno={(body) => lpagaApi.createTurno(body)}
+          onDeleteTurno={(id) => lpagaApi.deleteTurno(id)}
         />
       )}
       {!nuovoOpen && (
@@ -1475,8 +1479,8 @@ function ConvalidePortal({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-zinc-400">
           {onlyMine
-            ? "Seleziona i sottoreparti per filtrare i turni in fondo. «Convalida questo ambito» apre il controllo."
-            : "Clicca un responsabile per tutto il suo reparto, poi i sottoreparti per filtrare i turni."}
+            ? "Prima controlla il calendario: seleziona i sottoreparti, poi «Controlla calendario». Conferma solo dopo il confronto."
+            : "Prima controlla il calendario: clicca un responsabile, poi «Controlla calendario» sull’ambito."}
         </p>
         <button
           type="button"
@@ -1486,7 +1490,7 @@ function ConvalidePortal({
             setMeseOpen(true)
           }}
         >
-          Convalida turni
+          Controlla calendario
         </button>
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
@@ -1611,6 +1615,10 @@ function Mensilita({
               }
             : undefined
         }
+        canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
+        livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
+        onCreateTurno={(body) => lpagaApi.createTurno(body)}
+        onDeleteTurno={(id) => lpagaApi.deleteTurno(id)}
       />
     </div>
   )

@@ -11,7 +11,9 @@ import type {
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { LibroPagaRepartiMulti, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
+import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
+import { etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -37,6 +39,40 @@ function fmtDateIt(iso: string | null | undefined): string {
   if (!s) return "—"
   const [y, m, d] = s.split("-")
   return `${d}/${m}/${y}`
+}
+
+function oggiIso(): string {
+  try {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Rome",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date())
+  } catch {
+    return new Date().toISOString().slice(0, 10)
+  }
+}
+
+function defaultGiornoNelMese(mese: string): string {
+  const oggi = oggiIso()
+  if (oggi.startsWith(mese)) return oggi
+  return `${mese}-01`
+}
+
+function ultimoGiornoMese(mese: string): string {
+  const y = Number(mese.slice(0, 4))
+  const m = Number(mese.slice(5, 7))
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return `${mese}-${String(last).padStart(2, "0")}`
+}
+
+type TurnoCreateBody = {
+  personaleId: string
+  livelloId: string
+  giorno: string
+  quantita: number
+  note?: string
 }
 
 function currentIsoDate(): string {
@@ -133,6 +169,10 @@ export function LibroPagaMensilitaTab({
   onConvalida,
   onConvalidaMese,
   perimetroReparto,
+  canEditTurni,
+  livelliTurno,
+  onCreateTurno,
+  onDeleteTurno,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -144,6 +184,10 @@ export function LibroPagaMensilitaTab({
   onConvalida?: (personaleId: string) => void
   onConvalidaMese?: () => void
   perimetroReparto?: boolean
+  canEditTurni?: boolean
+  livelliTurno?: LpagaLivello[]
+  onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -209,6 +253,12 @@ export function LibroPagaMensilitaTab({
           hideIban={hideIban}
           onClose={() => setPannello(null)}
           soloTurni
+          canEditTurni={canEditTurni && canEdit(sel.personaleId)}
+          livelliTurno={livelliTurno}
+          onCreateTurno={onCreateTurno}
+          onDeleteTurno={onDeleteTurno}
+          onError={onError}
+          onDone={onDone}
         />
       )}
       <div className="space-y-2">
@@ -251,12 +301,13 @@ export function LibroPagaMensilitaTab({
           </button>
           {onConvalidaMese && (
             <button type="button" className={btnAmber} onClick={onConvalidaMese}>
-              Convalida tutto il mese
+              Controlla calendario
             </button>
           )}
         </div>
         <p className="text-xs text-zinc-500">
-          Seleziona uno o più nominativi, poi usa i pulsanti in alto.
+          Seleziona uno o più nominativi, poi usa i pulsanti in alto. Dettagli: inserisci o elimina turni.
+          Controlla calendario confronta i turni con i calendari FitCenter prima di confermare.
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
           {perimetroReparto
             ? " Importo totale e bonifico riguardano solo i turni del tuo reparto."
@@ -347,6 +398,10 @@ export function LibroPagaPersonaleDettaglio({
   allowAdminRole,
   onError,
   onDone,
+  canEditTurni,
+  livelliTurno,
+  onCreateTurno,
+  onDeleteTurno,
 }: {
   persona: LpagaPersonale
   mese: string
@@ -360,6 +415,10 @@ export function LibroPagaPersonaleDettaglio({
   allowAdminRole?: boolean
   onError?: (s: string) => void
   onDone?: () => void
+  canEditTurni?: boolean
+  livelliTurno?: LpagaLivello[]
+  onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const nominativo = persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()
   return (
@@ -391,6 +450,10 @@ export function LibroPagaPersonaleDettaglio({
       allowAdminRole={allowAdminRole}
       onError={onError}
       onDone={onDone}
+      canEditTurni={canEditTurni}
+      livelliTurno={livelliTurno}
+      onCreateTurno={onCreateTurno}
+      onDeleteTurno={onDeleteTurno}
     />
   )
 }
@@ -410,6 +473,10 @@ function DettaglioMese({
   onError,
   onDone,
   soloTurni,
+  canEditTurni,
+  livelliTurno,
+  onCreateTurno,
+  onDeleteTurno,
 }: {
   row: LpagaMensilitaRow
   persona?: LpagaPersonale
@@ -425,6 +492,10 @@ function DettaglioMese({
   onError?: (s: string) => void
   onDone?: () => void
   soloTurni?: boolean
+  canEditTurni?: boolean
+  livelliTurno?: LpagaLivello[]
+  onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const year = mese.slice(0, 4)
   const iban = hideIban ? "" : persona?.iban || row.iban
@@ -457,6 +528,50 @@ function DettaglioMese({
   useEffect(() => {
     setFiltroMansione("")
   }, [persona?.id, mese])
+  const mansioniTurno = (livelliTurno ?? []).filter((l) => l.attivo !== false && l.retribuibile)
+  const editTurni = Boolean(canEditTurni && persona && onCreateTurno && onDeleteTurno && mansioniTurno.length)
+  const [nuovoLivelloId, setNuovoLivelloId] = useState(mansioniTurno[0]?.id ?? "")
+  const [nuovoGiorno, setNuovoGiorno] = useState(() => defaultGiornoNelMese(mese))
+  const [nuovoQuantita, setNuovoQuantita] = useState("1")
+  const [nuovoNote, setNuovoNote] = useState("")
+  useEffect(() => {
+    setNuovoLivelloId(mansioniTurno[0]?.id ?? "")
+    setNuovoGiorno(defaultGiornoNelMese(mese))
+    setNuovoQuantita("1")
+    setNuovoNote("")
+  }, [persona?.id, mese])
+  const createTurnoMut = useMutation({
+    mutationFn: () => {
+      if (!persona || !onCreateTurno) throw new Error("Inserimento non disponibile")
+      const liv = mansioniTurno.find((l) => l.id === nuovoLivelloId)
+      const q = Number(String(nuovoQuantita).replace(",", "."))
+      const err = liv ? messaggioQuantitaTurno(liv, q) : "Mansione non valida"
+      if (err) throw new Error(err)
+      return onCreateTurno({
+        personaleId: persona.id,
+        livelloId: nuovoLivelloId,
+        giorno: nuovoGiorno,
+        quantita: q,
+        note: nuovoNote.trim() || undefined,
+      })
+    },
+    onSuccess: () => {
+      setNuovoNote("")
+      setNuovoQuantita("1")
+      onDone?.()
+    },
+    onError: (e: Error) => onError?.(e.message),
+  })
+  const deleteTurnoMut = useMutation({
+    mutationFn: (id: string) => {
+      if (!onDeleteTurno) throw new Error("Eliminazione non disponibile")
+      return onDeleteTurno(id)
+    },
+    onSuccess: () => onDone?.(),
+    onError: (e: Error) => onError?.(e.message),
+  })
+  const livelloNuovo = mansioniTurno.find((l) => l.id === nuovoLivelloId)
+  const valoreUi = etichettaValoreTurno(livelloNuovo)
   const saveMut = useMutation({
     mutationFn: () => {
       if (!persona || !onSavePersonale) throw new Error("Salvataggio non disponibile")
@@ -672,6 +787,51 @@ function DettaglioMese({
       ))}
       <div>
         <h3 className="mb-2 text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
+        {editTurni ? (
+          <form
+            className="mb-3 grid gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 sm:grid-cols-5"
+            onSubmit={(e) => {
+              e.preventDefault()
+              createTurnoMut.mutate()
+            }}
+          >
+            <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
+              Mansione
+              <MansioneSearchSelect items={mansioniTurno} value={nuovoLivelloId} onChange={setNuovoLivelloId} required />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400">
+              Data
+              <input
+                type="date"
+                value={nuovoGiorno}
+                min={`${mese}-01`}
+                max={ultimoGiornoMese(mese)}
+                onChange={(e) => setNuovoGiorno(e.target.value)}
+                className={inputCls}
+                required
+              />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400">
+              {valoreUi.label}
+              <input
+                value={nuovoQuantita}
+                onChange={(e) => setNuovoQuantita(e.target.value)}
+                className={inputCls}
+                required
+              />
+            </label>
+            <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-3">
+              Note
+              <input value={nuovoNote} onChange={(e) => setNuovoNote(e.target.value)} className={inputCls} />
+            </label>
+            <div className="flex items-end sm:col-span-2">
+              <button type="submit" className={btnAmber} disabled={createTurnoMut.isPending}>
+                {createTurnoMut.isPending ? "Inserimento…" : "Inserisci turno"}
+              </button>
+            </div>
+            <p className="text-[11px] text-zinc-500 sm:col-span-5">{valoreUi.hint}</p>
+          </form>
+        ) : null}
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
@@ -682,6 +842,7 @@ function DettaglioMese({
                 <th className="px-3 py-2 text-right">Valore</th>
                 <th className="px-3 py-2 text-right">Importo</th>
                 <th className="px-3 py-2">Note</th>
+                {editTurni ? <th className="px-3 py-2 text-right">Azioni</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -693,11 +854,27 @@ function DettaglioMese({
                   <td className="px-3 py-2 text-right">{t.quantita}</td>
                   <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                   <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
+                  {editTurni ? (
+                    <td className="px-3 py-2 text-right">
+                      <button
+                        type="button"
+                        className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                        disabled={deleteTurnoMut.isPending}
+                        onClick={() => {
+                          if (confirm(`Eliminare il turno del ${fmtDateIt(t.giorno)} (${t.livelloNome})?`)) {
+                            deleteTurnoMut.mutate(t.id)
+                          }
+                        }}
+                      >
+                        Elimina
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
               {!lezioniFiltrate.length && (
                 <tr>
-                  <td className="px-3 py-6 text-zinc-500" colSpan={6}>
+                  <td className="px-3 py-6 text-zinc-500" colSpan={editTurni ? 7 : 6}>
                     {lezioni.length
                       ? "Nessuna lezione per la mansione selezionata."
                       : "Nessuna lezione in questo mese."}

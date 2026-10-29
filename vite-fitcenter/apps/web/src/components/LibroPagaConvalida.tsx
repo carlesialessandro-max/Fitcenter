@@ -81,8 +81,9 @@ export function LibroPagaConvalidaPanel({
           <h2 className="text-sm font-medium text-zinc-200">Convalida mensilità</h2>
           <p className="mt-1 text-lg font-semibold text-zinc-100">{data.personaleNome}</p>
           <p className="text-xs text-zinc-500">
-            Confronta i turni Libro paga con i calendari FitCenter (corsi, scuola nuoto, fitness, bagnini, desk).
-            Tornello: basta la prima entrata in struttura quel giorno (stesso ingresso per tutti i corsi).{" "}
+            Prima controlla il calendario, poi conferma. Confronta i turni Libro paga con i calendari FitCenter
+            (corsi, scuola nuoto, fitness, bagnini, desk). Tornello: basta la prima entrata in struttura quel giorno.
+            {" "}
             {nDone}/{data.rows.length} controllati.
           </p>
         </div>
@@ -344,11 +345,12 @@ export function LibroPagaConvalidaMesePanel({
     <div className="space-y-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-zinc-200">Convalida tutto il mese</h2>
+          <h2 className="text-sm font-medium text-zinc-200">Controllo calendario</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            {riepilogo.nTurni} turni · {riepilogo.nConfermati} già confermati · {riepilogo.nConfermabili} allineati al
-            calendario da confermare · {riepilogo.nAnomalie} anomalie. Puoi filtrare per reparto (es. corsi terra / acqua)
-            e per settimana.
+            Prima confronta i turni con i calendari FitCenter, poi conferma quelli allineati.
+            {riepilogo.nTurni} turni · {riepilogo.nConfermati} già confermati · {riepilogo.nConfermabili} allineati da
+            confermare · {riepilogo.nAnomalie} anomalie. Puoi filtrare per reparto (es. corsi terra / acqua) e per
+            settimana.
           </p>
           {((riepilogo.confermatiOra ?? auto.data?.confermatiOra) ?? 0) > 0 && (
             <p className="mt-1 text-xs text-emerald-300">
@@ -628,7 +630,7 @@ function ScopeConvalidaCard({
           className="mt-2 self-start text-[11px] font-medium text-amber-300 hover:underline"
           onClick={() => onApri(scope.id)}
         >
-          Convalida questo ambito
+          Controlla calendario
         </button>
       ) : null}
     </div>

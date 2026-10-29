@@ -747,6 +747,10 @@ function PersonaleTab({
             onSavePersonale={(id, body) => libroPagaApi.patchPersonale(id, body)}
             onError={onError}
             onDone={onDone}
+            canEditTurni
+            livelliTurno={data.livelli.filter((l) => l.attivo !== false && l.retribuibile)}
+            onCreateTurno={(body) => libroPagaApi.createTurno(body)}
+            onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
           />
         )
       })()}
@@ -1371,7 +1375,7 @@ function ConvalideTab({
             setMeseOpen(true)
           }}
         >
-          Convalida turni
+          Controlla calendario
         </button>
       </div>
       <div className="grid gap-3 sm:grid-cols-4">
@@ -1395,8 +1399,8 @@ function ConvalideTab({
       </div>
       <Card title="Responsabili">
         <p className="mb-3 text-xs text-zinc-500">
-          Clicca un responsabile per vedere i turni di tutto il suo reparto. Poi seleziona uno o più sottoreparti per
-          filtrare l’elenco in fondo. «Convalida questo ambito» apre il controllo turni.
+          Prima controlla il calendario: clicca un responsabile, poi «Controlla calendario» sull’ambito.
+          Confronta i turni con i calendari FitCenter e solo dopo conferma quelli allineati.
         </p>
         <LibroPagaConvalideLista
           responsabili={responsabili}
@@ -1503,6 +1507,10 @@ function MensilitaTab({
           setConvId(null)
           setMeseOpen(true)
         }}
+        canEditTurni
+        livelliTurno={data.livelli.filter((l) => l.attivo !== false && l.retribuibile)}
+        onCreateTurno={(body) => libroPagaApi.createTurno(body)}
+        onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
       />
     </div>
   )
