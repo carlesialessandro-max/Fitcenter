@@ -347,8 +347,9 @@ function DashboardTab() {
               pulizie, personale condiviso) imputata in % sui ricavi.
             </p>
             <p className="mt-1">
-              I ricavi ordinari arrivano dagli incassi del gestionale. Danza, affitti spazi e convenzioni si prendono
-              sempre dalle fatture emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
+              I ricavi ordinari arrivano dagli incassi del gestionale (danza di cassa inclusa tra gli altri incassi,
+              senza duplicare le fatture Danza se già incassate). Affitti spazi e convenzioni si prendono dalle fatture
+              emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
               di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
               dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, Tres Energia e Sima energia stanno sul
               mese prima della fattura; Publiacqua si spezza sui mesi di consumo.

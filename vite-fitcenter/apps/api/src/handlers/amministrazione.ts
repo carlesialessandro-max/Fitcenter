@@ -1103,7 +1103,12 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
     if (fattureEmesseDisponibili) {
-      if (fattureAmm.ricaviDanza) {
+      const danzaCassa = round2(
+        ricavi.dettaglio
+          .filter((v) => v.voce === "Danza (incassi gestionale)")
+          .reduce((s, v) => s + (Number(v.importo) || 0), 0),
+      )
+      if (fattureAmm.ricaviDanza && danzaCassa < 0.01) {
         ricavi.byMacro.fitness = round2(ricavi.byMacro.fitness + fattureAmm.ricaviDanza)
         ricavi.dettaglio.push({
           voce: "Fatture Danza · Fatture in Cloud",

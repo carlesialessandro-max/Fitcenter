@@ -451,7 +451,22 @@ export function raggruppaDettaglioRicavi(voci: RicavoVoceGestionale[]): AmmRicav
     }
   >()
   for (const v of voci) {
-    if (v.danza) continue
+    if (v.danza) {
+      const euro = Number(v.euro || 0)
+      const key = "Danza (incassi gestionale)"
+      const current = grouped.get(key) ?? {
+        voce: key,
+        importo: 0,
+        n: 0,
+        ripartizione: new Map<string, number>(),
+        ripartizioneSotto: new Map<string, number>(),
+      }
+      current.n += v.n
+      current.importo = round2(current.importo + euro)
+      current.ripartizione.set("altro", round2((current.ripartizione.get("altro") ?? 0) + euro))
+      grouped.set(key, current)
+      continue
+    }
     const destMacro = classificaRicavo(v.voce, v.contesto)
     if (destMacro.length === 0) continue
     const destSotto = classificaSotto(v.voce, v.contesto)
@@ -537,8 +552,11 @@ export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRi
     const bySotto: Record<string, number> = {}
     let totAltri = 0
     for (const v of voci) {
-      if (v.danza) continue
       const euro = Number(v.euro) || 0
+      if (v.danza) {
+        totAltri += euro
+        continue
+      }
       const destSotto = classificaSotto(v.voce, v.contesto)
       if (destSotto.length) {
         for (const d of destSotto) {

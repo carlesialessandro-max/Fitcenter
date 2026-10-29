@@ -6738,9 +6738,51 @@ export function dedupeIncassiRows(rows: Record<string, unknown>[]): Record<strin
       continue
     }
     const nonRata = group.filter((r) => !isPagamentoRataIncassoRow(r))
-    out.push(nonRata.length ? pickBestIncassoRow(nonRata) : pickBestIncassoRow(group))
+    const rate = group.filter(isPagamentoRataIncassoRow)
+    const byProdotto = new Map<string, Record<string, unknown>[]>()
+    for (const row of rate) {
+      const key = incassiRataProdottoKey(row)
+      const list = byProdotto.get(key) ?? []
+      list.push(row)
+      byProdotto.set(key, list)
+    }
+    if (byProdotto.size <= 1) {
+      out.push(nonRata.length ? pickBestIncassoRow(nonRata) : pickBestIncassoRow(group))
+      continue
+    }
+    out.push(...nonRata)
+    for (const [prodotto, list] of byProdotto) {
+      const giaCoperto = nonRata.some((row) => incassiProdottoCopreRata(row, prodotto))
+      if (!giaCoperto) out.push(pickBestIncassoRow(list))
+    }
   }
   return out
+}
+
+function incassiRataProdottoKey(row: Record<string, unknown>): string {
+  const causale = incassiCausale(row)
+  return incassiNormText(titoloProdottoDaCausaleIncasso(causale) ?? causale) || "rata"
+}
+
+function incassiProdottoCopreRata(row: Record<string, unknown>, prodottoRata: string): boolean {
+  if (!prodottoRata) return false
+  const blob = incassiNormText(
+    [
+      row.AbbonamentiCategorieDescrizione,
+      row.CategoriaAbbonamentoDescrizione,
+      row.AbbonamentiDescrizione,
+      row.AbbonamentoDescrizione,
+      incassiCausale(row),
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ")
+  )
+  if (!blob) return false
+  if (blob.includes(prodottoRata) || prodottoRata.includes(blob)) return true
+  const a = blob.split(" ")[0] ?? ""
+  const b = prodottoRata.split(" ")[0] ?? ""
+  return a.length >= 3 && a === b
 }
 
 /** Estrae il prodotto da causale «PAGAMENTO RATA del …: …» (senza data rata né periodo abbonamento). */
