@@ -78,6 +78,7 @@ export type AmmRisultatoDettaglio = {
   marginePct: number | null
   ripartoPct: number
   corso: boolean
+  voci?: { voce: string; importo: number }[]
 }
 
 export type AmmDashboard = {

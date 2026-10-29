@@ -638,8 +638,10 @@ function DashboardTab() {
           </p>
           <h3 className="text-sm font-medium text-zinc-200">Dettaglio centri (stessi totali di sopra)</h3>
           <p className="text-xs text-zinc-500">
-            Clicca un centro per vedere le voci. Corsi terra (SMILE FIT) stanno dentro il Totale Fitness, corsi acqua
-            (SMILE H2O) dentro il Totale Piscina: la somma delle righe coincide con Piscina e Fitness di sopra.
+            Clicca un centro per vedere le voci. Le righe «Altri» (es. Altri Piscina) mostrano fatture, buste e libro
+            paga lasciati sul centro senza un sotto-reparto. Corsi terra (SMILE FIT) stanno dentro il Totale Fitness,
+            corsi acqua (SMILE H2O) dentro il Totale Piscina: la somma delle righe coincide con Piscina e Fitness di
+            sopra.
           </p>
           <div className="overflow-x-auto rounded-2xl border border-zinc-800">
             <table className="min-w-full text-sm">
@@ -660,23 +662,33 @@ function DashboardTab() {
                   pnlDettaglioByMacro.map(({ macro, righe }) => (
                     <Fragment key={macro.id}>
                       {righe.map((r) => {
-                        const vociSotto = vociPerSotto(d.ricaviDettaglio, r.id)
+                        const vociSotto = r.voci?.length ? r.voci : vociPerSotto(d.ricaviDettaglio, r.id)
+                        const rigaAltri = r.id.endsWith("-altri")
                         return (
                         <tr key={r.id} className="border-t border-zinc-800">
                           <td className="px-3 py-2 text-zinc-100">
-                            {vociSotto.length ? (
+                            {vociSotto.length || rigaAltri ? (
                               <details>
                                 <summary className="cursor-pointer hover:text-amber-200">
                                   {r.nome}
                                   {r.corso ? <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-500/80">corso</span> : null}
                                   <span className="ml-2 text-xs text-zinc-500">fissi {r.ripartoPct}%</span>
                                 </summary>
+                                {rigaAltri ? (
+                                  <p className="mt-1 text-[11px] font-normal text-zinc-500">
+                                    Costi (e eventuali ricavi) assegnati a {r.macroNome} senza un sotto-reparto.
+                                  </p>
+                                ) : null}
                                 <ul className="mt-1 space-y-0.5 text-[11px] font-normal text-zinc-500">
-                                  {vociSotto.map((v) => (
-                                    <li key={v.voce}>
-                                      {v.voce} · {eur(v.importo)}
-                                    </li>
-                                  ))}
+                                  {vociSotto.length ? (
+                                    vociSotto.map((v) => (
+                                      <li key={v.voce}>
+                                        {v.voce} · {eur(v.importo)}
+                                      </li>
+                                    ))
+                                  ) : (
+                                    <li>Nessuna voce nominata: resta un importo residuo sul centro {r.macroNome}.</li>
+                                  )}
                                 </ul>
                               </details>
                             ) : (

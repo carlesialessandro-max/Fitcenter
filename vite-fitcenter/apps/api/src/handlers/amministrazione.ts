@@ -930,12 +930,44 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     const busteAll = ammCostiStore.listBuste().filter((b) => (mese ? b.mese === mese : b.mese.startsWith(String(anno))))
     const bustaSlices: Slice[] = []
-    const pnlAlloc: { repartoId: string; importo: number }[] = speseParti.flatMap((p) =>
-      allocateQuote(p.importo, p.spesa.quote)
-    )
+    const pnlAlloc: { repartoId: string; importo: number }[] = []
+    const pnlVoci: { repartoId: string; importo: number; voce: string }[] = []
+    const labelSpesa = (s: AmmSpesa) => {
+      const bits = [s.fornitore, s.descrizione, s.numeroDocumento].map((x) => String(x || "").trim()).filter(Boolean)
+      return bits.length ? `Fattura · ${bits.join(" · ")}` : "Fattura"
+    }
+    const pushPnl = (alloc: { repartoId: string; importo: number }[], voce: string) => {
+      pnlAlloc.push(...alloc)
+      for (const a of alloc) {
+        if (Math.abs(a.importo) > 0.009) pnlVoci.push({ repartoId: a.repartoId, importo: a.importo, voce })
+      }
+    }
+    for (const p of speseParti) pushPnl(allocateQuote(p.importo, p.spesa.quote), labelSpesa(p.spesa))
     for (const b of busteAll) {
       const alloc = allocateQuote(b.totale, b.quote)
       pnlAlloc.push(...alloc)
+      const dipendenti = (b.dettaglioDipendenti ?? []).filter((d) => d.nominativo && Math.abs(d.totale) > 0.009)
+      if (dipendenti.length && Math.abs(b.totale) > 0.009) {
+        for (const d of dipendenti) {
+          const share = d.totale / b.totale
+          for (const a of alloc) {
+            const importo = round2(a.importo * share)
+            if (Math.abs(importo) > 0.009) {
+              pnlVoci.push({ repartoId: a.repartoId, importo, voce: `Busta paga · ${d.nominativo}` })
+            }
+          }
+        }
+      } else {
+        for (const a of alloc) {
+          if (Math.abs(a.importo) > 0.009) {
+            pnlVoci.push({
+              repartoId: a.repartoId,
+              importo: a.importo,
+              voce: `Busta paga · ${b.nominativo}${b.descrizione ? ` · ${b.descrizione}` : ""}`,
+            })
+          }
+        }
+      }
       for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
         bustaSlices.push({
           repartoId: a.repartoId,
@@ -968,7 +1000,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
             quoteTurniDelMese(ym, c.nominativo) ??
               quoteOfCollaboratore(c.nominativo, c.quote, centriCostoLibroPaga)
           )
-          pnlAlloc.push(...alloc)
+          pushPnl(alloc, `Libro paga · ${c.nominativo}`)
           for (const a of alloc.filter((x) => inFiltro(x.repartoId))) {
             lpSlices.push({
               repartoId: a.repartoId,
@@ -999,15 +1031,16 @@ export async function getAmmDashboard(req: Request, res: Response) {
           fonte: "rimborso" as const,
         })),
     )
-    pnlAlloc.push(
-      ...rimborsiAll.flatMap((r) =>
+    for (const r of rimborsiAll) {
+      pushPnl(
         allocateQuote(
           r.totale,
           quoteTurniDelMese(r.mese, r.nominativo) ??
             quoteOfCollaboratore(r.nominativo, r.quote, centriCostoLibroPaga)
-        )
+        ),
+        `Rimborso · ${r.nominativo}${r.descrizione ? ` · ${r.descrizione}` : ""}`,
       )
-    )
+    }
 
     const ricavi = await queryRicaviAmm(anno, mese || undefined)
     let fattureEmesseDisponibili = false
@@ -1114,7 +1147,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
             },
           ]
         : []
-    if (recuperoUtenze) pnlAlloc.push({ repartoId: "utenze-generali", importo: -recuperoUtenze })
+    if (recuperoUtenze) pushPnl([{ repartoId: "utenze-generali", importo: -recuperoUtenze }], "Recupero utenze")
 
     const allSlices = [
       ...speseParti.flatMap((p) => slicesOf(p.spesa, p.importo)),
@@ -1289,6 +1322,14 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
       return out
     }
+    const raggruppaVoci = (items: { voce: string; importo: number }[]) => {
+      const m = new Map<string, number>()
+      for (const it of items) m.set(it.voce, round2((m.get(it.voce) ?? 0) + it.importo))
+      return [...m.entries()]
+        .map(([voce, importo]) => ({ voce, importo }))
+        .filter((x) => Math.abs(x.importo) > 0.009)
+        .sort((a, b) => Math.abs(b.importo) - Math.abs(a.importo))
+    }
     const risultatoDettaglio: {
       id: string
       nome: string
@@ -1303,12 +1344,21 @@ export async function getAmmDashboard(req: Request, res: Response) {
       marginePct: number | null
       ripartoPct: number
       corso: boolean
+      voci?: { voce: string; importo: number }[]
     }[] = []
     for (const macro of MACRO_COMMERCIALI) {
       const parent = risultato.find((r) => r.id === macro)
       if (!parent) continue
-      const rows: { id: string; nome: string; ricavi: number; costiDiretti: number }[] = []
-      for (const s of idsSottoByMacro(macro)) {
+      const sottoElenco = idsSottoByMacro(macro)
+      const namedSotto = new Set(sottoElenco.map((s) => s.id))
+      const rows: {
+        id: string
+        nome: string
+        ricavi: number
+        costiDiretti: number
+        voci?: { voce: string; importo: number }[]
+      }[] = []
+      for (const s of sottoElenco) {
         const ricavo = round2(ricavi.bySotto?.[s.id] ?? 0)
         const costo = round2(costiByReparto.get(s.id) ?? 0)
         if (Math.abs(ricavo) > 0.009 || Math.abs(costo) > 0.009) {
@@ -1318,11 +1368,31 @@ export async function getAmmDashboard(req: Request, res: Response) {
       const residuoRic = round2(parent.ricavi - rows.reduce((s, r) => s + r.ricavi, 0))
       const residuoDir = round2(parent.costiDiretti - rows.reduce((s, r) => s + r.costiDiretti, 0))
       if (Math.abs(residuoRic) > 0.009 || Math.abs(residuoDir) > 0.009) {
+        const vociCosti = raggruppaVoci(
+          pnlVoci
+            .filter((x) => macroIdOf(reparti, x.repartoId) === macro && !namedSotto.has(x.repartoId))
+            .map((x) => ({ voce: x.voce, importo: x.importo })),
+        )
+        const vociRicavi = raggruppaVoci(
+          (ricavi.dettaglio ?? []).flatMap((v) => {
+            const quotaMacro =
+              v.ripartizione?.find((q) => q.macro === macro)?.importo ??
+              (v.macro === macro || v.macro.split("+").map((part) => part.trim()).includes(macro)
+                ? v.importo
+                : 0)
+            const sottoTot = (v.ripartizioneSotto ?? [])
+              .filter((s) => namedSotto.has(s.id))
+              .reduce((sum, s) => sum + s.importo, 0)
+            const residuo = round2(quotaMacro - sottoTot)
+            return Math.abs(residuo) > 0.009 ? [{ voce: `Ricavo · ${v.voce}`, importo: residuo }] : []
+          }),
+        )
         rows.push({
           id: `${macro}-altri`,
           nome: `Altri ${parent.nome}`,
           ricavi: residuoRic,
           costiDiretti: residuoDir,
+          voci: [...vociCosti, ...vociRicavi],
         })
       }
       if (!rows.length) continue
@@ -1347,6 +1417,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
           marginePct: r.ricavi > 0.009 ? Math.round((utile / r.ricavi) * 1000) / 10 : null,
           ripartoPct: parent.ricavi > 0.009 ? round2((r.ricavi / parent.ricavi) * parent.ripartoFissiPct) : 0,
           corso: isCorsoId(r.id),
+          ...(r.voci?.length ? { voci: r.voci } : {}),
         })
       })
     }
