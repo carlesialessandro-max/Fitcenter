@@ -104,6 +104,14 @@ export interface AbbAttiviAnalisiResponse {
   totaleDurataMesi: number
   adulti: AbbAttiviSegmentoAnalisi
   bambini: AbbAttiviSegmentoAnalisi
+  /** Snapshot stessa data calendario dell’anno di confronto (default: anno precedente). */
+  confronto?: {
+    asOf: string
+    anno: number
+    totaleAttivi: number
+    adulti: number
+    bambini: number
+  }
   notaClassificazione: string
 }
 

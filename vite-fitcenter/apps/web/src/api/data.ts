@@ -77,10 +77,11 @@ export const dataApi = {
     return api.get<DashboardStats>(url)
   },
   getClienti: () => api.get<Cliente[]>("/data/clienti"),
-  getAbbonamentiAttiviAnalisi: (asOf?: string, consulente?: string) => {
+  getAbbonamentiAttiviAnalisi: (asOf?: string, consulente?: string, confrontaAnno?: number) => {
     const params = new URLSearchParams()
     if (asOf) params.set("asOf", asOf)
     if (consulente) params.set("consulente", consulente)
+    if (confrontaAnno != null && Number.isFinite(confrontaAnno)) params.set("confrontaAnno", String(confrontaAnno))
     const q = params.toString()
     return api.get<AbbAttiviAnalisiResponse>(`/data/abbonamenti-attivi-analisi${q ? `?${q}` : ""}`)
   },

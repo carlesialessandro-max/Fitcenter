@@ -1342,6 +1342,16 @@ function byCategoriaDettaglio(rows: Abbonamento[], categoriaLabelFn: (a: Abbonam
     .sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria, "it"))
 }
 
+function shiftAsOfYear(key: string, year: number): { date: Date; key: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key)
+  const month = m ? Number(m[2]) : 1
+  const day = m ? Number(m[3]) : 1
+  const last = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const d = Math.min(day, last)
+  const dt = new Date(Date.UTC(year, month - 1, d, 12, 0, 0))
+  return { date: dt, key: `${year}-${pad2(month)}-${pad2(d)}` }
+}
+
 /** Admin: attivi per KPI, ripartiti per durata (fascia) e stima adulti / bambini. */
 export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
   try {
@@ -1362,7 +1372,6 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
     }
     markRinnovato(list)
     if (consulenteQ) list = filterAbbonamentiDelConsulente(list, consulenteQ)
-    let attivi = filterAbbonamentiAttiviForKpi(list, date)
     const orderDurata = ["1 mese", "2–3 mesi", "4–6 mesi", "7–12 mesi", "Oltre 12 mesi", "Durata non nota"] as const
     const byDurata = (rows: Abbonamento[]) => {
       const mCount = new Map<string, number>()
@@ -1390,19 +1399,19 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         .map(([categoria, totale]) => ({ categoria, totale }))
         .sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria))
     }
+    const splitAttivi = (asOfDate: Date) => {
+      const attivi = filterAbbonamentiAttiviForKpi(list, asOfDate)
+      const adultiRaw = attivi.filter((a) => isAbbonamentoAdultiListino(a))
+      const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a) && !isAbbonamentoAdultiListino(a))
+      const adulti = consulenteQ ? dedupBambiniByClienteId(adultiRaw) : adultiRaw
+      const bambini = consulenteQ ? [] : dedupBambiniByClienteId(bambiniRaw)
+      const sumDurataMesi = (rows: Abbonamento[]) => rows.reduce((s, a) => s + (inferDurataMesiAbb(a) ?? 0), 0)
+      return { adulti, bambini, adultiTotDurataMesi: sumDurataMesi(adulti), bambiniTotDurataMesi: sumDurataMesi(bambini) }
+    }
 
-    const adultiRaw = attivi.filter((a) => isAbbonamentoAdultiListino(a))
-    const bambiniRaw = attivi.filter((a) => isAbbonamentoBambini(a) && !isAbbonamentoAdultiListino(a))
-    const adulti = consulenteQ ? dedupBambiniByClienteId(adultiRaw) : adultiRaw
-    const bambini = consulenteQ ? [] : dedupBambiniByClienteId(bambiniRaw)
-    const attiviSegmentati = [...adulti, ...bambini]
-
-    const durataMesiForTotal = (a: Abbonamento) => inferDurataMesiAbb(a) ?? 0
-    const sumDurataMesi = (rows: Abbonamento[]) => rows.reduce((s, a) => s + durataMesiForTotal(a), 0)
-    const adultiTotDurataMesi = sumDurataMesi(adulti)
-    const bambiniTotDurataMesi = sumDurataMesi(bambini)
-    const totaleDurataMesi = adultiTotDurataMesi + bambiniTotDurataMesi
-
+    const curr = splitAttivi(date)
+    const attiviSegmentati = [...curr.adulti, ...curr.bambini]
+    const totaleDurataMesi = curr.adultiTotDurataMesi + curr.bambiniTotDurataMesi
     const totaleAttiviSegmentati = attiviSegmentati.length
     const notaClassificazione =
       totaleAttiviSegmentati === 0
@@ -1410,6 +1419,15 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         : consulenteQ
           ? "Filtro consulente adulti: solo abbonamenti adulti. Scuola nuoto, agonismo categorie e altri corsi bambini non contano. Esclusi tesseramenti, staff e personal trainer."
           : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo categorie e altri corsi bambini. Agonismo master resta adulti. Esclusi tesseramenti, staff e personal trainer. Validità: data inizio–fine comprende la data di riferimento."
+
+    const yearCurr = Number(key.slice(0, 4))
+    const confrontaAnnoRaw = Number(req.query.confrontaAnno)
+    const confrontaAnno =
+      Number.isFinite(confrontaAnnoRaw) && confrontaAnnoRaw >= 2000 && confrontaAnnoRaw <= 2100 && confrontaAnnoRaw !== yearCurr
+        ? Math.floor(confrontaAnnoRaw)
+        : yearCurr - 1
+    const prevAsOf = shiftAsOfYear(key, confrontaAnno)
+    const prev = splitAttivi(prevAsOf.date)
 
     res.json({
       asOf: key,
@@ -1419,20 +1437,27 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
       totaleAttivi: totaleAttiviSegmentati,
       totaleDurataMesi,
       adulti: {
-        totale: adulti.length,
-        totaleDurataMesi: adultiTotDurataMesi,
-        byDurata: byDurata(adulti),
-        byCategoria: byCategoria(adulti),
-        byCategoriaDettaglio: byCategoriaDettaglio(adulti, categoriaLabel),
-        byFasciaRossiVerdi: byFasciaRossiVerdi(adulti),
+        totale: curr.adulti.length,
+        totaleDurataMesi: curr.adultiTotDurataMesi,
+        byDurata: byDurata(curr.adulti),
+        byCategoria: byCategoria(curr.adulti),
+        byCategoriaDettaglio: byCategoriaDettaglio(curr.adulti, categoriaLabel),
+        byFasciaRossiVerdi: byFasciaRossiVerdi(curr.adulti),
       },
       bambini: {
-        totale: bambini.length,
-        totaleDurataMesi: bambiniTotDurataMesi,
-        byDurata: byDurata(bambini),
-        byCategoria: byCategoria(bambini),
-        byCategoriaDettaglio: byCategoriaDettaglio(bambini, categoriaLabel),
-        byFasciaRossiVerdi: byFasciaRossiVerdi(bambini),
+        totale: curr.bambini.length,
+        totaleDurataMesi: curr.bambiniTotDurataMesi,
+        byDurata: byDurata(curr.bambini),
+        byCategoria: byCategoria(curr.bambini),
+        byCategoriaDettaglio: byCategoriaDettaglio(curr.bambini, categoriaLabel),
+        byFasciaRossiVerdi: byFasciaRossiVerdi(curr.bambini),
+      },
+      confronto: {
+        asOf: prevAsOf.key,
+        anno: confrontaAnno,
+        totaleAttivi: prev.adulti.length + prev.bambini.length,
+        adulti: prev.adulti.length,
+        bambini: prev.bambini.length,
       },
       notaClassificazione,
     })
