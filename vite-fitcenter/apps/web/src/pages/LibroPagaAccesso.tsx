@@ -1167,7 +1167,10 @@ function Personale({
           mese={mese}
           mensilita={detMens}
           lezioni={detTurni}
-          onClose={() => setDettaglioId(null)}
+          onClose={() => {
+            onError("")
+            setDettaglioId(null)
+          }}
           canEdit={me?.ruolo === "admin" || (me?.ruolo === "manager" && detPersona.ruolo !== "admin")}
           allowAdminRole={me?.ruolo === "admin"}
           livelli={
@@ -1175,7 +1178,7 @@ function Personale({
               ? data.livelli
               : data.livelliAssegnabili?.length
                 ? data.livelliAssegnabili
-                : data.livelli
+                : []
           }
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
@@ -1347,7 +1350,10 @@ function Personale({
                     <button
                       type="button"
                       className="mr-2 text-xs text-zinc-300 hover:underline"
-                      onClick={() => setDettaglioId(p.id)}
+                      onClick={() => {
+                        onError("")
+                        setDettaglioId(p.id)
+                      }}
                     >
                       {me?.ruolo === "admin" || p.ruolo !== "admin" ? "Modifica" : "Dettaglio"}
                     </button>

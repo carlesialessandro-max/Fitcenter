@@ -395,10 +395,19 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
     const id = String(req.params.id ?? "").trim()
     const self = sess.id === id
     if (!self) assertGestionePersonale(sess)
-    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const me = scopeMe(sess, personale)
-    const vis = personaleVisibile(me, personale, livelli)
-    if (!vis.has(id) && !self) return res.status(403).json({ message: "Utente non visibile" })
+    const vis = personaleRaggiungibile(me, personale, livelli, turni)
+    const incoming =
+      req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
+    const tree = alberoAssegnabileAnagrafica(me, livelli)
+    const entraNelPerimetro = idsLivelli(incoming).some((x) => tree.has(x))
+    if (!vis.has(id) && !self && !entraNelPerimetro) {
+      return res.status(403).json({
+        message:
+          "Non puoi modificare questo utente: non è nel tuo reparto (né in anagrafica né per i turni).",
+      })
+    }
     const cur = personale.find((p) => p.id === id)
     if (!cur) return res.status(404).json({ message: "Persona non trovata" })
     const password = req.body?.password != null ? String(req.body.password) : ""
@@ -525,10 +534,15 @@ export async function putLpagaPersonalePassword(req: Request, res: Response) {
     assertGestionePersonale(sess)
     const id = String(req.params.id ?? "").trim()
     const password = String(req.body?.password ?? "")
-    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const [personale, livelli, turni] = await Promise.all([listPersonale(), listLivelli(), listTurni()])
     const me = scopeMe(sess, personale)
-    const vis = personaleVisibile(me, personale, livelli)
-    if (!vis.has(id)) return res.status(403).json({ message: "Utente non visibile" })
+    const vis = personaleRaggiungibile(me, personale, livelli, turni)
+    if (!vis.has(id)) {
+      return res.status(403).json({
+        message:
+          "Non puoi modificare questo utente: non è nel tuo reparto (né in anagrafica né per i turni).",
+      })
+    }
     const cur = personale.find((p) => p.id === id)
     if (!cur) return res.status(404).json({ message: "Persona non trovata" })
     if (me.ruolo === "manager" && cur.ruolo === "admin") {

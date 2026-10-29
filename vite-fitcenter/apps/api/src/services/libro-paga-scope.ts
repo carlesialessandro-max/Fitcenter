@@ -186,7 +186,7 @@ export function personaleVisibile(
   if (viewer.ruolo === "admin") return new Set(personale.map((p) => p.id))
   const roots = personaleLivelloRadici(viewer)
   if (viewer.ruolo === "user" || !roots.length) return new Set([viewer.id])
-  const tree = livelloAlberoUnion(livelli, roots)
+  const tree = alberoAssegnabileAnagrafica(viewer, livelli)
   const ids = new Set<string>([viewer.id])
   for (const p of personale) {
     if (personaleLivelloRadici(p).some((id) => tree.has(id))) ids.add(p.id)
@@ -209,7 +209,7 @@ export function personaleRaggiungibile(
   const vis = personaleVisibile(viewer, personale, livelli)
   const mgrRoots = viewer.ruolo === "manager" ? personaleLivelloRadici(viewer) : []
   const tree =
-    extraTree ?? (mgrRoots.length ? livelloAlberoUnion(livelli, mgrRoots) : undefined)
+    extraTree ?? (mgrRoots.length ? alberoAssegnabileAnagrafica(viewer, livelli) : undefined)
   if (!tree?.size) return vis
   const ids = new Set(vis)
   for (const p of personale) {
