@@ -7,7 +7,7 @@ import autoTable from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
-type Segment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+type Segment = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
 type DetailSeg = Exclude<Segment, "all">
 
 type IncassiResponse = {
@@ -47,12 +47,13 @@ const MESI = [
 const SEG_LABEL: Record<DetailSeg, string> = {
   adulti: "Adulti",
   bambini: "Bambini",
+  agonismo: "Agonismo",
   danza: "Danza",
   ticket: "Ticket (giornalieri)",
   altro: "Altro",
 }
 
-const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "danza", "ticket", "altro"]
+const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "agonismo", "danza", "ticket", "altro"]
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0")
@@ -230,6 +231,7 @@ function emptySegs(): Record<DetailSeg, SegTot> {
   return {
     adulti: { total: 0, count: 0 },
     bambini: { total: 0, count: 0 },
+    agonismo: { total: 0, count: 0 },
     danza: { total: 0, count: 0 },
     ticket: { total: 0, count: 0 },
     altro: { total: 0, count: 0 },
@@ -474,7 +476,10 @@ export function Incassi() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Incassi</h2>
-            <p className="text-sm text-zinc-500">Movimenti di cassa univoci, raggruppati per categoria cliente e ticket.</p>
+            <p className="text-sm text-zinc-500">
+              Movimenti di cassa univoci, raggruppati per prodotto (centri di ricavo): scuola nuoto, agonismo, danza, ticket, adulti.
+              Quote annuali, badge e shop restano in Altro.
+            </p>
             <div className="mt-2 flex gap-2">
               <button
                 type="button"
@@ -790,7 +795,7 @@ export function Incassi() {
         </div>
         ) : (
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio righe del giorno.
+          Seleziona un gruppo (Adulti/Bambini/Agonismo/Danza/Ticket) per vedere il dettaglio righe del giorno.
         </div>
         )
       ) : (
