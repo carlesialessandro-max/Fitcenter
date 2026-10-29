@@ -7,7 +7,7 @@ import autoTable from "jspdf-autotable"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/api/client"
 
-type Segment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+type Segment = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
 type DetailSeg = Exclude<Segment, "all">
 type IncassiVoce = { voce: string; euro: number; n: number }
 
@@ -48,12 +48,13 @@ const MESI = [
 const SEG_LABEL: Record<DetailSeg, string> = {
   adulti: "Adulti",
   bambini: "Bambini",
+  agonismo: "Agonismo",
   danza: "Danza",
   ticket: "Ticket (giornalieri)",
   altro: "Altro",
 }
 
-const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "danza", "ticket", "altro"]
+const SEG_ORDER: DetailSeg[] = ["adulti", "bambini", "agonismo", "danza", "ticket", "altro"]
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0")
@@ -231,6 +232,7 @@ function emptySegs(): Record<DetailSeg, SegTot> {
   return {
     adulti: { total: 0, count: 0, voci: [] },
     bambini: { total: 0, count: 0, voci: [] },
+    agonismo: { total: 0, count: 0, voci: [] },
     danza: { total: 0, count: 0, voci: [] },
     ticket: { total: 0, count: 0, voci: [] },
     altro: { total: 0, count: 0, voci: [] },
@@ -495,7 +497,7 @@ export function Incassi() {
           <div>
             <h2 className="text-lg font-semibold text-zinc-100">Incassi</h2>
             <p className="text-sm text-zinc-500">
-              Movimenti di cassa univoci, raggruppati per categoria cliente e ticket. Clicca un gruppo per il dettaglio per voce.
+              Movimenti di cassa univoci, raggruppati per tipologia di abbonamento (non per età). Clicca un gruppo per il dettaglio per voce.
             </p>
             <div className="mt-2 flex gap-2">
               <button
@@ -796,7 +798,7 @@ export function Incassi() {
         </div>
       ) : (
         <div className="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-500">
-          Seleziona un gruppo (Adulti/Bambini/Danza/Ticket) per vedere il dettaglio per voce.
+          Seleziona un gruppo (Adulti/Bambini/Agonismo/Danza/Ticket) per vedere il dettaglio per voce.
         </div>
       )}
 

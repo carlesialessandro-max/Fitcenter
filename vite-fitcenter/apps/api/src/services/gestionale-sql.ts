@@ -6536,7 +6536,7 @@ function selectExistingCols(colsLower: string[], wanted: string[]): string {
   return have.map((c) => bracketCol(c)).join(", ")
 }
 
-export type IncassiSegment = "all" | "adulti" | "bambini" | "danza" | "ticket" | "altro"
+export type IncassiSegment = "all" | "adulti" | "bambini" | "agonismo" | "danza" | "ticket" | "altro"
 export type IncassiVoceTot = { voce: string; euro: number; n: number }
 export type IncassiSegTot = { total: number; count: number; voci: IncassiVoceTot[] }
 
@@ -6555,6 +6555,7 @@ function emptyIncassiSegTotals(): Record<Exclude<IncassiSegment, "all">, Incassi
   return {
     adulti: { total: 0, count: 0, voci: [] },
     bambini: { total: 0, count: 0, voci: [] },
+    agonismo: { total: 0, count: 0, voci: [] },
     danza: { total: 0, count: 0, voci: [] },
     ticket: { total: 0, count: 0, voci: [] },
     altro: { total: 0, count: 0, voci: [] },
@@ -6858,6 +6859,7 @@ export async function queryIncassiRiepilogo(params: { from: string; to: string }
   const voceMaps: Record<Exclude<IncassiSegment, "all">, Map<string, { euro: number; n: number }>> = {
     adulti: new Map(),
     bambini: new Map(),
+    agonismo: new Map(),
     danza: new Map(),
     ticket: new Map(),
     altro: new Map(),
@@ -7114,9 +7116,111 @@ function isMerchandisingBraccialeIncasso(row: Record<string, unknown>): boolean 
   return false
 }
 
-function incassiVoceLabel(row: Record<string, unknown>): string {
+function incassiNormText(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+}
+
+/** Testo del prodotto/abbonamento, senza categoria cliente (CLIENTE/KIDS/DANZA = età o anagrafica). */
+function incassiProductBlob(row: Record<string, unknown>): string {
+  const causale = incassiCausale(row)
+  return incassiNormText(
+    [
+      firstNonEmpty(row, INCASSI_CENTRO_RICAVO_COLS),
+      row.AbbonamentiCategorieDescrizione,
+      row.CategoriaAbbonamentoDescrizione,
+      row.AbbonamentiCategoriaDescrizione,
+      row.MacroCategoriaAbbonamentoDescrizione,
+      row.MacroCategoriaDescrizione,
+      row.AbbonamentiDescrizione,
+      row.AbbonamentoDescrizione,
+      row.AbbonamentiDurataDescrizioneLunga,
+      titoloProdottoDaCausaleIncasso(causale),
+      causale,
+    ]
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean)
+      .join(" ")
+  )
+}
+
+function isIncassoDanzaProdotto(blob: string): boolean {
+  if (/POLE DANCE/.test(blob) && !/\bDANZA ADULTI\b|\bDANZA BAMBINI\b|\bQUOTE DANZA\b/.test(blob)) return false
+  return (
+    /\bDANZA\b|\bGIOCODANZA\b/.test(blob) ||
+    /\bQUOTE DANZA\b|\bARTE DANZA\b/.test(blob) ||
+    /\b1\s*M MENSILE 2VS\b/.test(blob) ||
+    (/\b3 GRADO\b/.test(blob) && /\b1\s*M MENSILE\b/.test(blob)) ||
+    /\b(PROFESSIONALE|PREPROFESSIONALE|ALTA FORMAZIONE|CORSO ACCADEMICO|CORSO INTERMEDIO|PROPEDEUTICA|HEEL)\b/.test(blob)
+  )
+}
+
+function isIncassoAgonismoProdotto(blob: string): boolean {
+  if (!/\bAGONISM/.test(blob)) return false
+  if (/\b(MASTER|SENIOR)\b/.test(blob)) return false
+  return true
+}
+
+/** Orari «BAMBINI Gio/Sab», acquaticità, buoni nuoto: stesso centro Scuola nuoto. */
+function isIncassoScuolaNuotoProdotto(blob: string): boolean {
+  if (/NUOTO ADULTI|SCUOLA NUOTO ADULTI|AGONISMO MASTER|MASTER ADULTI/.test(blob)) return false
+  if (isIncassoDanzaProdotto(blob)) return false
+  if (isIncassoAgonismoProdotto(blob) && !/SCUOLA NUOTO|ACQUATICIT/.test(blob)) return false
+  if (/SCUOLA NUOTO/.test(blob) && !/ADULTI/.test(blob)) return true
+  if (/ACQUATICIT/.test(blob)) return true
+  if (/CAMPUS/.test(blob) && !/ACCOMPAGNATORE/.test(blob)) return true
+  if (/PACCHETTO PRIVATE BAMBINI|PRIVATE BAMBINI/.test(blob)) return true
+  if (
+    /\bBAMBINI\b/.test(blob) &&
+    /\b(LUNEDI|LUN|MARTEDI|MAR|MERCOLEDI|MER|GIOVEDI|GIOVED|GIO|VENERDI|VEN|SABATO|SAB|DOMENICA|DOM)\b/.test(blob)
+  ) {
+    return true
+  }
+  if (/\bBAMBINI\b/.test(blob) && /(\d{1,2}[.:]\d{2}|\b\d{1,2}\s+\d{2}\b|\b\dV\b|\b\d+\s*P\b|VOLTE A SETTIMANA)/.test(blob)) {
+    return true
+  }
+  if (/(BUONO|BORSELLINO)/.test(blob) && /(SCUOLA NUOTO|CORSI DI NUOTO|\bNUOTO\b)/.test(blob)) return true
+  return false
+}
+
+function isIncassoAdultiProdotto(blob: string): boolean {
+  if (isIncassoDanzaProdotto(blob) || isIncassoScuolaNuotoProdotto(blob) || isIncassoAgonismoProdotto(blob)) return false
+  return (
+    /\bGYM\b/.test(blob) ||
+    /SMILE FIT|SMILE H2O|SMILE H20/.test(blob) ||
+    /\bOPEN\b/.test(blob) ||
+    /\bGOLD\b/.test(blob) ||
+    /\bPREMIUM\b/.test(blob) ||
+    /NUOTO LIBERO/.test(blob) ||
+    /ABBONAMENTI ADULTI/.test(blob) ||
+    /PERSONAL TRAIN/.test(blob) ||
+    /GESTANTI/.test(blob) ||
+    /PACCHETTO PRIVATE ADULTI|PRIVATE ADULTI/.test(blob) ||
+    /POLE DANCE/.test(blob) ||
+    /PACCHETTI INGRESSI/.test(blob) ||
+    /PERCORSO SPA/.test(blob) ||
+    /\bROSSI\b/.test(blob) ||
+    /\bVERDI\b/.test(blob) ||
+    /ORARIO LIBERO|ORARIO RIDOTTO/.test(blob) ||
+    /PISCINA ESTERNA/.test(blob) ||
+    /MAMME FIT/.test(blob)
+  )
+}
+
+function incassiVoceRaw(row: Record<string, unknown>): string {
   const centro = firstNonEmpty(row, INCASSI_CENTRO_RICAVO_COLS)
-  if (centro) return centro.trim()
+  const centroN = incassiNormText(centro ?? "")
+  if (
+    centro &&
+    /SCUOLA NUOTO|ACQUATIC|AGONISM|\bDANZA\b|CAMPUS|INGRESSI|TICKET|QUOTE ANNUALI|PERSONAL|SHOP|BADGE/.test(centroN) &&
+    !/^H2SPORT$/.test(centroN)
+  ) {
+    return centro.trim()
+  }
   if (isTicketingIncasso(row)) return incassiCausale(row) || "Ticket"
   const cat = firstNonEmpty(row, [
     "AbbonamentiCategorieDescrizione",
@@ -7126,25 +7230,60 @@ function incassiVoceLabel(row: Record<string, unknown>): string {
     "MacroCategoriaDescrizione",
   ])
   if (cat) return cat.trim()
+  const piano = firstNonEmpty(row, ["AbbonamentiDescrizione", "AbbonamentoDescrizione", "AbbonamentiDurataDescrizioneLunga"])
+  if (piano) return piano.trim()
   const causale = incassiCausale(row)
   const prodotto = titoloProdottoDaCausaleIncasso(causale)
   if (prodotto) return prodotto
   if (causale) return causale
-  const clienteCat = String(row.CategoriaDescrizione ?? "").trim()
-  return clienteCat || "Altro"
+  return "Altro"
 }
 
-/** Classifica un movimento di cassa dopo la deduplica: ticket, categoria cliente, badge/bracciale, altrimenti altro. */
+function incassiClassificaBlob(row: Record<string, unknown>): string {
+  return incassiNormText(`${incassiProductBlob(row)} ${incassiVoceRaw(row)}`)
+}
+
+function incassiVoceLabel(row: Record<string, unknown>): string {
+  if (isTicketingIncasso(row)) return incassiVoceRaw(row)
+  const blob = incassiClassificaBlob(row)
+  if (isIncassoDanzaProdotto(blob)) {
+    const raw = incassiVoceRaw(row)
+    const u = incassiNormText(raw)
+    if (/\bDANZA\b|\bPROFESSIONALE\b|\b3 GRADO\b|\bPROPEDEUTICA\b|\bQUOTE DANZA\b/.test(u)) return raw.trim()
+    return "DANZA"
+  }
+  if (isIncassoScuolaNuotoProdotto(blob)) {
+    if (/CAMPUS/.test(blob) && !/SCUOLA NUOTO|ACQUATICIT|\bBAMBINI\b/.test(blob)) return "CAMPUS SPORTIVI"
+    return "SCUOLA NUOTO"
+  }
+  if (isIncassoAgonismoProdotto(blob)) return "AGONISMO"
+  if (isIncassoVoceAccessoria(blob, "", incassiCausale(row)) || /QUOTE ANNUALI|QUOTA ANNUALE/.test(blob)) {
+    return "TESSERAMENTI"
+  }
+  if (/PERSONAL TRAIN/.test(blob)) return "PERSONAL TRAINER"
+  if (/LEZIONI PRIVATE|PACCHETTO PRIVATE/.test(blob)) return "LEZIONI PRIVATE"
+  if (/NUOTO LIBERO/.test(blob)) return "NUOTO LIBERO"
+  if (/\bGYM\b/.test(blob)) return "GYM"
+  return incassiVoceRaw(row)
+}
+
+/**
+ * Gruppi per tipologia di abbonamento, non per età (CLIENTE/KIDS).
+ * Scuola nuoto include acquaticità, orari BAMBINI Lun/Gio/Sab e buoni nuoto.
+ */
 export function classifyIncassiSegment(row: Record<string, unknown>): Exclude<IncassiSegment, "all"> {
   if (isTicketingIncasso(row)) return "ticket"
-  const cat = String(row.CategoriaDescrizione ?? "")
-    .trim()
-    .toUpperCase()
-  if (cat === "CLIENTE") return "adulti"
-  if (cat === "KIDS") return "bambini"
-  if (cat === "DANZA") return "danza"
-  // Badge/bracciale spesso senza CategoriaDescrizione CLIENTE/KIDS/DANZA: restano negli adulti.
-  if (isMerchandisingBraccialeIncasso(row)) return "adulti"
+  const blob = incassiClassificaBlob(row)
+  if (isIncassoDanzaProdotto(blob)) return "danza"
+  if (isMerchandisingBraccialeIncasso(row) || isIncassoVoceAccessoria(blob, "", incassiCausale(row)) || /QUOTE ANNUALI|QUOTA ANNUALE/.test(blob)) {
+    return "altro"
+  }
+  if (isIncassoAgonismoProdotto(blob)) return "agonismo"
+  if (isIncassoScuolaNuotoProdotto(blob)) return "bambini"
+  if (isIncassoAdultiProdotto(blob)) return "adulti"
+  if (/LEZIONI PRIVATE|PACCHETTO PRIVATE/.test(blob)) {
+    return /ADULTI|PERSONAL TRAIN/.test(blob) ? "adulti" : "bambini"
+  }
   return "altro"
 }
 
