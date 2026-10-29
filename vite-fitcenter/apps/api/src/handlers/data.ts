@@ -405,6 +405,7 @@ function isAbbonamentoBambini(a: Abbonamento): boolean {
   if (/\bNUOTO ADULTI\b/.test(text)) return false
   // Agonismo master/senior = nuoto adulti, non scuola nuoto.
   if (/\bAGONISMO\b/.test(text) && /\b(MASTER|SENIOR)\b/.test(text)) return false
+  if (/\bDANZA\b/.test(text) || /\bGIOCODANZA\b/.test(text) || /\bTEATRO\b/.test(text)) return false
   return (
     /SCUOLA\s*NUOTO/.test(text) ||
     /AGONISMO\s*CATEGORIE/.test(text) ||
@@ -420,7 +421,6 @@ function isAbbonamentoBambini(a: Abbonamento): boolean {
     /RAGAZZ/.test(text) ||
     /\bU(6|8|10|12|14)\b/.test(text) ||
     /PICCOLI/.test(text) ||
-    /TEATRO/.test(text) ||
     (/\bAGONISMO\b/.test(text) && !/\b(MASTER|SENIOR)\b/.test(text))
   )
 }
@@ -1418,7 +1418,7 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         ? "Nessun abbonamento attivo nel periodo."
         : consulenteQ
           ? "Filtro consulente adulti: solo abbonamenti adulti. Scuola nuoto, agonismo categorie e altri corsi bambini non contano. Esclusi tesseramenti, staff e personal trainer."
-          : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo categorie e altri corsi bambini. Agonismo master resta adulti. Esclusi tesseramenti, staff e personal trainer. Validità: data inizio–fine comprende la data di riferimento."
+          : "Adulti / bambini dal tipo di abbonamento, non dall'età. Bambini = scuola nuoto, acquaticità, agonismo categorie e lezioni private. Agonismo master resta adulti. Esclusi danza, tesseramenti, staff e personal trainer. Validità: data inizio–fine comprende la data di riferimento."
 
     const yearCurr = Number(key.slice(0, 4))
     const confrontaAnnoRaw = Number(req.query.confrontaAnno)
@@ -1458,6 +1458,8 @@ export async function getAbbonamentiAttiviAnalisi(req: Request, res: Response) {
         totaleAttivi: prev.adulti.length + prev.bambini.length,
         adulti: prev.adulti.length,
         bambini: prev.bambini.length,
+        adultiDettaglio: byCategoriaDettaglio(prev.adulti, categoriaLabel),
+        bambiniDettaglio: byCategoriaDettaglio(prev.bambini, categoriaLabel),
       },
       notaClassificazione,
     })

@@ -86,18 +86,56 @@ function FasciaSummaryChips({ summary }: { summary: AbbAttiviFasciaSummary }) {
   )
 }
 
+function emptyFascia(): AbbAttiviFasciaSummary {
+  return { rossi: 0, verdi: 0, altro: 0 }
+}
+
+function mergeCategoriaDettaglio(
+  curr: AbbAttiviCategoriaDettaglioBucket[],
+  prev: AbbAttiviCategoriaDettaglioBucket[],
+): Array<AbbAttiviCategoriaDettaglioBucket & { precedente: number }> {
+  const prevMap = new Map(prev.map((r) => [r.categoria, r]))
+  const seen = new Set<string>()
+  const out: Array<AbbAttiviCategoriaDettaglioBucket & { precedente: number }> = []
+  for (const r of curr) {
+    seen.add(r.categoria)
+    out.push({ ...r, precedente: prevMap.get(r.categoria)?.totale ?? 0 })
+  }
+  for (const r of prev) {
+    if (seen.has(r.categoria)) continue
+    out.push({
+      ...r,
+      totale: 0,
+      byFascia: emptyFascia(),
+      fascia: "altro",
+      precedente: r.totale,
+      sottocategorie: r.sottocategorie.map((s) => ({ ...s, totale: 0, byFascia: emptyFascia() })),
+    })
+  }
+  return out.sort((a, b) => b.totale - a.totale || a.categoria.localeCompare(b.categoria, "it"))
+}
+
 function CategoriaDettaglioTable({
   rows,
+  prevRows,
+  yearCurr,
+  yearPrev,
   totaleFooter,
   totaleFooterLabel,
   totaleFooterClass,
 }: {
   rows: AbbAttiviCategoriaDettaglioBucket[]
+  prevRows?: AbbAttiviCategoriaDettaglioBucket[]
+  yearCurr?: number
+  yearPrev?: number
   totaleFooter: number
   totaleFooterLabel: string
   totaleFooterClass: string
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
+  const merged = mergeCategoriaDettaglio(rows, prevRows ?? [])
+  const prevTotale = (prevRows ?? []).reduce((s, r) => s + r.totale, 0)
+  const dFoot = fmtDelta(totaleFooter, prevTotale)
 
   const toggle = (categoria: string) => {
     setExpanded((prev) => {
@@ -110,7 +148,7 @@ function CategoriaDettaglioTable({
 
   return (
     <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-800">
-      <table className="w-full min-w-[420px] text-sm">
+      <table className="w-full min-w-[560px] text-sm">
         <thead>
           <tr className="border-b border-zinc-800 text-zinc-500">
             <th className="px-3 py-2 text-left font-medium">Categoria</th>
@@ -118,13 +156,23 @@ function CategoriaDettaglioTable({
             <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">R</th>
             <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">V</th>
             <th className="hidden px-3 py-2 text-right font-medium sm:table-cell">A</th>
-            <th className="px-3 py-2 text-right font-medium">Totale</th>
+            <th className="px-3 py-2 text-right font-medium">{yearCurr ?? "Totale"}</th>
+            <th className="px-3 py-2 text-right font-medium">{yearPrev ?? "Anno prec."}</th>
+            <th className="px-3 py-2 text-right font-medium">Δ</th>
+            <th className="px-3 py-2 text-right font-medium">%</th>
           </tr>
         </thead>
         <tbody className="text-zinc-200">
-          {rows.map((r) => {
+          {merged.map((r) => {
             const open = expanded.has(r.categoria)
-            const canExpand = r.sottocategorie.length > 0
+            const prevCat = (prevRows ?? []).find((p) => p.categoria === r.categoria)
+            const canExpand = r.sottocategorie.length > 0 || (prevCat?.sottocategorie.length ?? 0) > 0
+            const d = fmtDelta(r.totale, r.precedente)
+            const subNames = [
+              ...r.sottocategorie.map((s) => s.sottocategoria),
+              ...(prevCat?.sottocategorie ?? []).map((s) => s.sottocategoria),
+            ]
+            const uniqueSubs = [...new Set(subNames)]
             return (
               <Fragment key={r.categoria}>
                 <tr
@@ -150,20 +198,33 @@ function CategoriaDettaglioTable({
                   <td className="hidden px-3 py-2 text-right tabular-nums text-emerald-300/90 sm:table-cell">{r.byFascia.verdi || "—"}</td>
                   <td className="hidden px-3 py-2 text-right tabular-nums text-zinc-500 sm:table-cell">{r.byFascia.altro || "—"}</td>
                   <td className="px-3 py-2 text-right tabular-nums font-medium">{r.totale}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{r.precedente}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${d.cls}`}>{d.abs}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${d.cls}`}>{d.pct}</td>
                 </tr>
                 {open &&
-                  r.sottocategorie.map((sub) => (
-                    <tr key={`${r.categoria}-${sub.sottocategoria}`} className="border-b border-zinc-800/50 bg-zinc-900/50">
-                      <td className="px-3 py-1.5 pl-9 text-xs text-zinc-400">{sub.sottocategoria}</td>
-                      <td className="px-3 py-1.5">
-                        <FasciaBadge fascia={sub.fascia} />
-                      </td>
-                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-red-300/80 sm:table-cell">{sub.byFascia.rossi || "—"}</td>
-                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-emerald-300/80 sm:table-cell">{sub.byFascia.verdi || "—"}</td>
-                      <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500 sm:table-cell">{sub.byFascia.altro || "—"}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-300">{sub.totale}</td>
-                    </tr>
-                  ))}
+                  uniqueSubs.map((name) => {
+                    const sub = r.sottocategorie.find((s) => s.sottocategoria === name)
+                    const prevSub = prevCat?.sottocategorie.find((s) => s.sottocategoria === name)
+                    const currN = sub?.totale ?? 0
+                    const prevN = prevSub?.totale ?? 0
+                    const ds = fmtDelta(currN, prevN)
+                    return (
+                      <tr key={`${r.categoria}-${name}`} className="border-b border-zinc-800/50 bg-zinc-900/50">
+                        <td className="px-3 py-1.5 pl-9 text-xs text-zinc-400">{name}</td>
+                        <td className="px-3 py-1.5">
+                          {sub ? <FasciaBadge fascia={sub.fascia} /> : <span className="text-xs text-zinc-600">—</span>}
+                        </td>
+                        <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-red-300/80 sm:table-cell">{sub?.byFascia.rossi || "—"}</td>
+                        <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-emerald-300/80 sm:table-cell">{sub?.byFascia.verdi || "—"}</td>
+                        <td className="hidden px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500 sm:table-cell">{sub?.byFascia.altro || "—"}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-300">{currN}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-xs text-zinc-500">{prevN}</td>
+                        <td className={`px-3 py-1.5 text-right tabular-nums text-xs ${ds.cls}`}>{ds.abs}</td>
+                        <td className={`px-3 py-1.5 text-right tabular-nums text-xs ${ds.cls}`}>{ds.pct}</td>
+                      </tr>
+                    )
+                  })}
               </Fragment>
             )
           })}
@@ -171,6 +232,9 @@ function CategoriaDettaglioTable({
             <td className="px-3 py-2 font-medium text-zinc-300">{totaleFooterLabel}</td>
             <td colSpan={4} />
             <td className={`px-3 py-2 text-right font-semibold tabular-nums ${totaleFooterClass}`}>{totaleFooter}</td>
+            <td className="px-3 py-2 text-right tabular-nums text-zinc-400">{prevTotale}</td>
+            <td className={`px-3 py-2 text-right font-semibold tabular-nums ${dFoot.cls}`}>{dFoot.abs}</td>
+            <td className={`px-3 py-2 text-right tabular-nums ${dFoot.cls}`}>{dFoot.pct}</td>
           </tr>
         </tbody>
       </table>
@@ -178,11 +242,15 @@ function CategoriaDettaglioTable({
   )
 }
 
-function filterCategoriaDettaglio(segment: AbbAttiviSegmentoAnalisi): AbbAttiviCategoriaDettaglioBucket[] {
-  return (segment.byCategoriaDettaglio ?? []).filter((r) => {
+function filterDettaglioList(rows: AbbAttiviCategoriaDettaglioBucket[] | undefined): AbbAttiviCategoriaDettaglioBucket[] {
+  return (rows ?? []).filter((r) => {
     const cat = String(r.categoria ?? "").toUpperCase()
     return !cat.includes("DANZA") && !cat.includes("STAFF")
   })
+}
+
+function filterCategoriaDettaglio(segment: AbbAttiviSegmentoAnalisi): AbbAttiviCategoriaDettaglioBucket[] {
+  return filterDettaglioList(segment.byCategoriaDettaglio)
 }
 
 export function AttiviAnalisi() {
@@ -634,6 +702,9 @@ export function AttiviAnalisi() {
               {data.adulti.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.adulti.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable
                 rows={filterCategoriaDettaglio(data.adulti)}
+                prevRows={filterDettaglioList(data.confronto?.adultiDettaglio)}
+                yearCurr={yearCurr}
+                yearPrev={yearPrev}
                 totaleFooter={adultiTotByCategoria}
                 totaleFooterLabel="Totale adulti"
                 totaleFooterClass="text-emerald-400"
@@ -643,11 +714,14 @@ export function AttiviAnalisi() {
             <section className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
               <h2 className="text-lg font-semibold text-zinc-100">Bambini — categorie</h2>
               <p className="mt-1 text-xs text-zinc-500">
-                Stessa logica: espandi per sottocategoria. Rossi / Verdi = fascia oraria (orario libero / ridotto), non l&apos;età. Qui trovi scuola nuoto, acquaticità e agonismo giovanile.
+                Stessa logica: espandi per sottocategoria. Rossi / Verdi = fascia oraria (orario libero / ridotto), non l&apos;età. Scuola nuoto, acquaticità, agonismo e private. La danza non entra. Confronto con lo stesso giorno dell&apos;anno scelto.
               </p>
               {data.bambini.byFasciaRossiVerdi && <FasciaSummaryChips summary={data.bambini.byFasciaRossiVerdi} />}
               <CategoriaDettaglioTable
                 rows={filterCategoriaDettaglio(data.bambini)}
+                prevRows={filterDettaglioList(data.confronto?.bambiniDettaglio)}
+                yearCurr={yearCurr}
+                yearPrev={yearPrev}
                 totaleFooter={bambiniTotByCategoria}
                 totaleFooterLabel="Totale bambini"
                 totaleFooterClass="text-violet-400"

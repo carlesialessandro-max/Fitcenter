@@ -111,6 +111,8 @@ export interface AbbAttiviAnalisiResponse {
     totaleAttivi: number
     adulti: number
     bambini: number
+    adultiDettaglio?: AbbAttiviCategoriaDettaglioBucket[]
+    bambiniDettaglio?: AbbAttiviCategoriaDettaglioBucket[]
   }
   notaClassificazione: string
 }
