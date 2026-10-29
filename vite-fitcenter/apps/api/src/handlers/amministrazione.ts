@@ -1079,7 +1079,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
         fattureAmm = riepilogoFattureAmm(docsAnno, { from: ricavi.from, to: ricavi.to })
         fattureEmesseDettaglio = docsAnno.flatMap((doc) => {
           const tipo = classificaFatturaEmessa(doc)
-          if (!tipo) return []
+          if (!tipo || tipo === "Danza") return []
           const competenza = doc.competenzaMese || doc.dataDocumento.slice(0, 7)
           const inPeriodo =
             tipo === "Recupero utenze"
@@ -1103,20 +1103,6 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
     if (fattureEmesseDisponibili) {
-      const danzaCassa = round2(
-        ricavi.dettaglio
-          .filter((v) => v.voce === "Danza (incassi gestionale)")
-          .reduce((s, v) => s + (Number(v.importo) || 0), 0),
-      )
-      if (fattureAmm.ricaviDanza && danzaCassa < 0.01) {
-        ricavi.byMacro.fitness = round2(ricavi.byMacro.fitness + fattureAmm.ricaviDanza)
-        ricavi.dettaglio.push({
-          voce: "Fatture Danza · Fatture in Cloud",
-          macro: "fitness",
-          importo: fattureAmm.ricaviDanza,
-          n: fattureAmm.nFattureDanza,
-        })
-      }
       if (fattureAmm.ricaviAffitti) {
         ricavi.totAltri = round2(ricavi.totAltri + fattureAmm.ricaviAffitti)
         ricavi.dettaglio.push({
@@ -1477,8 +1463,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
       nBuste: busteAll.length,
       ricaviDisponibili,
       ricaviErrore: ricavi.disponibile ? ricaviErrore : "Incassi del gestionale non disponibili.",
-      nFattureDanza: fattureAmm.nFattureDanza,
-      totRicaviDanza: fattureEmesseDisponibili ? fattureAmm.ricaviDanza : 0,
+      nFattureDanza: 0,
+      totRicaviDanza: 0,
       totRecuperiUtenze: recuperoUtenze,
       fattureEmesseDettaglio,
       totRicavi,

@@ -6851,6 +6851,10 @@ export async function queryIncassiRange(params: {
     "VenditoreNome",
     "Venditore",
     "Operatore",
+    "RicevuteAziendeNome",
+    "IDRicevuteAzienda",
+    "IdRicevuteAzienda",
+    "IDRicevutaAzienda",
     ...INCASSI_CENTRO_RICAVO_COLS,
   ])
 
@@ -6955,6 +6959,29 @@ export function isDanzaIncassoRow(row: Record<string, unknown>): boolean {
   )
 }
 
+function incassiAziendaNome(row: Record<string, unknown>): string {
+  return String(row.RicevuteAziendeNome ?? row.RicevuteAziendaNome ?? "").trim()
+}
+
+/** Centro Arte Danza: in Amministrazione si esclude, in Incassi resta. */
+export function isIncassoAziendaArteDanza(row: Record<string, unknown>): boolean {
+  const nome = incassiAziendaNome(row)
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  return /ARTE DANZA/.test(nome)
+}
+
+/** Movimento con ricevuta intestata a un'azienda (come «Fatturati all'azienda» in cassa). */
+export function isIncassoFatturatoAzienda(row: Record<string, unknown>): boolean {
+  if (incassiAziendaNome(row)) return true
+  for (const key of ["IDRicevuteAzienda", "IdRicevuteAzienda", "IDRicevutaAzienda"]) {
+    const value = String(row[key] ?? "").trim()
+    if (value && value !== "0" && value.toLowerCase() !== "null") return true
+  }
+  return false
+}
+
 function incassiClienteKey(row: Record<string, unknown>): string {
   for (const key of ["IDUtente", "IdUtente", "IDCliente", "IdCliente"]) {
     const value = String(row[key] ?? "").trim()
@@ -7003,6 +7030,7 @@ export async function queryIncassiPerVoce(
     euro: number
   }[] = []
   for (const row of await queryIncassiCassaDedup(params)) {
+    if (isDanzaIncassoRow(row) || isIncassoAziendaArteDanza(row) || !isIncassoFatturatoAzienda(row)) continue
     const ticketing = isTicketingIncasso(row)
     const causale = String(
       firstNonEmpty(row, [

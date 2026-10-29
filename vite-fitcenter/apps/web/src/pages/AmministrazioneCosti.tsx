@@ -347,8 +347,8 @@ function DashboardTab() {
               pulizie, personale condiviso) imputata in % sui ricavi.
             </p>
             <p className="mt-1">
-              I ricavi ordinari arrivano dagli incassi del gestionale (danza di cassa inclusa tra gli altri incassi,
-              senza duplicare le fatture Danza se già incassate). Affitti spazi e convenzioni si prendono dalle fatture
+              I ricavi ordinari arrivano dagli incassi del gestionale fatturati all’azienda Aqua Sport: tutta la danza
+              (Centro Arte Danza) resta fuori, si vede solo in Incassi. Affitti spazi e convenzioni si prendono dalle fatture
               emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
               di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
               dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, Tres Energia e Sima energia stanno sul
@@ -494,7 +494,7 @@ function DashboardTab() {
                     {!d.fattureEmesseDettaglio?.length && (
                       <tr>
                         <td className="px-2 py-3 text-zinc-500" colSpan={6}>
-                          Nessuna fattura Danza, affitto spazi, convenzione o recupero utenze nel periodo selezionato.
+                          Nessuna fattura affitto spazi, convenzione o recupero utenze nel periodo selezionato.
                         </td>
                       </tr>
                     )}
@@ -502,7 +502,7 @@ function DashboardTab() {
                 </table>
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                Danza, affitti spazi e convenzioni concorrono ai ricavi. I recuperi Big Food sono sottratti dalle utenze
+                Affitti spazi e convenzioni concorrono ai ricavi; la danza no. I recuperi Big Food sono sottratti dalle utenze
                 nel mese di competenza della fattura.
               </p>
             </details>
@@ -1369,8 +1369,8 @@ function RegistroTab() {
           <p className="text-zinc-400">
             In Fatture in Cloud: Impostazioni → Applicazioni collegate → Collega una nuova applicazione. Crea prima
             un’app su developers.fattureincloud.it, copia l’identificativo applicazione, autorizza la lettura degli
-            acquisti e delle fatture emesse, quindi incolla qui il token.             La dashboard legge dal cloud le fatture al
-            Centro Arte Danza, gli affitti spazi, le convenzioni e i recuperi utenze a Big Food. In alternativa si può mettere il token e l’id azienda
+            acquisti e delle fatture emesse, quindi incolla qui il token. La dashboard legge dal cloud gli affitti spazi,
+            le convenzioni e i recuperi utenze a Big Food (la danza resta fuori). In alternativa si può mettere il token e l’id azienda
             nel file di configurazione dell’API.
           </p>
           {fic.data?.connected ? (
