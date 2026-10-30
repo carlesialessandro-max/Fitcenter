@@ -1761,7 +1761,8 @@ export function Corsi() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Corsi</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Corsi attivi del giorno. Pallino verde = presente, grigio = assente, giallo = ingresso senza prenotazione.
+            Corsi attivi del giorno, anche a zero iscritti: da qui puoi controllare e bloccare il corso se non ci sono
+            abbastanza prenotazioni. Pallino verde = presente, grigio = assente, giallo = ingresso senza prenotazione.
           </p>
           <p className="mt-2 flex flex-wrap gap-3">
             <Link

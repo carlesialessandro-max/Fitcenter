@@ -21,7 +21,6 @@
  */
 
 import sql from "mssql"
-import { emptyLessonFitsPlanning } from "./planning-weekly.js"
 
 let pool: sql.ConnectionPool | null = null
 let poolWrite: sql.ConnectionPool | null = null
@@ -8396,8 +8395,9 @@ function buildPrenotazioniLezioniVuoteSql(
 
 /**
  * Lezioni programmate (PrenotazioniLezioni + Prenotazioni) senza iscritti nel giorno.
- * Restano in elenco (anche a 0) per poterle bloccare, ma solo se la SERIE è ancora in vigore:
- * DataInizio <= oggi <= DataFine su PrenotazioniLezioni.
+ * Restano sempre in elenco (anche a 0) per controllarle da casa e bloccarle se mancano iscritti.
+ * Solo serie ancora in vigore: DataInizio <= giorno <= DataFine, Attivo, giorno della settimana.
+ * Non filtrare sull'Excel planning: un corso attivo in gestionale va mostrato comunque.
  */
 async function queryLezioniCorsiSenzaIscritti(
   giorno: string,
@@ -8605,7 +8605,6 @@ async function queryLezioniCorsiSenzaIscritti(
         .replace(/\s+/g, " ")
         .trim()
       if (titoloU && isCorsoPaginaCorsiTitleExcluded(titoloU)) continue
-      if (titolo && emptyLessonFitsPlanning(titolo, giorno, oi || undefined) === false) continue
       seenLez.add(idLez)
       out.push(row)
     }
