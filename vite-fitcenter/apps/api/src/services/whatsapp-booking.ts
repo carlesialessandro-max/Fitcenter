@@ -76,7 +76,7 @@ type PendingInfoChannel = { corso?: BambiniCorso; expiresAt: number }
 const pendingInfoChannelByPhone = new Map<string, PendingInfoChannel>()
 
 /** Ricontatto già richiesto: i messaggi successivi sono note per la chiamata, non slot sede. */
-type PendingCallback = { requestedAt: number; expiresAt: number }
+type PendingCallback = { requestedAt: number; expiresAt: number; reason?: "posto" }
 const pendingCallbackByPhone = new Map<string, PendingCallback>()
 const PENDING_CALLBACK_TTL_MS = 2 * 60 * 60_000
 
@@ -196,6 +196,108 @@ export function parseSpogliatoioWashQuestionIt(text: string): boolean {
     return true
   }
   return false
+}
+
+/** Abbreviazioni chat (dv=dove, cm=come, x=per…). */
+function expandChatAbbrevIt(t: string): string {
+  return t
+    .replace(/\bdv\b/g, "dove")
+    .replace(/\bcm\b/g, "come")
+    .replace(/\bnn\b/g, "non")
+    .replace(/\bx\b/g, "per")
+    .replace(/\bke\b/g, "che")
+    .replace(/\bqnd\b/g, "quando")
+}
+
+function faqText(text: string): string {
+  return expandChatAbbrevIt(normText(text))
+}
+
+/** «Abbiamo già fatto la prova»: non è una nuova prenotazione prova. */
+export function alreadyDidProvaIt(text: string): boolean {
+  const t = faqText(text)
+  if (!/\bprova\b/.test(t)) return false
+  return (
+    /\b(abbiamo|ho|hai|ha)\s+(gia\s+)?(fatto|fatta)\b/.test(t) ||
+    /\b(gia\s+)?(fatto|fatta)\s+(la\s+)?prova\b/.test(t) ||
+    /\bprova\s+(gia\s+)?(fatta|fatto)\b/.test(t) ||
+    /\bdopo\s+la\s+prova\b/.test(t)
+  )
+}
+
+/** «Dove vi trovate?» / «dv vi trovate cm sede» → indirizzo, non guida prova. */
+export function parseLocationQuestionIt(text: string): boolean {
+  const t = faqText(text)
+  if (!t || t.length > 240) return false
+  if (/\b(appuntamento|consulenza|prenot)\b/.test(t) && /\bin\s+sede\b/.test(t)) return false
+  if (/\bindirizzo\s+(email|mail|e-mail)\b/.test(t)) return false
+  if (/\b(vi|ti)\s+trovate\b/.test(t)) return true
+  if (/\b(dove|di\s+dove)\b/.test(t) && /\b(siete|sei|trov|si\s+trova|sede|piscina|palestra|centro|h2|indirizzo|ubicat)\b/.test(t)) {
+    return true
+  }
+  if (/\bindirizzo\b/.test(t)) return true
+  if (/\b(come\s+arriv|come\s+raggiung|indicazioni|google\s+maps|\bmaps\b)\b/.test(t)) return true
+  if (/\bcome\s+(e\s+)?(la\s+)?sede\b/.test(t)) return true
+  if (/\b(la\s+)?sede\b/.test(t) && /\b(dove|trov|arriv)\b/.test(t)) return true
+  return false
+}
+
+function sedeLocationMsg(): string {
+  return (
+    `Siamo qui 📍\n\n` +
+    `H2Sport — Via Provinciale Lucchese 139, Pistoia\n` +
+    `🗺 Mappa: https://h2sport.it/contatti\n\n` +
+    `🕒 Orari:\n` +
+    `Lun–Ven 7:00–22:00 · Sab 9:00–19:00 · Dom 9:00–13:00\n\n` +
+    `📞 0573 572649`
+  )
+}
+
+/**
+ * «C'è posto al corso?» / «posto sabato mattina» dopo prova già fatta:
+ * disponibilità iscrizione, non nuova prova in acqua.
+ */
+export function parseCorsoPostoQuestionIt(text: string): boolean {
+  const t = faqText(text)
+  if (!t) return false
+  if (parseLocationQuestionIt(text)) return false
+  if (/\b(prenota\s+prova|prova\s+in\s+acqua|prova\s+in\s+vasca)\b/.test(t) && !alreadyDidProvaIt(t)) {
+    return false
+  }
+  // «c'è posto per la prova» = slot prova, non iscrizione al corso
+  if (/\bposto\b/.test(t) && /\bprova\b/.test(t) && !alreadyDidProvaIt(t) && !/\bcorso\b/.test(t)) {
+    return false
+  }
+
+  const asksPosto =
+    /\bposto\b/.test(t) &&
+    /\b(avete|c[' ]?e(?:ra)?|ce|anche|eventual|corso|iscriz|acquaticit|scuola\s*nuoto|sabato|lunedi|martedi|mercoledi|giovedi|venerdi|mattina|pomeriggio|bimbo|bambin|mesi|anni)\b/.test(
+      t
+    )
+  const asksIscrizioneSlot =
+    /\b(iscriv|iscrizion)\b/.test(t) &&
+    (/\b(corso|posto|sabato|lunedi|martedi|mercoledi|giovedi|venerdi|mattina)\b/.test(t) ||
+      hasWeekday(t))
+  const alreadyProvaWantsCorso =
+    alreadyDidProvaIt(t) && /\b(posto|corso|iscriz|disponibil)\b/.test(t)
+
+  return asksPosto || asksIscrizioneSlot || alreadyProvaWantsCorso
+}
+
+function corsoPostoHandoffMsg(text: string): string {
+  if (alreadyDidProvaIt(text)) {
+    return (
+      `Ho capito: avete già fatto la prova e ora volete sapere se c'è posto al corso, ` +
+        `non una nuova prova in acqua.\n\n` +
+        `Una consulente H2Sport verifica i posti (giorno/orario che hai scritto) e ti risponde a breve.\n\n` +
+        `Se preferisci una chiamata, scrivi «richiamatemi».`
+    )
+  }
+  return (
+    `Ho capito: vuoi sapere se c'è posto al corso (non stai prenotando la prova in acqua).\n\n` +
+      `Una consulente H2Sport verifica la disponibilità e ti risponde a breve.\n\n` +
+      `Se preferisci una chiamata, scrivi «richiamatemi».`
+  )
 }
 
 function spogliatoioWashMsg(corso: BambiniCorso | null): string {
@@ -659,10 +761,11 @@ function peekPendingCallback(from: string): PendingCallback | null {
   return p
 }
 
-function markCallbackPending(from: string) {
+function markCallbackPending(from: string, reason?: PendingCallback["reason"]) {
   pendingCallbackByPhone.set(from, {
     requestedAt: Date.now(),
     expiresAt: Date.now() + PENDING_CALLBACK_TTL_MS,
+    reason,
   })
   pendingProvaByPhone.delete(from)
   pendingProvaDayByPhone.delete(from)
@@ -711,14 +814,16 @@ function hasBookingIntent(t: string): boolean {
 /** Domanda libera (orari, chiusure, piscina…): non è una prenotazione. */
 export function looksLikeQuestionIt(text: string): boolean {
   const raw = String(text ?? "")
-  const t = normText(raw)
+  const t = faqText(raw)
   if (!t) return false
   if (/\?/.test(raw)) return true
+  if (parseLocationQuestionIt(raw) || parseCorsoPostoQuestionIt(raw)) return true
   if (/\b(quando|quanto|quanti|dove|come|perche|quale|quali)\b/.test(t)) return true
+  if (/\b(volevo\s+sapere|vorrei\s+sapere|sapere\s+se)\b/.test(t)) return true
   if (/\b(e\s+chius|e\s+apert|resta\s+chius|resta\s+apert|aprite|chiudete|apertura|chiusura)\b/.test(t)) {
     return true
   }
-  if (/\b(si\s+puo|posso|potete|avete|c'e|ce\s+l'avete|sapete|mi\s+dite|mi\s+dici)\b/.test(t)) {
+  if (/\b(si\s+puo|posso|potete|avete|c'e|c[' ]?e(?:ra)?|ce\s+l'avete|sapete|mi\s+dite|mi\s+dici)\b/.test(t)) {
     return true
   }
   if (/\b(scusa|scusami|scusate|scusatemi)\b/.test(t) && t.length > 18) return true
@@ -756,6 +861,7 @@ function looksLikeSlotFragmentIt(text: string): boolean {
 }
 
 function wantsBambiniInfo(t: string): boolean {
+  if (parseLocationQuestionIt(t) || parseCorsoPostoQuestionIt(t)) return false
   return (
     /\b(info\s*whatsapp|info\s*email|info\s*mail|mandami\s+(le\s+)?info|costi|prezzi|tariff|orari|programma|brochure|preventivo)\b/.test(
       t
@@ -776,8 +882,10 @@ function wantsSedeConsulenza(t: string): boolean {
 
 /** Intent prova in acqua (foglio SNB), non consulenza in sede. */
 export function parseProvaIntentIt(text: string): boolean {
-  const t = normText(text)
+  const t = faqText(text)
   if (!t) return false
+  if (alreadyDidProvaIt(t)) return false
+  if (parseCorsoPostoQuestionIt(text)) return false
   if (/\b(prenota\s+prova|prova\s+in\s+acqua|prova\s+in\s+vasca|prova\s+acqua)\b/.test(t)) return true
   if (/\bprova\b/.test(t) && /\b(prenot|fissa|vorrei|voglio|bambin|figli|acqua|vasca)\b/.test(t)) {
     return true
@@ -1291,7 +1399,10 @@ export async function handleWhatsappInboundBooking(params: {
     (/grazie per aver richiesto informazioni sui nostri corsi per bambini/.test(t) &&
       /info whatsapp/.test(t) &&
       /prenota prova/.test(t)) ||
-    (/dove le vuoi ricevere/.test(t) && /info whatsapp/.test(t) && /info email/.test(t))
+    (/dove le vuoi ricevere/.test(t) && /info whatsapp/.test(t) && /info email/.test(t)) ||
+    /via provinciale lucchese/.test(t) ||
+    /non stai prenotando la prova in acqua/.test(t) ||
+    /avete gia fatto la prova e ora volete sapere/.test(t)
 
   // Eco del follow-up che abbiamo appena inviato (Meta a volte lo rimanda come inbound).
   if (isWelcomeEcho) {
@@ -1475,14 +1586,17 @@ export async function handleWhatsappInboundBooking(params: {
     if (pendingCb) {
       const parsedCb = parseSlotRequestIt(text)
       const completeSlot = Boolean(parsedCb && hasWeekday(t) && hasTimeHint(t))
+      const slotIsNote = completeSlot && pendingCb.reason === "posto"
       const leaveToOtherFlow =
-        completeSlot ||
+        (completeSlot && !slotIsNote) ||
         parseProvaIntentIt(text) ||
         wantsBambiniInfo(t) ||
         wantsSedeConsulenza(t) ||
         wantsExplicitAppointment(t) ||
+        parseLocationQuestionIt(text) ||
+        parseCorsoPostoQuestionIt(text) ||
         shouldHandoffAsQuestion(text)
-      if (completeSlot) {
+      if (completeSlot && !slotIsNote) {
         pendingCallbackByPhone.delete(from)
       } else if (!leaveToOtherFlow) {
         const politeAck = /^(ok|va bene|grazie|perfetto|si|sì|no|👍|🙏)\b/.test(t) || t.length <= 2
@@ -1492,7 +1606,8 @@ export async function handleWhatsappInboundBooking(params: {
         const isPref =
           isRecurringAvailabilityIt(text) ||
           (hasTimeHint(t) && !hasWeekday(t)) ||
-          (hasWeekday(t) && !hasTimeHint(t))
+          (hasWeekday(t) && !hasTimeHint(t)) ||
+          slotIsNote
         if (isPref) {
           refreshCallbackPending(from)
           await sendWhatsappText(from, callbackPreferenceMsg(text))
@@ -1505,6 +1620,29 @@ export async function handleWhatsappInboundBooking(params: {
         }
       }
     }
+  }
+
+  // FAQ: dove siamo / indirizzo sede (prima della guida prova)
+  if (parseLocationQuestionIt(text)) {
+    await sendWhatsappText(from, sedeLocationMsg())
+    if (lead) {
+      appendLeadNote(lead.id, `WA faq sede/indirizzo: «${text}»`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: "faq sede" }
+  }
+
+  // FAQ: posto al corso (non nuova prova), anche se la prova è già stata fatta
+  if (parseCorsoPostoQuestionIt(text)) {
+    markCallbackPending(from, "posto")
+    await sendWhatsappText(from, corsoPostoHandoffMsg(text))
+    if (lead) {
+      appendLeadNote(lead.id, `WA posto al corso → ricontatto consulente («${text}»)`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: "posto corso" }
   }
 
   // FAQ spogliatoio / chi lava il bambino (dopo la prova o in chat libera)
@@ -1892,7 +2030,13 @@ export async function handleWhatsappInboundBooking(params: {
 
     // Messaggio libero senza slot: non rimandare il benvenuto (già inviato al lead)
     const parsedEarly = parseSlotRequestIt(text)
-    if (!parsedEarly && !wantsExplicitAppointment(t) && !hasBookingIntent(t)) {
+    if (
+      !parsedEarly &&
+      !wantsExplicitAppointment(t) &&
+      !hasBookingIntent(t) &&
+      !parseLocationQuestionIt(text) &&
+      !parseCorsoPostoQuestionIt(text)
+    ) {
       if (!/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t)) {
         await sendWhatsappText(
           from,
@@ -1991,7 +2135,7 @@ export async function handleWhatsappInboundBooking(params: {
 
   // 3) Slot completo → prenota o slot pieno
   // Bambini senza «appuntamento/consulenza in sede»: non creare A2 (usa foglio prove)
-  if (isLeadBambini(lead) && !wantsSedeConsulenza(t)) {
+  if (isLeadBambini(lead) && !wantsSedeConsulenza(t) && !parseCorsoPostoQuestionIt(text)) {
     await sendWhatsappText(
       from,
       `Per la prova in acqua usa:\n` +
