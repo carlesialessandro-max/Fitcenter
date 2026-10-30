@@ -351,8 +351,8 @@ function DashboardTab() {
               (Centro Arte Danza) resta fuori, si vede solo in Incassi. Affitti spazi e convenzioni si prendono dalle fatture
               emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
               di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
-              dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, Tres Energia e Sima energia stanno sul
-              mese prima della fattura; Publiacqua si spezza sui mesi di consumo.
+              dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, TIP POWEReGAS, Tres Energia e Sima
+              energia stanno sul mese prima della fattura; Publiacqua si spezza sui mesi di consumo.
             </p>
             <p className="mt-1">I totali aziendali restano complessivi anche quando si seleziona un reparto nel filtro.</p>
           </div>
@@ -1360,9 +1360,9 @@ function RegistroTab() {
         eccezione del mese (i prossimi scarichi tengono la regola precedente). RA.MO, Diversey e Toscochimica: fino a
         maggio e dopo la prima fornitura di settembre 100% piscina coperta; da giugno fino a quella fornitura
         (apertura piscina esterna) 75% piscina esterna / 25% coperta. Si ricalcola anche sulle fatture già scaricate.
-        Utenze: Italpower, Tip energia, Tres Energia e Sima energia vanno nel mese prima della fattura (febbraio →
-        gennaio). Publiacqua, se in descrizione c’è il periodo, spezza l’importo su quei mesi; altrimenti sui due mesi
-        precedenti la fattura.
+        Utenze: Italpower, Tip energia, TIP POWEReGAS, Tres Energia e Sima energia vanno nel mese prima della fattura
+        (giugno → maggio). Publiacqua, se in descrizione c’è il periodo, spezza l’importo su quei mesi; altrimenti sui
+        due mesi precedenti la fattura.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">

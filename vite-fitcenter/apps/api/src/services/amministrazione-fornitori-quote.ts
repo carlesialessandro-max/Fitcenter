@@ -22,6 +22,11 @@ export const FORNITORI_QUOTE_SEED: AmmFornitoreQuoteSeed[] = [
   { match: ["compass"], label: "Compass", quote: q("costi-generali-struttura") },
   { match: ["italpower energia", "italpower"], label: "Italpower", quote: q("utenze-generali") },
   { match: ["tip energia", "tipenergia"], label: "Tip energia", quote: q("utenze-generali") },
+  {
+    match: ["tip poweregas", "tip power e gas", "poweregas"],
+    label: "TIP POWEReGAS",
+    quote: q("utenze-generali"),
+  },
   { match: ["tres energia", "tresenergia"], label: "Tres Energia", quote: q("utenze-generali") },
   { match: ["sima energia", "simaenergia"], label: "Sima energia", quote: q("utenze-generali") },
   { match: ["publiacqua", "pubbliacqua"], label: "Publiacqua", quote: q("utenze-generali") },

@@ -1,7 +1,15 @@
 import { fornitoreMatch } from "./amministrazione-fornitori-quote.js"
 
 /** Bollette luce/gas: la fattura del mese N è il consumo del mese N−1. */
-const ENERGIA_MENO_UNO = ["italpower", "tip energia", "tres energia", "sima energia"]
+const ENERGIA_MENO_UNO = [
+  "italpower",
+  "tip energia",
+  "tip poweregas",
+  "tip power e gas",
+  "poweregas",
+  "tres energia",
+  "sima energia",
+]
 
 /** Acqua: spesso un periodo di più mesi. */
 const PUBBLIACQUA = ["publiacqua", "pubbliacqua"]
