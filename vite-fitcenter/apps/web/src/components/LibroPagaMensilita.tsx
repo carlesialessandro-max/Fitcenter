@@ -308,7 +308,7 @@ export function LibroPagaMensilitaTab({
         <p className="text-xs text-zinc-500">
           Seleziona uno o più nominativi, poi usa i pulsanti in alto. Dettagli: inserisci o elimina turni.
           Controlla calendario confronta i turni con i calendari FitCenter prima di confermare.
-          L’importo da pagare si inserisce a mano in Collaboratori sportivi.
+          L’importo da pagare è in Collaboratori sportivi (import PDF/Excel, o a mano).
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
           {perimetroReparto ? " Importo totale riguarda solo i turni del tuo reparto." : ""}
         </p>
@@ -948,7 +948,7 @@ function ModificaMese({
           <input value={eur(row.importo)} disabled className={inputCls} />
         </label>
         <p className="self-end text-xs text-zinc-500">
-          L’importo da pagare si inserisce a mano in Collaboratori sportivi.
+          L’importo da pagare è in Collaboratori sportivi (import PDF/Excel, o a mano).
         </p>
         <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
           Note correzione
