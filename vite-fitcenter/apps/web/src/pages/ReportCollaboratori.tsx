@@ -313,10 +313,9 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Gli importi sono quelli caricati in Amministrazione dal PDF stipendi del commercialista (Studio Mattonai:
-            netto; se c’è il lordo: lordo + solo INPS a carico società). Il PDF sostituisce gli importi di quel mese;
-            ripartizioni e centri di costo restano quelli del Libro paga (turni/reparto). L’Excel annuale resta un’opzione.
-            Solo admin e Alberto.
+            Gli importi si inseriscono a mano: clicca la cella del mese oppure usa Aggiungi istruttore. Non arrivano da
+            Amministrazione né dalle mensilità del Libro paga. Ripartizioni e centri di costo restano quelli dei turni.
+            PDF/Excel restano un’opzione. Solo admin e Alberto.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -509,7 +508,7 @@ export function ReportCollaboratori({
             {!report.isLoading && filtered.length === 0 ? (
               <tr>
                 <td colSpan={17} className="px-3 py-6 text-zinc-500">
-                  Nessun collaboratore in questo anno. Importa il PDF del commercialista, oppure aggiungi un istruttore.
+                  Nessun collaboratore in questo anno. Aggiungi un istruttore e inserisci gli importi nelle celle.
                 </td>
               </tr>
             ) : null}
