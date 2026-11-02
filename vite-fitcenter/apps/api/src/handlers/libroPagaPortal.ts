@@ -248,12 +248,8 @@ export async function putLpagaMensilita(req: Request, res: Response) {
       })
     }
     const mese = String(req.body?.mese ?? "").trim()
-    const bonificoInserito = Number(req.body?.bonifico)
     if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
     if (!isYmLpaga(mese)) return res.status(400).json({ message: "Mese non valido" })
-    if (!Number.isFinite(bonificoInserito) || bonificoInserito < 0) {
-      return res.status(400).json({ message: "Importo bonifico non valido" })
-    }
     const perimetro = resolveLivelloTree(me, livelli)
     const meseTurni = turni.filter((t) => t.personaleId === personaleId && t.giorno.slice(0, 7) === mese)
     const importoPersonaMese = roundLpaga2(meseTurni.reduce((s, t) => s + t.importo, 0))
@@ -261,12 +257,23 @@ export async function putLpagaMensilita(req: Request, res: Response) {
       ? roundLpaga2(meseTurni.filter((t) => perimetro.has(t.livelloId)).reduce((s, t) => s + t.importo, 0))
       : importoPersonaMese
     const saved = (await listMensilita(mese)).find((m) => m.personaleId === personaleId)
-    const bonifico = fondereBonificoPerimetro(
-      importoPerimetro,
-      importoPersonaMese,
-      saved?.bonifico,
-      bonificoInserito
-    )
+    const rawBonifico = req.body?.bonifico
+    const bonificoInserito =
+      rawBonifico === undefined || rawBonifico === null || rawBonifico === ""
+        ? undefined
+        : Number(rawBonifico)
+    if (bonificoInserito !== undefined && (!Number.isFinite(bonificoInserito) || bonificoInserito < 0)) {
+      return res.status(400).json({ message: "Importo non valido" })
+    }
+    const bonifico =
+      bonificoInserito === undefined
+        ? (saved?.bonifico ?? 0)
+        : fondereBonificoPerimetro(
+            importoPerimetro,
+            importoPersonaMese,
+            saved?.bonifico,
+            bonificoInserito
+          )
     const row = await upsertMensilita({
       personaleId,
       mese,

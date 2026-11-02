@@ -167,7 +167,7 @@ export const lpagaApi = {
       { method: "POST", body: JSON.stringify({ righe }) }
     ),
   deleteTurno: (id: string) => lpagaRequest<{ ok: boolean }>(`/lpaga/turni/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
+  putMensilita: (body: { personaleId: string; mese: string; bonifico?: number; nota?: string; chiuso: boolean }) =>
     lpagaRequest<{ mensilita: unknown }>("/lpaga/mensilita", { method: "PUT", body: JSON.stringify(body) }),
   createPersonale: (body: {
     nome: string

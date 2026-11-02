@@ -6,6 +6,7 @@ import {
   insertTurno,
   listLivelli,
   messaggioQuantitaTurno,
+  listMensilita,
   listPersonale,
   listTurni,
   nominativo,
@@ -536,11 +537,16 @@ export async function putMensilita(req: Request, res: Response) {
   try {
     const personaleId = String(req.body?.personaleId ?? "").trim()
     const mese = String(req.body?.mese ?? "").trim()
-    const bonifico = Number(req.body?.bonifico)
     if (!personaleId) return res.status(400).json({ message: "Persona obbligatoria" })
     if (!isYm(mese)) return res.status(400).json({ message: "Mese non valido" })
+    const saved = (await listMensilita(mese)).find((m) => m.personaleId === personaleId)
+    const rawBonifico = req.body?.bonifico
+    const bonifico =
+      rawBonifico === undefined || rawBonifico === null || rawBonifico === ""
+        ? (saved?.bonifico ?? 0)
+        : Number(rawBonifico)
     if (!Number.isFinite(bonifico) || bonifico < 0) {
-      return res.status(400).json({ message: "Importo bonifico non valido" })
+      return res.status(400).json({ message: "Importo non valido" })
     }
     const row = await upsertMensilita({
       personaleId,

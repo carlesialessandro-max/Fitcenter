@@ -55,7 +55,6 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
   const [vista, setVista] = useState<Vista>("riepilogo")
   const totImporto = data.mensilita.reduce((s, r) => s + r.importo, 0)
   const totOre = data.mensilita.reduce((s, r) => s + r.ore, 0)
-  const totBonifico = data.mensilita.reduce((s, r) => s + r.bonifico, 0)
 
   const perMansione = useMemo(() => {
     const map = new Map<string, { nome: string; n: number; ore: number; importo: number }>()
@@ -122,12 +121,11 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
             className={btnGhost}
             onClick={() =>
               downloadCsv(`mensilita-${data.mese}.csv`, [
-                ["Nominativo", "Ore", "Importo", "Bonifico", "Turni", "Note"],
+                ["Nominativo", "Ore", "Importo", "Turni", "Note"],
                 ...dipendenti.map((r) => [
                   r.personaleNome,
                   String(r.ore),
                   String(r.importo).replace(".", ","),
-                  String(r.bonifico).replace(".", ","),
                   String(r.nTurni),
                   r.nota,
                 ]),
@@ -159,7 +157,7 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
       </div>
 
       {vista === "riepilogo" && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Card title="Persone">
             <p className="text-2xl font-semibold">{data.mensilita.length}</p>
             <p className="mt-1 text-xs text-zinc-500">{data.personale.length} in anagrafica visibile</p>
@@ -170,9 +168,6 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
           </Card>
           <Card title="Importo mese">
             <p className="text-2xl font-semibold">{eur(totImporto)}</p>
-          </Card>
-          <Card title="Bonifici">
-            <p className="text-2xl font-semibold">{eur(totBonifico)}</p>
           </Card>
         </div>
       )}
@@ -187,7 +182,6 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
                   <th className="px-3 py-2 text-right">Turni</th>
                   <th className="px-3 py-2 text-right">Valore</th>
                   <th className="px-3 py-2 text-right">Importo</th>
-                  <th className="px-3 py-2 text-right">Bonifico</th>
                 </tr>
               </thead>
               <tbody>
@@ -197,7 +191,6 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
                     <td className="px-3 py-2 text-right">{r.nTurni}</td>
                     <td className="px-3 py-2 text-right">{r.ore}</td>
                     <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
-                    <td className="px-3 py-2 text-right">{eur(r.bonifico)}</td>
                   </tr>
                 ))}
                 <tr className="border-t border-zinc-700 font-medium text-zinc-100">
@@ -205,7 +198,6 @@ export function LibroPagaReport({ data }: { data: LibroPagaSnapshot }) {
                   <td className="px-3 py-2 text-right">{data.turni.length}</td>
                   <td className="px-3 py-2 text-right">{totOre.toFixed(2)}</td>
                   <td className="px-3 py-2 text-right">{eur(totImporto)}</td>
-                  <td className="px-3 py-2 text-right">{eur(totBonifico)}</td>
                 </tr>
               </tbody>
             </table>

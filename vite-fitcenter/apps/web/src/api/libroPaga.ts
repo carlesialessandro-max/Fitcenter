@@ -304,7 +304,7 @@ export const libroPagaApi = {
   deleteTurno: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/turni/${encodeURIComponent(id)}`),
   putPresenza: (turnoId: string, valore: number) =>
     api.put<{ presenza: unknown }>(`/libro-paga/turni/${encodeURIComponent(turnoId)}/presenza`, { valore }),
-  putMensilita: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) =>
+  putMensilita: (body: { personaleId: string; mese: string; bonifico?: number; nota?: string; chiuso: boolean }) =>
     api.put<{ mensilita: unknown }>("/libro-paga/mensilita", body),
   getConvalida: (mese: string, personaleId: string, reparto?: string) => {
     const q = new URLSearchParams({ mese, personaleId })

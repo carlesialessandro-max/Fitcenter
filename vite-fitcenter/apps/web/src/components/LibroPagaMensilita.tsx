@@ -178,7 +178,7 @@ export function LibroPagaMensilitaTab({
   mese: string
   canEdit: (personaleId: string) => boolean
   hideIban?: boolean
-  onSave: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) => Promise<unknown>
+  onSave: (body: { personaleId: string; mese: string; nota?: string; chiuso: boolean }) => Promise<unknown>
   onError: (s: string) => void
   onDone: () => void
   onConvalida?: (personaleId: string) => void
@@ -308,10 +308,9 @@ export function LibroPagaMensilitaTab({
         <p className="text-xs text-zinc-500">
           Seleziona uno o più nominativi, poi usa i pulsanti in alto. Dettagli: inserisci o elimina turni.
           Controlla calendario confronta i turni con i calendari FitCenter prima di confermare.
+          L’importo da pagare è in Collaboratori sportivi (PDF del commercialista in Amministrazione).
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
-          {perimetroReparto
-            ? " Importo totale e bonifico riguardano solo i turni del tuo reparto."
-            : ""}
+          {perimetroReparto ? " Importo totale riguarda solo i turni del tuo reparto." : ""}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
@@ -338,7 +337,6 @@ export function LibroPagaMensilitaTab({
               <th className="px-3 py-2">Nominativo</th>
               <th className="px-3 py-2 text-right">Importo totale</th>
               <th className="px-3 py-2">Note correzione</th>
-              <th className="px-3 py-2 text-right">Importo bonifico</th>
             </tr>
           </thead>
           <tbody>
@@ -368,12 +366,11 @@ export function LibroPagaMensilitaTab({
                 </td>
                 <td className="px-3 py-2 text-right">{eur(r.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.nota || "—"}</td>
-                <td className="px-3 py-2 text-right">{eur(r.bonifico)}</td>
               </tr>
             ))}
             {!rows.length && (
               <tr>
-                <td className="px-3 py-6 text-zinc-500" colSpan={5}>
+                <td className="px-3 py-6 text-zinc-500" colSpan={4}>
                   Nessuna mensilità in questo mese.
                 </td>
               </tr>
@@ -907,18 +904,16 @@ function ModificaMese({
   row: LpagaMensilitaRow
   mese: string
   onClose: () => void
-  onSave: (body: { personaleId: string; mese: string; bonifico: number; nota?: string; chiuso: boolean }) => Promise<unknown>
+  onSave: (body: { personaleId: string; mese: string; nota?: string; chiuso: boolean }) => Promise<unknown>
   onError: (s: string) => void
   onDone: () => void
 }) {
-  const [bonifico, setBonifico] = useState(String(row.bonifico))
   const [nota, setNota] = useState(row.nota)
   const mut = useMutation({
     mutationFn: () =>
       onSave({
         personaleId: row.personaleId,
         mese,
-        bonifico: Number(String(bonifico).replace(",", ".")),
         nota,
         chiuso: row.chiuso,
       }),
@@ -952,10 +947,9 @@ function ModificaMese({
           Importo totale
           <input value={eur(row.importo)} disabled className={inputCls} />
         </label>
-        <label className="grid gap-1 text-xs text-zinc-400">
-          Importo bonifico
-          <input value={bonifico} onChange={(e) => setBonifico(e.target.value)} className={inputCls} required />
-        </label>
+        <p className="self-end text-xs text-zinc-500">
+          L’importo da pagare si inserisce in Collaboratori sportivi (PDF commercialista).
+        </p>
         <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
           Note correzione
           <input

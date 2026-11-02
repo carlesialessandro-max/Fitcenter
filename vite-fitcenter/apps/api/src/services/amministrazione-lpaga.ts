@@ -109,8 +109,7 @@ function ripartoMese(
 
   for (const id of ids) {
     const agg = byPerson.get(id)
-    const saved = savedByPerson.get(id)
-    const importo = Math.round((saved?.bonifico ?? agg?.importoTurni ?? 0) * 100) / 100
+    const importo = Math.round((agg?.importoTurni ?? 0) * 100) / 100
     if (!importo) continue
     const persona = personaleById.get(id)
     const quote = [...(agg?.reparti ?? new Map()).entries()]

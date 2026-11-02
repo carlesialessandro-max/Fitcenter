@@ -1483,7 +1483,6 @@ function MensilitaTab({
                     .putMensilita({
                       personaleId: row.personaleId,
                       mese,
-                      bonifico: row.bonifico,
                       nota: row.nota,
                       chiuso: true,
                     })
