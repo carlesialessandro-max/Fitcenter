@@ -901,10 +901,13 @@ export function LibroPagaConvalideLista({
 
 export function rootsFiltroTurniConvalide(
   responsabile: ConvalidaResponsabileRow | undefined,
-  selectedScopeIds: string[]
+  selectedScopeIds: string[],
+  opts?: { onlyMine?: boolean }
 ): string[] | null {
   if (!responsabile) return null
   if (selectedScopeIds.length) return selectedScopeIds
+  // Responsabile: i turni sono già filtrati dal server sul suo perimetro.
+  if (opts?.onlyMine) return null
   const ids = (responsabile.scopes ?? []).filter((s) => s.nTurni > 0).map((s) => s.id)
   return ids.length ? ids : []
 }

@@ -118,6 +118,9 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
     const repartoId = String(req.query.reparto ?? "").trim()
     let livelloTree = resolveLivelloTree(me, livelli, me.ruolo === "admin" ? repartoId : undefined)
     let visibleIds = me.ruolo === "user" ? new Set([me.id]) : undefined
+    if (me.ruolo === "manager") {
+      visibleIds = personaleVisibile(me, personaleAll, livelli)
+    }
     if (me.ruolo === "user") {
       const deTree = alberoDaDeleghe(me.id, personaleAll, livelli)
       if (deTree.size) livelloTree = deTree

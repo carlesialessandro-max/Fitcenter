@@ -1441,7 +1441,7 @@ function ConvalidePortal({
   const nDaFare = riep?.nDaFare ?? 0
   const respSel = responsabili.find((r) => r.personaleId === aperto) ?? (onlyMine ? responsabili[0] : undefined)
   const turniVista = useMemo(() => {
-    const roots = rootsFiltroTurniConvalide(respSel, selectedScopeIds)
+    const roots = rootsFiltroTurniConvalide(respSel, selectedScopeIds, { onlyMine })
     if (roots === null) return data.turni
     if (!roots.length) return onlyMine ? data.turni : []
     const ids = livelloAlberoUnionUi(data.livelli, roots)

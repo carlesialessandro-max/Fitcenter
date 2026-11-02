@@ -310,7 +310,7 @@ export function LibroPagaMensilitaTab({
           Controlla calendario confronta i turni con i calendari FitCenter prima di confermare.
           L’importo da pagare è in Collaboratori sportivi (import PDF/Excel, o a mano).
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
-          {perimetroReparto ? " Importo totale riguarda solo i turni del tuo reparto." : ""}
+          {perimetroReparto ? " Importo totale: turni dei tuoi collaboratori in questo mese." : ""}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <input
