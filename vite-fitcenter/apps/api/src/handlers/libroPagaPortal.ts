@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express"
 import { deletePersonale, deleteTurno, getTurno, insertTurno, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
-import { importaTurniExcel } from "./libroPaga.js"
+import { importaTurniExcel, patchLivello, postLivello, removeLivello } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
   getDeleghe,
@@ -55,6 +55,90 @@ export function requireLpagaAdmin(req: Request, res: Response, next: NextFunctio
     return res.status(403).json({ message: "Solo l’amministratore libro paga può gestire i livelli" })
   }
   next()
+}
+
+export function requireLpagaTeam(req: Request, res: Response, next: NextFunction) {
+  const u = req.lpaga
+  if (!u) return res.status(401).json({ message: "Sessione Libro paga mancante" })
+  if (u.ruolo !== "admin" && u.ruolo !== "manager") {
+    return res.status(403).json({ message: "Solo responsabile o admin può gestire i livelli" })
+  }
+  next()
+}
+
+async function assertLpagaLivelloWritable(
+  me: LpagaSessionUser | LpagaPersonale,
+  opts: { livelloId?: string; parentId?: string; creating?: boolean }
+) {
+  if (me.ruolo === "admin") return
+  const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+  const scoped = scopeMe(me as LpagaSessionUser, personale)
+  const tree = alberoAssegnabileAnagrafica(scoped, livelli)
+  const roots = personaleLivelloRadici(scoped)
+  const consentito = (id: string) => Boolean(id) && (tree.has(id) || roots.includes(id))
+  if (opts.creating && !opts.parentId) {
+    const err = new Error("Il responsabile può creare livelli solo sotto i propri reparti")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
+  }
+  if (opts.parentId && !consentito(opts.parentId)) {
+    const err = new Error("Padre fuori dalle tue deleghe")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
+  }
+  if (opts.livelloId && !consentito(opts.livelloId)) {
+    const err = new Error("Livello fuori dalle tue deleghe")
+    ;(err as Error & { status?: number }).status = 403
+    throw err
+  }
+}
+
+export async function postLpagaLivello(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    const [personale] = await Promise.all([listPersonale()])
+    const me = scopeMe(sess, personale)
+    await assertLpagaLivelloWritable(me, {
+      creating: true,
+      parentId: String(req.body?.parentId ?? "").trim(),
+    })
+  } catch (e) {
+    return fail(res, e)
+  }
+  return postLivello(req, res)
+}
+
+export async function patchLpagaLivello(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
+    const id = String(req.params.id ?? "").trim()
+    const cur = livelli.find((x) => x.id === id)
+    const incomingParent = req.body?.parentId != null ? String(req.body.parentId).trim() : ""
+    await assertLpagaLivelloWritable(me, {
+      livelloId: id,
+      parentId:
+        incomingParent && incomingParent !== (cur?.parentId ?? "")
+          ? incomingParent
+          : undefined,
+    })
+  } catch (e) {
+    return fail(res, e)
+  }
+  return patchLivello(req, res)
+}
+
+export async function removeLpagaLivello(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    const [personale] = await Promise.all([listPersonale()])
+    const me = scopeMe(sess, personale)
+    await assertLpagaLivelloWritable(me, { livelloId: String(req.params.id ?? "").trim() })
+  } catch (e) {
+    return fail(res, e)
+  }
+  return removeLivello(req, res)
 }
 
 /** Report collaboratori sportivi: admin del libro paga (Alberto) o nominativo Alberto. */

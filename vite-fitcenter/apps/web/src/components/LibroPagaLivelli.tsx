@@ -45,6 +45,7 @@ export function LibroPagaLivelliTab({
   patchLivello,
   deleteLivello,
   showTreeDefault = false,
+  canCreateRoot = true,
 }: {
   data: Pick<LibroPagaSnapshot, "livelli" | "tree">
   q: string
@@ -62,8 +63,10 @@ export function LibroPagaLivelliTab({
   patchLivello: (id: string, body: Partial<LpagaLivello>) => Promise<unknown>
   deleteLivello: (id: string) => Promise<unknown>
   showTreeDefault?: boolean
+  canCreateRoot?: boolean
 }) {
   const [showTree, setShowTree] = useState(showTreeDefault)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [nome, setNome] = useState("")
   const [parentId, setParentId] = useState("")
   const [retrib, setRetrib] = useState("")
@@ -73,19 +76,48 @@ export function LibroPagaLivelliTab({
     const n = q.trim().toLowerCase()
     return data.livelli.filter((l) => !n || `${l.nome} ${l.dominio} ${l.parentNome}`.toLowerCase().includes(n))
   }, [data.livelli, q])
-  const createMut = useMutation({
-    mutationFn: () =>
-      createLivello({
+  function resetForm() {
+    setEditingId(null)
+    setNome("")
+    setParentId("")
+    setRetrib("")
+    setFissa(false)
+    setRetribuibile(true)
+  }
+  function startEdit(l: LpagaLivello) {
+    setEditingId(l.id)
+    setNome(l.nome)
+    setParentId(l.parentId ?? "")
+    setRetrib(Number.isFinite(l.retribuzione) ? String(l.retribuzione) : "")
+    setFissa(Boolean(l.fissa))
+    setRetribuibile(l.retribuibile !== false)
+  }
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const retribuzione = Number(retrib.replace(",", ".") || 0)
+      if (!canCreateRoot && !parentId && !editingId) {
+        throw new Error("Scegli il reparto padre")
+      }
+      if (editingId) {
+        return patchLivello(editingId, {
+          nome,
+          parentId: parentId || undefined,
+          retribuzione,
+          fissa,
+          retribuibile,
+        })
+      }
+      return createLivello({
         nome,
         parentId: parentId || undefined,
-        retribuzione: Number(retrib.replace(",", ".") || 0),
+        retribuzione,
         fissa,
         retribuibile,
         attivo: true,
-      }),
+      })
+    },
     onSuccess: () => {
-      setNome("")
-      setRetrib("")
+      resetForm()
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -128,7 +160,7 @@ export function LibroPagaLivelliTab({
         className="flex flex-wrap items-end gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4"
         onSubmit={(e) => {
           e.preventDefault()
-          createMut.mutate()
+          saveMut.mutate()
         }}
       >
         <label className="grid gap-1 text-xs text-zinc-400">
@@ -137,14 +169,16 @@ export function LibroPagaLivelliTab({
         </label>
         <label className="grid gap-1 text-xs text-zinc-400">
           Padre / dominio
-          <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={inputCls}>
-            <option value="">(radice)</option>
-            {data.livelli.map((l: LpagaLivello) => (
-              <option key={l.id} value={l.id}>
-                {l.nome}
-                {l.attivo === false ? " (nascosto)" : ""}
-              </option>
-            ))}
+          <select value={parentId} onChange={(e) => setParentId(e.target.value)} className={inputCls} required={!canCreateRoot && !editingId}>
+            {canCreateRoot ? <option value="">(radice)</option> : <option value="">Scegli padre…</option>}
+            {data.livelli
+              .filter((l) => l.id !== editingId)
+              .map((l: LpagaLivello) => (
+                <option key={l.id} value={l.id}>
+                  {l.nome}
+                  {l.attivo === false ? " (nascosto)" : ""}
+                </option>
+              ))}
           </select>
         </label>
         <label className="grid gap-1 text-xs text-zinc-400">
@@ -159,13 +193,18 @@ export function LibroPagaLivelliTab({
           <input type="checkbox" checked={fissa} onChange={(e) => setFissa(e.target.checked)} />
           Fissa
         </label>
-        <button type="submit" className={btnAmber} disabled={createMut.isPending}>
-          Aggiungi livello
+        {editingId ? (
+          <button type="button" className={btnGhost} onClick={resetForm}>
+            Annulla
+          </button>
+        ) : null}
+        <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
+          {saveMut.isPending ? "Salvataggio…" : editingId ? "Salva modifiche" : "Aggiungi livello"}
         </button>
       </form>
       <p className="text-xs text-zinc-500">
-        Se un livello è usato da turni esistenti non si può eliminare: nascondilo. Resta nello storico, ma non compare più
-        tra le mansioni per i nuovi turni.
+        Puoi modificare nome, paga e padre di un livello esistente. Se è usato da turni non si può eliminare: nascondilo.
+        Resta nello storico, ma non compare più tra le mansioni per i nuovi turni.
       </p>
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
@@ -198,9 +237,12 @@ export function LibroPagaLivelliTab({
                 <td className="px-3 py-2">{r.statistica ? "SI" : "—"}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-3">
+                    <button type="button" className="text-xs text-amber-300 hover:underline" onClick={() => startEdit(r)}>
+                      Modifica
+                    </button>
                     <button
                       type="button"
-                      className="text-xs text-amber-300 hover:underline"
+                      className="text-xs text-zinc-400 hover:underline"
                       disabled={hideMut.isPending}
                       onClick={() => {
                         const next = r.attivo === false

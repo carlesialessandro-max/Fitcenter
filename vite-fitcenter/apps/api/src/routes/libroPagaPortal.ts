@@ -21,10 +21,12 @@ import {
   putLpagaPersonalePassword,
   removeLpagaTurno,
   requireLpaga,
-  requireLpagaAdmin,
+  requireLpagaTeam,
   requireLpagaAlberto,
+  postLpagaLivello,
+  patchLpagaLivello,
+  removeLpagaLivello,
 } from "../handlers/libroPagaPortal.js"
-import { patchLivello, postLivello, removeLivello } from "../handlers/libroPaga.js"
 import {
   getAmmCollaboratoriReport,
   postAmmCollaboratoreImporto,
@@ -46,9 +48,9 @@ libroPagaPortalRouter.post("/login", loginLimiter, postLpagaLogin)
 libroPagaPortalRouter.post("/logout", postLpagaLogout)
 libroPagaPortalRouter.get("/me", requireLpaga, getLpagaMe)
 libroPagaPortalRouter.get("/", requireLpaga, getLpagaSnapshot)
-libroPagaPortalRouter.post("/livelli", requireLpaga, requireLpagaAdmin, postLivello)
-libroPagaPortalRouter.patch("/livelli/:id", requireLpaga, requireLpagaAdmin, patchLivello)
-libroPagaPortalRouter.delete("/livelli/:id", requireLpaga, requireLpagaAdmin, removeLivello)
+libroPagaPortalRouter.post("/livelli", requireLpaga, requireLpagaTeam, postLpagaLivello)
+libroPagaPortalRouter.patch("/livelli/:id", requireLpaga, requireLpagaTeam, patchLpagaLivello)
+libroPagaPortalRouter.delete("/livelli/:id", requireLpaga, requireLpagaTeam, removeLpagaLivello)
 libroPagaPortalRouter.post("/turni", requireLpaga, postLpagaTurno)
 libroPagaPortalRouter.patch("/turni/:id", requireLpaga, patchLpagaTurno)
 libroPagaPortalRouter.post("/turni/import-excel", requireLpaga, postLpagaImportTurniExcel)

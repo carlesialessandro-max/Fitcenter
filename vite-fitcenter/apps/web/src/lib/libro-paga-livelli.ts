@@ -38,6 +38,30 @@ export function mansioniInseribiliTurno<T extends LivelloTurno>(livelli: T[]): T
   })
 }
 
+export function livelloIdsAssegnati(
+  me: { livelloId?: string; livelloIds?: string[] },
+  livelli: LivelloTurno[]
+): Set<string> {
+  const roots = [...new Set([...(me.livelloIds ?? []), ...(me.livelloId ? [me.livelloId] : [])].map((x) => x.trim()).filter(Boolean))]
+  const out = new Set<string>()
+  for (const r of roots) {
+    for (const id of sottoAlbero(livelli, r)) out.add(id)
+  }
+  return out
+}
+
+export function filtraAlberoLivelli<T extends { id: string; children?: T[] }>(nodes: T[] | undefined, allowed: Set<string>): T[] {
+  if (!nodes?.length) return []
+  const out: T[] = []
+  for (const n of nodes) {
+    const kids = filtraAlberoLivelli(n.children, allowed)
+    if (allowed.has(n.id) || kids.length) {
+      out.push({ ...n, ...(kids.length ? { children: kids } : { children: undefined }) })
+    }
+  }
+  return out
+}
+
 /** In area personale: mansioni proprie (assegnate + sottoalbero), non tutte le deleghe del team. */
 export function mansioniTurnoProprio<T extends LivelloTurno>(
   me: { livelloId?: string; livelloIds?: string[] },

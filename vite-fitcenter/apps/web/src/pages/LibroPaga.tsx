@@ -748,10 +748,10 @@ function PersonaleTab({
             onSavePersonale={(id, body) => libroPagaApi.patchPersonale(id, body)}
             onError={onError}
             onDone={onDone}
-            canEditTurni
             livelliTurno={mansioniInseribiliTurno(data.livelli)}
             onCreateTurno={(body) => libroPagaApi.createTurno(body)}
             onPatchTurno={(id, body) => libroPagaApi.patchTurno(id, body)}
+            onCreateTurno={(body) => libroPagaApi.createTurno(body)}
             onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
           />
         )
@@ -934,8 +934,8 @@ function TurniTab({
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
   const [cercaData, setCercaData] = useState("")
-  const [nuovoTurno, setNuovoTurno] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [nuovoTurno, setNuovoTurno] = useState(false)
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
   const [importMessage, setImportMessage] = useState("")
   const [importHasErrors, setImportHasErrors] = useState(false)
@@ -946,7 +946,6 @@ function TurniTab({
     const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || fmtDateIt(t.giorno).includes(q.trim())
-  })
   const saveMut = useMutation({
     mutationFn: () => {
       const body = {
@@ -962,6 +961,7 @@ function TurniTab({
       setNote("")
       setQuantita("1")
       setEditingId(null)
+      setQuantita("1")
       setNuovoTurno(false)
       onDone()
     },
@@ -1111,7 +1111,6 @@ function TurniTab({
           </div>
         </div>
       )}
-      {nuovoTurno && (
         <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
           <form
             className="grid gap-3 sm:grid-cols-2"
@@ -1123,6 +1122,7 @@ function TurniTab({
               }
               onError("")
               saveMut.mutate()
+              createMut.mutate()
             }}
           >
             <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
@@ -1161,7 +1161,6 @@ function TurniTab({
                 className={inputCls}
               />
             </label>
-            <div className="flex justify-end gap-2 sm:col-span-2">
               <button
                 type="button"
                 className={btnGhost}
@@ -1174,6 +1173,7 @@ function TurniTab({
               </button>
               <button type="submit" className={btnAmber} disabled={saveMut.isPending || Boolean(quantitaErr)}>
                 {saveMut.isPending ? "Salvataggio…" : editingId ? "Salva modifiche" : "Salva"}
+                {createMut.isPending ? "Salvataggio…" : "Salva"}
               </button>
             </div>
           </form>
@@ -1210,7 +1210,6 @@ function TurniTab({
                 <td className="px-3 py-2 text-right">{t.quantita}</td>
                 <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
-                <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-3">
                     <button
                       type="button"
@@ -1231,6 +1230,7 @@ function TurniTab({
                       Elimina
                     </button>
                   </div>
+                  </button>
                 </td>
               </tr>
             ))}
@@ -1536,10 +1536,10 @@ function MensilitaTab({
           setConvId(null)
           setMeseOpen(true)
         }}
-        canEditTurni
         livelliTurno={mansioniInseribiliTurno(data.livelli)}
         onCreateTurno={(body) => libroPagaApi.createTurno(body)}
         onPatchTurno={(id, body) => libroPagaApi.patchTurno(id, body)}
+        onCreateTurno={(body) => libroPagaApi.createTurno(body)}
         onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
       />
     </div>

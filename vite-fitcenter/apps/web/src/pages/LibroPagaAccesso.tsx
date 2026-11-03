@@ -17,7 +17,7 @@ import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-ac
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
-import { mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
+import { filtraAlberoLivelli, livelloIdsAssegnati, mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
 import {
   downloadLibroPagaTurniTemplate,
   parseLibroPagaTurniExcel,
@@ -194,7 +194,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     { id: "home", label: "Home" },
     { id: "anagrafica", label: "Anagrafica" },
     { id: "area", label: "Area personale" },
-    ...(isAdmin ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
+    ...(canTeam ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
     ...(!isUser ? ([{ id: "turni" as const, label: "Turnazioni" }] as const) : []),
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
@@ -251,9 +251,21 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
         {snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
         {snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
         {data && tab === "home" && <Home data={data} me={me} />}
-        {data && tab === "livelli" && isAdmin && (
+        {data && tab === "livelli" && canTeam && me && (
           <LibroPagaLivelliTab
-            data={data}
+            data={
+              isAdmin
+                ? data
+                : (() => {
+                    const persona = data.personale.find((p) => p.id === me.id) ?? me
+                    const allowed = livelloIdsAssegnati(persona, data.livelli)
+                    return {
+                      ...data,
+                      livelli: data.livelli.filter((l) => allowed.has(l.id)),
+                      tree: filtraAlberoLivelli(data.tree, allowed),
+                    }
+                  })()
+            }
             q={q}
             setQ={setQ}
             onError={setError}
@@ -265,6 +277,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             patchLivello={(id, body) => lpagaApi.patchLivello(id, body)}
             deleteLivello={(id) => lpagaApi.deleteLivello(id)}
             showTreeDefault
+            canCreateRoot={isAdmin}
           />
         )}
         {data && tab === "anagrafica" && me && (
