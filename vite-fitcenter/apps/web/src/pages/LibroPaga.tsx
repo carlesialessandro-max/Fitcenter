@@ -751,7 +751,6 @@ function PersonaleTab({
             livelliTurno={mansioniInseribiliTurno(data.livelli)}
             onCreateTurno={(body) => libroPagaApi.createTurno(body)}
             onPatchTurno={(id, body) => libroPagaApi.patchTurno(id, body)}
-            onCreateTurno={(body) => libroPagaApi.createTurno(body)}
             onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
           />
         )
@@ -1539,7 +1538,6 @@ function MensilitaTab({
         livelliTurno={mansioniInseribiliTurno(data.livelli)}
         onCreateTurno={(body) => libroPagaApi.createTurno(body)}
         onPatchTurno={(id, body) => libroPagaApi.patchTurno(id, body)}
-        onCreateTurno={(body) => libroPagaApi.createTurno(body)}
         onDeleteTurno={(id) => libroPagaApi.deleteTurno(id)}
       />
     </div>
