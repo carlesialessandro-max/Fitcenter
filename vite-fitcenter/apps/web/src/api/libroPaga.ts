@@ -285,6 +285,10 @@ export const libroPagaApi = {
   deletePersonale: (id: string) => api.delete<{ ok: boolean }>(`/libro-paga/personale/${encodeURIComponent(id)}`),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     api.post<{ turno: unknown }>("/libro-paga/turni", body),
+  patchTurno: (
+    id: string,
+    body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }
+  ) => api.patch<{ turno: unknown }>(`/libro-paga/turni/${encodeURIComponent(id)}`, body),
   importTurniExcel: (
     righe: {
       riga: number

@@ -39,7 +39,7 @@ export function LpagaSearchSelect({
   const t = norm(q)
   const filtered = useMemo(() => {
     const list = t ? items.filter((i) => norm(i.label).includes(t)) : items
-    return list.slice(0, 120)
+    return list.slice(0, 400)
   }, [items, t])
 
   useEffect(() => {

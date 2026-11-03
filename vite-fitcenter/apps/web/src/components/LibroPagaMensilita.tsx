@@ -75,6 +75,8 @@ type TurnoCreateBody = {
   note?: string
 }
 
+type TurnoPatchFn = (id: string, body: TurnoCreateBody) => Promise<unknown>
+
 function currentIsoDate(): string {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome" }).format(new Date())
@@ -172,6 +174,7 @@ export function LibroPagaMensilitaTab({
   canEditTurni,
   livelliTurno,
   onCreateTurno,
+  onPatchTurno,
   onDeleteTurno,
 }: {
   data: LibroPagaSnapshot
@@ -187,6 +190,7 @@ export function LibroPagaMensilitaTab({
   canEditTurni?: boolean
   livelliTurno?: LpagaLivello[]
   onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onPatchTurno?: TurnoPatchFn
   onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
@@ -256,6 +260,7 @@ export function LibroPagaMensilitaTab({
           canEditTurni={canEditTurni && canEdit(sel.personaleId)}
           livelliTurno={livelliTurno}
           onCreateTurno={onCreateTurno}
+          onPatchTurno={onPatchTurno}
           onDeleteTurno={onDeleteTurno}
           onError={onError}
           onDone={onDone}
@@ -398,6 +403,7 @@ export function LibroPagaPersonaleDettaglio({
   canEditTurni,
   livelliTurno,
   onCreateTurno,
+  onPatchTurno,
   onDeleteTurno,
 }: {
   persona: LpagaPersonale
@@ -415,6 +421,7 @@ export function LibroPagaPersonaleDettaglio({
   canEditTurni?: boolean
   livelliTurno?: LpagaLivello[]
   onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onPatchTurno?: TurnoPatchFn
   onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const nominativo = persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()
@@ -450,6 +457,7 @@ export function LibroPagaPersonaleDettaglio({
       canEditTurni={canEditTurni}
       livelliTurno={livelliTurno}
       onCreateTurno={onCreateTurno}
+      onPatchTurno={onPatchTurno}
       onDeleteTurno={onDeleteTurno}
     />
   )
@@ -473,6 +481,7 @@ function DettaglioMese({
   canEditTurni,
   livelliTurno,
   onCreateTurno,
+  onPatchTurno,
   onDeleteTurno,
 }: {
   row: LpagaMensilitaRow
@@ -492,6 +501,7 @@ function DettaglioMese({
   canEditTurni?: boolean
   livelliTurno?: LpagaLivello[]
   onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
+  onPatchTurno?: TurnoPatchFn
   onDeleteTurno?: (id: string) => Promise<unknown>
 }) {
   const year = mese.slice(0, 4)
@@ -525,36 +535,44 @@ function DettaglioMese({
   useEffect(() => {
     setFiltroMansione("")
   }, [persona?.id, mese])
-  const mansioniTurno = (livelliTurno ?? []).filter((l) => l.attivo !== false && l.retribuibile)
+  const mansioniTurno = (livelliTurno ?? []).filter((l) => l.attivo !== false)
   const editTurni = Boolean(canEditTurni && persona && onCreateTurno && onDeleteTurno && mansioniTurno.length)
   const [nuovoLivelloId, setNuovoLivelloId] = useState(mansioniTurno[0]?.id ?? "")
   const [nuovoGiorno, setNuovoGiorno] = useState(() => defaultGiornoNelMese(mese))
   const [nuovoQuantita, setNuovoQuantita] = useState("1")
   const [nuovoNote, setNuovoNote] = useState("")
+  const [editingTurnoId, setEditingTurnoId] = useState<string | null>(null)
   useEffect(() => {
     setNuovoLivelloId(mansioniTurno[0]?.id ?? "")
     setNuovoGiorno(defaultGiornoNelMese(mese))
     setNuovoQuantita("1")
     setNuovoNote("")
+    setEditingTurnoId(null)
   }, [persona?.id, mese])
-  const createTurnoMut = useMutation({
+  const saveTurnoMut = useMutation({
     mutationFn: () => {
       if (!persona || !onCreateTurno) throw new Error("Inserimento non disponibile")
       const liv = mansioniTurno.find((l) => l.id === nuovoLivelloId)
       const q = Number(String(nuovoQuantita).replace(",", "."))
       const err = liv ? messaggioQuantitaTurno(liv, q) : "Mansione non valida"
       if (err) throw new Error(err)
-      return onCreateTurno({
+      const body = {
         personaleId: persona.id,
         livelloId: nuovoLivelloId,
         giorno: nuovoGiorno,
         quantita: q,
         note: nuovoNote.trim() || undefined,
-      })
+      }
+      if (editingTurnoId) {
+        if (!onPatchTurno) throw new Error("Modifica non disponibile")
+        return onPatchTurno(editingTurnoId, body)
+      }
+      return onCreateTurno(body)
     },
     onSuccess: () => {
       setNuovoNote("")
       setNuovoQuantita("1")
+      setEditingTurnoId(null)
       onDone?.()
     },
     onError: (e: Error) => onError?.(e.message),
@@ -789,7 +807,7 @@ function DettaglioMese({
             className="mb-3 grid gap-2 rounded-xl border border-zinc-800 bg-zinc-950/40 p-3 sm:grid-cols-5"
             onSubmit={(e) => {
               e.preventDefault()
-              createTurnoMut.mutate()
+              saveTurnoMut.mutate()
             }}
           >
             <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
@@ -821,9 +839,26 @@ function DettaglioMese({
               Note
               <input value={nuovoNote} onChange={(e) => setNuovoNote(e.target.value)} className={inputCls} />
             </label>
-            <div className="flex items-end sm:col-span-2">
-              <button type="submit" className={btnAmber} disabled={createTurnoMut.isPending}>
-                {createTurnoMut.isPending ? "Inserimento…" : "Inserisci turno"}
+            <div className="flex flex-wrap items-end gap-2 sm:col-span-2">
+              {editingTurnoId ? (
+                <button
+                  type="button"
+                  className={btnGhost}
+                  onClick={() => {
+                    setEditingTurnoId(null)
+                    setNuovoNote("")
+                    setNuovoQuantita("1")
+                  }}
+                >
+                  Annulla
+                </button>
+              ) : null}
+              <button type="submit" className={btnAmber} disabled={saveTurnoMut.isPending}>
+                {saveTurnoMut.isPending
+                  ? "Salvataggio…"
+                  : editingTurnoId
+                    ? "Salva modifiche"
+                    : "Inserisci turno"}
               </button>
             </div>
             <p className="text-[11px] text-zinc-500 sm:col-span-5">{valoreUi.hint}</p>
@@ -853,18 +888,35 @@ function DettaglioMese({
                   <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                   {editTurni ? (
                     <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        className="text-xs text-red-400 hover:underline disabled:opacity-50"
-                        disabled={deleteTurnoMut.isPending}
-                        onClick={() => {
-                          if (confirm(`Eliminare il turno del ${fmtDateIt(t.giorno)} (${t.livelloNome})?`)) {
-                            deleteTurnoMut.mutate(t.id)
-                          }
-                        }}
-                      >
-                        Elimina
-                      </button>
+                      <div className="flex justify-end gap-3">
+                        {onPatchTurno ? (
+                          <button
+                            type="button"
+                            className="text-xs text-amber-300 hover:underline"
+                            onClick={() => {
+                              setEditingTurnoId(t.id)
+                              setNuovoLivelloId(t.livelloId)
+                              setNuovoGiorno(t.giorno.slice(0, 10))
+                              setNuovoQuantita(String(t.quantita))
+                              setNuovoNote(t.note ?? "")
+                            }}
+                          >
+                            Modifica
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                          disabled={deleteTurnoMut.isPending}
+                          onClick={() => {
+                            if (confirm(`Eliminare il turno del ${fmtDateIt(t.giorno)} (${t.livelloNome})?`)) {
+                              deleteTurnoMut.mutate(t.id)
+                            }
+                          }}
+                        >
+                          Elimina
+                        </button>
+                      </div>
                     </td>
                   ) : null}
                 </tr>

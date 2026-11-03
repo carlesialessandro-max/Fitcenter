@@ -1132,6 +1132,25 @@ export function calcolaImporto(livello: LivelloValoreTurno, quantita: number): n
   return round2(q * Number(livello.retribuzione))
 }
 
+export async function getTurno(id: string): Promise<LpagaTurno | null> {
+  const tid = id.trim()
+  if (!tid) return null
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (!p) return readFile().turni.find((t) => t.id === tid) ?? null
+    const req = p.request()
+    req.input("Id", sql.NVarChar(64), tid)
+    const r = await req.query(`
+      SELECT Id, PersonaleId, LivelloId, CONVERT(varchar(10), Giorno, 23) AS Giorno,
+             Quantita, Importo, Note, CreatoDa, CreatedAt
+      FROM dbo.FcLibroPagaTurni WHERE Id=@Id
+    `)
+    const row = (r.recordset as Record<string, unknown>[])[0]
+    return row ? mapTurno(row) : null
+  }
+  return readFile().turni.find((t) => t.id === tid) ?? null
+}
+
 export async function insertTurno(input: {
   personaleId: string
   livelloId: string
@@ -1182,6 +1201,66 @@ export async function insertTurno(input: {
   }
   const db = readFile()
   db.turni.push(row)
+  writeFile(db)
+  return row
+}
+
+export async function updateTurno(
+  id: string,
+  input: {
+    personaleId: string
+    livelloId: string
+    giorno: string
+    quantita: number
+    note?: string
+  }
+): Promise<LpagaTurno> {
+  const cur = await getTurno(id)
+  if (!cur) throw Object.assign(new Error("Turno non trovato"), { status: 404 })
+  const livelli = await listLivelli()
+  const livello = livelli.find((x) => x.id === input.livelloId)
+  if (!livello) throw Object.assign(new Error("Livello non trovato"), { status: 400 })
+  const qErr = messaggioQuantitaTurno(livello, input.quantita)
+  if (qErr) throw Object.assign(new Error(qErr), { status: 400 })
+  if (livello.attivo === false && input.livelloId !== cur.livelloId) {
+    throw Object.assign(new Error("Livello nascosto: non si può più usare per i turni"), { status: 400 })
+  }
+  const personale = (await listPersonale()).find((x) => x.id === input.personaleId)
+  if (!personale) throw Object.assign(new Error("Persona non trovata"), { status: 400 })
+  const note = input.note?.trim() ?? ""
+  const row: LpagaTurno = {
+    ...cur,
+    personaleId: input.personaleId,
+    livelloId: input.livelloId,
+    giorno: input.giorno,
+    quantita: round2(input.quantita),
+    importo: calcolaImporto(livello, input.quantita),
+    ...(note ? { note } : {}),
+  }
+  if (!note) delete row.note
+  if ((await ensureLibroPagaStorage()) === "sql") {
+    const p = await pool()
+    if (!p) throw new Error("SQL non disponibile")
+    const req = p.request()
+    req.input("Id", sql.NVarChar(64), row.id)
+    req.input("PersonaleId", sql.NVarChar(64), row.personaleId)
+    req.input("LivelloId", sql.NVarChar(64), row.livelloId)
+    req.input("Giorno", sql.Date, row.giorno)
+    req.input("Quantita", sql.Decimal(10, 2), row.quantita)
+    req.input("Importo", sql.Decimal(10, 2), row.importo)
+    req.input("Note", sql.NVarChar(500), row.note ?? null)
+    await req.query(`
+      UPDATE dbo.FcLibroPagaTurni
+      SET PersonaleId=@PersonaleId, LivelloId=@LivelloId, Giorno=@Giorno,
+          Quantita=@Quantita, Importo=@Importo, Note=@Note
+      WHERE Id=@Id
+    `)
+    return row
+  }
+  const db = readFile()
+  const i = db.turni.findIndex((t) => t.id === row.id)
+  if (i < 0) throw Object.assign(new Error("Turno non trovato"), { status: 404 })
+  db.turni[i] = row
   writeFile(db)
   return row
 }

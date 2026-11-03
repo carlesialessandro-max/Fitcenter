@@ -5,6 +5,7 @@ import {
   deleteTurno,
   insertTurno,
   listLivelli,
+  updateTurno,
   messaggioQuantitaTurno,
   listMensilita,
   listPersonale,
@@ -500,6 +501,33 @@ export async function postImportTurniExcel(req: Request, res: Response) {
   try {
     const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
     res.json(await importaTurniExcel(rows, req.user?.nome || req.user?.username || "admin"))
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function patchTurno(req: Request, res: Response) {
+  try {
+    const id = String(req.params.id ?? "").trim()
+    if (!id) return res.status(400).json({ message: "Turno mancante" })
+    const personaleId = String(req.body?.personaleId ?? "").trim()
+    const livelloId = String(req.body?.livelloId ?? "").trim()
+    const giorno = String(req.body?.giorno ?? "").trim()
+    const quantita = Number(String(req.body?.quantita ?? "").replace(",", "."))
+    if (!personaleId || !livelloId) return res.status(400).json({ message: "Persona e livello obbligatori" })
+    if (!isYmd(giorno)) return res.status(400).json({ message: "Data non valida" })
+    const livello = (await listLivelli()).find((x) => x.id === livelloId)
+    if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
+    const qErr = messaggioQuantitaTurno(livello, quantita)
+    if (qErr) return res.status(400).json({ message: qErr })
+    const row = await updateTurno(id, {
+      personaleId,
+      livelloId,
+      giorno,
+      quantita,
+      note: String(req.body?.note ?? "").trim(),
+    })
+    res.json({ turno: row })
   } catch (e) {
     fail(res, e)
   }

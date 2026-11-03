@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, insertTurno, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, getTurno, insertTurno, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -182,6 +182,51 @@ export async function postLpagaTurno(req: Request, res: Response) {
       creatoDa: me.username || me.id,
     })
     res.status(201).json({ turno: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function patchLpagaTurno(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
+    const me = scopeMe(sess, personale)
+    if (me.ruolo !== "admin" && me.ruolo !== "manager") {
+      return res.status(403).json({ message: "Solo responsabile o admin può modificare i turni" })
+    }
+    const id = String(req.params.id ?? "").trim()
+    const cur = await getTurno(id)
+    if (!cur) return res.status(404).json({ message: "Turno non trovato" })
+    const tree = resolveLivelloTree(me, livelli)
+    if (!turnoNelScope(cur, { viewerId: me.id, ruolo: me.ruolo, tree })) {
+      return res.status(403).json({ message: "Non puoi modificare questo turno" })
+    }
+    const personaleId = String(req.body?.personaleId ?? cur.personaleId).trim()
+    if (me.ruolo !== "admin") {
+      const vis = personaleVisibile(me, personale, livelli)
+      if (!vis.has(personaleId)) return res.status(403).json({ message: "Persona fuori dal tuo reparto" })
+    }
+    const livelloId = String(req.body?.livelloId ?? cur.livelloId).trim()
+    const consentiti = new Set(livelliInseribili(me, livelli, tree).map((l) => l.id))
+    if (!consentiti.has(livelloId) && livelloId !== cur.livelloId) {
+      return res.status(400).json({ message: "Mansione non consentita" })
+    }
+    const giorno = String(req.body?.giorno ?? cur.giorno).trim()
+    const quantita = Number(String(req.body?.quantita ?? cur.quantita).replace(",", "."))
+    if (!isYmd(giorno)) return res.status(400).json({ message: "Data non valida" })
+    const livello = livelli.find((x) => x.id === livelloId)
+    if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
+    const qErr = messaggioQuantitaTurno(livello, quantita)
+    if (qErr) return res.status(400).json({ message: qErr })
+    const row = await updateTurno(id, {
+      personaleId,
+      livelloId,
+      giorno,
+      quantita,
+      note: req.body?.note != null ? String(req.body.note) : cur.note,
+    })
+    res.json({ turno: row })
   } catch (e) {
     fail(res, e)
   }

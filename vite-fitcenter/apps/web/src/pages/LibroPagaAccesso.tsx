@@ -17,6 +17,7 @@ import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-ac
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
+import { mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
 import {
   downloadLibroPagaTurniTemplate,
   parseLibroPagaTurniExcel,
@@ -500,7 +501,11 @@ function AreaPersonale({
   const mens = data.mensilita.find((r) => r.personaleId === me.id)
   const canChangeDay = me.ruolo === "admin" || me.ruolo === "manager"
   const oggi = todayIso()
-  const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
+  const livelli = mansioniTurnoProprio(
+    me,
+    data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile),
+    data.livelli
+  )
   const preferito =
     livelli.find((l) => l.id === me.livelloId) ??
     livelli.find((l) => (me.livelloIds ?? []).includes(l.id)) ??
@@ -509,21 +514,30 @@ function AreaPersonale({
   const [giorno, setGiorno] = useState(oggi)
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
+  const [editingId, setEditingId] = useState<string | null>(null)
   useEffect(() => {
     if (!canChangeDay) setGiorno(todayIso())
   }, [canChangeDay, mese])
-  const createMut = useMutation({
-    mutationFn: () =>
-      lpagaApi.createTurno({
+  function resetForm() {
+    setEditingId(null)
+    setNote("")
+    setQuantita("1")
+    setGiorno(oggi)
+    setLivelloId(preferito?.id ?? "")
+  }
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const body = {
         personaleId: me.id,
         livelloId,
         giorno: canChangeDay ? giorno : oggi,
         quantita: Number(quantita.replace(",", ".")),
         note,
-      }),
+      }
+      return editingId ? lpagaApi.patchTurno(editingId, body) : lpagaApi.createTurno(body)
+    },
     onSuccess: () => {
-      setNote("")
-      setQuantita("1")
+      resetForm()
       onDone()
     },
     onError: (e: Error) => onError(e.message),
@@ -570,7 +584,7 @@ function AreaPersonale({
           ))}
         </dl>
       </Card>
-      <LibroPagaSlot title="Nuovo turno di lavoro">
+      <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
         <p className="mb-3 text-xs text-zinc-500">
           I turni che inserisci qui sono i tuoi, senza cercare il nominativo.
           {me.ruolo === "user" ? "" : " Per il resto del reparto usa Turnazioni."}
@@ -584,7 +598,7 @@ function AreaPersonale({
               return
             }
             onError("")
-            createMut.mutate()
+            saveMut.mutate()
           }}
         >
           <label className="grid gap-1 text-xs text-zinc-400">
@@ -627,9 +641,14 @@ function AreaPersonale({
               Puoi inserire turni solo per oggi ({fmtDateIt(oggi)}), entro mezzanotte.
             </p>
           ) : null}
-          <div className="sm:col-span-2">
-            <button type="submit" className={btnAmber} disabled={createMut.isPending || Boolean(quantitaErr) || !livelloId}>
-              {createMut.isPending ? "Salvataggio…" : "Salva turno"}
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            {editingId ? (
+              <button type="button" className={btnGhost} onClick={resetForm}>
+                Annulla
+              </button>
+            ) : null}
+            <button type="submit" className={btnAmber} disabled={saveMut.isPending || Boolean(quantitaErr) || !livelloId}>
+              {saveMut.isPending ? "Salvataggio…" : editingId ? "Salva modifiche" : "Salva turno"}
             </button>
           </div>
         </form>
@@ -655,11 +674,28 @@ function AreaPersonale({
                 <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 <td className="px-3 py-2 text-right">
-                  {(canChangeDay || t.giorno === oggi) && (
-                    <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
-                      Elimina
-                    </button>
-                  )}
+                  <div className="flex justify-end gap-3">
+                    {canChangeDay && (
+                      <button
+                        type="button"
+                        className="text-xs text-amber-300 hover:underline"
+                        onClick={() => {
+                          setEditingId(t.id)
+                          setLivelloId(t.livelloId)
+                          setGiorno(t.giorno.slice(0, 10))
+                          setQuantita(String(t.quantita))
+                          setNote(t.note ?? "")
+                        }}
+                      >
+                        Modifica
+                      </button>
+                    )}
+                    {(canChangeDay || t.giorno === oggi) && (
+                      <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
+                        Elimina
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -703,6 +739,7 @@ function Turni({
   const [cercaTurni, setCercaTurni] = useState("")
   const [cercaData, setCercaData] = useState("")
   const [nuovoTurno, setNuovoTurno] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
   const [importMessage, setImportMessage] = useState("")
   const [importHasErrors, setImportHasErrors] = useState(false)
@@ -721,18 +758,21 @@ function Turni({
         })),
     [persone]
   )
-  const createMut = useMutation({
-    mutationFn: () =>
-      lpagaApi.createTurno({
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const body = {
         personaleId: isUser ? me!.id : personaleId,
         livelloId,
         giorno: canChangeDay ? giorno : todayIso(),
         quantita: Number(quantita.replace(",", ".")),
         note,
-      }),
+      }
+      return editingId ? lpagaApi.patchTurno(editingId, body) : lpagaApi.createTurno(body)
+    },
     onSuccess: () => {
       setNote("")
       setQuantita("1")
+      setEditingId(null)
       setNuovoTurno(false)
       onDone()
     },
@@ -906,7 +946,7 @@ function Turni({
         </>
       )}
       {nuovoTurno && (
-        <LibroPagaSlot title="Nuovo turno di lavoro">
+        <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
           <form
             className="grid gap-3 sm:grid-cols-2"
             onSubmit={(e) => {
@@ -916,7 +956,7 @@ function Turni({
                 return
               }
               onError("")
-              createMut.mutate()
+              saveMut.mutate()
             }}
           >
             {!isUser && (
@@ -971,11 +1011,18 @@ function Turni({
               </p>
             )}
             <div className="flex justify-end gap-2 sm:col-span-2">
-              <button type="button" className={btnGhost} onClick={() => setNuovoTurno(false)}>
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => {
+                  setNuovoTurno(false)
+                  setEditingId(null)
+                }}
+              >
                 Annulla
               </button>
-              <button type="submit" className={btnAmber} disabled={createMut.isPending || Boolean(quantitaErr)}>
-                {createMut.isPending ? "Salvataggio…" : "Salva"}
+              <button type="submit" className={btnAmber} disabled={saveMut.isPending || Boolean(quantitaErr)}>
+                {saveMut.isPending ? "Salvataggio…" : editingId ? "Salva modifiche" : "Salva"}
               </button>
             </div>
           </form>
@@ -1031,11 +1078,30 @@ function Turni({
                 <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 <td className="px-3 py-2 text-right">
-                  {(!isUser || t.giorno === oggi) && (
-                    <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
-                      Elimina
-                    </button>
-                  )}
+                  <div className="flex justify-end gap-3">
+                    {canChangeDay && (
+                      <button
+                        type="button"
+                        className="text-xs text-amber-300 hover:underline"
+                        onClick={() => {
+                          setEditingId(t.id)
+                          setPersonaleId(t.personaleId)
+                          setLivelloId(t.livelloId)
+                          setGiorno(t.giorno.slice(0, 10))
+                          setQuantita(String(t.quantita))
+                          setNote(t.note ?? "")
+                          setNuovoTurno(true)
+                        }}
+                      >
+                        Modifica
+                      </button>
+                    )}
+                    {(!isUser || t.giorno === oggi) && (
+                      <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
+                        Elimina
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -1187,6 +1253,7 @@ function Personale({
           canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
           livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
           onCreateTurno={(body) => lpagaApi.createTurno(body)}
+          onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}
           onDeleteTurno={(id) => lpagaApi.deleteTurno(id)}
         />
       )}
@@ -1617,6 +1684,7 @@ function Mensilita({
         canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
         livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
         onCreateTurno={(body) => lpagaApi.createTurno(body)}
+        onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}
         onDeleteTurno={(id) => lpagaApi.deleteTurno(id)}
       />
     </div>

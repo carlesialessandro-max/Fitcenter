@@ -167,12 +167,13 @@ export function resolveLivelloTree(
   return undefined
 }
 
-/** Turni visibili: istruttore = propri; responsabile/admin-reparto = mansione nel sottoalbero. */
+/** Turni visibili: i propri sempre; responsabile/admin-reparto = mansione nel sottoalbero. */
 export function turnoNelScope(
   t: { personaleId: string; livelloId: string },
   opts: { viewerId: string; ruolo: LpagaPersonale["ruolo"]; tree?: Set<string> }
 ): boolean {
-  if (opts.ruolo === "user") return t.personaleId === opts.viewerId
+  if (t.personaleId === opts.viewerId) return true
+  if (opts.ruolo === "user") return false
   if (opts.tree) return opts.tree.has(t.livelloId)
   return true
 }
@@ -221,17 +222,42 @@ export function personaleRaggiungibile(
   return ids
 }
 
+function hasRetrDescendant(livelli: LpagaLivello[], rootId: string): boolean {
+  const tree = livelloSottoAlbero(livelli, rootId)
+  return livelli.some((l) => l.id !== rootId && tree.has(l.id) && l.attivo !== false && l.retribuibile)
+}
+
+/**
+ * Mansione su cui si può inserire un turno: foglia retribuibile, oppure cartella
+ * usata come sede di lavoro (es. Scuole Esterne: isFinal=0 ma con ore/importo).
+ */
+export function nodoInseribileTurno(livelli: LpagaLivello[], l: LpagaLivello): boolean {
+  if (l.attivo === false) return false
+  if (l.retribuibile) return true
+  if (isRepartoRoot(l)) return false
+  return !hasRetrDescendant(livelli, l.id)
+}
+
 export function livelliInseribili(
   viewer: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
   livelli: LpagaLivello[],
   tree?: Set<string>
 ): LpagaLivello[] {
-  const retribuibili = livelli.filter((l) => l.attivo && l.retribuibile)
   const roots = personaleLivelloRadici(viewer)
+  const byId = new Map<string, LpagaLivello>()
+  for (const l of livelli) {
+    if (!nodoInseribileTurno(livelli, l)) continue
+    byId.set(l.id, l)
+  }
+  for (const id of roots) {
+    const l = livelli.find((x) => x.id === id)
+    if (!l || l.attivo === false || isRepartoRoot(l)) continue
+    byId.set(l.id, l)
+  }
+  const candidates = [...byId.values()]
   const scope = tree ?? (viewer.ruolo === "admin" || !roots.length ? undefined : livelloAlberoUnion(livelli, roots))
-  if (!scope) return retribuibili
-  const scoped = retribuibili.filter((l) => scope.has(l.id))
-  return scoped
+  if (!scope) return candidates
+  return candidates.filter((l) => scope.has(l.id))
 }
 
 /** Albero (reparti + mansioni) in cui il viewer può assegnare anagrafiche. */

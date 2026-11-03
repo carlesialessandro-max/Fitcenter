@@ -316,6 +316,7 @@ export function ReportCollaboratori({
             Importa PDF (riepilogo mensile Studio Mattonai) o Excel (report annuale Gen–Dic) per mettere gli importi tutti
             insieme, senza digitarli uno a uno. Il PDF riempie/sostituisce quel mese (campo Mese PDF); l’Excel sostituisce
             l’anno. Dopo puoi correggere a mano cliccando la cella. Solo admin e Alberto.
+            L’Excel annuale resta un’opzione. Solo admin e Alberto.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">

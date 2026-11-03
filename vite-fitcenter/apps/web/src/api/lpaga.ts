@@ -154,6 +154,14 @@ export const lpagaApi = {
     lpagaRequest<{ ok: boolean }>(`/lpaga/livelli/${encodeURIComponent(id)}`, { method: "DELETE" }),
   createTurno: (body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }) =>
     lpagaRequest<{ turno: unknown }>("/lpaga/turni", { method: "POST", body: JSON.stringify(body) }),
+  patchTurno: (
+    id: string,
+    body: { personaleId: string; livelloId: string; giorno: string; quantita: number; note?: string }
+  ) =>
+    lpagaRequest<{ turno: unknown }>(`/lpaga/turni/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
   importTurniExcel: (righe: {
     riga: number
     personaleId: string
