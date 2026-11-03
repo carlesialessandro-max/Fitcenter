@@ -26,7 +26,7 @@ import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components
 import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
@@ -151,6 +151,15 @@ export function LibroPaga() {
       setError("")
       invalidate()
       alert("Libro paga ripristinato dallo snapshot.")
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  const bloccoMut = useMutation({
+    mutationFn: (bloccato: boolean) => libroPagaApi.putMeseBlocco(mese, bloccato),
+    onSuccess: () => {
+      setError("")
+      invalidate()
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -341,6 +350,24 @@ export function LibroPaga() {
       </div>
 
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+      {data ? (
+        <LibroPagaMeseBloccoBanner
+          blocco={data.meseBlocco}
+          isAdmin
+          canBloccare
+          pending={bloccoMut.isPending}
+          onBlocca={() => {
+            if (window.confirm("Chiudere il mese? Istruttori e responsabili non potranno più inserire o modificare turni.")) {
+              bloccoMut.mutate(true)
+            }
+          }}
+          onSblocca={() => {
+            if (window.confirm("Sbloccare il mese? Tornerà possibile inserire e modificare i turni da /lpaga.")) {
+              bloccoMut.mutate(false)
+            }
+          }}
+        />
+      ) : null}
       {canFull && snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
       {canFull && snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
 
@@ -1481,8 +1508,8 @@ function ConvalideTab({
       </div>
       <Card title="Responsabili">
         <p className="mb-3 text-xs text-zinc-500">
-          Prima controlla il calendario: clicca un responsabile, poi «Controlla calendario» sull’ambito.
-          Confronta i turni con i calendari FitCenter e solo dopo conferma quelli allineati.
+          Cruscotto: qui vedi lo stato. Per confermare i turni usa «Controlla calendario» (o Mensilità → Convalida).
+          Quando tutti i turni del mese sono confermati, il mese si chiude: istruttori e responsabili non possono più modificarlo.
         </p>
         <LibroPagaConvalideLista
           responsabili={responsabili}

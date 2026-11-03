@@ -16,7 +16,7 @@ import {
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
 import { personaleLivelloRadici } from "./libro-paga-scope.js"
-import { buildRiepilogoConvalide, mapTurnoConvalide } from "./libro-paga-convalida.js"
+import { buildRiepilogoConvalide, mapTurnoConvalide, statoMeseBlocco } from "./libro-paga-convalida.js"
 
 function buildLivelloTreeNodes(
   livelli: LpagaLivello[],
@@ -162,6 +162,10 @@ export async function buildLibroPagaSnapshot(opts?: {
     totAnnoBy.set(t.personaleId, Math.round(((totAnnoBy.get(t.personaleId) ?? 0) + t.importo) * 100) / 100)
   }
   const turni = scopedTurni.filter((t) => t.giorno.slice(0, 7) === mese)
+  const meseBlocco = statoMeseBlocco(
+    mese,
+    turniTutti.filter((t) => t.giorno.slice(0, 7) === mese).map((t) => t.id)
+  )
   const fullMeseByPerson = new Map<string, number>()
   if (livelloTree) {
     for (const t of turniTutti) {
@@ -317,6 +321,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     mensilita,
     convalide,
     convalideRiepilogo,
+    meseBlocco,
     reparti: livelli
       .filter((l) => !l.parentId)
       .sort((a, b) => a.nome.localeCompare(b.nome, "it"))

@@ -222,6 +222,11 @@ export const lpagaApi = {
     }),
   putConvalidaTurno: (body: { turnoId: string; stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }) =>
     lpagaRequest<{ convalida: unknown }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),
+  putMeseBlocco: (mese: string, bloccato: boolean) =>
+    lpagaRequest<{ mese: string; meseBlocco: import("./libroPaga").LibroPagaSnapshot["meseBlocco"] }>("/lpaga/mese-blocco", {
+      method: "PUT",
+      body: JSON.stringify({ mese, bloccato }),
+    }),
   getDeleghe: (managerId?: string) => {
     const q = managerId ? `?managerId=${encodeURIComponent(managerId)}` : ""
     return lpagaRequest<{ managerId: string; deleghe: string[] }>(`/lpaga/deleghe${q}`)

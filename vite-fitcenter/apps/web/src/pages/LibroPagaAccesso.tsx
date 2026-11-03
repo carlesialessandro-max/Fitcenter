@@ -6,7 +6,7 @@ import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from 
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
-import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
+import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
@@ -170,6 +170,14 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const isAdmin = me?.ruolo === "admin"
   const canTeam = isLpagaTeamRuolo(me?.ruolo)
   const canCollab = canVedereReportCollaboratoriLpaga(me)
+  const bloccoMut = useMutation({
+    mutationFn: (bloccato: boolean) => lpagaApi.putMeseBlocco(mese, bloccato),
+    onSuccess: () => {
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["lpaga"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
 
   useEffect(() => {
     const msg = `${(meQ.error as Error | undefined)?.message ?? ""} ${(snap.error as Error | undefined)?.message ?? ""}`
@@ -194,7 +202,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     { id: "home", label: "Home" },
     { id: "anagrafica", label: "Anagrafica" },
     { id: "area", label: "Area personale" },
-    ...(canTeam ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
+    ...(isAdmin ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
     ...(!isUser ? ([{ id: "turni" as const, label: "Turnazioni" }] as const) : []),
     { id: "mensilita", label: "Mensilità" },
     ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
@@ -248,6 +256,24 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
           ))}
         </div>
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+        {data ? (
+          <LibroPagaMeseBloccoBanner
+            blocco={data.meseBlocco}
+            isAdmin={isAdmin}
+            canBloccare={canTeam}
+            pending={bloccoMut.isPending}
+            onBlocca={() => {
+              if (window.confirm("Chiudere il mese? Istruttori e responsabili non potranno più inserire o modificare turni.")) {
+                bloccoMut.mutate(true)
+              }
+            }}
+            onSblocca={() => {
+              if (window.confirm("Sbloccare il mese? Tornerà possibile inserire e modificare i turni.")) {
+                bloccoMut.mutate(false)
+              }
+            }}
+          />
+        ) : null}
         {snap.isLoading && <p className="mt-4 text-sm text-zinc-500">Caricamento…</p>}
         {snap.isError && <p className="mt-4 text-sm text-red-400">{(snap.error as Error).message}</p>}
         {data && tab === "home" && <Home data={data} me={me} />}
@@ -513,6 +539,7 @@ function AreaPersonale({
   const persona = data.personale.find((p) => p.id === me.id)
   const mens = data.mensilita.find((r) => r.personaleId === me.id)
   const canChangeDay = isLpagaTeamRuolo(me.ruolo)
+  const turniBloccati = Boolean(data.meseBlocco?.bloccato) && me.ruolo !== "admin"
   const oggi = todayIso()
   const livelli = mansioniTurnoProprio(
     me,
@@ -597,6 +624,11 @@ function AreaPersonale({
           ))}
         </dl>
       </Card>
+      {turniBloccati ? (
+        <p className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400">
+          Mese chiuso dopo le convalide: non puoi più inserire o modificare turni.
+        </p>
+      ) : (
       <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
         <p className="mb-3 text-xs text-zinc-500">
           I turni che inserisci qui sono i tuoi, senza cercare il nominativo.
@@ -666,6 +698,7 @@ function AreaPersonale({
           </div>
         </form>
       </LibroPagaSlot>
+      )}
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
@@ -688,7 +721,7 @@ function AreaPersonale({
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-3">
-                    {canChangeDay && (
+                    {canChangeDay && !turniBloccati && (
                       <button
                         type="button"
                         className="text-xs text-amber-300 hover:underline"
@@ -703,7 +736,7 @@ function AreaPersonale({
                         Modifica
                       </button>
                     )}
-                    {(canChangeDay || t.giorno === oggi) && (
+                    {!turniBloccati && (canChangeDay || t.giorno === oggi) && (
                       <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
                         Elimina
                       </button>
@@ -741,6 +774,7 @@ function Turni({
 }) {
   const isUser = me?.ruolo === "user"
   const canChangeDay = isLpagaTeamRuolo(me?.ruolo)
+  const turniBloccati = Boolean(data.meseBlocco?.bloccato) && me?.ruolo !== "admin"
   const oggi = todayIso()
   const persone = data.personale.filter((p) => p.attivo)
   const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
@@ -868,12 +902,12 @@ function Turni({
   return (
     <div className="mt-4 space-y-4">
       <div className="flex flex-wrap gap-2">
-        {!nuovoTurno && (
+        {!nuovoTurno && !turniBloccati && (
           <button type="button" className={btnGhost} onClick={() => setNuovoTurno(true)}>
             + Aggiungi turno di lavoro
           </button>
         )}
-        {canImport && (
+        {canImport && !turniBloccati && (
           <>
             <button type="button" className={btnGhost} onClick={downloadLibroPagaTurniTemplate}>
               Modello Excel turni
@@ -895,7 +929,7 @@ function Turni({
           </>
         )}
       </div>
-      {canImport && (
+      {canImport && !turniBloccati && (
         <>
           <p className="text-xs text-zinc-500">
             Importazione Excel disponibile per amministratori, responsabili e coordinatori; ognuno importa solo per il personale e le mansioni del proprio ambito.
@@ -957,7 +991,7 @@ function Turni({
           )}
         </>
       )}
-      {nuovoTurno && (
+      {nuovoTurno && !turniBloccati && (
         <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
           <form
             className="grid gap-3 sm:grid-cols-2"
@@ -1091,7 +1125,7 @@ function Turni({
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-3">
-                    {canChangeDay && (
+                    {canChangeDay && !turniBloccati && (
                       <button
                         type="button"
                         className="text-xs text-amber-300 hover:underline"
@@ -1108,7 +1142,7 @@ function Turni({
                         Modifica
                       </button>
                     )}
-                    {(!isUser || t.giorno === oggi) && (
+                    {!turniBloccati && (!isUser || t.giorno === oggi) && (
                       <button type="button" className="text-xs text-red-400 hover:underline" onClick={() => delMut.mutate(t.id)}>
                         Elimina
                       </button>
@@ -1266,7 +1300,7 @@ function Personale({
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
           onDone={onDone}
-          canEditTurni={isLpagaTeamRuolo(me?.ruolo)}
+          canEditTurni={isLpagaTeamRuolo(me?.ruolo) && (me?.ruolo === "admin" || !data.meseBlocco?.bloccato)}
           livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
           onCreateTurno={(body) => lpagaApi.createTurno(body)}
           onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}
@@ -1543,6 +1577,7 @@ function ConvalidePortal({
       {meseOpen && convMese.data && (
         <LibroPagaConvalidaMesePanel
           data={convMese.data}
+          readOnly={Boolean(data.meseBlocco?.bloccato) && me?.ruolo !== "admin"}
           onClose={() => setMeseOpen(false)}
           onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body).then(onDone)}
           onConfermaAllineati={() =>
@@ -1562,9 +1597,8 @@ function ConvalidePortal({
       )}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <p className="text-sm text-zinc-400">
-          {onlyMine
-            ? "Prima controlla il calendario: seleziona i sottoreparti, poi «Controlla calendario». Conferma solo dopo il confronto."
-            : "Prima controlla il calendario: clicca un responsabile, poi «Controlla calendario» sull’ambito."}
+          Cruscotto: qui vedi lo stato, senza modificare i turni. Per confermare usa «Controlla calendario» (Ok / Sostituzione / Non svolta).
+          Quando tutti i turni del mese sono confermati, il mese si chiude da solo.
         </p>
         <button
           type="button"
@@ -1641,6 +1675,7 @@ function Mensilita({
       {meseOpen && convMese.data && (
         <LibroPagaConvalidaMesePanel
           data={convMese.data}
+          readOnly={Boolean(data.meseBlocco?.bloccato) && me?.ruolo !== "admin"}
           onClose={() => setMeseOpen(false)}
           onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body)}
           onConfermaAllineati={() =>
@@ -1658,6 +1693,7 @@ function Mensilita({
       {conv.data && (
         <LibroPagaConvalidaPanel
           data={conv.data}
+          readOnly={Boolean(data.meseBlocco?.bloccato) && me?.ruolo !== "admin"}
           onClose={() => setConvId(null)}
           onSaveTurno={(body) => lpagaApi.putConvalidaTurno(body)}
           onChiudiMese={
@@ -1698,7 +1734,7 @@ function Mensilita({
               }
             : undefined
         }
-        canEditTurni={isLpagaTeamRuolo(me?.ruolo)}
+        canEditTurni={isLpagaTeamRuolo(me?.ruolo) && (me?.ruolo === "admin" || !data.meseBlocco?.bloccato)}
         livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
         onCreateTurno={(body) => lpagaApi.createTurno(body)}
         onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}

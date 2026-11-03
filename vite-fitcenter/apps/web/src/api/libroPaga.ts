@@ -160,6 +160,14 @@ export type LibroPagaSnapshot = {
   mensilita: LpagaMensilitaRow[]
   convalide: LpagaConvalida[]
   convalideRiepilogo?: LpagaConvalideRiepilogo
+  meseBlocco?: {
+    bloccato: boolean
+    at?: string | null
+    da?: string | null
+    completo: boolean
+    nTurni: number
+    nDaFare: number
+  }
   tree: LpagaTreeNode[]
   reparti?: { id: string; nome: string }[]
   home: {
@@ -354,6 +362,8 @@ export const libroPagaApi = {
     nota?: string
     sostitutoNome?: string
   }) => api.put<{ convalida: unknown }>("/libro-paga/convalida/turno", body),
+  putMeseBlocco: (mese: string, bloccato: boolean) =>
+    api.put<{ mese: string; meseBlocco: LibroPagaSnapshot["meseBlocco"] }>("/libro-paga/mese-blocco", { mese, bloccato }),
   getDeleghe: (managerId: string) =>
     api.get<{ managerId: string; deleghe: string[] }>(`/libro-paga/deleghe?managerId=${encodeURIComponent(managerId)}`),
   putDeleghe: (managerId: string, ids: string[]) =>

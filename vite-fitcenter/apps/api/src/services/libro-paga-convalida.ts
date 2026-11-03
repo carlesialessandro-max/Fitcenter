@@ -18,19 +18,97 @@ export type TurnoConvalida = {
   at: string
 }
 
+type MeseBloccoRow = { at: string; da: string }
+
 type ConvalidaDb = {
   deleghe: Record<string, string[]>
   turni: Record<string, TurnoConvalida>
+  mesiBloccati: Record<string, MeseBloccoRow>
 }
 
-const EMPTY: ConvalidaDb = { deleghe: {}, turni: {} }
+const EMPTY: ConvalidaDb = { deleghe: {}, turni: {}, mesiBloccati: {} }
 
 function readDb(): ConvalidaDb {
   const raw = readJson<ConvalidaDb>(FILE, EMPTY)
   return {
     deleghe: raw.deleghe && typeof raw.deleghe === "object" ? raw.deleghe : {},
     turni: raw.turni && typeof raw.turni === "object" ? raw.turni : {},
+    mesiBloccati: raw.mesiBloccati && typeof raw.mesiBloccati === "object" ? raw.mesiBloccati : {},
   }
+}
+
+export type MeseBloccoStato = {
+  bloccato: boolean
+  at: string | null
+  da: string | null
+  completo: boolean
+  nTurni: number
+  nDaFare: number
+}
+
+export function meseDaGiorno(giorno: string | undefined | null): string {
+  return String(giorno ?? "").slice(0, 7)
+}
+
+export function getMeseBlocco(mese: string): { bloccato: boolean; at: string | null; da: string | null } {
+  const row = readDb().mesiBloccati[mese]
+  if (!row) return { bloccato: false, at: null, da: null }
+  return { bloccato: true, at: row.at ?? null, da: row.da ?? null }
+}
+
+export function isMeseBloccato(mese: string): boolean {
+  return Boolean(mese && readDb().mesiBloccati[mese])
+}
+
+export function setMeseBloccato(mese: string, bloccato: boolean, da: string): void {
+  if (!/^\d{4}-\d{2}$/.test(mese)) return
+  const db = readDb()
+  if (bloccato) db.mesiBloccati[mese] = { at: new Date().toISOString(), da: da.trim() || "admin" }
+  else delete db.mesiBloccati[mese]
+  writeDb(db)
+}
+
+export function meseTurniCompletamenteConvalidati(turnoIds: string[]): boolean {
+  if (!turnoIds.length) return false
+  const db = readDb()
+  return turnoIds.every((id) => {
+    const s = db.turni[id]?.stato
+    return Boolean(s) && s !== "da_verificare"
+  })
+}
+
+export function statoMeseBlocco(mese: string, turnoIds: string[]): MeseBloccoStato {
+  const lock = getMeseBlocco(mese)
+  const db = readDb()
+  let nDaFare = 0
+  for (const id of turnoIds) {
+    const s = db.turni[id]?.stato
+    if (!s || s === "da_verificare") nDaFare += 1
+  }
+  return {
+    ...lock,
+    completo: turnoIds.length > 0 && nDaFare === 0,
+    nTurni: turnoIds.length,
+    nDaFare,
+  }
+}
+
+/** Se tutti i turni del mese sono convalidati, chiude il mese (idempotente). */
+export function maybeAutoBloccaMese(mese: string, turnoIds: string[], da: string): boolean {
+  if (isMeseBloccato(mese)) return false
+  if (!meseTurniCompletamenteConvalidati(turnoIds)) return false
+  setMeseBloccato(mese, true, da)
+  return true
+}
+
+export function assertMeseTurniModificabili(mese: string, ruolo: string | undefined | null): void {
+  if (ruolo === "admin") return
+  if (!isMeseBloccato(mese)) return
+  const err = new Error("Mese chiuso dopo le convalide: solo un amministratore può modificare i turni.") as Error & {
+    status?: number
+  }
+  err.status = 403
+  throw err
 }
 
 function writeDb(db: ConvalidaDb) {

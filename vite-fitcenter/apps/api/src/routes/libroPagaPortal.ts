@@ -16,6 +16,7 @@ import {
   patchLpagaTurno,
   postLpagaImportTurniExcel,
   putLpagaConvalidaTurno,
+  putLpagaMeseBlocco,
   putLpagaDeleghe,
   putLpagaMensilita,
   putLpagaPersonalePassword,
@@ -64,6 +65,7 @@ libroPagaPortalRouter.get("/convalida", requireLpaga, getLpagaConvalida)
 libroPagaPortalRouter.get("/convalida-mese", requireLpaga, getLpagaConvalidaMese)
 libroPagaPortalRouter.post("/convalida-mese", requireLpaga, postLpagaConvalidaMese)
 libroPagaPortalRouter.put("/convalida/turno", requireLpaga, putLpagaConvalidaTurno)
+libroPagaPortalRouter.put("/mese-blocco", requireLpaga, putLpagaMeseBlocco)
 libroPagaPortalRouter.get("/deleghe", requireLpaga, getLpagaDeleghe)
 libroPagaPortalRouter.put("/deleghe", requireLpaga, putLpagaDeleghe)
 libroPagaPortalRouter.get("/collaboratori/report", requireLpaga, requireLpagaAlberto, getAmmCollaboratoriReport)

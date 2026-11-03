@@ -100,12 +100,65 @@ export type ConvalidaRow = {
 
 export type ConvalidaPayload = LpagaConvalidaPayload
 
+export function LibroPagaMeseBloccoBanner({
+  blocco,
+  isAdmin,
+  canBloccare,
+  onBlocca,
+  onSblocca,
+  pending,
+}: {
+  blocco?: {
+    bloccato: boolean
+    at?: string | null
+    da?: string | null
+    completo?: boolean
+    nTurni?: number
+    nDaFare?: number
+  }
+  isAdmin?: boolean
+  canBloccare?: boolean
+  onBlocca?: () => void
+  onSblocca?: () => void
+  pending?: boolean
+}) {
+  if (!blocco) return null
+  if (blocco.bloccato) {
+    return (
+      <div className="mt-3 rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-3 py-2 text-sm text-emerald-100/90">
+        <p>
+          Mese chiuso: istruttori, coordinatori e responsabili non possono più inserire, modificare o eliminare turni.
+          {blocco.da ? ` Chiuso da ${blocco.da}.` : ""}
+          {isAdmin ? " Tu come amministratore puoi ancora intervenire in casi eccezionali." : ""}
+        </p>
+        {isAdmin && onSblocca ? (
+          <button type="button" className={`${btnGhost} mt-2`} disabled={pending} onClick={onSblocca}>
+            {pending ? "Sblocco…" : "Sblocca mese (solo admin)"}
+          </button>
+        ) : null}
+      </div>
+    )
+  }
+  if (blocco.completo && canBloccare && onBlocca) {
+    return (
+      <div className="mt-3 rounded-xl border border-amber-900/50 bg-amber-950/20 px-3 py-2 text-sm text-amber-100/90">
+        <p>Tutti i turni del mese sono convalidati. Chiudi il mese per bloccare inserimenti e modifiche.</p>
+        <button type="button" className={`${btnAmber} mt-2`} disabled={pending} onClick={onBlocca}>
+          {pending ? "Chiusura…" : "Chiudi e blocca il mese"}
+        </button>
+      </div>
+    )
+  }
+  return null
+}
+
 export function LibroPagaConvalidaPanel({
   data,
   onClose,
   onSaveTurno,
   onChiudiMese,
   showCalendariFitCenter,
+  readOnly,
 }: {
   data: ConvalidaPayload
   onClose: () => void
@@ -117,6 +170,7 @@ export function LibroPagaConvalidaPanel({
   }) => Promise<unknown>
   onChiudiMese?: () => Promise<unknown>
   showCalendariFitCenter?: boolean
+  readOnly?: boolean
 }) {
   const qc = useQueryClient()
   const mut = useMutation({
@@ -272,6 +326,9 @@ export function LibroPagaConvalidaPanel({
                   <td className="px-3 py-2 text-xs">{testoTornello(r.tornello)}</td>
                   <td className={`px-3 py-2 text-xs ${statoCls(stato)}`}>{statoLabel(stato)}</td>
                   <td className="px-3 py-2">
+                    {readOnly ? (
+                      <span className="text-xs text-zinc-500">Mese chiuso</span>
+                    ) : (
                     <div className="flex flex-wrap gap-1">
                       <button
                         type="button"
@@ -302,6 +359,7 @@ export function LibroPagaConvalidaPanel({
                         Non svolta
                       </button>
                     </div>
+                    )}
                   </td>
                 </tr>
               )
@@ -382,6 +440,7 @@ export function LibroPagaConvalidaMesePanel({
   onConfermaAllineati,
   showCalendariFitCenter,
   onFiltriChange,
+  readOnly,
 }: {
   data: LpagaConvalidaMesePayload
   onClose: () => void
@@ -394,6 +453,7 @@ export function LibroPagaConvalidaMesePanel({
   onConfermaAllineati: () => Promise<LpagaConvalidaMesePayload>
   showCalendariFitCenter?: boolean
   onFiltriChange?: (f: { scope: string; from: string; to: string }) => void
+  readOnly?: boolean
 }) {
   const qc = useQueryClient()
   const mut = useMutation({
@@ -440,7 +500,7 @@ export function LibroPagaConvalidaMesePanel({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {riepilogo.nConfermabili > 0 && (
+          {riepilogo.nConfermabili > 0 && !readOnly && (
             <button
               type="button"
               className={btnAmber}
@@ -575,6 +635,9 @@ export function LibroPagaConvalidaMesePanel({
                     <td className="px-3 py-2 text-xs">{testoTornello(r.tornello)}</td>
                     <td className={`px-3 py-2 text-xs ${statoCls(stato)}`}>{statoLabel(stato)}</td>
                     <td className="px-3 py-2">
+                      {readOnly ? (
+                        <span className="text-xs text-zinc-500">Mese chiuso</span>
+                      ) : (
                       <div className="flex flex-wrap gap-1">
                         <button
                           type="button"
@@ -605,6 +668,7 @@ export function LibroPagaConvalidaMesePanel({
                           Non svolta
                         </button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 )

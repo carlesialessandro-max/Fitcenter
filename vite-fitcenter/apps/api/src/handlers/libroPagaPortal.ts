@@ -18,6 +18,13 @@ import {
   turniNelMesePerConvalida,
   upsertTurnoConvalida,
   viewerPuoConvalidare,
+  assertMeseTurniModificabili,
+  isMeseBloccato,
+  meseDaGiorno,
+  meseTurniCompletamenteConvalidati,
+  maybeAutoBloccaMese,
+  setMeseBloccato,
+  statoMeseBlocco,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { alberoAssegnabileAnagrafica, livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
@@ -36,6 +43,16 @@ function fail(res: Response, e: unknown) {
 
 function isYmd(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+
+async function idsTurniDelMese(mese: string): Promise<string[]> {
+  const turni = await listTurni()
+  return turni.filter((t) => t.giorno.slice(0, 7) === mese).map((t) => t.id)
+}
+
+async function autoBloccaMeseSeCompleto(mese: string, da: string): Promise<boolean> {
+  if (!isYmLpaga(mese)) return false
+  return maybeAutoBloccaMese(mese, await idsTurniDelMese(mese), da)
 }
 
 export async function requireLpaga(req: Request, res: Response, next: NextFunction) {
@@ -257,6 +274,7 @@ export async function postLpagaTurno(req: Request, res: Response) {
     if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
     const qErr = messaggioQuantitaTurno(livello, quantita)
     if (qErr) return res.status(400).json({ message: qErr })
+    assertMeseTurniModificabili(meseDaGiorno(giorno), me.ruolo)
     const row = await insertTurno({
       personaleId,
       livelloId,
@@ -303,6 +321,8 @@ export async function patchLpagaTurno(req: Request, res: Response) {
     if (!livello) return res.status(400).json({ message: "Mansione non trovata" })
     const qErr = messaggioQuantitaTurno(livello, quantita)
     if (qErr) return res.status(400).json({ message: qErr })
+    assertMeseTurniModificabili(meseDaGiorno(cur.giorno), me.ruolo)
+    assertMeseTurniModificabili(meseDaGiorno(giorno), me.ruolo)
     const row = await updateTurno(id, {
       personaleId,
       livelloId,
@@ -332,7 +352,10 @@ export async function postLpagaImportTurniExcel(req: Request, res: Response) {
           personaleIds: personaleVisibile(me, personale, livelli),
           livelloIds: new Set(livelliInseribili(me, livelli, tree).map((livello) => livello.id)),
         }
-    const result = await importaTurniExcel(rows, me.username || me.id, scope)
+    const result = await importaTurniExcel(rows, me.username || me.id, {
+      ...scope,
+      skipMesiBloccati: me.ruolo !== "admin",
+    })
     res.json(result)
   } catch (e) {
     fail(res, e)
@@ -355,6 +378,7 @@ export async function removeLpagaTurno(req: Request, res: Response) {
     if (me.ruolo === "user" && t.giorno !== oggiRomaYmd()) {
       return res.status(403).json({ message: "Puoi eliminare solo i turni di oggi" })
     }
+    assertMeseTurniModificabili(meseDaGiorno(t.giorno), me.ruolo)
     await deleteTurno(id)
     res.json({ ok: true })
   } catch (e) {
@@ -833,7 +857,11 @@ export async function postLpagaConvalidaMese(req: Request, res: Response) {
       proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
+    if (isMeseBloccato(mese) && me.ruolo !== "admin") {
+      return res.status(403).json({ message: "Mese chiuso dopo le convalide: solo un amministratore può modificarlo." })
+    }
     const confermatiOra = applicaAutoOkConvalida(rows, sess.nominativo || sess.username || sess.id)
+    await autoBloccaMeseSeCompleto(mese, sess.nominativo || sess.username || sess.id)
     const aggiornate = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
@@ -869,6 +897,9 @@ export async function putLpagaConvalidaTurno(req: Request, res: Response) {
     if (tree && !tree.has(t.livelloId)) {
       return res.status(403).json({ message: "Turno fuori dal tuo reparto" })
     }
+    if (isMeseBloccato(meseDaGiorno(t.giorno)) && me.ruolo !== "admin") {
+      return res.status(403).json({ message: "Mese chiuso dopo le convalide: solo un amministratore può modificarlo." })
+    }
     const row = upsertTurnoConvalida({
       turnoId,
       stato,
@@ -876,7 +907,40 @@ export async function putLpagaConvalidaTurno(req: Request, res: Response) {
       sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
       da: me.nominativo || me.username || me.id,
     })
+    await autoBloccaMeseSeCompleto(meseDaGiorno(t.giorno), me.nominativo || me.username || me.id)
     res.json({ convalida: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLpagaMeseBlocco(req: Request, res: Response) {
+  try {
+    const sess = viewer(req)
+    const personale = await listPersonale()
+    const me = scopeMe(sess, personale)
+    const meseRaw = String(req.body?.mese ?? "").trim()
+    const mese = isYmLpaga(meseRaw) ? meseRaw : defaultMeseLpaga()
+    const bloccato = Boolean(req.body?.bloccato)
+    const da = sess.nominativo || sess.username || sess.id
+    const ids = await idsTurniDelMese(mese)
+    if (bloccato) {
+      if (!isLpagaTeamRuolo(me.ruolo)) {
+        return res.status(403).json({ message: "Solo responsabile, coordinatore o admin può chiudere il mese" })
+      }
+      if (!meseTurniCompletamenteConvalidati(ids)) {
+        return res.status(400).json({
+          message: "Prima conferma tutti i turni del mese (anche gli altri reparti). Poi il mese si può chiudere.",
+        })
+      }
+      setMeseBloccato(mese, true, da)
+    } else {
+      if (me.ruolo !== "admin") {
+        return res.status(403).json({ message: "Solo un amministratore può sbloccare il mese in casi eccezionali" })
+      }
+      setMeseBloccato(mese, false, da)
+    }
+    res.json({ mese, meseBlocco: statoMeseBlocco(mese, ids) })
   } catch (e) {
     fail(res, e)
   }

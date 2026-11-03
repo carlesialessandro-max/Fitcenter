@@ -39,6 +39,11 @@ import {
   getDeleghe,
   setDeleghe,
   removePersonaleDaDeleghe,
+  isMeseBloccato,
+  maybeAutoBloccaMese,
+  meseTurniCompletamenteConvalidati,
+  setMeseBloccato,
+  statoMeseBlocco,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { deletePersonaleCredentials, setPersonalePassword } from "../store/libro-paga-auth.js"
@@ -405,7 +410,7 @@ export async function postTurno(req: Request, res: Response) {
 export async function importaTurniExcel(
   rows: unknown[],
   createdBy: string,
-  scope?: { personaleIds?: ReadonlySet<string>; livelloIds?: ReadonlySet<string> }
+  scope?: { personaleIds?: ReadonlySet<string>; livelloIds?: ReadonlySet<string>; skipMesiBloccati?: boolean }
 ) {
     if (!rows.length) {
       const error = new Error("Nessun turno valido da importare") as Error & { status?: number }
@@ -465,6 +470,9 @@ export async function importaTurniExcel(
       if (!levelsById.has(livelloId)) errors.push("Mansione non attiva o non retribuibile")
       if (scope?.personaleIds && !scope.personaleIds.has(personaleId)) errors.push("Collaboratore fuori dalle deleghe")
       if (scope?.livelloIds && !scope.livelloIds.has(livelloId)) errors.push("Mansione fuori dalle deleghe")
+      if (scope?.skipMesiBloccati && isYmd(giorno) && isMeseBloccato(giorno.slice(0, 7))) {
+        errors.push("Mese chiuso dopo le convalide")
+      }
       const parsedDate = isYmd(giorno) ? new Date(`${giorno}T12:00:00`) : null
       if (!parsedDate || !Number.isFinite(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== giorno) {
         errors.push("Data non valida")
@@ -714,6 +722,11 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
       perBy
     )
     const confermatiOra = applicaAutoOkConvalida(rows, String(req.user?.nome || req.user?.username || "admin"))
+    maybeAutoBloccaMese(
+      mese,
+      turniTutti.filter((t) => t.giorno.slice(0, 7) === mese).map((t) => t.id),
+      String(req.user?.nome || req.user?.username || "admin")
+    )
     const aggiornate = await arricchisciTornelloConvalida(
       mese,
       proponeConvalidaMese({ mese, turni, personaleById: perBy }),
@@ -742,15 +755,41 @@ export async function putLibroPagaConvalidaTurno(req: Request, res: Response) {
       : "") as TurnoConvalidaStato | ""
     if (!turnoId || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
     const turni = await listTurni()
-    if (!turni.some((x) => x.id === turnoId)) return res.status(404).json({ message: "Turno non trovato" })
+    const t = turni.find((x) => x.id === turnoId)
+    if (!t) return res.status(404).json({ message: "Turno non trovato" })
+    const da = String(req.user?.nome || req.user?.username || "admin")
     const row = upsertTurnoConvalida({
       turnoId,
       stato,
       nota: String(req.body?.nota ?? "").trim(),
       sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
-      da: String(req.user?.nome || req.user?.username || "admin"),
+      da,
     })
+    maybeAutoBloccaMese(
+      t.giorno.slice(0, 7),
+      turni.filter((x) => x.giorno.slice(0, 7) === t.giorno.slice(0, 7)).map((x) => x.id),
+      da
+    )
     res.json({ convalida: row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function putLibroPagaMeseBlocco(req: Request, res: Response) {
+  try {
+    const meseRaw = String(req.body?.mese ?? "").trim()
+    const mese = isYm(meseRaw) ? meseRaw : defaultMese()
+    const bloccato = Boolean(req.body?.bloccato)
+    const da = String(req.user?.nome || req.user?.username || "admin")
+    const ids = (await listTurni()).filter((t) => t.giorno.slice(0, 7) === mese).map((t) => t.id)
+    if (bloccato && !meseTurniCompletamenteConvalidati(ids)) {
+      return res.status(400).json({
+        message: "Prima conferma tutti i turni del mese. Poi il mese si può chiudere.",
+      })
+    }
+    setMeseBloccato(mese, bloccato, da)
+    res.json({ mese, meseBlocco: statoMeseBlocco(mese, ids) })
   } catch (e) {
     fail(res, e)
   }
