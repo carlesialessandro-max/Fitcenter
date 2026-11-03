@@ -42,7 +42,7 @@ import {
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { deletePersonaleCredentials, setPersonalePassword } from "../store/libro-paga-auth.js"
-import { mergePersonaleLivelli, parseQualifichePersonale, type LpagaRuolo } from "../store/libro-paga-db.js"
+import { mergePersonaleLivelli, parseLpagaRuolo, parseQualifichePersonale } from "../store/libro-paga-db.js"
 
 function livelliFromBody(body: Record<string, unknown>) {
   const ids = Array.isArray(body.livelloIds)
@@ -269,8 +269,7 @@ export async function postPersonale(req: Request, res: Response) {
       }
       if (!password) return res.status(400).json({ message: "Password obbligatoria per l'accesso a Libro paga" })
     }
-    const ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
-    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const ruolo = parseLpagaRuolo(req.body?.ruolo)
     const livelli = livelliFromBody(req.body ?? {})
     const row = await upsertPersonale({
       nome,
@@ -304,8 +303,7 @@ export async function patchPersonale(req: Request, res: Response) {
     if (!cur) return res.status(404).json({ message: "Persona non trovata" })
     const nome = req.body?.nome != null ? String(req.body.nome).trim() : cur.nome
     if (!nome) return res.status(400).json({ message: "Nome obbligatorio" })
-    const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
-    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const ruolo = req.body?.ruolo != null ? parseLpagaRuolo(req.body.ruolo) : cur.ruolo
     const username =
       req.body?.username != null ? String(req.body.username).trim().toLowerCase() : cur.username ?? ""
     const password = req.body?.password != null ? String(req.body.password) : ""

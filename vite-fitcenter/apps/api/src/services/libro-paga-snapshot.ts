@@ -114,6 +114,8 @@ export async function buildLibroPagaSnapshot(opts?: {
   hideGlobalStats?: boolean
   hideIban?: boolean
   viewerId?: string
+  /** Coordinatore: solo turni sulla mansione nello scope, non tutti i turni delle persone visibili. */
+  turniSoloAlbero?: boolean
 }) {
   const mese = opts?.mese && isYmLpaga(opts.mese) ? opts.mese : defaultMeseLpaga()
   const storage = await ensureLibroPagaStorage()
@@ -129,10 +131,12 @@ export async function buildLibroPagaSnapshot(opts?: {
   const vis = opts?.visibleIds
   const livelloTree = opts?.livelloTree
   const scopedTurni =
-    livelloTree && vis
+    livelloTree && vis && !opts?.turniSoloAlbero
       ? turniTutti.filter((t) => livelloTree.has(t.livelloId) || vis.has(t.personaleId))
       : livelloTree
-        ? turniTutti.filter((t) => livelloTree.has(t.livelloId))
+        ? turniTutti.filter(
+            (t) => livelloTree.has(t.livelloId) || Boolean(opts?.viewerId && t.personaleId === opts.viewerId)
+          )
         : vis
           ? turniTutti.filter((t) => vis.has(t.personaleId))
           : turniTutti
@@ -331,6 +335,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     home: {
       admin: personale.filter((p) => p.ruolo === "admin").length,
       manager: personale.filter((p) => p.ruolo === "manager").length,
+      coordinator: personale.filter((p) => p.ruolo === "coordinator").length,
       user: personale.filter((p) => p.ruolo === "user").length,
       livelli: livelli.length,
       turniOggi: turni.filter((t) => t.giorno === todayYmd).length,

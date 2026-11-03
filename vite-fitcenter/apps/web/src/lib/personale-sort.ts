@@ -86,7 +86,7 @@ export function cmpNomeCognome(
   return collator.compare(chiaveNomeCognome(a), chiaveNomeCognome(b))
 }
 
-const RUOLO_ORDINE: Record<string, number> = { user: 0, manager: 1, admin: 2 }
+const RUOLO_ORDINE: Record<string, number> = { user: 0, coordinator: 1, manager: 2, admin: 3 }
 
 /** Elenco personale: ruolo, poi nome, cognome. */
 export function cmpRuoloNomeCognome(

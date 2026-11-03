@@ -149,12 +149,36 @@ export function expandScopeTree(livelli: LpagaLivello[], roots: string[], base: 
   return out
 }
 
-/** Albero mansioni del viewer (responsabile) o del reparto scelto (admin). */
+/**
+ * Coordinatore: solo le mansioni/cartelle assegnate + i loro figli.
+ * Il reparto radice (es. Piscina) non viene espanso a tutto il dipartimento.
+ */
+export function alberoCoordinatore(
+  viewer: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
+  livelli: LpagaLivello[]
+): Set<string> {
+  const roots = personaleLivelloRadici(viewer)
+  const out = new Set<string>()
+  for (const id of roots) {
+    const l = livelli.find((x) => x.id === id)
+    if (l && isRepartoRoot(l)) {
+      out.add(id)
+      continue
+    }
+    for (const x of livelloSottoAlbero(livelli, id)) out.add(x)
+  }
+  return out
+}
+
+/** Albero mansioni del viewer (responsabile/coordinatore) o del reparto scelto (admin). */
 export function resolveLivelloTree(
   viewer: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId" | "livelloIds">,
   livelli: LpagaLivello[],
   repartoId?: string
 ): Set<string> | undefined {
+  if (viewer.ruolo === "coordinator") {
+    return alberoCoordinatore(viewer, livelli)
+  }
   if (viewer.ruolo === "manager") {
     const roots = personaleLivelloRadici(viewer)
     if (!roots.length) return new Set()
@@ -187,7 +211,8 @@ export function personaleVisibile(
   if (viewer.ruolo === "admin") return new Set(personale.map((p) => p.id))
   const roots = personaleLivelloRadici(viewer)
   if (viewer.ruolo === "user" || !roots.length) return new Set([viewer.id])
-  const tree = alberoAssegnabileAnagrafica(viewer, livelli)
+  const tree =
+    viewer.ruolo === "coordinator" ? alberoCoordinatore(viewer, livelli) : alberoAssegnabileAnagrafica(viewer, livelli)
   const ids = new Set<string>([viewer.id])
   for (const p of personale) {
     if (personaleLivelloRadici(p).some((id) => tree.has(id))) ids.add(p.id)
@@ -208,9 +233,13 @@ export function personaleRaggiungibile(
 ): Set<string> {
   if (viewer.ruolo === "admin") return new Set(personale.map((p) => p.id))
   const vis = personaleVisibile(viewer, personale, livelli)
-  const mgrRoots = viewer.ruolo === "manager" ? personaleLivelloRadici(viewer) : []
   const tree =
-    extraTree ?? (mgrRoots.length ? alberoAssegnabileAnagrafica(viewer, livelli) : undefined)
+    extraTree ??
+    (viewer.ruolo === "coordinator"
+      ? alberoCoordinatore(viewer, livelli)
+      : viewer.ruolo === "manager"
+        ? alberoAssegnabileAnagrafica(viewer, livelli)
+        : undefined)
   if (!tree?.size) return vis
   const ids = new Set(vis)
   for (const p of personale) {
@@ -255,7 +284,13 @@ export function livelliInseribili(
     byId.set(l.id, l)
   }
   const candidates = [...byId.values()]
-  const scope = tree ?? (viewer.ruolo === "admin" || !roots.length ? undefined : livelloAlberoUnion(livelli, roots))
+  const scope =
+    tree ??
+    (viewer.ruolo === "admin" || !roots.length
+      ? undefined
+      : viewer.ruolo === "coordinator"
+        ? alberoCoordinatore(viewer, livelli)
+        : livelloAlberoUnion(livelli, roots))
   if (!scope) return candidates
   return candidates.filter((l) => scope.has(l.id))
 }
@@ -267,6 +302,7 @@ export function alberoAssegnabileAnagrafica(
 ): Set<string> {
   const attivi = livelli.filter((l) => l.attivo !== false)
   if (viewer.ruolo === "admin") return new Set(attivi.map((l) => l.id))
+  if (viewer.ruolo === "coordinator") return alberoCoordinatore(viewer, livelli)
   const roots = personaleLivelloRadici(viewer)
   if (!roots.length) return new Set()
   return expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))

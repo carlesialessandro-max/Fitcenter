@@ -420,6 +420,7 @@ function HomeTab({ data }: { data: LibroPagaSnapshot }) {
         <ul className="space-y-1.5 text-sm text-zinc-300">
           <li className="flex justify-between"><span>Amministratori</span><span>{h.admin}</span></li>
           <li className="flex justify-between"><span>Manager</span><span>{h.manager}</span></li>
+          <li className="flex justify-between"><span>Coordinatori</span><span>{h.coordinator ?? 0}</span></li>
           <li className="flex justify-between"><span>User</span><span>{h.user}</span></li>
           <li className="flex justify-between"><span>Livelli</span><span>{h.livelli}</span></li>
           <li className="flex justify-between"><span>Turni inseriti oggi</span><span>{h.turniOggi}</span></li>
@@ -497,6 +498,7 @@ function PersonaleTab({
   const match = (p: LpagaPersonale) =>
     !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
   const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
+  const coordinators = data.personale.filter((p) => p.ruolo === "coordinator" && match(p)).sort(cmpNomeCognome)
   const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
   const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome)
   const createMut = useMutation({
@@ -604,6 +606,7 @@ function PersonaleTab({
                     onChange={(e) => ruoloMut.mutate({ id: r.id, ruolo: e.target.value as LpagaRuolo })}
                   >
                     <option value="user">Istruttore</option>
+                    <option value="coordinator">Coordinatore</option>
                     <option value="manager">Responsabile</option>
                     <option value="admin">Amministratore</option>
                   </select>
@@ -845,6 +848,7 @@ function PersonaleTab({
               Ruolo
               <select value={ruolo} onChange={(e) => setRuolo(e.target.value as LpagaRuolo)} className={inputCls}>
                 <option value="user">Istruttore</option>
+                <option value="coordinator">Coordinatore</option>
                 <option value="manager">Responsabile</option>
                 <option value="admin">Amministratore</option>
               </select>
@@ -921,6 +925,7 @@ function PersonaleTab({
       )}
       <p className="text-xs text-zinc-500">{RUOLO_LEGENDA}</p>
       <Table title={`Istruttori · ${users.length}`} rows={users} />
+      <Table title={`Coordinatori · ${coordinators.length}`} rows={coordinators} showReparto />
       <Table title={`Responsabili · ${managers.length}`} rows={managers} showReparto />
       <Table title={`Amministratori · ${admins.length}`} rows={admins} />
     </div>

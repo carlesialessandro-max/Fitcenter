@@ -188,7 +188,7 @@ export function dumpSqlToDb(sql: string): FileDb {
     .filter((r) => dumpVal(r, "id"))
     .map((r) => {
       const ruoloRaw = dumpVal(r, "role", "ruolo").toLowerCase() || "user"
-      const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+      const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" || ruoloRaw === "coordinator" ? ruoloRaw : "user"
       const iban = dumpVal(r, "iban")
       const livelloId = dumpVal(r, "chargeLevel", "charge_level", "livelloId", "livello_id")
       const contratto = ymd(dumpVal(r, "contract", "contratto"))

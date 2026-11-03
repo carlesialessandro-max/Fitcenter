@@ -5,7 +5,18 @@ import { readJson, writeJson } from "./persist.js"
 
 const FILE = "libro-paga.json"
 
-export type LpagaRuolo = "admin" | "manager" | "user"
+export type LpagaRuolo = "admin" | "manager" | "coordinator" | "user"
+
+export function parseLpagaRuolo(raw: unknown): LpagaRuolo {
+  const s = String(raw ?? "").trim().toLowerCase()
+  if (s === "admin" || s === "manager" || s === "coordinator") return s
+  if (s === "coordinatore") return "coordinator"
+  return "user"
+}
+
+export function isLpagaTeamRuolo(r: string | undefined | null): boolean {
+  return r === "admin" || r === "manager" || r === "coordinator"
+}
 
 export type LpagaLivello = {
   id: string
@@ -336,8 +347,7 @@ function normalizeLivello(r: LpagaLivello): LpagaLivello {
 }
 
 function normalizePersonale(r: LpagaPersonale): LpagaPersonale {
-  const ruolo: LpagaRuolo = r.ruolo === "manager" || r.ruolo === "admin" ? r.ruolo : "user"
-  return { ...r, ruolo, attivo: r.attivo !== false }
+  return { ...r, ruolo: parseLpagaRuolo(r.ruolo), attivo: r.attivo !== false }
 }
 
 function writeFile(db: FileDb): void {
@@ -596,9 +606,8 @@ export async function copyPersonaleHrFromSql(): Promise<{
     if (!src) return pe
     let next = { ...pe }
     let changed = false
-    const ruoloSql = String(src.Ruolo ?? "").trim().toLowerCase()
-    const ruolo: LpagaRuolo | null =
-      ruoloSql === "admin" || ruoloSql === "manager" ? ruoloSql : null
+    const ruoloParsed = parseLpagaRuolo(src.Ruolo)
+    const ruolo: LpagaRuolo | null = ruoloParsed === "user" ? null : ruoloParsed
     if (ruolo && next.ruolo !== ruolo) {
       next.ruolo = ruolo
       changed = true
@@ -676,8 +685,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const qualificheRaw = parseQualificheStored(r.Qualifiche ?? r.qualifiche)
   const qualifiche = enrichQualificheVisitaMedica(qualificheRaw, visitaMedicaCol)
   const visitaMedica = visitaMedicaDaQualifiche(qualifiche) || visitaMedicaCol
-  const ruoloRaw = String(r.Ruolo ?? r.ruolo ?? "user").toLowerCase()
-  const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+  const ruolo = parseLpagaRuolo(r.Ruolo ?? r.ruolo)
   return {
     id: String(r.Id ?? r.id ?? ""),
     nome: String(r.Nome ?? r.nome ?? ""),
@@ -938,7 +946,7 @@ export async function upsertPersonale(input: {
   if (email && !isValidLpagaEmail(email)) {
     throw Object.assign(new Error("Indirizzo email non valido"), { status: 400 })
   }
-  const ruolo: LpagaRuolo = input.ruolo === "admin" || input.ruolo === "manager" ? input.ruolo : "user"
+  const ruolo = parseLpagaRuolo(input.ruolo)
   const tesseramento = (input.tesseramento ?? "").trim()
   const tesseramentoScadenza = (input.tesseramentoScadenza ?? "").trim()
   const hasVisitaMedica = input.visitaMedica !== undefined

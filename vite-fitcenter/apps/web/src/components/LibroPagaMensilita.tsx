@@ -696,6 +696,7 @@ function DettaglioMese({
             Ruolo
             <select value={ruolo} onChange={(e) => setRuolo(e.target.value as LpagaRuolo)} className={inputCls}>
               <option value="user">Istruttore</option>
+              <option value="coordinator">Coordinatore</option>
               <option value="manager">Responsabile</option>
               {allowAdminRole && <option value="admin">Amministratore</option>}
             </select>

@@ -2,7 +2,7 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { expandScopeTree, livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
+import { alberoCoordinatore, expandScopeTree, livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -168,6 +168,10 @@ export function alberoConvalidaViewer(
   livelli: LpagaLivello[]
 ): Set<string> | undefined {
   if (me.ruolo === "admin") return undefined
+  if (me.ruolo === "coordinator") {
+    const tree = alberoCoordinatore(me, livelli)
+    return tree.size ? tree : undefined
+  }
   if (me.ruolo === "manager") {
     const roots = personaleLivelloRadici(me)
     if (!roots.length) return undefined
@@ -309,7 +313,7 @@ export function viewerPuoConvalidare(
   me: Pick<LpagaPersonale, "id" | "ruolo">,
   personale: LpagaPersonale[]
 ): boolean {
-  if (me.ruolo === "admin" || me.ruolo === "manager") return true
+  if (me.ruolo === "admin" || me.ruolo === "manager" || me.ruolo === "coordinator") return true
   const db = readDb()
   return personale.some((p) => p.ruolo === "manager" && (db.deleghe[p.id] ?? []).includes(me.id))
 }
@@ -524,7 +528,7 @@ export function buildRiepilogoConvalide(opts: {
   const weeks = settimaneNelMese(opts.mese)
   const tot = statsTurniConvalida(opts.turni, byId)
   const viewer = opts.viewerId ? opts.personale.find((p) => p.id === opts.viewerId) : undefined
-  const soloIo = viewer?.ruolo === "manager" ? viewer.id : undefined
+  const soloIo = viewer?.ruolo === "manager" || viewer?.ruolo === "coordinator" ? viewer.id : undefined
   const managers = opts.personale.filter((p) => {
     if (p.ruolo !== "manager" || p.attivo === false) return false
     if (soloIo) return p.id === soloIo

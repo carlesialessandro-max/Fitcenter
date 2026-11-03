@@ -15,7 +15,7 @@ import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome, normCerca, testoCercaTurno } from "@/lib/personale-sort"
-import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
+import { isLpagaTeamRuolo, ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 import { filtraAlberoLivelli, livelloIdsAssegnati, mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
 import {
@@ -168,7 +168,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
   const data = snap.data
   const isUser = me?.ruolo === "user"
   const isAdmin = me?.ruolo === "admin"
-  const canTeam = me?.ruolo === "manager" || isAdmin
+  const canTeam = isLpagaTeamRuolo(me?.ruolo)
   const canCollab = canVedereReportCollaboratoriLpaga(me)
 
   useEffect(() => {
@@ -512,7 +512,7 @@ function AreaPersonale({
 }) {
   const persona = data.personale.find((p) => p.id === me.id)
   const mens = data.mensilita.find((r) => r.personaleId === me.id)
-  const canChangeDay = me.ruolo === "admin" || me.ruolo === "manager"
+  const canChangeDay = isLpagaTeamRuolo(me.ruolo)
   const oggi = todayIso()
   const livelli = mansioniTurnoProprio(
     me,
@@ -740,7 +740,7 @@ function Turni({
   onDone: () => void
 }) {
   const isUser = me?.ruolo === "user"
-  const canChangeDay = me?.ruolo === "admin" || me?.ruolo === "manager"
+  const canChangeDay = isLpagaTeamRuolo(me?.ruolo)
   const oggi = todayIso()
   const persone = data.personale.filter((p) => p.attivo)
   const livelli = data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)
@@ -756,7 +756,7 @@ function Turni({
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
   const [importMessage, setImportMessage] = useState("")
   const [importHasErrors, setImportHasErrors] = useState(false)
-  const canImport = me?.ruolo === "admin" || me?.ruolo === "manager"
+  const canImport = isLpagaTeamRuolo(me?.ruolo)
   useEffect(() => {
     if (!canChangeDay) setGiorno(todayIso())
   }, [canChangeDay, mese])
@@ -898,7 +898,7 @@ function Turni({
       {canImport && (
         <>
           <p className="text-xs text-zinc-500">
-            Importazione Excel disponibile per amministratori e responsabili; i responsabili possono importare solo per il personale e le mansioni delle proprie deleghe.
+            Importazione Excel disponibile per amministratori, responsabili e coordinatori; ognuno importa solo per il personale e le mansioni del proprio ambito.
           </p>
           {importMessage && (
             <p className={`text-sm ${importHasErrors ? "text-amber-300" : "text-emerald-300"}`}>{importMessage}</p>
@@ -1148,7 +1148,7 @@ function Personale({
   const [cognome, setCognome] = useState("")
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [ruolo, setRuolo] = useState<"user" | "manager">("user")
+  const [ruolo, setRuolo] = useState<"user" | "manager" | "coordinator">("user")
   const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
@@ -1166,8 +1166,8 @@ function Personale({
         cognome,
         username,
         password,
-        ruolo: me?.ruolo === "manager" ? "user" : ruolo,
-        livelloId: livelloId || (me?.ruolo === "manager" ? reparti[0]?.id : undefined) || me?.livelloId,
+        ruolo: me?.ruolo === "manager" || me?.ruolo === "coordinator" ? "user" : ruolo,
+        livelloId: livelloId || (me?.ruolo === "manager" || me?.ruolo === "coordinator" ? reparti[0]?.id : undefined) || me?.livelloId,
         ...(me?.ruolo === "admin"
           ? { qualifiche, visitaMedica: visitaMedicaFromQualifiche(qualifiche) }
           : {}),
@@ -1249,7 +1249,11 @@ function Personale({
             onError("")
             setDettaglioId(null)
           }}
-          canEdit={me?.ruolo === "admin" || (me?.ruolo === "manager" && detPersona.ruolo !== "admin")}
+          canEdit={
+            me?.ruolo === "admin" ||
+            (me?.ruolo === "manager" && detPersona.ruolo !== "admin") ||
+            (me?.ruolo === "coordinator" && detPersona.ruolo === "user")
+          }
           allowAdminRole={me?.ruolo === "admin"}
           livelli={
             me?.ruolo === "admin"
@@ -1262,7 +1266,7 @@ function Personale({
           onSavePersonale={(id, body) => lpagaApi.patchPersonale(id, body)}
           onError={onError}
           onDone={onDone}
-          canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
+          canEditTurni={isLpagaTeamRuolo(me?.ruolo)}
           livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
           onCreateTurno={(body) => lpagaApi.createTurno(body)}
           onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}
@@ -1310,8 +1314,9 @@ function Personale({
             {me?.ruolo === "admin" && (
               <label className="grid gap-1 text-xs text-zinc-500">
                 Ruolo
-                <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager")} className={inputCls}>
+                <select value={ruolo} onChange={(e) => setRuolo(e.target.value as "user" | "manager" | "coordinator")} className={inputCls}>
                   <option value="user">Istruttore</option>
+                  <option value="coordinator">Coordinatore</option>
                   <option value="manager">Responsabile</option>
                 </select>
               </label>
@@ -1319,11 +1324,11 @@ function Personale({
             <label className="grid gap-1 text-xs text-zinc-500">
               Reparto
               <select
-                value={livelloId || (me?.ruolo === "manager" ? (reparti[0]?.id ?? "") : "")}
+                value={livelloId || (me?.ruolo === "manager" || me?.ruolo === "coordinator" ? (reparti[0]?.id ?? "") : "")}
                 onChange={(e) => setLivelloId(e.target.value)}
                 className={inputCls}
                 required={me?.ruolo === "admin"}
-                disabled={me?.ruolo === "manager" && reparti.length <= 1}
+                disabled={(me?.ruolo === "manager" || me?.ruolo === "coordinator") && reparti.length <= 1}
               >
                 {me?.ruolo === "admin" && <option value="">—</option>}
                 {reparti.map((l) => (
@@ -1499,7 +1504,7 @@ function ConvalidePortal({
 }) {
   const riep = data.convalideRiepilogo
   const responsabili = riep?.responsabili ?? data.convalide
-  const onlyMine = me?.ruolo === "manager"
+  const onlyMine = me?.ruolo === "manager" || me?.ruolo === "coordinator"
   const [meseOpen, setMeseOpen] = useState(false)
   const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
   const [aperto, setAperto] = useState<string | null>(onlyMine ? responsabili[0]?.personaleId ?? null : null)
@@ -1617,7 +1622,7 @@ function Mensilita({
   onDone: () => void
   openConvalidaMese?: boolean
 }) {
-  const canValidate = Boolean(data.canValidate) || me?.ruolo === "admin" || me?.ruolo === "manager"
+  const canValidate = Boolean(data.canValidate) || isLpagaTeamRuolo(me?.ruolo)
   const [convId, setConvId] = useState<string | null>(null)
   const [meseOpen, setMeseOpen] = useState(Boolean(openConvalidaMese))
   const [filtri, setFiltri] = useState({ scope: "", from: "", to: "" })
@@ -1671,9 +1676,9 @@ function Mensilita({
       <LibroPagaMensilitaTab
         data={data}
         mese={mese}
-        canEdit={() => me?.ruolo === "admin" || me?.ruolo === "manager" || Boolean(data.canValidate)}
+        canEdit={() => isLpagaTeamRuolo(me?.ruolo) || Boolean(data.canValidate)}
         hideIban={me?.ruolo === "user"}
-        perimetroReparto={me?.ruolo === "manager"}
+        perimetroReparto={me?.ruolo === "manager" || me?.ruolo === "coordinator"}
         onSave={(body) => lpagaApi.putMensilita(body)}
         onError={onError}
         onDone={onDone}
@@ -1693,7 +1698,7 @@ function Mensilita({
               }
             : undefined
         }
-        canEditTurni={me?.ruolo === "admin" || me?.ruolo === "manager"}
+        canEditTurni={isLpagaTeamRuolo(me?.ruolo)}
         livelliTurno={data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile)}
         onCreateTurno={(body) => lpagaApi.createTurno(body)}
         onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}

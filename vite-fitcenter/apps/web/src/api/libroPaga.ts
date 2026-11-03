@@ -1,6 +1,6 @@
 import { api } from "./client"
 
-export type LpagaRuolo = "admin" | "manager" | "user"
+export type LpagaRuolo = "admin" | "manager" | "coordinator" | "user"
 
 export type LpagaLivello = {
   id: string
@@ -165,6 +165,7 @@ export type LibroPagaSnapshot = {
   home: {
     admin: number
     manager: number
+    coordinator?: number
     user: number
     livelli: number
     turniOggi: number

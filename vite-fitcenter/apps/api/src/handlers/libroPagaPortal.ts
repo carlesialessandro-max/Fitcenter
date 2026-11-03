@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, getTurno, insertTurno, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, getTurno, insertTurno, isLpagaTeamRuolo, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, parseLpagaRuolo, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel, patchLivello, postLivello, removeLivello } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -22,7 +22,6 @@ import {
 } from "../services/libro-paga-convalida.js"
 import { alberoAssegnabileAnagrafica, livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, fondereBonificoPerimetro, isYmLpaga, oggiRomaYmd, roundLpaga2 } from "../services/libro-paga-snapshot.js"
-import type { LpagaRuolo } from "../store/libro-paga-db.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 import { canVedereReportCollaboratoriLpaga } from "../lib/report-collaboratori-access.js"
 
@@ -60,8 +59,8 @@ export function requireLpagaAdmin(req: Request, res: Response, next: NextFunctio
 export function requireLpagaTeam(req: Request, res: Response, next: NextFunction) {
   const u = req.lpaga
   if (!u) return res.status(401).json({ message: "Sessione Libro paga mancante" })
-  if (u.ruolo !== "admin" && u.ruolo !== "manager") {
-    return res.status(403).json({ message: "Solo responsabile o admin può gestire i livelli" })
+  if (!isLpagaTeamRuolo(u.ruolo)) {
+    return res.status(403).json({ message: "Solo responsabile, coordinatore o admin può gestire i livelli" })
   }
   next()
 }
@@ -202,7 +201,7 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
     const repartoId = String(req.query.reparto ?? "").trim()
     let livelloTree = resolveLivelloTree(me, livelli, me.ruolo === "admin" ? repartoId : undefined)
     let visibleIds = me.ruolo === "user" ? new Set([me.id]) : undefined
-    if (me.ruolo === "manager") {
+    if (me.ruolo === "manager" || me.ruolo === "coordinator") {
       visibleIds = personaleVisibile(me, personaleAll, livelli)
     }
     if (me.ruolo === "user") {
@@ -217,6 +216,7 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
       hideGlobalStats: hideGlobal,
       hideIban: me.ruolo === "user",
       viewerId: me.id,
+      turniSoloAlbero: me.ruolo === "coordinator",
     })
     const inseribili = livelliInseribili(me, livelli, me.ruolo === "user" ? undefined : livelloTree)
     const assegnabili = livelliAssegnabiliAnagrafica(me, livelli)
@@ -276,8 +276,8 @@ export async function patchLpagaTurno(req: Request, res: Response) {
     const sess = viewer(req)
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
     const me = scopeMe(sess, personale)
-    if (me.ruolo !== "admin" && me.ruolo !== "manager") {
-      return res.status(403).json({ message: "Solo responsabile o admin può modificare i turni" })
+    if (!isLpagaTeamRuolo(me.ruolo)) {
+      return res.status(403).json({ message: "Solo responsabile, coordinatore o admin può modificare i turni" })
     }
     const id = String(req.params.id ?? "").trim()
     const cur = await getTurno(id)
@@ -322,8 +322,8 @@ export async function postLpagaImportTurniExcel(req: Request, res: Response) {
     const rows = Array.isArray(req.body?.righe) ? req.body.righe : []
     const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
     const me = scopeMe(sess, personale)
-    if (me.ruolo !== "admin" && me.ruolo !== "manager") {
-      return res.status(403).json({ message: "Importazione riservata ad amministratori e responsabili" })
+    if (!isLpagaTeamRuolo(me.ruolo)) {
+      return res.status(403).json({ message: "Importazione riservata ad amministratori, responsabili e coordinatori" })
     }
     const tree = resolveLivelloTree(me, livelli)
     const scope = me.ruolo === "admin"
@@ -420,8 +420,8 @@ export async function putLpagaMensilita(req: Request, res: Response) {
 }
 
 function assertGestionePersonale(me: LpagaSessionUser) {
-  if (me.ruolo !== "admin" && me.ruolo !== "manager") {
-    const err = new Error("Solo amministratore o responsabile può gestire gli utenti")
+  if (!isLpagaTeamRuolo(me.ruolo)) {
+    const err = new Error("Solo amministratore, responsabile o coordinatore può gestire gli utenti")
     ;(err as Error & { status?: number }).status = 403
     throw err
   }
@@ -486,14 +486,14 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       return res.status(409).json({ message: "Username già in uso" })
     }
     let ruoloRaw = String(req.body?.ruolo ?? "user").toLowerCase()
-    if (me.ruolo === "manager") ruoloRaw = "user"
-    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    if (me.ruolo === "manager" || me.ruolo === "coordinator") ruoloRaw = "user"
+    const ruolo = parseLpagaRuolo(ruoloRaw)
     const livelliAssegnati = livelliFromBody(req.body ?? {})
     const livelliFinali =
       livelliAssegnati.livelloId || (livelliAssegnati.livelloIds && livelliAssegnati.livelloIds.length)
         ? livelliAssegnati
         : mergePersonaleLivelli(me.livelloId, me.livelloIds)
-    if (me.ruolo === "manager") {
+    if (me.ruolo === "manager" || me.ruolo === "coordinator") {
       try {
         assertLivelliAnagraficaConsentiti(me, livelli, livelliFinali)
       } catch (e) {
@@ -578,11 +578,11 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
       return res.json({ personale: enriched ?? row })
     }
     const ruoloRaw = req.body?.ruolo != null ? String(req.body.ruolo).toLowerCase() : cur.ruolo
-    const ruolo: LpagaRuolo = ruoloRaw === "admin" || ruoloRaw === "manager" ? ruoloRaw : "user"
+    const ruolo = parseLpagaRuolo(ruoloRaw)
     assertPuoModificarePersonale(me, cur, ruolo)
     let livelliPatch =
       req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
-    if (me.ruolo === "manager") {
+    if (me.ruolo === "manager" || me.ruolo === "coordinator") {
       const esistenti = idsLivelli(mergePersonaleLivelli(cur.livelloId, cur.livelloIds))
       const nextLivelli =
         livelliPatch.livelloId || (livelliPatch.livelloIds && livelliPatch.livelloIds.length)
@@ -611,7 +611,8 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
       nome,
       cognome: req.body?.cognome != null ? String(req.body.cognome).trim() : cur.cognome,
       username,
-      ruolo: me.ruolo === "manager" ? (ruolo === "admin" ? cur.ruolo : ruolo) : ruolo,
+      ruolo:
+        me.ruolo === "admin" ? ruolo : me.ruolo === "manager" ? (ruolo === "admin" ? cur.ruolo : ruolo) : cur.ruolo,
       ...livelliPatch,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,

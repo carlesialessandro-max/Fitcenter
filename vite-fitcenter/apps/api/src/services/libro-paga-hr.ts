@@ -28,8 +28,18 @@ export function assertPuoModificarePersonale(
   target: { ruolo: LpagaRuolo },
   nextRuolo?: LpagaRuolo
 ): void {
-  if (actor.ruolo !== "admin" && actor.ruolo !== "manager") {
-    throw Object.assign(new Error("Solo amministratore o responsabile può modificare gli utenti"), { status: 403 })
+  if (actor.ruolo !== "admin" && actor.ruolo !== "manager" && actor.ruolo !== "coordinator") {
+    throw Object.assign(new Error("Solo amministratore, responsabile o coordinatore può modificare gli utenti"), {
+      status: 403,
+    })
+  }
+  if (actor.ruolo === "coordinator") {
+    if (target.ruolo !== "user") {
+      throw Object.assign(new Error("Il coordinatore può modificare solo gli istruttori"), { status: 403 })
+    }
+    if (nextRuolo && nextRuolo !== "user") {
+      throw Object.assign(new Error("Il coordinatore non può cambiare i ruoli"), { status: 403 })
+    }
   }
   if (actor.ruolo === "manager" && target.ruolo === "admin") {
     throw Object.assign(new Error("Il responsabile non può modificare un amministratore"), { status: 403 })
@@ -40,7 +50,8 @@ export function assertPuoModificarePersonale(
 }
 
 export function puoModificarePersonale(actorRuolo: LpagaRuolo, targetRuolo: LpagaRuolo): boolean {
-  if (actorRuolo !== "admin" && actorRuolo !== "manager") return false
+  if (actorRuolo !== "admin" && actorRuolo !== "manager" && actorRuolo !== "coordinator") return false
+  if (actorRuolo === "coordinator" && targetRuolo !== "user") return false
   if (actorRuolo === "manager" && targetRuolo === "admin") return false
   return true
 }
