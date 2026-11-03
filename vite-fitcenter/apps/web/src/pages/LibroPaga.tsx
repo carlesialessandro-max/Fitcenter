@@ -946,6 +946,7 @@ function TurniTab({
     const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
     return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || fmtDateIt(t.giorno).includes(q.trim())
+  })
   const saveMut = useMutation({
     mutationFn: () => {
       const body = {
@@ -961,7 +962,6 @@ function TurniTab({
       setNote("")
       setQuantita("1")
       setEditingId(null)
-      setQuantita("1")
       setNuovoTurno(false)
       onDone()
     },
@@ -1111,6 +1111,7 @@ function TurniTab({
           </div>
         </div>
       )}
+      {nuovoTurno && (
         <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
           <form
             className="grid gap-3 sm:grid-cols-2"
@@ -1122,7 +1123,6 @@ function TurniTab({
               }
               onError("")
               saveMut.mutate()
-              createMut.mutate()
             }}
           >
             <label className="grid gap-1 text-xs text-zinc-400 sm:col-span-2">
@@ -1161,6 +1161,7 @@ function TurniTab({
                 className={inputCls}
               />
             </label>
+            <div className="flex justify-end gap-2 sm:col-span-2">
               <button
                 type="button"
                 className={btnGhost}
@@ -1173,7 +1174,6 @@ function TurniTab({
               </button>
               <button type="submit" className={btnAmber} disabled={saveMut.isPending || Boolean(quantitaErr)}>
                 {saveMut.isPending ? "Salvataggio…" : editingId ? "Salva modifiche" : "Salva"}
-                {createMut.isPending ? "Salvataggio…" : "Salva"}
               </button>
             </div>
           </form>
@@ -1210,6 +1210,7 @@ function TurniTab({
                 <td className="px-3 py-2 text-right">{t.quantita}</td>
                 <td className="px-3 py-2 text-right">{eur(t.importo)}</td>
                 <td className="px-3 py-2 text-zinc-400">{t.note ?? ""}</td>
+                <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-3">
                     <button
                       type="button"
@@ -1230,7 +1231,6 @@ function TurniTab({
                       Elimina
                     </button>
                   </div>
-                  </button>
                 </td>
               </tr>
             ))}
