@@ -1617,6 +1617,66 @@ export async function replaceTurniOnly(turni: LpagaTurno[], presenze: LpagaPrese
   }
 }
 
+/** Aggiunge o aggiorna turni per id. Non cancella gli altri. */
+export async function mergeTurniKeepOthers(turni: LpagaTurno[]): Promise<"sql" | "json"> {
+  if (!turni.length) return (await ensureLibroPagaStorage()) === "sql" ? "sql" : "json"
+  const db = readFile()
+  const byId = new Map(db.turni.map((t, i) => [t.id, i]))
+  for (const t of turni) {
+    const idx = byId.get(t.id)
+    if (idx != null) db.turni[idx] = { ...db.turni[idx], ...t, id: t.id }
+    else {
+      byId.set(t.id, db.turni.length)
+      db.turni.push(t)
+    }
+  }
+  writeFile(db)
+  const write = await getPoolWrite()
+  if (!write) {
+    sqlReady = false
+    return "json"
+  }
+  try {
+    for (const t of turni) {
+      const upd = write.request()
+      upd.input("Id", sql.NVarChar(64), t.id)
+      upd.input("P", sql.NVarChar(64), t.personaleId)
+      upd.input("L", sql.NVarChar(64), t.livelloId)
+      upd.input("G", sql.Date, t.giorno)
+      upd.input("Q", sql.Decimal(10, 2), t.quantita)
+      upd.input("I", sql.Decimal(10, 2), t.importo)
+      upd.input("N", sql.NVarChar(500), t.note ?? null)
+      upd.input("C", sql.NVarChar(120), t.creatoDa)
+      const updated = await upd.query(`
+        UPDATE dbo.FcLibroPagaTurni
+        SET PersonaleId=@P, LivelloId=@L, Giorno=@G, Quantita=@Q, Importo=@I, Note=@N, CreatoDa=@C
+        WHERE Id=@Id
+      `)
+      const n = Array.isArray(updated.rowsAffected) ? updated.rowsAffected[0] ?? 0 : Number(updated.rowsAffected || 0)
+      if (n > 0) continue
+      const ins = write.request()
+      ins.input("Id", sql.NVarChar(64), t.id)
+      ins.input("P", sql.NVarChar(64), t.personaleId)
+      ins.input("L", sql.NVarChar(64), t.livelloId)
+      ins.input("G", sql.Date, t.giorno)
+      ins.input("Q", sql.Decimal(10, 2), t.quantita)
+      ins.input("I", sql.Decimal(10, 2), t.importo)
+      ins.input("N", sql.NVarChar(500), t.note ?? null)
+      ins.input("C", sql.NVarChar(120), t.creatoDa)
+      ins.input("A", sql.DateTime2, new Date(t.createdAt || Date.now()))
+      await ins.query(`
+        INSERT INTO dbo.FcLibroPagaTurni (Id, PersonaleId, LivelloId, Giorno, Quantita, Importo, Note, CreatoDa, CreatedAt)
+        VALUES (@Id, @P, @L, @G, @Q, @I, @N, @C, @A)
+      `)
+    }
+    return "sql"
+  } catch (e) {
+    sqlReady = false
+    console.warn("[libro-paga] merge turni SQL fallito, JSON aggiornato:", (e as Error)?.message)
+    return "json"
+  }
+}
+
 export async function replaceImportedDb(next: FileDb, opts?: { keepPersonale?: boolean }): Promise<"sql" | "json"> {
   writeFile(next)
   const keepPersonale = Boolean(opts?.keepPersonale)

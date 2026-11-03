@@ -128,6 +128,22 @@ export function LibroPaga() {
     },
     onError: (e: Error) => setError(e.message),
   })
+  const importPersonaMut = useMutation({
+    mutationFn: (p: { file: File; q: string; mese: string }) => libroPagaApi.importDumpPersona(p.file, p.q, p.mese),
+    onSuccess: (r) => {
+      setError("")
+      invalidate()
+      void qc.invalidateQueries({ queryKey: ["libro-paga-snapshots"] })
+      alert(
+        `Aggiunti i turni di ${r.persona}` +
+          (r.mese ? ` (${r.mese})` : "") +
+          `: ${r.inseriti} nuovi, ${r.aggiornati} già presenti riassegnati, ${r.saltati} saltati` +
+          (r.senzaMansione ? `, ${r.senzaMansione} senza mansione` : "") +
+          `. Gli altri turni non sono stati toccati.`
+      )
+    },
+    onError: (e: Error) => setError(e.message),
+  })
 
   const restoreSnapMut = useMutation({
     mutationFn: (id: string) => libroPagaApi.restoreSnapshot(id),
@@ -231,6 +247,36 @@ export function LibroPaga() {
                   return
                 }
                 importMut.mutate(file)
+              }}
+            />
+          </label>
+          <label
+            className={`${btnGhost} cursor-pointer ${importPersonaMut.isPending ? "pointer-events-none opacity-50" : ""}`}
+            title="Dal dump Payroll aggiunge i turni di una sola persona. Non cancella gli altri."
+          >
+            {importPersonaMut.isPending ? "Aggiunta in corso…" : "Aggiungi turni di una persona"}
+            <input
+              type="file"
+              accept=".sql,.gz,application/sql,application/gzip"
+              className="hidden"
+              disabled={importPersonaMut.isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ""
+                if (!file) return
+                const chi = window.prompt(
+                  `Nominativo da importare (es. Petruzzi). Verranno aggiunti solo i suoi turni di ${mese}, senza cancellare gli altri.`,
+                  "Petruzzi"
+                )
+                if (chi == null || !chi.trim()) return
+                if (
+                  !confirm(
+                    `Aggiungere solo i turni di «${chi.trim()}» da «${file.name}» per ${mese}? Tutti gli altri turni restano invariati.`
+                  )
+                ) {
+                  return
+                }
+                importPersonaMut.mutate({ file, q: chi.trim(), mese })
               }}
             />
           </label>

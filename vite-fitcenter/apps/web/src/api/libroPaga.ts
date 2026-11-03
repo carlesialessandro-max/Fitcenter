@@ -240,6 +240,23 @@ export const libroPagaApi = {
       dump: string
     }>("/libro-paga/import-dump", fd)
   },
+  importDumpPersona: (file: File, q: string, mese?: string) => {
+    const fd = new FormData()
+    fd.append("file", file)
+    fd.append("q", q)
+    if (mese) fd.append("mese", mese)
+    return api.post<{
+      persona: string
+      mese: string | null
+      dumpTurni: number
+      inseriti: number
+      aggiornati: number
+      saltati: number
+      senzaMansione: number
+      dump: string
+      storage: string
+    }>("/libro-paga/import-dump-persona", fd)
+  },
   listSnapshots: () =>
     api.get<{ snapshots: { id: string; createdAt: string; label: string; personale: number; turni: number }[] }>(
       "/libro-paga/snapshots"

@@ -16,7 +16,7 @@ import {
   upsertPersonale,
   upsertPresenza,
 } from "../store/libro-paga-db.js"
-import { importLibroPagaDumpFromBuffer } from "../services/libro-paga-import.js"
+import { importLibroPagaDumpFromBuffer, importLibroPagaDumpPersonaFromBuffer } from "../services/libro-paga-import.js"
 import { repairLibroPagaRuoliFromDeleghe } from "../services/libro-paga-repair.js"
 import {
   listLibroPagaSnapshots,
@@ -99,6 +99,24 @@ export async function postImportDump(req: Request, res: Response) {
       return res.status(400).json({ message: "Seleziona un file dump Payroll (.sql o .gz)" })
     }
     const result = await importLibroPagaDumpFromBuffer(file.buffer, file.originalname || "dump.sql")
+    res.json(result)
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export async function postImportDumpPersona(req: Request, res: Response) {
+  try {
+    const file = (req as Request & { file?: Express.Multer.File }).file
+    if (!file?.buffer?.length) {
+      return res.status(400).json({ message: "Seleziona un file dump Payroll (.sql o .gz)" })
+    }
+    const q = String(req.body?.q ?? req.query.q ?? "").trim()
+    const mese = String(req.body?.mese ?? req.query.mese ?? "").trim()
+    const result = await importLibroPagaDumpPersonaFromBuffer(file.buffer, file.originalname || "dump.sql", {
+      q,
+      mese: /^\d{4}-\d{2}$/.test(mese) ? mese : undefined,
+    })
     res.json(result)
   } catch (e) {
     fail(res, e)

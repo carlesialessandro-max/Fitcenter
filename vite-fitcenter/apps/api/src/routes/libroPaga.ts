@@ -8,6 +8,7 @@ import {
   patchLivello,
   patchPersonale,
   postImportDump,
+  postImportDumpPersona,
   getLibroPagaSnapshots,
   postLibroPagaSnapshotNow,
   postLibroPagaRestoreSnapshot,
@@ -48,6 +49,7 @@ libroPagaRouter.get("/", getLibroPaga)
 libroPagaRouter.get("/reparti-da-turni/preview", getLibroPagaRepartiDaTurniPreview)
 libroPagaRouter.post("/reparti-da-turni", postLibroPagaRepartiDaTurni)
 libroPagaRouter.post("/import-dump", dumpUpload.single("file"), postImportDump)
+libroPagaRouter.post("/import-dump-persona", dumpUpload.single("file"), postImportDumpPersona)
 libroPagaRouter.get("/snapshots", getLibroPagaSnapshots)
 libroPagaRouter.post("/snapshots", postLibroPagaSnapshotNow)
 libroPagaRouter.post("/snapshots/restore", postLibroPagaRestoreSnapshot)

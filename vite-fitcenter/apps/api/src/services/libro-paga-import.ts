@@ -11,7 +11,7 @@ import type {
   LpagaTurno,
   LpagaValidazione,
 } from "../store/libro-paga-db.js"
-import { exportFullFileDb, replaceTurniOnly } from "../store/libro-paga-db.js"
+import { exportFullFileDb, mergeTurniKeepOthers, nominativo, replaceTurniOnly } from "../store/libro-paga-db.js"
 import { saveLibroPagaSnapshot } from "./libro-paga-backup.js"
 
 function n(v: string | null | undefined): number {
@@ -104,6 +104,45 @@ export function mapDumpPersonaleIds(dump: LpagaPersonale[], current: LpagaPerson
     map.set(d.id, d.id)
   }
   return map
+}
+
+function mapDumpLivelloIds(dump: LpagaLivello[], current: LpagaLivello[]): Map<string, string> {
+  const map = new Map<string, string>()
+  const byId = new Set(current.map((l) => l.id))
+  const byNome = new Map<string, LpagaLivello[]>()
+  for (const l of current) {
+    const k = normPersonKey(l.nome)
+    if (!k) continue
+    const arr = byNome.get(k) ?? []
+    arr.push(l)
+    byNome.set(k, arr)
+  }
+  for (const d of dump) {
+    if (!d.id) continue
+    if (byId.has(d.id)) {
+      map.set(d.id, d.id)
+      continue
+    }
+    const hits = byNome.get(normPersonKey(d.nome)) ?? []
+    map.set(d.id, hits.length === 1 ? hits[0]!.id : d.id)
+  }
+  return map
+}
+
+function personMatchesQ(p: { nome?: string; cognome?: string; username?: string }, q: string): boolean {
+  const n = normPersonKey(q)
+  if (n.length < 3) return false
+  return normPersonKey([p.cognome, p.nome, p.username].join(" ")).includes(n)
+}
+
+function turnoDupKey(t: { giorno: string; personaleId: string; livelloId: string; quantita: number; note?: string }): string {
+  return [
+    t.giorno.slice(0, 10),
+    t.personaleId,
+    t.livelloId,
+    Number(t.quantita).toFixed(2),
+    normPersonKey(t.note ?? ""),
+  ].join("|")
 }
 
 const MACRO_NOMI: Record<string, string> = {
@@ -290,6 +329,156 @@ export async function importLibroPagaDumpFromSql(
 export async function importLibroPagaDumpFromBuffer(buf: Buffer, filename: string) {
   const sql = readDumpSqlFromBuffer(buf, filename)
   return importLibroPagaDumpFromSql(sql, filename || "upload")
+}
+
+/** Aggiunge i turni di UNA persona dal dump. Non cancella gli altri. */
+export async function importLibroPagaDumpPersonaFromSql(
+  sql: string,
+  dumpName: string,
+  opts: { q: string; mese?: string }
+): Promise<{
+  dump: string
+  storage: "sql" | "json"
+  mode: "persona"
+  snapshotId: string
+  persona: string
+  personaleId: string
+  mese: string | null
+  dumpTurni: number
+  inseriti: number
+  aggiornati: number
+  saltati: number
+  senzaMansione: number
+}> {
+  const q = String(opts.q ?? "").trim()
+  if (normPersonKey(q).length < 3) {
+    throw Object.assign(new Error("Scrivi almeno 3 lettere del nominativo (es. Petruzzi)"), { status: 400 })
+  }
+  const mese = opts.mese && /^\d{4}-\d{2}$/.test(opts.mese) ? opts.mese : ""
+  const current = await exportFullFileDb()
+  if (!current.personale.length) {
+    throw Object.assign(new Error("Anagrafica vuota: crea prima la persona in Personale."), { status: 409 })
+  }
+  const imported = dumpSqlToDb(sql)
+  if (!imported.turni.length) throw Object.assign(new Error("Dump senza turni (tabella workshifts)"), { status: 400 })
+
+  const dumpHits = imported.personale.filter((p) => personMatchesQ(p, q))
+  const currentHits = current.personale.filter((p) => personMatchesQ(p, q))
+  if (!dumpHits.length) {
+    throw Object.assign(new Error(`Nel dump Payroll non c’è nessuno per «${q}».`), { status: 404 })
+  }
+  if (!currentHits.length) {
+    throw Object.assign(
+      new Error(`In anagrafica non c’è nessuno per «${q}». Creala prima in Personale, poi ritenta.`),
+      { status: 404 }
+    )
+  }
+  if (currentHits.length > 1) {
+    throw Object.assign(
+      new Error(
+        `Più persone in anagrafica per «${q}»: ${currentHits.map((p) => nominativo(p)).join(", ")}. Scrivi nome e cognome.`
+      ),
+      { status: 409 }
+    )
+  }
+  if (dumpHits.length > 1) {
+    throw Object.assign(
+      new Error(
+        `Nel dump ci sono ${dumpHits.length} persone per «${q}»: ${dumpHits.map((p) => nominativo(p)).join(", ")}. Scrivi nome e cognome.`
+      ),
+      { status: 409 }
+    )
+  }
+
+  const target = currentHits[0]!
+  const dumpPerson = dumpHits[0]!
+  let dumpTurni = imported.turni.filter((t) => t.personaleId === dumpPerson.id)
+  if (mese) dumpTurni = dumpTurni.filter((t) => t.giorno.slice(0, 7) === mese)
+  if (!dumpTurni.length) {
+    throw Object.assign(
+      new Error(
+        mese
+          ? `Nessun turno nel dump per ${nominativo(dumpPerson)} a ${mese}.`
+          : `Nessun turno nel dump per ${nominativo(dumpPerson)}.`
+      ),
+      { status: 404 }
+    )
+  }
+
+  const livMap = mapDumpLivelloIds(imported.livelli, current.livelli)
+  const livOk = new Set(current.livelli.map((l) => l.id))
+  const existingById = new Map(current.turni.map((t) => [t.id, t]))
+  const seen = new Set(current.turni.map((t) => turnoDupKey(t)))
+  const toMerge: LpagaTurno[] = []
+  let aggiornati = 0
+  let saltati = 0
+  let senzaMansione = 0
+  for (const t of dumpTurni) {
+    const livelloId = livMap.get(t.livelloId) && livOk.has(livMap.get(t.livelloId)!) ? livMap.get(t.livelloId)! : livOk.has(t.livelloId) ? t.livelloId : ""
+    if (!livelloId) {
+      senzaMansione += 1
+      continue
+    }
+    const row: LpagaTurno = {
+      ...t,
+      personaleId: target.id,
+      livelloId,
+      giorno: t.giorno.slice(0, 10),
+    }
+    const prev = existingById.get(t.id)
+    if (prev) {
+      toMerge.push({
+        ...row,
+        id: t.id,
+        creatoDa: prev.creatoDa,
+        createdAt: prev.createdAt,
+      })
+      aggiornati += 1
+      continue
+    }
+    if (seen.has(turnoDupKey(row))) {
+      saltati += 1
+      continue
+    }
+    seen.add(turnoDupKey(row))
+    toMerge.push(row)
+  }
+  if (!toMerge.length) {
+    throw Object.assign(
+      new Error(
+        `Nessun turno nuovo da aggiungere per ${nominativo(target)}` +
+          (saltati ? ` (${saltati} già presenti)` : "") +
+          (senzaMansione ? `, ${senzaMansione} senza mansione in anagrafica` : "") +
+          "."
+      ),
+      { status: 409 }
+    )
+  }
+
+  const snapshot = saveLibroPagaSnapshot(current, `prima turni ${nominativo(target)} ${dumpName}`)
+  const storage = await mergeTurniKeepOthers(toMerge)
+  return {
+    dump: dumpName,
+    storage,
+    mode: "persona",
+    snapshotId: snapshot.id,
+    persona: nominativo(target),
+    personaleId: target.id,
+    mese: mese || null,
+    dumpTurni: dumpTurni.length,
+    inseriti: toMerge.length - aggiornati,
+    aggiornati,
+    saltati,
+    senzaMansione,
+  }
+}
+
+export async function importLibroPagaDumpPersonaFromBuffer(
+  buf: Buffer,
+  filename: string,
+  opts: { q: string; mese?: string }
+) {
+  return importLibroPagaDumpPersonaFromSql(readDumpSqlFromBuffer(buf, filename), filename || "upload", opts)
 }
 
 export async function importLibroPagaDump(): Promise<
