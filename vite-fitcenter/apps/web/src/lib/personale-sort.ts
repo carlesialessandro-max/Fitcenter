@@ -40,6 +40,38 @@ export function displayNomeCognome(p: {
   return { nome, cognome }
 }
 
+export function normCerca(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+}
+
+export function testoCercaPersona(p: {
+  nominativo?: string
+  nome?: string
+  cognome?: string
+  username?: string
+  repartoNome?: string
+}): string {
+  const { nome, cognome } = displayNomeCognome(p)
+  return [p.nominativo, nome, cognome, p.username, p.repartoNome].filter(Boolean).join(" ")
+}
+
+export function testoCercaTurno(
+  t: { personaleNome?: string; livelloNome?: string; giorno?: string; note?: string },
+  p?: {
+    nominativo?: string
+    nome?: string
+    cognome?: string
+    username?: string
+    repartoNome?: string
+  }
+): string {
+  return [t.personaleNome, t.livelloNome, t.giorno, t.note, p ? testoCercaPersona(p) : ""].filter(Boolean).join(" ")
+}
+
 function chiaveNomeCognome(p: { nome?: string; cognome?: string; nominativo?: string }): string {
   const { nome, cognome } = displayNomeCognome(p)
   if (nome || cognome) return `${cognome} ${nome}`.trim()

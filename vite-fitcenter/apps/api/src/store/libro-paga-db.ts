@@ -172,6 +172,12 @@ function ymd(v: unknown): string {
   }
   const s = String(v ?? "").trim()
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const it = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/)
+  if (it) {
+    const d = it[1]!.padStart(2, "0")
+    const m = it[2]!.padStart(2, "0")
+    return `${it[3]}-${m}-${d}`
+  }
   return s
 }
 
@@ -1090,7 +1096,7 @@ export async function listTurni(mese?: string): Promise<LpagaTurno[]> {
 }
 
 function filterTurniFile(mese?: string): LpagaTurno[] {
-  const list = [...readFile().turni]
+  const list = readFile().turni.map((t) => ({ ...t, giorno: ymd(t.giorno) }))
   const filtered =
     mese && /^\d{4}-\d{2}$/.test(mese) ? list.filter((t) => t.giorno.startsWith(mese)) : list
   return filtered.sort((a, b) => (a.giorno < b.giorno ? 1 : a.giorno > b.giorno ? -1 : 0))
@@ -1424,8 +1430,11 @@ export function cmpPersonaleNomeCognome(
 export function nominativo(p: LpagaPersonale): string {
   const c = (p.cognome ?? "").trim()
   const n = (p.nome ?? "").trim()
-  if (c && n) return `${c} ${n}`
-  return n || c || p.username || p.id
+  const placeholder = /^x+$/i.test(n)
+  if (c && n && !placeholder) return `${c} ${n}`
+  if (c) return c
+  if (n) return n
+  return (p.username ?? "").trim() || p.id
 }
 
 export function dominioLivello(livelli: LpagaLivello[], id: string): string {

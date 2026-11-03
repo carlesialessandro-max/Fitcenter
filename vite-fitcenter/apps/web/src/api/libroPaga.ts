@@ -233,6 +233,7 @@ export const libroPagaApi = {
     fd.append("file", file)
     return api.post<{
       turni: number
+      turniRiassegnati?: number
       mode: string
       snapshotId: string
       storage: string

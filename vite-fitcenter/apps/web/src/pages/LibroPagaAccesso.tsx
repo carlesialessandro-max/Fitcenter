@@ -14,7 +14,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
-import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
+import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome, normCerca, testoCercaTurno } from "@/lib/personale-sort"
 import { ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 import { filtraAlberoLivelli, livelloIdsAssegnati, mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
@@ -852,19 +852,18 @@ function Turni({
     }
   }
   const rows = useMemo(() => {
-    const n = cercaTurni.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+    const n = normCerca(cercaTurni)
+    const personeById = new Map(data.personale.map((p) => [p.id, p]))
     return [...data.turni]
       .filter((t) => {
         if (isUser && t.personaleId !== me?.id) return false
-        if (cercaData && t.giorno !== cercaData) return false
+        if (cercaData && t.giorno.slice(0, 10) !== cercaData) return false
         if (!n) return true
-        const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
-        const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
-        const dataIt = fmtDateIt(t.giorno)
-        return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || dataIt.includes(cercaTurni.trim())
+        const hay = normCerca(testoCercaTurno(t, personeById.get(t.personaleId)))
+        return hay.includes(n) || fmtDateIt(t.giorno).includes(cercaTurni.trim())
       })
       .sort((a, b) => b.giorno.localeCompare(a.giorno))
-  }, [data.turni, cercaTurni, cercaData, isUser, me?.id])
+  }, [data.turni, data.personale, cercaTurni, cercaData, isUser, me?.id])
 
   return (
     <div className="mt-4 space-y-4">

@@ -33,7 +33,7 @@ import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personal
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
-import { cmpNomeCognome, displayNomeCognome } from "@/lib/personale-sort"
+import { cmpNomeCognome, displayNomeCognome, normCerca, testoCercaTurno } from "@/lib/personale-sort"
 import { RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
 import { calcolaImportoTurno, etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 import { mansioniInseribiliTurno } from "@/lib/libro-paga-livelli"
@@ -121,7 +121,9 @@ export function LibroPaga() {
       invalidate()
       void qc.invalidateQueries({ queryKey: ["libro-paga-snapshots"] })
       alert(
-        `Importati ${r.turni} turni da ${r.dump}. Ruoli e anagrafica non modificati. Snapshot salvato.`
+        `Importati ${r.turni} turni da ${r.dump}` +
+          (r.turniRiassegnati ? ` (${r.turniRiassegnati} agganciati all'anagrafica attuale)` : "") +
+          `. Ruoli e anagrafica non modificati. Snapshot salvato.`
       )
     },
     onError: (e: Error) => setError(e.message),
@@ -938,13 +940,13 @@ function TurniTab({
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
   const [importMessage, setImportMessage] = useState("")
   const [importHasErrors, setImportHasErrors] = useState(false)
-  const n = q.trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
+  const n = normCerca(q)
+  const personeById = useMemo(() => new Map(data.personale.map((p) => [p.id, p])), [data.personale])
   const rows = data.turni.filter((t) => {
-    if (cercaData && t.giorno !== cercaData) return false
+    if (cercaData && t.giorno.slice(0, 10) !== cercaData) return false
     if (!n) return true
-    const nome = (t.personaleNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
-    const mans = (t.livelloNome ?? "").toLowerCase().normalize("NFD").replace(/\p{M}/gu, "")
-    return nome.includes(n) || mans.includes(n) || t.giorno.includes(n) || fmtDateIt(t.giorno).includes(q.trim())
+    const hay = normCerca(testoCercaTurno(t, personeById.get(t.personaleId)))
+    return hay.includes(n) || fmtDateIt(t.giorno).includes(q.trim())
   })
   const saveMut = useMutation({
     mutationFn: () => {
