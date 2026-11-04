@@ -801,7 +801,7 @@ export async function getLpagaConvalida(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
     res.json({
@@ -836,7 +836,7 @@ export async function getLpagaConvalidaMese(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
     res.json(
@@ -872,7 +872,7 @@ export async function postLpagaConvalidaMese(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
     if (isMeseBloccato(mese) && me.ruolo !== "admin") {
@@ -882,7 +882,7 @@ export async function postLpagaConvalidaMese(req: Request, res: Response) {
     await autoBloccaMeseSeCompleto(mese, sess.nominativo || sess.username || sess.id)
     const aggiornate = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni: scoped, personaleById: perBy }),
       perBy
     )
     res.json(

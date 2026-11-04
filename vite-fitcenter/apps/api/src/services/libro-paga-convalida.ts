@@ -451,13 +451,15 @@ export function conteggioConvalide(turnoIds: string[]): { n: number; ok: number 
   return { n, ok }
 }
 
-export function proponeConvalidaMese(opts: {
+export async function proponeConvalidaMese(opts: {
   mese: string
   turni: (LpagaTurno & { personaleNome: string; livelloNome: string; dominio?: string })[]
   personaleById: Map<string, LpagaPersonale>
-}): TurnoConvalidaProposta[] {
-  const cal = listCalendarioPerConvalida()
+}): Promise<TurnoConvalidaProposta[]> {
   const days = daysInMonth(opts.mese)
+  const cal = await listCalendarioPerConvalida(
+    days.length ? { from: days[0]!, to: days[days.length - 1]! } : undefined
+  )
   const occ: MatchCalendario[] = []
   for (const date of days) {
     const dow = new Date(`${date}T12:00:00`).getDay()

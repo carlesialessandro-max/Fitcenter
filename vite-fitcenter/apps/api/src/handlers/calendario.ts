@@ -22,6 +22,7 @@ import {
   writeCalendarioDb,
 } from "../store/calendario-db.js"
 import { isSmtpConfigured, sendMail } from "../services/mailer.js"
+import { loadScuolaNuotoCalendarioEvents } from "./scuolaNuoto.js"
 
 const COMPARTI: CalendarioComparto[] = [
   "corsi",
@@ -105,7 +106,7 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
 
 const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi", "pulizie"]
 
-/** PISCINAORARIO (S.N. Bambini): import una tantum, poi solo calendario-reparti.json. */
+/** Sala fitness (Excel una tantum) e fallback scuola nuoto se il gestionale non risponde. */
 const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto", "sala_fitness"]
 
 function isIsoDate(s: string): boolean {
@@ -608,6 +609,76 @@ function ensureSummerPoolShifts(db: CalendarioDb): CalendarioDb {
   return next
 }
 
+function defaultScuolaNuotoRange(): { from: string; to: string } {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  start.setDate(start.getDate() - 7)
+  const end = new Date(now.getFullYear(), now.getMonth() + 2, 0)
+  return { from: isoYmdFromDate(start), to: isoYmdFromDate(end) }
+}
+
+function expandWeeklyToRange(
+  events: CalendarioMergedEvent[],
+  from: string,
+  to: string
+): CalendarioMergedEvent[] {
+  const out: CalendarioMergedEvent[] = []
+  for (const e of events) {
+    if (e.dateIso || e.seasonal) {
+      out.push(e)
+      continue
+    }
+    let cur = from
+    let guard = 0
+    while (cur <= to && guard++ < 400) {
+      const [y, m, d] = cur.split("-").map(Number)
+      const dt = new Date(y, m - 1, d)
+      if (dt.getDay() === e.dow) {
+        out.push({ ...e, dateIso: cur })
+      }
+      dt.setDate(dt.getDate() + 1)
+      cur = isoYmdFromDate(dt)
+    }
+  }
+  return out
+}
+
+async function eventsForComparto(
+  comparto: CalendarioComparto,
+  db: CalendarioDb,
+  range?: { from: string; to: string }
+): Promise<CalendarioMergedEvent[]> {
+  const merged = mergeForComparto(comparto, db)
+  if (comparto !== "scuola_nuoto") return merged
+  const from = range?.from && isIsoDate(range.from) ? range.from : defaultScuolaNuotoRange().from
+  const to = range?.to && isIsoDate(range.to) ? range.to : defaultScuolaNuotoRange().to
+  try {
+    const gest = await loadScuolaNuotoCalendarioEvents(from, to)
+    if (gest == null) return merged
+    const revByKey = new Map<string, CalendarioSlotRevision>()
+    for (const r of db.revisions) {
+      if (r.comparto === "scuola_nuoto") revByKey.set(r.stableKey, r)
+    }
+    const fromGest: CalendarioMergedEvent[] = []
+    for (const e of gest) {
+      const r = revByKey.get(e.stableKey)
+      if (r?.removed) continue
+      fromGest.push({
+        ...e,
+        start: r?.start ?? e.start,
+        title: r?.title ?? e.title,
+        istruttoreId: r?.istruttoreId ?? null,
+        staffOverride: r?.staffOverride ?? e.staffOverride ?? null,
+        note: r?.note ?? null,
+      })
+    }
+    const extra = merged.filter((e) => String(e.stableKey ?? "").startsWith("manual-"))
+    return [...fromGest, ...expandWeeklyToRange(extra, from, to)]
+  } catch {
+    return merged
+  }
+}
+
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   if (MANUAL_ONLY_COMPARTI.includes(comparto)) {
     const manualDb = comparto === "piscina" ? ensureSummerPoolShifts(db) : db
@@ -740,14 +811,15 @@ const ASSEGNAZIONE_COMPARTI: CalendarioComparto[] = [
 ]
 
 /** Eventi calendario (orari + istruttore) per confrontare i turni Libro paga. */
-export function listCalendarioPerConvalida(): {
+export async function listCalendarioPerConvalida(range?: { from: string; to: string }): Promise<{
   instructors: CalendarioIstruttore[]
   events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[]
-} {
+}> {
   const db = readCalendarioDb()
   const events: (CalendarioMergedEvent & { comparto: CalendarioComparto; staffDisplay: string })[] = []
   for (const comparto of CONVALIDA_COMPARTI) {
-    for (const e of mergeForComparto(comparto, db)) {
+    const list = await eventsForComparto(comparto, db, range)
+    for (const e of list) {
       events.push({ ...e, comparto, staffDisplay: displayStaff(e, db.instructors) })
     }
   }
@@ -769,7 +841,7 @@ export function listCalendarioPerAssegnazione(): {
   return { instructors: db.instructors, events }
 }
 
-export function getCalendarioPianoOperativo(req: Request, res: Response) {
+export async function getCalendarioPianoOperativo(req: Request, res: Response) {
   const u = req.user!
   if (u.role !== "admin" && u.role !== "calendari") return res.status(403).json({ message: "Permessi insufficienti" })
 
@@ -779,8 +851,11 @@ export function getCalendarioPianoOperativo(req: Request, res: Response) {
 
   const dateIso = isoYmdFromDate(date)
   const db = readCalendarioDb()
-  const reparti = PIANO_OPERATIVO_COMPARTI.map((comparto) => {
-    const events = eventsMatchingCalendarDay(mergeForComparto(comparto, db), date)
+  const reparti: { comparto: CalendarioComparto; label: string; events: (CalendarioMergedEvent & { staffDisplay: string })[] }[] =
+    []
+  for (const comparto of PIANO_OPERATIVO_COMPARTI) {
+    const merged = await eventsForComparto(comparto, db, { from: dateIso, to: dateIso })
+    const events = eventsMatchingCalendarDay(merged, date)
       .map((e) => ({
         ...e,
         staffDisplay: displayStaff(e, db.instructors),
@@ -791,24 +866,29 @@ export function getCalendarioPianoOperativo(req: Request, res: Response) {
           a.title.localeCompare(b.title) ||
           a.staffDisplay.localeCompare(b.staffDisplay, "it")
       )
-    return {
+    reparti.push({
       comparto,
       label: COMPARTO_LABELS[comparto],
       events,
-    }
-  })
+    })
+  }
 
   res.json({ dateIso, reparti, instructors: db.instructors })
 }
 
-export function getCalendarioComparto(req: Request, res: Response) {
+export async function getCalendarioComparto(req: Request, res: Response) {
   const u = req.user!
   const raw = normalizeCompartoParam(String(req.params.comparto ?? ""))
   if (!isComparto(raw)) return res.status(400).json({ message: "Comparto non valido" })
   if (!canReadComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
 
+  const from = String(req.query.from ?? "").trim()
+  const to = String(req.query.to ?? "").trim()
   const db = readCalendarioDb()
-  const events = mergeForComparto(raw, db)
+  const events = await eventsForComparto(raw, db, {
+    from: isIsoDate(from) ? from : defaultScuolaNuotoRange().from,
+    to: isIsoDate(to) ? to : defaultScuolaNuotoRange().to,
+  })
   const withDisplay = events.map((e) => ({
     ...e,
     staffDisplay: displayStaff(e, db.instructors),
@@ -895,7 +975,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     if (!staffOverride && !hasIns) return res.status(400).json({ message: "Inserire istruttore da anagrafica o nome testuale" })
     const stableKey =
       raw === "scuola_nuoto"
-        ? stableKeyFromParts(zona, dow, start, title, staffOverride)
+        ? `manual-${crypto.randomUUID()}`
         : raw === "sala_fitness"
           ? stableKeyFromParts(zona, dateIso ? 0 : dow, start, `${title}|${dateIso ?? ""}|${staffOverride}`)
           : `manual-${crypto.randomUUID()}`
@@ -903,7 +983,7 @@ export function patchCalendarioSlot(req: Request, res: Response) {
       comparto: raw,
       stableKey,
       dow,
-      dateIso: dateIso,
+      dateIso: raw === "scuola_nuoto" ? null : dateIso,
       start,
       title,
       zona,
@@ -925,6 +1005,31 @@ export function patchCalendarioSlot(req: Request, res: Response) {
   const prevRev = db.revisions.find((r) => r.comparto === raw && r.stableKey === stableKey)
 
   if (body.removed === true) {
+    const isGestionaleSn = raw === "scuola_nuoto" && stableKey.startsWith("sn-gestionale|")
+    if (isGestionaleSn) {
+      const extra = Array.isArray(body.mergedStableKeys) ? body.mergedStableKeys : []
+      const keys = [...new Set([stableKey, ...extra.map((k) => String(k ?? "").trim()).filter(Boolean)])]
+      for (const k of keys) {
+        const prev = db.revisions.find((r) => r.comparto === raw && r.stableKey === k)
+        db = upsertRevision(db, {
+          comparto: raw,
+          stableKey: k,
+          dow: Number.isFinite(Number(body.dow ?? prev?.dow)) ? Number(body.dow ?? prev?.dow) : 1,
+          dateIso: prev?.dateIso ?? (body.dateIso != null ? String(body.dateIso).trim() : null),
+          start: normalizeHm(String(body.start ?? prev?.start ?? "00:00").trim()) || "00:00",
+          title: String(body.title ?? prev?.title ?? "Lezione").trim() || "Lezione",
+          zona: String(body.zona ?? prev?.zona ?? "scuola_nuoto"),
+          istruttoreId: prev?.istruttoreId ?? null,
+          staffOverride: prev?.staffOverride ?? null,
+          note: prev?.note ?? null,
+          removed: true,
+          updatedAt: now,
+          updatedBy: by,
+        })
+      }
+      writeCalendarioDb(db)
+      return res.json({ ok: true })
+    }
     const deleteFromDb =
       stableKey.startsWith("manual-") || MANUAL_ONLY_COMPARTI.includes(raw) || SERVER_SEEDED_COMPARTI.includes(raw)
     if (deleteFromDb) {
@@ -958,7 +1063,13 @@ export function patchCalendarioSlot(req: Request, res: Response) {
     return res.status(404).json({ message: "Slot non trovato" })
   }
 
-  if (SERVER_SEEDED_COMPARTI.includes(raw) && !prevRev && !stableKey.startsWith("manual-") && raw !== "sala_fitness") {
+  if (
+    SERVER_SEEDED_COMPARTI.includes(raw) &&
+    !prevRev &&
+    !stableKey.startsWith("manual-") &&
+    raw !== "sala_fitness" &&
+    !stableKey.startsWith("sn-gestionale|")
+  ) {
     return res.status(404).json({ message: "Slot non trovato" })
   }
 

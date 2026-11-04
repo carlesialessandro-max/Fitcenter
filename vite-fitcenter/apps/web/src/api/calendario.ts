@@ -89,8 +89,15 @@ export type PatchCalendarioSlotBody = {
 export const calendarioApi = {
   getPianoOperativo: (dateIso: string) =>
     api.get<PianoOperativoResponse>(`/data/calendario/piano-operativo?date=${encodeURIComponent(dateIso)}`),
-  getComparto: (comparto: CalendarioComparto) =>
-    api.get<CalendarioCompartoResponse>(`/data/calendario/${encodeURIComponent(comparto)}`),
+  getComparto: (comparto: CalendarioComparto, range?: { from: string; to: string }) => {
+    const q = new URLSearchParams()
+    if (range?.from) q.set("from", range.from)
+    if (range?.to) q.set("to", range.to)
+    const qs = q.toString()
+    return api.get<CalendarioCompartoResponse>(
+      `/data/calendario/${encodeURIComponent(comparto)}${qs ? `?${qs}` : ""}`
+    )
+  },
   patchSlot: (comparto: CalendarioComparto, body: PatchCalendarioSlotBody) =>
     api.patch<{ ok: boolean; stableKey?: string }>(`/data/calendario/${encodeURIComponent(comparto)}/slot`, body),
   duplica: (

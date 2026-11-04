@@ -326,6 +326,299 @@ function parseRequestedDay(raw: unknown): WeekdayKey | null {
   return null
 }
 
+export type ScuolaNuotoCorsoGroup = {
+  key: string
+  baseKey: string
+  idCorso: number | null
+  corso: string
+  oraInizio: string | null
+  oraFine: string | null
+  corsia: string | null
+  periodo: string | null
+  livello: string | null
+  istruttore: string | null
+  vasca: string | null
+  servizio: string | null
+  maxPartecipanti: number | null
+  utenti: {
+    key: string
+    idUtente: number | null
+    idIscrizione: number | null
+    nome: string | null
+    cognome: string | null
+    cellulare: string | null
+    email: string | null
+    eta: number | null
+  }[]
+}
+
+function groupRawRowsToCorsi(filtered: Record<string, unknown>[]): ScuolaNuotoCorsoGroup[] {
+  const groups = new Map<string, ScuolaNuotoCorsoGroup>()
+  for (const raw of filtered) {
+    const idUtente = firstNonEmpty(raw, ["IDUtente", "IdUtente", "idUtente", "IDCliente", "IdCliente", "IDAnagrafica"])
+    const nome = firstNonEmpty(raw, ["Nome", "nome", "UtenteNome", "ClienteNome", "AnagraficaNome"])
+    const cognome = firstNonEmpty(raw, ["Cognome", "cognome", "UtenteCognome", "ClienteCognome", "AnagraficaCognome"])
+    const cellulare = firstNonEmpty(raw, ["SMS", "Sms", "sms", "Cellulare", "Telefono", "Tel", "TelefonoCellulare"])
+    const email = firstNonEmpty(raw, ["Email", "E-mail", "Mail"])
+    const etaRaw = firstNonEmpty(raw, ["Eta", "Età", "Anni"])
+    const eta = etaRaw != null && /^\d+$/.test(etaRaw.trim()) ? Number(etaRaw.trim()) : null
+    const orarioRaw =
+      firstNonEmpty(raw, ["CorsiOrario", "Corsi Orario", "OrarioCorso", "Orario Corso", "Orario"]) ??
+      firstNonEmptyByKeyContains(raw, ["corsi", "orario"]) ??
+      firstNonEmptyByKeyContains(raw, ["orario"])
+    const tr = orarioRaw ? extractTimeRangeHHmm(orarioRaw) : { from: null, to: null }
+    const { from, to, label } = orarioRaw
+      ? { from: tr.from, to: tr.to, label: String(orarioRaw) }
+      : guessOrario(raw)
+    const servizio =
+      firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "Categoria", "TipoServizio"]) ??
+      (label && label.includes("BAMBINI") ? "BAMBINI" : null)
+    const vasca = firstNonEmpty(raw, ["Vasca", "VascaDescrizione", "Impianto", "Struttura"])
+    const corsia = firstNonEmpty(raw, ["Corsia", "CorsiCorsia"]) ?? firstNonEmptyByKeyContains(raw, ["corsia"])
+    const istruttore =
+      firstNonEmpty(raw, ["NomiIstruttori", "Nomi Istruttori", "NomiIstruttore"]) ??
+      firstNonEmptyByKeyContains(raw, ["nomi", "istruttori"]) ??
+      joinParts(
+        firstNonEmpty(raw, ["IstruttoreNome", "NomeIstruttore", "DocenteNome", "MaestroNome", "AllenatoreNome"]),
+        firstNonEmpty(raw, ["IstruttoreCognome", "CognomeIstruttore", "DocenteCognome", "MaestroCognome", "AllenatoreCognome"])
+      ) ??
+      firstNonEmpty(raw, [
+        "Istruttore",
+        "IstruttoreNomeCognome",
+        "NomeIstruttoreCognome",
+        "Docente",
+        "Maestro",
+        "Allenatore",
+        "OperatoreCorso",
+        "Operatore",
+        "Consulente",
+      ]) ??
+      firstNonEmptyByKeyContains(raw, ["istruttore", "maestro", "docente", "allenatore"])
+    const periodo = firstNonEmpty(raw, ["Periodo", "CorsiPeriodo", "PeriodoDescrizione", "NomePeriodo"])
+    const livello =
+      firstNonEmpty(raw, ["Livello", "CorsiLivello", "LivelloCorso"]) ?? firstNonEmptyByKeyContains(raw, ["livello"])
+    const maxRaw =
+      firstNonEmpty(raw, ["NrMax", "NumeroMax", "MaxPartecipanti", "NumeroPosti", "Nr"]) ??
+      firstNonEmptyByKeyContains(raw, ["nr", "max"]) ??
+      firstNonEmptyByKeyContains(raw, ["numero", "max"])
+    const maxPartecipanti = (() => {
+      const s = String(maxRaw ?? "").trim()
+      const m = s.match(/\b(\d{1,3})\b/)
+      const n = m ? Number(m[1]) : NaN
+      return Number.isFinite(n) ? n : null
+    })()
+    const corsoName =
+      firstNonEmpty(raw, ["Corso", "NomeCorso", "CorsiNome", "CorsiDescrizione", "DescrizioneCorso", "Descrizione"]) ??
+      label ??
+      "Corso"
+    const idCorsoRaw = String(firstNonEmpty(raw, ["IDCorso", "IdCorso", "CorsiIDCorso"]) ?? "").trim()
+    const idCorsoNum = Number(idCorsoRaw)
+    const hasStableCorsoId = Number.isFinite(idCorsoNum) && idCorsoNum > 0
+    const rangeStr = from && to ? `${from}-${to}` : from || to ? `${from ?? ""}${to ?? ""}` : ""
+    const baseKey = hasStableCorsoId
+      ? `corso:${idCorsoNum}`
+      : `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${rangeStr}::${normalizeText(
+          corsia ?? ""
+        )}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
+    const key = `${baseKey}::${normalizeText(livello ?? "")}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        baseKey,
+        idCorso: hasStableCorsoId ? idCorsoNum : null,
+        corso: corsoName,
+        oraInizio: from,
+        oraFine: to,
+        corsia,
+        periodo,
+        livello,
+        istruttore,
+        vasca,
+        servizio,
+        maxPartecipanti,
+        utenti: [],
+      })
+    }
+    groups.get(key)!.utenti.push({
+      key: normalizeParticipantKey({ id: idUtente, email, nome, cognome, cellulare }),
+      idUtente: (() => {
+        const n = Number(String(idUtente ?? "").trim())
+        return Number.isFinite(n) ? n : null
+      })(),
+      idIscrizione: (() => {
+        const n = Number(
+          String(firstNonEmpty(raw, ["CorsiIDIscrizione", "CorsiIdIscrizione", "IDIscrizione", "IdIscrizione"]) ?? "").trim()
+        )
+        return Number.isFinite(n) ? n : null
+      })(),
+      nome,
+      cognome,
+      cellulare,
+      email,
+      eta,
+    })
+  }
+  return Array.from(groups.values()).sort((a, b) => {
+    const la = normalizeText(a.livello ?? "")
+    const lb = normalizeText(b.livello ?? "")
+    if (la !== lb) return la.localeCompare(lb)
+    const ta = (a.oraInizio ?? "99:99").replace(":", "")
+    const tb = (b.oraInizio ?? "99:99").replace(":", "")
+    if (ta !== tb) return ta.localeCompare(tb)
+    return a.corso.localeCompare(b.corso)
+  })
+}
+
+function ymdFromSqlValue(v: unknown): string | null {
+  if (v == null || v === "") return null
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const y = v.getUTCFullYear()
+    const m = String(v.getUTCMonth() + 1).padStart(2, "0")
+    const d = String(v.getUTCDate()).padStart(2, "0")
+    return `${y}-${m}-${d}`
+  }
+  const s = String(v).trim()
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`
+  const it = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s)
+  if (it) return `${it[3]}-${it[2]}-${it[1]}`
+  return null
+}
+
+function rowValidOnIso(
+  raw: Record<string, unknown>,
+  iso: string,
+  dateStartCol: string,
+  dateEndCol: string,
+  abbStartCol: string,
+  abbEndCol: string
+): boolean {
+  const cs = ymdFromSqlValue(raw[dateStartCol])
+  const ce = ymdFromSqlValue(raw[dateEndCol])
+  const as = ymdFromSqlValue(raw[abbStartCol])
+  const ae = ymdFromSqlValue(raw[abbEndCol])
+  if (cs && iso < cs) return false
+  if (ce && iso > ce) return false
+  if (as && iso < as) return false
+  if (ae && iso > ae) return false
+  return true
+}
+
+function eachIsoInclusive(fromIso: string, toIso: string): string[] {
+  const out: string[] = []
+  let cur = fromIso
+  let guard = 0
+  while (cur <= toIso && guard++ < 400) {
+    out.push(cur)
+    const [y, m, d] = cur.split("-").map(Number)
+    const dt = new Date(Date.UTC(y, m - 1, d))
+    dt.setUTCDate(dt.getUTCDate() + 1)
+    cur = `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`
+  }
+  return out
+}
+
+export type ScuolaNuotoCalendarioEvent = {
+  id: string
+  zona: string
+  sheet: string
+  dow: number
+  dateIso: string
+  start: string
+  title: string
+  staff: string
+  stableKey: string
+  staffOverride: string | null
+}
+
+/** `null` = gestionale non disponibile; `[]` = connesso ma nessuna lezione nel periodo. */
+export async function loadScuolaNuotoCalendarioEvents(
+  fromIso: string,
+  toIso: string
+): Promise<ScuolaNuotoCalendarioEvent[] | null> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fromIso) || !/^\d{4}-\d{2}-\d{2}$/.test(toIso) || fromIso > toIso) return []
+  const pool = await getPool()
+  if (!pool) return null
+  const view = sqlViewInfo()
+  let dateStartCol: string | null = null
+  let dateEndCol: string | null = null
+  let abbStartCol: string | null = null
+  let abbEndCol: string | null = null
+  try {
+    const cols = await getViewColumns(pool, view.schema, view.name)
+    dateStartCol =
+      pickExistingColumn(cols, ["CorsiDataInizio", "corsidatainizio", "data_inizio_corso", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["corsi", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["datainizio"])
+    dateEndCol =
+      pickExistingColumn(cols, ["CorsiDataFine", "corsidatafine", "data_fine_corso", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["corsi", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["datafine"])
+    abbStartCol =
+      pickExistingColumn(cols, ["AbbonamentiIscrizioneDataInizio", "abbonamentiscrizionedatainizio"]) ??
+      pickColumnByKeyContains(cols, ["abbonamentiiscrizione", "datainizio"]) ??
+      pickColumnByKeyContains(cols, ["abbonamento", "iscrizione", "datainizio"])
+    abbEndCol =
+      pickExistingColumn(cols, ["AbbonamentiIscrizioneDataFine", "abbonamentiscrizionedatafine"]) ??
+      pickColumnByKeyContains(cols, ["abbonamentiiscrizione", "datafine"]) ??
+      pickColumnByKeyContains(cols, ["abbonamento", "iscrizione", "datafine"])
+  } catch {
+    return null
+  }
+  if (!dateStartCol || !dateEndCol || !abbStartCol || !abbEndCol) return null
+  const q = `
+    SELECT *
+    FROM ${view.query}
+    WHERE (TRY_CONVERT(date, [${dateStartCol}]) <= @to)
+      AND (TRY_CONVERT(date, [${dateEndCol}]) >= @from)
+      AND (TRY_CONVERT(date, [${abbStartCol}]) <= @to)
+      AND (TRY_CONVERT(date, [${abbEndCol}]) >= @from)
+  `
+  let rows: Record<string, unknown>[] = []
+  try {
+    const r = await pool.request().input("from", sql.Date, fromIso).input("to", sql.Date, toIso).query(q)
+    rows = (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return null
+  }
+  const events: ScuolaNuotoCalendarioEvent[] = []
+  for (const iso of eachIsoInclusive(fromIso, toIso)) {
+    const day = new Date(`${iso}T12:00:00`)
+    const wk = weekdayTokens(weekdayKeyIt(day))
+    const filtered = rows.filter(
+      (raw) => isRowForWeekday(raw, wk) && rowValidOnIso(raw, iso, dateStartCol, dateEndCol, abbStartCol, abbEndCol)
+    )
+    for (const c of groupRawRowsToCorsi(filtered)) {
+      const start = c.oraInizio || "00:00"
+      const orario = c.oraInizio && c.oraFine ? `${c.oraInizio}-${c.oraFine}` : c.oraInizio ? c.oraInizio : ""
+      const parts = [
+        orario,
+        c.corso,
+        c.livello ? `Livello ${c.livello}` : null,
+        c.istruttore ? `Istr: ${c.istruttore}` : null,
+        c.corsia ? `Corsia ${c.corsia}` : null,
+        c.servizio,
+        c.vasca,
+      ].filter(Boolean)
+      const staff = (c.istruttore ?? "").trim() || "—"
+      const stableKey = `sn-gestionale|${iso}|${c.key}`
+      events.push({
+        id: stableKey,
+        zona: "scuola_nuoto",
+        sheet: "Gestionale",
+        dow: day.getDay(),
+        dateIso: iso,
+        start,
+        title: parts.join(" · "),
+        staff,
+        stableKey,
+        staffOverride: staff === "—" ? null : staff,
+      })
+    }
+  }
+  return events
+}
+
 export async function getScuolaNuotoToday(req: Request, res: Response) {
   const pool = await getPool()
   if (!pool) return res.status(503).json({ message: "SQL non configurato" })
@@ -410,162 +703,7 @@ export async function getScuolaNuotoToday(req: Request, res: Response) {
 
   const filtered = rows.filter((raw) => isRowForWeekday(raw, wk))
   const wantDebug = String(req.query.debug ?? "").trim() === "1"
-
-  type Participant = {
-    key: string
-    idUtente: number | null
-    idIscrizione: number | null
-    nome: string | null
-    cognome: string | null
-    cellulare: string | null
-    email: string | null
-    eta: number | null
-    raw?: Record<string, unknown>
-  }
-
-  type Group = {
-    key: string
-    baseKey: string
-    idCorso: number | null
-    corso: string
-    oraInizio: string | null
-    oraFine: string | null
-    corsia: string | null
-    periodo: string | null
-    livello: string | null
-    istruttore: string | null
-    vasca: string | null
-    servizio: string | null
-    maxPartecipanti: number | null
-    utenti: Participant[]
-  }
-
-  const groups = new Map<string, Group>()
-
-  for (const raw of filtered) {
-    const idUtente = firstNonEmpty(raw, ["IDUtente", "IdUtente", "idUtente", "IDCliente", "IdCliente", "IDAnagrafica"])
-    const nome = firstNonEmpty(raw, ["Nome", "nome", "UtenteNome", "ClienteNome", "AnagraficaNome"])
-    const cognome = firstNonEmpty(raw, ["Cognome", "cognome", "UtenteCognome", "ClienteCognome", "AnagraficaCognome"])
-    const cellulare = firstNonEmpty(raw, ["SMS", "Sms", "sms", "Cellulare", "Telefono", "Tel", "TelefonoCellulare"])
-    const email = firstNonEmpty(raw, ["Email", "E-mail", "Mail"])
-    const etaRaw = firstNonEmpty(raw, ["Eta", "Età", "Anni"])
-    const eta = etaRaw != null && /^\d+$/.test(etaRaw.trim()) ? Number(etaRaw.trim()) : null
-
-    // Richiesta: orario da colonna "corsi orario"
-    const orarioRaw =
-      firstNonEmpty(raw, ["CorsiOrario", "Corsi Orario", "OrarioCorso", "Orario Corso", "Orario"]) ??
-      firstNonEmptyByKeyContains(raw, ["corsi", "orario"]) ??
-      firstNonEmptyByKeyContains(raw, ["orario"])
-    const tr = orarioRaw ? extractTimeRangeHHmm(orarioRaw) : { from: null, to: null }
-    const { from, to, label } = orarioRaw
-      ? { from: tr.from, to: tr.to, label: String(orarioRaw) }
-      : guessOrario(raw)
-    const servizio =
-      firstNonEmpty(raw, ["Servizio", "ServizioDescrizione", "Categoria", "TipoServizio"]) ??
-      (label && label.includes("BAMBINI") ? "BAMBINI" : null)
-    const vasca = firstNonEmpty(raw, ["Vasca", "VascaDescrizione", "Impianto", "Struttura"])
-    const corsia = firstNonEmpty(raw, ["Corsia", "CorsiCorsia"]) ?? firstNonEmptyByKeyContains(raw, ["corsia"])
-    const istruttore =
-      firstNonEmpty(raw, ["NomiIstruttori", "Nomi Istruttori", "NomiIstruttore"]) ??
-      firstNonEmptyByKeyContains(raw, ["nomi", "istruttori"]) ??
-      joinParts(
-        firstNonEmpty(raw, ["IstruttoreNome", "NomeIstruttore", "DocenteNome", "MaestroNome", "AllenatoreNome"]),
-        firstNonEmpty(raw, ["IstruttoreCognome", "CognomeIstruttore", "DocenteCognome", "MaestroCognome", "AllenatoreCognome"])
-      ) ??
-      firstNonEmpty(raw, [
-        "Istruttore",
-        "IstruttoreNomeCognome",
-        "NomeIstruttoreCognome",
-        "Docente",
-        "Maestro",
-        "Allenatore",
-        "OperatoreCorso",
-        "Operatore",
-        "Consulente",
-      ]) ??
-      firstNonEmptyByKeyContains(raw, ["istruttore", "maestro", "docente", "allenatore"])
-    const periodo = firstNonEmpty(raw, ["Periodo", "CorsiPeriodo", "PeriodoDescrizione", "NomePeriodo"])
-    const livello =
-      firstNonEmpty(raw, ["Livello", "CorsiLivello", "LivelloCorso"]) ?? firstNonEmptyByKeyContains(raw, ["livello"])
-    const maxRaw =
-      firstNonEmpty(raw, ["NrMax", "NumeroMax", "MaxPartecipanti", "NumeroPartecipantiMax", "NumeroPosti", "Nr"]) ??
-      firstNonEmptyByKeyContains(raw, ["nr", "max"]) ??
-      firstNonEmptyByKeyContains(raw, ["numero", "max"])
-    const maxPartecipanti = (() => {
-      const s = String(maxRaw ?? "").trim()
-      const m = s.match(/\b(\d{1,3})\b/)
-      const n = m ? Number(m[1]) : NaN
-      return Number.isFinite(n) ? n : null
-    })()
-    const corsoName =
-      firstNonEmpty(raw, ["Corso", "NomeCorso", "CorsiNome", "CorsiDescrizione", "DescrizioneCorso", "Descrizione"]) ??
-      label ??
-      "Corso"
-
-    const idCorsoRaw = String(firstNonEmpty(raw, ["IDCorso", "IdCorso", "CorsiIDCorso"]) ?? "").trim()
-    const idCorsoNum = Number(idCorsoRaw)
-    const hasStableCorsoId = Number.isFinite(idCorsoNum) && idCorsoNum > 0
-
-    const rangeStr = from && to ? `${from}-${to}` : from || to ? `${from ?? ""}${to ?? ""}` : ""
-
-    /** Chiave stabile tra le date: preferisci ID corso SQL; altrimenti fallback (può variare se cambia parsing orario). */
-    const baseKey = hasStableCorsoId
-      ? `corso:${idCorsoNum}`
-      : `${normalizeText(servizio ?? "")}::${normalizeText(corsoName)}::${rangeStr}::${normalizeText(
-          corsia ?? ""
-        )}::${normalizeText(vasca ?? "")}::${normalizeText(istruttore ?? "")}`
-    const key = `${baseKey}::${normalizeText(livello ?? "")}`
-    const existing = groups.get(key)
-    if (!existing) {
-      groups.set(key, {
-        key,
-        baseKey,
-        idCorso: hasStableCorsoId ? idCorsoNum : null,
-        corso: corsoName,
-        oraInizio: from,
-        oraFine: to,
-        corsia,
-        periodo,
-        livello,
-        istruttore,
-        vasca,
-        servizio,
-        maxPartecipanti,
-        utenti: [],
-      })
-    }
-
-    const pKey = normalizeParticipantKey({ id: idUtente, email, nome, cognome, cellulare })
-    groups.get(key)!.utenti.push({
-      key: pKey,
-      idUtente: (() => {
-        const s = String(idUtente ?? "").trim()
-        const n = Number(s)
-        return Number.isFinite(n) ? n : null
-      })(),
-      idIscrizione: (() => {
-        const s = String(firstNonEmpty(raw, ["CorsiIDIscrizione", "CorsiIdIscrizione", "IDIscrizione", "IdIscrizione"]) ?? "").trim()
-        const n = Number(s)
-        return Number.isFinite(n) ? n : null
-      })(),
-      nome,
-      cognome,
-      cellulare,
-      email,
-      eta,
-      raw: undefined,
-    })
-  }
-
-  const out = Array.from(groups.values()).sort((a, b) => {
-    const la = normalizeText(a.livello ?? "")
-    const lb = normalizeText(b.livello ?? "")
-    if (la !== lb) return la.localeCompare(lb)
-    const ta = (a.oraInizio ?? "99:99").replace(":", "")
-    const tb = (b.oraInizio ?? "99:99").replace(":", "")
-    if (ta !== tb) return ta.localeCompare(tb)
-    return a.corso.localeCompare(b.corso)
-  })
+  const out = groupRawRowsToCorsi(filtered)
 
   const debug = (() => {
     if (!wantDebug) return undefined

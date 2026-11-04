@@ -167,6 +167,18 @@ function staffCellLabel(s: string): string {
   return parts[0] ?? t
 }
 
+function isScuolaNuotoLesson(e: CalEvent): boolean {
+  return e.sheet === "Gestionale" || e.zona === "scuola_nuoto"
+}
+
+function lessonShortTitle(e: CalEvent): string {
+  let t = String(e.title ?? "").trim()
+  t = t.replace(/^\d{1,2}[:.]\d{2}\s*[–\-−—]\s*\d{1,2}[:.]\d{2}\s*[·\-–]\s*/u, "")
+  t = t.replace(/\s*Istr:\s*[^·]+/i, "")
+  t = t.replace(/\s*·\s*·+/g, " · ").replace(/^\s*·\s*|\s*·\s*$/g, "").trim()
+  return t || staffLaneLabel(e)
+}
+
 const SHIFT_SLOT_MINUTES = 30
 const SHIFT_LANE_PX_WEEK = 88
 const SHIFT_LANE_PX_DAY = 132
@@ -233,8 +245,11 @@ function ShiftBlock({
 }) {
   const { start, end } = eventTimeRange(e)
   const dur = formatShiftDurationLabel(start, end)
-  const label = staffLaneLabel(e)
-  const tip = `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
+  const gestionale = isScuolaNuotoLesson(e)
+  const label = gestionale ? lessonShortTitle(e) : staffLaneLabel(e)
+  const tip = gestionale
+    ? `${e.title}${e.staffDisplay && e.staffDisplay !== "—" ? ` · ${e.staffDisplay}` : ""}`
+    : `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
   return (
     <button
       type="button"
@@ -515,7 +530,7 @@ function EventPill({
         title={canEdit ? "Clic per modificare" : "Sola lettura"}
       >
         <span className="block truncate font-semibold text-zinc-200">{shiftPillLine(e)}</span>
-        <span className="block truncate text-zinc-300">{staffLabel}</span>
+        <span className="block truncate text-zinc-300">{isScuolaNuotoLesson(e) ? lessonShortTitle(e) : staffLabel}</span>
       </button>
     )
   }
@@ -550,7 +565,9 @@ function EventPill({
       {showShiftLine ? (
         <>
           <span className="font-semibold text-zinc-200">{shiftPillLine(e)}</span>
-          <span className="block truncate text-zinc-300">· {staffLabel}</span>
+          <span className="block truncate text-zinc-300">
+            · {isScuolaNuotoLesson(e) ? lessonShortTitle(e) : staffLabel}
+          </span>
         </>
       ) : (
         <>
@@ -1165,7 +1182,7 @@ function CreateSlotModal({
         <h2 className="text-base font-semibold text-zinc-100">{createSlotModalTitle(comparto)}</h2>
         <p className="text-xs text-zinc-500">
           {comparto === "scuola_nuoto"
-            ? "Lezione settimanale sul server (si ripete ogni settimana nel giorno scelto)."
+            ? "Lezione extra oltre al gestionale (si ripete ogni settimana nel giorno scelto)."
             : isCorsiLike
               ? "Corso settimanale sul planning (stesso giorno ogni settimana)."
               : "Turno salvato sul server solo per la data scelta (non si ripete nelle altre settimane)."}
@@ -1455,7 +1472,20 @@ export function CalendarioRepartoPage() {
     setLoading(true)
     setLoadErr(null)
     try {
-      const data = await calendarioApi.getComparto(apiComparto)
+      let range: { from: string; to: string } | undefined
+      if (apiComparto === "scuola_nuoto") {
+        if (view === "week") {
+          const start = startOfWeekMonday(cursor)
+          range = { from: isoYmd(start), to: isoYmd(addDays(start, 6)) }
+        } else if (view === "day") {
+          const iso = isoYmd(startOfDay(cursor))
+          range = { from: iso, to: iso }
+        } else {
+          const matrix = monthMatrix(cursor)
+          range = { from: isoYmd(matrix[0]!.date), to: isoYmd(matrix[matrix.length - 1]!.date) }
+        }
+      }
+      const data = await calendarioApi.getComparto(apiComparto, range)
       setEvents(data.events)
       setInstructors(data.instructors)
     } catch (e) {
@@ -1465,7 +1495,7 @@ export function CalendarioRepartoPage() {
     } finally {
       setLoading(false)
     }
-  }, [apiComparto])
+  }, [apiComparto, view, cursor])
 
   useEffect(() => {
     void reload()
@@ -1544,10 +1574,13 @@ export function CalendarioRepartoPage() {
       const keys = shiftRevisionKeys(e)
       if (compartoIsManualServer(apiComparto) || compartoIsServerSeeded(apiComparto)) {
         try {
+          const hideGestionale = apiComparto === "scuola_nuoto" && e.sheet === "Gestionale"
           await calendarioApi.patchSlot(apiComparto, {
             stableKey: keys[0] || e.stableKey,
             mergedStableKeys: keys,
-            clear: true,
+            ...(hideGestionale
+              ? { removed: true, dow: e.dow, start: e.start, title: e.title, dateIso: e.dateIso ?? null }
+              : { clear: true }),
           })
           await reload()
           setEditEvent(null)
@@ -1643,9 +1676,8 @@ export function CalendarioRepartoPage() {
                 </>
               ) : apiComparto === "scuola_nuoto" ? (
                 <>
-                  Calendario sul <strong className="font-medium text-zinc-400">server</strong> (import iniziale da{" "}
-                  <strong className="font-medium text-zinc-400">PISCINAORARIO</strong>, foglio S.N. Bambini): modifica, aggiungi o
-                  nascondi lezioni online.
+                  Lezioni dal <strong className="font-medium text-zinc-400">gestionale</strong>, le stesse della pagina Scuola
+                  nuoto. Puoi aggiungere lezioni extra o nascondere uno slot solo per quel giorno.
                 </>
               ) : apiComparto === "piscina" ? (
                 <>
@@ -1716,9 +1748,8 @@ export function CalendarioRepartoPage() {
               </>
             ) : apiComparto === "scuola_nuoto" ? (
               <>
-                Nessuna lezione. Import PISCINAORARIO (una tantum):{" "}
-                <code className="text-xs">cd apps/api && pnpm run import:scuola-nuoto</code>
-                {" "}(opz. <code className="text-xs">--from-xlsx</code>).
+                Nessuna lezione dal gestionale in questo periodo. Verifica SQL e abbonamenti validi (stessa fonte della pagina
+                Scuola nuoto).
               </>
             ) : apiComparto === "pulizie" ? (
               <>

@@ -647,7 +647,7 @@ export async function getLibroPagaConvalida(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
     res.json({
@@ -696,7 +696,7 @@ export async function getLibroPagaConvalidaMese(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
     res.json(
@@ -730,7 +730,7 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
     })
     const rows = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
     const confermatiOra = applicaAutoOkConvalida(rows, String(req.user?.nome || req.user?.username || "admin"))
@@ -741,7 +741,7 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
     )
     const aggiornate = await arricchisciTornelloConvalida(
       mese,
-      proponeConvalidaMese({ mese, turni, personaleById: perBy }),
+      await proponeConvalidaMese({ mese, turni, personaleById: perBy }),
       perBy
     )
     res.json(
