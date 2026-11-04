@@ -446,6 +446,28 @@ export function deleteLezioniPrivateIstruttore(req: Request, res: Response) {
   res.json({ ok: true })
 }
 
+export function patchLezioniPrivateRichiesta(req: Request, res: Response) {
+  const u = req.user!
+  const id = String(req.params.id ?? "")
+  const db = readLezioniPrivateDb()
+  const r = db.richieste.find((x) => x.id === id)
+  if (!r) return res.status(404).json({ message: "Richiesta non trovata" })
+  const b = req.body as { notaAperta?: string }
+  if (typeof b.notaAperta !== "string") return res.status(400).json({ message: "notaAperta obbligatoria" })
+  const nota = b.notaAperta.trim().slice(0, 800)
+  if (nota) {
+    r.notaAperta = nota
+    r.notaApertaAt = new Date().toISOString()
+    r.notaApertaBy = u.nome || u.username
+  } else {
+    delete r.notaAperta
+    delete r.notaApertaAt
+    delete r.notaApertaBy
+  }
+  writeLezioniPrivateDb(db)
+  res.json({ ok: true, richiesta: r })
+}
+
 export function deleteLezioniPrivateRichiesta(req: Request, res: Response) {
   const u = req.user!
   if (!canDesk(u) && !canManageRoster(u)) return res.status(403).json({ message: "Permessi insufficienti" })

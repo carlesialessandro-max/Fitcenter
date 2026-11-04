@@ -26,6 +26,52 @@ function fmtPrefIstr(p?: string): string {
   return p ?? ""
 }
 
+function NotaApertaCell({
+  richiesta,
+  onSaved,
+}: {
+  richiesta: LpRichiesta
+  onSaved: () => void
+}) {
+  const [val, setVal] = useState(richiesta.notaAperta ?? "")
+  useEffect(() => {
+    setVal(richiesta.notaAperta ?? "")
+  }, [richiesta.id, richiesta.notaAperta])
+  const saveM = useMutation({
+    mutationFn: (notaAperta: string) => lezioniPrivateApi.patchRichiesta(richiesta.id, { notaAperta }),
+    onSuccess: onSaved,
+  })
+  const dirty = val.trim() !== (richiesta.notaAperta ?? "").trim()
+  const when = richiesta.notaApertaAt
+    ? `${fmtDateIt(richiesta.notaApertaAt.slice(0, 10))} ${richiesta.notaApertaAt.slice(11, 16)}`
+    : ""
+  return (
+    <div className="min-w-[12rem]">
+      <textarea
+        value={val}
+        rows={2}
+        maxLength={800}
+        placeholder={richiesta.status === "aperta" ? "Motivazione se resta aperta…" : "Note staff"}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={() => {
+          if (dirty) saveM.mutate(val)
+        }}
+        className="w-full resize-y rounded-md border border-zinc-700 bg-zinc-900/70 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-600"
+      />
+      {saveM.isPending ? <p className="mt-0.5 text-[10px] text-zinc-500">Salvataggio…</p> : null}
+      {saveM.isError ? (
+        <p className="mt-0.5 text-[10px] text-red-400">{String((saveM.error as Error).message)}</p>
+      ) : null}
+      {richiesta.notaApertaBy && !dirty && !saveM.isPending ? (
+        <p className="mt-0.5 text-[10px] text-zinc-500">
+          {richiesta.notaApertaBy}
+          {when ? ` · ${when}` : ""}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
 function tabFromPath(pathname: string): Tab {
   if (pathname.includes("/calendario")) return "calendario"
   if (pathname.includes("/istruttori")) return "istruttori"
@@ -635,6 +681,7 @@ function RichiesteTab({
               <th className="px-3 py-2 font-medium">Quando</th>
               <th className="px-3 py-2 font-medium">Pref. istr.</th>
               <th className="px-3 py-2 font-medium">Note</th>
+              <th className="px-3 py-2 font-medium">Motivazione</th>
               <th className="px-3 py-2 font-medium">Istruttore</th>
               <th className="px-3 py-2 font-medium"> </th>
             </tr>
@@ -642,7 +689,7 @@ function RichiesteTab({
           <tbody>
             {richiesteVista.length === 0 ? (
               <tr>
-                <td colSpan={mostraData ? 12 : 11} className="px-3 py-6 text-zinc-500">
+                <td colSpan={mostraData ? 13 : 12} className="px-3 py-6 text-zinc-500">
                   {vista === "aperte"
                     ? "Nessuna richiesta aperta."
                     : vista === "tutte"
@@ -665,6 +712,9 @@ function RichiesteTab({
                 <td className="px-3 py-2 text-zinc-300">{r.quando ?? ""}</td>
                 <td className="px-3 py-2 text-zinc-400">{fmtPrefIstr(r.prefIstruttore)}</td>
                 <td className="px-3 py-2 text-zinc-400">{r.note ?? ""}</td>
+                <td className="px-3 py-2">
+                  <NotaApertaCell richiesta={r} onSaved={onDone} />
+                </td>
                 <td className="px-3 py-2 text-amber-200">
                   {r.istruttoreNome ?? r.status}
                   {lezioni.filter((l) => l.richiestaId === r.id && (l.stato === "prenotata" || l.stato === "svolta")).length ? (

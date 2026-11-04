@@ -8,6 +8,7 @@ import {
   getLezioniPrivateOccupazione,
   patchLezioniPrivateIstruttore,
   patchLezioniPrivateLezione,
+  patchLezioniPrivateRichiesta,
   postLezioniPrivateIstruttore,
   postLezioniPrivatePacchetto,
   postLezioniPrivatePrenota,
@@ -31,6 +32,7 @@ lezioniPrivateRouter.post("/istruttori", postLezioniPrivateIstruttore)
 lezioniPrivateRouter.patch("/istruttori/:id", patchLezioniPrivateIstruttore)
 lezioniPrivateRouter.delete("/istruttori/:id", deleteLezioniPrivateIstruttore)
 lezioniPrivateRouter.post("/richieste", postLezioniPrivateRichiesta)
+lezioniPrivateRouter.patch("/richieste/:id", patchLezioniPrivateRichiesta)
 lezioniPrivateRouter.post("/richieste/:id/riavvisa", postLezioniPrivateRiavvisa)
 lezioniPrivateRouter.delete("/richieste/:id", deleteLezioniPrivateRichiesta)
 lezioniPrivateRouter.post("/richieste/:id/prendi", postLezioniPrivatePrendi)

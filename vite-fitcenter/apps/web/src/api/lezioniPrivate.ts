@@ -17,6 +17,9 @@ export type LpRichiesta = {
   quando?: string
   prefIstruttore?: string
   note?: string
+  notaAperta?: string
+  notaApertaAt?: string
+  notaApertaBy?: string
   durataMin?: 30
   status: "aperta" | "assegnata" | "annullata"
   istruttoreId?: string
@@ -115,6 +118,8 @@ export const lezioniPrivateApi = {
       richiesta: LpRichiesta
       wa: { sent: number; errors: string[]; destinations: string[]; skipped?: string }
     }>("/lezioni-private/richieste", body),
+  patchRichiesta: (id: string, body: { notaAperta: string }) =>
+    api.patch<{ ok: boolean; richiesta: LpRichiesta }>(`/lezioni-private/richieste/${encodeURIComponent(id)}`, body),
   deleteRichiesta: (id: string) => api.delete<{ ok: boolean }>(`/lezioni-private/richieste/${encodeURIComponent(id)}`),
   riavvisa: (id: string) =>
     api.post<{

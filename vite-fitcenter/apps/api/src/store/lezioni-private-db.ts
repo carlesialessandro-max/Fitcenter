@@ -49,6 +49,10 @@ export type LpRichiesta = {
   quando?: string
   prefIstruttore?: string
   note?: string
+  /** Motivazione / note interne se la richiesta resta aperta. */
+  notaAperta?: string
+  notaApertaAt?: string
+  notaApertaBy?: string
   durataMin?: LpDurataMin
   status: "aperta" | "assegnata" | "annullata"
   istruttoreId?: string
