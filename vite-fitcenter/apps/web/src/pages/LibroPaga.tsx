@@ -613,8 +613,8 @@ function PersonaleTab({
               <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
-              {showReparto && <th className="px-3 py-2">Reparti visibili</th>}
-              <th className="px-3 py-2">Mansioni</th>
+              {showReparto && <th className="px-3 py-2">Reparti che vede</th>}
+              <th className="px-3 py-2">Corsi da istruttore</th>
               <th className="px-3 py-2">Scad. contratto</th>
               <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
@@ -885,6 +885,11 @@ function PersonaleTab({
                 <option value="admin">Amministratore</option>
               </select>
             </label>
+            {isRuoloConVisibilita(ruolo) ? (
+              <p className="text-[11px] leading-snug text-zinc-500 sm:col-span-2">
+                Coordinatore e responsabile restano anche istruttori: sotto i reparti che vedono e, a parte, i corsi che insegnano. Non serve un secondo utente.
+              </p>
+            ) : null}
             <LibroPagaAssegnazioniCampi
               ruolo={ruolo}
               livelli={data.livelli}

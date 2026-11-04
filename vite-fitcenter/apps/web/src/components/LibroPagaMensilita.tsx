@@ -14,6 +14,7 @@ import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloIdsFromPersona
 import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
 import { etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
+import { mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
 
 const inputCls =
   "rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-amber-500/50 focus:outline-none focus:ring-1 focus:ring-amber-500/30"
@@ -537,7 +538,12 @@ function DettaglioMese({
   useEffect(() => {
     setFiltroMansione("")
   }, [persona?.id, mese])
-  const mansioniTurno = (livelliTurno ?? []).filter((l) => l.attivo !== false)
+  const alberoPerTurni = alberoLivelli?.length ? alberoLivelli : livelli ?? livelliTurno ?? []
+  const mansioniTurno = mansioniTurnoProprio(
+    persona ?? {},
+    (livelliTurno ?? alberoPerTurni).filter((l) => l.attivo !== false),
+    alberoPerTurni
+  )
   const editTurni = Boolean(canEditTurni && persona && onCreateTurno && onDeleteTurno && mansioniTurno.length)
   const [nuovoLivelloId, setNuovoLivelloId] = useState(mansioniTurno[0]?.id ?? "")
   const [nuovoGiorno, setNuovoGiorno] = useState(() => defaultGiornoNelMese(mese))

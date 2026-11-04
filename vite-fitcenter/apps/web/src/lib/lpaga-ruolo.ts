@@ -11,4 +11,4 @@ export function isLpagaTeamRuolo(r?: string | null): boolean {
 }
 
 export const RUOLO_LEGENDA =
-  "Istruttore: inserisce i propri turni. Coordinatore: vede e gestisce solo le mansioni assegnate, non tutto il reparto. Responsabile: gestisce il personale del proprio reparto. Amministratore: accesso completo al libro paga."
+  "Un solo utente, anche se insegna e coordina. Istruttore: inserisce i propri corsi. Coordinatore e responsabile: vedono i reparti assegnati e, come istruttori, inseriscono i propri corsi dalle mansioni. Amministratore: accesso completo al libro paga."

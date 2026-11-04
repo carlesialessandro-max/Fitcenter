@@ -542,7 +542,7 @@ function AreaPersonale({
   const turniBloccati = Boolean(data.meseBlocco?.bloccato) && me.ruolo !== "admin"
   const oggi = todayIso()
   const livelli = mansioniTurnoProprio(
-    me,
+    persona ?? me,
     data.livelliInseribili?.length ? data.livelliInseribili : data.livelli.filter((l) => l.retribuibile),
     data.livelli
   )
@@ -631,8 +631,9 @@ function AreaPersonale({
       ) : (
       <LibroPagaSlot title={editingId ? "Modifica turno di lavoro" : "Nuovo turno di lavoro"}>
         <p className="mb-3 text-xs text-zinc-500">
-          I turni che inserisci qui sono i tuoi, senza cercare il nominativo.
-          {me.ruolo === "user" ? "" : " Per il resto del reparto usa Turnazioni."}
+          {isLpagaTeamRuolo(me.ruolo)
+            ? "Qui inserisci solo i tuoi corsi da istruttore. I turni del team restano in Turnazioni."
+            : "I turni che inserisci qui sono i tuoi, senza cercare il nominativo."}
         </p>
         <form
           className="grid gap-3 sm:grid-cols-2"
@@ -1360,6 +1361,11 @@ function Personale({
                 </select>
               </label>
             )}
+            {me?.ruolo === "admin" && isRuoloConVisibilita(ruolo) ? (
+              <p className="text-[11px] leading-snug text-zinc-500 sm:col-span-2">
+                Coordinatore e responsabile restano anche istruttori: sotto i reparti che vedono e, a parte, i corsi che insegnano. Non serve un secondo utente.
+              </p>
+            ) : null}
             <LibroPagaAssegnazioniCampi
               ruolo={me?.ruolo === "admin" ? ruolo : "user"}
               showVisibilita={me?.ruolo === "admin" && isRuoloConVisibilita(ruolo)}
@@ -1449,8 +1455,8 @@ function Personale({
               <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
-              <th className="px-3 py-2">Reparti visibili</th>
-              <th className="px-3 py-2">Mansioni</th>
+              <th className="px-3 py-2">Reparti che vede</th>
+              <th className="px-3 py-2">Corsi da istruttore</th>
               <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
             </tr>

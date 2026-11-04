@@ -427,14 +427,15 @@ export function LibroPagaAssegnazioniCampi({
   onRepartoIds: (ids: string[]) => void
 }) {
   const vis = showVisibilita ?? isRuoloConVisibilita(ruolo)
+  const ancheIstruttore = vis
   return (
     <>
       {vis ? (
         <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
-          <span>Reparti che vede</span>
+          <span>Reparti da coordinatore / responsabile</span>
           <p className="text-[11px] text-zinc-600">
-            Turni e persone visibili a responsabile o coordinatore. Per il coordinatore non spuntare l&apos;intero
-            reparto se deve vedere solo alcune mansioni. Se vuoto, resta allineato alle mansioni (come ora).
+            Cosa vede e gestisce (turni e persone del team). Non sono i corsi che insegna. Per il coordinatore non
+            spuntare l&apos;intero reparto se deve vedere solo alcuni rami. Se vuoto, resta allineato alle mansioni.
           </p>
           <LibroPagaRepartiMulti
             reparti={livelli}
@@ -447,10 +448,11 @@ export function LibroPagaAssegnazioniCampi({
         </div>
       ) : null}
       <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
-        <span>Mansioni da inserire</span>
+        <span>{ancheIstruttore ? "Mansioni da istruttore (i corsi che insegna)" : "Mansioni da inserire"}</span>
         <p className="text-[11px] text-zinc-600">
-          Turni che questa persona può inserire nella propria area. Possono essere di più reparti, anche oltre quelli
-          che vede.
+          {ancheIstruttore
+            ? "Coordinatore e responsabile restano anche istruttori: qui vanno solo i corsi/turni loro, anche di altri reparti. Li inseriscono in Area personale. Non serve un secondo utente."
+            : "Turni che questa persona può inserire nella propria area. Possono essere di più reparti."}
         </p>
         <LibroPagaRepartiMulti
           reparti={livelli}
