@@ -153,6 +153,14 @@ export function mergeRolePageGaps(role: Role, pages: string[]): string[] {
     if (i >= 0) out.splice(i + 1, 0, "/firme")
     else out.unshift("/firme")
   }
+  if ((role === "admin" || role === "calendari") && !out.includes("/calendario/squadra")) {
+    const allowed = new Set(ROLE_DEFAULT_PAGES[role] ?? [])
+    if (allowed.has("/calendario/squadra") && out.some((p) => p.startsWith("/calendario"))) {
+      const i = out.indexOf("/calendario/spogliatoi")
+      if (i >= 0) out.splice(i + 1, 0, "/calendario/squadra")
+      else out.push("/calendario/squadra")
+    }
+  }
   return out
 }
 

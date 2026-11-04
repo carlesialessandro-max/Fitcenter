@@ -73,6 +73,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/calendario/sala-fitness", label: "Calendario sala fitness" },
       { to: "/calendario/acquaticita", label: "Calendario acquaticità" },
       { to: "/calendario/spogliatoi", label: "Calendario spogliatoi" },
+      { to: "/calendario/squadra", label: "Calendario squadra" },
       { to: "/calendario/pulizie", label: "Calendario pulizie" },
       { to: "/calendario/personale", label: "Personale" },
     ],
