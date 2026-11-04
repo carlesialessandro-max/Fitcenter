@@ -23,7 +23,7 @@ import {
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
-import { LibroPagaRepartiMulti, livelloAlberoUnionUi, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
+import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloAlberoUnionUi, visibilitaIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
@@ -510,6 +510,7 @@ function PersonaleTab({
   const [username, setUsername] = useState("")
   const [ruolo, setRuolo] = useState<LpagaRuolo>("user")
   const [livelloIds, setLivelloIds] = useState<string[]>([])
+  const [repartoIds, setRepartoIds] = useState<string[]>([])
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
@@ -523,7 +524,7 @@ function PersonaleTab({
   const [previewReparti, setPreviewReparti] = useState<LibroPagaRepartiPreview | null>(null)
   const n = q.trim().toLowerCase()
   const match = (p: LpagaPersonale) =>
-    !n || `${p.nominativo} ${p.username} ${p.repartoNome}`.toLowerCase().includes(n)
+    !n || `${p.nominativo} ${p.username} ${p.repartoNome} ${p.mansioniNome}`.toLowerCase().includes(n)
   const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
   const coordinators = data.personale.filter((p) => p.ruolo === "coordinator" && match(p)).sort(cmpNomeCognome)
   const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
@@ -538,6 +539,7 @@ function PersonaleTab({
         ruolo,
         livelloIds,
         livelloId: livelloIds[0] ?? "",
+        repartoIds: isRuoloConVisibilita(ruolo) ? repartoIds : [],
         contratto,
         iban,
         email,
@@ -555,6 +557,7 @@ function PersonaleTab({
       setIban("")
       setEmail("")
       setLivelloIds([])
+      setRepartoIds([])
       setNuovoOpen(false)
       onDone()
     },
@@ -610,7 +613,8 @@ function PersonaleTab({
               <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
-              {showReparto && <th className="px-3 py-2">Reparto</th>}
+              {showReparto && <th className="px-3 py-2">Reparti visibili</th>}
+              <th className="px-3 py-2">Mansioni</th>
               <th className="px-3 py-2">Scad. contratto</th>
               <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
@@ -638,7 +642,8 @@ function PersonaleTab({
                     <option value="admin">Amministratore</option>
                   </select>
                 </td>
-                {showReparto && <td className="px-3 py-2">{r.repartoNome}</td>}
+                {showReparto && <td className="max-w-[16rem] px-3 py-2 text-xs leading-snug text-zinc-300">{r.repartoNome}</td>}
+                <td className="max-w-[20rem] px-3 py-2 text-xs leading-snug text-zinc-300">{r.mansioniNome ?? "—"}</td>
                 <td className="px-3 py-2">{fmtDateIt(r.contratto)}</td>
                 <td className="px-3 py-2">{fmtDateIt(visitaMedicaFromQualifiche(qualificheForDisplay(r)))}</td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
@@ -880,14 +885,14 @@ function PersonaleTab({
                 <option value="admin">Amministratore</option>
               </select>
             </label>
-            <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
-              <span>Reparti / sotto-reparti</span>
-              <LibroPagaRepartiMulti
-                reparti={data.livelli}
-                value={livelloIds}
-                onChange={setLivelloIds}
-              />
-            </div>
+            <LibroPagaAssegnazioniCampi
+              ruolo={ruolo}
+              livelli={data.livelli}
+              livelloIds={livelloIds}
+              onLivelloIds={setLivelloIds}
+              repartoIds={repartoIds}
+              onRepartoIds={setRepartoIds}
+            />
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
@@ -1338,7 +1343,7 @@ function PersonaleDelegheAdmin({
     .filter((p) => {
       if (p.ruolo !== "user") return false
       const mgr = data.personale.find((x) => x.id === managerId)
-      const roots = livelloIdsFromPersona(mgr)
+      const roots = visibilitaIdsFromPersona(mgr)
       if (!roots.length) return true
       const ids = livelloAlberoUnionUi(data.livelli, roots)
       return Boolean(p.livelloId && ids.has(p.livelloId))

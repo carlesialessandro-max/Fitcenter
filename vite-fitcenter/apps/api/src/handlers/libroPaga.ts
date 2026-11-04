@@ -56,6 +56,14 @@ function livelliFromBody(body: Record<string, unknown>) {
   const livelloId = body.livelloId != null ? String(body.livelloId).trim() : undefined
   return mergePersonaleLivelli(livelloId, ids)
 }
+
+function repartiFromBody(body: Record<string, unknown>): { repartoIds?: string[] } {
+  if (body.repartoIds == null) return {}
+  const ids = Array.isArray(body.repartoIds)
+    ? body.repartoIds.map((x) => String(x).trim()).filter(Boolean)
+    : []
+  return { repartoIds: [...new Set(ids)] }
+}
 import { enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 import {
   applyLibroPagaRepartiDaTurni,
@@ -276,12 +284,14 @@ export async function postPersonale(req: Request, res: Response) {
     }
     const ruolo = parseLpagaRuolo(req.body?.ruolo)
     const livelli = livelliFromBody(req.body ?? {})
+    const visibilita = repartiFromBody(req.body ?? {})
     const row = await upsertPersonale({
       nome,
       cognome: String(req.body?.cognome ?? "").trim(),
       username,
       ruolo,
       ...livelli,
+      ...visibilita,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
       email: String(req.body?.email ?? "").trim().toLowerCase(),
@@ -319,6 +329,7 @@ export async function patchPersonale(req: Request, res: Response) {
     }
     const livelli =
       req.body?.livelloIds != null || req.body?.livelloId != null ? livelliFromBody(req.body ?? {}) : {}
+    const visibilita = repartiFromBody(req.body ?? {})
     const row = await upsertPersonale({
       id,
       nome,
@@ -326,6 +337,7 @@ export async function patchPersonale(req: Request, res: Response) {
       username,
       ruolo,
       ...livelli,
+      ...visibilita,
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
       email: req.body?.email != null ? String(req.body.email).trim().toLowerCase() : cur.email,

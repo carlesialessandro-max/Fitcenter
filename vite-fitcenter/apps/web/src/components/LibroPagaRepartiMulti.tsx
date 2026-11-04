@@ -7,6 +7,24 @@ export function livelloIdsFromPersona(p?: { livelloId?: string; livelloIds?: str
   return []
 }
 
+export function repartoIdsFromPersona(p?: { repartoIds?: string[] }): string[] {
+  return p?.repartoIds?.length ? [...p.repartoIds] : []
+}
+
+export function visibilitaIdsFromPersona(p?: {
+  livelloId?: string
+  livelloIds?: string[]
+  repartoIds?: string[]
+}): string[] {
+  const vis = repartoIdsFromPersona(p)
+  if (vis.length) return vis
+  return livelloIdsFromPersona(p)
+}
+
+export function isRuoloConVisibilita(ruolo?: string): boolean {
+  return ruolo === "manager" || ruolo === "coordinator"
+}
+
 export function livelloAlberoUnionUi(livelli: LpagaLivello[], rootIds: string[]): Set<string> {
   const ids = new Set<string>()
   for (const rootId of rootIds) {
@@ -283,12 +301,16 @@ export function LibroPagaRepartiMulti({
   albero,
   value,
   onChange,
+  hint,
+  searchPlaceholder,
 }: {
   reparti: LpagaLivello[]
   /** Albero completo (anche livelli nascosti) per risalire i parentId. */
   albero?: LpagaLivello[]
   value: string[]
   onChange: (ids: string[]) => void
+  hint?: string
+  searchPlaceholder?: string
 }) {
   const allLivelli = albero?.length ? albero : reparti
   const attivi = useMemo(() => reparti.filter((l) => l.attivo !== false), [reparti])
@@ -357,13 +379,13 @@ export function LibroPagaRepartiMulti({
   return (
     <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950/40 p-2">
       <p className="text-[11px] leading-snug text-zinc-500">
-        Spunta il reparto per prendere tutte le mansioni, poi togli i sotto-reparti che non servono.
-        Oppure apri la gerarchia (▸) e spunta solo alcune voci.
+        {hint ??
+          "Spunta il reparto per prendere tutte le mansioni, poi togli i sotto-reparti che non servono. Oppure apri la gerarchia (▸) e spunta solo alcune voci."}
       </p>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Cerca mansione…"
+        placeholder={searchPlaceholder ?? "Cerca mansione…"}
         className="w-full rounded-lg border border-zinc-700 bg-zinc-950/60 px-2 py-1.5 text-sm text-zinc-100 placeholder:text-zinc-600"
       />
       {rootsShown.map((r) => (
@@ -382,5 +404,63 @@ export function LibroPagaRepartiMulti({
       ))}
       {qn && !rootsShown.length ? <p className="text-xs text-zinc-500">Nessuna mansione trovata.</p> : null}
     </div>
+  )
+}
+
+export function LibroPagaAssegnazioniCampi({
+  ruolo,
+  showVisibilita,
+  livelli,
+  albero,
+  livelloIds,
+  onLivelloIds,
+  repartoIds,
+  onRepartoIds,
+}: {
+  ruolo?: string
+  showVisibilita?: boolean
+  livelli: LpagaLivello[]
+  albero?: LpagaLivello[]
+  livelloIds: string[]
+  onLivelloIds: (ids: string[]) => void
+  repartoIds: string[]
+  onRepartoIds: (ids: string[]) => void
+}) {
+  const vis = showVisibilita ?? isRuoloConVisibilita(ruolo)
+  return (
+    <>
+      {vis ? (
+        <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+          <span>Reparti che vede</span>
+          <p className="text-[11px] text-zinc-600">
+            Turni e persone visibili a responsabile o coordinatore. Per il coordinatore non spuntare l&apos;intero
+            reparto se deve vedere solo alcune mansioni. Se vuoto, resta allineato alle mansioni (come ora).
+          </p>
+          <LibroPagaRepartiMulti
+            reparti={livelli}
+            albero={albero}
+            value={repartoIds}
+            onChange={onRepartoIds}
+            hint="Spunta i reparti o i sotto-reparti da vedere. Il coordinatore: apri la gerarchia e scegli solo i rami, non tutto il dipartimento."
+            searchPlaceholder="Cerca reparto…"
+          />
+        </div>
+      ) : null}
+      <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
+        <span>Mansioni da inserire</span>
+        <p className="text-[11px] text-zinc-600">
+          Turni che questa persona può inserire nella propria area. Possono essere di più reparti, anche oltre quelli
+          che vede.
+        </p>
+        <LibroPagaRepartiMulti
+          reparti={livelli}
+          albero={albero}
+          value={livelloIds}
+          onChange={onLivelloIds}
+          hint="Spunta le mansioni (anche di reparti diversi) su cui può inserire i propri turni."
+          searchPlaceholder="Cerca mansione…"
+        />
+      </div>
+    </>
   )
 }

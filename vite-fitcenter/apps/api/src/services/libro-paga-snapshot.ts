@@ -10,12 +10,13 @@ import {
   listTotaliReparto,
   listTurni,
   nominativo,
+  mansioniNomePersona,
   repartoNomePersona,
   type LpagaLivello,
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
-import { personaleLivelloRadici } from "./libro-paga-scope.js"
+import { personaleLivelloRadici, personaleVisibilitaIds } from "./libro-paga-scope.js"
 import { buildRiepilogoConvalide, mapTurnoConvalide, statoMeseBlocco } from "./libro-paga-convalida.js"
 
 function buildLivelloTreeNodes(
@@ -148,7 +149,12 @@ export async function buildLibroPagaSnapshot(opts?: {
   } else if (livelloTree) {
     const ids = new Set<string>()
     for (const p of personaleAll) {
-      if (personaleLivelloRadici(p).some((id) => livelloTree.has(id))) ids.add(p.id)
+      if (
+        personaleLivelloRadici(p).some((id) => livelloTree.has(id)) ||
+        personaleVisibilitaIds(p).some((id) => livelloTree.has(id))
+      ) {
+        ids.add(p.id)
+      }
     }
     for (const t of monthTurniPreview) ids.add(t.personaleId)
     if (opts?.viewerId) ids.add(opts.viewerId)
@@ -194,6 +200,7 @@ export async function buildLibroPagaSnapshot(opts?: {
     ...p,
     nominativo: nominativo(p),
     repartoNome: repartoNomePersona(p, livelli),
+    mansioniNome: mansioniNomePersona(p, livelli),
     ...(opts?.hideIban ? { iban: p.id === opts.viewerId ? p.iban ?? "" : "" } : {}),
   }))
 

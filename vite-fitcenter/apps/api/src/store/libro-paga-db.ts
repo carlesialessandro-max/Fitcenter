@@ -53,8 +53,10 @@ export type LpagaPersonale = {
   username?: string
   ruolo: LpagaRuolo
   livelloId?: string
-  /** Reparti / sotto-reparti di competenza (es. responsabile terra + acqua). */
+  /** Mansioni che la persona può inserire (anche di più reparti). */
   livelloIds?: string[]
+  /** Reparti / ambiti che responsabile o coordinatore vede (turni e persone). */
+  repartoIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -286,20 +288,66 @@ export function mergePersonaleLivelli(
   return { livelloId: merged[0], livelloIds: merged }
 }
 
+export function mergePersonaleReparti(repartoIds?: string[]): { repartoIds?: string[] } {
+  const merged = [...new Set((repartoIds ?? []).map((x) => x.trim()).filter(Boolean))]
+  return { repartoIds: merged }
+}
+
+function labelNodoLivello(livelli: LpagaLivello[], id: string): string | null {
+  const l = livelli.find((x) => x.id === id)
+  if (!l) return null
+  const dom = dominioLivello(livelli, id)
+  return dom && dom !== l.nome ? `${dom} · ${l.nome}` : l.nome
+}
+
+function nomiNodiPersona(ids: string[], livelli: LpagaLivello[], max = 8): string {
+  const labels = ids.map((id) => labelNodoLivello(livelli, id)).filter(Boolean) as string[]
+  if (!labels.length) return "—"
+  if (labels.length <= max) return labels.join(", ")
+  return `${labels.slice(0, max).join(", ")} +${labels.length - max}`
+}
+
+function radiciDeiNodi(livelli: LpagaLivello[], ids: string[]): string[] {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  const roots: string[] = []
+  for (const id of ids) {
+    let cur = byId.get(id)
+    let guard = 0
+    while (cur && guard++ < 40) {
+      const pid = (cur.parentId ?? "").trim()
+      if (!pid || pid === "0") {
+        roots.push(cur.id)
+        break
+      }
+      cur = byId.get(pid)
+      if (!cur) {
+        roots.push(id)
+        break
+      }
+    }
+  }
+  return [...new Set(roots)]
+}
+
+/** Reparti visibili: campo dedicato, altrimenti radici delle mansioni (elenco compatto). */
 export function repartoNomePersona(
+  p: Pick<LpagaPersonale, "livelloId" | "livelloIds" | "repartoIds">,
+  livelli: LpagaLivello[]
+): string {
+  if (p.repartoIds?.length) return nomiNodiPersona(p.repartoIds, livelli)
+  const merged = mergePersonaleLivelli(p.livelloId, p.livelloIds)
+  const ids = merged.livelloIds ?? (merged.livelloId ? [merged.livelloId] : [])
+  if (!ids.length) return "—"
+  return nomiNodiPersona(radiciDeiNodi(livelli, ids), livelli)
+}
+
+export function mansioniNomePersona(
   p: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
   livelli: LpagaLivello[]
 ): string {
   const merged = mergePersonaleLivelli(p.livelloId, p.livelloIds)
-  const roots = merged.livelloIds ?? (merged.livelloId ? [merged.livelloId] : [])
-  if (!roots.length) return "—"
-  const labels = roots.map((id) => {
-    const l = livelli.find((x) => x.id === id)
-    if (!l) return null
-    const dom = dominioLivello(livelli, id)
-    return dom && dom !== l.nome ? `${dom} · ${l.nome}` : l.nome
-  })
-  return labels.filter(Boolean).join(", ") || "—"
+  const ids = merged.livelloIds ?? (merged.livelloId ? [merged.livelloId] : [])
+  return nomiNodiPersona(ids, livelli)
 }
 
 function iso(v: unknown): string {
@@ -406,6 +454,7 @@ IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','VisitaMedica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD VisitaMedica DATE NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(4000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN LivelloIds NVARCHAR(4000) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','RepartoIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD RepartoIds NVARCHAR(4000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -678,6 +727,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const username = String(r.Username ?? r.username ?? "").trim()
   const livelloId = String(r.LivelloId ?? r.livelloId ?? "").trim()
   const livelloIds = parseLivelloIdsStored(r.LivelloIds ?? r.livelloIds, livelloId || undefined)
+  const repartoIds = parseLivelloIdsStored(r.RepartoIds ?? r.repartoIds)
   const contratto = ymd(r.Contratto ?? r.contratto)
   const tesseramento = String(r.Tesseramento ?? r.tesseramento ?? "").trim()
   const tesseramentoScadenza = ymd(r.TesseramentoScadenza ?? r.tesseramentoScadenza)
@@ -697,6 +747,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
       : livelloId
         ? { livelloId }
         : {}),
+    ...(repartoIds?.length ? { repartoIds } : {}),
     ...(contratto && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(contratto) ? { contratto } : {}),
     ...(iban ? { iban } : {}),
     ...(email ? { email } : {}),
@@ -862,7 +913,7 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
     const p = await pool()
     if (!p) return [...readFile().personale].sort(cmpPersonaleNomeCognome)
     const r = await p.request().query(
-      `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds,
+      `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, RepartoIds,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza,
               CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica, Qualifiche
@@ -932,6 +983,7 @@ export async function upsertPersonale(input: {
   ruolo?: LpagaRuolo
   livelloId?: string
   livelloIds?: string[]
+  repartoIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -964,6 +1016,8 @@ export async function upsertPersonale(input: {
   const visitaMedica = synced?.visitaMedica
   const hasLivelloIds = input.livelloIds !== undefined || input.livelloId !== undefined
   const livelliMerged = hasLivelloIds ? mergePersonaleLivelli(input.livelloId, input.livelloIds) : {}
+  const hasRepartoIds = input.repartoIds !== undefined
+  const repartiMerged = hasRepartoIds ? mergePersonaleReparti(input.repartoIds) : {}
   const row: LpagaPersonale = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
@@ -971,6 +1025,7 @@ export async function upsertPersonale(input: {
     ...(input.username?.trim() ? { username: input.username.trim().toLowerCase() } : {}),
     ruolo,
     ...livelliMerged,
+    ...repartiMerged,
     ...(input.contratto?.trim() ? { contratto: input.contratto.trim() } : {}),
     ...(iban ? { iban } : {}),
     ...(email ? { email } : {}),
@@ -993,6 +1048,8 @@ export async function upsertPersonale(input: {
     req.input("LivelloId", sql.NVarChar(64), row.livelloId ?? null)
     req.input("LivelloIds", sql.NVarChar(4000), hasLivelloIds ? JSON.stringify(row.livelloIds ?? []) : null)
     req.input("LivelloIdsSet", sql.Bit, hasLivelloIds)
+    req.input("RepartoIds", sql.NVarChar(4000), hasRepartoIds ? JSON.stringify(row.repartoIds ?? []) : null)
+    req.input("RepartoIdsSet", sql.Bit, hasRepartoIds)
     req.input("Contratto", sql.Date, row.contratto && /^\d{4}-\d{2}-\d{2}$/.test(row.contratto) ? row.contratto : null)
     req.input("Iban", sql.NVarChar(34), iban || null)
     req.input("Email", sql.NVarChar(200), email || null)
@@ -1013,12 +1070,13 @@ export async function upsertPersonale(input: {
       WHEN MATCHED THEN UPDATE SET Nome=@Nome, Cognome=@Cognome, Username=@Username, Ruolo=@Ruolo,
         LivelloId=CASE WHEN @LivelloIdsSet=1 THEN @LivelloId ELSE t.LivelloId END,
         LivelloIds=CASE WHEN @LivelloIdsSet=1 THEN @LivelloIds ELSE t.LivelloIds END,
+        RepartoIds=CASE WHEN @RepartoIdsSet=1 THEN @RepartoIds ELSE t.RepartoIds END,
         Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
         TesseramentoScadenza=@TesseramentoScadenza,
         VisitaMedica=CASE WHEN @VisitaMedicaSet=1 THEN @VisitaMedica ELSE t.VisitaMedica END,
         Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @LivelloIds, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, RepartoIds, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @LivelloIds, @RepartoIds, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
     `)
     return row
   }
@@ -1035,6 +1093,7 @@ export async function upsertPersonale(input: {
           : prev.livelloId
             ? { livelloId: prev.livelloId }
             : {}),
+      ...(hasRepartoIds ? {} : prev.repartoIds?.length ? { repartoIds: prev.repartoIds } : {}),
       ...(corsiTouched
         ? {
             qualifiche: qualifiche ?? [],

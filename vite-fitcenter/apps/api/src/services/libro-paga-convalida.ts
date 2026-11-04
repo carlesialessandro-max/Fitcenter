@@ -2,7 +2,7 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { alberoCoordinatore, expandScopeTree, livelloAlberoUnion, personaleLivelloRadici } from "./libro-paga-scope.js"
+import { alberoCoordinatore, expandScopeTree, livelloAlberoUnion, personaleVisibilitaIds } from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -241,7 +241,7 @@ export const FOGLI_ORARI_CONVALIDA = {
 
 /** Mansioni visibili in convalida: admin = tutte; responsabile = sottoalbero; delegato = albero dei manager. */
 export function alberoConvalidaViewer(
-  me: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId" | "livelloIds">,
+  me: Pick<LpagaPersonale, "id" | "ruolo" | "livelloId" | "livelloIds" | "repartoIds">,
   personale: LpagaPersonale[],
   livelli: LpagaLivello[]
 ): Set<string> | undefined {
@@ -251,7 +251,7 @@ export function alberoConvalidaViewer(
     return tree.size ? tree : undefined
   }
   if (me.ruolo === "manager") {
-    const roots = personaleLivelloRadici(me)
+    const roots = personaleVisibilitaIds(me)
     if (!roots.length) return undefined
     const tree = expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
     return tree.size ? tree : undefined
@@ -406,7 +406,7 @@ export function alberoDaDeleghe(meId: string, personale: LpagaPersonale[], livel
   const tree = new Set<string>()
   for (const id of managerIdsCheDelegatoA(meId, personale)) {
     const mgr = personale.find((p) => p.id === id)
-    const roots = mgr ? personaleLivelloRadici(mgr) : []
+    const roots = mgr ? personaleVisibilitaIds(mgr) : []
     if (!roots.length) continue
     for (const id of expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))) tree.add(id)
   }
@@ -614,7 +614,7 @@ export function buildRiepilogoConvalide(opts: {
   })
   const responsabili = managers
     .map((m) => {
-      const roots = personaleLivelloRadici(m)
+      const roots = personaleVisibilitaIds(m)
       const tree = roots.length ? expandScopeTree(opts.livelli, roots, livelloAlberoUnion(opts.livelli, roots)) : new Set<string>()
       const mine = opts.turni.filter((t) => tree.has(t.livelloId))
       const st = statsTurniConvalida(mine, byId)

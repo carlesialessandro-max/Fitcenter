@@ -13,6 +13,7 @@ export type LpagaMe = {
   ruolo: LpagaRuolo
   livelloId?: string
   livelloIds?: string[]
+  repartoIds?: string[]
   nominativo: string
 }
 
@@ -184,6 +185,8 @@ export const lpagaApi = {
     password: string
     ruolo?: LpagaRuolo
     livelloId?: string
+    livelloIds?: string[]
+    repartoIds?: string[]
     contratto?: string
     iban?: string
     email?: string

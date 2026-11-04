@@ -7,7 +7,7 @@ import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagrafic
 import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
-import { livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
+import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
 import { ThemeToggle } from "@/components/ThemeToggle"
@@ -1183,7 +1183,8 @@ function Personale({
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [ruolo, setRuolo] = useState<"user" | "manager" | "coordinator">("user")
-  const [livelloId, setLivelloId] = useState(me?.livelloId ?? "")
+  const [livelloIds, setLivelloIds] = useState<string[]>([])
+  const [repartoIds, setRepartoIds] = useState<string[]>([])
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
@@ -1201,7 +1202,9 @@ function Personale({
         username,
         password,
         ruolo: me?.ruolo === "manager" || me?.ruolo === "coordinator" ? "user" : ruolo,
-        livelloId: livelloId || (me?.ruolo === "manager" || me?.ruolo === "coordinator" ? reparti[0]?.id : undefined) || me?.livelloId,
+        livelloIds,
+        livelloId: livelloIds[0] ?? "",
+        ...(me?.ruolo === "admin" && isRuoloConVisibilita(ruolo) ? { repartoIds } : {}),
         ...(me?.ruolo === "admin"
           ? { qualifiche, visitaMedica: visitaMedicaFromQualifiche(qualifiche) }
           : {}),
@@ -1218,6 +1221,8 @@ function Personale({
       setContratto("")
       setIban("")
       setEmail("")
+      setLivelloIds([])
+      setRepartoIds([])
       setNuovoOpen(false)
       onDone()
     },
@@ -1248,7 +1253,7 @@ function Personale({
     .filter(
       (p) =>
         !n ||
-        `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""}`
+        `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""} ${p.mansioniNome ?? ""}`
           .toLowerCase()
           .includes(n)
     )
@@ -1355,23 +1360,22 @@ function Personale({
                 </select>
               </label>
             )}
-            <label className="grid gap-1 text-xs text-zinc-500">
-              Reparto
-              <select
-                value={livelloId || (me?.ruolo === "manager" || me?.ruolo === "coordinator" ? (reparti[0]?.id ?? "") : "")}
-                onChange={(e) => setLivelloId(e.target.value)}
-                className={inputCls}
-                required={me?.ruolo === "admin"}
-                disabled={(me?.ruolo === "manager" || me?.ruolo === "coordinator") && reparti.length <= 1}
-              >
-                {me?.ruolo === "admin" && <option value="">—</option>}
-                {reparti.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.dominio && l.dominio !== l.nome ? `${l.dominio} · ${l.nome}` : l.nome}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <LibroPagaAssegnazioniCampi
+              ruolo={me?.ruolo === "admin" ? ruolo : "user"}
+              showVisibilita={me?.ruolo === "admin" && isRuoloConVisibilita(ruolo)}
+              livelli={
+                me?.ruolo === "admin"
+                  ? data.livelli
+                  : data.livelliAssegnabili?.length
+                    ? data.livelliAssegnabili
+                    : reparti
+              }
+              albero={data.livelli}
+              livelloIds={livelloIds}
+              onLivelloIds={setLivelloIds}
+              repartoIds={repartoIds}
+              onRepartoIds={setRepartoIds}
+            />
             <label className="grid gap-1 text-xs text-zinc-500">
               Scadenza contratto
               <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />
@@ -1445,7 +1449,8 @@ function Personale({
               <th className="px-3 py-2">Cognome</th>
               <th className="px-3 py-2">Username</th>
               <th className="px-3 py-2">Ruolo</th>
-              <th className="px-3 py-2">Reparto</th>
+              <th className="px-3 py-2">Reparti visibili</th>
+              <th className="px-3 py-2">Mansioni</th>
               <th className="px-3 py-2">Visita medica</th>
               <th className="px-3 py-2" />
             </tr>
@@ -1455,7 +1460,7 @@ function Personale({
               const header =
                 i === 0 || p.ruolo !== personeFiltrate[i - 1]?.ruolo ? (
                   <tr key={`ruolo-${p.ruolo}`} className="border-t border-zinc-800 bg-zinc-900/70">
-                    <td className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400" colSpan={7}>
+                    <td className="px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400" colSpan={8}>
                       {ruoloLabel(p.ruolo)}
                     </td>
                   </tr>
@@ -1467,7 +1472,10 @@ function Personale({
                   <td className="px-3 py-2">{cognomeVis || "—"}</td>
                   <td className="px-3 py-2 font-mono text-xs text-zinc-400">{p.username ?? "—"}</td>
                   <td className="px-3 py-2 text-zinc-400">{ruoloLabel(p.ruolo)}</td>
-                  <td className="px-3 py-2">{p.repartoNome}</td>
+                  <td className="max-w-[16rem] px-3 py-2 text-xs leading-snug text-zinc-300">
+                    {p.ruolo === "manager" || p.ruolo === "coordinator" ? p.repartoNome : "—"}
+                  </td>
+                  <td className="max-w-[20rem] px-3 py-2 text-xs leading-snug text-zinc-300">{p.mansioniNome ?? "—"}</td>
                   <td className="px-3 py-2">{fmtDateIt(visitaMedicaFromQualifiche(qualificheForDisplay(p)))}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     <button

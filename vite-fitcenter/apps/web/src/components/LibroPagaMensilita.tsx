@@ -10,7 +10,7 @@ import type {
 } from "@/api/libroPaga"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
-import { LibroPagaRepartiMulti, livelloIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
+import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloIdsFromPersona, repartoIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
 import { etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
@@ -514,6 +514,7 @@ function DettaglioMese({
   const [username, setUsername] = useState(persona?.username ?? "")
   const [ruolo, setRuolo] = useState<LpagaRuolo>(persona?.ruolo ?? "user")
   const [livelloIds, setLivelloIds] = useState<string[]>(() => livelloIdsFromPersona(persona))
+  const [repartoIds, setRepartoIds] = useState<string[]>(() => repartoIdsFromPersona(persona))
   const [contratto, setContratto] = useState(isoDateInput(persona?.contratto))
   const [ibanEdit, setIbanEdit] = useState(persona?.iban ?? "")
   const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
@@ -525,6 +526,7 @@ function DettaglioMese({
     setUsername(persona?.username ?? "")
     setRuolo(persona?.ruolo ?? "user")
     setLivelloIds(livelloIdsFromPersona(persona))
+    setRepartoIds(repartoIdsFromPersona(persona))
     setContratto(isoDateInput(persona?.contratto))
     setIbanEdit(persona?.iban ?? "")
     setEmailEdit(persona?.email ?? "")
@@ -598,6 +600,7 @@ function DettaglioMese({
         ruolo,
         livelloIds,
         livelloId: livelloIds[0] ?? "",
+        repartoIds: isRuoloConVisibilita(ruolo) ? repartoIds : [],
         contratto,
         iban: ibanEdit.trim(),
         email: emailEdit.trim(),
@@ -701,18 +704,15 @@ function DettaglioMese({
               {allowAdminRole && <option value="admin">Amministratore</option>}
             </select>
           </label>
-          <div className="grid gap-1 text-xs text-zinc-500 sm:col-span-2">
-            <span>Reparti / sotto-reparti</span>
-            <p className="text-[11px] text-zinc-600">
-              Spunta il reparto per tutte le mansioni, poi deseleziona i sotto-reparti da escludere.
-            </p>
-            <LibroPagaRepartiMulti
-              reparti={reparti}
-              albero={albero}
-              value={livelloIds}
-              onChange={setLivelloIds}
-            />
-          </div>
+          <LibroPagaAssegnazioniCampi
+            ruolo={ruolo}
+            livelli={reparti}
+            albero={albero}
+            livelloIds={livelloIds}
+            onLivelloIds={setLivelloIds}
+            repartoIds={repartoIds}
+            onRepartoIds={setRepartoIds}
+          />
           <label className="grid gap-1 text-xs text-zinc-500">
             Scad. contratto
             <input type="date" value={contratto} onChange={(e) => setContratto(e.target.value)} className={inputCls} />

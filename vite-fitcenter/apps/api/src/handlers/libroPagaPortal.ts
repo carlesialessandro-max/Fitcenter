@@ -27,7 +27,7 @@ import {
   statoMeseBlocco,
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
-import { alberoAssegnabileAnagrafica, livelliInseribili, livelliAssegnabiliAnagrafica, personaleLivelloRadici, personaleRaggiungibile, personaleVisibile, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
+import { alberoAssegnabileAnagrafica, livelliInseribili, livelliAssegnabiliAnagrafica, personaleRaggiungibile, personaleVisibile, personaleVisibilitaIds, resolveLivelloTree, turnoNelScope } from "../services/libro-paga-scope.js"
 import { buildLibroPagaSnapshot, defaultMeseLpaga, fondereBonificoPerimetro, isYmLpaga, oggiRomaYmd, roundLpaga2 } from "../services/libro-paga-snapshot.js"
 import { assertPuoModificarePersonale, enrichPersonaleHr, syncIstruttoreCalendarioHr } from "../services/libro-paga-hr.js"
 import { canVedereReportCollaboratoriLpaga } from "../lib/report-collaboratori-access.js"
@@ -90,7 +90,7 @@ async function assertLpagaLivelloWritable(
   const [personale, livelli] = await Promise.all([listPersonale(), listLivelli()])
   const scoped = scopeMe(me as LpagaSessionUser, personale)
   const tree = alberoAssegnabileAnagrafica(scoped, livelli)
-  const roots = personaleLivelloRadici(scoped)
+  const roots = personaleVisibilitaIds(scoped)
   const consentito = (id: string) => Boolean(id) && (tree.has(id) || roots.includes(id))
   if (opts.creating && !opts.parentId) {
     const err = new Error("Il responsabile può creare livelli solo sotto i propri reparti")
@@ -261,6 +261,9 @@ export async function postLpagaTurno(req: Request, res: Response) {
     if (!pe) return res.status(400).json({ message: "Persona non trovata" })
     const livelloId = String(req.body?.livelloId ?? "").trim()
     const consentiti = new Set(livelliInseribili(me, livelli, tree).map((l) => l.id))
+    if (personaleId !== me.id && tree && !tree.has(livelloId)) {
+      return res.status(400).json({ message: "Mansione non consentita" })
+    }
     if (!consentiti.has(livelloId)) return res.status(400).json({ message: "Mansione non consentita" })
     const giornoRaw = String(req.body?.giorno ?? "").trim()
     const oggi = oggiRomaYmd()
@@ -311,6 +314,9 @@ export async function patchLpagaTurno(req: Request, res: Response) {
     }
     const livelloId = String(req.body?.livelloId ?? cur.livelloId).trim()
     const consentiti = new Set(livelliInseribili(me, livelli, tree).map((l) => l.id))
+    if (personaleId !== me.id && tree && !tree.has(livelloId) && livelloId !== cur.livelloId) {
+      return res.status(400).json({ message: "Mansione non consentita" })
+    }
     if (!consentiti.has(livelloId) && livelloId !== cur.livelloId) {
       return res.status(400).json({ message: "Mansione non consentita" })
     }
@@ -459,18 +465,26 @@ function livelliFromBody(body: Record<string, unknown>) {
   return mergePersonaleLivelli(livelloId, ids)
 }
 
+function repartiFromBody(body: Record<string, unknown>): { repartoIds?: string[] } {
+  if (body.repartoIds == null) return {}
+  const ids = Array.isArray(body.repartoIds)
+    ? body.repartoIds.map((x) => String(x).trim()).filter(Boolean)
+    : []
+  return { repartoIds: [...new Set(ids)] }
+}
+
 function idsLivelli(assigned: { livelloId?: string; livelloIds?: string[] }): string[] {
   if (assigned.livelloIds?.length) return assigned.livelloIds
   return assigned.livelloId ? [assigned.livelloId] : []
 }
 
 function assertLivelliAnagraficaConsentiti(
-  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
+  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds" | "repartoIds">,
   livelli: Awaited<ReturnType<typeof listLivelli>>,
   assigned: { livelloId?: string; livelloIds?: string[] },
   giaAssegnati: string[] = []
 ) {
-  if (me.ruolo !== "manager") return
+  if (me.ruolo !== "manager" && me.ruolo !== "coordinator") return
   const tree = alberoAssegnabileAnagrafica(me, livelli)
   const ids = idsLivelli(assigned)
   const gia = new Set(giaAssegnati)
@@ -482,7 +496,7 @@ function assertLivelliAnagraficaConsentiti(
 }
 
 function livelliPatchNelPerimetro(
-  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds">,
+  me: Pick<LpagaPersonale, "ruolo" | "livelloId" | "livelloIds" | "repartoIds">,
   livelli: Awaited<ReturnType<typeof listLivelli>>,
   cur: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
   incoming: { livelloId?: string; livelloIds?: string[] }
@@ -524,12 +538,14 @@ export async function postLpagaPersonale(req: Request, res: Response) {
         return res.status(403).json({ message: (e as Error).message })
       }
     }
+    const visibilita = me.ruolo === "admin" ? repartiFromBody(req.body ?? {}) : {}
     const row = await upsertPersonale({
       nome,
       cognome: String(req.body?.cognome ?? "").trim(),
       username,
       ruolo,
       ...livelliFinali,
+      ...visibilita,
       contratto: String(req.body?.contratto ?? "").trim(),
       iban: String(req.body?.iban ?? "").trim(),
       email: normalizeLpagaEmail(req.body?.email),
@@ -585,6 +601,7 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
         ruolo: cur.ruolo,
         livelloId: cur.livelloId,
         livelloIds: cur.livelloIds,
+        repartoIds: cur.repartoIds,
         contratto: cur.contratto,
         iban,
         email,
@@ -638,6 +655,7 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
       ruolo:
         me.ruolo === "admin" ? ruolo : me.ruolo === "manager" ? (ruolo === "admin" ? cur.ruolo : ruolo) : cur.ruolo,
       ...livelliPatch,
+      ...(me.ruolo === "admin" ? repartiFromBody(req.body ?? {}) : {}),
       contratto: req.body?.contratto != null ? String(req.body.contratto).trim() : cur.contratto,
       iban: req.body?.iban != null ? String(req.body.iban).trim() : cur.iban,
       email: req.body?.email != null ? normalizeLpagaEmail(req.body.email) : cur.email,
@@ -736,7 +754,7 @@ async function loadConvalidaScope(sess: LpagaSessionUser) {
 function filtriConvalidaMese(
   req: Request,
   tree: Set<string> | undefined,
-  me: { ruolo: string; livelloId?: string; livelloIds?: string[] },
+  me: { ruolo: string; livelloId?: string; livelloIds?: string[]; repartoIds?: string[] },
   livelli: import("../store/libro-paga-db.js").LpagaLivello[]
 ) {
   const body = (req.body ?? {}) as Record<string, unknown>
@@ -747,7 +765,7 @@ function filtriConvalidaMese(
   const roots =
     me.ruolo === "admin"
       ? livelli.filter((l) => !l.parentId).map((l) => l.id)
-      : personaleLivelloRadici(me)
+      : personaleVisibilitaIds(me)
   const scopeOpzioni = optionsScopeConvalida(livelli, roots, tree)
   return { scopeId, from, to, tree: scopedTree, scopeOpzioni }
 }

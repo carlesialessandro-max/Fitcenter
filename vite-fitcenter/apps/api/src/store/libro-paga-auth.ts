@@ -17,6 +17,7 @@ export type LpagaSessionUser = {
   ruolo: LpagaRuolo
   livelloId?: string
   livelloIds?: string[]
+  repartoIds?: string[]
   nominativo: string
 }
 
@@ -84,6 +85,7 @@ function toPublic(p: LpagaPersonale): LpagaSessionUser {
     ruolo: p.ruolo,
     ...(p.livelloId ? { livelloId: p.livelloId } : {}),
     ...(p.livelloIds?.length ? { livelloIds: p.livelloIds } : {}),
+    ...(p.repartoIds?.length ? { repartoIds: p.repartoIds } : {}),
     nominativo: nominativo(p),
   }
 }

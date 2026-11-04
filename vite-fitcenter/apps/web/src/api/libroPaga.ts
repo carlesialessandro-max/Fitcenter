@@ -24,6 +24,8 @@ export type LpagaPersonale = {
   ruolo: LpagaRuolo
   livelloId?: string
   livelloIds?: string[]
+  /** Reparti visibili a responsabile/coordinatore (turni e persone). */
+  repartoIds?: string[]
   contratto?: string
   iban?: string
   email?: string
@@ -35,6 +37,7 @@ export type LpagaPersonale = {
   attivo: boolean
   nominativo?: string
   repartoNome?: string
+  mansioniNome?: string
   gestionale?: {
     idUtente?: string
     codiceFiscale?: string
@@ -296,6 +299,7 @@ export const libroPagaApi = {
     ruolo?: LpagaRuolo
     livelloId?: string
     livelloIds?: string[]
+    repartoIds?: string[]
     contratto?: string
     iban?: string
     email?: string

@@ -50,6 +50,7 @@ export async function repairLibroPagaRuoliFromDeleghe(opts?: {
       ruolo: next,
       livelloId: p.livelloId,
       livelloIds: p.livelloIds,
+      repartoIds: p.repartoIds,
       contratto: p.contratto,
       iban: p.iban,
       email: p.email,
