@@ -16,6 +16,7 @@ import {
   setDeleghe,
   treePerScopeConvalida,
   turniNelMesePerConvalida,
+  turnoIdsFromBody,
   upsertTurnoConvalida,
   viewerPuoConvalidare,
   assertMeseTurniModificabili,
@@ -902,31 +903,48 @@ export async function postLpagaConvalidaMese(req: Request, res: Response) {
 export async function putLpagaConvalidaTurno(req: Request, res: Response) {
   try {
     const me = viewer(req)
-    const turnoId = String(req.body?.turnoId ?? "").trim()
+    const ids = turnoIdsFromBody(req.body)
     const statoRaw = String(req.body?.stato ?? "").trim()
     const stato = (["ok", "sostituzione", "non_svolta", "da_verificare"].includes(statoRaw)
       ? statoRaw
       : "") as TurnoConvalidaStato | ""
-    if (!turnoId || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
+    if (!ids.length || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
     const turni = await listTurni()
-    const t = turni.find((x) => x.id === turnoId)
-    if (!t) return res.status(404).json({ message: "Turno non trovato" })
-    const { tree } = await assertConvalidaTarget(me, t.personaleId)
-    if (tree && !tree.has(t.livelloId)) {
-      return res.status(403).json({ message: "Turno fuori dal tuo reparto" })
+    const byId = new Map(turni.map((x) => [x.id, x]))
+    const found = ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+    if (!found.length) return res.status(404).json({ message: "Turno non trovato" })
+    const da = me.nominativo || me.username || me.id
+    const nota = String(req.body?.nota ?? "").trim()
+    const sostitutoNome = String(req.body?.sostitutoNome ?? "").trim()
+    const scope = await loadConvalidaScope(me)
+    const rows = []
+    const mesi = new Set<string>()
+    for (const t of found) {
+      if (!scope.ids.has(t.personaleId)) {
+        return res.status(403).json({
+          message: me.ruolo === "user" ? "Fuori dalla delega di convalida" : "Persona fuori dal tuo reparto",
+        })
+      }
+      if (scope.tree && !scope.tree.has(t.livelloId)) {
+        return res.status(403).json({ message: "Turno fuori dal tuo reparto" })
+      }
+      const mese = meseDaGiorno(t.giorno)
+      if (isMeseBloccato(mese) && me.ruolo !== "admin") {
+        return res.status(403).json({ message: "Mese chiuso dopo le convalide: solo un amministratore può modificarlo." })
+      }
+      rows.push(
+        upsertTurnoConvalida({
+          turnoId: t.id,
+          stato,
+          nota,
+          sostitutoNome,
+          da,
+        })
+      )
+      mesi.add(mese)
     }
-    if (isMeseBloccato(meseDaGiorno(t.giorno)) && me.ruolo !== "admin") {
-      return res.status(403).json({ message: "Mese chiuso dopo le convalide: solo un amministratore può modificarlo." })
-    }
-    const row = upsertTurnoConvalida({
-      turnoId,
-      stato,
-      nota: String(req.body?.nota ?? "").trim(),
-      sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
-      da: me.nominativo || me.username || me.id,
-    })
-    await autoBloccaMeseSeCompleto(meseDaGiorno(t.giorno), me.nominativo || me.username || me.id)
-    res.json({ convalida: row })
+    for (const mese of mesi) await autoBloccaMeseSeCompleto(mese, da)
+    res.json({ convalida: rows[0], n: rows.length })
   } catch (e) {
     fail(res, e)
   }

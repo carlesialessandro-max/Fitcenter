@@ -361,11 +361,12 @@ export const libroPagaApi = {
       ...(opts?.to ? { to: opts.to } : {}),
     }),
   putConvalidaTurno: (body: {
-    turnoId: string
+    turnoId?: string
+    turnoIds?: string[]
     stato: import("@/api/lpaga").TurnoConvalidaStato
     nota?: string
     sostitutoNome?: string
-  }) => api.put<{ convalida: unknown }>("/libro-paga/convalida/turno", body),
+  }) => api.put<{ convalida: unknown; n?: number }>("/libro-paga/convalida/turno", body),
   putMeseBlocco: (mese: string, bloccato: boolean) =>
     api.put<{ mese: string; meseBlocco: LibroPagaSnapshot["meseBlocco"] }>("/libro-paga/mese-blocco", { mese, bloccato }),
   getDeleghe: (managerId: string) =>

@@ -163,26 +163,53 @@ function isMansioneCorsoFit(t: string): boolean {
   )
 }
 
+/** Assistenza, squadre, agonismo: niente confronto con i corsi BAMBINI del gestionale. */
+function isMansioneFuoriCalendarioCorsi(m: string): boolean {
+  return /\bassistenz/.test(m) || /\bsquadra\b/.test(m) || /\bagonist/.test(m) || /\besordient/.test(m)
+}
+
+function isMansioneScuolaNuoto(m: string): boolean {
+  if (isMansioneFuoriCalendarioCorsi(m)) return false
+  return (
+    /\bscuola nuoto\b/.test(m) ||
+    /\bs n\b/.test(m) ||
+    /\bsn bambini\b/.test(m) ||
+    /\bistruttore nuoto/.test(m) ||
+    /\bbimbo\b/.test(m) ||
+    /\bbimbi\b/.test(m) ||
+    /\bbambin/.test(m)
+  )
+}
+
 /** Mansione Libro paga → calendari FitCenter da usare (mai tutti insieme). */
 export function compartiPerMansione(mansione: string, dominio?: string): string[] {
-  const t = norm(`${mansione} ${dominio ?? ""}`)
+  const m = norm(mansione)
+  const d = norm(dominio ?? "")
+  const t = `${m} ${d}`.trim()
   if (!t) return []
+  if (isMansioneFuoriCalendarioCorsi(m)) return []
   if (/\bsala pesi\b|\bsala fitness\b|\bpalestr/.test(t) && !/\bcorso\b|\bcorsi\b|\bscuola nuoto\b/.test(t)) {
     return ["sala_fitness"]
   }
   if (/\bbagnin/.test(t)) return ["piscina"]
   if (/\bdesk\b|\breception\b|\bsegreteri|\baccoglienza/.test(t)) return ["reception"]
   if (isMansioneCorsoFit(t)) return ["corsi"]
-  if (/\bscuola nuoto\b|\bs n\b|\bsn bambini\b|\bistruttore nuoto|\bbimbo\b|\bbimbi\b/.test(t)) {
-    return ["scuola_nuoto"]
-  }
+  if (isMansioneScuolaNuoto(m)) return ["scuola_nuoto"]
   if (/\bdanza\b/.test(t)) return ["danza"]
   if (/\bcampus\b/.test(t)) return ["campus"]
   if (/\bacquatic/.test(t)) return ["acquaticita"]
   if (/\bpuliz/.test(t)) return ["pulizie"]
   if (/\bfitness\b|\bpalestr/.test(t)) return ["sala_fitness"]
-  if (/\bnuoto\b|\bvasca|\bpiscina/.test(t)) return ["scuola_nuoto"]
+  // Solo sulla mansione: il dominio "piscina" è il reparto padre, non il calendario SN.
+  if (/\bnuoto\b|\bvasca/.test(m)) return ["scuola_nuoto"]
   return []
+}
+
+export function turnoIdsFromBody(body: unknown): string[] {
+  const b = (body ?? {}) as Record<string, unknown>
+  const one = String(b.turnoId ?? "").trim()
+  const many = Array.isArray(b.turnoIds) ? b.turnoIds.map((x) => String(x ?? "").trim()).filter(Boolean) : []
+  return [...new Set(one ? [one, ...many] : many)]
 }
 
 export function labelCompartoConvalida(comparto: string): string {

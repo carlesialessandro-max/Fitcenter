@@ -35,6 +35,7 @@ import {
   proponeConvalidaMese,
   treePerScopeConvalida,
   turniNelMesePerConvalida,
+  turnoIdsFromBody,
   upsertTurnoConvalida,
   getDeleghe,
   setDeleghe,
@@ -760,29 +761,37 @@ export async function postLibroPagaConvalidaMese(req: Request, res: Response) {
 
 export async function putLibroPagaConvalidaTurno(req: Request, res: Response) {
   try {
-    const turnoId = String(req.body?.turnoId ?? "").trim()
+    const ids = turnoIdsFromBody(req.body)
     const statoRaw = String(req.body?.stato ?? "").trim()
     const stato = (["ok", "sostituzione", "non_svolta", "da_verificare"].includes(statoRaw)
       ? statoRaw
       : "") as TurnoConvalidaStato | ""
-    if (!turnoId || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
+    if (!ids.length || !stato) return res.status(400).json({ message: "Turno e stato obbligatori" })
     const turni = await listTurni()
-    const t = turni.find((x) => x.id === turnoId)
-    if (!t) return res.status(404).json({ message: "Turno non trovato" })
+    const byId = new Map(turni.map((x) => [x.id, x]))
+    const found = ids.map((id) => byId.get(id)).filter((x): x is NonNullable<typeof x> => Boolean(x))
+    if (!found.length) return res.status(404).json({ message: "Turno non trovato" })
     const da = String(req.user?.nome || req.user?.username || "admin")
-    const row = upsertTurnoConvalida({
-      turnoId,
-      stato,
-      nota: String(req.body?.nota ?? "").trim(),
-      sostitutoNome: String(req.body?.sostitutoNome ?? "").trim(),
-      da,
-    })
-    maybeAutoBloccaMese(
-      t.giorno.slice(0, 7),
-      turni.filter((x) => x.giorno.slice(0, 7) === t.giorno.slice(0, 7)).map((x) => x.id),
-      da
+    const nota = String(req.body?.nota ?? "").trim()
+    const sostitutoNome = String(req.body?.sostitutoNome ?? "").trim()
+    const rows = found.map((t) =>
+      upsertTurnoConvalida({
+        turnoId: t.id,
+        stato,
+        nota,
+        sostitutoNome,
+        da,
+      })
     )
-    res.json({ convalida: row })
+    const mesi = new Set(found.map((t) => t.giorno.slice(0, 7)))
+    for (const mese of mesi) {
+      maybeAutoBloccaMese(
+        mese,
+        turni.filter((x) => x.giorno.slice(0, 7) === mese).map((x) => x.id),
+        da
+      )
+    }
+    res.json({ convalida: rows[0], n: rows.length })
   } catch (e) {
     fail(res, e)
   }

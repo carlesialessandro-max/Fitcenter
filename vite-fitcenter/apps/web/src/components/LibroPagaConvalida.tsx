@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import type { TurnoConvalidaStato, LpagaConvalidaPayload, LpagaConvalidaMesePayload } from "@/api/lpaga"
 
@@ -100,6 +100,14 @@ export type ConvalidaRow = {
 
 export type ConvalidaPayload = LpagaConvalidaPayload
 
+type SaveTurnoConvalidaBody = {
+  turnoId?: string
+  turnoIds?: string[]
+  stato: TurnoConvalidaStato
+  nota?: string
+  sostitutoNome?: string
+}
+
 export function LibroPagaMeseBloccoBanner({
   blocco,
   isAdmin,
@@ -162,12 +170,7 @@ export function LibroPagaConvalidaPanel({
 }: {
   data: ConvalidaPayload
   onClose: () => void
-  onSaveTurno: (body: {
-    turnoId: string
-    stato: TurnoConvalidaStato
-    nota?: string
-    sostitutoNome?: string
-  }) => Promise<unknown>
+  onSaveTurno: (body: SaveTurnoConvalidaBody) => Promise<unknown>
   onChiudiMese?: () => Promise<unknown>
   showCalendariFitCenter?: boolean
   readOnly?: boolean
@@ -430,7 +433,10 @@ function testoCalendario(r: ConvalidaRow): ReactNode {
       return c
     })
     .join(", ")
-  return <span>Nessuna copertura in {attesi || "calendario FitCenter"} per questa data</span>
+  if (!attesi) {
+    return <span>Nessun calendario corsi da confrontare (es. assistenza, squadra). Conferma a mano.</span>
+  }
+  return <span>Nessuna copertura in {attesi} per questa data</span>
 }
 
 export function LibroPagaConvalidaMesePanel({
@@ -444,12 +450,7 @@ export function LibroPagaConvalidaMesePanel({
 }: {
   data: LpagaConvalidaMesePayload
   onClose: () => void
-  onSaveTurno: (body: {
-    turnoId: string
-    stato: TurnoConvalidaStato
-    nota?: string
-    sostitutoNome?: string
-  }) => Promise<unknown>
+  onSaveTurno: (body: SaveTurnoConvalidaBody) => Promise<unknown>
   onConfermaAllineati: () => Promise<LpagaConvalidaMesePayload>
   showCalendariFitCenter?: boolean
   onFiltriChange?: (f: { scope: string; from: string; to: string }) => void
@@ -475,11 +476,29 @@ export function LibroPagaConvalidaMesePanel({
   })
   const riepilogo = data
   const [split, setSplit] = useState(false)
+  const [sel, setSel] = useState<string[]>([])
   const primaAnomalia = riepilogo.anomalie?.[0]
   const [segmento, setSegmento] = useState(() =>
     segmentoDaComparto(primaAnomalia?.match?.comparto ?? primaAnomalia?.calendariAttesi?.[0])
   )
   const dataSplit = riepilogo.from || primaAnomalia?.giorno
+  const anomaliaIds = useMemo(() => riepilogo.anomalie.map((r) => r.turnoId), [riepilogo.anomalie])
+  useEffect(() => {
+    const ids = new Set(anomaliaIds)
+    setSel((prev) => prev.filter((id) => ids.has(id)))
+  }, [anomaliaIds])
+  const allChecked = anomaliaIds.length > 0 && anomaliaIds.every((id) => sel.includes(id))
+  function toggleAll() {
+    setSel(allChecked ? [] : [...anomaliaIds])
+  }
+  function toggleOne(id: string) {
+    setSel((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+  function okMassivo(ids: string[], label: string) {
+    if (!ids.length) return
+    if (!window.confirm(`Confermare Ok su ${ids.length} ${ids.length === 1 ? "turno" : "turni"} (${label})?`)) return
+    mut.mutate({ turnoIds: ids, stato: "ok" })
+  }
 
   return (
     <div className={split ? "xl:grid xl:grid-cols-2 xl:items-start xl:gap-3" : ""}>
@@ -509,6 +528,26 @@ export function LibroPagaConvalidaMesePanel({
             >
               {auto.isPending ? "Conferma in corso…" : `Conferma i ${riepilogo.nConfermabili} allineati`}
             </button>
+          )}
+          {riepilogo.nAnomalie > 0 && !readOnly && (
+            <>
+              <button
+                type="button"
+                className={btnGhost}
+                disabled={mut.isPending || sel.length === 0}
+                onClick={() => okMassivo(sel, "selezionati")}
+              >
+                {mut.isPending ? "Ok…" : `Ok selezionati${sel.length ? ` (${sel.length})` : ""}`}
+              </button>
+              <button
+                type="button"
+                className={btnGhost}
+                disabled={mut.isPending}
+                onClick={() => okMassivo(anomaliaIds, "tutti visibili")}
+              >
+                Ok tutti ({riepilogo.nAnomalie})
+              </button>
+            </>
           )}
           <button type="button" className={btnGhost} onClick={() => setSplit((v) => !v)}>
             {split ? "Chiudi calendario" : "Apri calendario"}
@@ -566,8 +605,8 @@ export function LibroPagaConvalidaMesePanel({
         </div>
       ) : null}
       <p className="text-xs text-zinc-500">
-        I turni allineati al calendario si confermano in un click. Le anomalie (sostituzione, assenza in calendario)
-        restano da controllare sotto. Fogli orari:{" "}
+        I turni allineati al calendario si confermano in un click. Assistenza e squadra non si confrontano con i corsi
+        scuola nuoto: seleziona le righe oppure usa «Ok tutti». Fogli orari:{" "}
         <a className="text-amber-300 underline" href={riepilogo.fogli.bagnini} target="_blank" rel="noreferrer">
           Bagnini
         </a>
@@ -607,6 +646,16 @@ export function LibroPagaConvalidaMesePanel({
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
               <tr>
+                {!readOnly ? (
+                  <th className="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={toggleAll}
+                      aria-label="Seleziona tutti"
+                    />
+                  </th>
+                ) : null}
                 <th className="px-3 py-2">Nominativo</th>
                 <th className="px-3 py-2">Data</th>
                 <th className="px-3 py-2">Mansione / valore</th>
@@ -622,6 +671,16 @@ export function LibroPagaConvalidaMesePanel({
                 const sub = r.sostitutiPossibili[0]
                 return (
                   <tr key={r.turnoId} className="border-t border-zinc-800 align-top text-zinc-200">
+                    {!readOnly ? (
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={sel.includes(r.turnoId)}
+                          onChange={() => toggleOne(r.turnoId)}
+                          aria-label={`Seleziona ${r.personaleNome}`}
+                        />
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2">{r.personaleNome}</td>
                     <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(r.giorno)}</td>
                     <td className="px-3 py-2">

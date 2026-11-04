@@ -223,8 +223,13 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify({ mese, ...(opts?.scope ? { scope: opts.scope } : {}), ...(opts?.from ? { from: opts.from } : {}), ...(opts?.to ? { to: opts.to } : {}) }),
     }),
-  putConvalidaTurno: (body: { turnoId: string; stato: TurnoConvalidaStato; nota?: string; sostitutoNome?: string }) =>
-    lpagaRequest<{ convalida: unknown }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),
+  putConvalidaTurno: (body: {
+    turnoId?: string
+    turnoIds?: string[]
+    stato: TurnoConvalidaStato
+    nota?: string
+    sostitutoNome?: string
+  }) => lpagaRequest<{ convalida: unknown; n?: number }>("/lpaga/convalida/turno", { method: "PUT", body: JSON.stringify(body) }),
   putMeseBlocco: (mese: string, bloccato: boolean) =>
     lpagaRequest<{ mese: string; meseBlocco: import("./libroPaga").LibroPagaSnapshot["meseBlocco"] }>("/lpaga/mese-blocco", {
       method: "PUT",
