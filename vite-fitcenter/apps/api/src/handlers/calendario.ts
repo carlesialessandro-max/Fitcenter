@@ -34,6 +34,7 @@ const COMPARTI: CalendarioComparto[] = [
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
+  "squadra",
   "pulizie",
   "consulenti",
 ]
@@ -48,7 +49,7 @@ function canReadComparto(u: User, comparto: CalendarioComparto): boolean {
   if (comparto === "corsi") return u.role === "corsi" || u.role === "istruttore"
   if (comparto === "scuola_nuoto") return u.role === "scuola_nuoto"
   if (comparto === "piscina") return u.role === "bagnini"
-  if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "pulizie") return false
+  if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "squadra" || comparto === "pulizie") return false
   if (comparto === "danza") return u.role === "danza"
   if (comparto === "campus") return u.role === "campus"
   if (comparto === "reception") return u.role === "operatore" || u.role === "firme"
@@ -104,7 +105,14 @@ function baseEventsForComparto(comparto: CalendarioComparto): CalendarioBaseEven
   return rows
 }
 
-const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = ["reception", "piscina", "acquaticita", "spogliatoi", "pulizie"]
+const MANUAL_ONLY_COMPARTI: CalendarioComparto[] = [
+  "reception",
+  "piscina",
+  "acquaticita",
+  "spogliatoi",
+  "squadra",
+  "pulizie",
+]
 
 /** Sala fitness (Excel una tantum) e fallback scuola nuoto se il gestionale non risponde. */
 const SERVER_SEEDED_COMPARTI: CalendarioComparto[] = ["scuola_nuoto", "sala_fitness"]
@@ -221,15 +229,16 @@ function eventDateIso(e: { dateIso?: string | null }): string {
   return String(e.dateIso ?? "").trim()
 }
 
+function monthDayInSeason(monthDay: string, from: string, to: string): boolean {
+  if (from <= to) return monthDay >= from && monthDay <= to
+  return monthDay >= from || monthDay <= to
+}
+
 function eventsMatchingCalendarDay(events: CalendarioMergedEvent[], d: Date): CalendarioMergedEvent[] {
   const iso = isoYmdFromDate(d)
   const monthDay = iso.slice(5)
   const seasonal = events.filter(
-    (e) =>
-      e.seasonal &&
-      e.dow === d.getDay() &&
-      monthDay >= e.seasonal.from &&
-      monthDay <= e.seasonal.to,
+    (e) => e.seasonal && e.dow === d.getDay() && monthDayInSeason(monthDay, e.seasonal.from, e.seasonal.to)
   )
   const dated = events.filter((e) => eventDateIso(e) === iso)
   if (dated.length) return [...dated, ...seasonal]
@@ -279,6 +288,7 @@ const COMPARTO_LABELS: Record<CalendarioComparto, string> = {
   sala_fitness: "Sala fitness",
   acquaticita: "Acquaticità",
   spogliatoi: "Spogliatoi",
+  squadra: "Squadra",
   pulizie: "Pulizie",
   consulenti: "Consulenti",
 }
@@ -290,6 +300,7 @@ const PIANO_OPERATIVO_COMPARTI: CalendarioComparto[] = [
   "piscina",
   "acquaticita",
   "spogliatoi",
+  "squadra",
   "pulizie",
   "sala_fitness",
   "campus",
@@ -301,6 +312,7 @@ function defaultZonaManual(comparto: CalendarioComparto): string {
   if (comparto === "sala_fitness") return "sala_fitness"
   if (comparto === "acquaticita") return "acquaticita"
   if (comparto === "spogliatoi") return "spogliatoi"
+  if (comparto === "squadra") return "squadra"
   if (comparto === "pulizie") return "pulizie"
   if (comparto === "scuola_nuoto") return "acqua"
   return "invernale"
@@ -679,9 +691,89 @@ async function eventsForComparto(
   }
 }
 
+type BundledWeeklyEvent = {
+  dow: number
+  start: string
+  title: string
+  staff: string
+  seasonal?: { from: string; to: string }
+}
+
+const BUNDLED_WEEKLY: Partial<Record<CalendarioComparto, string>> = {
+  spogliatoi: "spogliatoi-weekly.json",
+  squadra: "squadra-weekly.json",
+}
+
+function bundledWeeklyCandidates(name: string): string[] {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  return [
+    path.join(here, "../planning", name),
+    path.join(here, "../../src/planning", name),
+    path.join(process.cwd(), "apps/api/src/planning", name),
+    path.join(process.cwd(), "src/planning", name),
+    path.join(process.cwd(), "vite-fitcenter/apps/api/src/planning", name),
+  ]
+}
+
+function loadBundledWeekly(name: string): BundledWeeklyEvent[] {
+  const p = bundledWeeklyCandidates(name).find((c) => existsSync(c))
+  if (!p) return []
+  try {
+    const raw = JSON.parse(readFileSync(p, "utf8")) as unknown
+    return Array.isArray(raw) ? (raw as BundledWeeklyEvent[]) : []
+  } catch {
+    return []
+  }
+}
+
+function applyBundledWeekly(db: CalendarioDb, comparto: CalendarioComparto): CalendarioDb {
+  const file = BUNDLED_WEEKLY[comparto]
+  if (!file) return db
+  const events = loadBundledWeekly(file)
+  if (!events.length) return db
+  const hash = crypto.createHash("sha1").update(JSON.stringify(events)).digest("hex").slice(0, 12)
+  const marker = `${comparto}|bundled|${hash}`
+  if (db.revisions.some((r) => r.comparto === comparto && r.stableKey === marker)) return db
+  const kept = db.revisions.filter(
+    (r) => r.comparto !== comparto || String(r.stableKey ?? "").startsWith("manual-")
+  )
+  const now = new Date().toISOString()
+  const added: CalendarioSlotRevision[] = events.map((e) => ({
+    comparto,
+    stableKey: `${comparto}|${e.dow}|${e.start}|${e.title}|${e.staff}`,
+    dow: e.dow,
+    dateIso: null,
+    ...(e.seasonal ? { seasonal: e.seasonal } : {}),
+    start: e.start,
+    title: e.title,
+    zona: comparto,
+    staffOverride: e.staff,
+    istruttoreId: null,
+    note: null,
+    updatedAt: now,
+    updatedBy: "import-weekly-json",
+  }))
+  added.push({
+    comparto,
+    stableKey: marker,
+    dow: 1,
+    dateIso: null,
+    start: "00:00",
+    title: "bundled",
+    zona: comparto,
+    removed: true,
+    updatedAt: now,
+    updatedBy: "import-weekly-json",
+  })
+  const next = { ...db, revisions: [...kept, ...added] }
+  writeCalendarioDb(next)
+  return next
+}
+
 function mergeForComparto(comparto: CalendarioComparto, db: CalendarioDb): CalendarioMergedEvent[] {
   if (MANUAL_ONLY_COMPARTI.includes(comparto)) {
-    const manualDb = comparto === "piscina" ? ensureSummerPoolShifts(db) : db
+    let manualDb = BUNDLED_WEEKLY[comparto] ? applyBundledWeekly(db, comparto) : db
+    if (comparto === "piscina") manualDb = ensureSummerPoolShifts(manualDb)
     return mergeManualOnlyFromDb(comparto, manualDb)
   }
 
@@ -792,6 +884,8 @@ const CONVALIDA_COMPARTI: CalendarioComparto[] = [
   "piscina",
   "reception",
   "acquaticita",
+  "spogliatoi",
+  "squadra",
   "pulizie",
   "campus",
 ]
@@ -806,6 +900,7 @@ const ASSEGNAZIONE_COMPARTI: CalendarioComparto[] = [
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
+  "squadra",
   "pulizie",
   "consulenti",
 ]
@@ -963,9 +1058,11 @@ export function patchCalendarioSlot(req: Request, res: Response) {
               ? "Acquaticità"
               : raw === "spogliatoi"
                 ? "Spogliatoi"
-                : raw === "pulizie"
-                  ? "Pulizie"
-                  : "Copertura")
+                : raw === "squadra"
+                  ? "Allenamento"
+                  : raw === "pulizie"
+                    ? "Pulizie"
+                    : "Copertura")
     const zona = String(body.zona ?? defaultZona).trim() || defaultZona
     if (!Number.isFinite(dow) || dow < 0 || dow > 6 || !start || !title) {
       return res.status(400).json({ message: "dow, start, title obbligatori" })
@@ -1199,7 +1296,7 @@ export function postCalendarioDuplica(req: Request, res: Response) {
   if (!canWriteComparto(u, raw)) return res.status(403).json({ message: "Permessi insufficienti" })
   if (!DUPLICABLE_COMPARTI.includes(raw)) {
     return res.status(400).json({
-      message: "La duplicazione è disponibile sui calendari a data (reception, bagnini, sala fitness, acquaticità, spogliatoi, pulizie)",
+      message: "La duplicazione è disponibile sui calendari a data (reception, bagnini, sala fitness, acquaticità, spogliatoi, squadra, pulizie)",
     })
   }
 

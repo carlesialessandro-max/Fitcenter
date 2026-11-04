@@ -10,6 +10,7 @@ export type CalendarioComparto =
   | "sala_fitness"
   | "acquaticita"
   | "spogliatoi"
+  | "squadra"
   | "pulizie"
   | "consulenti"
 

@@ -8,6 +8,7 @@ export const MANUAL_SERVER_COMPARTI: CalendarioComparto[] = [
   "sala_fitness",
   "acquaticita",
   "spogliatoi",
+  "squadra",
   "pulizie",
 ]
 
@@ -37,9 +38,14 @@ function eventDateIso(e: { dateIso?: string | null }): string {
   return String(e.dateIso ?? "").trim()
 }
 
+function monthDayInSeason(monthDay: string, from: string, to: string): boolean {
+  if (from <= to) return monthDay >= from && monthDay <= to
+  return monthDay >= from || monthDay <= to
+}
+
 function eventMatchesSeason(e: CalendarDayEvent, d: Date): boolean {
   const monthDay = isoYmd(d).slice(5)
-  return Boolean(e.seasonal && e.dow === d.getDay() && monthDay >= e.seasonal.from && monthDay <= e.seasonal.to)
+  return Boolean(e.seasonal && e.dow === d.getDay() && monthDayInSeason(monthDay, e.seasonal.from, e.seasonal.to))
 }
 
 /** Slot visibile nel giorno di calendario d (data esatta o, legacy, ripetizione settimanale per dow). */

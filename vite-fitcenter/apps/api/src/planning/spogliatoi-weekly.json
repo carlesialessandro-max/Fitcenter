@@ -1,0 +1,446 @@
+[
+  {
+    "dow": 1,
+    "start": "16:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 1,
+    "start": "16:00",
+    "title": "Spogliatoio F",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 1,
+    "start": "16:00",
+    "title": "Spogliatoio B",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 1,
+    "start": "16:45",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 1,
+    "start": "16:45",
+    "title": "Spogliatoio F",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 1,
+    "start": "16:45",
+    "title": "Spogliatoio B",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 1,
+    "start": "16:45",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 1,
+    "start": "19:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 1,
+    "start": "19:00",
+    "title": "Spogliatoio F",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 1,
+    "start": "19:00",
+    "title": "Spogliatoio B",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 1,
+    "start": "19:00",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 1,
+    "start": "20:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 1,
+    "start": "20:00",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 2,
+    "start": "16:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 2,
+    "start": "16:00",
+    "title": "Spogliatoio F",
+    "staff": "VALENTINA"
+  },
+  {
+    "dow": 2,
+    "start": "16:00",
+    "title": "Spogliatoio B",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 2,
+    "start": "16:45",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 2,
+    "start": "16:45",
+    "title": "Spogliatoio F",
+    "staff": "VALENTINA"
+  },
+  {
+    "dow": 2,
+    "start": "16:45",
+    "title": "Spogliatoio B",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 2,
+    "start": "16:45",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 2,
+    "start": "19:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 2,
+    "start": "19:00",
+    "title": "Spogliatoio F",
+    "staff": "VALENTINA"
+  },
+  {
+    "dow": 2,
+    "start": "19:00",
+    "title": "Spogliatoio B",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 2,
+    "start": "19:00",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 3,
+    "start": "16:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 3,
+    "start": "16:00",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 3,
+    "start": "16:00",
+    "title": "Spogliatoio B",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 3,
+    "start": "16:45",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 3,
+    "start": "16:45",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 3,
+    "start": "16:45",
+    "title": "Spogliatoio B",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 3,
+    "start": "16:45",
+    "title": "Spogliatoio B 2",
+    "staff": "MARTINA"
+  },
+  {
+    "dow": 3,
+    "start": "19:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 3,
+    "start": "19:00",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 3,
+    "start": "19:00",
+    "title": "Spogliatoio B",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 3,
+    "start": "19:00",
+    "title": "Spogliatoio B 2",
+    "staff": "MARTINA"
+  },
+  {
+    "dow": 3,
+    "start": "20:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 3,
+    "start": "20:00",
+    "title": "Spogliatoio B 2",
+    "staff": "MARTINA"
+  },
+  {
+    "dow": 4,
+    "start": "16:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 4,
+    "start": "16:00",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 4,
+    "start": "16:00",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 4,
+    "start": "16:45",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 4,
+    "start": "16:45",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 4,
+    "start": "16:45",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 4,
+    "start": "16:45",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 4,
+    "start": "19:00",
+    "title": "Spogliatoio M",
+    "staff": "FEDERICO"
+  },
+  {
+    "dow": 4,
+    "start": "19:00",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 4,
+    "start": "19:00",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA M."
+  },
+  {
+    "dow": 4,
+    "start": "19:00",
+    "title": "Spogliatoio B 2",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 5,
+    "start": "16:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 5,
+    "start": "16:00",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 5,
+    "start": "16:00",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 5,
+    "start": "16:45",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 5,
+    "start": "16:45",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 5,
+    "start": "16:45",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 5,
+    "start": "16:45",
+    "title": "Spogliatoio B 2",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 5,
+    "start": "19:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 5,
+    "start": "19:00",
+    "title": "Spogliatoio F",
+    "staff": "CATERINA"
+  },
+  {
+    "dow": 5,
+    "start": "19:00",
+    "title": "Spogliatoio B",
+    "staff": "GIULIA F."
+  },
+  {
+    "dow": 5,
+    "start": "19:00",
+    "title": "Spogliatoio B 2",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 5,
+    "start": "20:00",
+    "title": "Spogliatoio M",
+    "staff": "DIEGO S."
+  },
+  {
+    "dow": 5,
+    "start": "20:00",
+    "title": "Spogliatoio B 2",
+    "staff": "VITTORIA"
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "Spogliatoio B",
+    "staff": "IRIS"
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "Spogliatoio B 2",
+    "staff": "GIADA"
+  },
+  {
+    "dow": 6,
+    "start": "12:30",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 6,
+    "start": "12:30",
+    "title": "Spogliatoio B",
+    "staff": "IRIS"
+  },
+  {
+    "dow": 6,
+    "start": "12:30",
+    "title": "Spogliatoio B 2",
+    "staff": "GIADA"
+  },
+  {
+    "dow": 6,
+    "start": "12:45",
+    "title": "Spogliatoio F",
+    "staff": "MATILDE"
+  },
+  {
+    "dow": 6,
+    "start": "15:15",
+    "title": "Spogliatoio M",
+    "staff": "DAVIDE"
+  },
+  {
+    "dow": 6,
+    "start": "15:15",
+    "title": "Spogliatoio B 2",
+    "staff": "DEBORA"
+  },
+  {
+    "dow": 6,
+    "start": "16:15",
+    "title": "Spogliatoio M",
+    "staff": "DAVIDE"
+  },
+  {
+    "dow": 6,
+    "start": "16:15",
+    "title": "Spogliatoio B 2",
+    "staff": "DEBORA"
+  },
+  {
+    "dow": 6,
+    "start": "18:15",
+    "title": "Spogliatoio M",
+    "staff": "DAVIDE"
+  },
+  {
+    "dow": 6,
+    "start": "18:15",
+    "title": "Spogliatoio B 2",
+    "staff": "DEBORA"
+  }
+]

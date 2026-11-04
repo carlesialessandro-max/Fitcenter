@@ -133,10 +133,25 @@ export function namesMatchPersonale(person: Pick<LpagaPersonale, "nome" | "cogno
   const tokens = staffN.split(" ").filter(Boolean)
   if (cognome.length >= 3) {
     const cognomeHit = tokens.some((t) => t === cognome || (cognome.length >= 4 && t.startsWith(cognome.slice(0, 4))))
-    if (!cognomeHit && !staffN.includes(cognome)) return false
-    if (tokens.length === 1) return true
-    if (!nome || nome.length < 2) return true
-    return staffN.includes(nome) || tokens.some((t) => t[0] === nome[0])
+    if (cognomeHit || staffN.includes(cognome)) {
+      if (tokens.length === 1) return true
+      if (!nome || nome.length < 2) return true
+      if (staffN.includes(nome) || tokens.some((t) => t[0] === nome[0])) return true
+    }
+  }
+  const first = (nome.split(" ")[0] ?? "").trim()
+  if (first.length >= 3) {
+    if (tokens.length === 1) {
+      const t = tokens[0]!
+      if (t === first || (t.length >= 3 && (first.startsWith(t) || t.startsWith(first)))) return true
+    }
+    if (tokens.length === 2 && tokens[1]!.length <= 2) {
+      if ((tokens[0] === first || first.startsWith(tokens[0]!)) && (!cognome || cognome[0] === tokens[1]![0])) return true
+    }
+  }
+  if (tokens.length === 1 && cognome.length >= 4) {
+    const t = tokens[0]!
+    if (t === cognome || cognome.startsWith(t) || t.startsWith(cognome.slice(0, 4))) return true
   }
   return Boolean(nome.length >= 4 && (staffN === nome || tokens.includes(nome)))
 }
@@ -148,6 +163,8 @@ const COMPARTO_LABEL: Record<string, string> = {
   piscina: "Bagnini",
   reception: "Desk",
   acquaticita: "Acquaticità",
+  spogliatoi: "Spogliatoi",
+  squadra: "Squadra",
   pulizie: "Pulizie",
   campus: "Campus",
   danza: "Danza",
@@ -163,13 +180,16 @@ function isMansioneCorsoFit(t: string): boolean {
   )
 }
 
-/** Assistenza, squadre, agonismo: niente confronto con i corsi BAMBINI del gestionale. */
-function isMansioneFuoriCalendarioCorsi(m: string): boolean {
-  return /\bassistenz/.test(m) || /\bsquadra\b/.test(m) || /\bagonist/.test(m) || /\besordient/.test(m)
+function isMansioneAssistenza(m: string): boolean {
+  return /\bassistenz/.test(m) || /\bspogliat/.test(m)
+}
+
+function isMansioneSquadra(m: string): boolean {
+  return /\bsquadra\b/.test(m) || /\bagonist/.test(m) || /\besordient/.test(m) || /\bpropaganda/.test(m)
 }
 
 function isMansioneScuolaNuoto(m: string): boolean {
-  if (isMansioneFuoriCalendarioCorsi(m)) return false
+  if (isMansioneAssistenza(m) || isMansioneSquadra(m)) return false
   return (
     /\bscuola nuoto\b/.test(m) ||
     /\bs n\b/.test(m) ||
@@ -187,7 +207,8 @@ export function compartiPerMansione(mansione: string, dominio?: string): string[
   const d = norm(dominio ?? "")
   const t = `${m} ${d}`.trim()
   if (!t) return []
-  if (isMansioneFuoriCalendarioCorsi(m)) return []
+  if (isMansioneAssistenza(m)) return ["spogliatoi"]
+  if (isMansioneSquadra(m)) return ["squadra"]
   if (/\bsala pesi\b|\bsala fitness\b|\bpalestr/.test(t) && !/\bcorso\b|\bcorsi\b|\bscuola nuoto\b/.test(t)) {
     return ["sala_fitness"]
   }
@@ -494,7 +515,10 @@ export async function proponeConvalidaMese(opts: {
       const dateIso = String(e.dateIso ?? "").trim()
       if (e.seasonal) {
         const monthDay = date.slice(5)
-        if (e.dow !== dow || monthDay < e.seasonal.from || monthDay > e.seasonal.to) continue
+        const from = e.seasonal.from
+        const to = e.seasonal.to
+        const inSeason = from <= to ? monthDay >= from && monthDay <= to : monthDay >= from || monthDay <= to
+        if (e.dow !== dow || !inSeason) continue
       } else if (dateIso) {
         if (dateIso !== date) continue
       } else if (e.dow !== dow) continue

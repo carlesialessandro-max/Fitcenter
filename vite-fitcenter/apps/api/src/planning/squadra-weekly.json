@@ -1,0 +1,792 @@
+[
+  {
+    "dow": 1,
+    "start": "14:30",
+    "title": "14:30–17:00 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "14:30",
+    "title": "14:30–16:30 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "20:00",
+    "title": "20:00–21:30 · Assoluti · Sala Pesi",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "14:30",
+    "title": "14:30–16:30 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "14:30",
+    "title": "14:30–16:30 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "14:30",
+    "title": "14:30–16:30 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "20:00",
+    "title": "20:00–21:30 · Assoluti · Sala Pesi",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "14:30",
+    "title": "14:30–17:00 · Assoluti",
+    "staff": "SARA",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "14:30",
+    "title": "14:30–16:30 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "14:30",
+    "title": "14:30–16:30 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "14:30",
+    "title": "14:30–16:30 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "14:30",
+    "title": "14:30–16:30 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "15:30",
+    "title": "15:30–17:00 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "14:30",
+    "title": "14:30–15:15 · Categoria · Orange",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "14:30",
+    "title": "14:30–17:00 · Categoria",
+    "staff": "LORENZO F.",
+    "seasonal": {
+      "from": "08-31",
+      "to": "08-08"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti A",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti A",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "16:30",
+    "title": "16:30–18:00 · Esordienti A",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "16:30",
+    "title": "16:30–18:00 · Esordienti A",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "19:30",
+    "title": "19:30–20:30 · Esordienti A",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "18:30",
+    "title": "18:30–19:15 · Esordienti A · Jujtzu",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "19:30",
+    "title": "19:30–20:30 · Esordienti A",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "18:30",
+    "title": "18:30–19:15 · Esordienti A · Jujtzu",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "16:30",
+    "title": "16:30–18:00 · Esordienti A",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "16:30",
+    "title": "16:30–18:00 · Esordienti A",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti A",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "16:00",
+    "title": "16:00–16:45 · Esordienti A · Orange",
+    "staff": "LORENZO S.",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti A",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "16:00",
+    "title": "16:00–16:45 · Esordienti A · Orange",
+    "staff": "MARCHI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 2,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti B",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti B",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "17:00",
+    "title": "17:00–18:30 · Esordienti B",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "18:00",
+    "title": "18:00–19:30 · Esordienti B",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 4,
+    "start": "17:45",
+    "title": "17:45–18:00 · Esordienti B · Preacqua",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "09:30–11:00 · Esordienti B",
+    "staff": "CATE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "09:30–11:00 · Esordienti B",
+    "staff": "MATILDE",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "09:30",
+    "title": "09:30–11:00 · Esordienti B",
+    "staff": "GALLO",
+    "seasonal": {
+      "from": "09-08",
+      "to": "07-17"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Giovanissimi",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Giovanissimi",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Giovanissimi · Piano Vasca",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Giovanissimi",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Giovanissimi · Piano Vasca",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Giovanissimi",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Giovanissimi · Piano Vasca",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "18:30",
+    "title": "18:30–19:30 · Propaganda Esordienti",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Esordienti",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Esordienti · Piano Vasca",
+    "staff": "GABRI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Esordienti",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Esordienti · Piano Vasca",
+    "staff": "MATI",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:15",
+    "title": "11:15–12:15 · Propaganda Esordienti",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "11:00",
+    "title": "11:00–11:15 · Propaganda Esordienti · Piano Vasca",
+    "staff": "SIMO",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-03"
+    }
+  },
+  {
+    "dow": 1,
+    "start": "20:15",
+    "title": "20:15–21:45 · Propaganda Grandi",
+    "staff": "YLENIA",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 3,
+    "start": "20:30",
+    "title": "20:30–22:00 · Propaganda Grandi",
+    "staff": "YLENIA",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "20:15",
+    "title": "20:15–21:45 · Propaganda Grandi",
+    "staff": "YLENIA",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 5,
+    "start": "19:00",
+    "title": "19:00–20:00 · Propaganda Grandi · Palestra",
+    "staff": "YLENIA",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  },
+  {
+    "dow": 6,
+    "start": "13:00",
+    "title": "13:00–14:30 · Propaganda Grandi",
+    "staff": "YLENIA",
+    "seasonal": {
+      "from": "09-07",
+      "to": "07-31"
+    }
+  }
+]

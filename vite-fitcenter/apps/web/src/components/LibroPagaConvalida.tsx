@@ -11,6 +11,8 @@ const CALENDARI_SPLIT: { id: string; label: string }[] = [
   { id: "sala-fitness", label: "Sala pesi" },
   { id: "piscina", label: "Bagnini" },
   { id: "reception", label: "Desk" },
+  { id: "spogliatoi", label: "Spogliatoi" },
+  { id: "squadra", label: "Squadra" },
 ]
 
 function segmentoDaComparto(comparto?: string): string {
@@ -18,6 +20,8 @@ function segmentoDaComparto(comparto?: string): string {
   if (comparto === "sala_fitness") return "sala-fitness"
   if (comparto === "piscina") return "piscina"
   if (comparto === "reception") return "reception"
+  if (comparto === "spogliatoi") return "spogliatoi"
+  if (comparto === "squadra") return "squadra"
   if (comparto === "corsi") return "corsi"
   return "corsi"
 }
@@ -287,18 +291,7 @@ export function LibroPagaConvalidaPanel({
                     {r.match ? (
                       <span>
                         {r.match.title} · {r.match.start} · {r.match.staff} (
-                        {r.match.comparto === "sala_fitness"
-                          ? "sala pesi"
-                          : r.match.comparto === "scuola_nuoto"
-                            ? "scuola nuoto"
-                            : r.match.comparto === "corsi"
-                              ? "corsi"
-                              : r.match.comparto === "piscina"
-                                ? "bagnini"
-                                : r.match.comparto === "reception"
-                                  ? "desk"
-                                  : r.match.comparto}
-                        )
+                        {labelComparto(r.match.comparto)})
                       </span>
                     ) : sub ? (
                       <span className="text-amber-300">
@@ -319,7 +312,11 @@ export function LibroPagaConvalidaPanel({
                                     ? "Bagnini"
                                     : c === "reception"
                                       ? "Desk"
-                                      : c
+                                      : c === "spogliatoi"
+                                        ? "Spogliatoi"
+                                        : c === "squadra"
+                                          ? "Squadra"
+                                          : c
                           )
                           .join(", ") || "calendario FitCenter"}{" "}
                         per questa data
@@ -396,6 +393,8 @@ function labelComparto(c: string): string {
   if (c === "corsi") return "corsi"
   if (c === "piscina") return "bagnini"
   if (c === "reception") return "desk"
+  if (c === "spogliatoi") return "spogliatoi"
+  if (c === "squadra") return "squadra"
   return c
 }
 
@@ -430,11 +429,13 @@ function testoCalendario(r: ConvalidaRow): ReactNode {
       if (c === "corsi") return "Corsi fitness"
       if (c === "piscina") return "Bagnini"
       if (c === "reception") return "Desk"
+      if (c === "spogliatoi") return "Spogliatoi"
+      if (c === "squadra") return "Squadra"
       return c
     })
     .join(", ")
   if (!attesi) {
-    return <span>Nessun calendario corsi da confrontare (es. assistenza, squadra). Conferma a mano.</span>
+    return <span>Nessun calendario da confrontare per questa mansione. Conferma a mano.</span>
   }
   return <span>Nessuna copertura in {attesi} per questa data</span>
 }
@@ -605,8 +606,8 @@ export function LibroPagaConvalidaMesePanel({
         </div>
       ) : null}
       <p className="text-xs text-zinc-500">
-        I turni allineati al calendario si confermano in un click. Assistenza e squadra non si confrontano con i corsi
-        scuola nuoto: seleziona le righe oppure usa «Ok tutti». Fogli orari:{" "}
+        I turni allineati al calendario si confermano in un click. Assistenza usa il calendario Spogliatoi, squadra
+        quello Squadra. Fogli orari:{" "}
         <a className="text-amber-300 underline" href={riepilogo.fogli.bagnini} target="_blank" rel="noreferrer">
           Bagnini
         </a>
@@ -635,6 +636,14 @@ export function LibroPagaConvalidaMesePanel({
             {" · "}
             <a className="text-amber-300 underline" href="/calendario/reception">
               Desk
+            </a>
+            {" · "}
+            <a className="text-amber-300 underline" href="/calendario/spogliatoi">
+              Spogliatoi
+            </a>
+            {" · "}
+            <a className="text-amber-300 underline" href="/calendario/squadra">
+              Squadra
             </a>
           </>
         )}

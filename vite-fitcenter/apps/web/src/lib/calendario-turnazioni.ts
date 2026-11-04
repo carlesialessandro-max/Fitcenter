@@ -57,7 +57,7 @@ export function eventDurationMinutes(e: CalendarioMergedEventDto, comparto?: str
     if (d > 0 && d <= max) return d
   }
   if (comparto === "reception" || comparto === "piscina" || comparto === "sala_fitness" || comparto === "pulizie") return 6 * 60
-  if (comparto === "scuola_nuoto" || comparto === "acquaticita" || comparto === "spogliatoi") return 45
+  if (comparto === "scuola_nuoto" || comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "squadra") return 45
   return 60
 }
 

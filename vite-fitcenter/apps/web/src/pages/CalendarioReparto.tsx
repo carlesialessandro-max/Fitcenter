@@ -142,6 +142,7 @@ const COMPARTI_CALENDARIO_GRID: CalendarioComparto[] = [
   "scuola_nuoto",
   "acquaticita",
   "spogliatoi",
+  "squadra",
   "pulizie",
   "piscina",
   "reception",
@@ -456,6 +457,8 @@ function pillColClass(e: CalEvent, colorByStaff?: boolean): string {
   if (e.zona === "reception") return "border-emerald-500/35 bg-emerald-950/30 text-emerald-100"
   if (e.zona === "sala_fitness") return "border-orange-500/35 bg-orange-950/25 text-orange-100"
   if (e.zona === "pulizie") return "border-stone-400/45 bg-stone-900/50 text-stone-100"
+  if (e.zona === "spogliatoi") return "border-teal-500/40 bg-teal-950/30 text-teal-100"
+  if (e.zona === "squadra") return "border-indigo-500/40 bg-indigo-950/30 text-indigo-100"
   return "border-cyan-500/35 bg-cyan-500/10 text-cyan-100"
 }
 
@@ -1701,6 +1704,16 @@ export function CalendarioRepartoPage() {
                   Orario pulizie da Excel settimanale. Puoi aggiungere o modificare un turno{" "}
                   <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
                 </>
+              ) : apiComparto === "spogliatoi" ? (
+                <>
+                  Assistenza spogliatoi dal file orario 2027. Copertura per spogliatoio M / F / B. Puoi aggiungere o
+                  modificare un turno <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                </>
+              ) : apiComparto === "squadra" ? (
+                <>
+                  Allenamenti squadra dal file orario 2027 (assoluti, categoria, esordienti, propaganda). Puoi
+                  aggiungere o modificare un turno <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                </>
               ) : compartoIsManualServer(apiComparto) ? (
                 <>
                   Calendario <strong className="font-medium text-zinc-400">{compartoLabel}</strong>:{" "}
@@ -1755,6 +1768,11 @@ export function CalendarioRepartoPage() {
               <>
                 Nessuno slot. Import Excel:{" "}
                 <code className="text-xs">pnpm run import:pulizie -- --replace</code>
+              </>
+            ) : apiComparto === "spogliatoi" || apiComparto === "squadra" ? (
+              <>
+                Nessuno slot in questo periodo. L&apos;orario 2027 si carica dal server al primo accesso; se resta vuoto
+                verifica il JSON in <code className="text-xs">apps/api/src/planning</code>.
               </>
             ) : compartoIsManualServer(apiComparto) ? (
               <>

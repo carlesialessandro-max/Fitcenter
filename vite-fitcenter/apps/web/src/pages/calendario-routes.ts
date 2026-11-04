@@ -10,6 +10,7 @@ export type CalendarioSegmento =
   | "sala-fitness"
   | "acquaticita"
   | "spogliatoi"
+  | "squadra"
   | "pulizie"
   | "consulenti"
 
@@ -22,6 +23,7 @@ export const CALENDARIO_SEGMENTI: { segmento: CalendarioSegmento; api: Calendari
   { segmento: "sala-fitness", api: "sala_fitness", label: "Sala fitness" },
   { segmento: "acquaticita", api: "acquaticita", label: "Acquaticità" },
   { segmento: "spogliatoi", api: "spogliatoi", label: "Spogliatoi" },
+  { segmento: "squadra", api: "squadra", label: "Squadra" },
   { segmento: "pulizie", api: "pulizie", label: "Pulizie" },
   { segmento: "consulenti", api: "consulenti", label: "Consulenti" },
 ]
@@ -46,7 +48,7 @@ export function roleCanReadCalendarioComparto(role: Role, comparto: CalendarioCo
   if (comparto === "corsi") return role === "corsi" || role === "istruttore"
   if (comparto === "scuola_nuoto") return role === "scuola_nuoto"
   if (comparto === "piscina") return role === "bagnini"
-  if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "sala_fitness" || comparto === "pulizie") return false
+  if (comparto === "acquaticita" || comparto === "spogliatoi" || comparto === "squadra" || comparto === "sala_fitness" || comparto === "pulizie") return false
   if (comparto === "campus") return role === "campus"
   if (comparto === "reception") return role === "operatore" || role === "firme"
   if (comparto === "consulenti") return false
