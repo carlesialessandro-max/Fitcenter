@@ -84,6 +84,8 @@ export type AmmRisultatoDettaglio = {
 export type AmmDashboard = {
   anno: number
   mese: string | null
+  meseA?: string | null
+  mesi?: string[]
   repartoId: string | null
   tot: number
   totFisso: number
@@ -270,9 +272,10 @@ function token(): string | null {
 }
 
 export const amministrazioneApi = {
-  dashboard: (anno: number, mese?: string, reparto?: string) => {
+  dashboard: (anno: number, mese?: string, reparto?: string, meseA?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })
     if (mese) q.set("mese", mese)
+    if (meseA && meseA !== mese) q.set("meseA", meseA)
     if (reparto) q.set("reparto", reparto)
     return api.get<AmmDashboard>(`/amministrazione/dashboard?${q}`)
   },

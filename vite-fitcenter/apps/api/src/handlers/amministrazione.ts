@@ -24,7 +24,7 @@ import {
   isMacroServizi,
   isMacroStruttura,
   MACRO_COMMERCIALI,
-  periodoIso,
+  mesiNelPeriodo,
   ordinaDettaglioRicavi,
   queryRicaviAmm,
   quoteRipartoFissi,
@@ -1073,7 +1073,16 @@ export async function getAmmDashboard(req: Request, res: Response) {
     ammCostiStore.riapplicaQuotePiscinaEstate()
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const meseQ = String(req.query.mese ?? "").trim()
-    const mese = /^\d{2}$/.test(meseQ) ? `${anno}-${meseQ}` : /^\d{4}-\d{2}$/.test(meseQ) ? meseQ : ""
+    const meseAQ = String(req.query.meseA ?? req.query.a ?? "").trim()
+    const normYm = (raw: string) =>
+      /^\d{4}-\d{2}$/.test(raw) ? raw : /^\d{2}$/.test(raw) ? `${anno}-${raw}` : ""
+    const meseDa = normYm(meseQ)
+    const meseA = normYm(meseAQ) || meseDa
+    const mesiTarget = meseDa
+      ? mesiNelPeriodo(meseDa, meseA || meseDa)
+      : Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
+    const mesiSet = new Set(mesiTarget)
+    const inPeriodo = (ym: string) => mesiSet.has(ym)
     const repartoId = String(req.query.reparto ?? "").trim()
     const reparti = ammCostiStore.listReparti(true)
     const round2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100
@@ -1089,7 +1098,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
     const inFiltro = (id: string) => !filtroIds || filtroIds.has(id)
     const speseParti = ammCostiStore.listSpese().flatMap((s) =>
       ripartoCompetenza(s)
-        .filter((p) => (mese ? p.mese === mese : p.mese.startsWith(String(anno))))
+        .filter((p) => inPeriodo(p.mese))
         .map((p) => ({ spesa: s, mese: p.mese, importo: p.importo }))
     )
 
@@ -1104,7 +1113,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
         }))
     }
 
-    const busteAll = ammCostiStore.listBuste().filter((b) => (mese ? b.mese === mese : b.mese.startsWith(String(anno))))
+    const busteAll = ammCostiStore.listBuste().filter((b) => inPeriodo(b.mese))
     const bustaSlices: Slice[] = []
     const pnlAlloc: { repartoId: string; importo: number }[] = []
     const pnlVoci: { repartoId: string; importo: number; voce: string }[] = []
@@ -1155,7 +1164,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
     }
 
     const collabAll = ammCostiStore.listCollaboratori()
-    const lpAnno = await costiCollaboratoriAnno(anno)
+    const anniLp = [...new Set(mesiTarget.map((ym) => Number(ym.slice(0, 4))))]
+    const lpAnno = (await Promise.all(anniLp.map((y) => costiCollaboratoriAnno(y)))).flat()
     const centriCostoLibroPaga = await centriCostoCollaboratoriDaLibroPaga()
     const lpSlices: Slice[] = []
     function quoteTurniDelMese(ym: string, nominativo: string): AmmQuota[] | undefined {
@@ -1163,9 +1173,6 @@ export async function getAmmDashboard(req: Request, res: Response) {
       return meseLp ? quoteTurniCollaboratore(nominativo, meseLp.collaboratori) : undefined
     }
     let totCollaboratoriAziendaRaw = 0
-    const mesiTarget = mese
-      ? [mese]
-      : Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
     for (const ym of mesiTarget) {
       const stored = collabAll.filter((c) => c.mese === ym)
       if (stored.length) {
@@ -1189,10 +1196,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
         continue
       }
     }
-    const rimborsiAnno = ammCostiStore
-      .listCollaboratoriRimborsi()
-      .filter((r) => r.mese.startsWith(String(anno)))
-    const rimborsiAll = rimborsiAnno.filter((r) => !mese || r.mese === mese)
+    const rimborsiAll = ammCostiStore.listCollaboratoriRimborsi().filter((r) => inPeriodo(r.mese))
+    const rimborsiAnno = rimborsiAll
     const rimborsoSlices: Slice[] = rimborsiAll.flatMap((r) =>
       allocateQuote(
         r.totale,
@@ -1218,7 +1223,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       )
     }
 
-    const ricavi = await queryRicaviAmm(anno, mese || undefined)
+    const ricavi = await queryRicaviAmm(anno, meseDa || undefined, meseA && meseA !== meseDa ? meseA : undefined)
     let fattureEmesseDisponibili = false
     let ricaviErrore = ""
     let fattureAmm = {
@@ -1245,13 +1250,15 @@ export async function getAmmDashboard(req: Request, res: Response) {
       ricaviErrore = "Collega Fatture in Cloud per leggere le fatture emesse."
     } else {
       try {
-        const periodoAnno = periodoIso(anno)
+        const yMin = Number(mesiTarget[0]?.slice(0, 4) || anno)
+        const yMax = Number(mesiTarget[mesiTarget.length - 1]?.slice(0, 4) || anno)
+        const periodoDocs = { from: `${yMin}-01-01`, to: `${yMax}-12-31` }
         const docsAnno = await listFattureEmessePeriodo(
           ficCfg,
-          shiftIsoDays(periodoAnno.from, -45),
-          shiftIsoDays(periodoAnno.to, 45)
+          shiftIsoDays(periodoDocs.from, -45),
+          shiftIsoDays(periodoDocs.to, 45)
         )
-        fattureAmmAnno = riepilogoFattureAmm(docsAnno, periodoAnno)
+        fattureAmmAnno = riepilogoFattureAmm(docsAnno, periodoDocs)
         fattureAmm = riepilogoFattureAmm(docsAnno, { from: ricavi.from, to: ricavi.to })
         fattureEmesseDettaglio = docsAnno.flatMap((doc) => {
           const tipo = classificaFatturaEmessa(doc)
@@ -1362,16 +1369,16 @@ export async function getAmmDashboard(req: Request, res: Response) {
       .sort((a, b) => b.importo - a.importo)
 
     const byMeseMap = new Map<string, number>()
-    for (let i = 1; i <= 12; i++) byMeseMap.set(`${anno}-${String(i).padStart(2, "0")}`, 0)
+    for (const ym of mesiTarget) byMeseMap.set(ym, 0)
     for (const s of ammCostiStore.listSpese()) {
       for (const p of ripartoCompetenza(s)) {
-        if (!p.mese.startsWith(String(anno))) continue
+        if (!inPeriodo(p.mese)) continue
         const alloc = allocateQuote(p.importo, s.quote).filter((a) => inFiltro(a.repartoId))
         const sub = alloc.reduce((n, a) => n + a.importo, 0)
         byMeseMap.set(p.mese, Math.round(((byMeseMap.get(p.mese) ?? 0) + sub) * 100) / 100)
       }
     }
-    for (const ym of Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)) {
+    for (const ym of mesiTarget) {
       const stored = collabAll.filter((c) => c.mese === ym)
       let sub = 0
       if (stored.length) {
@@ -1401,22 +1408,23 @@ export async function getAmmDashboard(req: Request, res: Response) {
       byMeseMap.set(r.mese, round2((byMeseMap.get(r.mese) ?? 0) + sub))
     }
     for (const b of ammCostiStore.listBuste()) {
-      if (!b.mese.startsWith(String(anno))) continue
+      if (!inPeriodo(b.mese)) continue
       const sub = allocateQuote(b.totale, b.quote).filter((a) => inFiltro(a.repartoId)).reduce((n, a) => n + a.importo, 0)
       byMeseMap.set(b.mese, Math.round(((byMeseMap.get(b.mese) ?? 0) + sub) * 100) / 100)
     }
     if (inFiltro("utenze-generali")) {
       for (const [meseRecupero, importo] of Object.entries(fattureAmmAnno.recuperiUtenzePerMese)) {
-        if (!meseRecupero.startsWith(String(anno))) continue
+        if (!inPeriodo(meseRecupero)) continue
         byMeseMap.set(
           meseRecupero,
           round2((byMeseMap.get(meseRecupero) ?? 0) - importo)
         )
       }
     }
+    const anniNelGrafico = new Set(mesiTarget.map((ym) => ym.slice(0, 4)))
     const byMese = [...byMeseMap.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([meseKey, importo]) => ({
       mese: meseKey,
-      label: meseKey.slice(5),
+      label: anniNelGrafico.size > 1 ? `${meseKey.slice(5)}/${meseKey.slice(2, 4)}` : meseKey.slice(5),
       importo,
     }))
 
@@ -1620,7 +1628,9 @@ export async function getAmmDashboard(req: Request, res: Response) {
 
     res.json({
       anno,
-      mese: mese || null,
+      mese: meseDa ? mesiTarget[0] ?? null : null,
+      meseA: meseDa && mesiTarget.length > 1 ? mesiTarget[mesiTarget.length - 1] ?? null : null,
+      mesi: mesiTarget,
       repartoId: repartoId || null,
       tot,
       totFisso,

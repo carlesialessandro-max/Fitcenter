@@ -518,18 +518,47 @@ function emptyRicavi(from: string, to: string): AmmRicaviPeriodo {
   }
 }
 
-export function periodoIso(anno: number, mese?: string): { from: string; to: string } {
-  if (mese && /^\d{4}-\d{2}$/.test(mese)) {
-    const y = Number(mese.slice(0, 4))
-    const m = Number(mese.slice(5, 7))
-    const to = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
-    return { from: `${mese}-01`, to }
+export function mesiNelPeriodo(da: string, a: string): string[] {
+  if (!/^\d{4}-\d{2}$/.test(da) || !/^\d{4}-\d{2}$/.test(a)) return []
+  const start = da <= a ? da : a
+  const end = da <= a ? a : da
+  const out: string[] = []
+  let y = Number(start.slice(0, 4))
+  let m = Number(start.slice(5, 7))
+  const yEnd = Number(end.slice(0, 4))
+  const mEnd = Number(end.slice(5, 7))
+  while (y < yEnd || (y === yEnd && m <= mEnd)) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`)
+    m += 1
+    if (m > 12) {
+      m = 1
+      y += 1
+    }
+    if (out.length > 36) break
+  }
+  return out
+}
+
+function ultimoGiornoYm(ym: string): string {
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(5, 7))
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10)
+}
+
+export function periodoIso(anno: number, mese?: string, meseA?: string): { from: string; to: string } {
+  const da = mese && /^\d{4}-\d{2}$/.test(mese) ? mese : ""
+  const a = meseA && /^\d{4}-\d{2}$/.test(meseA) ? meseA : da
+  if (da) {
+    const mesi = mesiNelPeriodo(da, a || da)
+    const first = mesi[0] ?? da
+    const last = mesi[mesi.length - 1] ?? da
+    return { from: `${first}-01`, to: ultimoGiornoYm(last) }
   }
   return { from: `${anno}-01-01`, to: `${anno}-12-31` }
 }
 
-export async function queryRicaviAmm(anno: number, mese?: string): Promise<AmmRicaviPeriodo> {
-  const { from, to } = periodoIso(anno, mese)
+export async function queryRicaviAmm(anno: number, mese?: string, meseA?: string): Promise<AmmRicaviPeriodo> {
+  const { from, to } = periodoIso(anno, mese, meseA)
   if (!isGestionaleConfigured()) return emptyRicavi(from, to)
   try {
     const voci = await queryIncassiPerVoce({ from, to })

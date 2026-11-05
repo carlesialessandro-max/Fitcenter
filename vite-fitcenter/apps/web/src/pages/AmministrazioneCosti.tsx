@@ -125,6 +125,14 @@ function currentYm(): string {
   }
 }
 
+function addMonthsYm(ym: string, delta: number): string {
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(5, 7))
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return ym
+  const d = new Date(y, m - 1 + delta, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
 function quoteSum(q: AmmQuota[]): number {
   return Math.round(q.reduce((s, x) => s + Number(x.percentuale || 0), 0) * 100) / 100
 }
@@ -214,13 +222,20 @@ export function AmministrazioneCosti() {
 function DashboardTab() {
   const now = currentYm()
   const [anno, setAnno] = useState(Number(now.slice(0, 4)))
-  const [mese, setMese] = useState(now.slice(5, 7))
+  const [da, setDa] = useState(now)
+  const [a, setA] = useState(now)
   const [tuttoAnno, setTuttoAnno] = useState(false)
   const [reparto, setReparto] = useState("")
   const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
   const dash = useQuery({
-    queryKey: ["amm-dash", anno, tuttoAnno ? "" : mese, reparto],
-    queryFn: () => amministrazioneApi.dashboard(anno, tuttoAnno ? undefined : `${anno}-${mese}`, reparto || undefined),
+    queryKey: ["amm-dash", anno, tuttoAnno ? "anno" : `${da}:${a}`, reparto],
+    queryFn: () =>
+      amministrazioneApi.dashboard(
+        tuttoAnno ? anno : Number(da.slice(0, 4)) || anno,
+        tuttoAnno ? undefined : da,
+        reparto || undefined,
+        tuttoAnno ? undefined : a
+      ),
   })
   const d = dash.data
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
@@ -261,20 +276,47 @@ function DashboardTab() {
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-xs text-zinc-500">
           Anno
-          <input type="number" value={anno} onChange={(e) => setAnno(Number(e.target.value))} className={inputCls} />
+          <input
+            type="number"
+            value={anno}
+            onChange={(e) => {
+              const y = Number(e.target.value) || anno
+              setAnno(y)
+              if (!tuttoAnno && /^\d{4}-\d{2}$/.test(da) && /^\d{4}-\d{2}$/.test(a)) {
+                setDa(`${y}-${da.slice(5, 7)}`)
+                setA(`${y}-${a.slice(5, 7)}`)
+              }
+            }}
+            className={inputCls}
+          />
         </label>
         <label className="grid gap-1 text-xs text-zinc-500">
-          Mese
+          Da
           <input
             type="month"
-            value={`${anno}-${mese}`}
+            value={da}
             disabled={tuttoAnno}
             onChange={(e) => {
               const v = e.target.value
-              if (/^\d{4}-\d{2}$/.test(v)) {
-                setAnno(Number(v.slice(0, 4)))
-                setMese(v.slice(5, 7))
-              }
+              if (!/^\d{4}-\d{2}$/.test(v)) return
+              setDa(v)
+              setAnno(Number(v.slice(0, 4)))
+              if (v > a) setA(v)
+            }}
+            className={inputCls}
+          />
+        </label>
+        <label className="grid gap-1 text-xs text-zinc-500">
+          A
+          <input
+            type="month"
+            value={a}
+            disabled={tuttoAnno}
+            onChange={(e) => {
+              const v = e.target.value
+              if (!/^\d{4}-\d{2}$/.test(v)) return
+              setA(v)
+              if (v < da) setDa(v)
             }}
             className={inputCls}
           />
@@ -283,6 +325,21 @@ function DashboardTab() {
           <input type="checkbox" checked={tuttoAnno} onChange={(e) => setTuttoAnno(e.target.checked)} className="accent-amber-500" />
           Intero anno
         </label>
+        <button
+          type="button"
+          className={btnGhost}
+          disabled={tuttoAnno}
+          title="Ultimi 3 mesi rispetto ad A"
+          onClick={() => {
+            setTuttoAnno(false)
+            const end = a
+            setDa(addMonthsYm(end, -2))
+            setA(end)
+            setAnno(Number(end.slice(0, 4)))
+          }}
+        >
+          3 mesi
+        </button>
         <label className="grid gap-1 text-xs text-zinc-500">
           Reparto
           <select value={reparto} onChange={(e) => setReparto(e.target.value)} className={inputCls}>
@@ -875,7 +932,9 @@ function DashboardTab() {
               </p>
             </div>
             <div className="rounded-2xl border border-zinc-800 p-4">
-              <h3 className="mb-3 text-sm font-medium text-zinc-200">Andamento {anno}</h3>
+              <h3 className="mb-3 text-sm font-medium text-zinc-200">
+                Andamento {tuttoAnno ? anno : da === a ? da : `${da} → ${a}`}
+              </h3>
               <div className="h-64">
                 <ResponsiveContainer>
                   <BarChart data={d.byMese}>
