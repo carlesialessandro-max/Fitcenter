@@ -79,3 +79,12 @@ export function trovaRigaPerNominativo<T>(
   }
   return trovaPerNominativo(map, nominativo)
 }
+
+/** True se i due nominativi coincidono (ordine nome/cognome e accenti ignorati). */
+export function stessoNominativo(a: string, b: string): boolean {
+  const na = normalizzaNominativo(a)
+  const nb = normalizzaNominativo(b)
+  if (!na || !nb) return false
+  if (na === nb) return true
+  return trovaPerNominativo(new Map([[na, true]]), b) === true
+}

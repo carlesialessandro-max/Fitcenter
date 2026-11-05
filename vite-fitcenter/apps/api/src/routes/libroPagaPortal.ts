@@ -30,6 +30,9 @@ import {
 } from "../handlers/libroPagaPortal.js"
 import {
   getAmmCollaboratoriReport,
+  getLpagaMioCompenso,
+  postLpagaMiaAltraAzienda,
+  deleteLpagaMiaAltraAzienda,
   postAmmCollaboratoreImporto,
   postAmmCollaboratoreRimanenze,
   postAmmCollaboratoriImport,
@@ -74,3 +77,6 @@ libroPagaPortalRouter.post("/collaboratori/rimanenze", requireLpaga, requireLpag
 libroPagaPortalRouter.post("/collaboratori/report/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriReportImport)
 libroPagaPortalRouter.post("/stipendi/pdf", requireLpaga, requireLpagaAlberto, postAmmStipendiPdf)
 libroPagaPortalRouter.post("/collaboratori/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriImport)
+libroPagaPortalRouter.get("/mio-compenso", requireLpaga, getLpagaMioCompenso)
+libroPagaPortalRouter.post("/mio-compenso/altre-aziende", requireLpaga, postLpagaMiaAltraAzienda)
+libroPagaPortalRouter.delete("/mio-compenso/altre-aziende/:id", requireLpaga, deleteLpagaMiaAltraAzienda)

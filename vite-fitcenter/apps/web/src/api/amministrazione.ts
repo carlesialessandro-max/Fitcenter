@@ -187,6 +187,15 @@ export type AmmCollaboratoreRimborso = {
   quote: AmmQuota[]
 }
 
+export type AmmCollabAltraAzienda = {
+  id: string
+  nominativo: string
+  anno: number
+  azienda: string
+  importo: number
+  updatedAt?: string
+}
+
 export type AmmCollabReportRiga = {
   nominativo: string
   tipo: "sportivo" | "gestionale"
@@ -194,6 +203,9 @@ export type AmmCollabReportRiga = {
   mansione?: string
   mesi: Record<string, { id: string; totale: number; origine: string }>
   rimanenze: number
+  altreAziende?: number
+  altreAziendeVoci?: { id?: string; azienda: string; importo: number }[]
+  totFitcenter?: number
   tot: number
   oltre5000: number
   oltre15000: number
@@ -216,9 +228,18 @@ export type AmmCollabReport = {
   righe: AmmCollabReportRiga[]
   totMese: Record<string, number>
   totRimanenze?: number
+  totAltreAziende?: number
   totAnno: number
   n: number
   audit: AmmCollabAudit[]
+}
+
+export type LpagaMioCompenso = {
+  anno: number
+  mesi: { id: string; label: string }[]
+  nominativo: string
+  riga: AmmCollabReportRiga
+  altreAziende: AmmCollabAltraAzienda[]
 }
 
 export type AmmImportEsito = {

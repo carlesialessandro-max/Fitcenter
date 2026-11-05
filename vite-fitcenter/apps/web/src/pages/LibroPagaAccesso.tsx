@@ -13,6 +13,7 @@ import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
+import { LibroPagaMioCompenso } from "@/components/LibroPagaMioCompenso"
 import { canVedereReportCollaboratoriLpaga } from "@/lib/report-collaboratori-access"
 import { cmpNomeCognome, cmpRuoloNomeCognome, displayNomeCognome, normCerca, testoCercaTurno } from "@/lib/personale-sort"
 import { isLpagaTeamRuolo, ruoloLabel, RUOLO_LEGENDA } from "@/lib/lpaga-ruolo"
@@ -152,6 +153,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     | "turni"
     | "personale"
     | "mensilita"
+    | "compensi"
     | "convalide"
     | "report"
     | "collaboratori"
@@ -205,6 +207,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
     ...(isAdmin ? ([{ id: "livelli" as const, label: "Livelli" }] as const) : []),
     ...(!isUser ? ([{ id: "turni" as const, label: "Turnazioni" }] as const) : []),
     { id: "mensilita", label: "Mensilità" },
+    ...(!canCollab ? ([{ id: "compensi" as const, label: "Compensi anno" }] as const) : []),
     ...(canTeam ? ([{ id: "convalide" as const, label: "Convalide" }] as const) : []),
     ...(canTeam ? ([{ id: "personale" as const, label: "Personale" }] as const) : []),
     ...(canTeam ? ([{ id: "report" as const, label: "Report" }] as const) : []),
@@ -366,6 +369,7 @@ function LpagaApp({ onLogout }: { onLogout: () => void }) {
             }}
           />
         )}
+        {tab === "compensi" && !canCollab ? <LibroPagaMioCompenso /> : null}
         {data && tab === "convalide" && canTeam && (
           <ConvalidePortal
             data={data}
@@ -503,6 +507,12 @@ function Home({ data, me }: { data: LpagaPortalSnapshot; me?: LpagaMe }) {
           Hai la delega per convalidare le mensilità del reparto: apri Mensilità e premi Convalida.
         </p>
       )}
+      {isUser ? (
+        <p className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3 py-2 text-sm text-zinc-400">
+          Per gli importi di tutto l’anno e la soglia dei 5.000 € apri la scheda Compensi anno. Puoi anche inserire i
+          compensi di altre aziende. Vedi solo i tuoi dati.
+        </p>
+      ) : null}
       <div className="grid gap-4 sm:grid-cols-3">
       <Card title={isUser ? "Le mie ore" : "Ore del mese"}>
         <p className="text-2xl font-semibold">{isUser ? h.mioOre ?? 0 : data.mensilita.reduce((s, r) => s + r.ore, 0)}</p>
@@ -1753,6 +1763,11 @@ function Mensilita({
         onCreateTurno={(body) => lpagaApi.createTurno(body)}
         onPatchTurno={(id, body) => lpagaApi.patchTurno(id, body)}
         onDeleteTurno={(id) => lpagaApi.deleteTurno(id)}
+        notaImporti={
+          me?.ruolo === "user"
+            ? " Per gli importi di tutto l’anno e la soglia dei 5.000 € apri Compensi anno."
+            : undefined
+        }
       />
     </div>
   )

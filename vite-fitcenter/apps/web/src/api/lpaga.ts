@@ -1,5 +1,5 @@
 import { getApiBase } from "./baseUrl"
-import type { AmmCollabReport, AmmCollaboratoreRiga } from "./amministrazione"
+import type { AmmCollabAltraAzienda, AmmCollabReport, AmmCollaboratoreRiga, LpagaMioCompenso } from "./amministrazione"
 import type { LibroPagaSnapshot, LpagaLivello, LpagaRuolo } from "./libroPaga"
 
 const API_BASE = getApiBase()
@@ -278,5 +278,16 @@ export const lpagaApi = {
     lpagaRequest<import("./amministrazione").AmmImportEsito>("/lpaga/collaboratori/import", {
       method: "POST",
       body: JSON.stringify({ righe }),
+    }),
+  mioCompenso: (anno: number) =>
+    lpagaRequest<LpagaMioCompenso>(`/lpaga/mio-compenso?anno=${encodeURIComponent(String(anno))}`),
+  setMiaAltraAzienda: (body: { anno: number; azienda: string; importo: number; id?: string }) =>
+    lpagaRequest<{ row: AmmCollabAltraAzienda }>("/lpaga/mio-compenso/altre-aziende", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteMiaAltraAzienda: (id: string) =>
+    lpagaRequest<{ row: AmmCollabAltraAzienda }>(`/lpaga/mio-compenso/altre-aziende/${encodeURIComponent(id)}`, {
+      method: "DELETE",
     }),
 }

@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path"
 import { randomUUID } from "crypto"
 import { getDataDir, readJson, writeJson } from "./persist.js"
-import { normalizzaNominativo, trovaPerNominativo } from "../lib/nominativo-match.js"
+import { normalizzaNominativo, stessoNominativo, trovaPerNominativo } from "../lib/nominativo-match.js"
 import {
   FORNITORI_QUOTE_SEED,
   isQuoteDumpDefault,
@@ -35,6 +35,17 @@ export type AmmCollabAudit = {
 export type AmmCollabRimanenza = {
   nominativo: string
   anno: number
+  importo: number
+  updatedAt: string
+  modificatoDa?: string
+}
+
+/** Compensi dichiarati dall'istruttore per altre società (soglia 5.000 €). Non sono costi FitCenter. */
+export type AmmCollabAltraAzienda = {
+  id: string
+  nominativo: string
+  anno: number
+  azienda: string
   importo: number
   updatedAt: string
   modificatoDa?: string
@@ -144,6 +155,7 @@ type FileShape = {
   collaboratoriCentriCosto: AmmCollaboratoreCentroCosto[]
   collaboratoriAudit: AmmCollabAudit[]
   collaboratoriRimanenze: AmmCollabRimanenza[]
+  collaboratoriAltreAziende: AmmCollabAltraAzienda[]
 }
 
 export const BUSTA_DEFAULT_REPARTO = "amministrazione-uffici"
@@ -213,6 +225,7 @@ function empty(): FileShape {
     collaboratoriCentriCosto: [],
     collaboratoriAudit: [],
     collaboratoriRimanenze: [],
+    collaboratoriAltreAziende: [],
   }
 }
 
@@ -331,6 +344,21 @@ function migrate(raw: Partial<FileShape>): FileShape {
       modificatoDa: String(r.modificatoDa ?? "").trim() || undefined,
     }))
     .filter((r) => r.nominativo && Number.isFinite(r.anno) && r.anno >= 1990 && r.importo > 0)
+  const collaboratoriAltreAziende: AmmCollabAltraAzienda[] = (
+    Array.isArray(raw.collaboratoriAltreAziende) ? raw.collaboratoriAltreAziende : []
+  )
+    .map((r) => ({
+      id: String(r.id ?? "").trim() || randomUUID(),
+      nominativo: String(r.nominativo ?? "").trim(),
+      anno: Number(r.anno),
+      azienda: String(r.azienda ?? "").trim(),
+      importo: Math.round((Number(r.importo) || 0) * 100) / 100,
+      updatedAt: String(r.updatedAt ?? ""),
+      modificatoDa: String(r.modificatoDa ?? "").trim() || undefined,
+    }))
+    .filter(
+      (r) => r.id && r.nominativo && r.azienda && Number.isFinite(r.anno) && r.anno >= 1990 && r.importo > 0
+    )
   let fornitoriQuote: AmmFornitoreQuote[] = (Array.isArray(raw.fornitoriQuote) ? raw.fornitoriQuote : [])
     .map((r) => ({
       key: normFornitoreKey(String(r.key ?? r.ragioneSociale ?? "")),
@@ -368,6 +396,7 @@ function migrate(raw: Partial<FileShape>): FileShape {
     collaboratoriCentriCosto,
     collaboratoriAudit,
     collaboratoriRimanenze,
+    collaboratoriAltreAziende,
   }
 }
 
@@ -1135,6 +1164,97 @@ export const ammCostiStore = {
     d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
     save(d)
     return row
+  },
+  listAltreAziende(anno: number): AmmCollabAltraAzienda[] {
+    return load()
+      .collaboratoriAltreAziende.filter((r) => r.anno === anno)
+      .slice()
+      .sort((a, b) => a.nominativo.localeCompare(b.nominativo, "it") || a.azienda.localeCompare(b.azienda, "it"))
+  },
+  listAltreAziendeDi(nominativo: string, anno: number): AmmCollabAltraAzienda[] {
+    return this.listAltreAziende(anno).filter((r) => stessoNominativo(r.nominativo, nominativo))
+  },
+  getAltraAzienda(id: string): AmmCollabAltraAzienda | undefined {
+    const key = String(id ?? "").trim()
+    if (!key) return undefined
+    return load().collaboratoriAltreAziende.find((r) => r.id === key)
+  },
+  upsertAltraAzienda(body: {
+    id?: string
+    nominativo: string
+    anno: number
+    azienda: string
+    importo: number
+    user: string
+  }): AmmCollabAltraAzienda {
+    const nominativo = body.nominativo.trim()
+    const azienda = String(body.azienda ?? "").trim().slice(0, 80)
+    const anno = Number(body.anno)
+    const importo = Math.round((Number(String(body.importo).replace(",", ".")) || 0) * 100) / 100
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    if (!azienda) throw Object.assign(new Error("Indica l’azienda"), { status: 400 })
+    if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
+      throw Object.assign(new Error("Anno non valido"), { status: 400 })
+    }
+    if (!Number.isFinite(importo) || importo < 0 || importo > 200000) {
+      throw Object.assign(new Error("Importo non valido"), { status: 400 })
+    }
+    const d = load()
+    const id = String(body.id ?? "").trim()
+    const sameId = id ? d.collaboratoriAltreAziende.find((r) => r.id === id) : undefined
+    if (id && !sameId) throw Object.assign(new Error("Voce non trovata"), { status: 404 })
+    const sameAzienda = d.collaboratoriAltreAziende.find(
+      (r) =>
+        r.anno === anno &&
+        stessoNominativo(r.nominativo, nominativo) &&
+        normalizzaNominativo(r.azienda) === normalizzaNominativo(azienda) &&
+        r.id !== sameId?.id
+    )
+    const prev = sameId ?? sameAzienda
+    const row: AmmCollabAltraAzienda = {
+      id: prev?.id ?? randomUUID(),
+      nominativo: prev?.nominativo ?? nominativo,
+      anno,
+      azienda,
+      importo,
+      updatedAt: nowIso(),
+      modificatoDa: body.user.trim() || undefined,
+    }
+    d.collaboratoriAltreAziende = d.collaboratoriAltreAziende.filter((r) => r.id !== row.id)
+    if (importo > 0) d.collaboratoriAltreAziende.push(row)
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: body.user.trim() || "sconosciuto",
+      nominativo: row.nominativo,
+      mese: `${anno} · ${azienda}`,
+      da: prev?.importo ?? null,
+      a: importo > 0 ? importo : 0,
+      azione: importo > 0 ? (prev ? "importo" : "aggiunto") : "eliminato",
+    }
+    d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
+    save(d)
+    return row
+  },
+  deleteAltraAzienda(id: string, user: string): AmmCollabAltraAzienda {
+    const key = String(id ?? "").trim()
+    const d = load()
+    const prev = d.collaboratoriAltreAziende.find((r) => r.id === key)
+    if (!prev) throw Object.assign(new Error("Voce non trovata"), { status: 404 })
+    d.collaboratoriAltreAziende = d.collaboratoriAltreAziende.filter((r) => r.id !== key)
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: user.trim() || "sconosciuto",
+      nominativo: prev.nominativo,
+      mese: `${prev.anno} · ${prev.azienda}`,
+      da: prev.importo,
+      a: 0,
+      azione: "eliminato",
+    }
+    d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
+    save(d)
+    return prev
   },
   /** Sostituisce l'anno del report COMP_SP (Excel REPORT GENERALE). */
   importCollaboratoriReport(

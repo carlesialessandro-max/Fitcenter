@@ -177,6 +177,7 @@ export function LibroPagaMensilitaTab({
   onCreateTurno,
   onPatchTurno,
   onDeleteTurno,
+  notaImporti,
 }: {
   data: LibroPagaSnapshot
   mese: string
@@ -193,6 +194,7 @@ export function LibroPagaMensilitaTab({
   onCreateTurno?: (body: TurnoCreateBody) => Promise<unknown>
   onPatchTurno?: TurnoPatchFn
   onDeleteTurno?: (id: string) => Promise<unknown>
+  notaImporti?: string
 }) {
   const [pannello, setPannello] = useState<Pannello | null>(null)
   const [q, setQ] = useState("")
@@ -314,7 +316,7 @@ export function LibroPagaMensilitaTab({
         <p className="text-xs text-zinc-500">
           Seleziona uno o più nominativi, poi usa i pulsanti in alto. Dettagli: inserisci o elimina turni.
           Controlla calendario confronta i turni con i calendari FitCenter prima di confermare.
-          L’importo da pagare è in Collaboratori sportivi (import PDF/Excel, o a mano).
+          {notaImporti ?? " L’importo da pagare è in Collaboratori sportivi (import PDF/Excel, o a mano)."}
           {nSel > 0 ? ` ${nSel} selezionat${nSel === 1 ? "o" : "i"}.` : ""}
           {perimetroReparto ? " Importo totale: turni dei tuoi collaboratori in questo mese." : ""}
         </p>

@@ -316,7 +316,8 @@ export function ReportCollaboratori({
             Importa PDF (riepilogo mensile Studio Mattonai) o Excel (report annuale Gen–Dic) per mettere gli importi tutti
             insieme, senza digitarli uno a uno. Il PDF riempie/sostituisce quel mese (campo Mese PDF); l’Excel sostituisce
             l’anno. Dopo puoi correggere a mano cliccando la cella. Solo admin e Alberto.
-            L’Excel annuale resta un’opzione. Solo admin e Alberto.
+            L’Excel annuale resta un’opzione. Solo admin e Alberto. La colonna Altre az. è dichiarata dall’istruttore
+            (altre società) e conta nella soglia dei 5.000 €.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -493,6 +494,12 @@ export function ReportCollaboratori({
               <th className="px-2 py-2 text-right font-medium" title="Rimanenze degli anni precedenti">
                 Rimanenze
               </th>
+              <th
+                className="px-2 py-2 text-right font-medium"
+                title="Compensi dichiarati dall’istruttore per altre società (soglia 5.000 €)"
+              >
+                Altre az.
+              </th>
               <th className="px-2 py-2 text-right font-medium">IMPORTO</th>
               <th className="px-2 py-2 text-right font-medium">oltre € 5.000</th>
               <th className="px-2 py-2 text-right font-medium">oltre € 15.000</th>
@@ -501,14 +508,14 @@ export function ReportCollaboratori({
           <tbody>
             {report.isLoading ? (
               <tr>
-                <td colSpan={17} className="px-3 py-6 text-zinc-500">
+                <td colSpan={18} className="px-3 py-6 text-zinc-500">
                   Caricamento…
                 </td>
               </tr>
             ) : null}
             {!report.isLoading && filtered.length === 0 ? (
               <tr>
-                <td colSpan={17} className="px-3 py-6 text-zinc-500">
+                <td colSpan={18} className="px-3 py-6 text-zinc-500">
                   Nessun collaboratore in questo anno. Importa PDF o Excel per gli importi, oppure aggiungi un istruttore.
                 </td>
               </tr>
@@ -519,7 +526,7 @@ export function ReportCollaboratori({
                 <Fragment key={g.reparto}>
                   <tr className="border-b border-zinc-800 bg-zinc-900/80">
                     <td
-                      colSpan={17}
+                      colSpan={18}
                       className="sticky left-0 z-10 bg-zinc-900 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-200 print:static print:bg-zinc-200 print:text-zinc-800"
                     >
                       {g.reparto}
@@ -563,6 +570,16 @@ export function ReportCollaboratori({
                           onSave={(nom, _mese, tot) => rimMut.mutate({ nominativo: nom, anno, importo: tot })}
                         />
                       </td>
+                      <td
+                        className="px-2 py-1 text-right tabular-nums text-zinc-300"
+                        title={
+                          (r.altreAziendeVoci ?? [])
+                            .map((v) => `${v.azienda}: ${eur(v.importo)}`)
+                            .join(" · ") || "Dichiarato dall’istruttore nel libro paga"
+                        }
+                      >
+                        {r.altreAziende ? eur(r.altreAziende) : "—"}
+                      </td>
                       <td className="px-2 py-1 text-right font-medium tabular-nums text-zinc-100">{eur(r.tot)}</td>
                       <td
                         className={`px-2 py-1 text-right tabular-nums ${r.oltre5000 ? "text-amber-200" : "text-zinc-600"}`}
@@ -591,6 +608,9 @@ export function ReportCollaboratori({
                 ))}
                 <td className="px-2 py-2 text-right tabular-nums">
                   {eur(filtered.reduce((s, r) => s + (r.rimanenze ?? 0), 0))}
+                </td>
+                <td className="px-2 py-2 text-right tabular-nums">
+                  {eur(filtered.reduce((s, r) => s + (r.altreAziende ?? 0), 0))}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">{eur(totAnno)}</td>
                 <td className="px-2 py-2 text-right tabular-nums">

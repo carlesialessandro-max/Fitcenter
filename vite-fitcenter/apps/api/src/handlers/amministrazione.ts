@@ -11,7 +11,7 @@ import {
   type AmmSpesa,
   type AmmTipoCosto,
 } from "../store/amministrazione-costi.js"
-import { trovaPerNominativo, trovaRigaPerNominativo } from "../lib/nominativo-match.js"
+import { normalizzaNominativo, stessoNominativo, trovaPerNominativo, trovaRigaPerNominativo } from "../lib/nominativo-match.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
 import {
   centriCostoPredefinitiCollaboratori,
@@ -735,78 +735,254 @@ function labelReparto(tipo: "sportivo" | "gestionale", hit: AnagReparto | null):
   return REPARTO_SENZA
 }
 
+export type AmmCollabReportRigaBuilt = {
+  nominativo: string
+  tipo: "sportivo" | "gestionale"
+  reparto: string
+  mansione: string
+  mesi: Record<string, { id: string; totale: number; origine: string }>
+  rimanenze: number
+  altreAziende: number
+  altreAziendeVoci: { id: string; azienda: string; importo: number }[]
+  totFitcenter: number
+  tot: number
+  oltre5000: number
+  oltre15000: number
+}
+
+export type AmmCollabReportBuilt = {
+  anno: number
+  mesi: { id: string; label: string }[]
+  righe: AmmCollabReportRigaBuilt[]
+  totMese: Record<string, number>
+  totRimanenze: number
+  totAltreAziende: number
+  totAnno: number
+  n: number
+}
+
+function keyByNome(byNome: Map<string, { nominativo: string }>, nominativo: string): string | undefined {
+  const lower = nominativo.trim().toLowerCase()
+  if (byNome.has(lower)) return lower
+  const map = new Map<string, string>()
+  for (const [k, v] of byNome) {
+    const n = normalizzaNominativo(v.nominativo)
+    if (n && !map.has(n)) map.set(n, k)
+  }
+  return trovaPerNominativo(map, nominativo)
+}
+
+export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmCollabReportBuilt> {
+  const now = new Date()
+  const anno = Number(annoRaw) || now.getFullYear()
+  const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese.startsWith(`${anno}-`))
+  const rimanenzeAnno = ammCostiStore.listRimanenze(anno)
+  const altreAnno = ammCostiStore.listAltreAziende(anno)
+  const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
+  const anag = await anagraficaReparti()
+  const byNome = new Map<
+    string,
+    { nominativo: string; tipo: "sportivo" | "gestionale"; mesi: Record<string, { id: string; totale: number; origine: string }> }
+  >()
+  for (const c of stored) {
+    const key = c.nominativo.trim().toLowerCase()
+    const cur = byNome.get(key) ?? {
+      nominativo: c.nominativo.trim(),
+      tipo: c.tipo,
+      mesi: {},
+    }
+    if (c.tipo === "gestionale") cur.tipo = "gestionale"
+    cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine }
+    byNome.set(key, cur)
+  }
+  for (const r of rimanenzeAnno) {
+    const key = r.nominativo.trim().toLowerCase()
+    if (byNome.has(key)) continue
+    const fuzzy = keyByNome(byNome, r.nominativo)
+    if (fuzzy) continue
+    byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
+  }
+  for (const r of altreAnno) {
+    const key = r.nominativo.trim().toLowerCase()
+    if (byNome.has(key)) continue
+    const fuzzy = keyByNome(byNome, r.nominativo)
+    if (fuzzy) continue
+    byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
+  }
+  const rimByNome = new Map(rimanenzeAnno.map((r) => [r.nominativo.trim().toLowerCase(), r.importo]))
+  const altreByKey = new Map<string, { id: string; azienda: string; importo: number }[]>()
+  for (const v of altreAnno) {
+    const key = keyByNome(byNome, v.nominativo) ?? v.nominativo.trim().toLowerCase()
+    const list = altreByKey.get(key) ?? []
+    list.push({ id: v.id, azienda: v.azienda, importo: v.importo })
+    altreByKey.set(key, list)
+  }
+  const righe = [...byNome.entries()]
+    .map(([key, r]) => {
+      const mesiTot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+      const rimanenze =
+        rimByNome.get(r.nominativo.trim().toLowerCase()) ??
+        rimByNome.get(key) ??
+        [...rimByNome.entries()].find(([k]) => stessoNominativo(k, r.nominativo))?.[1] ??
+        0
+      const altreAziendeVoci = altreByKey.get(key) ?? altreByKey.get(r.nominativo.trim().toLowerCase()) ?? []
+      const altreAziende = Math.round(altreAziendeVoci.reduce((s, v) => s + v.importo, 0) * 100) / 100
+      const totFitcenter = Math.round((mesiTot + rimanenze) * 100) / 100
+      const tot = Math.round((totFitcenter + altreAziende) * 100) / 100
+      const hit = matchAnag(r.nominativo, anag)
+      return {
+        nominativo: r.nominativo,
+        tipo: r.tipo,
+        reparto: labelReparto(r.tipo, hit),
+        mansione: hit?.mansione || "",
+        mesi: r.mesi,
+        rimanenze,
+        altreAziende,
+        altreAziendeVoci,
+        totFitcenter,
+        tot,
+        oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
+        oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
+      }
+    })
+    .sort((a, b) => {
+      const ra = a.reparto || REPARTO_SENZA
+      const rb = b.reparto || REPARTO_SENZA
+      const o = ordineReparto(ra) - ordineReparto(rb)
+      if (o) return o
+      const c = ra.localeCompare(rb, "it")
+      if (c) return c
+      return a.nominativo.localeCompare(b.nominativo, "it")
+    })
+  const totMese: Record<string, number> = {}
+  for (const m of mesi) {
+    totMese[m] = Math.round(righe.reduce((s, r) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
+  }
+  const totAnno = Math.round(righe.reduce((s, r) => s + r.tot, 0) * 100) / 100
+  const totRimanenze = Math.round(righe.reduce((s, r) => s + r.rimanenze, 0) * 100) / 100
+  const totAltreAziende = Math.round(righe.reduce((s, r) => s + r.altreAziende, 0) * 100) / 100
+  return {
+    anno,
+    mesi: mesi.map((id, i) => ({ id, label: MESI_LABEL[i] ?? id })),
+    righe,
+    totMese,
+    totRimanenze,
+    totAltreAziende,
+    totAnno,
+    n: righe.length,
+  }
+}
+
+function rigaVuotaCompenso(nominativo: string): AmmCollabReportRigaBuilt {
+  return {
+    nominativo,
+    tipo: "sportivo",
+    reparto: REPARTO_SENZA,
+    mansione: "",
+    mesi: {},
+    rimanenze: 0,
+    altreAziende: 0,
+    altreAziendeVoci: [],
+    totFitcenter: 0,
+    tot: 0,
+    oltre5000: 0,
+    oltre15000: 0,
+  }
+}
+
 export async function getAmmCollaboratoriReport(req: Request, res: Response) {
   try {
     const now = new Date()
     const anno = Number(req.query.anno) || now.getFullYear()
-    const stored = ammCostiStore.listCollaboratori().filter((c) => c.mese.startsWith(`${anno}-`))
-    const rimanenzeAnno = ammCostiStore.listRimanenze(anno)
-    const mesi = Array.from({ length: 12 }, (_, i) => `${anno}-${String(i + 1).padStart(2, "0")}`)
-    const anag = await anagraficaReparti()
-    const byNome = new Map<
-      string,
-      { nominativo: string; tipo: "sportivo" | "gestionale"; mesi: Record<string, { id: string; totale: number; origine: string }> }
-    >()
-    for (const c of stored) {
-      const key = c.nominativo.trim().toLowerCase()
-      const cur = byNome.get(key) ?? {
-        nominativo: c.nominativo.trim(),
-        tipo: c.tipo,
-        mesi: {},
-      }
-      if (c.tipo === "gestionale") cur.tipo = "gestionale"
-      cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine }
-      byNome.set(key, cur)
-    }
-    for (const r of rimanenzeAnno) {
-      const key = r.nominativo.trim().toLowerCase()
-      if (byNome.has(key)) continue
-      byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
-    }
-    const rimByNome = new Map(rimanenzeAnno.map((r) => [r.nominativo.trim().toLowerCase(), r.importo]))
-    const righe = [...byNome.values()]
-      .map((r) => {
-        const mesiTot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
-        const rimanenze = rimByNome.get(r.nominativo.trim().toLowerCase()) ?? 0
-        const tot = Math.round((mesiTot + rimanenze) * 100) / 100
-        const hit = matchAnag(r.nominativo, anag)
-        return {
-          nominativo: r.nominativo,
-          tipo: r.tipo,
-          reparto: labelReparto(r.tipo, hit),
-          mansione: hit?.mansione || "",
-          mesi: r.mesi,
-          rimanenze,
-          tot,
-          oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
-          oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
-        }
-      })
-      .sort((a, b) => {
-        const ra = a.reparto || REPARTO_SENZA
-        const rb = b.reparto || REPARTO_SENZA
-        const o = ordineReparto(ra) - ordineReparto(rb)
-        if (o) return o
-        const c = ra.localeCompare(rb, "it")
-        if (c) return c
-        return a.nominativo.localeCompare(b.nominativo, "it")
-      })
-    const totMese: Record<string, number> = {}
-    for (const m of mesi) {
-      totMese[m] = Math.round(righe.reduce((s, r) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
-    }
-    const totAnno = Math.round(righe.reduce((s, r) => s + r.tot, 0) * 100) / 100
-    const totRimanenze = Math.round(righe.reduce((s, r) => s + r.rimanenze, 0) * 100) / 100
+    const report = await buildAmmCollaboratoriReport(anno)
     res.json({
-      anno,
-      mesi: mesi.map((id, i) => ({ id, label: MESI_LABEL[i] ?? id })),
-      righe,
-      totMese,
-      totRimanenze,
-      totAnno,
-      n: righe.length,
+      ...report,
       audit: ammCostiStore.listCollaboratoriAudit(60),
     })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+function nominativoSessioneLpaga(req: Request): string {
+  const u = req.lpaga
+  const fromNom = String(u?.nominativo ?? "").trim()
+  if (fromNom) return fromNom
+  return `${u?.cognome ?? ""} ${u?.nome ?? ""}`.trim()
+}
+
+export async function getLpagaMioCompenso(req: Request, res: Response) {
+  try {
+    const nominativo = nominativoSessioneLpaga(req)
+    if (!nominativo) return res.status(400).json({ message: "Nominativo mancante" })
+    const now = new Date()
+    const anno = Number(req.query.anno) || now.getFullYear()
+    const report = await buildAmmCollaboratoriReport(anno)
+    const trovata = trovaRigaPerNominativo(report.righe, (r) => r.nominativo, nominativo)
+    const base = trovata ?? rigaVuotaCompenso(nominativo)
+    const altreAziende = ammCostiStore.listAltreAziendeDi(nominativo, anno)
+    const voci = altreAziende.map((v) => ({ id: v.id, azienda: v.azienda, importo: v.importo }))
+    const altreTot = Math.round(voci.reduce((s, v) => s + v.importo, 0) * 100) / 100
+    const totFitcenter = Math.round((base.totFitcenter || 0) * 100) / 100
+    const tot = Math.round((totFitcenter + altreTot) * 100) / 100
+    const riga = {
+      ...base,
+      altreAziende: altreTot,
+      altreAziendeVoci: voci,
+      totFitcenter,
+      tot,
+      oltre5000: Math.max(0, Math.round((tot - 5000) * 100) / 100),
+      oltre15000: Math.max(0, Math.round((tot - 15000) * 100) / 100),
+    }
+    res.json({
+      anno: report.anno,
+      mesi: report.mesi,
+      nominativo: riga.nominativo,
+      riga,
+      altreAziende,
+    })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postLpagaMiaAltraAzienda(req: Request, res: Response) {
+  try {
+    const nominativo = nominativoSessioneLpaga(req)
+    if (!nominativo) return res.status(400).json({ message: "Nominativo mancante" })
+    const id = String(req.body?.id ?? "").trim() || undefined
+    if (id) {
+      const cur = ammCostiStore.getAltraAzienda(id)
+      if (!cur || !stessoNominativo(cur.nominativo, nominativo)) {
+        return res.status(404).json({ message: "Voce non trovata" })
+      }
+    }
+    const user = nominativo
+    const row = ammCostiStore.upsertAltraAzienda({
+      id,
+      nominativo,
+      anno: Number(req.body?.anno),
+      azienda: String(req.body?.azienda ?? ""),
+      importo: Number(String(req.body?.importo ?? "").replace(",", ".")),
+      user,
+    })
+    res.json({ row })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function deleteLpagaMiaAltraAzienda(req: Request, res: Response) {
+  try {
+    const nominativo = nominativoSessioneLpaga(req)
+    if (!nominativo) return res.status(400).json({ message: "Nominativo mancante" })
+    const id = String(req.params.id ?? req.body?.id ?? "").trim()
+    const cur = ammCostiStore.getAltraAzienda(id)
+    if (!cur || !stessoNominativo(cur.nominativo, nominativo)) {
+      return res.status(404).json({ message: "Voce non trovata" })
+    }
+    const row = ammCostiStore.deleteAltraAzienda(id, nominativo)
+    res.json({ row })
   } catch (e) {
     fail(res, e)
   }
