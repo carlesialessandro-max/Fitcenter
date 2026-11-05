@@ -207,6 +207,8 @@ function expandChatAbbrevIt(t: string): string {
     .replace(/\bx\b/g, "per")
     .replace(/\bke\b/g, "che")
     .replace(/\bqnd\b/g, "quando")
+    .replace(/\bi\s+cosi\b/g, "i costi")
+    .replace(/\bcosi\s+(dell[oa]|del|di)\b/g, "costi $1")
 }
 
 function faqText(text: string): string {
@@ -298,6 +300,56 @@ function corsoPostoHandoffMsg(text: string): string {
       `Una consulente H2Sport verifica la disponibilità e ti risponde a breve.\n\n` +
       `Se preferisci una chiamata, scrivi «richiamatemi».`
   )
+}
+
+/** «Si paga a lezione o mensile?» / «non ho capito i costi dell'abbonamento». */
+export function parseBambiniPagamentoQuestionIt(text: string): boolean {
+  const t = faqText(text)
+  if (!t || t.length > 280) return false
+  if (parseLocationQuestionIt(text) || parseCorsoPostoQuestionIt(text) || parseSpogliatoioWashQuestionIt(text)) {
+    return false
+  }
+  if (/\b(prenota\s+prova|prova\s+in\s+acqua|info\s*whatsapp|info\s*email)\b/.test(t)) return false
+
+  const talksLezione = /\b(a\s+lezione|per\s+lezione|ogni\s+lezione|lezioni?)\b/.test(t)
+  const talksMensile = /\bmensil|\babbonament|\bal\s+mese\b|\bogni\s+mese\b/.test(t)
+  const costWord =
+    /\b(costi|costo|prezzi|prezzo|tariff|quanto\s+(si\s+)?paga|quanto\s+costa|quanto\s+viene|pagat[aoe]|pagare|pagamento|quota)\b/.test(
+      t
+    )
+  const lezVsMens =
+    (talksLezione && talksMensile) || (/\bviene\s+pagat/.test(t) && (talksLezione || talksMensile))
+  const freq =
+    /\b(1|una|due|2|tre|3)\s+volt[ae]\s+(a\s+)?settimana\b/.test(t) ||
+    /\bquante\s+volte\s+(a\s+)?settimana\b/.test(t)
+  const abbonamentoConfused =
+    /\babbonament/.test(t) &&
+    (costWord || /\b(non\s+ho\s+capito|non\s+capisco|capito|capisco)\b/.test(t))
+
+  return (
+    lezVsMens ||
+    freq ||
+    abbonamentoConfused ||
+    (costWord && (talksLezione || talksMensile || /\b(corso|scuola\s*nuoto)\b/.test(t)))
+  )
+}
+
+function bambiniPagamentoMsg(corso: BambiniCorso | null): string {
+  const snb =
+    `Nella Scuola Nuoto Bambini si paga a lezione, non con un abbonamento mensile fisso.\n\n` +
+    `Si può frequentare 1, 2 o 3 volte a settimana: paghi le lezioni della frequenza scelta ` +
+    `(più volte in settimana = più lezioni).\n\n` +
+    `Gli importi sono nel documento Scuola Nuoto Bambini.\n` +
+    `Per il gruppo giusto serve prima la prova in acqua (circa 10 minuti).\n` +
+    `Se vuoi prenotarla: PRENOTA PROVA + giorno + orario + età.`
+  if (corso === "acquaticita") {
+    return (
+      `Per Acquaticità i costi sono nel documento che ti abbiamo inviato (o scrivi INFO WHATSAPP).\n\n` +
+      `Se invece parli della Scuola Nuoto Bambini (dai 4 anni):\n\n` +
+      snb
+    )
+  }
+  return snb
 }
 
 function spogliatoioWashMsg(corso: BambiniCorso | null): string {
@@ -817,7 +869,9 @@ export function looksLikeQuestionIt(text: string): boolean {
   const t = faqText(raw)
   if (!t) return false
   if (/\?/.test(raw)) return true
-  if (parseLocationQuestionIt(raw) || parseCorsoPostoQuestionIt(raw)) return true
+  if (parseLocationQuestionIt(raw) || parseCorsoPostoQuestionIt(raw) || parseBambiniPagamentoQuestionIt(raw)) {
+    return true
+  }
   if (/\b(quando|quanto|quanti|dove|come|perche|quale|quali)\b/.test(t)) return true
   if (/\b(volevo\s+sapere|vorrei\s+sapere|sapere\s+se)\b/.test(t)) return true
   if (/\b(e\s+chius|e\s+apert|resta\s+chius|resta\s+apert|aprite|chiudete|apertura|chiusura)\b/.test(t)) {
@@ -842,6 +896,7 @@ export function looksLikeOperationalQuestionIt(text: string): boolean {
 function shouldHandoffAsQuestion(text: string): boolean {
   if (wantsExplicitAppointment(normText(text))) return false
   if (parseSpogliatoioWashQuestionIt(text)) return false
+  if (parseBambiniPagamentoQuestionIt(text)) return false
   return looksLikeQuestionIt(text) || looksLikeOperationalQuestionIt(text)
 }
 
@@ -861,7 +916,9 @@ function looksLikeSlotFragmentIt(text: string): boolean {
 }
 
 function wantsBambiniInfo(t: string): boolean {
-  if (parseLocationQuestionIt(t) || parseCorsoPostoQuestionIt(t)) return false
+  if (parseLocationQuestionIt(t) || parseCorsoPostoQuestionIt(t) || parseBambiniPagamentoQuestionIt(t)) {
+    return false
+  }
   return (
     /\b(info\s*whatsapp|info\s*email|info\s*mail|mandami\s+(le\s+)?info|costi|prezzi|tariff|orari|programma|brochure|preventivo)\b/.test(
       t
@@ -1595,6 +1652,7 @@ export async function handleWhatsappInboundBooking(params: {
         wantsExplicitAppointment(t) ||
         parseLocationQuestionIt(text) ||
         parseCorsoPostoQuestionIt(text) ||
+        parseBambiniPagamentoQuestionIt(text) ||
         shouldHandoffAsQuestion(text)
       if (completeSlot && !slotIsNote) {
         pendingCallbackByPhone.delete(from)
@@ -1643,6 +1701,20 @@ export async function handleWhatsappInboundBooking(params: {
       })
     }
     return { handled: true, detail: "posto corso" }
+  }
+
+  // FAQ: costo Scuola Nuoto (a lezione, 1/2/3 volte a settimana) — non rimandare il documento
+  if (parseBambiniPagamentoQuestionIt(text)) {
+    const corso =
+      parseCorsoChoiceIt(text) ||
+      detectBambiniCorso({ lead, text, ageYears: parseChildAgeIt(text)?.years ?? null })
+    await sendWhatsappText(from, bambiniPagamentoMsg(corso))
+    if (lead) {
+      appendLeadNote(lead.id, `WA faq pagamento SNB (${corso ?? "corso non indicato"}): «${text}»`, {
+        stato: lead.stato === "nuovo" ? "contattato" : lead.stato,
+      })
+    }
+    return { handled: true, detail: `faq pagamento snb ${corso ?? "n/d"}` }
   }
 
   // FAQ spogliatoio / chi lava il bambino (dopo la prova o in chat libera)
@@ -2035,7 +2107,8 @@ export async function handleWhatsappInboundBooking(params: {
       !wantsExplicitAppointment(t) &&
       !hasBookingIntent(t) &&
       !parseLocationQuestionIt(text) &&
-      !parseCorsoPostoQuestionIt(text)
+      !parseCorsoPostoQuestionIt(text) &&
+      !parseBambiniPagamentoQuestionIt(text)
     ) {
       if (!/^(ok|va bene|grazie|perfetto|si|sì|no)\b/.test(t)) {
         await sendWhatsappText(

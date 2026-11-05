@@ -111,6 +111,7 @@ function botWelcomeBody(name: string, bambini: boolean): string {
       `Il bot ha inviato il benvenuto H2Sport:\n` +
       `• info su WhatsApp, email o richiamo\n` +
       `• prima dell’iscrizione serve una prova in acqua\n` +
+      `• Scuola Nuoto Bambini: si paga a lezione (1, 2 o 3 volte a settimana), non mensile\n` +
       `• per prenotare la prova si scrive: PRENOTA PROVA + giorno + orario + età`
     )
   }
