@@ -1256,21 +1256,39 @@ export const ammCostiStore = {
     save(d)
     return prev
   },
-  /** Sostituisce l'anno del report COMP_SP (Excel REPORT GENERALE). */
+  /**
+   * Upsert Excel REPORT GENERALE. Sostituisce solo i mesi presenti nelle righe
+   * (es. gen–ott) e lascia intatti gli altri mesi già inseriti.
+   */
   importCollaboratoriReport(
     anno: number,
     righe: { nominativo: string; mese: string; totale: number; tipo?: AmmCollabTipo }[],
     user: string,
-    rimanenze: { nominativo: string; importo: number }[] = []
+    rimanenze: { nominativo: string; importo: number }[] = [],
+    opts?: { aggiornaRimanenze?: boolean }
   ): { inserite: number; sostituite: number; nPersone: number } {
     if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
       throw Object.assign(new Error("Anno non valido"), { status: 400 })
     }
     const prefix = `${anno}-`
+    const mesiFile = [
+      ...new Set(
+        righe
+          .map((r) => String(r.mese ?? "").slice(0, 7))
+          .filter((m) => /^\d{4}-\d{2}$/.test(m) && m.startsWith(prefix))
+      ),
+    ]
+    if (!mesiFile.length) {
+      throw Object.assign(new Error("Nessun mese valido da importare"), { status: 400 })
+    }
     const d = load()
-    const prev = d.collaboratori.filter((c) => c.mese.startsWith(prefix))
-    const prevQuote = new Map(prev.map((c) => [c.nominativo.trim().toLowerCase(), c.quote]))
-    d.collaboratori = d.collaboratori.filter((c) => !c.mese.startsWith(prefix))
+    const prevQuote = new Map<string, AmmQuota[]>()
+    for (const c of d.collaboratori) {
+      if (!c.mese.startsWith(prefix)) continue
+      prevQuote.set(c.nominativo.trim().toLowerCase(), c.quote)
+    }
+    const prev = d.collaboratori.filter((c) => mesiFile.includes(c.mese))
+    d.collaboratori = d.collaboratori.filter((c) => !mesiFile.includes(c.mese))
     save(d)
     const persone = new Set<string>()
     let inserite = 0
@@ -1297,19 +1315,21 @@ export const ammCostiStore = {
       inserite += 1
     }
     const d2 = load()
-    d2.collaboratoriRimanenze = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
-    for (const raw of rimanenze) {
-      const nominativo = String(raw.nominativo ?? "").trim()
-      const importo = Math.round((Number(raw.importo) || 0) * 100) / 100
-      if (!nominativo || importo <= 0) continue
-      persone.add(nominativo.toLowerCase())
-      d2.collaboratoriRimanenze.push({
-        nominativo,
-        anno,
-        importo,
-        updatedAt: nowIso(),
-        modificatoDa: user.trim() || undefined,
-      })
+    if (opts?.aggiornaRimanenze !== false) {
+      d2.collaboratoriRimanenze = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
+      for (const raw of rimanenze) {
+        const nominativo = String(raw.nominativo ?? "").trim()
+        const importo = Math.round((Number(raw.importo) || 0) * 100) / 100
+        if (!nominativo || importo <= 0) continue
+        persone.add(nominativo.toLowerCase())
+        d2.collaboratoriRimanenze.push({
+          nominativo,
+          anno,
+          importo,
+          updatedAt: nowIso(),
+          modificatoDa: user.trim() || undefined,
+        })
+      }
     }
     const audit: AmmCollabAudit = {
       id: randomUUID(),

@@ -997,19 +997,29 @@ export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
     if (!righe.length) return res.status(400).json({ message: "Nessuna riga da importare" })
     const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
     const rimanenze = Array.isArray(req.body?.rimanenze) ? req.body.rimanenze : []
+    const mesiFiltro = Array.isArray(req.body?.mesi)
+      ? req.body.mesi.map((x: unknown) => String(x ?? "").slice(0, 7)).filter((m: string) => /^\d{4}-\d{2}$/.test(m))
+      : []
+    const mapped = righe.map((raw: Record<string, unknown>) => ({
+      nominativo: String(raw.nominativo ?? "").trim(),
+      mese: String(raw.mese ?? "").slice(0, 7),
+      totale: Number(String(raw.totale ?? "").replace(",", ".")),
+      tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
+    }))
+    const filtered = mesiFiltro.length
+      ? mapped.filter((r: { mese: string }) => mesiFiltro.includes(r.mese))
+      : mapped
+    if (!filtered.length) return res.status(400).json({ message: "Nessuna riga da importare per i mesi scelti" })
+    const aggiornaRimanenze = req.body?.aggiornaRimanenze !== false && mesiFiltro.length !== 1
     const { inserite, sostituite, nPersone } = ammCostiStore.importCollaboratoriReport(
       anno,
-      righe.map((raw: Record<string, unknown>) => ({
-        nominativo: String(raw.nominativo ?? "").trim(),
-        mese: String(raw.mese ?? "").slice(0, 7),
-        totale: Number(String(raw.totale ?? "").replace(",", ".")),
-        tipo: raw.tipo === "gestionale" ? "gestionale" : "sportivo",
-      })),
+      filtered,
       user,
       rimanenze.map((raw: Record<string, unknown>) => ({
         nominativo: String(raw.nominativo ?? "").trim(),
         importo: Number(String(raw.importo ?? "").replace(",", ".")),
-      }))
+      })),
+      { aggiornaRimanenze }
     )
     res.json({ inserite, saltate: 0, sostituite, nPersone, errori: [] })
   } catch (e) {

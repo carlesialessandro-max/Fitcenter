@@ -263,10 +263,21 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  importCollaboratoriReport: (anno: number, righe: unknown[], rimanenze?: unknown[]) =>
+  importCollaboratoriReport: (
+    anno: number,
+    righe: unknown[],
+    rimanenze?: unknown[],
+    opts?: { mesi?: string[]; aggiornaRimanenze?: boolean }
+  ) =>
     lpagaRequest<import("./amministrazione").AmmImportEsito & { nPersone?: number }>("/lpaga/collaboratori/report/import", {
       method: "POST",
-      body: JSON.stringify({ anno, righe, rimanenze }),
+      body: JSON.stringify({
+        anno,
+        righe,
+        rimanenze,
+        mesi: opts?.mesi,
+        aggiornaRimanenze: opts?.aggiornaRimanenze,
+      }),
     }),
   parseStipendiPdf: (text: string, filename: string, mese: string) =>
     lpagaRequest<{

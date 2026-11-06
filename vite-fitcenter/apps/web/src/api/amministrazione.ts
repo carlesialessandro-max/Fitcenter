@@ -351,11 +351,18 @@ export const amministrazioneApi = {
       `/amministrazione/collaboratori/rimanenze`,
       body
     ),
-  importCollaboratoriReport: (anno: number, righe: unknown[], rimanenze?: unknown[]) =>
+  importCollaboratoriReport: (
+    anno: number,
+    righe: unknown[],
+    rimanenze?: unknown[],
+    opts?: { mesi?: string[]; aggiornaRimanenze?: boolean }
+  ) =>
     api.post<AmmImportEsito & { nPersone?: number }>("/amministrazione/collaboratori/report/import", {
       anno,
       righe,
       rimanenze,
+      mesi: opts?.mesi,
+      aggiornaRimanenze: opts?.aggiornaRimanenze,
     }),
   collaboratori: (anno: number, mese?: string) => {
     const q = new URLSearchParams({ anno: String(anno) })

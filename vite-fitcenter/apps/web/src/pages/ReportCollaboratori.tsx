@@ -25,6 +25,12 @@ function currentYear(): number {
   }
 }
 
+function labelMese(ym: string): string {
+  const mesi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
+  const i = Number(ym.slice(5, 7)) - 1
+  return i >= 0 && i < 12 ? `${mesi[i]} ${ym.slice(0, 4)}` : ym
+}
+
 function currentYm(): string {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit" }).format(
@@ -115,6 +121,7 @@ export function ReportCollaboratori({
     tot: number
     totSettembre: number
     totRimanenze: number
+    mesi: string[]
     righe: CollabReportExcelRiga[]
     rimanenze: CollabReportExcelRimanenza[]
   } | null>(null)
@@ -215,16 +222,27 @@ export function ReportCollaboratori({
   })
 
   const importMut = useMutation({
-    mutationFn: (body: { righe: CollabReportExcelRiga[]; rimanenze: CollabReportExcelRimanenza[] }) =>
+    mutationFn: (body: {
+      righe: CollabReportExcelRiga[]
+      rimanenze: CollabReportExcelRimanenza[]
+      mesi?: string[]
+      aggiornaRimanenze?: boolean
+    }) =>
       source === "lpaga"
-        ? lpagaApi.importCollaboratoriReport(anno, body.righe, body.rimanenze)
-        : amministrazioneApi.importCollaboratoriReport(anno, body.righe, body.rimanenze),
+        ? lpagaApi.importCollaboratoriReport(anno, body.righe, body.rimanenze, {
+            mesi: body.mesi,
+            aggiornaRimanenze: body.aggiornaRimanenze,
+          })
+        : amministrazioneApi.importCollaboratoriReport(anno, body.righe, body.rimanenze, {
+            mesi: body.mesi,
+            aggiornaRimanenze: body.aggiornaRimanenze,
+          }),
     onSuccess: (r) => {
       setPreview(null)
       setErr("")
       setMsg(
         `Importati ${r.nPersone ?? 0} nominativi, ${r.inserite} mensilità` +
-          (r.sostituite ? ` (prima ${r.sostituite} righe dell'anno)` : "") +
+          (r.sostituite ? ` (sostituiti ${r.sostituite} importi precedenti di quei mesi)` : "") +
           "."
       )
       void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
@@ -266,11 +284,13 @@ export function ReportCollaboratori({
       const parsed = parseCollabReportExcel(buf, anno)
       const totSettembre =
         Math.round(parsed.righe.filter((r) => r.mese.endsWith("-09")).reduce((s, r) => s + r.totale, 0) * 100) / 100
+      const mesi = [...new Set(parsed.righe.map((r) => r.mese))].sort()
       setPreview({
         nPersone: parsed.nPersone,
         tot: parsed.tot,
         totSettembre,
         totRimanenze: parsed.totRimanenze,
+        mesi,
         righe: parsed.righe,
         rimanenze: parsed.rimanenze,
       })
@@ -313,16 +333,15 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Importa PDF (riepilogo mensile Studio Mattonai) o Excel (report annuale Gen–Dic) per mettere gli importi tutti
-            insieme, senza digitarli uno a uno. Il PDF riempie/sostituisce quel mese (campo Mese PDF); l’Excel sostituisce
-            l’anno. Dopo puoi correggere a mano cliccando la cella. Solo admin e Alberto.
-            L’Excel annuale resta un’opzione. Solo admin e Alberto. La colonna Altre az. è dichiarata dall’istruttore
-            (altre società) e conta nella soglia dei 5.000 €.
+            Importa l’Excel REPORT ANNUO per allineare gli importi (solo i mesi presenti nel file, es. gen–ott: gli altri
+            mesi già inseriti restano). Poi puoi aggiungere un mese alla volta: scegli il mese e importa Excel/PDF di
+            quel mese, oppure clicca la cella. Aggiungi istruttore inserisce un nominativo su un solo mese. Solo admin e
+            Alberto. La colonna Altre az. è dichiarata dall’istruttore (altre società) e conta nella soglia dei 5.000 €.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="grid gap-1 text-xs text-zinc-500">
-            Mese PDF
+            Mese (PDF / Excel del mese)
             <input type="month" value={meseNew} onChange={(e) => setMeseNew(e.target.value)} className={inputCls} />
           </label>
           <label className={`${btnAmber} cursor-pointer`}>
@@ -416,14 +435,14 @@ export function ReportCollaboratori({
         </div>
       ) : null}
       {preview ? (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
+        <div className="mt-3 space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 print:hidden">
           <p className="text-sm text-zinc-300">
-            File letto: {preview.nPersone} persone, {preview.righe.length} mensilità, {eur(preview.tot)} per il {anno}
-            {preview.totSettembre ? ` · settembre ${eur(preview.totSettembre)}` : ""}
-            {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Sostituisce i dati già presenti di
-            quest’anno. Le partite IVA non vengono importate.
+            File letto: {preview.nPersone} persone, {preview.righe.length} mensilità, {eur(preview.tot)} · mesi{" "}
+            {preview.mesi.map(labelMese).join(", ")}
+            {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Aggiorna solo quei mesi; gli altri
+            restano. Le partite IVA non vengono importate.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button type="button" className={btnGhost} onClick={() => setPreview(null)}>
               Annulla
             </button>
@@ -431,10 +450,37 @@ export function ReportCollaboratori({
               type="button"
               className={btnAmber}
               disabled={importMut.isPending}
-              onClick={() => importMut.mutate({ righe: preview.righe, rimanenze: preview.rimanenze })}
+              onClick={() =>
+                importMut.mutate({
+                  righe: preview.righe,
+                  rimanenze: preview.rimanenze,
+                  aggiornaRimanenze: true,
+                })
+              }
             >
-              {importMut.isPending ? "Importazione…" : `Importa ${preview.nPersone}`}
+              {importMut.isPending ? "Importazione…" : `Importa i mesi del file (${preview.mesi.length})`}
             </button>
+            {preview.mesi.includes(meseNew) ? (
+              <button
+                type="button"
+                className={btnGhost}
+                disabled={importMut.isPending}
+                onClick={() =>
+                  importMut.mutate({
+                    righe: preview.righe.filter((r) => r.mese === meseNew),
+                    rimanenze: [],
+                    mesi: [meseNew],
+                    aggiornaRimanenze: false,
+                  })
+                }
+              >
+                Importa solo {labelMese(meseNew)}
+              </button>
+            ) : (
+              <span className="self-center text-xs text-zinc-500">
+                Per un mese solo scegli «Mese» tra quelli del file ({preview.mesi.map(labelMese).join(", ")}).
+              </span>
+            )}
           </div>
         </div>
       ) : null}
