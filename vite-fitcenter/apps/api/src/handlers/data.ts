@@ -1582,8 +1582,8 @@ async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<At
 
   const toContact = (p: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
     const c = pickEmailTelFromAbbRow(p.row)
-    const cat = categoriaLabelAttiviMsg(p.a)
-    const piano = (p.a.abbonamentoDescrizione ?? p.a.pianoNome ?? "").trim()
+    const cat = categoriaLabelAttiviMsg(p.a).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+    const piano = (p.a.abbonamentoDescrizione ?? p.a.pianoNome ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
     const macroRaw = String(
       p.a.macroCategoriaDescrizione ??
         p.row.MacroCategoriaAbbonamentoDescrizione ??

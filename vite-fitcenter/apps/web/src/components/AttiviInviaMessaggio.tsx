@@ -43,6 +43,10 @@ function foldTesto(s: string): string {
     .replace(/h\s*2\s*o/g, "h2o")
 }
 
+function normPiano(s: string): string {
+  return s.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+}
+
 /** Come «Macro cat.» in gestionale: PACCHETTI INGRESSI è un gruppo a sé, non va sotto Nuoto/H2O. */
 function gruppoDi(p: AttiviProdotto): string {
   const macro = (p.macro ?? "").trim()
@@ -104,12 +108,15 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     const m = new Map<string, Leaf>()
     for (const c of bySegmento) {
       for (const p of prodottiDi(c)) {
-        if (!p.piano || isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) continue
-        const g = gruppoDi(p)
-        const key = `${g}|||${p.piano}`
+        const piano = normPiano(p.piano)
+        const cat = normPiano(p.categoria)
+        const macro = normPiano(p.macro ?? "")
+        if (!piano || isStaffOrDanza(piano) || isStaffOrDanza(cat) || isStaffOrDanza(macro)) continue
+        const g = gruppoDi({ ...p, piano, categoria: cat, macro })
+        const key = `${g}|||${piano}`
         const prev = m.get(key)
         if (prev) prev.n += 1
-        else m.set(key, { key, gruppo: g, piano: p.piano, n: 1 })
+        else m.set(key, { key, gruppo: g, piano, n: 1 })
       }
     }
     return Array.from(m.values()).sort((a, b) => a.gruppo.localeCompare(b.gruppo, "it") || a.piano.localeCompare(b.piano, "it"))
@@ -161,7 +168,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
       const prodOk = prods.some((p) => {
         if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) return false
         if (gruppo && gruppoDi(p) !== gruppo) return false
-        if (pianiSel.size && !pianiSel.has(p.piano)) return false
+        if (pianiSel.size && !pianiSel.has(normPiano(p.piano))) return false
         if (!haFiltroTipo && ql && !prodottoMatchQ(p, ql)) return false
         return true
       })
@@ -368,7 +375,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                       ))
                     )}
                   </div>
-                  <div className="mt-1 flex flex-wrap gap-3 font-normal">
+                  <div className="mt-1.5 flex flex-wrap gap-3 border-t border-zinc-800 pt-1.5 font-normal">
                     <button
                       type="button"
                       className="text-[11px] text-amber-400 hover:underline"
