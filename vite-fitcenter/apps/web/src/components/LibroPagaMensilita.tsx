@@ -9,7 +9,7 @@ import type {
   LpagaTurnoRow,
 } from "@/api/libroPaga"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
-import { QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { QualificheCorsiFields, TesserinoTecnicoFields, tesserinoFromPersona } from "@/components/LibroPagaSlot"
 import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloIdsFromPersona, repartoIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
@@ -523,6 +523,7 @@ function DettaglioMese({
   const [emailEdit, setEmailEdit] = useState(persona?.email ?? "")
   const [password, setPassword] = useState("")
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>(() => qualificheForDisplay(persona))
+  const [tesserino, setTesserino] = useState(() => tesserinoFromPersona(persona))
   useEffect(() => {
     setCognome(persona?.cognome ?? "")
     setNome(persona?.nome ?? "")
@@ -535,6 +536,7 @@ function DettaglioMese({
     setEmailEdit(persona?.email ?? "")
     setPassword("")
     setQualifiche(qualificheForDisplay(persona))
+    setTesserino(tesserinoFromPersona(persona))
   }, [persona])
   const [filtroMansione, setFiltroMansione] = useState("")
   useEffect(() => {
@@ -612,6 +614,7 @@ function DettaglioMese({
         contratto,
         iban: ibanEdit.trim(),
         email: emailEdit.trim(),
+        tesserinoTecnico: tesserino,
         ...(allowAdminRole
           ? { qualifiche, visitaMedica: visitaMedicaFromQualifiche(qualifiche) }
           : {}),
@@ -740,6 +743,12 @@ function DettaglioMese({
             />
           </label>
           <GestionaleAnagraficaBlock persona={persona} />
+          <TesserinoTecnicoFields
+            value={tesserino}
+            onChange={setTesserino}
+            inputCls={inputCls}
+            dataNascita={persona?.gestionale?.dataNascita}
+          />
           <QualificheCorsiFields
             value={qualifiche}
             onChange={allowAdminRole ? setQualifiche : undefined}
@@ -806,6 +815,11 @@ function DettaglioMese({
         <div className="sm:col-span-2">
           <GestionaleAnagraficaBlock persona={persona} />
         </div>
+        <TesserinoTecnicoFields
+          value={tesserinoFromPersona(persona)}
+          readOnly
+          dataNascita={persona?.gestionale?.dataNascita}
+        />
         <QualificheCorsiFields value={qualificheForDisplay(persona)} readOnly />
       </dl>
       ))}

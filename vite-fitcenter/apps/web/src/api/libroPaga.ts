@@ -34,6 +34,13 @@ export type LpagaPersonale = {
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
   visitaMedica?: string
   qualifiche?: { id: string; data?: string }[]
+  tesserinoTecnico?: {
+    qualifica?: string
+    sport?: string
+    disciplina?: string
+    numero?: string
+    rilasciataIl?: string
+  }
   attivo: boolean
   nominativo?: string
   repartoNome?: string
@@ -307,6 +314,7 @@ export const libroPagaApi = {
     tesseramentoScadenza?: string
     visitaMedica?: string
     qualifiche?: { id: string; data?: string }[]
+    tesserinoTecnico?: LpagaPersonale["tesserinoTecnico"]
     attivo?: boolean
   }) => api.post<{ personale: LpagaPersonale }>("/libro-paga/personale", body),
   setPersonalePassword: (id: string, password: string) =>

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
-import { deletePersonale, deleteTurno, getTurno, insertTurno, isLpagaTeamRuolo, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, parseLpagaRuolo, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
+import { deletePersonale, deleteTurno, getTurno, insertTurno, isLpagaTeamRuolo, listLivelli, listMensilita, listPersonale, listTurni, mergePersonaleLivelli, messaggioQuantitaTurno, parseLpagaRuolo, parseTesserinoTecnico, updateTurno, upsertMensilita, upsertPersonale, nominativo, parseQualifichePersonale, normalizeLpagaEmail, type LpagaPersonale } from "../store/libro-paga-db.js"
 import { importaTurniExcel, patchLivello, postLivello, removeLivello } from "./libroPaga.js"
 import { bearerLpaga, deletePersonaleCredentials, loginLpaga, logoutLpaga, meLpaga, setPersonalePassword, type LpagaSessionUser } from "../store/libro-paga-auth.js"
 import {
@@ -552,6 +552,7 @@ export async function postLpagaPersonale(req: Request, res: Response) {
       email: normalizeLpagaEmail(req.body?.email),
       tesseramento: String(req.body?.tesseramento ?? "").trim(),
       tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
+      tesserinoTecnico: parseTesserinoTecnico(req.body?.tesserinoTecnico),
       ...(me.ruolo === "admin"
         ? {
             visitaMedica: String(req.body?.visitaMedica ?? "").trim(),
@@ -610,6 +611,10 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
         tesseramentoScadenza: cur.tesseramentoScadenza,
         visitaMedica: cur.visitaMedica,
         qualifiche: cur.qualifiche,
+        tesserinoTecnico:
+          req.body?.tesserinoTecnico != null
+            ? parseTesserinoTecnico(req.body.tesserinoTecnico)
+            : cur.tesserinoTecnico,
         attivo: cur.attivo,
       })
       if (password) {
@@ -674,6 +679,10 @@ export async function patchLpagaPersonale(req: Request, res: Response) {
         me.ruolo === "admin" && req.body?.qualifiche != null
           ? parseQualifichePersonale(req.body.qualifiche)
           : cur.qualifiche,
+      tesserinoTecnico:
+        req.body?.tesserinoTecnico != null
+          ? parseTesserinoTecnico(req.body.tesserinoTecnico)
+          : cur.tesserinoTecnico,
       attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
     })
     if (req.body?.tesseramento != null || req.body?.tesseramentoScadenza != null || req.body?.qualifiche != null) {

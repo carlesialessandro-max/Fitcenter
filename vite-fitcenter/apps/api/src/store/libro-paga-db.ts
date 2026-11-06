@@ -46,6 +46,14 @@ export type LpagaQualificaId = (typeof LPAGA_QUALIFICHE)[number]
 
 export type LpagaQualifica = { id: string; data?: string }
 
+export type LpagaTesserinoTecnico = {
+  qualifica?: string
+  sport?: string
+  disciplina?: string
+  numero?: string
+  rilasciataIl?: string
+}
+
 export type LpagaPersonale = {
   id: string
   nome: string
@@ -65,6 +73,7 @@ export type LpagaPersonale = {
   tesseramentoFonte?: "gestionale" | "calendario" | "manuale"
   visitaMedica?: string
   qualifiche?: LpagaQualifica[]
+  tesserinoTecnico?: LpagaTesserinoTecnico
   attivo: boolean
   gestionale?: {
     idUtente?: string
@@ -230,6 +239,48 @@ function parseQualificheStored(v: unknown): LpagaQualifica[] | undefined {
   if (v == null || v === "") return undefined
   return parseQualifichePersonale(v)
 }
+
+export function parseTesserinoTecnico(v: unknown): LpagaTesserinoTecnico {
+  const o =
+    v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : {}
+  const qualifica = String(o.qualifica ?? "").trim()
+  const sport = String(o.sport ?? "").trim()
+  const disciplina = String(o.disciplina ?? o.specialita ?? "").trim()
+  const numero = String(o.numero ?? o.tessera ?? "").trim()
+  const rilasciataIl = ymd(o.rilasciataIl ?? o.rilasciata)
+  const out: LpagaTesserinoTecnico = {}
+  if (qualifica) out.qualifica = qualifica
+  if (sport) out.sport = sport
+  if (disciplina) out.disciplina = disciplina
+  if (numero) out.numero = numero
+  if (rilasciataIl && /^\d{4}-\d{2}-\d{2}$/.test(rilasciataIl)) out.rilasciataIl = rilasciataIl
+  return out
+}
+
+function tesserinoFromRow(r: Record<string, unknown>): LpagaTesserinoTecnico | undefined {
+  if (r.tesserinoTecnico && typeof r.tesserinoTecnico === "object") {
+    const nested = parseTesserinoTecnico(r.tesserinoTecnico)
+    if (Object.keys(nested).length) return nested
+  }
+  const parsed = parseTesserinoTecnico({
+    qualifica: r.TesserinoQualifica ?? r.tesserinoQualifica,
+    sport: r.TesserinoSport ?? r.tesserinoSport,
+    disciplina: r.TesserinoDisciplina ?? r.tesserinoDisciplina,
+    numero: r.TesserinoNumero ?? r.tesserinoNumero,
+    rilasciataIl: r.TesserinoRilasciataIl ?? r.tesserinoRilasciataIl,
+  })
+  return Object.keys(parsed).length ? parsed : undefined
+}
+
+const TESSERINO_DDL = `
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoQualifica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoQualifica NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoSport') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoSport NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoDisciplina') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoDisciplina NVARCHAR(400) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoNumero') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoNumero NVARCHAR(40) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoRilasciataIl') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoRilasciataIl DATE NULL;
+`
 
 function enrichQualificheVisitaMedica(
   qualifiche: LpagaQualifica[] | undefined,
@@ -455,6 +506,11 @@ IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD LivelloIds NVARCHAR(4000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','LivelloIds') IS NOT NULL ALTER TABLE dbo.FcLibroPagaPersonale ALTER COLUMN LivelloIds NVARCHAR(4000) NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','RepartoIds') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD RepartoIds NVARCHAR(4000) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoQualifica') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoQualifica NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoSport') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoSport NVARCHAR(200) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoDisciplina') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoDisciplina NVARCHAR(400) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoNumero') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoNumero NVARCHAR(40) NULL;
+IF OBJECT_ID(N'dbo.FcLibroPagaPersonale', N'U') IS NOT NULL AND COL_LENGTH('dbo.FcLibroPagaPersonale','TesserinoRilasciataIl') IS NULL ALTER TABLE dbo.FcLibroPagaPersonale ADD TesserinoRilasciataIl DATE NULL;
 IF OBJECT_ID(N'dbo.FcLibroPagaTurni', N'U') IS NULL
 CREATE TABLE dbo.FcLibroPagaTurni (
   Id NVARCHAR(64) NOT NULL PRIMARY KEY,
@@ -548,6 +604,14 @@ export async function ensureLibroPagaStorage(): Promise<"sql" | "json"> {
     if (!tablesOk) {
       sqlReady = false
       return "json"
+    }
+    const ddlPool = write ?? p
+    if (ddlPool) {
+      try {
+        await ddlPool.request().query(TESSERINO_DDL)
+      } catch (e) {
+        console.warn("[libro-paga] colonne tesserino tecnico:", (e as Error)?.message)
+      }
     }
     const file = readFile()
     if (file.turni.length > 0) {
@@ -736,6 +800,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
   const qualifiche = enrichQualificheVisitaMedica(qualificheRaw, visitaMedicaCol)
   const visitaMedica = visitaMedicaDaQualifiche(qualifiche) || visitaMedicaCol
   const ruolo = parseLpagaRuolo(r.Ruolo ?? r.ruolo)
+  const tesserinoTecnico = tesserinoFromRow(r)
   return {
     id: String(r.Id ?? r.id ?? ""),
     nome: String(r.Nome ?? r.nome ?? ""),
@@ -757,6 +822,7 @@ function mapPersonale(r: Record<string, unknown>): LpagaPersonale {
       : {}),
     ...(visitaMedica && /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(visitaMedica) ? { visitaMedica } : {}),
     ...(qualifiche ? { qualifiche } : {}),
+    ...(tesserinoTecnico ? { tesserinoTecnico } : {}),
     attivo: r.Attivo == null && r.attivo == null ? true : bit(r.Attivo ?? r.attivo),
   }
 }
@@ -916,7 +982,9 @@ export async function listPersonale(): Promise<LpagaPersonale[]> {
       `SELECT Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, RepartoIds,
               CONVERT(varchar(10), Contratto, 23) AS Contratto, Iban, Email, Attivo,
               Tesseramento, CONVERT(varchar(10), TesseramentoScadenza, 23) AS TesseramentoScadenza,
-              CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica, Qualifiche
+              CONVERT(varchar(10), VisitaMedica, 23) AS VisitaMedica, Qualifiche,
+              TesserinoQualifica, TesserinoSport, TesserinoDisciplina, TesserinoNumero,
+              CONVERT(varchar(10), TesserinoRilasciataIl, 23) AS TesserinoRilasciataIl
        FROM dbo.FcLibroPagaPersonale ORDER BY Nome COLLATE Latin1_General_CI_AI, Cognome COLLATE Latin1_General_CI_AI`
     )
     return (r.recordset as Record<string, unknown>[]).map(mapPersonale)
@@ -991,6 +1059,7 @@ export async function upsertPersonale(input: {
   tesseramentoScadenza?: string
   visitaMedica?: string
   qualifiche?: LpagaQualifica[] | string[]
+  tesserinoTecnico?: LpagaTesserinoTecnico
   attivo: boolean
 }): Promise<LpagaPersonale> {
   const iban = (input.iban ?? "").trim()
@@ -1018,6 +1087,8 @@ export async function upsertPersonale(input: {
   const livelliMerged = hasLivelloIds ? mergePersonaleLivelli(input.livelloId, input.livelloIds) : {}
   const hasRepartoIds = input.repartoIds !== undefined
   const repartiMerged = hasRepartoIds ? mergePersonaleReparti(input.repartoIds) : {}
+  const hasTesserino = input.tesserinoTecnico !== undefined
+  const tesserinoTecnico = hasTesserino ? parseTesserinoTecnico(input.tesserinoTecnico) : undefined
   const row: LpagaPersonale = {
     id: input.id?.trim() || newId(),
     nome: input.nome.trim(),
@@ -1033,6 +1104,7 @@ export async function upsertPersonale(input: {
     ...(tesseramentoScadenza && /^\d{4}-\d{2}-\d{2}$/.test(tesseramentoScadenza) ? { tesseramentoScadenza } : {}),
     ...(visitaMedica ? { visitaMedica } : {}),
     ...(hasQualifiche || hasVisitaMedica ? { qualifiche: qualifiche ?? [] } : {}),
+    ...(hasTesserino && tesserinoTecnico && Object.keys(tesserinoTecnico).length ? { tesserinoTecnico } : {}),
     attivo: input.attivo !== false,
   }
   const corsiTouched = hasQualifiche || hasVisitaMedica
@@ -1063,6 +1135,18 @@ export async function upsertPersonale(input: {
     req.input("QualificheSet", sql.Bit, corsiTouched)
     req.input("VisitaMedica", sql.Date, visitaMedica || null)
     req.input("VisitaMedicaSet", sql.Bit, corsiTouched)
+    req.input("TesserinoQualifica", sql.NVarChar(200), tesserinoTecnico?.qualifica ?? null)
+    req.input("TesserinoSport", sql.NVarChar(200), tesserinoTecnico?.sport ?? null)
+    req.input("TesserinoDisciplina", sql.NVarChar(400), tesserinoTecnico?.disciplina ?? null)
+    req.input("TesserinoNumero", sql.NVarChar(40), tesserinoTecnico?.numero ?? null)
+    req.input(
+      "TesserinoRilasciataIl",
+      sql.Date,
+      tesserinoTecnico?.rilasciataIl && /^\d{4}-\d{2}-\d{2}$/.test(tesserinoTecnico.rilasciataIl)
+        ? tesserinoTecnico.rilasciataIl
+        : null
+    )
+    req.input("TesserinoSet", sql.Bit, hasTesserino)
     req.input("Attivo", sql.Bit, row.attivo)
     await req.query(`
       MERGE dbo.FcLibroPagaPersonale AS t
@@ -1074,9 +1158,15 @@ export async function upsertPersonale(input: {
         Contratto=@Contratto, Iban=@Iban, Email=@Email, Tesseramento=@Tesseramento,
         TesseramentoScadenza=@TesseramentoScadenza,
         VisitaMedica=CASE WHEN @VisitaMedicaSet=1 THEN @VisitaMedica ELSE t.VisitaMedica END,
-        Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END, Attivo=@Attivo
-      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, RepartoIds, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, Attivo)
-      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @LivelloIds, @RepartoIds, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @Attivo);
+        Qualifiche=CASE WHEN @QualificheSet=1 THEN @Qualifiche ELSE t.Qualifiche END,
+        TesserinoQualifica=CASE WHEN @TesserinoSet=1 THEN @TesserinoQualifica ELSE t.TesserinoQualifica END,
+        TesserinoSport=CASE WHEN @TesserinoSet=1 THEN @TesserinoSport ELSE t.TesserinoSport END,
+        TesserinoDisciplina=CASE WHEN @TesserinoSet=1 THEN @TesserinoDisciplina ELSE t.TesserinoDisciplina END,
+        TesserinoNumero=CASE WHEN @TesserinoSet=1 THEN @TesserinoNumero ELSE t.TesserinoNumero END,
+        TesserinoRilasciataIl=CASE WHEN @TesserinoSet=1 THEN @TesserinoRilasciataIl ELSE t.TesserinoRilasciataIl END,
+        Attivo=@Attivo
+      WHEN NOT MATCHED THEN INSERT (Id, Nome, Cognome, Username, Ruolo, LivelloId, LivelloIds, RepartoIds, Contratto, Iban, Email, Tesseramento, TesseramentoScadenza, VisitaMedica, Qualifiche, TesserinoQualifica, TesserinoSport, TesserinoDisciplina, TesserinoNumero, TesserinoRilasciataIl, Attivo)
+      VALUES (@Id, @Nome, @Cognome, @Username, @Ruolo, @LivelloId, @LivelloIds, @RepartoIds, @Contratto, @Iban, @Email, @Tesseramento, @TesseramentoScadenza, @VisitaMedica, @Qualifiche, @TesserinoQualifica, @TesserinoSport, @TesserinoDisciplina, @TesserinoNumero, @TesserinoRilasciataIl, @Attivo);
     `)
     return row
   }
@@ -1105,6 +1195,13 @@ export async function upsertPersonale(input: {
       ...(!corsiTouched && prev.visitaMedica ? { visitaMedica: prev.visitaMedica } : {}),
       ...(row.tesseramento ? {} : prev.tesseramento ? { tesseramento: prev.tesseramento } : {}),
       ...(row.tesseramentoScadenza ? {} : prev.tesseramentoScadenza ? { tesseramentoScadenza: prev.tesseramentoScadenza } : {}),
+      ...(hasTesserino
+        ? tesserinoTecnico && Object.keys(tesserinoTecnico).length
+          ? { tesserinoTecnico }
+          : {}
+        : prev.tesserinoTecnico
+          ? { tesserinoTecnico: prev.tesserinoTecnico }
+          : {}),
     }
   } else db.personale.push(row)
   writeFile(db)

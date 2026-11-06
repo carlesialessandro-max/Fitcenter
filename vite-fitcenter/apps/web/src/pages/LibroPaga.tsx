@@ -28,7 +28,7 @@ import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
-import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { LibroPagaSlot, QualificheCorsiFields, TesserinoTecnicoFields, emptyTesserinoTecnico } from "@/components/LibroPagaSlot"
 import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
 import type { QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
@@ -514,6 +514,7 @@ function PersonaleTab({
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
+  const [tesserino, setTesserino] = useState(() => emptyTesserinoTecnico())
   const [qualifiche, setQualifiche] = useState<QualificaConData[]>([])
   const [password, setPassword] = useState("")
   const [nuovoOpen, setNuovoOpen] = useState(false)
@@ -545,6 +546,7 @@ function PersonaleTab({
         email,
         qualifiche,
         visitaMedica: visitaMedicaFromQualifiche(qualifiche),
+        tesserinoTecnico: tesserino,
         attivo: true,
       }),
     onSuccess: () => {
@@ -556,6 +558,7 @@ function PersonaleTab({
       setContratto("")
       setIban("")
       setEmail("")
+      setTesserino(emptyTesserinoTecnico())
       setLivelloIds([])
       setRepartoIds([])
       setNuovoOpen(false)
@@ -918,7 +921,9 @@ function PersonaleTab({
             </label>
             <p className="text-xs text-zinc-500 sm:col-span-2">
               Tesseramento ASI, certificato medico e anagrafica (CF, recapiti, indirizzo) arrivano dal gestionale (categoria STAFF) e non si modificano qui.
+              Il tesserino tecnico si inserisce qui e lo può aggiornare anche l’istruttore dalla propria anagrafica.
             </p>
+            <TesserinoTecnicoFields value={tesserino} onChange={setTesserino} inputCls={inputCls} />
             <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
             <div className="flex justify-end gap-2 sm:col-span-2">
               <button type="button" className={btnGhost} onClick={() => setNuovoOpen(false)}>

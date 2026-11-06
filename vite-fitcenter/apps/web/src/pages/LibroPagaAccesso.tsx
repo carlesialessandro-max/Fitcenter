@@ -9,7 +9,7 @@ import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
-import { LibroPagaSlot, QualificheCorsiFields } from "@/components/LibroPagaSlot"
+import { LibroPagaSlot, QualificheCorsiFields, TesserinoTecnicoFields, tesserinoFromPersona, emptyTesserinoTecnico } from "@/components/LibroPagaSlot"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
 import { ReportCollaboratori } from "@/pages/ReportCollaboratori"
@@ -412,17 +412,20 @@ function MiaAnagrafica({
   const persona = data.personale.find((p) => p.id === me.id)
   const [email, setEmail] = useState(persona?.email ?? "")
   const [iban, setIban] = useState(persona?.iban ?? "")
+  const [tesserino, setTesserino] = useState(() => tesserinoFromPersona(persona))
   const [password, setPassword] = useState("")
   const [msg, setMsg] = useState("")
   useEffect(() => {
     setEmail(persona?.email ?? "")
     setIban(persona?.iban ?? "")
-  }, [persona?.email, persona?.iban])
+    setTesserino(tesserinoFromPersona(persona))
+  }, [persona])
   const saveMut = useMutation({
     mutationFn: () =>
       lpagaApi.patchPersonale(me.id, {
         email: email.trim(),
         iban: iban.trim(),
+        tesserinoTecnico: tesserino,
         ...(password.trim() ? { password: password.trim() } : {}),
       }),
     onSuccess: () => {
@@ -443,7 +446,8 @@ function MiaAnagrafica({
       <div>
         <h2 className="text-lg font-semibold text-zinc-100">La mia anagrafica</h2>
         <p className="mt-1 text-sm text-zinc-500">
-          Puoi aggiornare l’email di accesso e l’IBAN. I dati anagrafici del gestionale (STAFF) sono in sola lettura.
+          Puoi aggiornare l’email di accesso, l’IBAN e i dati del tesserino tecnico. I dati anagrafici del gestionale
+          (STAFF) sono in sola lettura.
         </p>
       </div>
       <GestionaleAnagraficaBlock persona={persona} />
@@ -459,6 +463,12 @@ function MiaAnagrafica({
           {persona.nominativo ?? `${persona.cognome ?? ""} ${persona.nome}`.trim()}
           {persona.repartoNome ? <span className="text-zinc-500"> · {persona.repartoNome}</span> : null}
         </p>
+        <TesserinoTecnicoFields
+          value={tesserino}
+          onChange={setTesserino}
+          inputCls={inputCls}
+          dataNascita={persona.gestionale?.dataNascita}
+        />
         <label className="grid gap-1 text-xs text-zinc-500">
           Email di accesso libro paga
           <input
@@ -1200,6 +1210,7 @@ function Personale({
   const [contratto, setContratto] = useState("")
   const [iban, setIban] = useState("")
   const [email, setEmail] = useState("")
+  const [tesserino, setTesserino] = useState(() => emptyTesserinoTecnico())
   const [nuovoOpen, setNuovoOpen] = useState(false)
   const [pwdId, setPwdId] = useState<string | null>(null)
   const [pwdNew, setPwdNew] = useState("")
@@ -1222,6 +1233,7 @@ function Personale({
         contratto,
         iban,
         email,
+        tesserinoTecnico: tesserino,
       }),
     onSuccess: () => {
       setNome("")
@@ -1232,6 +1244,7 @@ function Personale({
       setContratto("")
       setIban("")
       setEmail("")
+      setTesserino(emptyTesserinoTecnico())
       setLivelloIds([])
       setRepartoIds([])
       setNuovoOpen(false)
@@ -1412,7 +1425,9 @@ function Personale({
             </label>
             <p className="text-xs text-zinc-500 sm:col-span-2">
               Tesseramento ASI, certificato medico e anagrafica STAFF arrivano dal gestionale e non si modificano qui.
+              Il tesserino tecnico si inserisce qui e lo può aggiornare anche l’istruttore.
             </p>
+            <TesserinoTecnicoFields value={tesserino} onChange={setTesserino} inputCls={inputCls} />
             {me?.ruolo === "admin" ? (
               <QualificheCorsiFields value={qualifiche} onChange={setQualifiche} inputCls={inputCls} />
             ) : null}

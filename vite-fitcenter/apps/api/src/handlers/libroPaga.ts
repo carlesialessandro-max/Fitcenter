@@ -48,7 +48,7 @@ import {
   type TurnoConvalidaStato,
 } from "../services/libro-paga-convalida.js"
 import { deletePersonaleCredentials, setPersonalePassword } from "../store/libro-paga-auth.js"
-import { mergePersonaleLivelli, parseLpagaRuolo, parseQualifichePersonale } from "../store/libro-paga-db.js"
+import { mergePersonaleLivelli, parseLpagaRuolo, parseQualifichePersonale, parseTesserinoTecnico } from "../store/libro-paga-db.js"
 
 function livelliFromBody(body: Record<string, unknown>) {
   const ids = Array.isArray(body.livelloIds)
@@ -300,6 +300,7 @@ export async function postPersonale(req: Request, res: Response) {
       tesseramentoScadenza: String(req.body?.tesseramentoScadenza ?? "").trim(),
       visitaMedica: String(req.body?.visitaMedica ?? "").trim(),
       qualifiche: parseQualifichePersonale(req.body?.qualifiche),
+      tesserinoTecnico: parseTesserinoTecnico(req.body?.tesserinoTecnico),
       attivo: req.body?.attivo !== false,
     })
     syncIstruttoreCalendarioHr(row)
@@ -350,6 +351,10 @@ export async function patchPersonale(req: Request, res: Response) {
           : cur.tesseramentoScadenza,
       visitaMedica: req.body?.visitaMedica != null ? String(req.body.visitaMedica).trim() : cur.visitaMedica,
       qualifiche: req.body?.qualifiche != null ? parseQualifichePersonale(req.body.qualifiche) : cur.qualifiche,
+      tesserinoTecnico:
+        req.body?.tesserinoTecnico != null
+          ? parseTesserinoTecnico(req.body.tesserinoTecnico)
+          : cur.tesserinoTecnico,
       attivo: req.body?.attivo != null ? Boolean(req.body.attivo) : cur.attivo,
     })
     if (req.body?.tesseramento != null || req.body?.tesseramentoScadenza != null || req.body?.qualifiche != null) {
