@@ -27,6 +27,7 @@ export type FicIssuedDoc = {
   dataDocumento: string
   descrizione: string
   totale: number
+  imponibile: number
   competenzaMese: string
 }
 
@@ -282,13 +283,21 @@ function normalizedText(value: string): string {
     .trim()
 }
 
+function positiveMoney(n: unknown): number {
+  const v = Number(n)
+  return Number.isFinite(v) ? Math.abs(v) : 0
+}
+
 function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
   if (!raw || typeof raw !== "object") return null
   const o = raw as FicJson
   const id = Number(o.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const amount = Number(o.amount_gross ?? o.amount_net ?? 0)
-  if (!Number.isFinite(amount) || amount <= 0) return null
+  const gross = positiveMoney(o.amount_gross)
+  const net = positiveMoney(o.amount_net)
+  const amountGross = gross || net
+  if (amountGross <= 0) return null
+  const amountNet = net || amountGross
   const dataDocumento = String(o.date ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) return null
   const entity = o.entity && typeof o.entity === "object" ? (o.entity as FicJson) : {}
@@ -307,7 +316,8 @@ function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
     numeroDocumento: String(o.invoice_number ?? o.number ?? "").trim() || `FIC-${id}`,
     dataDocumento,
     descrizione,
-    totale: Math.round(amount * sign * 100) / 100,
+    totale: Math.round(amountGross * sign * 100) / 100,
+    imponibile: Math.round(amountNet * sign * 100) / 100,
     competenzaMese,
   }
 }
@@ -336,6 +346,12 @@ function mapDoc(raw: unknown): FicDoc | null {
     descrizione,
     totale: Math.round(amount * sign * 100) / 100,
   }
+}
+
+/** Danza: solo imponibile (IVA a debito). Affitti/convenzioni/utenze restano sul totale documento. */
+export function importoFatturaAmm(doc: Pick<FicIssuedDoc, "totale" | "imponibile">, tipo: FicIssuedTipo): number {
+  if (tipo === "Danza") return doc.imponibile
+  return doc.totale
 }
 
 export function classificaFatturaEmessa(doc: Pick<FicIssuedDoc, "cliente" | "descrizione">): FicIssuedTipo | null {
@@ -484,19 +500,20 @@ export function riepilogoFattureAmm(
     } else if (periodo && (doc.dataDocumento < periodo.from || doc.dataDocumento > periodo.to)) {
       continue
     }
+    const importo = importoFatturaAmm(doc, tipo)
     if (tipo === "Recupero utenze") {
-      recuperiUtenze += doc.totale
-      recuperiUtenzePerMese[competenza] = (recuperiUtenzePerMese[competenza] ?? 0) + doc.totale
+      recuperiUtenze += importo
+      recuperiUtenzePerMese[competenza] = (recuperiUtenzePerMese[competenza] ?? 0) + importo
       continue
     }
     if (tipo === "Danza") {
-      ricaviDanza += doc.totale
+      ricaviDanza += importo
       nFattureDanza += 1
     } else if (tipo === "Affitto spazi") {
-      ricaviAffitti += doc.totale
+      ricaviAffitti += importo
       nFattureAffitti += 1
     } else if (tipo === "Convenzione") {
-      ricaviConvenzioni += doc.totale
+      ricaviConvenzioni += importo
       nFattureConvenzioni += 1
     }
   }

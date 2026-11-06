@@ -42,6 +42,7 @@ import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import {
   classificaFatturaEmessa,
+  importoFatturaAmm,
   meseCompetenzaDanza,
   listAcquistiMese,
   listCompanies,
@@ -1282,7 +1283,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
               descrizione: doc.descrizione,
               tipo,
               competenzaMese: competenza,
-              totale: doc.totale,
+              totale: importoFatturaAmm(doc, tipo),
             },
           ]
         })
@@ -1292,6 +1293,15 @@ export async function getAmmDashboard(req: Request, res: Response) {
       }
     }
     if (fattureEmesseDisponibili) {
+      if (fattureAmm.ricaviDanza) {
+        ricavi.totAltri = round2(ricavi.totAltri + fattureAmm.ricaviDanza)
+        ricavi.dettaglio.push({
+          voce: "Centro Arte Danza · Fatture in Cloud (imponibile)",
+          macro: "altro",
+          importo: fattureAmm.ricaviDanza,
+          n: fattureAmm.nFattureDanza,
+        })
+      }
       if (fattureAmm.ricaviAffitti) {
         ricavi.totAltri = round2(ricavi.totAltri + fattureAmm.ricaviAffitti)
         ricavi.dettaglio.push({
