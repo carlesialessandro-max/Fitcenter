@@ -12,6 +12,7 @@ import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData
 import { QualificheCorsiFields, TesserinoTecnicoFields, tesserinoFromPersona } from "@/components/LibroPagaSlot"
 import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloIdsFromPersona, repartoIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { LibroPagaTurniTotaliReparto } from "@/components/LibroPagaTurniTotaliReparto"
 import { ruoloLabel } from "@/lib/lpaga-ruolo"
 import { etichettaValoreTurno, messaggioQuantitaTurno } from "@/lib/libro-paga-quantita"
 import { mansioniTurnoProprio } from "@/lib/libro-paga-livelli"
@@ -823,6 +824,7 @@ function DettaglioMese({
         <QualificheCorsiFields value={qualificheForDisplay(persona)} readOnly />
       </dl>
       ))}
+      <LibroPagaTurniTotaliReparto turni={lezioni} mese={mese} />
       <div>
         <h3 className="mb-2 text-sm font-medium text-zinc-300">Lezioni / turni del mese</h3>
         {editTurni ? (

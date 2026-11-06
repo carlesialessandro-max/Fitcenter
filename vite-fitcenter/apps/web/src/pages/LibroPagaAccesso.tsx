@@ -9,6 +9,7 @@ import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloAlberoUnionUi } from "@/components/LibroPagaRepartiMulti"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { LibroPagaTurniTotaliReparto } from "@/components/LibroPagaTurniTotaliReparto"
 import { LibroPagaSlot, QualificheCorsiFields, TesserinoTecnicoFields, tesserinoFromPersona, emptyTesserinoTecnico } from "@/components/LibroPagaSlot"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { qualificheForDisplay, visitaMedicaFromQualifiche, type QualificaConData } from "@/lib/personale-qualifiche"
@@ -806,6 +807,7 @@ function Turni({
   const [note, setNote] = useState("")
   const [cercaTurni, setCercaTurni] = useState("")
   const [cercaData, setCercaData] = useState("")
+  const [filtroPersonaleId, setFiltroPersonaleId] = useState("")
   const [nuovoTurno, setNuovoTurno] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
@@ -906,19 +908,27 @@ function Turni({
       onError((e as Error).message || "File Excel non leggibile")
     }
   }
+  const filtroItems = useMemo(
+    () => [{ id: "", label: "Tutti i nominativi" }, ...personeItems],
+    [personeItems]
+  )
+  const turniNominativo = useMemo(() => {
+    if (isUser) return data.turni.filter((t) => t.personaleId === me?.id)
+    if (filtroPersonaleId) return data.turni.filter((t) => t.personaleId === filtroPersonaleId)
+    return data.turni
+  }, [data.turni, filtroPersonaleId, isUser, me?.id])
   const rows = useMemo(() => {
     const n = normCerca(cercaTurni)
     const personeById = new Map(data.personale.map((p) => [p.id, p]))
-    return [...data.turni]
+    return [...turniNominativo]
       .filter((t) => {
-        if (isUser && t.personaleId !== me?.id) return false
         if (cercaData && t.giorno.slice(0, 10) !== cercaData) return false
         if (!n) return true
         const hay = normCerca(testoCercaTurno(t, personeById.get(t.personaleId)))
         return hay.includes(n) || fmtDateIt(t.giorno).includes(cercaTurni.trim())
       })
       .sort((a, b) => b.giorno.localeCompare(a.giorno))
-  }, [data.turni, data.personale, cercaTurni, cercaData, isUser, me?.id])
+  }, [turniNominativo, data.personale, cercaTurni, cercaData])
 
   return (
     <div className="mt-4 space-y-4">
@@ -1095,6 +1105,22 @@ function Turni({
           </form>
         </LibroPagaSlot>
       )}
+      {!isUser && (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="grid min-w-[16rem] max-w-md flex-1 gap-1 text-xs text-zinc-400">
+              <span>Nominativo</span>
+              <LpagaSearchSelect
+                items={filtroItems}
+                value={filtroPersonaleId}
+                onChange={setFiltroPersonaleId}
+                placeholder="Tutti i nominativi"
+              />
+            </label>
+          </div>
+          <LibroPagaTurniTotaliReparto turni={turniNominativo} mese={mese} />
+        </>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <label className="grid min-w-[16rem] flex-1 gap-1 text-xs text-zinc-400">
           <span>Cerca turnazioni</span>
@@ -1109,13 +1135,14 @@ function Turni({
           <span>Filtra data</span>
           <input type="date" value={cercaData} onChange={(e) => setCercaData(e.target.value)} className={inputCls} />
         </label>
-        {(cercaTurni || cercaData) && (
+        {(cercaTurni || cercaData || filtroPersonaleId) && (
           <button
             type="button"
             className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-300"
             onClick={() => {
               setCercaTurni("")
               setCercaData("")
+              setFiltroPersonaleId("")
             }}
           >
             Pulisci

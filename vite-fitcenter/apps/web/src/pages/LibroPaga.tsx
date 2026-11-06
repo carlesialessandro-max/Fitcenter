@@ -28,6 +28,7 @@ import { LibroPagaReport } from "@/components/LibroPagaReport"
 import { LibroPagaLivelliTab } from "@/components/LibroPagaLivelli"
 import { LibroPagaConvalidaMesePanel, LibroPagaConvalidaPanel, LibroPagaConvalideLista, LibroPagaMeseBloccoBanner, LibroPagaTurniConvalidaElenco, LibroPagaDelegheForm, rootsFiltroTurniConvalide, useLibroPagaConvalida, useLibroPagaConvalidaMese } from "@/components/LibroPagaConvalida"
 import { LpagaSearchSelect, MansioneSearchSelect } from "@/components/MansioneSearchSelect"
+import { LibroPagaTurniTotaliReparto } from "@/components/LibroPagaTurniTotaliReparto"
 import { LibroPagaSlot, QualificheCorsiFields, TesserinoTecnicoFields, emptyTesserinoTecnico } from "@/components/LibroPagaSlot"
 import { qualificheForDisplay, visitaMedicaFromQualifiche } from "@/lib/personale-qualifiche"
 import type { QualificaConData } from "@/lib/personale-qualifiche"
@@ -1028,6 +1029,7 @@ function TurniTab({
   const [quantita, setQuantita] = useState("1")
   const [note, setNote] = useState("")
   const [cercaData, setCercaData] = useState("")
+  const [filtroPersonaleId, setFiltroPersonaleId] = useState("")
   const [editingId, setEditingId] = useState<string | null>(null)
   const [nuovoTurno, setNuovoTurno] = useState(false)
   const [importPreview, setImportPreview] = useState<ImportTurnoExcelPreview[] | null>(null)
@@ -1035,7 +1037,15 @@ function TurniTab({
   const [importHasErrors, setImportHasErrors] = useState(false)
   const n = normCerca(q)
   const personeById = useMemo(() => new Map(data.personale.map((p) => [p.id, p])), [data.personale])
-  const rows = data.turni.filter((t) => {
+  const filtroItems = useMemo(
+    () => [{ id: "", label: "Tutti i nominativi" }, ...personeItems],
+    [personeItems]
+  )
+  const turniNominativo = useMemo(
+    () => (filtroPersonaleId ? data.turni.filter((t) => t.personaleId === filtroPersonaleId) : data.turni),
+    [data.turni, filtroPersonaleId]
+  )
+  const rows = turniNominativo.filter((t) => {
     if (cercaData && t.giorno.slice(0, 10) !== cercaData) return false
     if (!n) return true
     const hay = normCerca(testoCercaTurno(t, personeById.get(t.personaleId)))
@@ -1274,6 +1284,15 @@ function TurniTab({
         </LibroPagaSlot>
       )}
       <div className="flex flex-wrap items-end gap-3">
+        <label className="grid min-w-[16rem] flex-1 gap-1 text-xs text-zinc-400">
+          <span>Nominativo</span>
+          <LpagaSearchSelect
+            items={filtroItems}
+            value={filtroPersonaleId}
+            onChange={setFiltroPersonaleId}
+            placeholder="Tutti i nominativi"
+          />
+        </label>
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -1282,6 +1301,7 @@ function TurniTab({
         />
         <input type="date" value={cercaData} onChange={(e) => setCercaData(e.target.value)} className={inputCls} />
       </div>
+      <LibroPagaTurniTotaliReparto turni={turniNominativo} mese={mese} />
       <div className="overflow-x-auto rounded-2xl border border-zinc-800">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-zinc-900/80 text-xs uppercase text-zinc-500">
