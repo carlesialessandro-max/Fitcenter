@@ -104,6 +104,7 @@ export const dataApi = {
   postAbbonamentiAttiviInvia: (body: {
     asOf?: string
     segmento?: "tutti" | "adulti" | "bambini"
+    sesso?: "M" | "F"
     categorie?: string[]
     piani?: string[]
     clienteIds?: string[]

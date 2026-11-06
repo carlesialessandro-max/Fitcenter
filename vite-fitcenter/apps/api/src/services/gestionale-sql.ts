@@ -2093,7 +2093,7 @@ export async function queryAbbonamenti(
     }
     const where = (idConsultant ? ` WHERE a.[${col}] = @id` : " WHERE 1=1") + dateFilter
     const r = await req.query(
-      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}
+      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}
        FROM [${tblA}] a
        LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
        ${where}
@@ -2109,7 +2109,7 @@ export async function queryAbbonamenti(
       try {
         const joinVenditore = options?.leftJoinVenditore ? "LEFT JOIN" : "INNER JOIN"
         const r = await p.request().query(
-          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}, R.[${viewCfg.colNome}] AS ConsulenteNome
+          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}, R.[${viewCfg.colNome}] AS ConsulenteNome
            FROM [${tblA}] a
            ${joinVenditore} [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
            LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
@@ -2122,7 +2122,7 @@ export async function queryAbbonamenti(
       }
     }
     const r = await p.request().query(
-      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}
+      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}
        FROM [${tblA}] a
        LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
        ${where}
@@ -2141,7 +2141,7 @@ export async function queryAbbonamenti(
         let req = p.request()
         ids.forEach((id, i) => { req = req.input(`id${i}`, sql.Int, id) })
         const r = await req.query(
-          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}, R.[${viewCfg.colNome}] AS ConsulenteNome
+          `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}, R.[${viewCfg.colNome}] AS ConsulenteNome
            FROM [${tblA}] a
            INNER JOIN [${viewCfg.view}] R ON R.[${viewCfg.colJoin}] = a.IDIscrizione
            LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
@@ -2171,7 +2171,7 @@ export async function queryAbbonamenti(
     const idStr = String(idConsultant)
     const req = p.request().input("id", sql.VarChar, idStr)
     const r = await req.query(
-      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms${etaFrag}
+      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}
        FROM [${tblA}] a
        LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
        WHERE (CAST(a.IDVenditore AS NVARCHAR(50)) = @id OR CAST(a.Abbonanditore AS NVARCHAR(50)) = @id)${dateFilter}

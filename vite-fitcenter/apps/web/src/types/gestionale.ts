@@ -131,6 +131,7 @@ export interface AttiviContatto {
   email: string | null
   telefono: string | null
   segmento: AttiviContattoSegmento
+  sesso?: "M" | "F" | null
   categoria: string
   categorie?: string[]
   piano: string

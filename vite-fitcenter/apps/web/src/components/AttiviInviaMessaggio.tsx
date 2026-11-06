@@ -4,6 +4,7 @@ import { dataApi } from "@/api/data"
 import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
 
 type SegmentoFiltro = "tutti" | "adulti" | "bambini"
+type SessoFiltro = "tutti" | "M" | "F"
 type Channel = "email" | "sms"
 
 type Props = {
@@ -68,8 +69,9 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [segmento, setSegmento] = useState<SegmentoFiltro>("tutti")
+  const [sessoFiltro, setSessoFiltro] = useState<SessoFiltro>("tutti")
   const [gruppo, setGruppo] = useState("")
-  const [pianoSel, setPianoSel] = useState("")
+  const [pianiSel, setPianiSel] = useState<Set<string>>(new Set())
   const [q, setQ] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [channel, setChannel] = useState<Channel>("email")
@@ -92,9 +94,11 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     return allRows.filter((c) => {
       if (segmento === "adulti" && c.segmento !== "adulti") return false
       if (segmento === "bambini" && c.segmento !== "bambini") return false
+      if (sessoFiltro === "M" && c.sesso !== "M") return false
+      if (sessoFiltro === "F" && c.sesso !== "F") return false
       return !isStaffOrDanza(c.categoria) && !isStaffOrDanza(c.macro ?? "") && !isStaffOrDanza(c.piano)
     })
-  }, [allRows, segmento])
+  }, [allRows, segmento, sessoFiltro])
 
   const foglie = useMemo(() => {
     const m = new Map<string, Leaf>()
@@ -141,17 +145,23 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   }, [gruppi, gruppo])
 
   useEffect(() => {
-    if (pianoSel && !prodottiSelect.some((p) => p.piano === pianoSel)) setPianoSel("")
-  }, [prodottiSelect, pianoSel])
+    setPianiSel((prev) => {
+      if (!prev.size) return prev
+      const ok = new Set(prodottiSelect.map((p) => p.piano))
+      const next = new Set([...prev].filter((x) => ok.has(x)))
+      if (next.size === prev.size) return prev
+      return next
+    })
+  }, [prodottiSelect])
 
   const rows = useMemo(() => {
     return bySegmento.filter((c) => {
       const prods = prodottiDi(c)
-      const haFiltroTipo = Boolean(gruppo || pianoSel)
+      const haFiltroTipo = Boolean(gruppo || pianiSel.size)
       const prodOk = prods.some((p) => {
         if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) return false
         if (gruppo && gruppoDi(p) !== gruppo) return false
-        if (pianoSel && p.piano !== pianoSel) return false
+        if (pianiSel.size && !pianiSel.has(p.piano)) return false
         if (!haFiltroTipo && ql && !prodottoMatchQ(p, ql)) return false
         return true
       })
@@ -162,9 +172,9 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
       }
       return false
     })
-  }, [bySegmento, ql, gruppo, pianoSel])
+  }, [bySegmento, ql, gruppo, pianiSel])
 
-  const rowKey = `${segmento}|${gruppo}|${pianoSel}|${ql}|${rows.length}|${rows[0]?.clienteId ?? ""}`
+  const rowKey = `${segmento}|${sessoFiltro}|${gruppo}|${[...pianiSel].sort().join(",")}|${ql}|${rows.length}|${rows[0]?.clienteId ?? ""}`
   useEffect(() => {
     setSelected(new Set(rows.map((r) => r.clienteId)))
     setConfirm(false)
@@ -176,7 +186,8 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
         asOf,
         consulente: consulente || undefined,
         segmento,
-        piani: pianoSel ? [pianoSel] : undefined,
+        sesso: sessoFiltro === "tutti" ? undefined : sessoFiltro,
+        piani: pianiSel.size ? Array.from(pianiSel) : undefined,
         clienteIds: Array.from(selected),
         channel,
         subject: channel === "email" ? subject.trim() : undefined,
@@ -244,8 +255,9 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                   Messaggio agli abbonati attivi
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  Come in gestionale: scegli il gruppo (Rossi, Pacchetti ingressi, Nuoto libero…) poi il prodotto. «h2o»
-                  filtra solo SMILE H2O; i pacchetti si selezionano dal menu, non arrivano da quella ricerca. Staff esclusi.
+                  Come in gestionale: scegli il gruppo (Rossi, Pacchetti ingressi, Nuoto libero…) poi uno o più prodotti.
+                  «h2o» filtra solo SMILE H2O; i pacchetti si selezionano dall&apos;elenco, non arrivano da quella ricerca.
+                  Puoi filtrare maschi/femmine. Staff esclusi.
                 </p>
               </div>
               <button type="button" onClick={close} className="rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
@@ -254,7 +266,8 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+                <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Età</span>
                 {(
                   [
                     ["tutti", "Tutti"],
@@ -268,6 +281,26 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                     onClick={() => setSegmento(id)}
                     className={`rounded-full px-3 py-1 text-sm ${
                       segmento === id ? "bg-amber-500 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <span className="mx-1 hidden h-4 w-px bg-zinc-700 sm:block" aria-hidden />
+                <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Sesso</span>
+                {(
+                  [
+                    ["tutti", "Tutti"],
+                    ["M", "Maschi"],
+                    ["F", "Femmine"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={`sesso-${id}`}
+                    type="button"
+                    onClick={() => setSessoFiltro(id)}
+                    className={`rounded-full px-3 py-1 text-sm ${
+                      sessoFiltro === id ? "bg-sky-500 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
                     }`}
                   >
                     {label}
@@ -290,7 +323,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                     value={gruppo}
                     onChange={(e) => {
                       setGruppo(e.target.value)
-                      setPianoSel("")
+                      setPianiSel(new Set())
                     }}
                     className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
                   >
@@ -302,34 +335,70 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                     ))}
                   </select>
                 </label>
-                <label className="block text-xs font-medium text-zinc-400">
-                  Prodotto (abbonamento)
-                  <select
-                    value={pianoSel}
-                    onChange={(e) => setPianoSel(e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-                  >
-                    <option value="">{gruppo ? "Tutti i prodotti del gruppo" : "Tutti i prodotti"}</option>
-                    {prodottiSelect.map((p) => (
-                      <option key={p.piano} value={p.piano}>
-                        {p.piano} ({p.n})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="block text-xs font-medium text-zinc-400">
+                  <div className="flex items-center justify-between gap-2">
+                    <span>Prodotto (abbonamento)</span>
+                    <span className="font-normal text-zinc-500">
+                      {pianiSel.size
+                        ? `${pianiSel.size} selezionat${pianiSel.size === 1 ? "o" : "i"}`
+                        : gruppo
+                          ? "tutti del gruppo"
+                          : "tutti"}
+                    </span>
+                  </div>
+                  <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
+                    {prodottiSelect.length === 0 ? (
+                      <p className="py-2 text-zinc-500">Nessun prodotto in elenco.</p>
+                    ) : (
+                      prodottiSelect.map((p) => (
+                        <label
+                          key={p.piano}
+                          className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={pianiSel.has(p.piano)}
+                            onChange={() => setPianiSel((prev) => toggleSet(prev, p.piano))}
+                          />
+                          <span className="min-w-0 flex-1 leading-snug">
+                            {p.piano} <span className="text-zinc-500">({p.n})</span>
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-3 font-normal">
+                    <button
+                      type="button"
+                      className="text-[11px] text-amber-400 hover:underline"
+                      onClick={() => setPianiSel(new Set(prodottiSelect.map((p) => p.piano)))}
+                    >
+                      Tutti visibili
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[11px] text-zinc-400 hover:underline"
+                      onClick={() => setPianiSel(new Set())}
+                    >
+                      Azzera selezione
+                    </button>
+                  </div>
+                </div>
               </div>
               <p className="mt-1 text-[11px] text-zinc-600">
-                Esempio: gruppo «ROSSI - orario libero» + «SMILE H2O» = solo H2O. Per i pacchetti: gruppo «PACCHETTI
-                INGRESSI» poi il prodotto (nuoto libero, corsi, spa…).
+                Nessun prodotto spuntato = tutti. Più prodotti = chi ha almeno uno di quelli (OR). Esempio: gruppo «ROSSI
+                - orario libero» + SMILE H2O e SMILE FIT. Per i pacchetti: gruppo «PACCHETTI INGRESSI» poi i prodotti.
               </p>
-              {(gruppo || pianoSel || ql) && (
+              {(gruppo || pianiSel.size > 0 || ql || sessoFiltro !== "tutti") && (
                 <button
                   type="button"
                   className="mt-2 text-xs text-amber-400 hover:underline"
                   onClick={() => {
                     setGruppo("")
-                    setPianoSel("")
+                    setPianiSel(new Set())
                     setQ("")
+                    setSessoFiltro("tutti")
                   }}
                 >
                   Azzera filtri
@@ -365,6 +434,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                       <th className="w-8 px-2 py-1.5" />
                       <th className="px-2 py-1.5 font-medium">Cliente</th>
                       <th className="px-2 py-1.5 font-medium">Seg.</th>
+                      <th className="px-2 py-1.5 font-medium">Sesso</th>
                       <th className="px-2 py-1.5 font-medium">Abbonamento</th>
                       <th className="px-2 py-1.5 font-medium">Contatti</th>
                     </tr>
@@ -381,7 +451,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                     ))}
                     {!isLoading && rows.length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
+                        <td colSpan={6} className="px-3 py-6 text-center text-zinc-500">
                           Nessun abbonato con questi filtri.
                         </td>
                       </tr>
@@ -513,6 +583,15 @@ function ContattoRow({
         <span className={row.segmento === "bambini" ? "text-violet-300" : "text-emerald-300"}>
           {row.segmento === "bambini" ? "B" : "A"}
         </span>
+      </td>
+      <td className="px-2 py-1.5 text-xs">
+        {row.sesso === "M" ? (
+          <span className="text-sky-300">M</span>
+        ) : row.sesso === "F" ? (
+          <span className="text-pink-300">F</span>
+        ) : (
+          <span className="text-zinc-600">—</span>
+        )}
       </td>
       <td className="max-w-[260px] truncate px-2 py-1.5 text-xs text-zinc-400" title={tipo}>
         {tipo}

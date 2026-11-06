@@ -33,6 +33,7 @@ import { sendMail, isSmtpConfigured } from "../services/mailer.js"
 import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
 import { markRinnovato } from "../lib/mark-rinnovato.js"
+import { inferSessoDaNome } from "../services/lp-istruttore-sesso.js"
 
 export { markRinnovato }
 
@@ -1480,11 +1481,31 @@ export type AttiviContatto = {
   email: string | null
   telefono: string | null
   segmento: "adulti" | "bambini"
+  sesso: "M" | "F" | null
   categoria: string
   categorie: string[]
   piano: string
   macro: string
   prodotti: AttiviProdotto[]
+}
+
+function normalizeSessoCliente(row: Record<string, unknown>, nome: string): "M" | "F" | null {
+  const raw = row.ClienteSesso ?? row.Sesso ?? row.sesso ?? row.Sex ?? ""
+  const t = String(raw ?? "")
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+  if (t === "M" || t === "1" || t.startsWith("MASCH") || t === "UOMO" || t === "U" || t === "MALE") return "M"
+  if (t === "F" || t === "2" || t.startsWith("FEMM") || t === "DONNA" || t === "D" || t === "FEMALE") return "F"
+  return inferSessoDaNome(nome)
+}
+
+function parseSessoFiltro(raw: unknown): "M" | "F" | undefined {
+  const t = String(raw ?? "").trim().toUpperCase()
+  if (t === "M" || t === "MASCHI" || t === "MASCHIO" || t === "UOMO") return "M"
+  if (t === "F" || t === "FEMMINE" || t === "FEMMINA" || t === "DONNA") return "F"
+  return undefined
 }
 
 function pickEmailTelFromAbbRow(row: Record<string, unknown>): { email: string | null; telefono: string | null } {
@@ -1518,7 +1539,7 @@ let attiviContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoad
 
 async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<AttiviContattiLoaded> {
   const p = toDateParts(date)
-  const key = `v4-${p.year}-${pad2(p.month)}-${pad2(p.day)}-${idConsultant ?? "all"}`
+  const key = `v5-${p.year}-${pad2(p.month)}-${pad2(p.day)}-${idConsultant ?? "all"}`
   const now = Date.now()
   if (attiviContattiCacheSlot && attiviContattiCacheSlot.key === key && now - attiviContattiCacheSlot.at < 8_000) {
     return attiviContattiCacheSlot.data
@@ -1573,13 +1594,15 @@ async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<At
     ).trim()
     const macro = macroRaw
     const clienteId = String(p.a.clienteId ?? "").trim() || `abb:${p.a.id}`
+    const nome = p.a.clienteNome || "—"
     const prodotto: AttiviProdotto = { macro, categoria: cat, piano: piano || cat }
     return {
       clienteId,
-      nome: p.a.clienteNome || "—",
+      nome,
       email: c.email,
       telefono: c.telefono,
       segmento,
+      sesso: normalizeSessoCliente(p.row, nome === "—" ? "" : nome),
       categoria: cat,
       categorie: [cat],
       piano: prodotto.piano,
@@ -1601,6 +1624,7 @@ async function loadAttiviContatti(date: Date, idConsultant?: string): Promise<At
       if (!prev.email && c.email) prev.email = c.email
       if (!prev.telefono && c.telefono) prev.telefono = c.telefono
       if (!prev.macro && c.macro) prev.macro = c.macro
+      if (!prev.sesso && c.sesso) prev.sesso = c.sesso
       for (const cat of c.categorie) {
         if (!prev.categorie.includes(cat)) prev.categorie.push(cat)
       }
@@ -1666,15 +1690,17 @@ function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
 
 function filterAttiviContatti(
   all: AttiviContatto[],
-  opts: { segmento?: string; categorie?: string[]; piani?: string[]; q?: string }
+  opts: { segmento?: string; categorie?: string[]; piani?: string[]; q?: string; sesso?: string }
 ): AttiviContatto[] {
   const seg = String(opts.segmento ?? "tutti").trim().toLowerCase()
+  const wantedSesso = parseSessoFiltro(opts.sesso)
   const wantedCat = (opts.categorie ?? []).map(normalizeCategoriaAttiviMsg).filter(Boolean)
   const wantedPiani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean)
   const q = String(opts.q ?? "").trim().toLowerCase()
   return all.filter((c) => {
     if (seg === "adulti" && c.segmento !== "adulti") return false
     if (seg === "bambini" && c.segmento !== "bambini") return false
+    if (wantedSesso && c.sesso !== wantedSesso) return false
     const prods = prodottiDi(c)
     if (wantedPiani.length) {
       if (!prods.some((p) => wantedPiani.includes(p.piano) || wantedPiani.includes(`${p.categoria}|||${p.piano}`))) {
@@ -1747,6 +1773,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     const body = (req.body ?? {}) as {
       asOf?: string
       segmento?: string
+      sesso?: string
       categorie?: string[] | string
       piani?: string[] | string
       clienteIds?: string[]
@@ -1797,7 +1824,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     const all = loaded.rows
     const categorie = parseCategorieParam(body.categorie)
     const piani = parseCategorieParam(body.piani)
-    let rows = filterAttiviContatti(all, { segmento: body.segmento, categorie, piani })
+    let rows = filterAttiviContatti(all, { segmento: body.segmento, categorie, piani, sesso: body.sesso })
     const ids = Array.isArray(body.clienteIds)
       ? body.clienteIds.map((x) => String(x).trim()).filter(Boolean)
       : []
