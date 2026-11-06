@@ -42,6 +42,7 @@ import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import {
   classificaFatturaEmessa,
+  meseCompetenzaDanza,
   listAcquistiMese,
   listCompanies,
   listFattureEmessePeriodo,
@@ -1243,6 +1244,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
       cliente: string
       descrizione: string
       tipo: "Danza" | "Recupero utenze" | "Affitto spazi" | "Convenzione"
+      competenzaMese: string
       totale: number
     }[] = []
     const ficCfg = resolvedConfig().cfg
@@ -1262,10 +1264,13 @@ export async function getAmmDashboard(req: Request, res: Response) {
         fattureAmm = riepilogoFattureAmm(docsAnno, { from: ricavi.from, to: ricavi.to })
         fattureEmesseDettaglio = docsAnno.flatMap((doc) => {
           const tipo = classificaFatturaEmessa(doc)
-          if (!tipo || tipo === "Danza") return []
-          const competenza = doc.competenzaMese || doc.dataDocumento.slice(0, 7)
+          if (!tipo) return []
+          const competenza =
+            tipo === "Danza"
+              ? meseCompetenzaDanza(`${doc.cliente} ${doc.descrizione}`, doc.dataDocumento)
+              : doc.competenzaMese || doc.dataDocumento.slice(0, 7)
           const inPeriodo =
-            tipo === "Recupero utenze"
+            tipo === "Recupero utenze" || tipo === "Danza"
               ? competenza >= ricavi.from.slice(0, 7) && competenza <= ricavi.to.slice(0, 7)
               : doc.dataDocumento >= ricavi.from && doc.dataDocumento <= ricavi.to
           if (!inPeriodo) return []
@@ -1276,6 +1281,7 @@ export async function getAmmDashboard(req: Request, res: Response) {
               cliente: doc.cliente,
               descrizione: doc.descrizione,
               tipo,
+              competenzaMese: competenza,
               totale: doc.totale,
             },
           ]
@@ -1649,8 +1655,8 @@ export async function getAmmDashboard(req: Request, res: Response) {
       nBuste: busteAll.length,
       ricaviDisponibili,
       ricaviErrore: ricavi.disponibile ? ricaviErrore : "Incassi del gestionale non disponibili.",
-      nFattureDanza: 0,
-      totRicaviDanza: 0,
+      nFattureDanza: fattureEmesseDisponibili ? fattureAmm.nFattureDanza : 0,
+      totRicaviDanza: fattureEmesseDisponibili ? fattureAmm.ricaviDanza : 0,
       totRecuperiUtenze: recuperoUtenze,
       fattureEmesseDettaglio,
       totRicavi,

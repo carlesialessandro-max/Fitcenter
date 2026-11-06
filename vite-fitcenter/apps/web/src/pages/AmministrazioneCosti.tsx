@@ -117,6 +117,12 @@ function fmtDateIt(iso: string): string {
   return `${d}/${m}/${y}`
 }
 
+function fmtYm(ym: string | undefined): string {
+  const s = String(ym ?? "").slice(0, 7)
+  if (!/^\d{4}-\d{2}$/.test(s)) return "—"
+  return `${s.slice(5)}/${s.slice(0, 4)}`
+}
+
 function currentYm(): string {
   try {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit" }).format(new Date())
@@ -404,8 +410,10 @@ function DashboardTab() {
               pulizie, personale condiviso) imputata in % sui ricavi.
             </p>
             <p className="mt-1">
-              I ricavi ordinari arrivano dagli incassi del gestionale fatturati all’azienda Aqua Sport: tutta la danza
-              (Centro Arte Danza) resta fuori, si vede solo in Incassi. Affitti spazi e convenzioni si prendono dalle fatture
+              I ricavi ordinari arrivano dagli incassi del gestionale fatturati all’azienda Aqua Sport: gli incassi danza
+              del gestionale restano fuori, si vedono in Incassi. Le fatture emesse al Centro Arte Danza si vedono sotto
+              «Fatture emesse considerate» nel mese di competenza, non in quello di emissione: se a inizio febbraio
+              esce la fattura di gennaio, conta su gennaio. Affitti spazi e convenzioni si prendono dalle fatture
               emesse in Fatture in Cloud. I rimborsi utenze a Big Food riducono le utenze nel mese
               di competenza indicato in fattura, non in quello di emissione: un rimborso di gennaio per consumi di
               dicembre 2025 resta sul 2025. Le bollette Italpower, Tip energia, TIP POWEReGAS, Tres Energia e Sima
@@ -490,7 +498,8 @@ function DashboardTab() {
               )}
               {(d.totRicaviDanza ?? 0) > 0.009 && (
                 <p className="mt-1 text-xs text-zinc-400">
-                  Fatture Danza al Centro Arte Danza incluse: {eur(d.totRicaviDanza ?? 0)} ({d.nFattureDanza ?? 0} documenti).
+                  Fatture al Centro Arte Danza nel periodo: {eur(d.totRicaviDanza ?? 0)} ({d.nFattureDanza ?? 0}{" "}
+                  documenti), per competenza. Non concorrono ai ricavi Aqua Sport.
                 </p>
               )}
               {(d.fattureEmesseDettaglio ?? []).some((doc) => doc.tipo === "Affitto spazi") && (
@@ -527,6 +536,7 @@ function DashboardTab() {
                   <thead className="text-left text-zinc-500">
                     <tr>
                       <th className="px-2 py-1">Data</th>
+                      <th className="px-2 py-1">Competenza</th>
                       <th className="px-2 py-1">N. documento</th>
                       <th className="px-2 py-1">Cliente</th>
                       <th className="px-2 py-1">Descrizione</th>
@@ -541,6 +551,7 @@ function DashboardTab() {
                         className="border-t border-zinc-800 text-zinc-300"
                       >
                         <td className="px-2 py-1">{fmtDateIt(doc.dataDocumento)}</td>
+                        <td className="px-2 py-1">{fmtYm(doc.competenzaMese || doc.dataDocumento)}</td>
                         <td className="px-2 py-1">{doc.numeroDocumento}</td>
                         <td className="px-2 py-1">{doc.cliente}</td>
                         <td className="px-2 py-1">{doc.descrizione || "—"}</td>
@@ -550,8 +561,8 @@ function DashboardTab() {
                     ))}
                     {!d.fattureEmesseDettaglio?.length && (
                       <tr>
-                        <td className="px-2 py-3 text-zinc-500" colSpan={6}>
-                          Nessuna fattura affitto spazi, convenzione o recupero utenze nel periodo selezionato.
+                        <td className="px-2 py-3 text-zinc-500" colSpan={7}>
+                          Nessuna fattura Danza, affitto spazi, convenzione o recupero utenze nel periodo selezionato.
                         </td>
                       </tr>
                     )}
@@ -559,8 +570,9 @@ function DashboardTab() {
                 </table>
               </div>
               <p className="mt-2 text-xs text-zinc-500">
-                Affitti spazi e convenzioni concorrono ai ricavi; la danza no. I recuperi Big Food sono sottratti dalle utenze
-                nel mese di competenza della fattura.
+                Affitti spazi e convenzioni concorrono ai ricavi Aqua Sport; le fatture al Centro Arte Danza si elencano
+                per competenza e non entrano nei ricavi. I recuperi Big Food sono sottratti dalle utenze nel mese di
+                competenza della fattura.
               </p>
             </details>
           )}
@@ -1428,8 +1440,8 @@ function RegistroTab() {
           <p className="text-zinc-400">
             In Fatture in Cloud: Impostazioni → Applicazioni collegate → Collega una nuova applicazione. Crea prima
             un’app su developers.fattureincloud.it, copia l’identificativo applicazione, autorizza la lettura degli
-            acquisti e delle fatture emesse, quindi incolla qui il token. La dashboard legge dal cloud gli affitti spazi,
-            le convenzioni e i recuperi utenze a Big Food (la danza resta fuori). In alternativa si può mettere il token e l’id azienda
+            acquisti e delle fatture emesse, quindi incolla qui il token. La dashboard legge dal cloud le fatture al
+            Centro Arte Danza (per competenza), gli affitti spazi, le convenzioni e i recuperi utenze a Big Food. In alternativa si può mettere il token e l’id azienda
             nel file di configurazione dell’API.
           </p>
           {fic.data?.connected ? (

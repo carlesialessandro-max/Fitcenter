@@ -114,6 +114,7 @@ export type AmmDashboard = {
     cliente: string
     descrizione: string
     tipo: "Danza" | "Recupero utenze" | "Affitto spazi" | "Convenzione"
+    competenzaMese?: string
     totale: number
   }[]
   totRicaviAzienda: number

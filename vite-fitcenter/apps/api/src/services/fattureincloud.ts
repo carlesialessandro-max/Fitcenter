@@ -191,10 +191,17 @@ const MESI_IT: Record<string, string> = {
   DIC: "12",
 }
 
-export function meseCompetenzaDaTesto(text: string, dataDocumento: string): string {
-  const fallback = String(dataDocumento ?? "").slice(0, 7)
+function addMonthsYm(ym: string, delta: number): string {
+  const y = Number(ym.slice(0, 4))
+  const m = Number(ym.slice(5, 7))
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return ym
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+}
+
+function meseDaTesto(text: string, dataDocumento: string): string | null {
   const t = normalizedText(text)
-  if (!t) return fallback
+  if (!t) return null
   const names = Object.keys(MESI_IT).sort((a, b) => b.length - a.length)
   for (const nome of names) {
     const mm = MESI_IT[nome]
@@ -207,7 +214,39 @@ export function meseCompetenzaDaTesto(text: string, dataDocumento: string): stri
     const month = Number(periodoNum[1])
     if (month >= 1 && month <= 12) return `${periodoNum[2]}-${String(month).padStart(2, "0")}`
   }
-  return fallback
+  const docYm = String(dataDocumento ?? "").slice(0, 7)
+  const docYear = Number(docYm.slice(0, 4))
+  const docMonth = Number(docYm.slice(5, 7))
+  if (Number.isFinite(docYear) && Number.isFinite(docMonth)) {
+    for (const nome of names) {
+      const mm = MESI_IT[nome]
+      if (!mm) continue
+      const re = new RegExp(`\\b(?:PERIODO|COMPETENZA|MESE|RELATIV[OA]|CANONE|CORRISPETTIV[OI])?\\s*${nome}\\b`)
+      if (!re.test(t)) continue
+      const month = Number(mm)
+      const year = month > docMonth ? docYear - 1 : docYear
+      return `${year}-${mm}`
+    }
+  }
+  return null
+}
+
+export function meseCompetenzaDaTesto(text: string, dataDocumento: string): string {
+  const fallback = String(dataDocumento ?? "").slice(0, 7)
+  return meseDaTesto(text, dataDocumento) || fallback
+}
+
+/** Fattura danza emessa nei primi 10 giorni del mese, senza periodo in testo, conta il mese precedente. */
+const DANZA_INIZIO_MESE_GIORNI = 10
+
+export function meseCompetenzaDanza(text: string, dataDocumento: string): string {
+  const fromText = meseDaTesto(text, dataDocumento)
+  if (fromText) return fromText
+  const iso = String(dataDocumento ?? "").slice(0, 10)
+  const ym = iso.slice(0, 7)
+  const day = Number(iso.slice(8, 10))
+  if (/^\d{4}-\d{2}$/.test(ym) && day >= 1 && day <= DANZA_INIZIO_MESE_GIORNI) return addMonthsYm(ym, -1)
+  return ym
 }
 
 function ymInPeriodo(ym: string, from: string, to: string): boolean {
@@ -257,6 +296,10 @@ function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
   const type = String(o.type ?? "invoice")
   const sign = /credit.?note/i.test(type) ? -1 : 1
   const cliente = String(entity.name ?? "").trim()
+  const blob = `${cliente} ${descrizione}`
+  const competenzaMese = /arte danza/i.test(cliente)
+    ? meseCompetenzaDanza(blob, dataDocumento)
+    : meseCompetenzaDaTesto(blob, dataDocumento)
   return {
     id,
     type,
@@ -265,7 +308,7 @@ function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
     dataDocumento,
     descrizione,
     totale: Math.round(amount * sign * 100) / 100,
-    competenzaMese: meseCompetenzaDaTesto(`${cliente} ${descrizione}`, dataDocumento),
+    competenzaMese,
   }
 }
 
@@ -299,7 +342,7 @@ export function classificaFatturaEmessa(doc: Pick<FicIssuedDoc, "cliente" | "des
   const cliente = normalizedText(doc.cliente)
   const descrizione = normalizedText(doc.descrizione)
   const blob = `${cliente} ${descrizione}`
-  if (cliente.includes("CENTRO ARTE DANZA")) return "Danza"
+  if (cliente.includes("CENTRO ARTE DANZA") || cliente.includes("ARTE DANZA")) return "Danza"
   if (cliente.includes("BIG FOOD") && /\b(ENERGIA|ENERGY|GAS|ELETTRIC|UTENZ)\b/.test(descrizione)) return "Recupero utenze"
   if (/\bCONVENZION/.test(blob)) return "Convenzione"
   if (/AFFITT|LOCAZION|NOLEGGIO SPAZ|NOLEGGIO SALA|CANONE LOCAT/.test(blob)) return "Affitto spazi"
@@ -432,14 +475,20 @@ export function riepilogoFattureAmm(
   for (const doc of docs) {
     const tipo = classificaFatturaEmessa(doc)
     if (!tipo) continue
-    const competenza = doc.competenzaMese || meseCompetenzaDaTesto(`${doc.cliente} ${doc.descrizione}`, doc.dataDocumento)
-    if (tipo === "Recupero utenze") {
+    const competenza =
+      tipo === "Danza"
+        ? meseCompetenzaDanza(`${doc.cliente} ${doc.descrizione}`, doc.dataDocumento)
+        : doc.competenzaMese || meseCompetenzaDaTesto(`${doc.cliente} ${doc.descrizione}`, doc.dataDocumento)
+    if (tipo === "Recupero utenze" || tipo === "Danza") {
       if (periodo && !ymInPeriodo(competenza, periodo.from, periodo.to)) continue
+    } else if (periodo && (doc.dataDocumento < periodo.from || doc.dataDocumento > periodo.to)) {
+      continue
+    }
+    if (tipo === "Recupero utenze") {
       recuperiUtenze += doc.totale
       recuperiUtenzePerMese[competenza] = (recuperiUtenzePerMese[competenza] ?? 0) + doc.totale
       continue
     }
-    if (periodo && (doc.dataDocumento < periodo.from || doc.dataDocumento > periodo.to)) continue
     if (tipo === "Danza") {
       ricaviDanza += doc.totale
       nFattureDanza += 1
