@@ -169,6 +169,121 @@ export function expandScopeTree(livelli: LpagaLivello[], roots: string[], base: 
   return out
 }
 
+function normFamiglia(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+/** Famiglie strette: un responsabile corsi non eredita squadra/scuola nuoto (e viceversa). */
+const FAMIGLIE_STRETTE = new Set(["corsi", "sala", "squadra", "scuola_nuoto", "acquaticita", "bagnini"])
+
+export function famigliaNodo(nome: string): string {
+  const m = normFamiglia(nome)
+  if (!m) return "altro"
+  if (/\bsquadra\b/.test(m) || /\bagonist/.test(m) || /\besordient/.test(m) || /\bpropaganda/.test(m)) return "squadra"
+  if (/\bbagnin/.test(m)) return "bagnini"
+  if (/\bacquatic/.test(m) && !/\bfit\b|\bh ?2 ?0\b|\bcorsi\b/.test(m)) return "acquaticita"
+  if (
+    /\bscuola nuoto\b/.test(m) ||
+    /\bs n\b/.test(m) ||
+    /\bsn bambini\b/.test(m) ||
+    /\bistruttore nuoto/.test(m) ||
+    (/\bbimbo\b|\bbimbi\b|\bbambin/.test(m) && !/\bfit\b|\bcorsi\b/.test(m)) ||
+    (/\blivello\b/.test(m) && !/\bfit\b|\bh ?2 ?0\b|\bcorsi\b/.test(m))
+  ) {
+    return "scuola_nuoto"
+  }
+  if (/\bsala pesi\b|\bsala fitness\b/.test(m) && !/\bcorso\b|\bcorsi\b/.test(m)) return "sala"
+  if (
+    /\bcorso\b|\bcorsi\b/.test(m) ||
+    /gestione corsi/.test(m) ||
+    /\baquafit/.test(m) ||
+    (/\bfit\b/.test(m) && /\bh ?2 ?0\b|\bterra\b|\baerob|\bpump\b|\bspinning|\bpilates|\byoga|\bzumba/.test(m))
+  ) {
+    return "corsi"
+  }
+  return "altro"
+}
+
+function famigliaEffettiva(livelli: LpagaLivello[], id: string): string {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  let cur = byId.get(id)
+  let guard = 0
+  while (cur && guard++ < 40) {
+    const f = famigliaNodo(cur.nome)
+    if (f !== "altro") return f
+    const pid = (cur.parentId ?? "").trim()
+    if (!pid || pid === "0") break
+    cur = byId.get(pid)
+  }
+  return "altro"
+}
+
+/**
+ * Se gli ambiti assegnati sono corsi/sala/ecc., toglie le altre famiglie
+ * (es. responsabile corsi fitness+acqua non vede agonismo/scuola nuoto).
+ * Chi ha solo il reparto radice (Piscina, Palestra) continua a vedere tutto.
+ */
+export function filtraAlberoPerFamigliaAssegnata(
+  livelli: LpagaLivello[],
+  tree: Set<string>,
+  roots: string[]
+): Set<string> {
+  const allowed = new Set<string>()
+  for (const r of roots) allowed.add(famigliaEffettiva(livelli, r))
+  const strette = [...allowed].filter((f) => FAMIGLIE_STRETTE.has(f))
+  if (!strette.length) return tree
+  const allow = new Set(strette)
+  const rootSet = new Set(roots)
+  const out = new Set<string>()
+  for (const id of tree) {
+    if (rootSet.has(id)) {
+      out.add(id)
+      continue
+    }
+    const f = famigliaEffettiva(livelli, id)
+    if (!FAMIGLIE_STRETTE.has(f) || allow.has(f)) out.add(id)
+  }
+  return out
+}
+
+/** Albero da cartelle assegnate, senza squadra/scuola nuoto se l'ambito è corsi. */
+export function alberoDaRootsAssegnati(livelli: LpagaLivello[], roots: string[]): Set<string> {
+  const ids = [...new Set(roots.map((x) => x.trim()).filter(Boolean))]
+  if (!ids.length) return new Set()
+  const raw = expandScopeTree(livelli, ids, livelloAlberoUnion(livelli, ids))
+  return filtraAlberoPerFamigliaAssegnata(livelli, raw, ids)
+}
+
+/** Antenati dei nodi nello scope: un responsabile palestra coincide coi corsi terra figli. */
+export function antenatiDeiNodi(livelli: LpagaLivello[], ids: Iterable<string>): Set<string> {
+  const byId = new Map(livelli.map((l) => [l.id, l]))
+  const out = new Set<string>()
+  for (const id of ids) {
+    let cur = byId.get(id)
+    let guard = 0
+    while (cur && guard++ < 40) {
+      const pid = (cur.parentId ?? "").trim()
+      if (!pid || pid === "0") break
+      out.add(pid)
+      cur = byId.get(pid)
+    }
+  }
+  return out
+}
+
+export function anagraficaNelPerimetro(
+  p: Pick<LpagaPersonale, "livelloId" | "livelloIds" | "repartoIds">,
+  tree: Set<string>,
+  antenatiTree: Set<string>
+): boolean {
+  return personaleNodiAnagrafica(p).some((id) => tree.has(id) || antenatiTree.has(id))
+}
+
 /**
  * Coordinatore: solo le mansioni/cartelle assegnate + i loro figli.
  * Il reparto radice (es. Piscina) non viene espanso a tutto il dipartimento.
@@ -187,7 +302,7 @@ export function alberoCoordinatore(
     }
     for (const x of livelloSottoAlbero(livelli, id)) out.add(x)
   }
-  return out
+  return filtraAlberoPerFamigliaAssegnata(livelli, out, roots)
 }
 
 /** Albero mansioni del viewer (responsabile/coordinatore) o del reparto scelto (admin). */
@@ -202,8 +317,7 @@ export function resolveLivelloTree(
   if (viewer.ruolo === "manager") {
     const roots = personaleVisibilitaIds(viewer)
     if (!roots.length) return new Set()
-    const base = livelloAlberoUnion(livelli, roots)
-    return expandScopeTree(livelli, roots, base)
+    return alberoDaRootsAssegnati(livelli, roots)
   }
   if (viewer.ruolo === "admin" && repartoId) {
     return livelloSottoAlbero(livelli, repartoId)
@@ -233,9 +347,11 @@ export function personaleVisibile(
   if (viewer.ruolo === "user" || !roots.length) return new Set([viewer.id])
   const tree =
     viewer.ruolo === "coordinator" ? alberoCoordinatore(viewer, livelli) : alberoAssegnabileAnagrafica(viewer, livelli)
+  const antenati = antenatiDeiNodi(livelli, tree)
   const ids = new Set<string>([viewer.id])
   for (const p of personale) {
-    if (personaleNodiAnagrafica(p).some((id) => tree.has(id))) ids.add(p.id)
+    if (p.ruolo === "admin") continue
+    if (anagraficaNelPerimetro(p, tree, antenati)) ids.add(p.id)
   }
   return ids
 }
@@ -261,9 +377,11 @@ export function personaleRaggiungibile(
         ? alberoAssegnabileAnagrafica(viewer, livelli)
         : undefined)
   if (!tree?.size) return vis
+  const antenati = antenatiDeiNodi(livelli, tree)
   const ids = new Set(vis)
   for (const p of personale) {
-    if (personaleNodiAnagrafica(p).some((id) => tree.has(id))) ids.add(p.id)
+    if (p.ruolo === "admin") continue
+    if (anagraficaNelPerimetro(p, tree, antenati)) ids.add(p.id)
   }
   for (const t of turni) {
     if (tree.has(t.livelloId)) ids.add(t.personaleId)
@@ -305,7 +423,7 @@ export function livelliInseribili(
   }
   const candidates = [...byId.values()]
   if (viewer.ruolo === "admin") return candidates
-  const ownTree = mansioni.length ? livelloAlberoUnion(livelli, mansioni) : new Set<string>()
+  const ownTree = mansioni.length ? alberoDaRootsAssegnati(livelli, mansioni) : new Set<string>()
   for (const id of mansioni) ownTree.add(id)
   const visRoots = personaleVisibilitaIds(viewer)
   const visScope =
@@ -314,7 +432,7 @@ export function livelliInseribili(
       ? undefined
       : viewer.ruolo === "coordinator"
         ? alberoCoordinatore(viewer, livelli)
-        : livelloAlberoUnion(livelli, visRoots))
+        : alberoDaRootsAssegnati(livelli, visRoots))
   if (!mansioni.length && !visScope) return candidates
   return candidates.filter((l) => ownTree.has(l.id) || Boolean(visScope?.has(l.id)))
 }
@@ -329,7 +447,7 @@ export function alberoAssegnabileAnagrafica(
   if (viewer.ruolo === "coordinator") return alberoCoordinatore(viewer, livelli)
   const roots = personaleVisibilitaIds(viewer)
   if (!roots.length) return new Set()
-  return expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
+  return alberoDaRootsAssegnati(livelli, roots)
 }
 
 /** Nodi (reparti e mansioni) in cui il viewer può creare/modificare anagrafiche. */

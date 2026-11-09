@@ -234,7 +234,7 @@ export async function getLpagaSnapshot(req: Request, res: Response) {
       hideGlobalStats: hideGlobal,
       hideIban: me.ruolo === "user",
       viewerId: me.id,
-      turniSoloAlbero: me.ruolo === "coordinator",
+      turniSoloAlbero: me.ruolo === "coordinator" || me.ruolo === "manager",
     })
     const inseribili = livelliInseribili(me, livelli, me.ruolo === "user" ? undefined : livelloTree)
     const assegnabili = livelliAssegnabiliAnagrafica(me, livelli)

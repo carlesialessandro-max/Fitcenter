@@ -16,7 +16,7 @@ import {
   type LpagaPersonale,
 } from "../store/libro-paga-db.js"
 import { enrichPersonaleHr } from "./libro-paga-hr.js"
-import { personaleLivelloRadici, personaleVisibilitaIds } from "./libro-paga-scope.js"
+import { anagraficaNelPerimetro, antenatiDeiNodi } from "./libro-paga-scope.js"
 import { buildRiepilogoConvalide, mapTurnoConvalide, statoMeseBlocco } from "./libro-paga-convalida.js"
 
 function buildLivelloTreeNodes(
@@ -115,7 +115,7 @@ export async function buildLibroPagaSnapshot(opts?: {
   hideGlobalStats?: boolean
   hideIban?: boolean
   viewerId?: string
-  /** Coordinatore: solo turni sulla mansione nello scope, non tutti i turni delle persone visibili. */
+  /** Responsabile/coordinatore: solo turni sulla mansione nello scope, non tutti i turni delle persone visibili. */
   turniSoloAlbero?: boolean
 }) {
   const mese = opts?.mese && isYmLpaga(opts.mese) ? opts.mese : defaultMeseLpaga()
@@ -147,14 +147,11 @@ export async function buildLibroPagaSnapshot(opts?: {
   if (vis && !livelloTree) {
     personale = personaleAll.filter((p) => vis.has(p.id))
   } else if (livelloTree) {
+    const antenati = antenatiDeiNodi(livelli, livelloTree)
     const ids = new Set<string>()
     for (const p of personaleAll) {
-      if (
-        personaleLivelloRadici(p).some((id) => livelloTree.has(id)) ||
-        personaleVisibilitaIds(p).some((id) => livelloTree.has(id))
-      ) {
-        ids.add(p.id)
-      }
+      if (p.ruolo === "admin") continue
+      if (anagraficaNelPerimetro(p, livelloTree, antenati)) ids.add(p.id)
     }
     for (const t of monthTurniPreview) ids.add(t.personaleId)
     if (opts?.viewerId) ids.add(opts.viewerId)

@@ -2,7 +2,12 @@ import { readJson, writeJson } from "../store/persist.js"
 import { listCalendarioPerConvalida } from "../handlers/calendario.js"
 import type { LpagaLivello, LpagaPersonale, LpagaTurno } from "../store/libro-paga-db.js"
 import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
-import { alberoCoordinatore, expandScopeTree, livelloAlberoUnion, personaleVisibilitaIds } from "./libro-paga-scope.js"
+import {
+  alberoCoordinatore,
+  alberoDaRootsAssegnati,
+  personaleVisibilitaIds,
+  resolveLivelloTree,
+} from "./libro-paga-scope.js"
 import { isGestionaleConfigured, queryAccessiUtenti } from "./gestionale-sql.js"
 
 const FILE = "libro-paga-convalida.json"
@@ -299,10 +304,8 @@ export function alberoConvalidaViewer(
     return tree.size ? tree : undefined
   }
   if (me.ruolo === "manager") {
-    const roots = personaleVisibilitaIds(me)
-    if (!roots.length) return undefined
-    const tree = expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
-    return tree.size ? tree : undefined
+    const tree = resolveLivelloTree(me, livelli)
+    return tree?.size ? tree : undefined
   }
   const de = alberoDaDeleghe(me.id, personale, livelli)
   return de.size ? de : undefined
@@ -341,7 +344,7 @@ export function optionsScopeConvalida(
   viewerTree?: Set<string>
 ): { id: string; nome: string }[] {
   const byId = new Map(livelli.map((l) => [l.id, l]))
-  const tree = viewerTree ?? expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))
+  const tree = viewerTree ?? alberoDaRootsAssegnati(livelli, roots)
   const seen = new Set<string>()
   const opts: { id: string; nome: string }[] = []
   const add = (id: string) => {
@@ -367,10 +370,15 @@ export function treePerScopeConvalida(
 ): Set<string> | undefined {
   const id = scopeId.trim()
   if (!id) return viewerTree
-  const sub = expandScopeTree(livelli, [id], livelloAlberoUnion(livelli, [id]))
+  const sub = alberoDaRootsAssegnati(livelli, [id])
   if (!viewerTree) return sub
   if (!viewerTree.has(id) && ![...sub].some((x) => viewerTree.has(x))) return new Set()
-  return sub
+  const out = new Set<string>()
+  for (const x of sub) {
+    if (viewerTree.has(x)) out.add(x)
+  }
+  if (viewerTree.has(id)) out.add(id)
+  return out
 }
 
 export function turniNelMesePerConvalida(opts: {
@@ -456,7 +464,7 @@ export function alberoDaDeleghe(meId: string, personale: LpagaPersonale[], livel
     const mgr = personale.find((p) => p.id === id)
     const roots = mgr ? personaleVisibilitaIds(mgr) : []
     if (!roots.length) continue
-    for (const id of expandScopeTree(livelli, roots, livelloAlberoUnion(livelli, roots))) tree.add(id)
+    for (const nid of alberoDaRootsAssegnati(livelli, roots)) tree.add(nid)
   }
   return tree
 }
@@ -668,7 +676,7 @@ export function buildRiepilogoConvalide(opts: {
   const responsabili = managers
     .map((m) => {
       const roots = personaleVisibilitaIds(m)
-      const tree = roots.length ? expandScopeTree(opts.livelli, roots, livelloAlberoUnion(opts.livelli, roots)) : new Set<string>()
+      const tree = roots.length ? alberoDaRootsAssegnati(opts.livelli, roots) : new Set<string>()
       const mine = opts.turni.filter((t) => tree.has(t.livelloId))
       const st = statsTurniConvalida(mine, byId)
       const scopes = optionsScopeConvalida(opts.livelli, roots, tree).map((s) => {
