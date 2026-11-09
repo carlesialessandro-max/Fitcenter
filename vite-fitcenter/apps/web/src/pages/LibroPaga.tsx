@@ -22,6 +22,7 @@ import {
   type LpagaRuolo,
 } from "@/api/libroPaga"
 import { useAuth } from "@/contexts/AuthContext"
+import { CercaFiltroInput } from "@/components/CercaFiltroInput"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio } from "@/components/LibroPagaMensilita"
 import { LibroPagaAssegnazioniCampi, isRuoloConVisibilita, livelloAlberoUnionUi, visibilitaIdsFromPersona } from "@/components/LibroPagaRepartiMulti"
 import { LibroPagaReport } from "@/components/LibroPagaReport"
@@ -391,7 +392,7 @@ export function LibroPaga() {
         />
       )}
       {data && tab === "personale" && (
-        <PersonaleTab data={data} q={q} setQ={setQ} onError={setError} onDone={() => { setError(""); invalidate() }} />
+        <PersonaleTab data={data} onError={setError} onDone={() => { setError(""); invalidate() }} />
       )}
         {data && tab === "turni" && (
           <TurniTab data={data} mese={mese} q={q} setQ={setQ} reparto={reparto} onError={setError} onDone={() => { setError(""); invalidate() }} />
@@ -495,17 +496,14 @@ function HomeTab({ data }: { data: LibroPagaSnapshot }) {
 
 function PersonaleTab({
   data,
-  q,
-  setQ,
   onError,
   onDone,
 }: {
   data: LibroPagaSnapshot
-  q: string
-  setQ: (s: string) => void
   onError: (s: string) => void
   onDone: () => void
 }) {
+  const [q, setQ] = useState("")
   const [nome, setNome] = useState("")
   const [cognome, setCognome] = useState("")
   const [username, setUsername] = useState("")
@@ -524,13 +522,17 @@ function PersonaleTab({
   const [dettaglioId, setDettaglioId] = useState<string | null>(null)
   const [meseTurni, setMeseTurni] = useState("2026-09")
   const [previewReparti, setPreviewReparti] = useState<LibroPagaRepartiPreview | null>(null)
-  const n = q.trim().toLowerCase()
-  const match = (p: LpagaPersonale) =>
-    !n || `${p.nominativo} ${p.username} ${p.repartoNome} ${p.mansioniNome}`.toLowerCase().includes(n)
-  const users = data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome)
-  const coordinators = data.personale.filter((p) => p.ruolo === "coordinator" && match(p)).sort(cmpNomeCognome)
-  const managers = data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome)
-  const admins = data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome)
+  const { users, coordinators, managers, admins } = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    const match = (p: LpagaPersonale) =>
+      !n || `${p.nominativo} ${p.username} ${p.repartoNome} ${p.mansioniNome}`.toLowerCase().includes(n)
+    return {
+      users: data.personale.filter((p) => p.ruolo === "user" && match(p)).sort(cmpNomeCognome),
+      coordinators: data.personale.filter((p) => p.ruolo === "coordinator" && match(p)).sort(cmpNomeCognome),
+      managers: data.personale.filter((p) => p.ruolo === "manager" && match(p)).sort(cmpNomeCognome),
+      admins: data.personale.filter((p) => p.ruolo === "admin" && match(p)).sort(cmpNomeCognome),
+    }
+  }, [data.personale, q])
   const createMut = useMutation({
     mutationFn: () =>
       libroPagaApi.createPersonale({
@@ -818,7 +820,7 @@ function PersonaleTab({
         </div>
       </Card>
       <PersonaleDelegheAdmin data={data} onError={onError} />
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
+      <CercaFiltroInput value={q} onChange={setQ} placeholder="Cerca personale…" className={inputCls} />
       {dettaglioId && (() => {
         const persona = data.personale.find((p) => p.id === dettaglioId)
         if (!persona) return null
@@ -1369,20 +1371,22 @@ function PersonaleDelegheAdmin({
     queryFn: () => libroPagaApi.getDeleghe(managerId),
     enabled: Boolean(managerId),
   })
-  const persone = data.personale
-    .filter((p) => {
-      if (p.ruolo !== "user") return false
-      const mgr = data.personale.find((x) => x.id === managerId)
-      const roots = visibilitaIdsFromPersona(mgr)
-      if (!roots.length) return true
-      const ids = livelloAlberoUnionUi(data.livelli, roots)
-      return Boolean(p.livelloId && ids.has(p.livelloId))
-    })
-    .sort(cmpNomeCognome)
-    .map((p) => ({
-      id: p.id,
-      label: `${p.nominativo ?? `${p.nome} ${p.cognome ?? ""}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
-    }))
+  const persone = useMemo(() => {
+    const mgr = data.personale.find((x) => x.id === managerId)
+    const roots = visibilitaIdsFromPersona(mgr)
+    const ids = roots.length ? livelloAlberoUnionUi(data.livelli, roots) : undefined
+    return data.personale
+      .filter((p) => {
+        if (p.ruolo !== "user") return false
+        if (!ids) return true
+        return Boolean(p.livelloId && ids.has(p.livelloId))
+      })
+      .sort(cmpNomeCognome)
+      .map((p) => ({
+        id: p.id,
+        label: `${p.nominativo ?? `${p.nome} ${p.cognome ?? ""}`.trim()}${p.repartoNome ? ` · ${p.repartoNome}` : ""}`,
+      }))
+  }, [data.personale, data.livelli, managerId])
   if (!managers.length) return null
   return (
     <LibroPagaDelegheForm

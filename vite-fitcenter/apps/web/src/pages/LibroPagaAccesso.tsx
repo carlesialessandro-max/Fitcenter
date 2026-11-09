@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { BrandLogo } from "@/components/BrandLogo"
+import { CercaFiltroInput } from "@/components/CercaFiltroInput"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
 import { lpagaApi, setLpagaToken, type LpagaMe, type LpagaPortalSnapshot } from "@/api/lpaga"
 import { LibroPagaMensilitaTab, LibroPagaPersonaleDettaglio, GestionaleAnagraficaBlock } from "@/components/LibroPagaMensilita"
@@ -1299,25 +1300,30 @@ function Personale({
       : me?.ruolo === "admin"
         ? data.livelli.filter((l) => !l.retribuibile)
         : data.livelli.filter((l) => !l.retribuibile && l.id === me?.livelloId)
-  const n = q.trim().toLowerCase()
-  const personeFiltrate = data.personale
-    .filter(
-      (p) =>
-        !n ||
-        `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""} ${p.mansioniNome ?? ""}`
-          .toLowerCase()
-          .includes(n)
-    )
-    .sort(cmpRuoloNomeCognome)
+  const personeFiltrate = useMemo(() => {
+    const n = q.trim().toLowerCase()
+    const list = n
+      ? data.personale.filter((p) =>
+          `${p.nominativo ?? ""} ${p.cognome ?? ""} ${p.nome} ${p.username ?? ""} ${p.repartoNome ?? ""} ${p.mansioniNome ?? ""}`
+            .toLowerCase()
+            .includes(n)
+        )
+      : data.personale
+    return list.slice().sort(cmpRuoloNomeCognome)
+  }, [data.personale, q])
   const detPersona = dettaglioId ? data.personale.find((p) => p.id === dettaglioId) : undefined
   const detMens = dettaglioId ? data.mensilita.find((m) => m.personaleId === dettaglioId) : undefined
   const detTurni = dettaglioId
     ? data.turni.filter((t) => t.personaleId === dettaglioId).sort((a, b) => b.giorno.localeCompare(a.giorno))
     : []
-  const istruttoriDelega = data.personale
-    .filter((p) => p.ruolo === "user" && p.id !== me?.id)
-    .sort(cmpNomeCognome)
-    .map((p) => ({ id: p.id, label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim() }))
+  const istruttoriDelega = useMemo(
+    () =>
+      data.personale
+        .filter((p) => p.ruolo === "user" && p.id !== me?.id)
+        .sort(cmpNomeCognome)
+        .map((p) => ({ id: p.id, label: p.nominativo ?? `${p.cognome ?? ""} ${p.nome}`.trim() })),
+    [data.personale, me?.id]
+  )
   return (
     <div className="mt-4 space-y-4">
       {(me?.ruolo === "manager" || me?.ruolo === "admin") && (
@@ -1328,7 +1334,7 @@ function Personale({
           onError={onError}
         />
       )}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca personale…" className={inputCls} />
+      <CercaFiltroInput value={q} onChange={setQ} placeholder="Cerca personale…" className={inputCls} />
       {detPersona && (
         <LibroPagaPersonaleDettaglio
           persona={detPersona}
