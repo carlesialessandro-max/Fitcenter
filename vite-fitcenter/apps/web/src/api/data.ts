@@ -113,6 +113,7 @@ export const dataApi = {
     text: string
     confirm: true
     consulente?: string
+    immagine?: { filename: string; contentType: string; dataBase64: string }
   }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
   getAbbonamentiAttiviInvii: (limit = 40) =>
     api.get<AbbAttiviInviiResponse>(`/data/abbonamenti-attivi-invii?limit=${limit}`),

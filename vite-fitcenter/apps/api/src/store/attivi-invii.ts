@@ -21,6 +21,8 @@ export type AttiviInvio = {
   channel: "email" | "sms"
   subject: string
   text: string
+  /** Solo il nome file: la grafica non viene salvata nel log. */
+  imageName?: string
   segmento?: string
   piani?: string[]
   destinatari: number

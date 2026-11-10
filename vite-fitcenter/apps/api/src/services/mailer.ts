@@ -1,11 +1,20 @@
 import nodemailer from "nodemailer"
 
+export type SendMailAttachment = {
+  filename: string
+  path?: string
+  content?: Buffer
+  contentType?: string
+  cid?: string
+}
+
 type SendMailInput = {
   to: string
   bcc?: string
   subject: string
   text: string
-  attachments?: { filename: string; path: string; contentType?: string }[]
+  html?: string
+  attachments?: SendMailAttachment[]
 }
 
 function env(k: string): string | undefined {
@@ -82,6 +91,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
       ...(input.bcc ? { bcc: input.bcc } : {}),
       subject: input.subject,
       text: input.text,
+      ...(input.html ? { html: input.html } : {}),
       attachments: input.attachments,
     })
     const accepted = addrs((info as { accepted?: unknown }).accepted)

@@ -1767,6 +1767,75 @@ function sleepMs(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
+const ATTIVI_IMAGE_CID = "attivi-locandina"
+const ATTIVI_IMAGE_MAX = 8 * 1024 * 1024
+const ATTIVI_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"])
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+function attiviEmailHtml(text: string, withImage: boolean): string {
+  const body = escapeHtml(text).replace(/\r\n|\r|\n/g, "<br>")
+  const img = withImage
+    ? `<p style="margin:20px 0 0;"><img src="cid:${ATTIVI_IMAGE_CID}" alt="Locandina" style="max-width:560px;width:100%;height:auto;border-radius:8px;" /></p>`
+    : ""
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#111;">${body}${img}</div>`
+}
+
+function safeImageName(raw: string, ext: string): string {
+  const base = raw.replace(/\\/g, "/").split("/").pop() ?? `locandina${ext}`
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 80)
+  const name = cleaned || `locandina${ext}`
+  return /\.(jpe?g|png|webp|gif)$/i.test(name) ? name : `${name}${ext}`
+}
+
+function parseAttiviImmagine(raw: unknown):
+  | { filename: string; contentType: string; buffer: Buffer }
+  | { error: string }
+  | null {
+  if (raw == null) return null
+  if (typeof raw !== "object") return { error: "Grafica non valida" }
+  const o = raw as { filename?: string; contentType?: string; dataBase64?: string }
+  let b64 = String(o.dataBase64 ?? "").trim()
+  if (!b64) return null
+  const dataUrl = b64.match(/^data:([^;]+);base64,(.+)$/i)
+  let contentType = String(o.contentType ?? "").trim().toLowerCase()
+  if (dataUrl) {
+    if (!contentType) contentType = dataUrl[1]!.toLowerCase()
+    b64 = dataUrl[2]!
+  }
+  if (contentType === "image/jpg") contentType = "image/jpeg"
+  if (!ATTIVI_IMAGE_TYPES.has(contentType)) {
+    return { error: "Formato grafica non valido (usa JPG, PNG, WebP o GIF)" }
+  }
+  let buffer: Buffer
+  try {
+    buffer = Buffer.from(b64, "base64")
+  } catch {
+    return { error: "Grafica non leggibile" }
+  }
+  if (!buffer.length) return { error: "Grafica vuota" }
+  if (buffer.length > ATTIVI_IMAGE_MAX) return { error: "Grafica troppo pesante (max 8 MB)" }
+  const ext =
+    contentType === "image/png"
+      ? ".png"
+      : contentType === "image/webp"
+        ? ".webp"
+        : contentType === "image/gif"
+          ? ".gif"
+          : ".jpg"
+  return {
+    filename: safeImageName(String(o.filename ?? `locandina${ext}`), ext),
+    contentType,
+    buffer,
+  }
+}
+
 /** Admin: invio email SMTP o SMS SMSHosting ai contatti attivi selezionati. */
 export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
   try {
@@ -1782,6 +1851,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       text?: string
       confirm?: boolean
       consulente?: string
+      immagine?: { filename?: string; contentType?: string; dataBase64?: string }
     }
     if (!body.confirm) {
       return res.status(400).json({ message: "Conferma obbligatoria (confirm: true)" })
@@ -1802,6 +1872,11 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     if (channel === "email" && !subject) {
       return res.status(400).json({ message: "Oggetto email obbligatorio" })
     }
+    const parsedImage = channel === "email" ? parseAttiviImmagine(body.immagine) : null
+    if (parsedImage && "error" in parsedImage) {
+      return res.status(400).json({ message: parsedImage.error })
+    }
+    const locandina = parsedImage && "buffer" in parsedImage ? parsedImage : null
 
     if (channel === "email" && !isSmtpConfigured()) {
       return res.status(503).json({ message: "SMTP non configurato (SMTP_HOST / SMTP_USER / SMTP_PASS)" })
@@ -1892,7 +1967,25 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         const chunk = emails.slice(i, i + chunkSize)
         const to = chunk[0]!
         const bcc = chunk.length > 1 ? chunk.slice(1).join(", ") : undefined
-        const out = await sendMail({ to, bcc, subject, text })
+        const out = await sendMail({
+          to,
+          bcc,
+          subject,
+          text,
+          ...(locandina
+            ? {
+                html: attiviEmailHtml(text, true),
+                attachments: [
+                  {
+                    filename: locandina.filename,
+                    content: locandina.buffer,
+                    contentType: locandina.contentType,
+                    cid: ATTIVI_IMAGE_CID,
+                  },
+                ],
+              }
+            : {}),
+        })
         const rejected = new Set((out.rejected ?? []).map(normAddr))
         if (!out.sent && rejected.size === 0) {
           if (out.detail && errors.length < 8) errors.push(out.detail)
@@ -1960,6 +2053,7 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
         channel,
         subject: channel === "email" ? subject : "",
         text,
+        imageName: locandina?.filename,
         segmento: String(body.segmento ?? "").trim() || undefined,
         piani: piani.length ? piani : undefined,
         destinatari: rows.length,

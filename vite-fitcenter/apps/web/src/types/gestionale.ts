@@ -214,6 +214,7 @@ export interface AbbAttiviInvio {
   channel: "email" | "sms"
   subject: string
   text: string
+  imageName?: string
   segmento?: string
   piani?: string[]
   destinatari: number

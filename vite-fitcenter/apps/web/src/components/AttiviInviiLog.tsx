@@ -253,6 +253,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                         {row.channel === "email" ? "Email" : "SMS"} · {row.user} · inviati {row.sent}
                         {row.failed ? ` · rifiutati ${row.failed}` : ""}
                         {row.skipped ? ` · senza contatto ${row.skipped}` : ""}
+                        {row.imageName ? ` · grafica ${row.imageName}` : ""}
                       </p>
                     </button>
                     <div className="flex items-center gap-3">

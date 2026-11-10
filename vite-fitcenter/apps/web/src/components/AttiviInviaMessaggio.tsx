@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { dataApi } from "@/api/data"
 import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
@@ -34,6 +34,18 @@ function isStaffOrDanza(s: string): boolean {
 function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
   if (c.prodotti?.length) return c.prodotti
   return [{ macro: c.macro ?? "", categoria: c.categoria, piano: c.piano || c.categoria }]
+}
+
+const IMAGE_MAX_BYTES = 8 * 1024 * 1024
+const IMAGE_OK = /^image\/(jpeg|jpg|png|webp|gif)$/i
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload = () => resolve(String(r.result ?? ""))
+    r.onerror = () => reject(new Error("Impossibile leggere la grafica"))
+    r.readAsDataURL(file)
+  })
 }
 
 function foldTesto(s: string): string {
@@ -81,8 +93,22 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   const [channel, setChannel] = useState<Channel>("email")
   const [subject, setSubject] = useState("")
   const [text, setText] = useState("")
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageErr, setImageErr] = useState<string | null>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const [confirm, setConfirm] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview(null)
+      return
+    }
+    const url = URL.createObjectURL(imageFile)
+    setImagePreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [imageFile])
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["abbonamenti-attivi-contatti", asOf, consulente ?? ""],
@@ -188,8 +214,17 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   }, [rowKey])
 
   const sendM = useMutation({
-    mutationFn: () =>
-      dataApi.postAbbonamentiAttiviInvia({
+    mutationFn: async () => {
+      let immagine: { filename: string; contentType: string; dataBase64: string } | undefined
+      if (channel === "email" && imageFile) {
+        const dataUrl = await readFileAsDataUrl(imageFile)
+        immagine = {
+          filename: imageFile.name,
+          contentType: imageFile.type || "image/jpeg",
+          dataBase64: dataUrl,
+        }
+      }
+      return dataApi.postAbbonamentiAttiviInvia({
         asOf,
         consulente: consulente || undefined,
         segmento,
@@ -200,7 +235,9 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
         subject: channel === "email" ? subject.trim() : undefined,
         text: text.trim(),
         confirm: true,
-      }),
+        immagine,
+      })
+    },
     onSuccess: (res) => {
       const skipped = res.skipped ? `, ${res.skipped} senza contatto (nel log)` : ""
       const fail = res.failed ? `, ${res.failed} rifiutati dal server (nel log)` : ""
@@ -216,10 +253,31 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     return selectedRows.filter((r) => r.telefono)
   }, [selectedRows, channel])
 
+  function clearImage() {
+    setImageFile(null)
+    setImageErr(null)
+    if (imageInputRef.current) imageInputRef.current.value = ""
+  }
+
+  function onPickImage(f: File | undefined) {
+    if (!f) return
+    if (!IMAGE_OK.test(f.type)) {
+      setImageErr("Usa JPG, PNG, WebP o GIF")
+      return
+    }
+    if (f.size > IMAGE_MAX_BYTES) {
+      setImageErr("Grafica troppo pesante (max 8 MB)")
+      return
+    }
+    setImageErr(null)
+    setImageFile(f)
+  }
+
   function close() {
     setOpen(false)
     setConfirm(false)
     setResultMsg(null)
+    clearImage()
     sendM.reset()
   }
 
@@ -227,6 +285,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     confirm &&
     text.trim().length > 0 &&
     (channel !== "email" || subject.trim().length > 0) &&
+    !imageErr &&
     reachable.length > 0 &&
     reachable.length <= 800 &&
     !sendM.isPending
@@ -506,6 +565,61 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                 maxLength={channel === "sms" ? 1000 : 20000}
                 className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
               />
+              {channel === "email" ? (
+                <div className="mt-2">
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif"
+                    className="hidden"
+                    onChange={(e) => onPickImage(e.target.files?.[0])}
+                  />
+                  {imagePreview && imageFile ? (
+                    <div className="flex items-start gap-3 rounded-lg border border-zinc-700 bg-zinc-950 p-2">
+                      <img
+                        src={imagePreview}
+                        alt="Anteprima locandina"
+                        className="h-36 w-auto max-w-[160px] rounded-md object-cover"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-zinc-100">{imageFile.name}</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500">
+                          {(imageFile.size / 1024).toFixed(0)} KB · nell&apos;email compare sotto il testo, in
+                          miniatura
+                        </p>
+                        <div className="mt-2 flex flex-wrap gap-3">
+                          <button
+                            type="button"
+                            className="text-xs text-amber-400 hover:underline"
+                            onClick={() => imageInputRef.current?.click()}
+                          >
+                            Cambia grafica
+                          </button>
+                          <button
+                            type="button"
+                            className="text-xs text-red-400 hover:underline"
+                            onClick={clearImage}
+                          >
+                            Rimuovi
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => imageInputRef.current?.click()}
+                      className="w-full rounded-lg border border-dashed border-zinc-600 bg-zinc-950 px-3 py-3 text-left text-sm text-zinc-400 hover:border-amber-500/70 hover:text-zinc-200"
+                    >
+                      Allega locandina (JPG, PNG…)
+                      <span className="mt-0.5 block text-[11px] text-zinc-600">
+                        Compare nell&apos;email sotto il testo, in miniatura. Max 8 MB.
+                      </span>
+                    </button>
+                  )}
+                  {imageErr ? <p className="mt-1 text-xs text-red-400">{imageErr}</p> : null}
+                </div>
+              ) : null}
               <p className="mt-1 text-[11px] text-zinc-500">
                 {channel === "sms"
                   ? `${text.length}/1000 caratteri · SMSHosting (un SMS per cellulare; non compare in «Campagne»)`
