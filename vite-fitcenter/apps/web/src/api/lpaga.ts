@@ -62,10 +62,12 @@ export type LpagaConvalidaPayload = {
 export type LpagaConvalidaMesePayload = {
   mese: string
   nTurni: number
+  nDaFare?: number
   nConfermabili: number
   nAnomalie: number
   nConfermati: number
   confermatiOra?: number
+  allineati?: LpagaConvalidaPayload["rows"]
   anomalie: LpagaConvalidaPayload["rows"]
   fogli: { bagnini: string; desk: string }
   settimane?: { id: string; from: string; to: string; label: string }[]

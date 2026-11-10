@@ -508,10 +508,12 @@ export function LibroPagaConvalidaMesePanel({
         <div>
           <h2 className="text-sm font-medium text-zinc-200">Controllo calendario</h2>
           <p className="mt-1 text-xs text-zinc-500">
-            Prima confronta i turni con i calendari FitCenter, poi conferma quelli allineati.
-            {riepilogo.nTurni} turni · {riepilogo.nConfermati} già confermati · {riepilogo.nConfermabili} allineati da
-            confermare · {riepilogo.nAnomalie} anomalie. Puoi filtrare per reparto (es. corsi terra / acqua) e per
-            settimana.
+            {riepilogo.nTurni} turni in questo filtro · {riepilogo.nConfermati} già confermati ·{" "}
+            {riepilogo.nDaFare ?? riepilogo.nConfermabili + riepilogo.nAnomalie} da fare
+            {riepilogo.nConfermabili || riepilogo.nAnomalie
+              ? ` (${riepilogo.nConfermabili} coincidono col calendario, ${riepilogo.nAnomalie} da verificare a mano)`
+              : ""}
+            . I turni allineati non spariscono: non sono ancora confermati, si chiudono col pulsante arancione.
           </p>
           {((riepilogo.confermatiOra ?? auto.data?.confermatiOra) ?? 0) > 0 && (
             <p className="mt-1 text-xs text-emerald-300">
@@ -648,9 +650,62 @@ export function LibroPagaConvalidaMesePanel({
           </>
         )}
       </p>
+      {(riepilogo.allineati?.length ?? 0) > 0 ? (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-emerald-200">
+            Allineati al calendario · {riepilogo.nConfermabili} da confermare
+          </p>
+          <p className="text-xs text-zinc-500">
+            Stesso istruttore e stesso orario nel calendario FitCenter. Non sono ancora convalidati: usa «Conferma i{" "}
+            {riepilogo.nConfermabili} allineati».
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-emerald-900/40">
+            <table className="min-w-full text-left text-sm">
+              <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
+                <tr>
+                  <th className="px-3 py-2">Nominativo</th>
+                  <th className="px-3 py-2">Data</th>
+                  <th className="px-3 py-2">Mansione / valore</th>
+                  <th className="px-3 py-2">Calendario</th>
+                  <th className="px-3 py-2">Tornello</th>
+                  <th className="px-3 py-2">Stato</th>
+                </tr>
+              </thead>
+              <tbody>
+                {riepilogo.allineati!.map((r) => (
+                  <tr key={r.turnoId} className="border-t border-zinc-800 align-top text-zinc-200">
+                    <td className="px-3 py-2">{r.personaleNome}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">{fmtDateIt(r.giorno)}</td>
+                    <td className="px-3 py-2">
+                      <div>{r.livelloNome}</div>
+                      <div className="text-xs text-zinc-500">
+                        {r.quantita}
+                        {r.note ? ` · ${r.note}` : ""}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-emerald-300/90">{testoCalendario(r)}</td>
+                    <td className="px-3 py-2 text-xs">{testoTornello(r.tornello)}</td>
+                    <td className="px-3 py-2 text-xs text-emerald-300">Allineato</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
       {riepilogo.nAnomalie === 0 ? (
-        <p className="text-sm text-emerald-300">Nessuna anomalia: tutti i turni risultano allineati o già confermati.</p>
+        <p className="text-sm text-emerald-300">
+          {riepilogo.nConfermabili > 0
+            ? "Nessuna anomalia: i turni qui sopra coincidono col calendario, resta solo da confermarli."
+            : "Nessuna anomalia: tutti i turni risultano allineati o già confermati."}
+        </p>
       ) : (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-amber-200">Da verificare · {riepilogo.nAnomalie}</p>
+          <p className="text-xs text-zinc-500">
+            In calendario c’è un altro istruttore o manca la copertura. Questi non sono gli allineati: vanno confermati a
+            mano (Ok / Sostituzione / Non svolta).
+          </p>
         <div className="overflow-x-auto rounded-xl border border-zinc-800">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase text-zinc-500">
@@ -743,6 +798,7 @@ export function LibroPagaConvalidaMesePanel({
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

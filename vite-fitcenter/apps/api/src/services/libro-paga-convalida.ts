@@ -5,6 +5,8 @@ import { dominioLivello, nominativo } from "../store/libro-paga-db.js"
 import {
   alberoCoordinatore,
   alberoDaRootsAssegnati,
+  filtraAlberoPerFamigliaAssegnata,
+  livelloSottoAlbero,
   personaleVisibilitaIds,
   resolveLivelloTree,
 } from "./libro-paga-scope.js"
@@ -370,7 +372,8 @@ export function treePerScopeConvalida(
 ): Set<string> | undefined {
   const id = scopeId.trim()
   if (!id) return viewerTree
-  const sub = alberoDaRootsAssegnati(livelli, [id])
+  const discendenti = livelloSottoAlbero(livelli, id)
+  const sub = filtraAlberoPerFamigliaAssegnata(livelli, discendenti, [id])
   if (!viewerTree) return sub
   if (!viewerTree.has(id) && ![...sub].some((x) => viewerTree.has(x))) return new Set()
   const out = new Set<string>()
@@ -607,17 +610,20 @@ export function payloadConvalidaMese(
     scopeOpzioni?: { id: string; nome: string }[]
   }
 ) {
-  const anomalie = rows
-    .filter(isAnomaliaConvalida)
-    .sort((a, b) => a.personaleNome.localeCompare(b.personaleNome, "it") || a.giorno.localeCompare(b.giorno))
-  const confermabili = rows.filter((r) => r.proposto === "ok" && (!r.salvato || r.salvato.stato === "da_verificare"))
+  const sortTurno = (a: TurnoConvalidaProposta, b: TurnoConvalidaProposta) =>
+    a.personaleNome.localeCompare(b.personaleNome, "it") || a.giorno.localeCompare(b.giorno)
+  const nonSalvato = (r: TurnoConvalidaProposta) => !r.salvato || r.salvato.stato === "da_verificare"
+  const allineati = rows.filter((r) => r.proposto === "ok" && nonSalvato(r)).sort(sortTurno)
+  const anomalie = rows.filter((r) => nonSalvato(r) && r.proposto !== "ok").sort(sortTurno)
   const confermati = rows.filter((r) => r.salvato?.stato === "ok" || r.salvato?.stato === "sostituzione")
   return {
     mese,
     nTurni: rows.length,
-    nConfermabili: confermabili.length,
+    nDaFare: allineati.length + anomalie.length,
+    nConfermabili: allineati.length,
     nAnomalie: anomalie.length,
     nConfermati: confermati.length,
+    allineati,
     anomalie,
     fogli: FOGLI_ORARI_CONVALIDA,
     settimane: settimaneNelMese(mese),
