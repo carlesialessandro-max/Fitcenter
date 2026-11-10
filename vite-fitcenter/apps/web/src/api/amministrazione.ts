@@ -357,7 +357,7 @@ export const amministrazioneApi = {
     rimanenze?: unknown[],
     opts?: { mesi?: string[]; aggiornaRimanenze?: boolean }
   ) =>
-    api.post<AmmImportEsito & { nPersone?: number }>("/amministrazione/collaboratori/report/import", {
+    api.post<AmmImportEsito & { nPersone?: number; rimosse?: number }>("/amministrazione/collaboratori/report/import", {
       anno,
       righe,
       rimanenze,

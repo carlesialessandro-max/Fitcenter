@@ -1257,8 +1257,9 @@ export const ammCostiStore = {
     return prev
   },
   /**
-   * Upsert Excel: abbina ogni importo al nominativo (anche se l'ordine del file
-   * è diverso dalla pagina). Aggiorna solo i mesi presenti nelle righe.
+   * Upsert Excel: abbina ogni importo al nominativo (ordine del file irrilevante).
+   * I mesi presenti nel file diventano identici al file: chi non c’è in quel mese
+   * viene rimosso, così il totale della pagina coincide con l’Excel.
    */
   importCollaboratoriReport(
     anno: number,
@@ -1266,7 +1267,7 @@ export const ammCostiStore = {
     user: string,
     rimanenze: { nominativo: string; importo: number }[] = [],
     opts?: { aggiornaRimanenze?: boolean }
-  ): { inserite: number; sostituite: number; nPersone: number } {
+  ): { inserite: number; sostituite: number; nPersone: number; rimosse: number } {
     if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
       throw Object.assign(new Error("Anno non valido"), { status: 400 })
     }
@@ -1290,6 +1291,7 @@ export const ammCostiStore = {
       if (c.mese.startsWith(prefix)) quoteMap.set(nk || c.nominativo.trim().toLowerCase(), c.quote)
     }
     const persone = new Set<string>()
+    const keptIds = new Set<string>()
     let inserite = 0
     let sostituite = 0
     for (const raw of righe) {
@@ -1325,9 +1327,17 @@ export const ammCostiStore = {
           ],
       })
       if (key) nomeMap.set(key, saved)
+      keptIds.add(saved.id)
       inserite += 1
     }
     const d2 = load()
+    let rimosse = 0
+    d2.collaboratori = d2.collaboratori.filter((c) => {
+      if (!mesiFile.includes(c.mese)) return true
+      if (keptIds.has(c.id)) return true
+      rimosse += 1
+      return false
+    })
     if (opts?.aggiornaRimanenze !== false) {
       const rimKeep = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
       const rimNew: typeof d2.collaboratoriRimanenze = []
@@ -1360,6 +1370,6 @@ export const ammCostiStore = {
     }
     d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
     save(d2)
-    return { inserite, sostituite, nPersone: persone.size }
+    return { inserite, sostituite, nPersone: persone.size, rimosse }
   },
 }

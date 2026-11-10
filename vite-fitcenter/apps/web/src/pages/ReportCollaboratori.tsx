@@ -245,7 +245,8 @@ export function ReportCollaboratori({
       setMsg(
         `Importati ${r.nPersone ?? 0} nominativi, ${r.inserite} mensilità` +
           (r.sostituite ? ` (sostituiti ${r.sostituite} importi precedenti di quei mesi)` : "") +
-          "."
+          (r.rimosse ? ` · tolti ${r.rimosse} importi di quel mese non presenti nel file` : "") +
+          ". Il totale del mese coincide con l’Excel."
       )
       void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
       void qc.invalidateQueries({ queryKey: ["amm-collab"] })
@@ -443,7 +444,7 @@ export function ReportCollaboratori({
             File letto: {preview.nPersone} persone, {eur(preview.tot)}
             {preview.formato === "mese" ? " · un mese" : ` · ${preview.mesi.length} mesi (${preview.mesi.map(labelMese).join(", ")})`}
             {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Ogni importo va sul nominativo
-            corrispondente, non sulla riga in questa pagina.
+            corrispondente. Quel mese sulla pagina diventa uguale al file (chi non c’è nel file esce dal mese).
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <button type="button" className={btnGhost} onClick={() => setPreview(null)}>

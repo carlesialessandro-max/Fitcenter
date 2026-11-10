@@ -1011,7 +1011,7 @@ export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
       : mapped
     if (!filtered.length) return res.status(400).json({ message: "Nessuna riga da importare per i mesi scelti" })
     const aggiornaRimanenze = req.body?.aggiornaRimanenze !== false && mesiFiltro.length !== 1
-    const { inserite, sostituite, nPersone } = ammCostiStore.importCollaboratoriReport(
+    const { inserite, sostituite, nPersone, rimosse } = ammCostiStore.importCollaboratoriReport(
       anno,
       filtered,
       user,
@@ -1021,7 +1021,7 @@ export function postAmmCollaboratoriReportImport(req: Request, res: Response) {
       })),
       { aggiornaRimanenze }
     )
-    res.json({ inserite, saltate: 0, sostituite, nPersone, errori: [] })
+    res.json({ inserite, saltate: 0, sostituite, nPersone, rimosse, errori: [] })
   } catch (e) {
     fail(res, e)
   }

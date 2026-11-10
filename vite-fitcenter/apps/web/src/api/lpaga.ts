@@ -271,7 +271,7 @@ export const lpagaApi = {
     rimanenze?: unknown[],
     opts?: { mesi?: string[]; aggiornaRimanenze?: boolean }
   ) =>
-    lpagaRequest<import("./amministrazione").AmmImportEsito & { nPersone?: number }>("/lpaga/collaboratori/report/import", {
+    lpagaRequest<import("./amministrazione").AmmImportEsito & { nPersone?: number; rimosse?: number }>("/lpaga/collaboratori/report/import", {
       method: "POST",
       body: JSON.stringify({
         anno,
