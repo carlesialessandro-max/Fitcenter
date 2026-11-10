@@ -111,9 +111,10 @@ export const dataApi = {
     channel: "email" | "sms"
     subject?: string
     text: string
-    confirm: true
+    confirm?: true
     consulente?: string
     immagine?: { filename: string; contentType: string; dataBase64: string }
+    testTo?: string
   }) => api.post<AbbAttiviInviaResponse>("/data/abbonamenti-attivi-invia", body),
   getAbbonamentiAttiviInvii: (limit = 40) =>
     api.get<AbbAttiviInviiResponse>(`/data/abbonamenti-attivi-invii?limit=${limit}`),

@@ -38,6 +38,8 @@ function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
 
 const IMAGE_MAX_BYTES = 8 * 1024 * 1024
 const IMAGE_OK = /^image\/(jpeg|jpg|png|webp|gif)$/i
+const TEST_EMAIL_KEY = "fitcenter-attivi-test-email"
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -99,6 +101,14 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   const imageInputRef = useRef<HTMLInputElement>(null)
   const [confirm, setConfirm] = useState(false)
   const [resultMsg, setResultMsg] = useState<string | null>(null)
+  const [testEmail, setTestEmail] = useState(() => {
+    try {
+      return localStorage.getItem(TEST_EMAIL_KEY) ?? ""
+    } catch {
+      return ""
+    }
+  })
+  const [testMsg, setTestMsg] = useState<string | null>(null)
 
   useEffect(() => {
     if (!imageFile) {
@@ -213,17 +223,18 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     setConfirm(false)
   }, [rowKey])
 
+  async function buildImmagine() {
+    if (channel !== "email" || !imageFile) return undefined
+    const dataUrl = await readFileAsDataUrl(imageFile)
+    return {
+      filename: imageFile.name,
+      contentType: imageFile.type || "image/jpeg",
+      dataBase64: dataUrl,
+    }
+  }
+
   const sendM = useMutation({
     mutationFn: async () => {
-      let immagine: { filename: string; contentType: string; dataBase64: string } | undefined
-      if (channel === "email" && imageFile) {
-        const dataUrl = await readFileAsDataUrl(imageFile)
-        immagine = {
-          filename: imageFile.name,
-          contentType: imageFile.type || "image/jpeg",
-          dataBase64: dataUrl,
-        }
-      }
       return dataApi.postAbbonamentiAttiviInvia({
         asOf,
         consulente: consulente || undefined,
@@ -235,7 +246,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
         subject: channel === "email" ? subject.trim() : undefined,
         text: text.trim(),
         confirm: true,
-        immagine,
+        immagine: await buildImmagine(),
       })
     },
     onSuccess: (res) => {
@@ -243,6 +254,29 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
       const fail = res.failed ? `, ${res.failed} rifiutati dal server (nel log)` : ""
       setResultMsg(`Inviati ${res.sent}${fail}${skipped}. Per un reclamo: Log invii.`)
       setConfirm(false)
+      void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
+    },
+  })
+
+  const testM = useMutation({
+    mutationFn: async () => {
+      const dest = testEmail.trim()
+      try {
+        localStorage.setItem(TEST_EMAIL_KEY, dest)
+      } catch {
+        // ignore
+      }
+      return dataApi.postAbbonamentiAttiviInvia({
+        channel: "email",
+        subject: subject.trim(),
+        text: text.trim(),
+        testTo: dest,
+        immagine: await buildImmagine(),
+      })
+    },
+    onSuccess: (res) => {
+      setTestMsg(`Prova inviata a ${testEmail.trim()}. Controlla la casella (anche spam). Gli abbonati non hanno ricevuto nulla.`)
+      if (!res.ok) setTestMsg(`Prova non consegnata: ${(res.errors ?? []).join("; ") || "errore SMTP"}`)
       void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
     },
   })
@@ -277,8 +311,10 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     setOpen(false)
     setConfirm(false)
     setResultMsg(null)
+    setTestMsg(null)
     clearImage()
     sendM.reset()
+    testM.reset()
   }
 
   const canSend =
@@ -288,6 +324,16 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     !imageErr &&
     reachable.length > 0 &&
     reachable.length <= 800 &&
+    !sendM.isPending &&
+    !testM.isPending
+
+  const canTest =
+    channel === "email" &&
+    text.trim().length > 0 &&
+    subject.trim().length > 0 &&
+    EMAIL_OK.test(testEmail.trim()) &&
+    !imageErr &&
+    !testM.isPending &&
     !sendM.isPending
 
   const conEmail = rows.filter((r) => r.email).length
@@ -628,6 +674,38 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
             </div>
 
             <div className="border-t border-zinc-800 px-4 py-3">
+              {channel === "email" ? (
+                <div className="mb-3 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Invio di prova</p>
+                  <p className="mt-0.5 text-[11px] text-zinc-500">
+                    Stesso oggetto, testo e locandina, solo al tuo indirizzo. Gli abbonati non ricevono nulla.
+                  </p>
+                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                    <input
+                      type="email"
+                      value={testEmail}
+                      onChange={(e) => {
+                        setTestEmail(e.target.value)
+                        setTestMsg(null)
+                      }}
+                      placeholder="tua@email.it"
+                      className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+                    />
+                    <button
+                      type="button"
+                      disabled={!canTest}
+                      onClick={() => testM.mutate()}
+                      className="rounded-lg border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm font-medium text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {testM.isPending ? "Invio prova…" : "Invia prova"}
+                    </button>
+                  </div>
+                  {testM.isError ? (
+                    <p className="mt-2 text-xs text-red-400">{(testM.error as Error).message}</p>
+                  ) : null}
+                  {testMsg ? <p className="mt-2 text-xs text-emerald-400">{testMsg}</p> : null}
+                </div>
+              ) : null}
               <label className="flex items-start gap-2 text-sm text-zinc-300">
                 <input
                   type="checkbox"

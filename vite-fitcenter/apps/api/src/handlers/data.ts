@@ -1852,8 +1852,11 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       confirm?: boolean
       consulente?: string
       immagine?: { filename?: string; contentType?: string; dataBase64?: string }
+      /** Se valorizzato: invia solo a questo indirizzo, nessuno degli abbonati. */
+      testTo?: string
     }
-    if (!body.confirm) {
+    const testTo = String(body.testTo ?? "").trim()
+    if (!testTo && !body.confirm) {
       return res.status(400).json({ message: "Conferma obbligatoria (confirm: true)" })
     }
     const channel = String(body.channel ?? "").trim().toLowerCase()
@@ -1880,6 +1883,84 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
 
     if (channel === "email" && !isSmtpConfigured()) {
       return res.status(503).json({ message: "SMTP non configurato (SMTP_HOST / SMTP_USER / SMTP_PASS)" })
+    }
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (testTo) {
+      if (channel !== "email") {
+        return res.status(400).json({ message: "L'invio di prova è solo via email" })
+      }
+      if (!emailOk.test(testTo)) {
+        return res.status(400).json({ message: "Email di prova non valida" })
+      }
+      const out = await sendMail({
+        to: testTo,
+        subject,
+        text,
+        ...(locandina
+          ? {
+              html: attiviEmailHtml(text, true),
+              attachments: [
+                {
+                  filename: locandina.filename,
+                  content: locandina.buffer,
+                  contentType: locandina.contentType,
+                  cid: ATTIVI_IMAGE_CID,
+                },
+              ],
+            }
+          : {}),
+      })
+      const actorTest = getScopedUser(req)
+      const userTest = String(actorTest.username ?? actorTest.nome ?? "").trim() || "admin"
+      try {
+        attiviInviiStore.append({
+          user: userTest,
+          channel: "email",
+          subject,
+          text,
+          imageName: locandina?.filename,
+          segmento: "prova",
+          destinatari: 1,
+          sent: out.sent ? 1 : 0,
+          failed: out.sent ? 0 : 1,
+          skipped: 0,
+          errors: out.sent ? [] : [out.detail ?? "SMTP non ha accettato l'invio"],
+          recipients: [
+            {
+              clienteId: "prova",
+              nome: "Invio di prova",
+              dest: testTo,
+              esito: out.sent ? "sent" : "failed",
+              nota: "Prova: non inviato agli abbonati",
+            },
+          ],
+        })
+      } catch (e) {
+        console.error("[ATTIVI-MSG] log prova non salvato:", (e as Error)?.message ?? e)
+      }
+      if (!out.sent) {
+        return res.status(502).json({
+          message: out.detail ?? "Invio di prova non riuscito",
+          ok: false,
+          channel: "email",
+          destinatari: 1,
+          sent: 0,
+          failed: 1,
+          skipped: 0,
+          errors: [out.detail ?? "SMTP non ha accettato l'invio"],
+          test: true,
+        })
+      }
+      return res.json({
+        ok: true,
+        channel: "email",
+        destinatari: 1,
+        sent: 1,
+        failed: 0,
+        skipped: 0,
+        errors: [] as string[],
+        test: true,
+      })
     }
     if (channel === "sms") {
       if (!isSmsConfigured()) {
@@ -1922,7 +2003,6 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     let skipped = 0
     const errors: string[] = []
     const recipients: AttiviInvioRecipient[] = []
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     const normAddr = (s: string) => {
       const t = s.trim().toLowerCase()
       const m = t.match(/<([^>]+)>/)

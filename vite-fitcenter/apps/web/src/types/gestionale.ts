@@ -157,6 +157,7 @@ export interface AbbAttiviInviaResponse {
   failed: number
   skipped: number
   errors: string[]
+  test?: boolean
 }
 
 export type RinnovoCorsoRow = {
