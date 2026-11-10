@@ -416,6 +416,28 @@ function attiviClassificazioneBlob(a: Abbonamento): string {
  * Adulti vs bambini dal tipo di abbonamento, non dall’età.
  * Scuola nuoto / acquaticità / corsi bambini = bambini; GYM, SMILE, OPEN, ecc. restano adulti anche se il cliente è minorenne.
  */
+/** Scaduti bambini = solo voci spuntate (acquaticità, agonismo categorie, scuola nuoto bambini, private bambini). */
+function isAbbonamentoBambiniListino(a: Abbonamento): boolean {
+  if (isAbbonamentoAdultiListino(a)) return false
+  const macro = normalizeAttiviCategoria(a.macroCategoriaDescrizione ?? "")
+  const cat = normalizeAttiviCategoria(a.categoriaAbbonamentoDescrizione ?? "")
+  const piano = normalizeAttiviCategoria(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+  const blob = `${macro} ${cat} ${piano}`
+  if (isArchivioProdottiVecchi(macro, cat, blob)) return false
+  if (blob.includes("DANZA") || blob.includes("TESSERAMENT") || blob.includes("ABBIGLIAMENTO")) return false
+  if (blob.includes("CAMPUS") || blob.includes("JUJITSU") || blob.includes("GESTANTI")) return false
+  if (blob.includes("COMPLEANN") || blob.includes("ACCONTO") || blob.includes("PREVENDITA")) return false
+  if (blob.includes("ESTIVA") || blob.includes("MASTER") || blob.includes("SENIOR")) return false
+  if (cat === "AQ" || piano === "AQ") return false
+  if (blob.includes("ACQUATICIT")) return true
+  if (blob.includes("AGONISMO CATEGORIE")) return true
+  if (blob.includes("AGONISMO") && !blob.includes("ABBIGLIAMENTO")) return true
+  if (blob.includes("PRIVATE BAMBINI")) return true
+  if (blob.includes("BAMBIN") && !blob.includes("ADULT")) return true
+  if (blob.includes("SCUOLA NUOTO") && blob.includes("BAMBIN")) return true
+  return false
+}
+
 function isAbbonamentoBambini(a: Abbonamento): boolean {
   const text = attiviClassificazioneBlob(a)
   if (/\bNUOTO ADULTI\b/.test(text)) return false
@@ -1817,7 +1839,7 @@ type ScadutiLoadOpts = {
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
   const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v8-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
+  return `ex-v9-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
@@ -1949,7 +1971,7 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
   const bambiniRaw =
     ambito === "adulti"
       ? []
-      : scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a) && !isAbbonamentoAdultiListino(pair.a))
+      : scadutiPairs.filter((pair) => isAbbonamentoBambiniListino(pair.a))
   const rows = mergeByCliente([
     ...adultiRaw.map((pair) => toContact(pair, "adulti")),
     ...bambiniRaw.map((pair) => toContact(pair, "bambini")),

@@ -95,28 +95,23 @@ function isProdottoAdultiListino(p: AttiviProdotto): boolean {
 
 function isProdottoBambini(p: AttiviProdotto): boolean {
   const t = blobProdotto(p)
+  const cat = normCat(p.categoria)
+  const macro = normCat(p.macro ?? "")
+  const piano = normCat(p.piano)
   if (isProdottoAdultiListino(p)) return false
-  if (/\bNUOTO ADULTI\b/.test(t)) return false
-  if (/\bAGONISMO\b/.test(t) && /\b(MASTER|SENIOR)\b/.test(t)) return false
-  if (t.includes("DANZA") || t.includes("GIOCODANZA") || t.includes("TEATRO")) return false
-  if (/PRIVATE/.test(t) && !/\bADULT/.test(t) && !/\bMASTER/.test(t) && !/\bSENIOR/.test(t)) return true
-  return (
-    /SCUOLA\s*NUOTO/.test(t) ||
-    /AGONISMO\s*CATEGORIE/.test(t) ||
-    /ACQUATICIT/.test(t) ||
-    /\bBAMBIN[IO]\b/.test(t) ||
-    /\bBIMB[IO]\b/.test(t) ||
-    /\bKIDS\b/.test(t) ||
-    /\bMINI\b/.test(t) ||
-    /GIOVANISSIM/.test(t) ||
-    /ESORDIEN/.test(t) ||
-    /PREAGONISMO/.test(t) ||
-    /PROPAGANDA/.test(t) ||
-    /RAGAZZ/.test(t) ||
-    /\bU(6|8|10|12|14)\b/.test(t) ||
-    /PICCOLI/.test(t) ||
-    (/\bAGONISMO\b/.test(t) && !/\b(MASTER|SENIOR)\b/.test(t))
-  )
+  if (macro.startsWith("Z_") || macro.startsWith("Z ") || t.includes("FITNESS_OLD") || t.includes("FITNESS OLD")) return false
+  if (t.includes("TESSERAMENT") || t.includes("ABBIGLIAMENTO") || t.includes("DANZA")) return false
+  if (t.includes("CAMPUS") || t.includes("JUJITSU") || t.includes("GESTANTI") || t.includes("COMPLEANN")) return false
+  if (t.includes("ACCONTO") || t.includes("PREVENDITA") || t.includes("ESTIVA")) return false
+  if (t.includes("MASTER") || t.includes("SENIOR") || t.includes("PRIVATE ADULTI")) return false
+  if (cat === "AQ" || piano === "AQ") return false
+  if (t.includes("ACQUATICIT")) return true
+  if (t.includes("AGONISMO CATEGORIE")) return true
+  if (t.includes("AGONISMO") && !t.includes("ABBIGLIAMENTO")) return true
+  if (t.includes("PRIVATE BAMBINI")) return true
+  if (t.includes("BAMBIN") && !t.includes("ADULT")) return true
+  if (t.includes("SCUOLA NUOTO") && t.includes("BAMBIN")) return true
+  return false
 }
 
 function prodottoNelSegmento(p: AttiviProdotto, segmento: SegmentoFiltro): boolean {
@@ -365,9 +360,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Adulti = cartelle spuntate in gestionale (GOLD, rinnovi, gym, nuoto, corsi, rossi/verdi, master,
-            private adulti). Niente promozioni, FITNESS_old, scadenze oltre 8 anni. Nessun gruppo spuntato =
-            tutti quelli del listino. Chi ha rinnovato esce; danza/kids attivi restano in lista.
+            Adulti = GOLD, rinnovi, gym, nuoto, corsi, rossi/verdi, master, private adulti. Bambini =
+            acquaticità, agonismo categorie, scuola nuoto bambini, private bambini. Niente FITNESS_old,
+            abbigliamento squadra, tesseramenti. Nessun gruppo spuntato = tutto il listino.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -489,7 +484,7 @@ export function ScadutiEx() {
             ) : gruppi.length === 0 ? (
               <p className="py-2 text-zinc-500">
                 {segmento === "bambini"
-                  ? "Nessun gruppo bambini (scuola nuoto, acquaticità, agonismo, private)."
+                  ? "Nessun gruppo bambini (acquaticità, agonismo categorie, scuola nuoto, private bambini)."
                   : "Nessun gruppo in elenco."}
               </p>
             ) : (

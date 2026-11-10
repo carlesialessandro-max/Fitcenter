@@ -2340,8 +2340,8 @@ export async function queryAbbonamentiScadutiEx(
   const tblU = defaultTables.clienti
   const etaFrag = sqlUtenteEtaFragment()
   const ambito = opts?.ambito === "bambini" ? "bambini" : opts?.ambito === "adulti" ? "adulti" : undefined
-  const ambitoSql = ambito === "bambini" ? whereAndamentoAmbito("a", "bambini") : ambito === "adulti" ? whereAdultiListinoScaduti("a") : ""
-  const ambitoSqlValidi = ambito === "bambini" ? whereAndamentoAmbito("v", "bambini") : ambito === "adulti" ? whereAdultiListinoScaduti("v") : ""
+  const ambitoSql = ambito === "bambini" ? whereBambiniListinoScaduti("a") : ambito === "adulti" ? whereAdultiListinoScaduti("a") : ""
+  const ambitoSqlValidi = ambito === "bambini" ? whereBambiniListinoScaduti("v") : ambito === "adulti" ? whereAdultiListinoScaduti("v") : ""
   const qSafe = sqlLikeSafe(opts?.q ?? "")
   const gruppi = (opts?.gruppi ?? []).map((x) => sqlLikeSafe(x)).filter(Boolean).slice(0, 200)
   const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 400)
@@ -3925,6 +3925,40 @@ function whereAdultiListinoScaduti(alias: string): string {
       OR ${cat} LIKE N'%PRIVATE ADULTI%' OR ${abb} LIKE N'%PRIVATE ADULTI%'
       OR ${cat} LIKE N'%OPEN%' OR (${abb} LIKE N'%OPEN%' AND ${abb} NOT LIKE N'%ACQUA OPEN%')
       OR ${cat} LIKE N'%SMILE%' OR ${abb} LIKE N'%SMILE%'
+    )
+  `
+}
+
+/** Scaduti bambini: solo cartelle spuntate (niente FITNESS_old, abbigliamento, tesseramenti). */
+function whereBambiniListinoScaduti(alias: string): string {
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], N''))))`
+  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
+  return `
+    AND ${macro} NOT LIKE N'Z[_]%' AND ${macro} NOT LIKE N'%FITNESS%OLD%' AND ${cat} NOT LIKE N'%FITNESS%OLD%'
+    AND ${cat} NOT LIKE N'%TESSERAMENT%' AND ${abb} NOT LIKE N'%TESSERAMENT%' AND ${macro} NOT LIKE N'%TESSERAMENT%'
+    AND ${cat} NOT LIKE N'%ABBIGLIAMENTO%' AND ${abb} NOT LIKE N'%ABBIGLIAMENTO%'
+    AND ${cat} NOT LIKE N'%CAMPUS%' AND ${cat} NOT LIKE N'%JUJITSU%' AND ${cat} NOT LIKE N'%GESTANTI%'
+    AND ${cat} NOT LIKE N'%COMPLEANN%' AND ${abb} NOT LIKE N'%COMPLEANN%'
+    AND ${abb} NOT LIKE N'%ACCONTO%' AND ${abb} NOT LIKE N'%PREVENDITA%'
+    AND ${cat} NOT LIKE N'%ESTIVA%' AND ${abb} NOT LIKE N'%ESTIVA%'
+    AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%'
+    AND ${cat} NOT LIKE N'%DANZA%' AND ${macro} NOT LIKE N'%DANZA%' AND ${abb} NOT LIKE N'%DANZA%'
+    AND ${cat} <> N'AQ' AND ${abb} <> N'AQ'
+    AND (
+      ${cat} LIKE N'%ACQUATICIT%' OR ${abb} LIKE N'%ACQUATICIT%'
+      OR ${cat} LIKE N'%AGONISMO CATEGORIE%' OR ${abb} LIKE N'%AGONISMO CATEGORIE%'
+      OR (
+        (${cat} LIKE N'%AGONISMO%' OR ${abb} LIKE N'%AGONISMO%')
+        AND ${cat} NOT LIKE N'%ABBIGLIAMENTO%' AND ${abb} NOT LIKE N'%ABBIGLIAMENTO%'
+        AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%'
+      )
+      OR ${cat} LIKE N'%PRIVATE BAMBINI%' OR ${abb} LIKE N'%PRIVATE BAMBINI%'
+      OR (
+        (${cat} LIKE N'%BAMBIN%' OR ${abb} LIKE N'%BAMBIN%'
+          OR ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%')))
+        AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
+      )
     )
   `
 }
