@@ -7,6 +7,7 @@ import type {
   DettaglioBlocco,
   AbbAttiviAnalisiResponse,
   AbbAttiviContattiResponse,
+  AbbScadutiContattiResponse,
   AbbAttiviInviaResponse,
   AbbAttiviInviiResponse,
   ScuolaNuotoRinnoviInviaResponse,
@@ -100,6 +101,12 @@ export const dataApi = {
     if (opts?.consulente) params.set("consulente", opts.consulente)
     const q = params.toString()
     return api.get<AbbAttiviContattiResponse>(`/data/abbonamenti-attivi-contatti${q ? `?${q}` : ""}`)
+  },
+  getAbbonamentiScadutiContatti: (opts?: { asOf?: string }) => {
+    const params = new URLSearchParams()
+    if (opts?.asOf) params.set("asOf", opts.asOf)
+    const q = params.toString()
+    return api.get<AbbScadutiContattiResponse>(`/data/abbonamenti-scaduti-contatti${q ? `?${q}` : ""}`)
   },
   postAbbonamentiAttiviInvia: (body: {
     asOf?: string

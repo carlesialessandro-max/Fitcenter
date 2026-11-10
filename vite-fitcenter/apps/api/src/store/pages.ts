@@ -10,6 +10,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/referral", label: "Referral", group: "Vendite" },
   { path: "/convalide-consulenti", label: "Convalide", group: "Vendite" },
   { path: "/attivi-analisi", label: "Attivi", group: "Vendite" },
+  { path: "/scaduti", label: "Scaduti / Ex", group: "Vendite" },
   { path: "/crm", label: "CRM vendita", group: "Vendite" },
   { path: "/crm/whatsapp-log", label: "Log WhatsApp", group: "Vendite" },
   { path: "/telefonate", label: "Telefonate", group: "Vendite" },

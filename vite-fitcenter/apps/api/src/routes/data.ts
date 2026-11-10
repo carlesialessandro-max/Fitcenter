@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { getRicevuteUtenti, postInviaScontrino } from "../handlers/scontrini.js"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, deleteAbbonamentiAttiviInvio, deleteAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, getAbbonamentiScadutiContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, deleteAbbonamentiAttiviInvio, deleteAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
   deleteCalendarioInstructor,
@@ -74,6 +74,7 @@ dataRouter.get("/scuola-nuoto-rinnovi", requireScuolaNuotoRinnovi, getScuolaNuot
 dataRouter.post("/scuola-nuoto-rinnovi-invia", requireScuolaNuotoRinnovi, postScuolaNuotoRinnoviInvia)
 dataRouter.get("/abbonamenti-attivi-analisi", requireAdmin, getAbbonamentiAttiviAnalisi)
 dataRouter.get("/abbonamenti-attivi-contatti", requireAdmin, getAbbonamentiAttiviContatti)
+dataRouter.get("/abbonamenti-scaduti-contatti", requireAdmin, getAbbonamentiScadutiContatti)
 dataRouter.post("/abbonamenti-attivi-invia", requireAdmin, postAbbonamentiAttiviInvia)
 dataRouter.get("/abbonamenti-attivi-invii", requireAdmin, getAbbonamentiAttiviInvii)
 dataRouter.delete("/abbonamenti-attivi-invii/:id", requireAdmin, deleteAbbonamentiAttiviInvio)

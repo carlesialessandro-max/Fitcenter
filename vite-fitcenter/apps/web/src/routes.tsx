@@ -16,6 +16,7 @@ import { Telefonate } from "@/pages/Telefonate"
 import { WhatsappLog } from "@/pages/WhatsappLog"
 import { ConvalideConsulenti } from "@/pages/ConvalideConsulenti"
 import { AttiviAnalisi } from "@/pages/AttiviAnalisi"
+import { ScadutiEx } from "@/pages/ScadutiEx"
 import { SignaturesAdmin } from "@/pages/SignaturesAdmin"
 import { FirmaDaCassa } from "@/pages/FirmaDaCassa"
 import { Scontrini } from "@/pages/Scontrini"
@@ -143,6 +144,8 @@ export const router = createBrowserRouter([
       { path: "amministrazione/report-collaboratori", element: <Navigate to="/libro-paga?tab=collaboratori" replace /> },
       { path: "abbonamenti/dettaglio/:id", element: <AbbonamentoDettaglio /> },
       { path: "attivi-analisi", element: <AttiviAnalisi /> },
+      { path: "scaduti", element: <ScadutiEx /> },
+      { path: "ex", element: <Navigate to="/scaduti" replace /> },
       { path: "firme", element: <SignaturesAdmin /> },
       { path: "firma-cassa", element: <FirmaDaCassa /> },
       { path: "scontrini", element: <Scontrini /> },

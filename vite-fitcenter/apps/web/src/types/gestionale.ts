@@ -128,6 +128,8 @@ export interface AttiviProdotto {
 export interface AttiviContatto {
   clienteId: string
   nome: string
+  cognome?: string
+  nomeProprio?: string
   email: string | null
   telefono: string | null
   segmento: AttiviContattoSegmento
@@ -137,6 +139,7 @@ export interface AttiviContatto {
   piano: string
   macro?: string
   prodotti?: AttiviProdotto[]
+  dataFine?: string | null
 }
 
 export interface AbbAttiviContattiResponse {
@@ -148,6 +151,8 @@ export interface AbbAttiviContattiResponse {
   piani?: string[]
   rows: AttiviContatto[]
 }
+
+export type AbbScadutiContattiResponse = AbbAttiviContattiResponse
 
 export interface AbbAttiviInviaResponse {
   ok: boolean

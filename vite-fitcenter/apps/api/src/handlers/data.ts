@@ -1478,6 +1478,8 @@ export type AttiviProdotto = {
 export type AttiviContatto = {
   clienteId: string
   nome: string
+  cognome?: string
+  nomeProprio?: string
   email: string | null
   telefono: string | null
   segmento: "adulti" | "bambini"
@@ -1487,6 +1489,7 @@ export type AttiviContatto = {
   piano: string
   macro: string
   prodotti: AttiviProdotto[]
+  dataFine?: string | null
 }
 
 function normalizeSessoCliente(row: Record<string, unknown>, nome: string): "M" | "F" | null {
@@ -1506,6 +1509,23 @@ function parseSessoFiltro(raw: unknown): "M" | "F" | undefined {
   if (t === "M" || t === "MASCHI" || t === "MASCHIO" || t === "UOMO") return "M"
   if (t === "F" || t === "FEMMINE" || t === "FEMMINA" || t === "DONNA") return "F"
   return undefined
+}
+
+function splitNominativoAbb(row: Record<string, unknown>, clienteNome: string): { cognome: string; nomeProprio: string } {
+  const cognome = String(row.ClienteCognome ?? row.Cognome ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+  const nomeProprio = String(row.ClienteNome ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (cognome || nomeProprio) return { cognome, nomeProprio }
+  const parts = String(clienteNome ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+  if (parts.length >= 2) return { cognome: parts[0] ?? "", nomeProprio: parts.slice(1).join(" ") }
+  return { cognome: "", nomeProprio: String(clienteNome ?? "").trim() }
 }
 
 function pickEmailTelFromAbbRow(row: Record<string, unknown>): { email: string | null; telefono: string | null } {
@@ -1744,6 +1764,202 @@ export async function getAbbonamentiAttiviContatti(req: Request, res: Response) 
         [
           ...all.flatMap((c) => (c.prodotti ?? []).map((p) => p.categoria)),
           ...all.flatMap((c) => (c.prodotti ?? []).map((p) => p.piano)),
+          ...loaded.categorie,
+          ...loaded.piani,
+        ].filter((x) => x && !x.toUpperCase().includes("DANZA") && !x.toUpperCase().includes("STAFF"))
+      )
+    ).sort((a, b) => a.localeCompare(b, "it"))
+    res.json({
+      asOf: key,
+      totale: all.length,
+      conEmail: all.filter((r) => r.email).length,
+      conTelefono: all.filter((r) => r.telefono).length,
+      categorie: tipologie,
+      piani: loaded.piani,
+      rows: all,
+    })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/**
+ * Ex / scaduti come nel gestionale (ricerca 6 − ricerca 7):
+ * ha almeno un abbonamento con DataFine prima di oggi, e NON ha un abbonamento
+ * ancora valido (data inizio ≤ oggi ≤ data fine). Chi ha rinnovato esce dalla lista.
+ */
+let scadutiContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
+
+function isValiditaAllaData(a: Abbonamento, asOfKey: string): boolean {
+  if (isTesseramentoAbbForKpi(a)) return false
+  const ini = abbonamentoGiornoKey(a.dataInizio)
+  const fine = abbonamentoGiornoKey(a.dataFine)
+  if (!ini || !fine) return false
+  return asOfKey >= ini && asOfKey <= fine
+}
+
+async function loadScadutiContatti(date: Date): Promise<AttiviContattiLoaded> {
+  const parts = toDateParts(date)
+  const asOfKey = `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`
+  const key = `ex-v1-${asOfKey}`
+  const now = Date.now()
+  if (scadutiContattiCacheSlot && scadutiContattiCacheSlot.key === key && now - scadutiContattiCacheSlot.at < 8_000) {
+    return scadutiContattiCacheSlot.data
+  }
+  if (!gestionaleSql.isGestionaleConfigured()) return { rows: [], categorie: [], piani: [] }
+  const rawRows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
+  const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
+
+  const clientiValidi = new Set<string>()
+  for (const pair of pairs) {
+    const id = String(pair.a.clienteId ?? "").trim()
+    if (!id) continue
+    if (isValiditaAllaData(pair.a, asOfKey)) clientiValidi.add(id)
+  }
+
+  const adultiCategoriaEscluse = new Set([
+    "QUOTE DANZA",
+    "DANZA ADULTI",
+    "DANZA BAMBINI",
+    "PROFESSIONALE",
+    "INVITO",
+    "ABBONAMENTI STAFF",
+  ])
+  const isEsclusaLista = (a: Abbonamento) => {
+    if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a)) return true
+    const n = normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a))
+    const macro = normalizeCategoriaAttiviMsg(a.macroCategoriaDescrizione ?? "")
+    return (
+      adultiCategoriaEscluse.has(n) ||
+      adultiCategoriaEscluse.has(macro) ||
+      n.includes("STAFF") ||
+      macro.includes("STAFF") ||
+      n.includes("DANZA") ||
+      macro.includes("DANZA")
+    )
+  }
+
+  const scadutiPairs = pairs.filter((pair) => {
+    const id = String(pair.a.clienteId ?? "").trim()
+    if (!id || clientiValidi.has(id)) return false
+    if (isEsclusaLista(pair.a)) return false
+    const fine = abbonamentoGiornoKey(pair.a.dataFine)
+    return Boolean(fine && fine < asOfKey)
+  })
+
+  const toContact = (pair: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
+    const c = pickEmailTelFromAbbRow(pair.row)
+    const cat = categoriaLabelAttiviMsg(pair.a).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+    const piano = (pair.a.abbonamentoDescrizione ?? pair.a.pianoNome ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+    const macroRaw = String(
+      pair.a.macroCategoriaDescrizione ??
+        pair.row.MacroCategoriaAbbonamentoDescrizione ??
+        pair.row.Tipo ??
+        pair.row.TipoDescrizione ??
+        pair.row.Cartella ??
+        ""
+    ).trim()
+    const clienteId = String(pair.a.clienteId ?? "").trim() || `abb:${pair.a.id}`
+    const nome = pair.a.clienteNome || "—"
+    const { cognome, nomeProprio } = splitNominativoAbb(pair.row, nome === "—" ? "" : nome)
+    const prodotto: AttiviProdotto = { macro: macroRaw, categoria: cat, piano: piano || cat }
+    return {
+      clienteId,
+      nome,
+      cognome,
+      nomeProprio,
+      email: c.email,
+      telefono: c.telefono,
+      segmento,
+      sesso: normalizeSessoCliente(pair.row, nome === "—" ? "" : nome),
+      categoria: cat,
+      categorie: [cat],
+      piano: prodotto.piano,
+      macro: macroRaw,
+      prodotti: [prodotto],
+      dataFine: abbonamentoGiornoKey(pair.a.dataFine),
+    }
+  }
+
+  const mergeByCliente = (list: AttiviContatto[]): AttiviContatto[] => {
+    const m = new Map<string, AttiviContatto>()
+    for (const c of list) {
+      const id = c.clienteId
+      if (!id) continue
+      const prev = m.get(id)
+      if (!prev) {
+        m.set(id, { ...c, categorie: [...c.categorie], prodotti: c.prodotti.map((x) => ({ ...x })) })
+        continue
+      }
+      if (!prev.email && c.email) prev.email = c.email
+      if (!prev.telefono && c.telefono) prev.telefono = c.telefono
+      if (!prev.macro && c.macro) prev.macro = c.macro
+      if (!prev.sesso && c.sesso) prev.sesso = c.sesso
+      if (!prev.cognome && c.cognome) prev.cognome = c.cognome
+      if (!prev.nomeProprio && c.nomeProprio) prev.nomeProprio = c.nomeProprio
+      if (c.segmento === "adulti") prev.segmento = "adulti"
+      if ((c.dataFine ?? "") > (prev.dataFine ?? "")) prev.dataFine = c.dataFine
+      for (const cat of c.categorie) {
+        if (!prev.categorie.includes(cat)) prev.categorie.push(cat)
+      }
+      for (const pr of c.prodotti) {
+        const k = `${pr.categoria}|||${pr.piano}`
+        if (!prev.prodotti.some((x) => `${x.categoria}|||${x.piano}` === k)) prev.prodotti.push({ ...pr })
+      }
+      prev.categoria = prev.prodotti[0]?.categoria || prev.categoria
+      prev.piano = prev.prodotti.map((x) => x.piano).filter(Boolean).join(" · ")
+      prev.macro = prev.prodotti[0]?.macro || prev.macro
+    }
+    return Array.from(m.values())
+  }
+
+  const adultiRaw = scadutiPairs.filter((pair) => !isAbbonamentoBambini(pair.a))
+  const bambiniRaw = scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a))
+  const rows = mergeByCliente([
+    ...adultiRaw.map((pair) => toContact(pair, "adulti")),
+    ...bambiniRaw.map((pair) => toContact(pair, "bambini")),
+  ])
+  const categorie = Array.from(
+    new Set(
+      rows
+        .flatMap((c) => (c.categorie ?? [c.categoria]).map((x) => x.trim()))
+        .filter((x) => x && !x.toUpperCase().includes("DANZA") && !x.toUpperCase().includes("STAFF"))
+    )
+  ).sort((a, b) => a.localeCompare(b, "it"))
+  const piani = Array.from(
+    new Set(
+      rows
+        .flatMap((c) => (c.prodotti ?? []).map((pr) => pr.piano).filter(Boolean))
+        .filter((x) => {
+          const n = normalizeCategoriaAttiviMsg(x)
+          return x && !n.includes("DANZA") && !n.includes("STAFF")
+        })
+    )
+  ).sort((a, b) => a.localeCompare(b, "it"))
+  const data: AttiviContattiLoaded = { rows, categorie, piani }
+  scadutiContattiCacheSlot = { key, at: now, data }
+  return data
+}
+
+function sortScadutiContatti(list: AttiviContatto[]): AttiviContatto[] {
+  return [...list].sort((a, b) => {
+    const c = (a.cognome || "").localeCompare(b.cognome || "", "it")
+    if (c) return c
+    return (a.nomeProprio || a.nome).localeCompare(b.nomeProprio || b.nome, "it")
+  })
+}
+
+/** Admin: ex / scaduti (niente rinnovo in corso) per liste da scaricare. */
+export async function getAbbonamentiScadutiContatti(req: Request, res: Response) {
+  try {
+    const { date, key } = parseAsOf(req)
+    const loaded = await loadScadutiContatti(date)
+    const all = sortScadutiContatti(loaded.rows)
+    const tipologie = Array.from(
+      new Set(
+        [
+          ...all.flatMap((c) => (c.prodotti ?? []).map((pr) => pr.categoria)),
+          ...all.flatMap((c) => (c.prodotti ?? []).map((pr) => pr.piano)),
           ...loaded.categorie,
           ...loaded.piani,
         ].filter((x) => x && !x.toUpperCase().includes("DANZA") && !x.toUpperCase().includes("STAFF"))

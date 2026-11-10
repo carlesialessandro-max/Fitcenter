@@ -103,6 +103,7 @@ const VENDITE_LINKS: { to: string; label: string }[] = [
   { to: "/referral", label: "Referral" },
   { to: "/convalide-consulenti", label: "Convalide" },
   { to: "/attivi-analisi", label: "Attivi" },
+  { to: "/scaduti", label: "Scaduti / Ex" },
   { to: "/crm", label: "CRM vendita" },
   { to: "/telefonate", label: "Telefonate" },
   { to: "/abbonamenti", label: "Abbonamenti in scadenza" },

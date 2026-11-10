@@ -12,6 +12,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/referral", label: "Referral" },
       { to: "/convalide-consulenti", label: "Convalide" },
       { to: "/attivi-analisi", label: "Attivi" },
+      { to: "/scaduti", label: "Scaduti / Ex" },
       { to: "/crm", label: "CRM vendita" },
       { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
       { to: "/telefonate", label: "Telefonate" },
