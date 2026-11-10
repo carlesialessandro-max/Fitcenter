@@ -312,11 +312,9 @@ function filterAbbonamentiDelConsulente(list: Abbonamento[], consulenteNome: str
 }
 
 /**
- * Adulti = voci spuntate nel listino gestionale (10/11/2026):
- * GOLD ESTIVO/PREMIUM, RINNOVI (+ gold), GYM, NUOTO LIBERO,
- * PACCHETTI CORSI, SCUOLA NUOTO ADULTI, ROSSI/VERDI, AGONISMO MASTER, PRIVATE ADULTI.
- * Fuori: danza, eventi, staff, PT, invito, tesseramenti, acquaticità, agonismo categorie,
- * scuola nuoto bambini, private bambini, gestanti, spa, pole dance, campus, jujitsu.
+ * Adulti = listino gestionale spuntato: tutto tranne le cartelle NON spuntate.
+ * Non una whitelist di nomi (GYM/OPEN/SMILE…): sotto GYM/GOLD/RINNOVI i piani
+ * storici hanno descrizioni diverse e venivano persi.
  */
 function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
   if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a) || isAdultiCategoriaEsclusa(a)) {
@@ -326,25 +324,17 @@ function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
   const cat = normalizeAttiviCategoria(a.categoriaAbbonamentoDescrizione ?? "")
   const piano = normalizeAttiviCategoria(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
   const blob = `${macro} ${cat} ${piano}`
-  if (macro.includes("DANZA") || cat.includes("DANZA") || macro.includes("EVENTI") || macro.includes("VARIE") || macro.includes("PROMOZION")) return false
-  if (cat.includes("MAMME FIT") || cat.includes("PISCINA ESTERNA") || cat.includes("ESTATE")) return false
-  if (cat.includes("ACQUATIC") || cat.includes("CAMPUS") || cat.includes("JUJITSU") || cat.includes("GESTANTI")) return false
-  if (cat.includes("AGONISMO CATEGORIE") || cat.includes("PRIVATE BAMBINI") || cat.includes("PRIVATE SPECIAL COPPIA")) return false
-  if (cat.includes("POLE DANCE") || blob.includes("PERCORSO SPA")) return false
-  const scuolaNuoto = blob.includes("SCUOLA NUOTO")
-  if (scuolaNuoto && !blob.includes("ADULT")) return false
-  if (macro.includes("GOLD") || macro === "RINNOVI" || macro.startsWith("RINNOVI ")) return true
-  if (macro.includes("RINNOVO AUTOMATIC")) return true
-  if (cat.includes("GYM") && !cat.includes("GYMPAY")) return true
-  if (blob.includes("NUOTO LIBERO")) return true
-  if (blob.includes("PACCHETTI CORSI")) return true
-  if (scuolaNuoto && blob.includes("ADULT")) return true
-  if (cat.includes("ROSSI") && cat.includes("ORARIO LIBERO")) return true
-  if (cat.includes("VERDI") && cat.includes("ORARIO RIDOTTO")) return true
-  if (blob.includes("AGONISMO MASTER")) return true
-  if (blob.includes("PRIVATE ADULTI")) return true
-  if (/\bOPEN\b/.test(blob) || blob.includes("SMILE")) return true
-  return false
+  if (macro.includes("DANZA") || cat.includes("DANZA") || blob.includes("DANZA")) return false
+  if (macro.includes("EVENTI") || macro.includes("VARIE") || macro.includes("PROMOZION")) return false
+  if (cat.includes("MAMME FIT") || cat.includes("PISCINA ESTERNA") || cat.includes("ESTATE") || cat.includes("INVITO")) return false
+  if (blob.includes("ACQUATIC") || blob.includes("CAMPUS") || blob.includes("JUJITSU") || blob.includes("GESTANTI")) return false
+  if (blob.includes("AGONISMO CATEGORIE") || blob.includes("PRIVATE BAMBINI") || blob.includes("PRIVATE SPECIAL COPPIA")) return false
+  if (blob.includes("POLE DANCE") || blob.includes("PERCORSO SPA") || blob.includes("ABBIGLIAMENTO")) return false
+  if (blob.includes("SCUOLA NUOTO") && !blob.includes("ADULT")) return false
+  if (blob.includes("AGONISMO") && !blob.includes("MASTER") && !blob.includes("SENIOR")) return false
+  if (blob.includes("PRIVATE") && !blob.includes("ADULT")) return false
+  if (blob.includes("BAMBIN") || /\bKIDS\b/.test(blob) || /\bBIMB[IO]\b/.test(blob)) return false
+  return true
 }
 
 function dedupBambiniByClienteId(rows: Abbonamento[]): Abbonamento[] {
@@ -1793,10 +1783,10 @@ export async function getAbbonamentiAttiviContatti(req: Request, res: Response) 
 }
 
 /**
- * Ex / scaduti come nel gestionale (ricerca 6 − ricerca 7):
- * ha almeno un abbonamento con DataFine prima di oggi, e NON ha un abbonamento
- * ancora valido (data inizio ≤ oggi ≤ data fine). Chi ha rinnovato esce dalla lista.
- * I nominativi si caricano solo dopo i filtri: in SQL non si tira lo storico da 50k.
+ * Ex / scaduti come nel gestionale (ricerca 6 − ricerca 7 sul listino spuntato):
+ * ha almeno un abbonamento listino con DataFine prima di oggi, e NON ha un
+ * abbonamento dello stesso listino ancora valido. Un danza/kids/PT attivo non
+ * toglie chi è scaduto in palestra. Chi ha rinnovato il listino esce dalla lista.
  */
 let scadutiContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
 
@@ -1811,7 +1801,7 @@ type ScadutiLoadOpts = {
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
   const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v4-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
+  return `ex-v5-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
