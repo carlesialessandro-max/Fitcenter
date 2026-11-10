@@ -2341,7 +2341,7 @@ export async function queryAbbonamentiScadutiEx(
   const tblU = defaultTables.clienti
   const etaFrag = sqlUtenteEtaFragment()
   const ambito = opts?.ambito === "bambini" ? "bambini" : opts?.ambito === "adulti" ? "adulti" : undefined
-  const ambitoSql = ambito ? whereAndamentoAmbito("a", ambito) : ""
+  const ambitoSql = ambito === "bambini" ? whereAndamentoAmbito("a", "bambini") : ambito === "adulti" ? whereAdultiListinoScaduti("a") : ""
   const qSafe = sqlLikeSafe(opts?.q ?? "")
   const gruppi = (opts?.gruppi ?? []).map((x) => sqlLikeSafe(x)).filter(Boolean).slice(0, 30)
   const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 40)
@@ -3884,6 +3884,45 @@ function whereExcludeAbbonamentiSpecificiIds(alias = "R"): string {
       COALESCE(${alias}.[IDMacroCategoria], -2147483648) = 5
       AND COALESCE(${alias}.[IDCategoria], -2147483648) = 19
       AND COALESCE(${alias}.[IDAbbonamento], -2147483648) = 401${tessDur}
+    )
+  `
+}
+
+/** Listino adulti spuntato in gestionale (GOLD/RINNOVI + GYM, nuoto libero, rossi/verdi, …). */
+function whereAdultiListinoScaduti(alias: string): string {
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
+  const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
+  const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
+  return `
+    AND ${macro} NOT LIKE N'%DANZA%' AND ${cat} NOT LIKE N'%DANZA%' AND ${abb} NOT LIKE N'%DANZA%'
+    AND ${macro} NOT LIKE N'%STAFF%' AND ${cat} NOT LIKE N'%STAFF%'
+    AND ${macro} NOT LIKE N'%EVENTI%' AND ${macro} NOT LIKE N'%VARIE%' AND ${macro} NOT LIKE N'%PROMOZION%'
+    AND ${cat} NOT LIKE N'%INVITO%' AND ${cat} NOT LIKE N'%TESSERAMENT%'
+    AND ${cat} NOT LIKE N'%BEACTIVE%' AND ${cat} NOT LIKE N'%GYMPAY%'
+    AND ${cat} NOT LIKE N'%PERSONAL TRAINER%' AND ${abb} NOT LIKE N'%PERSONAL TRAINER%'
+    AND ${cat} NOT LIKE N'%MAMME FIT%' AND ${cat} NOT LIKE N'%PISCINA ESTERNA%'
+    AND ${cat} NOT LIKE N'%ACQUATIC%' AND ${cat} NOT LIKE N'%CAMPUS%' AND ${cat} NOT LIKE N'%JUJITSU%'
+    AND ${cat} NOT LIKE N'%GESTANTI%' AND ${cat} NOT LIKE N'%AGONISMO CATEGORIE%'
+    AND ${cat} NOT LIKE N'%PRIVATE BAMBINI%' AND ${abb} NOT LIKE N'%PRIVATE BAMBINI%'
+    AND ${cat} NOT LIKE N'%POLE DANCE%'
+    AND ${cat} NOT LIKE N'%PERCORSO SPA%' AND ${abb} NOT LIKE N'%PERCORSO SPA%'
+    AND NOT (
+      (${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%' OR ${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%')
+      AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
+    )
+    AND (
+      ${macro} LIKE N'%GOLD ESTIVO%' OR ${macro} LIKE N'%GOLD ESITVO%' OR ${macro} LIKE N'%GOLD PREMIUM%'
+      OR ${macro} LIKE N'%RINNOVI%' OR ${macro} LIKE N'%RINNOVO AUTOMATIC%'
+      OR (${cat} LIKE N'%GYM%' AND ${cat} NOT LIKE N'%GYMPAY%')
+      OR ${cat} LIKE N'%NUOTO LIBERO%' OR ${abb} LIKE N'%NUOTO LIBERO%'
+      OR ${cat} LIKE N'%PACCHETTI CORSI%' OR ${abb} LIKE N'%PACCHETTI CORSI%'
+      OR ((${cat} LIKE N'%SCUOLA NUOTO%' OR ${abb} LIKE N'%SCUOLA NUOTO%') AND (${cat} LIKE N'%ADULT%' OR ${abb} LIKE N'%ADULT%'))
+      OR (${cat} LIKE N'%ROSSI%' AND ${cat} LIKE N'%ORARIO LIBERO%')
+      OR (${cat} LIKE N'%VERDI%' AND ${cat} LIKE N'%ORARIO RIDOTTO%')
+      OR ${cat} LIKE N'%AGONISMO MASTER%' OR ${abb} LIKE N'%AGONISMO MASTER%'
+      OR ${cat} LIKE N'%PRIVATE ADULTI%' OR ${abb} LIKE N'%PRIVATE ADULTI%'
+      OR ${cat} LIKE N'%OPEN%' OR ${abb} LIKE N'%OPEN%'
+      OR ${cat} LIKE N'%SMILE%' OR ${abb} LIKE N'%SMILE%'
     )
   `
 }

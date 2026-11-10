@@ -8,6 +8,7 @@ import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
 
 type SegmentoFiltro = "tutti" | "adulti" | "bambini"
 type SessoFiltro = "tutti" | "M" | "F"
+type ContattoFiltro = "tutti" | "email" | "soloCellulare"
 type Leaf = { key: string; gruppo: string; piano: string; n: number }
 
 function localIsoDate(d = new Date()): string {
@@ -40,43 +41,62 @@ function normPiano(s: string): string {
   return s.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
 }
 
+function normCat(s: string): string {
+  return s
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 function gruppoDi(p: AttiviProdotto): string {
   const macro = (p.macro ?? "").trim()
   const cat = (p.categoria ?? "").trim()
   const piano = (p.piano ?? "").trim()
+  const m = normCat(macro)
+  if (m.includes("GOLD") || m === "RINNOVI" || m.startsWith("RINNOVI ")) return macro || cat
   if (macro && /PACCHETT/i.test(macro) && !isStaffOrDanza(macro)) return macro
   if (cat && /PACCHETT/i.test(cat) && !isStaffOrDanza(cat)) return cat
   return cat || macro || piano || "Altro"
 }
 
 function blobProdotto(p: AttiviProdotto): string {
-  return `${p.macro ?? ""} ${p.categoria ?? ""} ${p.piano ?? ""} ${gruppoDi(p)}`
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
+  return normCat(`${p.macro ?? ""} ${p.categoria ?? ""} ${p.piano ?? ""}`)
 }
 
-/** Tesseramenti, invito, PT, BeActive: non servono in queste liste. */
-function isProdottoFuoriListe(p: AttiviProdotto): boolean {
+/** Stesso listino adulti spuntato nel gestionale. */
+function isProdottoAdultiListino(p: AttiviProdotto): boolean {
   const t = blobProdotto(p)
-  return (
-    t.includes("STAFF") ||
-    t.includes("DANZA") ||
-    t.includes("TESSERAMENT") ||
-    t.includes("INVITO") ||
-    t.includes("BEACTIVE") ||
-    t.includes("GYMPAY") ||
-    t.includes("PERSONAL TRAINER") ||
-    t.includes("PERSONAL TRAINING")
-  )
+  const cat = normCat(p.categoria)
+  const macro = normCat(p.macro ?? "")
+  if (isStaffOrDanza(t) || t.includes("TESSERAMENT") || t.includes("INVITO") || t.includes("BEACTIVE") || t.includes("GYMPAY")) {
+    return false
+  }
+  if (t.includes("PERSONAL TRAINER") || t.includes("PERSONAL TRAINING") || t.includes("EVENTI") || t.includes("VARIE") || t.includes("PROMOZION")) return false
+  if (t.includes("MAMME FIT") || t.includes("PISCINA ESTERNA") || cat.includes("ESTATE")) return false
+  if (t.includes("ACQUATIC") || t.includes("CAMPUS") || t.includes("JUJITSU") || t.includes("GESTANTI")) return false
+  if (t.includes("AGONISMO CATEGORIE") || t.includes("PRIVATE BAMBINI") || t.includes("PRIVATE SPECIAL COPPIA")) return false
+  if (t.includes("POLE DANCE") || t.includes("PERCORSO SPA")) return false
+  const scuolaNuoto = t.includes("SCUOLA NUOTO")
+  if (scuolaNuoto && !t.includes("ADULT")) return false
+  if (macro.includes("GOLD") || macro === "RINNOVI" || macro.startsWith("RINNOVI ")) return true
+  if (macro.includes("RINNOVO AUTOMATIC")) return true
+  if (cat.includes("GYM") && !cat.includes("GYMPAY")) return true
+  if (t.includes("NUOTO LIBERO")) return true
+  if (t.includes("PACCHETTI CORSI")) return true
+  if (scuolaNuoto && t.includes("ADULT")) return true
+  if (cat.includes("ROSSI") && cat.includes("ORARIO LIBERO")) return true
+  if (cat.includes("VERDI") && cat.includes("ORARIO RIDOTTO")) return true
+  if (t.includes("AGONISMO MASTER")) return true
+  if (t.includes("PRIVATE ADULTI")) return true
+  if (/\bOPEN\b/.test(t) || t.includes("SMILE")) return true
+  return false
 }
 
-/**
- * Stessa logica Attivi: scuola nuoto, acquaticità, agonismo categorie, lezioni private bambini.
- * Agonismo master/senior e nuoto adulti restano adulti.
- */
 function isProdottoBambini(p: AttiviProdotto): boolean {
   const t = blobProdotto(p)
+  if (isProdottoAdultiListino(p)) return false
   if (/\bNUOTO ADULTI\b/.test(t)) return false
   if (/\bAGONISMO\b/.test(t) && /\b(MASTER|SENIOR)\b/.test(t)) return false
   if (t.includes("DANZA") || t.includes("GIOCODANZA") || t.includes("TEATRO")) return false
@@ -101,13 +121,10 @@ function isProdottoBambini(p: AttiviProdotto): boolean {
 }
 
 function prodottoNelSegmento(p: AttiviProdotto, segmento: SegmentoFiltro): boolean {
-  if (isProdottoFuoriListe(p) || isStaffOrDanza(p.macro ?? "") || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.piano)) {
-    return false
-  }
-  const kids = isProdottoBambini(p)
-  if (segmento === "adulti") return !kids
-  if (segmento === "bambini") return kids
-  return true
+  if (isStaffOrDanza(p.macro ?? "") || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.piano)) return false
+  if (segmento === "adulti") return isProdottoAdultiListino(p)
+  if (segmento === "bambini") return isProdottoBambini(p)
+  return isProdottoAdultiListino(p) || isProdottoBambini(p)
 }
 
 function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
@@ -174,6 +191,7 @@ export function ScadutiEx() {
   const [gruppiSel, setGruppiSel] = useState<Set<string>>(new Set())
   const [pianiSel, setPianiSel] = useState<Set<string>>(new Set())
   const [q, setQ] = useState("")
+  const [contattoFiltro, setContattoFiltro] = useState<ContattoFiltro>("tutti")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [applied, setApplied] = useState<FiltriCaricati | null>(null)
 
@@ -265,9 +283,16 @@ export function ScadutiEx() {
     })
   }, [prodottiSelect])
 
-  const rows = data?.rows ?? []
+  const rowsAll = data?.rows ?? []
+  const rows = useMemo(() => {
+    return rowsAll.filter((r) => {
+      if (contattoFiltro === "email") return Boolean(r.email)
+      if (contattoFiltro === "soloCellulare") return Boolean(r.telefono) && !r.email
+      return true
+    })
+  }, [rowsAll, contattoFiltro])
   const hasLoaded = applied != null && !isFetching
-  const rowKey = `${applied?.asOf ?? ""}|${rows.length}|${rows[0]?.clienteId ?? ""}`
+  const rowKey = `${applied?.asOf ?? ""}|${contattoFiltro}|${rows.length}|${rows[0]?.clienteId ?? ""}`
   useEffect(() => {
     setSelected(new Set(rows.map((r) => r.clienteId)))
   }, [rowKey])
@@ -337,9 +362,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Prima scegli età, sesso, uno o più gruppi e i prodotti, poi premi Carica lista. Adulti: niente
-            scuola nuoto, acquaticità, agonismo categorie, lezioni private bambini. Bambini: solo quelle.
-            Default: adulti.
+            Adulti = voci spuntate in gestionale (GOLD, rinnovi, gym, nuoto libero, pacchetti corsi,
+            scuola nuoto adulti, rossi/verdi, agonismo master, private adulti). Poi puoi filtrare chi ha
+            email o chi ha solo il cellulare.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -388,6 +413,26 @@ export function ScadutiEx() {
             onClick={() => setSessoFiltro(id)}
             className={`rounded-full px-3 py-1 text-sm ${
               sessoFiltro === id ? "bg-sky-500 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="mx-1 hidden h-4 w-px bg-zinc-700 sm:block" aria-hidden />
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Contatto</span>
+        {(
+          [
+            ["tutti", "Tutti"],
+            ["email", "Con email"],
+            ["soloCellulare", "Solo cellulare"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={`contatto-${id}`}
+            type="button"
+            onClick={() => setContattoFiltro(id)}
+            className={`rounded-full px-3 py-1 text-sm ${
+              contattoFiltro === id ? "bg-emerald-500 text-zinc-950" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
             }`}
           >
             {label}
