@@ -2274,8 +2274,8 @@ function sqlLikeSafe(raw: string): string {
 }
 
 /**
- * Catalogo prodotti attualmente in vigore (non lo storico da 50k).
- * Serve i filtri Gruppo/Prodotto della pagina Scaduti prima di caricare i nominativi.
+ * Catalogo gruppi/prodotti degli scaduti (DataFine prima di asOf), non i soli attivi.
+ * I filtri della pagina devono elencare GOLD/GYM/OPEN storici, non solo il listino in vigore.
  */
 export async function queryAbbonamentiCatalogoProdotti(asOfKey: string): Promise<CatalogoProdottoAbb[]> {
   const p = await getPool()
@@ -2290,8 +2290,7 @@ export async function queryAbbonamentiCatalogoProdotti(asOfKey: string): Promise
          LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N''))) AS categoria,
          LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N''))) AS piano
        FROM [${tblA}] a
-       WHERE a.[DataInizio] <= CAST(@asOf AS DATE)
-         AND a.[DataFine] >= CAST(@asOf AS DATE)
+       WHERE a.[DataFine] < CAST(@asOf AS DATE)
          AND UPPER(LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
          AND UPPER(LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
          AND UPPER(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
@@ -2415,7 +2414,7 @@ export async function queryAbbonamentiScadutiEx(
     return (r.recordset ?? []) as Record<string, unknown>[]
   } catch (e) {
     console.error("[queryAbbonamentiScadutiEx]", e)
-    return []
+    throw e
   }
 }
 
@@ -3891,39 +3890,30 @@ function whereExcludeAbbonamentiSpecificiIds(alias = "R"): string {
   `
 }
 
-/** Listino adulti: esclusioni delle cartelle NON spuntate (non whitelist di nomi). */
+/** Listino adulti: esclusioni delle cartelle NON spuntate. Solo colonne della view RVW. */
 function whereAdultiListinoScaduti(alias: string): string {
-  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], ${alias}.[CategoriaDescrizione], N''))))`
+  const cat = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[CategoriaAbbonamentoDescrizione], N''))))`
   const macro = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[MacroCategoriaAbbonamentoDescrizione], N''))))`
   const abb = `UPPER(LTRIM(RTRIM(COALESCE(${alias}.[AbbonamentoDescrizione], N''))))`
-  const blobLike = (n: string) => `(${macro} LIKE N'%${n}%' OR ${cat} LIKE N'%${n}%' OR ${abb} LIKE N'%${n}%')`
   return `
     AND ${macro} NOT LIKE N'%DANZA%' AND ${cat} NOT LIKE N'%DANZA%' AND ${abb} NOT LIKE N'%DANZA%'
     AND ${macro} NOT LIKE N'%STAFF%' AND ${cat} NOT LIKE N'%STAFF%'
-    AND ${macro} NOT LIKE N'%EVENTI%' AND ${macro} NOT LIKE N'%VARIE%'
+    AND ${macro} NOT LIKE N'%EVENTI%' AND ${macro} NOT LIKE N'%VARIE%' AND ${macro} NOT LIKE N'%PROMOZION%'
     AND ${cat} NOT LIKE N'%INVITO%' AND ${cat} NOT LIKE N'%TESSERAMENT%'
     AND ${cat} NOT LIKE N'%BEACTIVE%' AND ${cat} NOT LIKE N'%GYMPAY%'
     AND ${cat} NOT LIKE N'%PERSONAL TRAINER%' AND ${abb} NOT LIKE N'%PERSONAL TRAINER%'
     AND ${cat} NOT LIKE N'%MAMME FIT%' AND ${cat} NOT LIKE N'%PISCINA ESTERNA%' AND ${cat} NOT LIKE N'%ESTATE%'
-    AND NOT ${blobLike("ACQUATIC")} AND NOT ${blobLike("CAMPUS")} AND NOT ${blobLike("JUJITSU")}
-    AND NOT ${blobLike("GESTANTI")} AND NOT ${blobLike("POLE DANCE")} AND NOT ${blobLike("PERCORSO SPA")}
-    AND NOT ${blobLike("ABBIGLIAMENTO")}
+    AND ${cat} NOT LIKE N'%ACQUATIC%' AND ${abb} NOT LIKE N'%ACQUATIC%'
+    AND ${cat} NOT LIKE N'%CAMPUS%' AND ${abb} NOT LIKE N'%CAMPUS%'
+    AND ${cat} NOT LIKE N'%JUJITSU%' AND ${cat} NOT LIKE N'%GESTANTI%'
+    AND ${cat} NOT LIKE N'%POLE DANCE%' AND ${cat} NOT LIKE N'%PERCORSO SPA%' AND ${abb} NOT LIKE N'%PERCORSO SPA%'
     AND ${cat} NOT LIKE N'%AGONISMO CATEGORIE%' AND ${abb} NOT LIKE N'%AGONISMO CATEGORIE%'
     AND ${cat} NOT LIKE N'%PRIVATE BAMBINI%' AND ${abb} NOT LIKE N'%PRIVATE BAMBINI%'
+    AND ${cat} NOT LIKE N'%BAMBIN%' AND ${abb} NOT LIKE N'%BAMBIN%'
     AND NOT (
       ((${cat} LIKE N'%SCUOLA%' AND ${cat} LIKE N'%NUOT%') OR (${abb} LIKE N'%SCUOLA%' AND ${abb} LIKE N'%NUOT%'))
       AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
     )
-    AND NOT (
-      ${blobLike("AGONISMO")}
-      AND ${cat} NOT LIKE N'%MASTER%' AND ${abb} NOT LIKE N'%MASTER%' AND ${macro} NOT LIKE N'%MASTER%'
-      AND ${cat} NOT LIKE N'%SENIOR%' AND ${abb} NOT LIKE N'%SENIOR%'
-    )
-    AND NOT (
-      ${blobLike("PRIVATE")}
-      AND ${cat} NOT LIKE N'%ADULT%' AND ${abb} NOT LIKE N'%ADULT%'
-    )
-    AND ${cat} NOT LIKE N'%BAMBIN%' AND ${abb} NOT LIKE N'%BAMBIN%'
   `
 }
 

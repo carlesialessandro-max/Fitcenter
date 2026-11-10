@@ -1801,7 +1801,7 @@ type ScadutiLoadOpts = {
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
   const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v6-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
+  return `ex-v7-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
@@ -1968,7 +1968,7 @@ function sortScadutiContatti(list: AttiviContatto[]): AttiviContatto[] {
   })
 }
 
-/** Admin: catalogo gruppi/prodotti (solo abbonamenti in vigore, non i 50k nominativi). */
+/** Admin: catalogo gruppi/prodotti degli scaduti (non solo il listino ancora in vigore). */
 export async function getAbbonamentiScadutiCatalogo(req: Request, res: Response) {
   try {
     const { key } = parseAsOf(req)

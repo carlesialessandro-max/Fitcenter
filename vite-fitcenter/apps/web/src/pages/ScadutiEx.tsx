@@ -72,7 +72,7 @@ function isProdottoAdultiListino(p: AttiviProdotto): boolean {
   if (isStaffOrDanza(t) || t.includes("TESSERAMENT") || t.includes("INVITO") || t.includes("BEACTIVE") || t.includes("GYMPAY")) {
     return false
   }
-  if (t.includes("PERSONAL TRAINER") || t.includes("PERSONAL TRAINING") || t.includes("EVENTI") || t.includes("VARIE")) return false
+  if (t.includes("PERSONAL TRAINER") || t.includes("PERSONAL TRAINING") || t.includes("EVENTI") || t.includes("VARIE") || t.includes("PROMOZION")) return false
   if (t.includes("MAMME FIT") || t.includes("PISCINA ESTERNA") || cat.includes("ESTATE")) return false
   if (t.includes("ACQUATIC") || t.includes("CAMPUS") || t.includes("JUJITSU") || t.includes("GESTANTI")) return false
   if (t.includes("AGONISMO CATEGORIE") || t.includes("PRIVATE BAMBINI") || t.includes("PRIVATE SPECIAL COPPIA")) return false
@@ -356,9 +356,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Adulti = listino gestionale (GOLD, rinnovi, gym, nuoto, corsi, promozioni, …). Chi ha rinnovato
-            quel listino esce; danza/kids attivi non tolgono lo scaduto palestra. Deseleziona il gruppo se
-            non vuoi le promozioni. Poi filtra chi ha email o solo cellulare.
+            Adulti = listino gestionale senza danza, kids, promozioni, PT, spa. Nessun gruppo spuntato = tutti
+            gli scaduti. Se spunti i gruppi, usa quelli dello storico scaduti (non solo i prodotti ancora
+            attivi). Chi ha rinnovato il listino esce; danza/kids attivi restano in lista.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -448,7 +448,7 @@ export function ScadutiEx() {
             <span>Gruppo (macro / categoria)</span>
             <div className="flex flex-wrap items-center gap-3 font-normal">
               <span className="text-zinc-500">
-                {gruppiSel.size ? `${gruppiSel.size}/${gruppi.length}` : `0/${gruppi.length}`}
+                {gruppiSel.size ? `${gruppiSel.size}/${gruppi.length}` : "tutti"}
               </span>
               <button
                 type="button"
@@ -524,7 +524,7 @@ export function ScadutiEx() {
             <span>Prodotto (abbonamento scaduto)</span>
             <div className="flex flex-wrap items-center gap-3 font-normal">
               <span className="text-zinc-500">
-                {pianiSel.size ? `${pianiSel.size}/${prodottiSelect.length}` : `0/${prodottiSelect.length}`}
+                {pianiSel.size ? `${pianiSel.size}/${prodottiSelect.length}` : "tutti"}
               </span>
               <button
                 type="button"
