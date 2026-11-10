@@ -1257,8 +1257,8 @@ export const ammCostiStore = {
     return prev
   },
   /**
-   * Upsert Excel REPORT GENERALE. Sostituisce solo i mesi presenti nelle righe
-   * (es. gen–ott) e lascia intatti gli altri mesi già inseriti.
+   * Upsert Excel: abbina ogni importo al nominativo (anche se l'ordine del file
+   * è diverso dalla pagina). Aggiorna solo i mesi presenti nelle righe.
    */
   importCollaboratoriReport(
     anno: number,
@@ -1282,47 +1282,63 @@ export const ammCostiStore = {
       throw Object.assign(new Error("Nessun mese valido da importare"), { status: 400 })
     }
     const d = load()
-    const prevQuote = new Map<string, AmmQuota[]>()
+    const nomeMap = new Map<string, AmmCollaboratore>()
+    const quoteMap = new Map<string, AmmQuota[]>()
     for (const c of d.collaboratori) {
-      if (!c.mese.startsWith(prefix)) continue
-      prevQuote.set(c.nominativo.trim().toLowerCase(), c.quote)
+      const nk = normalizzaNominativo(c.nominativo)
+      if (nk && !nomeMap.has(nk)) nomeMap.set(nk, c)
+      if (c.mese.startsWith(prefix)) quoteMap.set(nk || c.nominativo.trim().toLowerCase(), c.quote)
     }
-    const prev = d.collaboratori.filter((c) => mesiFile.includes(c.mese))
-    d.collaboratori = d.collaboratori.filter((c) => !mesiFile.includes(c.mese))
-    save(d)
     const persone = new Set<string>()
     let inserite = 0
+    let sostituite = 0
     for (const raw of righe) {
-      const nominativo = String(raw.nominativo ?? "").trim()
+      const nomeFile = String(raw.nominativo ?? "").trim()
       const mese = String(raw.mese ?? "").slice(0, 7)
       const totale = Number(String(raw.totale ?? "").replace(",", "."))
-      if (!nominativo || !/^\d{4}-\d{2}$/.test(mese) || !mese.startsWith(prefix)) continue
+      if (!nomeFile || !/^\d{4}-\d{2}$/.test(mese) || !mese.startsWith(prefix)) continue
       if (!Number.isFinite(totale) || totale <= 0) continue
-      const key = nominativo.toLowerCase()
+      const hit = trovaPerNominativo(nomeMap, nomeFile)
+      const nominativo = hit?.nominativo?.trim() || nomeFile
+      const key = normalizzaNominativo(nominativo)
       persone.add(key)
-      const tipo: AmmCollabTipo = raw.tipo === "gestionale" ? "gestionale" : "sportivo"
-      this.upsertCollaboratore({
+      const tipo: AmmCollabTipo =
+        raw.tipo === "gestionale" || hit?.tipo === "gestionale" ? "gestionale" : "sportivo"
+      const same = d.collaboratori.find(
+        (c) => c.mese === mese && (stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === nominativo.toLowerCase())
+      )
+      if (same) sostituite += 1
+      const saved = this.upsertCollaboratore({
+        id: same?.id,
         nominativo,
         mese,
         totale,
         tipo,
         origine: "excel",
         modificatoDa: user.trim() || undefined,
-        quote: prevQuote.get(key) ?? [
-          { repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 },
-        ],
+        quote:
+          same?.quote ??
+          quoteMap.get(key) ??
+          trovaPerNominativo(quoteMap, nomeFile) ??
+          [
+            { repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 },
+          ],
       })
+      if (key) nomeMap.set(key, saved)
       inserite += 1
     }
     const d2 = load()
     if (opts?.aggiornaRimanenze !== false) {
-      d2.collaboratoriRimanenze = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
+      const rimKeep = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
+      const rimNew: typeof d2.collaboratoriRimanenze = []
       for (const raw of rimanenze) {
-        const nominativo = String(raw.nominativo ?? "").trim()
+        const nomeFile = String(raw.nominativo ?? "").trim()
         const importo = Math.round((Number(raw.importo) || 0) * 100) / 100
-        if (!nominativo || importo <= 0) continue
-        persone.add(nominativo.toLowerCase())
-        d2.collaboratoriRimanenze.push({
+        if (!nomeFile || importo <= 0) continue
+        const hit = trovaPerNominativo(nomeMap, nomeFile)
+        const nominativo = hit?.nominativo?.trim() || nomeFile
+        persone.add(normalizzaNominativo(nominativo))
+        rimNew.push({
           nominativo,
           anno,
           importo,
@@ -1330,19 +1346,20 @@ export const ammCostiStore = {
           modificatoDa: user.trim() || undefined,
         })
       }
+      d2.collaboratoriRimanenze = [...rimKeep, ...rimNew]
     }
     const audit: AmmCollabAudit = {
       id: randomUUID(),
       at: nowIso(),
       user: user.trim() || "sconosciuto",
       nominativo: "Import Excel",
-      mese: String(anno),
-      da: prev.length,
+      mese: mesiFile.join(", "),
+      da: sostituite,
       a: inserite,
       azione: "importo",
     }
     d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
     save(d2)
-    return { inserite, sostituite: prev.length, nPersone: persone.size }
+    return { inserite, sostituite, nPersone: persone.size }
   },
 }
