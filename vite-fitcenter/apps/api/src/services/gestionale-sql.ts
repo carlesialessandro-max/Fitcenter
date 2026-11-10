@@ -2344,8 +2344,8 @@ export async function queryAbbonamentiScadutiEx(
   const ambitoSql = ambito === "bambini" ? whereAndamentoAmbito("a", "bambini") : ambito === "adulti" ? whereAdultiListinoScaduti("a") : ""
   const ambitoSqlValidi = ambito === "bambini" ? whereAndamentoAmbito("v", "bambini") : ambito === "adulti" ? whereAdultiListinoScaduti("v") : ""
   const qSafe = sqlLikeSafe(opts?.q ?? "")
-  const gruppi = (opts?.gruppi ?? []).map((x) => sqlLikeSafe(x)).filter(Boolean).slice(0, 30)
-  const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 40)
+  const gruppi = (opts?.gruppi ?? []).map((x) => sqlLikeSafe(x)).filter(Boolean).slice(0, 200)
+  const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 400)
 
   let extra = `
     AND a.[DataFine] < CAST(@asOf AS DATE)
@@ -2413,7 +2413,8 @@ export async function queryAbbonamentiScadutiEx(
        ${extra}`
     )
     return (r.recordset ?? []) as Record<string, unknown>[]
-  } catch {
+  } catch (e) {
+    console.error("[queryAbbonamentiScadutiEx]", e)
     return []
   }
 }
@@ -3899,7 +3900,7 @@ function whereAdultiListinoScaduti(alias: string): string {
   return `
     AND ${macro} NOT LIKE N'%DANZA%' AND ${cat} NOT LIKE N'%DANZA%' AND ${abb} NOT LIKE N'%DANZA%'
     AND ${macro} NOT LIKE N'%STAFF%' AND ${cat} NOT LIKE N'%STAFF%'
-    AND ${macro} NOT LIKE N'%EVENTI%' AND ${macro} NOT LIKE N'%VARIE%' AND ${macro} NOT LIKE N'%PROMOZION%'
+    AND ${macro} NOT LIKE N'%EVENTI%' AND ${macro} NOT LIKE N'%VARIE%'
     AND ${cat} NOT LIKE N'%INVITO%' AND ${cat} NOT LIKE N'%TESSERAMENT%'
     AND ${cat} NOT LIKE N'%BEACTIVE%' AND ${cat} NOT LIKE N'%GYMPAY%'
     AND ${cat} NOT LIKE N'%PERSONAL TRAINER%' AND ${abb} NOT LIKE N'%PERSONAL TRAINER%'

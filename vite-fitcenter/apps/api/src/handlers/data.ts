@@ -1801,7 +1801,7 @@ type ScadutiLoadOpts = {
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
   const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v5-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
+  return `ex-v6-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
@@ -1832,9 +1832,12 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
     "ABBONAMENTI STAFF",
   ])
   const isEsclusaLista = (a: Abbonamento) => {
-    if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a)) return true
+    if (isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a)) return true
     const n = normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a))
     const macro = normalizeCategoriaAttiviMsg(a.macroCategoriaDescrizione ?? "")
+    const piano = normalizeCategoriaAttiviMsg(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+    if (n.includes("TESSERAMENT") || macro.includes("TESSERAMENT") || piano.includes("TESSERAMENT")) return true
+    if (macro.includes("VARIE") || n === "GYMPAY" || n.includes("BEACTIVE")) return true
     return (
       adultiCategoriaEscluse.has(n) ||
       adultiCategoriaEscluse.has(macro) ||
@@ -1919,8 +1922,18 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
     return Array.from(m.values())
   }
 
-  const adultiRaw = scadutiPairs.filter((pair) => isAbbonamentoAdultiListino(pair.a))
-  const bambiniRaw = scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a) && !isAbbonamentoAdultiListino(pair.a))
+  const adultiRaw =
+    ambito === "bambini"
+      ? []
+      : ambito === "adulti"
+        ? scadutiPairs
+        : scadutiPairs.filter((pair) => isAbbonamentoAdultiListino(pair.a))
+  const bambiniRaw =
+    ambito === "adulti"
+      ? []
+      : ambito === "bambini"
+        ? scadutiPairs
+        : scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a) && !isAbbonamentoAdultiListino(pair.a))
   const rows = mergeByCliente([
     ...adultiRaw.map((pair) => toContact(pair, "adulti")),
     ...bambiniRaw.map((pair) => toContact(pair, "bambini")),
