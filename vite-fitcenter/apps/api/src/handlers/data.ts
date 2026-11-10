@@ -311,10 +311,19 @@ function filterAbbonamentiDelConsulente(list: Abbonamento[], consulenteNome: str
   return list.filter((a) => consulenteNomeMatch(a.consulenteNome, want))
 }
 
+function isArchivioProdottiVecchi(macro: string, cat: string, blob: string): boolean {
+  if (macro.startsWith("Z_") || macro.startsWith("Z ") || macro.includes("FITNESS_OLD") || macro.includes("FITNESS OLD")) return true
+  if (cat.includes("FITNESS_OLD") || cat.includes("FITNESS OLD")) return true
+  if (blob.includes("CO-MARKETING") || blob.includes("CO MARKETING")) return true
+  if (blob.includes("TRIATHLON")) return true
+  if (blob.includes("ACQUA OPEN")) return true
+  return false
+}
+
 /**
- * Adulti = listino gestionale spuntato: tutto tranne le cartelle NON spuntate.
- * Non una whitelist di nomi (GYM/OPEN/SMILE…): sotto GYM/GOLD/RINNOVI i piani
- * storici hanno descrizioni diverse e venivano persi.
+ * Adulti = solo cartelle spuntate in gestionale (GOLD, RINNOVI, GYM, nuoto libero,
+ * pacchetti corsi, scuola nuoto adulti, rossi/verdi, agonismo master, private adulti).
+ * Fuori: danza, kids, promozioni, PT, spa, FITNESS_old e prodotti archiviati.
  */
 function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
   if (isTesseramentoAbbForKpi(a) || isAbbonamentoStaff(a) || isAbbonamentoPersonalTrainer(a) || isAdultiCategoriaEsclusa(a)) {
@@ -324,6 +333,7 @@ function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
   const cat = normalizeAttiviCategoria(a.categoriaAbbonamentoDescrizione ?? "")
   const piano = normalizeAttiviCategoria(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
   const blob = `${macro} ${cat} ${piano}`
+  if (isArchivioProdottiVecchi(macro, cat, blob)) return false
   if (macro.includes("DANZA") || cat.includes("DANZA") || blob.includes("DANZA")) return false
   if (macro.includes("EVENTI") || macro.includes("VARIE") || macro.includes("PROMOZION")) return false
   if (cat.includes("MAMME FIT") || cat.includes("PISCINA ESTERNA") || cat.includes("ESTATE") || cat.includes("INVITO")) return false
@@ -331,10 +341,16 @@ function isAbbonamentoAdultiListino(a: Abbonamento): boolean {
   if (blob.includes("AGONISMO CATEGORIE") || blob.includes("PRIVATE BAMBINI") || blob.includes("PRIVATE SPECIAL COPPIA")) return false
   if (blob.includes("POLE DANCE") || blob.includes("PERCORSO SPA") || blob.includes("ABBIGLIAMENTO")) return false
   if (blob.includes("SCUOLA NUOTO") && !blob.includes("ADULT")) return false
-  if (blob.includes("AGONISMO") && !blob.includes("MASTER") && !blob.includes("SENIOR")) return false
-  if (blob.includes("PRIVATE") && !blob.includes("ADULT")) return false
-  if (blob.includes("BAMBIN") || /\bKIDS\b/.test(blob) || /\bBIMB[IO]\b/.test(blob)) return false
-  return true
+  if (macro.includes("GOLD") || macro === "RINNOVI" || macro.startsWith("RINNOVI ")) return true
+  if (macro.includes("RINNOVO AUTOMATIC")) return true
+  if (cat.includes("GYM") && !cat.includes("GYMPAY")) return true
+  if (blob.includes("NUOTO LIBERO") || blob.includes("PACCHETTI CORSI")) return true
+  if (blob.includes("SCUOLA NUOTO") && blob.includes("ADULT")) return true
+  if (cat.includes("ROSSI") && cat.includes("ORARIO LIBERO")) return true
+  if (cat.includes("VERDI") && cat.includes("ORARIO RIDOTTO")) return true
+  if (blob.includes("AGONISMO MASTER") || blob.includes("PRIVATE ADULTI")) return true
+  if (/\bOPEN\b/.test(blob) || blob.includes("SMILE")) return true
+  return false
 }
 
 function dedupBambiniByClienteId(rows: Abbonamento[]): Abbonamento[] {
@@ -1801,7 +1817,7 @@ type ScadutiLoadOpts = {
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
   const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v7-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
+  return `ex-v8-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
@@ -1836,6 +1852,7 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
     const n = normalizeCategoriaAttiviMsg(categoriaLabelAttiviMsg(a))
     const macro = normalizeCategoriaAttiviMsg(a.macroCategoriaDescrizione ?? "")
     const piano = normalizeCategoriaAttiviMsg(`${a.pianoNome ?? ""} ${a.abbonamentoDescrizione ?? ""}`)
+    if (isArchivioProdottiVecchi(macro, n, `${macro} ${n} ${piano}`)) return true
     if (n.includes("TESSERAMENT") || macro.includes("TESSERAMENT") || piano.includes("TESSERAMENT")) return true
     if (macro.includes("VARIE") || n === "GYMPAY" || n.includes("BEACTIVE")) return true
     return (
@@ -1848,12 +1865,17 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
     )
   }
 
+  const minFine = (() => {
+    const p = parseYmdKey(asOfKey)
+    if (!p) return "2018-01-01"
+    return `${p.year - 8}-${pad2(p.month)}-${pad2(p.day)}`
+  })()
   const scadutiPairs = pairs.filter((pair) => {
     const id = String(pair.a.clienteId ?? "").trim()
     if (!id) return false
     if (isEsclusaLista(pair.a)) return false
     const fine = abbonamentoGiornoKey(pair.a.dataFine)
-    return Boolean(fine && fine < asOfKey)
+    return Boolean(fine && fine < asOfKey && fine >= minFine)
   })
 
   const toContact = (pair: (typeof pairs)[0], segmento: "adulti" | "bambini"): AttiviContatto => {
@@ -1923,17 +1945,11 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
   }
 
   const adultiRaw =
-    ambito === "bambini"
-      ? []
-      : ambito === "adulti"
-        ? scadutiPairs
-        : scadutiPairs.filter((pair) => isAbbonamentoAdultiListino(pair.a))
+    ambito === "bambini" ? [] : scadutiPairs.filter((pair) => isAbbonamentoAdultiListino(pair.a))
   const bambiniRaw =
     ambito === "adulti"
       ? []
-      : ambito === "bambini"
-        ? scadutiPairs
-        : scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a) && !isAbbonamentoAdultiListino(pair.a))
+      : scadutiPairs.filter((pair) => isAbbonamentoBambini(pair.a) && !isAbbonamentoAdultiListino(pair.a))
   const rows = mergeByCliente([
     ...adultiRaw.map((pair) => toContact(pair, "adulti")),
     ...bambiniRaw.map((pair) => toContact(pair, "bambini")),

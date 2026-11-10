@@ -65,10 +65,13 @@ function blobProdotto(p: AttiviProdotto): string {
   return normCat(`${p.macro ?? ""} ${p.categoria ?? ""} ${p.piano ?? ""}`)
 }
 
-/** Stesso listino adulti spuntato nel gestionale (esclusioni, non whitelist di nomi). */
+/** Stesso listino adulti spuntato nel gestionale (niente FITNESS_old / archivio). */
 function isProdottoAdultiListino(p: AttiviProdotto): boolean {
   const t = blobProdotto(p)
   const cat = normCat(p.categoria)
+  const macro = normCat(p.macro ?? "")
+  if (macro.startsWith("Z_") || macro.startsWith("Z ") || t.includes("FITNESS_OLD") || t.includes("FITNESS OLD")) return false
+  if (t.includes("CO-MARKETING") || t.includes("CO MARKETING") || t.includes("TRIATHLON") || t.includes("ACQUA OPEN")) return false
   if (isStaffOrDanza(t) || t.includes("TESSERAMENT") || t.includes("INVITO") || t.includes("BEACTIVE") || t.includes("GYMPAY")) {
     return false
   }
@@ -78,10 +81,16 @@ function isProdottoAdultiListino(p: AttiviProdotto): boolean {
   if (t.includes("AGONISMO CATEGORIE") || t.includes("PRIVATE BAMBINI") || t.includes("PRIVATE SPECIAL COPPIA")) return false
   if (t.includes("POLE DANCE") || t.includes("PERCORSO SPA") || t.includes("ABBIGLIAMENTO")) return false
   if (t.includes("SCUOLA NUOTO") && !t.includes("ADULT")) return false
-  if (t.includes("AGONISMO") && !t.includes("MASTER") && !t.includes("SENIOR")) return false
-  if (t.includes("PRIVATE") && !t.includes("ADULT")) return false
-  if (t.includes("BAMBIN") || /\bKIDS\b/.test(t) || /\bBIMB[IO]\b/.test(t)) return false
-  return true
+  if (macro.includes("GOLD") || macro === "RINNOVI" || macro.startsWith("RINNOVI ")) return true
+  if (macro.includes("RINNOVO AUTOMATIC")) return true
+  if (cat.includes("GYM") && !cat.includes("GYMPAY")) return true
+  if (t.includes("NUOTO LIBERO") || t.includes("PACCHETTI CORSI")) return true
+  if (t.includes("SCUOLA NUOTO") && t.includes("ADULT")) return true
+  if (cat.includes("ROSSI") && cat.includes("ORARIO LIBERO")) return true
+  if (cat.includes("VERDI") && cat.includes("ORARIO RIDOTTO")) return true
+  if (t.includes("AGONISMO MASTER") || t.includes("PRIVATE ADULTI")) return true
+  if (/\bOPEN\b/.test(t) || t.includes("SMILE")) return true
+  return false
 }
 
 function isProdottoBambini(p: AttiviProdotto): boolean {
@@ -356,9 +365,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Adulti = listino gestionale senza danza, kids, promozioni, PT, spa. Nessun gruppo spuntato = tutti
-            gli scaduti. Se spunti i gruppi, usa quelli dello storico scaduti (non solo i prodotti ancora
-            attivi). Chi ha rinnovato il listino esce; danza/kids attivi restano in lista.
+            Adulti = cartelle spuntate in gestionale (GOLD, rinnovi, gym, nuoto, corsi, rossi/verdi, master,
+            private adulti). Niente promozioni, FITNESS_old, scadenze oltre 8 anni. Nessun gruppo spuntato =
+            tutti quelli del listino. Chi ha rinnovato esce; danza/kids attivi restano in lista.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
