@@ -2263,6 +2263,156 @@ export async function queryAbbonamentiPerKpiAttivi(
   }
 }
 
+export type CatalogoProdottoAbb = { macro: string; categoria: string; piano: string }
+
+function sqlLikeSafe(raw: string): string {
+  return String(raw ?? "")
+    .replace(/[%_[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
+}
+
+/**
+ * Catalogo prodotti attualmente in vigore (non lo storico da 50k).
+ * Serve i filtri Gruppo/Prodotto della pagina Scaduti prima di caricare i nominativi.
+ */
+export async function queryAbbonamentiCatalogoProdotti(asOfKey: string): Promise<CatalogoProdottoAbb[]> {
+  const p = await getPool()
+  if (!p) return []
+  const asOf = String(asOfKey ?? "").trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return []
+  const tblA = getAbbonamentiTableName()
+  try {
+    const r = await p.request().input("asOf", sql.VarChar(10), asOf).query(
+      `SELECT DISTINCT
+         LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N''))) AS macro,
+         LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N''))) AS categoria,
+         LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N''))) AS piano
+       FROM [${tblA}] a
+       WHERE a.[DataInizio] <= CAST(@asOf AS DATE)
+         AND a.[DataFine] >= CAST(@asOf AS DATE)
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'
+         AND UPPER(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'`
+    )
+    const out: CatalogoProdottoAbb[] = []
+    const seen = new Set<string>()
+    for (const row of r.recordset ?? []) {
+      const macro = String((row as { macro?: unknown }).macro ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+      const categoria = String((row as { categoria?: unknown }).categoria ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+      const piano = String((row as { piano?: unknown }).piano ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim()
+      if (!piano && !categoria) continue
+      const key = `${macro}|||${categoria}|||${piano}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push({ macro, categoria, piano: piano || categoria })
+    }
+    return out.sort((a, b) => a.piano.localeCompare(b.piano, "it"))
+  } catch {
+    return []
+  }
+}
+
+export type QueryScadutiExOpts = {
+  ambito?: "adulti" | "bambini"
+  q?: string
+  gruppo?: string
+  piani?: string[]
+}
+
+/**
+ * Ex / scaduti in SQL (ricerca 6 − 7): DataFine prima di asOf, e il cliente non ha
+ * un abbonamento ancora valido (esclusi tesseramenti/VARIE). Filtri prodotto in query
+ * così non si scaricano i 50k nominativi.
+ */
+export async function queryAbbonamentiScadutiEx(
+  asOfKey: string,
+  opts?: QueryScadutiExOpts
+): Promise<Record<string, unknown>[]> {
+  const p = await getPool()
+  if (!p) return []
+  const asOf = String(asOfKey ?? "").trim().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOf)) return []
+  const tblA = getAbbonamentiTableName()
+  const tblU = defaultTables.clienti
+  const etaFrag = sqlUtenteEtaFragment()
+  const ambito = opts?.ambito === "bambini" ? "bambini" : opts?.ambito === "adulti" ? "adulti" : undefined
+  const ambitoSql = ambito ? whereAndamentoAmbito("a", ambito) : ""
+  const qSafe = sqlLikeSafe(opts?.q ?? "")
+  const gruppoSafe = sqlLikeSafe(opts?.gruppo ?? "")
+  const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 40)
+
+  let extra = `
+    AND a.[DataFine] < CAST(@asOf AS DATE)
+    AND NOT EXISTS (
+      SELECT 1
+      FROM [${tblA}] v
+      WHERE v.[IDUtente] = a.[IDUtente]
+        AND v.[IDUtente] IS NOT NULL
+        AND v.[DataInizio] <= CAST(@asOf AS DATE)
+        AND v.[DataFine] >= CAST(@asOf AS DATE)
+        AND COALESCE(v.[IDMacroCategoria], 0) <> 5
+        AND UPPER(LTRIM(RTRIM(COALESCE(v.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%TESSERAMENT%'
+        AND UPPER(LTRIM(RTRIM(COALESCE(v.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%TESSERAMENT%'
+    )
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%STAFF%'
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'
+    AND UPPER(LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N'')))) NOT LIKE N'%DANZA%'
+    ${ambitoSql}
+  `
+
+  let req = p.request().input("asOf", sql.VarChar(10), asOf)
+  if (qSafe) {
+    req = req.input("q", sql.NVarChar(80), `%${qSafe}%`)
+    extra += `
+      AND (
+        a.[AbbonamentoDescrizione] LIKE @q
+        OR a.[CategoriaAbbonamentoDescrizione] LIKE @q
+        OR a.[MacroCategoriaAbbonamentoDescrizione] LIKE @q
+        OR u.[Cognome] LIKE @q
+        OR u.[Nome] LIKE @q
+      )`
+  }
+  if (gruppoSafe) {
+    req = req.input("gruppo", sql.NVarChar(80), gruppoSafe)
+    extra += `
+      AND (
+        LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N''))) = @gruppo
+        OR LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N''))) = @gruppo
+        OR a.[CategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo + N'%'
+        OR a.[MacroCategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo + N'%'
+      )`
+  }
+  if (piani.length) {
+    const ors: string[] = []
+    piani.forEach((piano, i) => {
+      req = req.input(`piano${i}`, sql.NVarChar(120), piano)
+      ors.push(`LTRIM(RTRIM(COALESCE(a.[AbbonamentoDescrizione], N''))) = @piano${i}`)
+    })
+    extra += ` AND (${ors.join(" OR ")})`
+  }
+
+  try {
+    const r = await req.query(
+      `SELECT a.*, u.Cognome AS ClienteCognome, u.Nome AS ClienteNome, u.Email AS ClienteEmail, u.SMS AS ClienteSms, u.Sesso AS ClienteSesso${etaFrag}
+       FROM [${tblA}] a
+       LEFT JOIN [${tblU}] u ON u.IDUtente = a.IDUtente
+       WHERE 1=1
+       ${extra}`
+    )
+    return (r.recordset ?? []) as Record<string, unknown>[]
+  } catch {
+    return []
+  }
+}
+
 /** Vendite dalla tabella MovimentiVenduto. Con view venditore: join su IDIscrizione, filtro per venditore anagrafica. */
 export async function queryMovimentiVenduto(idConsultant?: string): Promise<Record<string, unknown>[]> {
   const p = await getPool()

@@ -8,6 +8,7 @@ import type {
   AbbAttiviAnalisiResponse,
   AbbAttiviContattiResponse,
   AbbScadutiContattiResponse,
+  AttiviProdotto,
   AbbAttiviInviaResponse,
   AbbAttiviInviiResponse,
   ScuolaNuotoRinnoviInviaResponse,
@@ -102,9 +103,27 @@ export const dataApi = {
     const q = params.toString()
     return api.get<AbbAttiviContattiResponse>(`/data/abbonamenti-attivi-contatti${q ? `?${q}` : ""}`)
   },
-  getAbbonamentiScadutiContatti: (opts?: { asOf?: string }) => {
+  getAbbonamentiScadutiCatalogo: (opts?: { asOf?: string }) => {
     const params = new URLSearchParams()
     if (opts?.asOf) params.set("asOf", opts.asOf)
+    const q = params.toString()
+    return api.get<{ asOf: string; prodotti: AttiviProdotto[] }>(`/data/abbonamenti-scaduti-catalogo${q ? `?${q}` : ""}`)
+  },
+  getAbbonamentiScadutiContatti: (opts?: {
+    asOf?: string
+    segmento?: "tutti" | "adulti" | "bambini"
+    sesso?: "M" | "F"
+    q?: string
+    gruppo?: string
+    piani?: string[]
+  }) => {
+    const params = new URLSearchParams()
+    if (opts?.asOf) params.set("asOf", opts.asOf)
+    if (opts?.segmento) params.set("segmento", opts.segmento)
+    if (opts?.sesso) params.set("sesso", opts.sesso)
+    if (opts?.q?.trim()) params.set("q", opts.q.trim())
+    if (opts?.gruppo?.trim()) params.set("gruppo", opts.gruppo.trim())
+    if (opts?.piani?.length) params.set("piani", opts.piani.join(","))
     const q = params.toString()
     return api.get<AbbScadutiContattiResponse>(`/data/abbonamenti-scaduti-contatti${q ? `?${q}` : ""}`)
   },

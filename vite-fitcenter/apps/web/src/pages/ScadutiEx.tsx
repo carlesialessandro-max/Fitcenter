@@ -29,11 +29,6 @@ function isStaffOrDanza(s: string): boolean {
   return n.includes("STAFF") || n.includes("DANZA")
 }
 
-function prodottiDi(c: AttiviContatto): AttiviProdotto[] {
-  if (c.prodotti?.length) return c.prodotti
-  return [{ macro: c.macro ?? "", categoria: c.categoria, piano: c.piano || c.categoria }]
-}
-
 function foldTesto(s: string): string {
   return s
     .toLowerCase()
@@ -99,6 +94,15 @@ function fmtData(iso?: string | null): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : iso
 }
 
+type FiltriCaricati = {
+  asOf: string
+  segmento: SegmentoFiltro
+  sesso: SessoFiltro
+  q: string
+  gruppo: string
+  piani: string[]
+}
+
 export function ScadutiEx() {
   const { role } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -110,44 +114,49 @@ export function ScadutiEx() {
   const [pianiSel, setPianiSel] = useState<Set<string>>(new Set())
   const [q, setQ] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [applied, setApplied] = useState<FiltriCaricati | null>(null)
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["abbonamenti-scaduti-contatti", asOf],
-    queryFn: () => dataApi.getAbbonamentiScadutiContatti({ asOf }),
+  const catalogQ = useQuery({
+    queryKey: ["abbonamenti-scaduti-catalogo", asOf],
+    queryFn: () => dataApi.getAbbonamentiScadutiCatalogo({ asOf }),
     enabled: role === "admin",
+    staleTime: 5 * 60_000,
+  })
+
+  const { data, isFetching, error, refetch } = useQuery({
+    queryKey: ["abbonamenti-scaduti-contatti", applied],
+    queryFn: () =>
+      dataApi.getAbbonamentiScadutiContatti({
+        asOf: applied!.asOf,
+        segmento: applied!.segmento,
+        sesso: applied!.sesso === "tutti" ? undefined : applied!.sesso,
+        q: applied!.q || undefined,
+        gruppo: applied!.gruppo || undefined,
+        piani: applied!.piani.length ? applied!.piani : undefined,
+      }),
+    enabled: role === "admin" && applied != null,
     staleTime: 60_000,
   })
 
-  const allRows = data?.rows ?? []
   const ql = q.trim().toLowerCase()
-
-  const bySegmento = useMemo(() => {
-    return allRows.filter((c) => {
-      if (segmento === "adulti" && c.segmento !== "adulti") return false
-      if (segmento === "bambini" && c.segmento !== "bambini") return false
-      if (sessoFiltro === "M" && c.sesso !== "M") return false
-      if (sessoFiltro === "F" && c.sesso !== "F") return false
-      return !isStaffOrDanza(c.categoria) && !isStaffOrDanza(c.macro ?? "") && !isStaffOrDanza(c.piano)
-    })
-  }, [allRows, segmento, sessoFiltro])
+  const catalogProdotti = catalogQ.data?.prodotti ?? []
 
   const foglie = useMemo(() => {
     const m = new Map<string, Leaf>()
-    for (const c of bySegmento) {
-      for (const p of prodottiDi(c)) {
-        const piano = normPiano(p.piano)
-        const cat = normPiano(p.categoria)
-        const macro = normPiano(p.macro ?? "")
-        if (!piano || isStaffOrDanza(piano) || isStaffOrDanza(cat) || isStaffOrDanza(macro)) continue
-        const g = gruppoDi({ ...p, piano, categoria: cat, macro })
-        const key = `${g}|||${piano}`
-        const prev = m.get(key)
-        if (prev) prev.n += 1
-        else m.set(key, { key, gruppo: g, piano, n: 1 })
-      }
+    for (const p of catalogProdotti) {
+      const piano = normPiano(p.piano)
+      const cat = normPiano(p.categoria)
+      const macro = normPiano(p.macro ?? "")
+      if (!piano || isStaffOrDanza(piano) || isStaffOrDanza(cat) || isStaffOrDanza(macro)) continue
+      const g = gruppoDi({ ...p, piano, categoria: cat, macro })
+      if (ql && !prodottoMatchQ({ ...p, piano, categoria: cat, macro }, ql)) continue
+      const key = `${g}|||${piano}`
+      const prev = m.get(key)
+      if (prev) prev.n += 1
+      else m.set(key, { key, gruppo: g, piano, n: 1 })
     }
     return Array.from(m.values()).sort((a, b) => a.gruppo.localeCompare(b.gruppo, "it") || a.piano.localeCompare(b.piano, "it"))
-  }, [bySegmento])
+  }, [catalogProdotti, ql])
 
   const gruppi = useMemo(() => {
     return Array.from(new Set(foglie.map((f) => f.gruppo))).sort((a, b) => a.localeCompare(b, "it"))
@@ -187,30 +196,36 @@ export function ScadutiEx() {
     })
   }, [prodottiSelect])
 
-  const rows = useMemo(() => {
-    return bySegmento.filter((c) => {
-      const prods = prodottiDi(c)
-      const haFiltroTipo = Boolean(gruppo || pianiSel.size)
-      const prodOk = prods.some((p) => {
-        if (isStaffOrDanza(p.piano) || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.macro ?? "")) return false
-        if (gruppo && gruppoDi(p) !== gruppo) return false
-        if (pianiSel.size && !pianiSel.has(normPiano(p.piano))) return false
-        if (!haFiltroTipo && ql && !prodottoMatchQ(p, ql)) return false
-        return true
-      })
-      if (prodOk) return true
-      if (ql && !haFiltroTipo) {
-        const hay = foldTesto(`${c.nome} ${c.cognome ?? ""} ${c.email ?? ""}`)
-        if (hay.includes(foldTesto(ql))) return true
-      }
-      return false
-    })
-  }, [bySegmento, ql, gruppo, pianiSel])
-
-  const rowKey = `${segmento}|${sessoFiltro}|${gruppo}|${[...pianiSel].sort().join(",")}|${ql}|${rows.length}|${rows[0]?.clienteId ?? ""}`
+  const rows = data?.rows ?? []
+  const hasLoaded = applied != null && !isFetching
+  const rowKey = `${applied?.asOf ?? ""}|${rows.length}|${rows[0]?.clienteId ?? ""}`
   useEffect(() => {
     setSelected(new Set(rows.map((r) => r.clienteId)))
   }, [rowKey])
+
+  const caricaLista = () => {
+    const next: FiltriCaricati = {
+      asOf,
+      segmento,
+      sesso: sessoFiltro,
+      q: gruppo || pianiSel.size ? "" : q.trim(),
+      gruppo,
+      piani: [...pianiSel].sort(),
+    }
+    const same =
+      applied != null &&
+      applied.asOf === next.asOf &&
+      applied.segmento === next.segmento &&
+      applied.sesso === next.sesso &&
+      applied.q === next.q &&
+      applied.gruppo === next.gruppo &&
+      applied.piani.join("|") === next.piani.join("|")
+    if (same) {
+      void refetch()
+      return
+    }
+    setApplied(next)
+  }
 
   const selectedRows = useMemo(
     () =>
@@ -253,9 +268,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Come nel gestionale: chi ha almeno un abbonamento già finito, togliendo chi ha ancora un abbonamento
-            valido oggi (ha rinnovato). Niente invio mail: selezioni la lista e scarichi Cognome, Nome, Email,
-            Cellulare. Staff e danza esclusi. Default: adulti.
+            Prima scegli età, sesso, gruppo o prodotto, poi premi Carica lista. Non scarichiamo i 50mila
+            registrati all&apos;apertura: arrivano solo i nominativi del filtro. Chi ha rinnovato esce dalla
+            lista. Default: adulti.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -346,8 +361,10 @@ export function ScadutiEx() {
             </span>
           </div>
           <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
-            {prodottiSelect.length === 0 ? (
-              <p className="py-2 text-zinc-500">Nessun prodotto in elenco.</p>
+            {catalogQ.isLoading ? (
+              <p className="py-2 text-zinc-500">Caricamento prodotti…</p>
+            ) : prodottiSelect.length === 0 ? (
+              <p className="py-2 text-zinc-500">Nessun prodotto in elenco. Puoi anche scrivere h2o, smile, gym…</p>
             ) : (
               prodottiSelect.map((p) => (
                 <label
@@ -382,126 +399,128 @@ export function ScadutiEx() {
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-400">
-        <p>
-          {isLoading
-            ? "Caricamento elenco…"
-            : `${rows.length} in lista · ${rows.filter((r) => r.email).length} con email · ${rows.filter((r) => r.telefono).length} con cellulare`}
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <button type="button" className="text-amber-400 hover:underline" onClick={() => setSelected(new Set(rows.map((r) => r.clienteId)))}>
-            Seleziona tutti
-          </button>
-          <button type="button" className="text-zinc-400 hover:underline" onClick={() => setSelected(new Set())}>
-            Nessuno
-          </button>
-        </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={caricaLista}
+          disabled={isFetching}
+          className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-zinc-950 hover:bg-amber-400 disabled:cursor-wait disabled:opacity-60"
+        >
+          {isFetching ? "Caricamento lista…" : "Carica lista"}
+        </button>
+        {applied == null ? (
+          <p className="text-sm text-zinc-500">Imposta i filtri e premi Carica lista. Non si scaricano i 50mila all&apos;apertura.</p>
+        ) : null}
       </div>
 
       {error ? <p className="mt-2 text-sm text-red-400">{(error as Error).message}</p> : null}
 
-      <div className="mt-3 max-h-[40vh] overflow-auto rounded-lg border border-zinc-800">
-        <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="sticky top-0 bg-zinc-900 text-xs text-zinc-500">
-            <tr>
-              <th className="w-8 px-2 py-1.5" />
-              <th className="px-2 py-1.5 font-medium">Cognome</th>
-              <th className="px-2 py-1.5 font-medium">Nome</th>
-              <th className="px-2 py-1.5 font-medium">Email</th>
-              <th className="px-2 py-1.5 font-medium">Cellulare</th>
-              <th className="px-2 py-1.5 font-medium">Ultimo scaduto</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr
-                key={r.clienteId}
-                className={`border-t border-zinc-800/70 ${selected.has(r.clienteId) ? "bg-zinc-800/30" : ""}`}
+      {applied == null ? (
+        <div className="mt-4 rounded-xl border border-dashed border-zinc-700 bg-zinc-950/40 px-4 py-10 text-center text-sm text-zinc-500">
+          Seleziona adulti / bambini, sesso e prodotto, poi carica i nominativi.
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-950/50 px-4 py-3">
+            <div className="flex flex-wrap items-end gap-6">
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Totale</p>
+                <p className="text-3xl font-semibold tabular-nums text-zinc-50">
+                  {isFetching ? "…" : rows.length}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Con email</p>
+                <p className="text-xl font-semibold tabular-nums text-zinc-200">
+                  {isFetching ? "…" : rows.filter((r) => r.email).length}
+                </p>
+              </div>
+              <div>
+                <p className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Con cellulare</p>
+                <p className="text-xl font-semibold tabular-nums text-zinc-200">
+                  {isFetching ? "…" : rows.filter((r) => r.telefono).length}
+                </p>
+              </div>
+              <p className="pb-1 text-sm text-zinc-500">
+                {selectedRows.length} spuntat{selectedRows.length === 1 ? "o" : "i"} per il file
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                className="text-sm text-amber-400 hover:underline"
+                onClick={() => setSelected(new Set(rows.map((r) => r.clienteId)))}
               >
-                <td className="px-2 py-1.5">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(r.clienteId)}
-                    onChange={() => setSelected((prev) => toggleSet(prev, r.clienteId))}
-                  />
-                </td>
-                <td className="px-2 py-1.5 text-zinc-100">{r.cognome || "—"}</td>
-                <td className="px-2 py-1.5 text-zinc-100">{r.nomeProprio || r.nome}</td>
-                <td className="px-2 py-1.5 text-xs text-zinc-300">{r.email || <span className="text-zinc-600">no email</span>}</td>
-                <td className="px-2 py-1.5 text-xs text-zinc-300">{r.telefono || <span className="text-zinc-600">no tel</span>}</td>
-                <td className="max-w-[280px] truncate px-2 py-1.5 text-xs text-zinc-500" title={r.piano}>
-                  {fmtData(r.dataFine)} · {r.piano}
-                </td>
-              </tr>
-            ))}
-            {!isLoading && rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
-                  Nessuno scaduto / ex con questi filtri.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+                Seleziona tutti
+              </button>
+              <button type="button" className="text-sm text-zinc-400 hover:underline" onClick={() => setSelected(new Set())}>
+                Nessuno
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRows.length}
+                onClick={() => downloadCsv(selectedRows, asOf)}
+                className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Scarica CSV
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRows.length}
+                onClick={() => downloadXlsx(selectedRows, asOf)}
+                className="rounded-lg border border-amber-600 px-3 py-1.5 text-sm text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Scarica Excel
+              </button>
+            </div>
+          </div>
 
-      <section className="mt-5 rounded-2xl border border-amber-800/50 bg-zinc-950/60 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-100">Anteprima lista da scaricare</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Stesso contenuto del file: Cognome, Nome, Email, Cellulare. {selectedRows.length} righe spuntate.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={!selectedRows.length}
-              onClick={() => downloadCsv(selectedRows, asOf)}
-              className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-zinc-950 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Scarica CSV
-            </button>
-            <button
-              type="button"
-              disabled={!selectedRows.length}
-              onClick={() => downloadXlsx(selectedRows, asOf)}
-              className="rounded-lg border border-amber-600 px-3 py-1.5 text-sm text-amber-200 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Scarica Excel
-            </button>
-          </div>
-        </div>
-        <div className="mt-3 max-h-[46vh] overflow-auto rounded-lg border border-zinc-800 bg-zinc-900">
-          <table className="w-full min-w-[520px] text-left text-sm">
-            <thead className="sticky top-0 bg-zinc-800 text-xs uppercase tracking-wide text-zinc-400">
-              <tr>
-                <th className="px-3 py-2 font-medium">Cognome</th>
-                <th className="px-3 py-2 font-medium">Nome</th>
-                <th className="px-3 py-2 font-medium">Email</th>
-                <th className="px-3 py-2 font-medium">Cellulare</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedRows.map((r) => (
-                <tr key={`prev-${r.clienteId}`} className="border-t border-zinc-800/80">
-                  <td className="px-3 py-1.5 text-zinc-100">{r.cognome || ""}</td>
-                  <td className="px-3 py-1.5 text-zinc-100">{r.nomeProprio || r.nome}</td>
-                  <td className="px-3 py-1.5 text-zinc-300">{r.email || ""}</td>
-                  <td className="px-3 py-1.5 text-zinc-300">{r.telefono || ""}</td>
-                </tr>
-              ))}
-              {!selectedRows.length ? (
+          <div className="mt-3 max-h-[70vh] overflow-auto rounded-lg border border-zinc-800">
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="sticky top-0 bg-zinc-900 text-xs text-zinc-500">
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-zinc-500">
-                    Spunta le persone sopra: qui vedi l&apos;anteprima del file prima di scaricarlo.
-                  </td>
+                  <th className="w-8 px-2 py-1.5" />
+                  <th className="px-2 py-1.5 font-medium">Cognome</th>
+                  <th className="px-2 py-1.5 font-medium">Nome</th>
+                  <th className="px-2 py-1.5 font-medium">Email</th>
+                  <th className="px-2 py-1.5 font-medium">Cellulare</th>
+                  <th className="px-2 py-1.5 font-medium">Ultimo scaduto</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr
+                    key={r.clienteId}
+                    className={`border-t border-zinc-800/70 ${selected.has(r.clienteId) ? "bg-zinc-800/30" : ""}`}
+                  >
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(r.clienteId)}
+                        onChange={() => setSelected((prev) => toggleSet(prev, r.clienteId))}
+                      />
+                    </td>
+                    <td className="px-2 py-1.5 text-zinc-100">{r.cognome || "—"}</td>
+                    <td className="px-2 py-1.5 text-zinc-100">{r.nomeProprio || r.nome}</td>
+                    <td className="px-2 py-1.5 text-xs text-zinc-300">{r.email || <span className="text-zinc-600">no email</span>}</td>
+                    <td className="px-2 py-1.5 text-xs text-zinc-300">{r.telefono || <span className="text-zinc-600">no tel</span>}</td>
+                    <td className="max-w-[280px] truncate px-2 py-1.5 text-xs text-zinc-500" title={r.piano}>
+                      {fmtData(r.dataFine)} · {r.piano}
+                    </td>
+                  </tr>
+                ))}
+                {hasLoaded && rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-zinc-500">
+                      Nessuno scaduto / ex con questi filtri.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   )
 }

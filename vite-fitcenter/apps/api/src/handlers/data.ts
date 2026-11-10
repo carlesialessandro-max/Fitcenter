@@ -1787,35 +1787,41 @@ export async function getAbbonamentiAttiviContatti(req: Request, res: Response) 
  * Ex / scaduti come nel gestionale (ricerca 6 − ricerca 7):
  * ha almeno un abbonamento con DataFine prima di oggi, e NON ha un abbonamento
  * ancora valido (data inizio ≤ oggi ≤ data fine). Chi ha rinnovato esce dalla lista.
+ * I nominativi si caricano solo dopo i filtri: in SQL non si tira lo storico da 50k.
  */
 let scadutiContattiCacheSlot: { key: string; at: number; data: AttiviContattiLoaded } | null = null
 
-function isValiditaAllaData(a: Abbonamento, asOfKey: string): boolean {
-  if (isTesseramentoAbbForKpi(a)) return false
-  const ini = abbonamentoGiornoKey(a.dataInizio)
-  const fine = abbonamentoGiornoKey(a.dataFine)
-  if (!ini || !fine) return false
-  return asOfKey >= ini && asOfKey <= fine
+type ScadutiLoadOpts = {
+  segmento?: string
+  sesso?: string
+  q?: string
+  gruppo?: string
+  piani?: string[]
 }
 
-async function loadScadutiContatti(date: Date): Promise<AttiviContattiLoaded> {
+function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
+  const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
+  return `ex-v2-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${opts.gruppo ?? ""}|${piani}`
+}
+
+async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
   const parts = toDateParts(date)
   const asOfKey = `${parts.year}-${pad2(parts.month)}-${pad2(parts.day)}`
-  const key = `ex-v1-${asOfKey}`
+  const key = scadutiFiltroKey(asOfKey, opts)
   const now = Date.now()
-  if (scadutiContattiCacheSlot && scadutiContattiCacheSlot.key === key && now - scadutiContattiCacheSlot.at < 8_000) {
+  if (scadutiContattiCacheSlot && scadutiContattiCacheSlot.key === key && now - scadutiContattiCacheSlot.at < 60_000) {
     return scadutiContattiCacheSlot.data
   }
   if (!gestionaleSql.isGestionaleConfigured()) return { rows: [], categorie: [], piani: [] }
-  const rawRows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
+  const segRaw = String(opts.segmento ?? "adulti").trim().toLowerCase()
+  const ambito = segRaw === "bambini" ? "bambini" : segRaw === "tutti" ? undefined : "adulti"
+  const rawRows = await gestionaleSql.queryAbbonamentiScadutiEx(asOfKey, {
+    ambito,
+    q: opts.q,
+    gruppo: opts.gruppo,
+    piani: opts.piani,
+  })
   const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
-
-  const clientiValidi = new Set<string>()
-  for (const pair of pairs) {
-    const id = String(pair.a.clienteId ?? "").trim()
-    if (!id) continue
-    if (isValiditaAllaData(pair.a, asOfKey)) clientiValidi.add(id)
-  }
 
   const adultiCategoriaEscluse = new Set([
     "QUOTE DANZA",
@@ -1841,7 +1847,7 @@ async function loadScadutiContatti(date: Date): Promise<AttiviContattiLoaded> {
 
   const scadutiPairs = pairs.filter((pair) => {
     const id = String(pair.a.clienteId ?? "").trim()
-    if (!id || clientiValidi.has(id)) return false
+    if (!id) return false
     if (isEsclusaLista(pair.a)) return false
     const fine = abbonamentoGiornoKey(pair.a.dataFine)
     return Boolean(fine && fine < asOfKey)
@@ -1949,12 +1955,39 @@ function sortScadutiContatti(list: AttiviContatto[]): AttiviContatto[] {
   })
 }
 
-/** Admin: ex / scaduti (niente rinnovo in corso) per liste da scaricare. */
+/** Admin: catalogo gruppi/prodotti (solo abbonamenti in vigore, non i 50k nominativi). */
+export async function getAbbonamentiScadutiCatalogo(req: Request, res: Response) {
+  try {
+    const { key } = parseAsOf(req)
+    if (!gestionaleSql.isGestionaleConfigured()) {
+      res.json({ asOf: key, prodotti: [] as gestionaleSql.CatalogoProdottoAbb[] })
+      return
+    }
+    const prodotti = await gestionaleSql.queryAbbonamentiCatalogoProdotti(key)
+    res.json({ asOf: key, prodotti })
+  } catch (e) {
+    res.status(500).json({ message: (e as Error).message })
+  }
+}
+
+/** Admin: ex / scaduti (niente rinnovo in corso) per liste da scaricare. Caricare solo dopo i filtri. */
 export async function getAbbonamentiScadutiContatti(req: Request, res: Response) {
   try {
     const { date, key } = parseAsOf(req)
-    const loaded = await loadScadutiContatti(date)
-    const all = sortScadutiContatti(loaded.rows)
+    const segmento = String(req.query.segmento ?? "adulti").trim().toLowerCase()
+    const sesso = String(req.query.sesso ?? "").trim()
+    const q = String(req.query.q ?? "").trim()
+    const gruppo = String(req.query.gruppo ?? "").trim()
+    const piani = parseCategorieParam(req.query.piani)
+    const loaded = await loadScadutiContatti(date, { segmento, sesso, q, gruppo, piani })
+    const filtered = filterAttiviContatti(loaded.rows, {
+      segmento,
+      sesso,
+      q,
+      piani,
+      categorie: gruppo ? [gruppo] : [],
+    })
+    const all = sortScadutiContatti(filtered)
     const tipologie = Array.from(
       new Set(
         [
