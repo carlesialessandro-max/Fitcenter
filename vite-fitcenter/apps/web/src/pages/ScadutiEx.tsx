@@ -440,11 +440,35 @@ export function ScadutiEx() {
 
       <div className="mt-3 grid max-w-4xl gap-3 sm:grid-cols-2">
         <div className="block text-xs font-medium text-zinc-400">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span>Gruppo (macro / categoria)</span>
-            <span className="font-normal text-zinc-500">
-              {gruppiSel.size ? `${gruppiSel.size} selezionat${gruppiSel.size === 1 ? "o" : "i"}` : "tutti visibili"}
-            </span>
+            <div className="flex flex-wrap items-center gap-3 font-normal">
+              <span className="text-zinc-500">
+                {gruppiSel.size ? `${gruppiSel.size}/${gruppi.length}` : `0/${gruppi.length}`}
+              </span>
+              <button
+                type="button"
+                className="text-sm text-amber-400 hover:underline disabled:text-zinc-600 disabled:no-underline"
+                disabled={!gruppi.length}
+                onClick={() => {
+                  setGruppiSel(new Set(gruppi))
+                  setPianiSel(new Set())
+                }}
+              >
+                Seleziona tutti
+              </button>
+              <button
+                type="button"
+                className="text-sm text-zinc-400 hover:underline disabled:text-zinc-600 disabled:no-underline"
+                disabled={!gruppiSel.size}
+                onClick={() => {
+                  setGruppiSel(new Set())
+                  setPianiSel(new Set())
+                }}
+              >
+                Nessuno
+              </button>
+            </div>
           </div>
           <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
             {catalogQ.isLoading ? (
@@ -456,58 +480,65 @@ export function ScadutiEx() {
                   : "Nessun gruppo in elenco."}
               </p>
             ) : (
-              gruppi.map((g) => (
-                <label
-                  key={g}
-                  className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
-                >
+              <>
+                <label className="flex cursor-pointer items-start gap-2 rounded border-b border-zinc-800 px-1 py-1 text-sm text-amber-200 hover:bg-zinc-800/70">
                   <input
                     type="checkbox"
                     className="mt-0.5"
-                    checked={gruppiSel.has(g)}
+                    checked={gruppi.length > 0 && gruppi.every((g) => gruppiSel.has(g))}
                     onChange={() => {
-                      setGruppiSel((prev) => toggleSet(prev, g))
+                      const allOn = gruppi.length > 0 && gruppi.every((g) => gruppiSel.has(g))
+                      setGruppiSel(allOn ? new Set() : new Set(gruppi))
                       setPianiSel(new Set())
                     }}
                   />
-                  <span className="min-w-0 flex-1 leading-snug">{g}</span>
+                  <span className="min-w-0 flex-1 leading-snug">Seleziona tutti i gruppi</span>
                 </label>
-              ))
+                {gruppi.map((g) => (
+                  <label
+                    key={g}
+                    className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={gruppiSel.has(g)}
+                      onChange={() => {
+                        setGruppiSel((prev) => toggleSet(prev, g))
+                        setPianiSel(new Set())
+                      }}
+                    />
+                    <span className="min-w-0 flex-1 leading-snug">{g}</span>
+                  </label>
+                ))}
+              </>
             )}
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-3 border-t border-zinc-800 pt-1.5 font-normal">
-            <button
-              type="button"
-              className="text-[11px] text-amber-400 hover:underline"
-              onClick={() => {
-                setGruppiSel(new Set(gruppi))
-                setPianiSel(new Set())
-              }}
-            >
-              Tutti visibili
-            </button>
-            <button
-              type="button"
-              className="text-[11px] text-zinc-400 hover:underline"
-              onClick={() => {
-                setGruppiSel(new Set())
-                setPianiSel(new Set())
-              }}
-            >
-              Azzera selezione
-            </button>
           </div>
         </div>
         <div className="block text-xs font-medium text-zinc-400">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span>Prodotto (abbonamento scaduto)</span>
-            <span className="font-normal text-zinc-500">
-              {pianiSel.size
-                ? `${pianiSel.size} selezionat${pianiSel.size === 1 ? "o" : "i"}`
-                : gruppiSel.size
-                  ? "tutti dei gruppi"
-                  : "tutti"}
-            </span>
+            <div className="flex flex-wrap items-center gap-3 font-normal">
+              <span className="text-zinc-500">
+                {pianiSel.size ? `${pianiSel.size}/${prodottiSelect.length}` : `0/${prodottiSelect.length}`}
+              </span>
+              <button
+                type="button"
+                className="text-sm text-amber-400 hover:underline disabled:text-zinc-600 disabled:no-underline"
+                disabled={!prodottiSelect.length}
+                onClick={() => setPianiSel(new Set(prodottiSelect.map((p) => p.piano)))}
+              >
+                Seleziona tutti
+              </button>
+              <button
+                type="button"
+                className="text-sm text-zinc-400 hover:underline disabled:text-zinc-600 disabled:no-underline"
+                disabled={!pianiSel.size}
+                onClick={() => setPianiSel(new Set())}
+              >
+                Nessuno
+              </button>
+            </div>
           </div>
           <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
             {catalogQ.isLoading ? (
@@ -515,35 +546,37 @@ export function ScadutiEx() {
             ) : prodottiSelect.length === 0 ? (
               <p className="py-2 text-zinc-500">Nessun prodotto in elenco. Puoi anche scrivere h2o, smile, gym…</p>
             ) : (
-              prodottiSelect.map((p) => (
-                <label
-                  key={p.piano}
-                  className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
-                >
+              <>
+                <label className="flex cursor-pointer items-start gap-2 rounded border-b border-zinc-800 px-1 py-1 text-sm text-amber-200 hover:bg-zinc-800/70">
                   <input
                     type="checkbox"
                     className="mt-0.5"
-                    checked={pianiSel.has(p.piano)}
-                    onChange={() => setPianiSel((prev) => toggleSet(prev, p.piano))}
+                    checked={prodottiSelect.length > 0 && prodottiSelect.every((p) => pianiSel.has(p.piano))}
+                    onChange={() => {
+                      const allOn = prodottiSelect.length > 0 && prodottiSelect.every((p) => pianiSel.has(p.piano))
+                      setPianiSel(allOn ? new Set() : new Set(prodottiSelect.map((p) => p.piano)))
+                    }}
                   />
-                  <span className="min-w-0 flex-1 leading-snug">
-                    {p.piano} <span className="text-zinc-500">({p.n})</span>
-                  </span>
+                  <span className="min-w-0 flex-1 leading-snug">Seleziona tutti i prodotti</span>
                 </label>
-              ))
+                {prodottiSelect.map((p) => (
+                  <label
+                    key={p.piano}
+                    className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={pianiSel.has(p.piano)}
+                      onChange={() => setPianiSel((prev) => toggleSet(prev, p.piano))}
+                    />
+                    <span className="min-w-0 flex-1 leading-snug">
+                      {p.piano} <span className="text-zinc-500">({p.n})</span>
+                    </span>
+                  </label>
+                ))}
+              </>
             )}
-          </div>
-          <div className="mt-1.5 flex flex-wrap gap-3 border-t border-zinc-800 pt-1.5 font-normal">
-            <button
-              type="button"
-              className="text-[11px] text-amber-400 hover:underline"
-              onClick={() => setPianiSel(new Set(prodottiSelect.map((p) => p.piano)))}
-            >
-              Tutti visibili
-            </button>
-            <button type="button" className="text-[11px] text-zinc-400 hover:underline" onClick={() => setPianiSel(new Set())}>
-              Azzera selezione
-            </button>
           </div>
         </div>
       </div>
