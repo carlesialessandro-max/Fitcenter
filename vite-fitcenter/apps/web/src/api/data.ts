@@ -114,7 +114,7 @@ export const dataApi = {
     segmento?: "tutti" | "adulti" | "bambini"
     sesso?: "M" | "F"
     q?: string
-    gruppo?: string
+    gruppi?: string[]
     piani?: string[]
   }) => {
     const params = new URLSearchParams()
@@ -122,7 +122,7 @@ export const dataApi = {
     if (opts?.segmento) params.set("segmento", opts.segmento)
     if (opts?.sesso) params.set("sesso", opts.sesso)
     if (opts?.q?.trim()) params.set("q", opts.q.trim())
-    if (opts?.gruppo?.trim()) params.set("gruppo", opts.gruppo.trim())
+    if (opts?.gruppi?.length) params.set("gruppi", opts.gruppi.join(","))
     if (opts?.piani?.length) params.set("piani", opts.piani.join(","))
     const q = params.toString()
     return api.get<AbbScadutiContattiResponse>(`/data/abbonamenti-scaduti-contatti${q ? `?${q}` : ""}`)

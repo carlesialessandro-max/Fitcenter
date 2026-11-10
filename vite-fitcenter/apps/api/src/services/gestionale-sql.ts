@@ -2320,7 +2320,7 @@ export async function queryAbbonamentiCatalogoProdotti(asOfKey: string): Promise
 export type QueryScadutiExOpts = {
   ambito?: "adulti" | "bambini"
   q?: string
-  gruppo?: string
+  gruppi?: string[]
   piani?: string[]
 }
 
@@ -2343,7 +2343,7 @@ export async function queryAbbonamentiScadutiEx(
   const ambito = opts?.ambito === "bambini" ? "bambini" : opts?.ambito === "adulti" ? "adulti" : undefined
   const ambitoSql = ambito ? whereAndamentoAmbito("a", ambito) : ""
   const qSafe = sqlLikeSafe(opts?.q ?? "")
-  const gruppoSafe = sqlLikeSafe(opts?.gruppo ?? "")
+  const gruppi = (opts?.gruppi ?? []).map((x) => sqlLikeSafe(x)).filter(Boolean).slice(0, 30)
   const piani = (opts?.piani ?? []).map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 40)
 
   let extra = `
@@ -2380,15 +2380,18 @@ export async function queryAbbonamentiScadutiEx(
         OR u.[Nome] LIKE @q
       )`
   }
-  if (gruppoSafe) {
-    req = req.input("gruppo", sql.NVarChar(80), gruppoSafe)
-    extra += `
-      AND (
-        LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N''))) = @gruppo
-        OR LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N''))) = @gruppo
-        OR a.[CategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo + N'%'
-        OR a.[MacroCategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo + N'%'
-      )`
+  if (gruppi.length) {
+    const ors: string[] = []
+    gruppi.forEach((g, i) => {
+      req = req.input(`gruppo${i}`, sql.NVarChar(80), g)
+      ors.push(`(
+        LTRIM(RTRIM(COALESCE(a.[CategoriaAbbonamentoDescrizione], N''))) = @gruppo${i}
+        OR LTRIM(RTRIM(COALESCE(a.[MacroCategoriaAbbonamentoDescrizione], N''))) = @gruppo${i}
+        OR a.[CategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo${i} + N'%'
+        OR a.[MacroCategoriaAbbonamentoDescrizione] LIKE N'%' + @gruppo${i} + N'%'
+      )`)
+    })
+    extra += ` AND (${ors.join(" OR ")})`
   }
   if (piani.length) {
     const ors: string[] = []

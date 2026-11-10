@@ -1795,13 +1795,14 @@ type ScadutiLoadOpts = {
   segmento?: string
   sesso?: string
   q?: string
-  gruppo?: string
+  gruppi?: string[]
   piani?: string[]
 }
 
 function scadutiFiltroKey(asOfKey: string, opts: ScadutiLoadOpts): string {
+  const gruppi = (opts.gruppi ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
   const piani = (opts.piani ?? []).map((x) => x.trim()).filter(Boolean).sort().join(",")
-  return `ex-v2-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${opts.gruppo ?? ""}|${piani}`
+  return `ex-v3-${asOfKey}|${opts.segmento ?? ""}|${opts.sesso ?? ""}|${opts.q ?? ""}|${gruppi}|${piani}`
 }
 
 async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Promise<AttiviContattiLoaded> {
@@ -1818,7 +1819,7 @@ async function loadScadutiContatti(date: Date, opts: ScadutiLoadOpts = {}): Prom
   const rawRows = await gestionaleSql.queryAbbonamentiScadutiEx(asOfKey, {
     ambito,
     q: opts.q,
-    gruppo: opts.gruppo,
+    gruppi: opts.gruppi,
     piani: opts.piani,
   })
   const pairs = rawRows.map((row) => ({ row, a: rowToAbbonamento(row) }))
@@ -1977,15 +1978,15 @@ export async function getAbbonamentiScadutiContatti(req: Request, res: Response)
     const segmento = String(req.query.segmento ?? "adulti").trim().toLowerCase()
     const sesso = String(req.query.sesso ?? "").trim()
     const q = String(req.query.q ?? "").trim()
-    const gruppo = String(req.query.gruppo ?? "").trim()
+    const gruppi = parseCategorieParam(req.query.gruppi ?? req.query.gruppo)
     const piani = parseCategorieParam(req.query.piani)
-    const loaded = await loadScadutiContatti(date, { segmento, sesso, q, gruppo, piani })
+    const loaded = await loadScadutiContatti(date, { segmento, sesso, q, gruppi, piani })
     const filtered = filterAttiviContatti(loaded.rows, {
       segmento,
       sesso,
       q,
       piani,
-      categorie: gruppo ? [gruppo] : [],
+      categorie: gruppi,
     })
     const all = sortScadutiContatti(filtered)
     const tipologie = Array.from(

@@ -49,6 +49,67 @@ function gruppoDi(p: AttiviProdotto): string {
   return cat || macro || piano || "Altro"
 }
 
+function blobProdotto(p: AttiviProdotto): string {
+  return `${p.macro ?? ""} ${p.categoria ?? ""} ${p.piano ?? ""} ${gruppoDi(p)}`
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+}
+
+/** Tesseramenti, invito, PT, BeActive: non servono in queste liste. */
+function isProdottoFuoriListe(p: AttiviProdotto): boolean {
+  const t = blobProdotto(p)
+  return (
+    t.includes("STAFF") ||
+    t.includes("DANZA") ||
+    t.includes("TESSERAMENT") ||
+    t.includes("INVITO") ||
+    t.includes("BEACTIVE") ||
+    t.includes("GYMPAY") ||
+    t.includes("PERSONAL TRAINER") ||
+    t.includes("PERSONAL TRAINING")
+  )
+}
+
+/**
+ * Stessa logica Attivi: scuola nuoto, acquaticità, agonismo categorie, lezioni private bambini.
+ * Agonismo master/senior e nuoto adulti restano adulti.
+ */
+function isProdottoBambini(p: AttiviProdotto): boolean {
+  const t = blobProdotto(p)
+  if (/\bNUOTO ADULTI\b/.test(t)) return false
+  if (/\bAGONISMO\b/.test(t) && /\b(MASTER|SENIOR)\b/.test(t)) return false
+  if (t.includes("DANZA") || t.includes("GIOCODANZA") || t.includes("TEATRO")) return false
+  if (/PRIVATE/.test(t) && !/\bADULT/.test(t) && !/\bMASTER/.test(t) && !/\bSENIOR/.test(t)) return true
+  return (
+    /SCUOLA\s*NUOTO/.test(t) ||
+    /AGONISMO\s*CATEGORIE/.test(t) ||
+    /ACQUATICIT/.test(t) ||
+    /\bBAMBIN[IO]\b/.test(t) ||
+    /\bBIMB[IO]\b/.test(t) ||
+    /\bKIDS\b/.test(t) ||
+    /\bMINI\b/.test(t) ||
+    /GIOVANISSIM/.test(t) ||
+    /ESORDIEN/.test(t) ||
+    /PREAGONISMO/.test(t) ||
+    /PROPAGANDA/.test(t) ||
+    /RAGAZZ/.test(t) ||
+    /\bU(6|8|10|12|14)\b/.test(t) ||
+    /PICCOLI/.test(t) ||
+    (/\bAGONISMO\b/.test(t) && !/\b(MASTER|SENIOR)\b/.test(t))
+  )
+}
+
+function prodottoNelSegmento(p: AttiviProdotto, segmento: SegmentoFiltro): boolean {
+  if (isProdottoFuoriListe(p) || isStaffOrDanza(p.macro ?? "") || isStaffOrDanza(p.categoria) || isStaffOrDanza(p.piano)) {
+    return false
+  }
+  const kids = isProdottoBambini(p)
+  if (segmento === "adulti") return !kids
+  if (segmento === "bambini") return kids
+  return true
+}
+
 function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
   if (!q) return true
   const ql = foldTesto(q)
@@ -99,7 +160,7 @@ type FiltriCaricati = {
   segmento: SegmentoFiltro
   sesso: SessoFiltro
   q: string
-  gruppo: string
+  gruppi: string[]
   piani: string[]
 }
 
@@ -110,7 +171,7 @@ export function ScadutiEx() {
   const asOf = asOfParam && /^\d{4}-\d{2}-\d{2}$/.test(asOfParam) ? asOfParam : localIsoDate()
   const [segmento, setSegmento] = useState<SegmentoFiltro>("adulti")
   const [sessoFiltro, setSessoFiltro] = useState<SessoFiltro>("tutti")
-  const [gruppo, setGruppo] = useState("")
+  const [gruppiSel, setGruppiSel] = useState<Set<string>>(new Set())
   const [pianiSel, setPianiSel] = useState<Set<string>>(new Set())
   const [q, setQ] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -131,7 +192,7 @@ export function ScadutiEx() {
         segmento: applied!.segmento,
         sesso: applied!.sesso === "tutti" ? undefined : applied!.sesso,
         q: applied!.q || undefined,
-        gruppo: applied!.gruppo || undefined,
+        gruppi: applied!.gruppi.length ? applied!.gruppi : undefined,
         piani: applied!.piani.length ? applied!.piani : undefined,
       }),
     enabled: role === "admin" && applied != null,
@@ -148,24 +209,26 @@ export function ScadutiEx() {
       const cat = normPiano(p.categoria)
       const macro = normPiano(p.macro ?? "")
       if (!piano || isStaffOrDanza(piano) || isStaffOrDanza(cat) || isStaffOrDanza(macro)) continue
-      const g = gruppoDi({ ...p, piano, categoria: cat, macro })
-      if (ql && !prodottoMatchQ({ ...p, piano, categoria: cat, macro }, ql)) continue
+      const prod = { ...p, piano, categoria: cat, macro }
+      if (!prodottoNelSegmento(prod, segmento)) continue
+      const g = gruppoDi(prod)
+      if (ql && !prodottoMatchQ(prod, ql)) continue
       const key = `${g}|||${piano}`
       const prev = m.get(key)
       if (prev) prev.n += 1
       else m.set(key, { key, gruppo: g, piano, n: 1 })
     }
     return Array.from(m.values()).sort((a, b) => a.gruppo.localeCompare(b.gruppo, "it") || a.piano.localeCompare(b.piano, "it"))
-  }, [catalogProdotti, ql])
+  }, [catalogProdotti, ql, segmento])
 
   const gruppi = useMemo(() => {
     return Array.from(new Set(foglie.map((f) => f.gruppo))).sort((a, b) => a.localeCompare(b, "it"))
   }, [foglie])
 
   const foglieGruppo = useMemo(() => {
-    if (!gruppo) return foglie
-    return foglie.filter((f) => f.gruppo === gruppo)
-  }, [foglie, gruppo])
+    if (!gruppiSel.size) return foglie
+    return foglie.filter((f) => gruppiSel.has(f.gruppo))
+  }, [foglie, gruppiSel])
 
   const prodottiSelect = useMemo(() => {
     const seen = new Set<string>()
@@ -183,8 +246,14 @@ export function ScadutiEx() {
   }, [foglieGruppo])
 
   useEffect(() => {
-    if (gruppo && !gruppi.includes(gruppo)) setGruppo("")
-  }, [gruppi, gruppo])
+    setGruppiSel((prev) => {
+      if (!prev.size) return prev
+      const ok = new Set(gruppi)
+      const next = new Set([...prev].filter((x) => ok.has(x)))
+      if (next.size === prev.size) return prev
+      return next
+    })
+  }, [gruppi])
 
   useEffect(() => {
     setPianiSel((prev) => {
@@ -208,8 +277,8 @@ export function ScadutiEx() {
       asOf,
       segmento,
       sesso: sessoFiltro,
-      q: gruppo || pianiSel.size ? "" : q.trim(),
-      gruppo,
+      q: gruppiSel.size || pianiSel.size ? "" : q.trim(),
+      gruppi: [...gruppiSel].sort(),
       piani: [...pianiSel].sort(),
     }
     const same =
@@ -218,7 +287,7 @@ export function ScadutiEx() {
       applied.segmento === next.segmento &&
       applied.sesso === next.sesso &&
       applied.q === next.q &&
-      applied.gruppo === next.gruppo &&
+      applied.gruppi.join("|") === next.gruppi.join("|") &&
       applied.piani.join("|") === next.piani.join("|")
     if (same) {
       void refetch()
@@ -268,9 +337,9 @@ export function ScadutiEx() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-zinc-100">Scaduti / Ex</h1>
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Prima scegli età, sesso, gruppo o prodotto, poi premi Carica lista. Non scarichiamo i 50mila
-            registrati all&apos;apertura: arrivano solo i nominativi del filtro. Chi ha rinnovato esce dalla
-            lista. Default: adulti.
+            Prima scegli età, sesso, uno o più gruppi e i prodotti, poi premi Carica lista. Adulti: niente
+            scuola nuoto, acquaticità, agonismo categorie, lezioni private bambini. Bambini: solo quelle.
+            Default: adulti.
           </p>
         </div>
         <label className="flex items-center gap-2 text-sm text-zinc-400">
@@ -335,29 +404,74 @@ export function ScadutiEx() {
       />
 
       <div className="mt-3 grid max-w-4xl gap-3 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-zinc-400">
-          Gruppo (macro / categoria)
-          <select
-            value={gruppo}
-            onChange={(e) => {
-              setGruppo(e.target.value)
-              setPianiSel(new Set())
-            }}
-            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
-          >
-            <option value="">Tutti i gruppi</option>
-            {gruppi.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="block text-xs font-medium text-zinc-400">
+          <div className="flex items-center justify-between gap-2">
+            <span>Gruppo (macro / categoria)</span>
+            <span className="font-normal text-zinc-500">
+              {gruppiSel.size ? `${gruppiSel.size} selezionat${gruppiSel.size === 1 ? "o" : "i"}` : "tutti visibili"}
+            </span>
+          </div>
+          <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
+            {catalogQ.isLoading ? (
+              <p className="py-2 text-zinc-500">Caricamento gruppi…</p>
+            ) : gruppi.length === 0 ? (
+              <p className="py-2 text-zinc-500">
+                {segmento === "bambini"
+                  ? "Nessun gruppo bambini (scuola nuoto, acquaticità, agonismo, private)."
+                  : "Nessun gruppo in elenco."}
+              </p>
+            ) : (
+              gruppi.map((g) => (
+                <label
+                  key={g}
+                  className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-zinc-100 hover:bg-zinc-800/70"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={gruppiSel.has(g)}
+                    onChange={() => {
+                      setGruppiSel((prev) => toggleSet(prev, g))
+                      setPianiSel(new Set())
+                    }}
+                  />
+                  <span className="min-w-0 flex-1 leading-snug">{g}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="mt-1.5 flex flex-wrap gap-3 border-t border-zinc-800 pt-1.5 font-normal">
+            <button
+              type="button"
+              className="text-[11px] text-amber-400 hover:underline"
+              onClick={() => {
+                setGruppiSel(new Set(gruppi))
+                setPianiSel(new Set())
+              }}
+            >
+              Tutti visibili
+            </button>
+            <button
+              type="button"
+              className="text-[11px] text-zinc-400 hover:underline"
+              onClick={() => {
+                setGruppiSel(new Set())
+                setPianiSel(new Set())
+              }}
+            >
+              Azzera selezione
+            </button>
+          </div>
+        </div>
         <div className="block text-xs font-medium text-zinc-400">
           <div className="flex items-center justify-between gap-2">
             <span>Prodotto (abbonamento scaduto)</span>
             <span className="font-normal text-zinc-500">
-              {pianiSel.size ? `${pianiSel.size} selezionat${pianiSel.size === 1 ? "o" : "i"}` : gruppo ? "tutti del gruppo" : "tutti"}
+              {pianiSel.size
+                ? `${pianiSel.size} selezionat${pianiSel.size === 1 ? "o" : "i"}`
+                : gruppiSel.size
+                  ? "tutti dei gruppi"
+                  : "tutti"}
             </span>
           </div>
           <div className="mt-1 max-h-40 overflow-auto rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1">
