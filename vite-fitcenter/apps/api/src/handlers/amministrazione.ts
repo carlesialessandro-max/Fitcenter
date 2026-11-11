@@ -766,12 +766,27 @@ export type AmmCollabReportBuilt = {
 function keyByNome(byNome: Map<string, { nominativo: string }>, nominativo: string): string | undefined {
   const lower = nominativo.trim().toLowerCase()
   if (byNome.has(lower)) return lower
+  const norm = normalizzaNominativo(nominativo)
+  if (norm && byNome.has(norm)) return norm
   const map = new Map<string, string>()
   for (const [k, v] of byNome) {
     const n = normalizzaNominativo(v.nominativo)
     if (n && !map.has(n)) map.set(n, k)
   }
   return trovaPerNominativo(map, nominativo)
+}
+
+type MeseCell = { id: string; totale: number; origine: string; updatedAt?: string }
+
+/** Una sola cifra per persona/mese: la modifica a mano vince sull'Excel; lo 0 non cancella un importo positivo duplicato. */
+function pickMeseCell(cands: MeseCell[]): MeseCell | undefined {
+  if (!cands.length) return undefined
+  const newer = (a: MeseCell, b: MeseCell) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""))
+  const positivi = cands.filter((c) => (c.totale || 0) > 0.004)
+  const pool = positivi.length ? positivi : cands
+  const manuali = pool.filter((c) => c.origine === "manuale")
+  const use = (manuali.length ? manuali : pool).slice().sort(newer)
+  return use[0]
 }
 
 export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmCollabReportBuilt> {
@@ -787,47 +802,62 @@ export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmC
     {
       nominativo: string
       tipo: "sportivo" | "gestionale"
-      mesi: Record<string, { id: string; totale: number; origine: string; updatedAt?: string }>
+      mesiCands: Record<string, MeseCell[]>
     }
   >()
   for (const c of stored) {
-    const key = c.nominativo.trim().toLowerCase()
+    const key =
+      keyByNome(byNome, c.nominativo) ??
+      normalizzaNominativo(c.nominativo) ??
+      c.nominativo.trim().toLowerCase()
     const cur = byNome.get(key) ?? {
       nominativo: c.nominativo.trim(),
       tipo: c.tipo,
-      mesi: {},
+      mesiCands: {},
     }
     if (c.tipo === "gestionale") cur.tipo = "gestionale"
-    const prev = cur.mesi[c.mese]
-    const newer = !prev || String(c.updatedAt ?? "") >= String(prev.updatedAt ?? "")
-    if (newer) {
-      cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine, updatedAt: c.updatedAt }
-    }
+    const list = cur.mesiCands[c.mese] ?? []
+    list.push({ id: c.id, totale: c.totale, origine: c.origine, updatedAt: c.updatedAt })
+    cur.mesiCands[c.mese] = list
     byNome.set(key, cur)
   }
+  const byNomeMesi = new Map<
+    string,
+    {
+      nominativo: string
+      tipo: "sportivo" | "gestionale"
+      mesi: Record<string, { id: string; totale: number; origine: string }>
+    }
+  >()
+  for (const [key, r] of byNome) {
+    const mesi: Record<string, { id: string; totale: number; origine: string }> = {}
+    for (const [mese, cands] of Object.entries(r.mesiCands)) {
+      const picked = pickMeseCell(cands)
+      if (picked) mesi[mese] = { id: picked.id, totale: picked.totale, origine: picked.origine }
+    }
+    byNomeMesi.set(key, { nominativo: r.nominativo, tipo: r.tipo, mesi })
+  }
   for (const r of rimanenzeAnno) {
-    const key = r.nominativo.trim().toLowerCase()
-    if (byNome.has(key)) continue
-    const fuzzy = keyByNome(byNome, r.nominativo)
-    if (fuzzy) continue
-    byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
+    if (keyByNome(byNomeMesi, r.nominativo)) continue
+    const key = normalizzaNominativo(r.nominativo) || r.nominativo.trim().toLowerCase()
+    if (byNomeMesi.has(key)) continue
+    byNomeMesi.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
   }
   for (const r of altreAnno) {
-    const key = r.nominativo.trim().toLowerCase()
-    if (byNome.has(key)) continue
-    const fuzzy = keyByNome(byNome, r.nominativo)
-    if (fuzzy) continue
-    byNome.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
+    if (keyByNome(byNomeMesi, r.nominativo)) continue
+    const key = normalizzaNominativo(r.nominativo) || r.nominativo.trim().toLowerCase()
+    if (byNomeMesi.has(key)) continue
+    byNomeMesi.set(key, { nominativo: r.nominativo.trim(), tipo: "sportivo", mesi: {} })
   }
   const rimByNome = new Map(rimanenzeAnno.map((r) => [r.nominativo.trim().toLowerCase(), r.importo]))
   const altreByKey = new Map<string, { id: string; azienda: string; importo: number }[]>()
   for (const v of altreAnno) {
-    const key = keyByNome(byNome, v.nominativo) ?? v.nominativo.trim().toLowerCase()
+    const key = keyByNome(byNomeMesi, v.nominativo) ?? normalizzaNominativo(v.nominativo) ?? v.nominativo.trim().toLowerCase()
     const list = altreByKey.get(key) ?? []
     list.push({ id: v.id, azienda: v.azienda, importo: v.importo })
     altreByKey.set(key, list)
   }
-  const righe = [...byNome.entries()]
+  const righe = [...byNomeMesi.entries()]
     .map(([key, r]) => {
       const mesiTot = Math.round(mesi.reduce((s, m) => s + (r.mesi[m]?.totale ?? 0), 0) * 100) / 100
       const rimanenze =

@@ -212,14 +212,11 @@ export function ReportCollaboratori({
     return out
   }, [filtered])
   const mesi = report.data?.mesi ?? []
-  const totMese = useMemo(() => {
-    const out: Record<string, number> = {}
-    for (const m of mesi) {
-      out[m.id] = Math.round(filtered.reduce((s, r) => s + (r.mesi[m.id]?.totale ?? 0), 0) * 100) / 100
-    }
-    return out
-  }, [filtered, mesi])
-  const totAnno = Math.round(filtered.reduce((s, r) => s + r.tot, 0) * 100) / 100
+  const allRighe = report.data?.righe ?? []
+  const totMese = report.data?.totMese ?? {}
+  const totAnno = report.data?.totAnno ?? 0
+  const totN = report.data?.n ?? allRighe.length
+  const filtroAttivo = Boolean(q.trim() || tipo !== "tutti" || repartoFiltro !== "tutti")
 
   const importPdfMut = useMutation({
     mutationFn: (righe: AmmStipendiPdfRiga[]) =>
@@ -713,27 +710,34 @@ export function ReportCollaboratori({
               )
             })}
           </tbody>
-          {filtered.length ? (
+          {allRighe.length ? (
             <tfoot>
               <tr className="border-t border-zinc-700 bg-zinc-950/80 font-medium text-zinc-100">
-                <td className="sticky left-0 z-10 bg-zinc-950 px-3 py-2 print:static">TOTALE ({filtered.length})</td>
+                <td className="sticky left-0 z-10 bg-zinc-950 px-3 py-2 print:static">
+                  TOTALE ({totN})
+                  {filtroAttivo ? (
+                    <span className="mt-0.5 block text-[10px] font-normal text-zinc-500">
+                      di tutti, non solo i {filtered.length} visibili
+                    </span>
+                  ) : null}
+                </td>
                 {mesi.map((m) => (
                   <td key={m.id} className="px-2 py-2 text-right tabular-nums">
                     {totMese[m.id] ? eur(totMese[m.id] ?? 0) : "—"}
                   </td>
                 ))}
                 <td className="px-2 py-2 text-right tabular-nums">
-                  {eur(filtered.reduce((s, r) => s + (r.rimanenze ?? 0), 0))}
+                  {eur(report.data?.totRimanenze ?? 0)}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">
-                  {eur(filtered.reduce((s, r) => s + (r.altreAziende ?? 0), 0))}
+                  {eur(report.data?.totAltreAziende ?? 0)}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">{eur(totAnno)}</td>
                 <td className="px-2 py-2 text-right tabular-nums">
-                  {eur(filtered.reduce((s, r) => s + r.oltre5000, 0))}
+                  {eur(allRighe.reduce((s, r) => s + r.oltre5000, 0))}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">
-                  {eur(filtered.reduce((s, r) => s + r.oltre15000, 0))}
+                  {eur(allRighe.reduce((s, r) => s + r.oltre15000, 0))}
                 </td>
               </tr>
             </tfoot>
