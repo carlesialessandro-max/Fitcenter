@@ -52,18 +52,44 @@ function parseImporto(raw: unknown): number | null {
   if (raw == null || raw === "") return null
   if (typeof raw === "number") {
     if (!Number.isFinite(raw) || raw < 0) return null
+    // 447.519999… da Excel: centesimi. 1.025 come numero inglese è 1.025, non 1.025 € italiani.
     return Math.round(raw * 100) / 100
   }
   const s = String(raw).replace(/\s/g, "").replace(/[€$]/g, "").replace(/eur/gi, "")
   if (!s || s === "-" || s === "—") return null
+  // 1.025 / 12.500 → migliaia italiane (non 1,025 dollari)
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(s)) {
+    const n = Number(s.replace(/\./g, ""))
+    return Number.isFinite(n) && n >= 0 ? n : null
+  }
   const lastComma = s.lastIndexOf(",")
   const lastDot = s.lastIndexOf(".")
   let n: number
   if (lastComma > lastDot) n = Number(s.replace(/\./g, "").replace(",", "."))
-  else if (lastDot > lastComma) n = Number(s.replace(/,/g, ""))
-  else n = Number(s.replace(",", "."))
+  else if (lastDot > lastComma) {
+    const decimals = s.length - lastDot - 1
+    n = decimals === 3 ? Number(s.replace(/\./g, "")) : Number(s.replace(/,/g, ""))
+  } else n = Number(s.replace(",", "."))
   if (!Number.isFinite(n) || n < 0) return null
   return Math.round(n * 100) / 100
+}
+
+function setRiga(
+  byKey: Map<string, CollabReportExcelRiga>,
+  nominativo: string,
+  mese: string,
+  tot: number,
+  tipo: "sportivo" | "gestionale"
+) {
+  const key = `${nominativo.toLowerCase()}|${mese}`
+  const prev = byKey.get(key)
+  // Una riga per persona/mese: il file non si somma (due blocchi Gen–Dic raddoppiavano importi e centesimi).
+  byKey.set(key, {
+    nominativo,
+    mese,
+    totale: tot,
+    tipo: tipo === "gestionale" || prev?.tipo === "gestionale" ? "gestionale" : "sportivo",
+  })
 }
 
 function skipNome(s: string): boolean {
@@ -216,14 +242,7 @@ function parseAnnuo(rows: unknown[][], anno: number) {
       const tot = parseImporto(row[m.col])
       if (tot == null || tot <= 0) continue
       const mese = `${anno}-${String(m.mm).padStart(2, "0")}`
-      const key = `${nominativo.toLowerCase()}|${mese}`
-      const prev = byKey.get(key)
-      byKey.set(key, {
-        nominativo,
-        mese,
-        totale: Math.round(((prev?.totale ?? 0) + tot) * 100) / 100,
-        tipo: tipo === "gestionale" || prev?.tipo === "gestionale" ? "gestionale" : "sportivo",
-      })
+      setRiga(byKey, nominativo, mese, tot, tipo)
     }
   }
   return packEsito(
@@ -273,14 +292,7 @@ function parseMensile(rows: unknown[][], anno: number, meseSolo?: string) {
     const tot = parseImporto(row[importoCol])
     if (tot == null || tot <= 0) continue
     const tipo = tipoFrom(nomeRaw)
-    const key = `${nominativo.toLowerCase()}|${mese}`
-    const prev = byKey.get(key)
-    byKey.set(key, {
-      nominativo,
-      mese,
-      totale: Math.round(((prev?.totale ?? 0) + tot) * 100) / 100,
-      tipo: tipo === "gestionale" || prev?.tipo === "gestionale" ? "gestionale" : "sportivo",
-    })
+    setRiga(byKey, nominativo, mese, tot, tipo)
   }
   return packEsito(
     Number(mese.slice(0, 4)) || anno,
@@ -306,11 +318,26 @@ export function parseCollabReportExcel(
   mesi: string[]
 } {
   if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) throw new Error("Anno non valido")
-  const wb = XLSX.read(buf, { type: "array", raw: true })
+  const wb = XLSX.read(buf, { type: "array", cellDates: true })
   const name = wb.SheetNames[0]
   if (!name) throw new Error("Excel vuoto")
   const sheet = wb.Sheets[name]
-  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }) as unknown[][]
+  // raw:false = testo come in Excel (1.025 = mille, non 1,025). I numeri restano number.
+  const rowsRaw = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: true }) as unknown[][]
+  const rowsFmt = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false }) as unknown[][]
+  const rows = rowsRaw.map((row, i) => {
+    const fmt = rowsFmt[i] ?? []
+    return (row ?? []).map((cell, j) => {
+      if (typeof cell === "number") {
+        const shown = String(fmt[j] ?? "").trim()
+        if (shown) {
+          const fromShown = parseImporto(shown)
+          if (fromShown != null) return fromShown
+        }
+      }
+      return cell
+    })
+  }) as unknown[][]
   const hasAnnuo = rows.some((row) => Array.isArray(row) && mesiDaRiga(row).length >= 6)
   if (hasAnnuo) return parseAnnuo(rows, anno)
   return parseMensile(rows, anno, meseSolo)
