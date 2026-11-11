@@ -1041,6 +1041,18 @@ export function postAmmCollaboratoreImporto(req: Request, res: Response) {
   }
 }
 
+export function postAmmCollaboratoreElimina(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const anno = Number(req.body?.anno)
+    const user = String(req.user?.nome || req.user?.username || req.lpaga?.nominativo || req.lpaga?.username || "").trim()
+    const result = ammCostiStore.deleteCollaboratoreNominativoAnno({ nominativo, anno, user })
+    res.json({ ok: true, ...result })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
 export function postAmmCollaboratoreRimanenze(req: Request, res: Response) {
   try {
     const nominativo = String(req.body?.nominativo ?? "").trim()

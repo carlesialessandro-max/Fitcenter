@@ -22,6 +22,7 @@ import {
   postAmmCollaboratoriReportImport,
   postAmmCollaboratoreCentroCosto,
   postAmmCollaboratoreImporto,
+  postAmmCollaboratoreElimina,
   postAmmCollaboratoreRimanenze,
   postAmmCollaboratoreRimborso,
   deleteAmmCollaboratore,
@@ -49,6 +50,7 @@ amministrazioneRouter.use(requireAuth)
 
 amministrazioneRouter.get("/collaboratori/report", requireAdminOrAlberto, getAmmCollaboratoriReport)
 amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, postAmmCollaboratoreImporto)
+amministrazioneRouter.post("/collaboratori/elimina", requireAdminOrAlberto, postAmmCollaboratoreElimina)
 amministrazioneRouter.post("/collaboratori/rimanenze", requireAdminOrAlberto, postAmmCollaboratoreRimanenze)
 amministrazioneRouter.post("/collaboratori/report/import", requireAdminOrAlberto, postAmmCollaboratoriReportImport)
 

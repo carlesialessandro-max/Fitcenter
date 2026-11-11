@@ -49,13 +49,9 @@ export function classifyBlackFridayOffer(...parts: (string | undefined | null)[]
   const isBf = /black[\s-]*friday/.test(t)
   const isFlash = /offerta[\s-]*flash/.test(t)
   const isH2Pistoia = /h2sport[\s-]*pistoia/.test(t)
-  const isFormOffer =
-    /info\s+offerta/.test(t) ||
-    (/sono interessato all['']?offerta/.test(t) && /ricontattat/.test(t))
 
-  if (!isBf && !isFlash && !isH2Pistoia && !(isFormOffer && isBlackFridayCampaignActive())) {
-    return null
-  }
+  // Solo queste tre offerte: qualsiasi altro form/WhatsApp resta sul bot normale.
+  if (!isBf && !isFlash && !isH2Pistoia) return null
 
   if (isBf && /\bbambin|\bbimbi|scuola\s*nuoto|acquaticit/.test(t)) return "bambini"
   if (isFlash) return "flash"

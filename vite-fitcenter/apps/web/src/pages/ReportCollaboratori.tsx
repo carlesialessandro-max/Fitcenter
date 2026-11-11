@@ -167,6 +167,24 @@ export function ReportCollaboratori({
     },
   })
 
+  const delMut = useMutation({
+    mutationFn: (body: { nominativo: string; anno: number }) =>
+      source === "lpaga"
+        ? lpagaApi.eliminaCollaboratoreNominativo(body)
+        : amministrazioneApi.eliminaCollaboratoreNominativo(body),
+    onSuccess: (r) => {
+      setErr("")
+      setMsg(`Eliminato ${r.nominativo} da ${r.anno}.`)
+      void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
+      void qc.invalidateQueries({ queryKey: ["amm-collab"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => {
+      setMsg("")
+      setErr(e.message)
+    },
+  })
+
   const filtered = useMemo(() => {
     const list = report.data?.righe ?? []
     const needle = q.trim().toLowerCase()
@@ -539,6 +557,9 @@ export function ReportCollaboratori({
         <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
           Aggiungi
         </button>
+        <p className="w-full text-[11px] text-zinc-500 print:hidden">
+          Per togliere un nominativo inserito per sbaglio, spunta la casella a sinistra del nome.
+        </p>
       </form>
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800 print:border-zinc-400">
@@ -598,13 +619,35 @@ export function ReportCollaboratori({
                   {g.righe.map((r) => (
                     <tr key={r.nominativo} className="border-b border-zinc-800/60">
                       <td className="sticky left-0 z-10 bg-zinc-950 px-3 py-1 font-medium text-zinc-100 print:static print:bg-white">
-                        {r.nominativo}
-                        {r.tipo === "gestionale" ? (
-                          <span className="ml-2 text-[10px] font-normal uppercase text-zinc-500">gest. amm.</span>
-                        ) : null}
-                        {r.mansione && r.mansione !== g.reparto ? (
-                          <span className="ml-2 text-[10px] font-normal text-zinc-500">{r.mansione}</span>
-                        ) : null}
+                        <label className="inline-flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            className="rounded border-zinc-600 bg-zinc-900 text-red-400 print:hidden"
+                            title="Elimina questo nominativo dall'anno"
+                            checked={false}
+                            disabled={delMut.isPending}
+                            onChange={(e) => {
+                              e.currentTarget.checked = false
+                              if (
+                                !confirm(
+                                  `Eliminare ${r.nominativo} da tutte le mensilità ${anno}?`
+                                )
+                              ) {
+                                return
+                              }
+                              delMut.mutate({ nominativo: r.nominativo, anno })
+                            }}
+                          />
+                          <span>
+                            {r.nominativo}
+                            {r.tipo === "gestionale" ? (
+                              <span className="ml-2 text-[10px] font-normal uppercase text-zinc-500">gest. amm.</span>
+                            ) : null}
+                            {r.mansione && r.mansione !== g.reparto ? (
+                              <span className="ml-2 text-[10px] font-normal text-zinc-500">{r.mansione}</span>
+                            ) : null}
+                          </span>
+                        </label>
                       </td>
                       {mesi.map((m) => {
                         const cell = r.mesi[m.id]

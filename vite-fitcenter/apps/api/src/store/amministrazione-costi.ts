@@ -1031,6 +1031,58 @@ export const ammCostiStore = {
     d.collaboratori = d.collaboratori.filter((c) => c.id !== id)
     save(d)
   },
+  /** Rimuove un nominativo da tutte le mensilità dell'anno (righe 0 € inserite per sbaglio, ecc.). */
+  deleteCollaboratoreNominativoAnno(body: {
+    nominativo: string
+    anno: number
+    user: string
+  }): { rimosse: number; nominativo: string; anno: number } {
+    const nominativo = String(body.nominativo ?? "").trim()
+    const anno = Number(body.anno)
+    if (!nominativo) throw Object.assign(new Error("Nominativo obbligatorio"), { status: 400 })
+    if (!Number.isFinite(anno) || anno < 1990 || anno > 2100) {
+      throw Object.assign(new Error("Anno non valido"), { status: 400 })
+    }
+    const key = normalizzaNominativo(nominativo)
+    const prefix = `${anno}-`
+    const d = load()
+    const hit = d.collaboratori.filter(
+      (c) => c.mese.startsWith(prefix) && normalizzaNominativo(c.nominativo) === key
+    )
+    const rim = d.collaboratoriRimanenze.filter(
+      (r) => r.anno === anno && normalizzaNominativo(r.nominativo) === key
+    )
+    const altre = (d.collaboratoriAltreAziende ?? []).filter(
+      (r) => r.anno === anno && normalizzaNominativo(r.nominativo) === key
+    )
+    if (!hit.length && !rim.length && !altre.length) {
+      throw Object.assign(new Error("Nominativo non trovato in quest'anno"), { status: 404 })
+    }
+    const label = hit[0]?.nominativo ?? rim[0]?.nominativo ?? altre[0]?.nominativo ?? nominativo
+    d.collaboratori = d.collaboratori.filter(
+      (c) => !(c.mese.startsWith(prefix) && normalizzaNominativo(c.nominativo) === key)
+    )
+    d.collaboratoriRimanenze = d.collaboratoriRimanenze.filter(
+      (r) => !(r.anno === anno && normalizzaNominativo(r.nominativo) === key)
+    )
+    d.collaboratoriAltreAziende = (d.collaboratoriAltreAziende ?? []).filter(
+      (r) => !(r.anno === anno && normalizzaNominativo(r.nominativo) === key)
+    )
+    const tot = hit.reduce((s, c) => s + (c.totale || 0), 0) + rim.reduce((s, r) => s + (r.importo || 0), 0)
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at: nowIso(),
+      user: body.user.trim() || "sconosciuto",
+      nominativo: label,
+      mese: String(anno),
+      da: Math.round(tot * 100) / 100,
+      a: 0,
+      azione: "eliminato",
+    }
+    d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
+    save(d)
+    return { rimosse: hit.length + rim.length + altre.length, nominativo: label, anno }
+  },
   listCollaboratoriAudit(limit = 80): AmmCollabAudit[] {
     return load()
       .collaboratoriAudit.slice()

@@ -34,6 +34,7 @@ import {
   postLpagaMiaAltraAzienda,
   deleteLpagaMiaAltraAzienda,
   postAmmCollaboratoreImporto,
+  postAmmCollaboratoreElimina,
   postAmmCollaboratoreRimanenze,
   postAmmCollaboratoriImport,
   postAmmCollaboratoriReportImport,
@@ -73,6 +74,7 @@ libroPagaPortalRouter.get("/deleghe", requireLpaga, getLpagaDeleghe)
 libroPagaPortalRouter.put("/deleghe", requireLpaga, putLpagaDeleghe)
 libroPagaPortalRouter.get("/collaboratori/report", requireLpaga, requireLpagaAlberto, getAmmCollaboratoriReport)
 libroPagaPortalRouter.post("/collaboratori/importo", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreImporto)
+libroPagaPortalRouter.post("/collaboratori/elimina", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreElimina)
 libroPagaPortalRouter.post("/collaboratori/rimanenze", requireLpaga, requireLpagaAlberto, postAmmCollaboratoreRimanenze)
 libroPagaPortalRouter.post("/collaboratori/report/import", requireLpaga, requireLpagaAlberto, postAmmCollaboratoriReportImport)
 libroPagaPortalRouter.post("/stipendi/pdf", requireLpaga, requireLpagaAlberto, postAmmStipendiPdf)

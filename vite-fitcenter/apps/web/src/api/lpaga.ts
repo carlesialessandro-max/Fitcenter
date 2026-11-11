@@ -260,6 +260,11 @@ export const lpagaApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  eliminaCollaboratoreNominativo: (body: { nominativo: string; anno: number }) =>
+    lpagaRequest<{ ok: boolean; rimosse: number; nominativo: string; anno: number }>("/lpaga/collaboratori/elimina", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   setRimanenzeCollaboratore: (body: { nominativo: string; anno: number; importo: number }) =>
     lpagaRequest<{ row: { nominativo: string; anno: number; importo: number } | null }>("/lpaga/collaboratori/rimanenze", {
       method: "POST",
