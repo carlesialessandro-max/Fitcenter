@@ -6,11 +6,14 @@ import type { LeadSource, LeadStatus, LeadCreate, InteresseLead } from "../types
 import { getScopedUser, getOperatoreConsulenteNome } from "../middleware/auth.js"
 import { notifyLeadWelcomeWhatsapp } from "../services/whatsapp.js"
 import { applyOpenDaySpaLeadFields, isOpenDaySpaText } from "../services/open-day-spa.js"
+import { applyBlackFridayLeadFields, classifyBlackFridayOffer } from "../services/black-friday.js"
 import { firstNameFromLeadNome, formatLeadFormDumpNote, parseLeadFormDump } from "../lib/lead-form-dump.js"
 
-/** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. Open Day SPA no. */
+/** Lead bambini → Irene. «Scuola nuoto adulti» non è bambini. Open Day SPA / Black Friday adulti no. */
 export function isLeadBambiniText(...parts: (string | undefined | null)[]): boolean {
   if (isOpenDaySpaText(...parts)) return false
+  const bf = classifyBlackFridayOffer(...parts)
+  if (bf === "h2sport" || bf === "flash" || bf === "generic") return false
   const blob = parts
     .filter((p) => p != null && String(p).trim() !== "")
     .join(" ")
@@ -51,7 +54,7 @@ export async function getLead(req: Request, res: Response) {
 }
 
 export async function createLead(req: Request, res: Response) {
-  const created = store.create(applyOpenDaySpaLeadFields(req.body))
+  const created = store.create(applyBlackFridayLeadFields(applyOpenDaySpaLeadFields(req.body)))
   res.status(201).json(created)
 }
 
@@ -471,18 +474,20 @@ function normalizeZapierBody(body: Record<string, unknown>): LeadCreate {
   if (categoriaRaw === "bambini") categoria = "bambini"
   else if (categoriaRaw === "generale" || categoriaRaw === "adulti") categoria = undefined
   else categoria = isLeadBambiniText(blobCat) ? "bambini" : undefined
-  return applyOpenDaySpaLeadFields({
-    nome: nome || "—",
-    cognome: cognome || "—",
-    email: email || "—",
-    telefono: telefono || "—",
-    fonte,
-    fonteDettaglio: body.fonte_dettaglio != null ? String(body.fonte_dettaglio) : (body["fonteDettaglio"] != null ? String(body["fonteDettaglio"]) : undefined),
-    interesse: interesseValido,
-    interesseDettaglio: interesseDettaglio || undefined,
-    categoria,
-    note: noteOut,
-  })
+  return applyBlackFridayLeadFields(
+    applyOpenDaySpaLeadFields({
+      nome: nome || "—",
+      cognome: cognome || "—",
+      email: email || "—",
+      telefono: telefono || "—",
+      fonte,
+      fonteDettaglio: body.fonte_dettaglio != null ? String(body.fonte_dettaglio) : (body["fonteDettaglio"] != null ? String(body["fonteDettaglio"]) : undefined),
+      interesse: interesseValido,
+      interesseDettaglio: interesseDettaglio || undefined,
+      categoria,
+      note: noteOut,
+    })
+  )
 }
 
 export async function webhookZapier(req: Request, res: Response) {
@@ -577,7 +582,11 @@ export async function webhookZapier(req: Request, res: Response) {
         interesse: saved.interesse,
         interesseDettaglio: saved.interesseDettaglio,
       })
-      if (wa.topic) {
+      if (wa.skipped === "black_friday_callback_only") {
+        store.update(saved.id, {
+          note: [saved.note, "WA auto: nessun messaggio (Black Friday → richiamare)"].filter(Boolean).join("\n"),
+        })
+      } else if (wa.topic) {
         store.update(saved.id, {
           note: [saved.note, `WA auto (sito): risposta su ${wa.topic}`].filter(Boolean).join("\n"),
         })

@@ -15,6 +15,7 @@ import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { whatsAppMeUrl } from "@/lib/whatsappPhone"
 import { isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
+import { isBlackFridayCampaignActive, isBlackFridayLead, BLACK_FRIDAY_LABEL } from "@/lib/black-friday"
 import { WhatsappThread } from "@/components/WhatsappThread"
 
 function waErr(e: unknown): string {
@@ -167,6 +168,11 @@ export function LeadDetail() {
                   {OPEN_DAY_SPA_LABEL}
                 </span>
               )}
+              {isBlackFridayLead(lead) && (
+                <span className="rounded-full border border-orange-500/40 bg-orange-500/20 px-2 py-0.5 text-xs text-orange-200">
+                  {BLACK_FRIDAY_LABEL}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -225,7 +231,7 @@ export function LeadDetail() {
                         </a>
                       ) : null
                     })()}
-                    {canSendWa ? (
+                    {canSendWa && !(isBlackFridayLead(lead) && isBlackFridayCampaignActive()) ? (
                       <Button
                         type="button"
                         variant="ghost"
@@ -245,7 +251,14 @@ export function LeadDetail() {
                   </>
                 )}
               </dd>
-              {canSendWa && lead.telefono && isOpenDaySpaLead(lead) ? (
+              {canSendWa && lead.telefono && isBlackFridayLead(lead) && isBlackFridayCampaignActive() ? (
+                <div className="mt-3 rounded-md border border-orange-800/60 bg-orange-950/30 p-3">
+                  <p className="text-xs text-orange-200/90">
+                    Offerta Black Friday: niente WhatsApp automatico. Il cliente ha chiesto di essere ricontattato —
+                    richiamarlo.
+                  </p>
+                </div>
+              ) : canSendWa && lead.telefono && isOpenDaySpaLead(lead) ? (
                 <div className="mt-3 rounded-md border border-fuchsia-800/60 bg-fuchsia-950/30 p-3">
                   <p className="mb-2 text-xs text-fuchsia-200/80">
                     Info Open Day SPA 30/09 dal WhatsApp H2Sport (orari 11–20, −50% abbonamento, prenotazione obbligatoria)
@@ -351,7 +364,9 @@ export function LeadDetail() {
               <dt className="text-zinc-500">Interesse</dt>
               <dd className="text-zinc-100">
                 {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
-                {isOpenDaySpaLead(lead) && lead.interesse && lead.interesseDettaglio
+                {(isOpenDaySpaLead(lead) || isBlackFridayLead(lead)) &&
+                lead.interesse &&
+                lead.interesseDettaglio
                   ? ` · ${lead.interesseDettaglio}`
                   : ""}
               </dd>

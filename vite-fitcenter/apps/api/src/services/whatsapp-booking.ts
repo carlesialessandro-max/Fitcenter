@@ -28,6 +28,7 @@ import {
 } from "./whatsapp.js"
 import { adultTopicReplyMsg, classifyAdultSiteTopic } from "./whatsapp-site-topics.js"
 import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
+import { isBlackFridayCampaignActive, isBlackFridayLead, isBlackFridayText } from "./black-friday.js"
 import { isSmtpConfigured, sendMail } from "./mailer.js"
 import { bookProveSnbSlot, isProveSnbSheetConfigured, type BambiniCorso } from "./prove-snb-sheet.js"
 import fs from "fs"
@@ -1399,6 +1400,7 @@ function pickLeadForCancel(phone: string) {
 function isLeadBambini(lead: { categoria?: string | null; interesseDettaglio?: string | null; note?: string | null } | null): boolean {
   if (!lead) return false
   if (isOpenDaySpaText(lead.interesseDettaglio, lead.note, lead.categoria)) return false
+  if (isBlackFridayLead(lead) && lead.categoria !== "bambini") return false
   if (lead.categoria === "bambini") return true
   const blob = `${lead.interesseDettaglio ?? ""} ${lead.note ?? ""}`
   return /\b(bambin|campus|scuola\s*nuoto|nuoto\s*bambin|acquaticit)\b/i.test(blob)
@@ -1469,6 +1471,14 @@ export async function handleWhatsappInboundBooking(params: {
   // Ogni testo del cliente va in note (sito e Facebook Ads), se il telefono combacia.
   if (lead) {
     appendLeadNote(lead.id, `WA: «${text}»`)
+  }
+
+  // Black Friday 11–23/11: niente bot (benvenuto, guide, slot). Solo lead CRM, richiamano le consulenti.
+  if (
+    isBlackFridayCampaignActive() &&
+    (isBlackFridayText(text) || (lead != null && isBlackFridayLead(lead)))
+  ) {
+    return { handled: true, detail: "black friday: nessun reply, solo CRM" }
   }
 
   // 0) Annullamento: solo il segmento del lead (adulti vs bambini), non entrambi

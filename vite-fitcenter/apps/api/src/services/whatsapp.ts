@@ -5,6 +5,7 @@
 import { explainWhatsappDeliveryError, whatsappEventsStore } from "../store/whatsapp-events.js"
 import { welcomeTextFromWebsiteRequest } from "./whatsapp-site-topics.js"
 import { isOpenDaySpaText, openDaySpaReplyMsg } from "./open-day-spa.js"
+import { isBlackFridayCampaignActive, isBlackFridayText } from "./black-friday.js"
 import { firstNameFromLeadNome, formatLeadFormDumpNote, parseLeadFormDump } from "../lib/lead-form-dump.js"
 
 const GRAPH_VERSION = (process.env.WHATSAPP_GRAPH_VERSION ?? "v21.0").trim() || "v21.0"
@@ -643,6 +644,12 @@ export async function notifyLeadWelcomeWhatsapp(params: {
       text: requestLines.join("\n"),
       raw: { fonte: params.fonte, note: params.note, interesseDettaglio: params.interesseDettaglio },
     })
+  }
+  if (
+    isBlackFridayCampaignActive() &&
+    isBlackFridayText(params.note, params.interesse, params.interesseDettaglio)
+  ) {
+    return { sent: false, skipped: "black_friday_callback_only" }
   }
   try {
     if (isOpenDay) {

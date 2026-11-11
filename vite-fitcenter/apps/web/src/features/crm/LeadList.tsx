@@ -13,6 +13,7 @@ import { RegistraTelefonataButton } from "@/components/RegistraTelefonataButton"
 import { Button } from "@workspace/ui/components/button"
 import { useAuth } from "@/contexts/AuthContext"
 import { isOpenDaySpaCampaignActive, isOpenDaySpaLead, OPEN_DAY_SPA_LABEL } from "@/lib/open-day-spa"
+import { isBlackFridayCampaignActive, isBlackFridayLead, BLACK_FRIDAY_LABEL } from "@/lib/black-friday"
 
 const PIPELINE_STATUSES: LeadStatus[] = [
   "nuovo",
@@ -44,6 +45,7 @@ export function LeadList() {
   const [fonte, setFonte] = useState<LeadSource | "">("")
   const [consulente, setConsulente] = useState("")
   const [openSpaOnly, setOpenSpaOnly] = useState(false)
+  const [blackFridayOnly, setBlackFridayOnly] = useState(false)
 
   const assignToMe = useMutation({
     mutationFn: (leadId: string) => dataApi.assignLeadToMe(leadId),
@@ -79,11 +81,14 @@ export function LeadList() {
     if (fonte) list = list.filter((l) => l.fonte === fonte)
     if (consulente) list = list.filter((l) => l.consulenteNome === consulente)
     if (openSpaOnly) list = list.filter((l) => isOpenDaySpaLead(l))
+    if (blackFridayOnly) list = list.filter((l) => isBlackFridayLead(l))
     return list
-  }, [allLeads, search, fonte, consulente, openSpaOnly])
+  }, [allLeads, search, fonte, consulente, openSpaOnly, blackFridayOnly])
 
   const openSpaCount = useMemo(() => allLeads.filter((l) => isOpenDaySpaLead(l)).length, [allLeads])
   const showOpenSpaFilter = isOpenDaySpaCampaignActive() || openSpaCount > 0
+  const blackFridayCount = useMemo(() => allLeads.filter((l) => isBlackFridayLead(l)).length, [allLeads])
+  const showBlackFridayFilter = isBlackFridayCampaignActive() || blackFridayCount > 0
 
   const countsByStatus = useMemo(() => {
     const m: Record<LeadStatus, number> = {
@@ -184,6 +189,20 @@ export function LeadList() {
             {openSpaCount > 0 ? ` (${openSpaCount})` : ""}
           </button>
         )}
+        {showBlackFridayFilter && (
+          <button
+            type="button"
+            onClick={() => setBlackFridayOnly((v) => !v)}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              blackFridayOnly
+                ? "border-orange-500/50 bg-orange-500/20 text-orange-200"
+                : "border-zinc-700 bg-zinc-800/50 text-zinc-200 hover:border-orange-500/40"
+            }`}
+          >
+            {BLACK_FRIDAY_LABEL}
+            {blackFridayCount > 0 ? ` (${blackFridayCount})` : ""}
+          </button>
+        )}
       </div>
 
       <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-800">
@@ -240,9 +259,16 @@ export function LeadList() {
                           {OPEN_DAY_SPA_LABEL}
                         </span>
                       )}
+                      {isBlackFridayLead(lead) && (
+                        <span className="rounded-full border border-orange-500/40 bg-orange-500/20 px-2 py-0.5 text-xs text-orange-200">
+                          {BLACK_FRIDAY_LABEL}
+                        </span>
+                      )}
                       <span>
                         {lead.interesse ? INTERESSE_LABELS[lead.interesse] : lead.interesseDettaglio ?? "—"}
-                        {isOpenDaySpaLead(lead) && lead.interesse && lead.interesseDettaglio
+                        {(isOpenDaySpaLead(lead) || isBlackFridayLead(lead)) &&
+                        lead.interesse &&
+                        lead.interesseDettaglio
                           ? ` · ${lead.interesseDettaglio}`
                           : ""}
                       </span>
