@@ -128,6 +128,7 @@ export function ReportCollaboratori({
   } | null>(null)
   const [meseImport, setMeseImport] = useState(currentYm())
   const [pdfPreview, setPdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
+  const [eliminaMode, setEliminaMode] = useState(false)
 
   const report = useQuery({
     queryKey: ["amm-collab-report", source, anno],
@@ -557,9 +558,19 @@ export function ReportCollaboratori({
         <button type="submit" className={btnAmber} disabled={saveMut.isPending}>
           Aggiungi
         </button>
-        <p className="w-full text-[11px] text-zinc-500 print:hidden">
-          Per togliere un nominativo inserito per sbaglio, spunta la casella a sinistra del nome.
-        </p>
+        <button
+          type="button"
+          className={eliminaMode ? "rounded-md border border-red-500/50 bg-red-500/15 px-3 py-2 text-sm text-red-200" : btnGhost}
+          disabled={delMut.isPending}
+          onClick={() => setEliminaMode((v) => !v)}
+        >
+          {eliminaMode ? "Chiudi elimina" : "Elimina"}
+        </button>
+        {eliminaMode ? (
+          <p className="w-full text-[11px] text-red-300/90 print:hidden">
+            Spunta il nominativo da togliere da questo anno, poi conferma. Non tocca omonimi diversi (es. Innocenti Andrea).
+          </p>
+        ) : null}
       </form>
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-zinc-800 print:border-zinc-400">
@@ -619,25 +630,27 @@ export function ReportCollaboratori({
                   {g.righe.map((r) => (
                     <tr key={r.nominativo} className="border-b border-zinc-800/60">
                       <td className="sticky left-0 z-10 bg-zinc-950 px-3 py-1 font-medium text-zinc-100 print:static print:bg-white">
-                        <label className="inline-flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            className="rounded border-zinc-600 bg-zinc-900 text-red-400 print:hidden"
-                            title="Elimina questo nominativo dall'anno"
-                            checked={false}
-                            disabled={delMut.isPending}
-                            onChange={(e) => {
-                              e.currentTarget.checked = false
-                              if (
-                                !confirm(
-                                  `Eliminare ${r.nominativo} da tutte le mensilità ${anno}?`
-                                )
-                              ) {
-                                return
-                              }
-                              delMut.mutate({ nominativo: r.nominativo, anno })
-                            }}
-                          />
+                        <span className="inline-flex items-center gap-2">
+                          {eliminaMode ? (
+                            <input
+                              type="checkbox"
+                              className="rounded border-zinc-600 bg-zinc-900 text-red-400 print:hidden"
+                              title="Elimina questo nominativo dall'anno"
+                              checked={false}
+                              disabled={delMut.isPending}
+                              onChange={(e) => {
+                                e.currentTarget.checked = false
+                                if (
+                                  !confirm(
+                                    `Eliminare ${r.nominativo} da tutte le mensilità ${anno}?`
+                                  )
+                                ) {
+                                  return
+                                }
+                                delMut.mutate({ nominativo: r.nominativo, anno })
+                              }}
+                            />
+                          ) : null}
                           <span>
                             {r.nominativo}
                             {r.tipo === "gestionale" ? (
@@ -647,7 +660,7 @@ export function ReportCollaboratori({
                               <span className="ml-2 text-[10px] font-normal text-zinc-500">{r.mansione}</span>
                             ) : null}
                           </span>
-                        </label>
+                        </span>
                       </td>
                       {mesi.map((m) => {
                         const cell = r.mesi[m.id]

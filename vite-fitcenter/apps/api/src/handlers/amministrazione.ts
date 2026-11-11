@@ -784,7 +784,11 @@ export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmC
   const anag = await anagraficaReparti()
   const byNome = new Map<
     string,
-    { nominativo: string; tipo: "sportivo" | "gestionale"; mesi: Record<string, { id: string; totale: number; origine: string }> }
+    {
+      nominativo: string
+      tipo: "sportivo" | "gestionale"
+      mesi: Record<string, { id: string; totale: number; origine: string; updatedAt?: string }>
+    }
   >()
   for (const c of stored) {
     const key = c.nominativo.trim().toLowerCase()
@@ -794,7 +798,11 @@ export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmC
       mesi: {},
     }
     if (c.tipo === "gestionale") cur.tipo = "gestionale"
-    cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine }
+    const prev = cur.mesi[c.mese]
+    const newer = !prev || String(c.updatedAt ?? "") >= String(prev.updatedAt ?? "")
+    if (newer) {
+      cur.mesi[c.mese] = { id: c.id, totale: c.totale, origine: c.origine, updatedAt: c.updatedAt }
+    }
     byNome.set(key, cur)
   }
   for (const r of rimanenzeAnno) {

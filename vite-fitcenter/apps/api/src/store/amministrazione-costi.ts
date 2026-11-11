@@ -1116,8 +1116,12 @@ export const ammCostiStore = {
       (tipo === "gestionale"
         ? [{ repartoId: "amministrazione-uffici", percentuale: 100 }]
         : [{ repartoId: "personale-condiviso", percentuale: 100 }])
-    const same = d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese)
+    const sameMonth = d.collaboratori.filter(
+      (c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese
+    )
+    const same = sameMonth[0]
     const prevTot = same ? same.totale : null
+    const extras = sameMonth.slice(1).map((c) => c.id)
     const row = this.upsertCollaboratore({
       id: same?.id,
       nominativo,
@@ -1129,6 +1133,11 @@ export const ammCostiStore = {
       modificatoDa: body.user.trim() || undefined,
       descrizione: same?.descrizione ?? "",
     })
+    if (extras.length) {
+      const dDup = load()
+      dDup.collaboratori = dDup.collaboratori.filter((c) => !extras.includes(c.id))
+      save(dDup)
+    }
     const audit: AmmCollabAudit = {
       id: randomUUID(),
       at: nowIso(),
