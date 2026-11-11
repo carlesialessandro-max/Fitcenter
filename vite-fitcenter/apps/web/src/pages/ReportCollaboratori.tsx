@@ -260,9 +260,9 @@ export function ReportCollaboratori({
       setErr("")
       setMsg(
         `Importati ${r.nPersone ?? 0} nominativi, ${r.inserite} mensilità` +
-          (r.sostituite ? ` (sostituiti ${r.sostituite} importi precedenti di quei mesi)` : "") +
+          (r.sostituite ? ` (sostituiti ${r.sostituite} importi già in FitCenter)` : "") +
           (r.rimosse ? ` · tolti ${r.rimosse} importi di quel mese non presenti nel file` : "") +
-          ". Il totale del mese coincide con l’Excel."
+          ". Salvati: il file non si rilegge più finché non lo ricarichi."
       )
       void qc.invalidateQueries({ queryKey: ["amm-collab-report"] })
       void qc.invalidateQueries({ queryKey: ["amm-collab"] })
@@ -354,9 +354,9 @@ export function ReportCollaboratori({
             <h1 className="text-2xl font-semibold text-zinc-100">Report collaboratori sportivi</h1>
           )}
           <p className="mt-1 max-w-3xl text-sm text-zinc-500">
-            Importa l’Excel REPORT ANNUO (colonne Gen–Dic) oppure un Excel di un solo mese (titolo es. OTTOBRE 2026 e
-            colonna IMPORTO). Gli importi si agganciano al nominativo, anche se l’ordine del file è diverso da questa
-            pagina. Scegli il mese in alto per PDF o Excel mensile. Solo admin e Alberto.
+            Carichi l’Excel una volta: gli importi si memorizzano qui e il file non si rilegge più. Un import di ottobre
+            (o di un altro mese) sostituisce anche le celle già piene di quel mese; restano così finché non ricarichi il
+            file. Accetta il REPORT ANNUO (Gen–Dic) o un Excel di un solo mese. Solo admin e Alberto.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -459,8 +459,9 @@ export function ReportCollaboratori({
           <p className="text-sm text-zinc-300">
             File letto: {preview.nPersone} persone, {eur(preview.tot)}
             {preview.formato === "mese" ? " · un mese" : ` · ${preview.mesi.length} mesi (${preview.mesi.map(labelMese).join(", ")})`}
-            {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Ogni importo va sul nominativo
-            corrispondente. Quel mese sulla pagina diventa uguale al file (chi non c’è nel file esce dal mese).
+            {preview.totRimanenze ? ` · rimanenze ${eur(preview.totRimanenze)}` : ""}. Gli importi di quel mese
+            sostituiscono quelli già in FitCenter, anche se non sono vuoti, e restano memorizzati. Il file non si
+            rilegge alle aperture successive. Chi non c’è nel file esce dal mese.
           </p>
           <div className="flex flex-wrap items-end gap-2">
             <button type="button" className={btnGhost} onClick={() => setPreview(null)}>

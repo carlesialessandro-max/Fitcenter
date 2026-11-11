@@ -1318,9 +1318,9 @@ export const ammCostiStore = {
     return prev
   },
   /**
-   * Upsert Excel: abbina ogni importo al nominativo (ordine del file irrilevante).
-   * I mesi presenti nel file diventano identici al file: chi non c’è in quel mese
-   * viene rimosso, così il totale della pagina coincide con l’Excel.
+   * Import Excel: gli importi si memorizzano. Il file non si rilegge più.
+   * I mesi del file sostituiscono quelli già in FitCenter (anche se non vuoti).
+   * Chi non c’è nel file esce da quel mese. Un nuovo caricamento li rimpiazza.
    */
   importCollaboratoriReport(
     anno: number,
@@ -1367,9 +1367,12 @@ export const ammCostiStore = {
       persone.add(key)
       const tipo: AmmCollabTipo =
         raw.tipo === "gestionale" || hit?.tipo === "gestionale" ? "gestionale" : "sportivo"
-      const same = d.collaboratori.find(
-        (c) => c.mese === mese && (stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === nominativo.toLowerCase())
+      const sameAll = load().collaboratori.filter(
+        (c) =>
+          c.mese === mese &&
+          (stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === nominativo.toLowerCase())
       )
+      const same = sameAll[0]
       if (same) sostituite += 1
       const saved = this.upsertCollaboratore({
         id: same?.id,

@@ -778,15 +778,13 @@ function keyByNome(byNome: Map<string, { nominativo: string }>, nominativo: stri
 
 type MeseCell = { id: string; totale: number; origine: string; updatedAt?: string }
 
-/** Una sola cifra per persona/mese: la modifica a mano vince sull'Excel; lo 0 non cancella un importo positivo duplicato. */
+/** Una cifra per persona/mese: vince l’ultimo salvataggio (import Excel o modifica a mano). */
 function pickMeseCell(cands: MeseCell[]): MeseCell | undefined {
   if (!cands.length) return undefined
-  const newer = (a: MeseCell, b: MeseCell) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? ""))
   const positivi = cands.filter((c) => (c.totale || 0) > 0.004)
-  const pool = positivi.length ? positivi : cands
-  const manuali = pool.filter((c) => c.origine === "manuale")
-  const use = (manuali.length ? manuali : pool).slice().sort(newer)
-  return use[0]
+  const pool = (positivi.length ? positivi : cands).slice()
+  pool.sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
+  return pool[0]
 }
 
 export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmCollabReportBuilt> {
