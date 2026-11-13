@@ -412,6 +412,31 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
+/** Vince la modifica a mano, a meno che un import Excel successivo non l’abbia sostituita. */
+export function scegliRigaCollaboratoreMese<T extends { totale?: number; origine?: string; updatedAt?: string }>(
+  cands: T[]
+): T | undefined {
+  if (!cands.length) return undefined
+  const positivi = cands.filter((c) => (Number(c.totale) || 0) > 0.004)
+  const pool = (positivi.length ? positivi : cands).slice()
+  const time = (c: T) => String(c.updatedAt ?? "")
+  pool.sort((a, b) => time(b).localeCompare(time(a)))
+  const manuals = pool.filter((c) => c.origine === "manuale")
+  if (manuals.length) {
+    const manual = manuals[0]!
+    const excelNewer = pool.find(
+      (c) =>
+        (c.origine === "excel" || c.origine === "riepilogo") &&
+        time(c) &&
+        time(manual) &&
+        time(c) > time(manual)
+    )
+    if (excelNewer) return excelNewer
+    return manual
+  }
+  return pool[0]
+}
+
 export function pdfDir(): string {
   const dir = path.join(getDataDir(), "amministrazione-pdf")
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
@@ -895,6 +920,28 @@ export const ammCostiStore = {
       .collaboratori.slice()
       .sort((a, b) => b.mese.localeCompare(a.mese) || a.nominativo.localeCompare(b.nominativo, "it"))
   },
+  /** Una riga per persona/mese: toglie i doppioni Excel+manuale che facevano tornare indietro gli importi. */
+  collapseCollaboratoriDuplicati(): number {
+    const d = load()
+    const groups: AmmCollaboratore[][] = []
+    for (const c of d.collaboratori) {
+      const g = groups.find((rows) => rows[0] && rows[0].mese === c.mese && stessoNominativo(rows[0].nominativo, c.nominativo))
+      if (g) g.push(c)
+      else groups.push([c])
+    }
+    const keep = new Set<string>()
+    for (const rows of groups) {
+      const winner = scegliRigaCollaboratoreMese(rows) ?? rows[0]
+      if (winner) keep.add(winner.id)
+    }
+    const next = d.collaboratori.filter((c) => keep.has(c.id))
+    const rimosse = d.collaboratori.length - next.length
+    if (rimosse > 0) {
+      d.collaboratori = next
+      save(d)
+    }
+    return rimosse
+  },
   listCollaboratoriRimborsi(mese?: string): AmmCollaboratoreRimborso[] {
     return load()
       .collaboratoriRimborsi.filter((r) => !mese || r.mese === mese)
@@ -1104,24 +1151,24 @@ export const ammCostiStore = {
     if (!Number.isFinite(totale) || totale < 0) throw Object.assign(new Error("Importo non valido"), { status: 400 })
     const d = load()
     const key = nominativo.toLowerCase()
+    const sameMonth = d.collaboratori.filter(
+      (c) => c.mese === mese && (stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === key)
+    )
+    const same = scegliRigaCollaboratoreMese(sameMonth) ?? sameMonth[0]
     const cur =
-      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese) ??
-      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key)
+      same ??
+      d.collaboratori.find((c) => stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === key)
     const tipo: AmmCollabTipo =
       body.tipo === "gestionale" || body.tipo === "sportivo"
         ? body.tipo
         : (cur?.tipo === "gestionale" ? "gestionale" : "sportivo")
     const quote =
-      d.collaboratori.find((c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese)?.quote ??
+      same?.quote ??
       (tipo === "gestionale"
         ? [{ repartoId: "amministrazione-uffici", percentuale: 100 }]
         : [{ repartoId: "personale-condiviso", percentuale: 100 }])
-    const sameMonth = d.collaboratori.filter(
-      (c) => c.nominativo.trim().toLowerCase() === key && c.mese === mese
-    )
-    const same = sameMonth[0]
     const prevTot = same ? same.totale : null
-    const extras = sameMonth.slice(1).map((c) => c.id)
+    const extras = sameMonth.filter((c) => c.id !== same?.id).map((c) => c.id)
     const row = this.upsertCollaboratore({
       id: same?.id,
       nominativo,
@@ -1151,6 +1198,7 @@ export const ammCostiStore = {
     const d2 = load()
     d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
     save(d2)
+    this.collapseCollaboratoriDuplicati()
     return row
   },
   /** Sostituisce gli importi di quel mese (non solo i mancanti). Conserva le quote già salvate per nominativo. */
@@ -1434,6 +1482,7 @@ export const ammCostiStore = {
     }
     d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
     save(d2)
-    return { inserite, sostituite, nPersone: persone.size, rimosse }
+    const extraDup = this.collapseCollaboratoriDuplicati()
+    return { inserite, sostituite, nPersone: persone.size, rimosse: rimosse + extraDup }
   },
 }

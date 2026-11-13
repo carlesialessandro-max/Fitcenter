@@ -10,6 +10,7 @@ import {
   type AmmQuota,
   type AmmSpesa,
   type AmmTipoCosto,
+  scegliRigaCollaboratoreMese,
 } from "../store/amministrazione-costi.js"
 import { normalizzaNominativo, stessoNominativo, trovaPerNominativo, trovaRigaPerNominativo } from "../lib/nominativo-match.js"
 import { parseFatturaText } from "../services/amministrazione-ocr.js"
@@ -778,13 +779,9 @@ function keyByNome(byNome: Map<string, { nominativo: string }>, nominativo: stri
 
 type MeseCell = { id: string; totale: number; origine: string; updatedAt?: string }
 
-/** Una cifra per persona/mese: vince l’ultimo salvataggio (import Excel o modifica a mano). */
+/** Una cifra per persona/mese: la modifica a mano resta, l’Excel la sostituisce solo se ricaricato dopo. */
 function pickMeseCell(cands: MeseCell[]): MeseCell | undefined {
-  if (!cands.length) return undefined
-  const positivi = cands.filter((c) => (c.totale || 0) > 0.004)
-  const pool = (positivi.length ? positivi : cands).slice()
-  pool.sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
-  return pool[0]
+  return scegliRigaCollaboratoreMese(cands)
 }
 
 export async function buildAmmCollaboratoriReport(annoRaw: number): Promise<AmmCollabReportBuilt> {
@@ -932,6 +929,7 @@ export async function getAmmCollaboratoriReport(req: Request, res: Response) {
   try {
     const now = new Date()
     const anno = Number(req.query.anno) || now.getFullYear()
+    ammCostiStore.collapseCollaboratoriDuplicati()
     const report = await buildAmmCollaboratoriReport(anno)
     res.json({
       ...report,

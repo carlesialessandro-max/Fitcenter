@@ -2,26 +2,63 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 
+const MARKER_FILES = ["amministrazione-costi.json", "auth-users.json", "libro-paga.json"]
+
 function dataDirCandidates(): string[] {
   const __dirname = path.dirname(fileURLToPath(import.meta.url))
-  return [
+  const raw = [
     path.resolve(__dirname, "../../data"),
     path.resolve(process.cwd(), "data"),
     path.resolve(process.cwd(), "apps/api/data"),
     path.resolve(process.cwd(), "vite-fitcenter/apps/api/data"),
     path.resolve(process.cwd(), "vite-fitcenter/vite-fitcenter/apps/api/data"),
   ]
+  return [...new Set(raw)]
 }
 
+function mtimeMs(filePath: string): number {
+  try {
+    return fs.statSync(filePath).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
+function dirFreshness(dir: string): number {
+  return Math.max(0, ...MARKER_FILES.map((name) => mtimeMs(path.join(dir, name))))
+}
+
+let cachedDir: string | undefined
+
 function resolveDataDir(): string {
+  if (cachedDir) return cachedDir
   const candidates = dataDirCandidates()
-  const existing = candidates.find((d) => fs.existsSync(d))
-  const dir = existing ?? candidates[0] ?? path.resolve(process.cwd(), "data")
+  const existing = candidates.filter((d) => {
+    try {
+      return fs.existsSync(d)
+    } catch {
+      return false
+    }
+  })
+  let dir = existing[0] ?? candidates[0] ?? path.resolve(process.cwd(), "data")
+  if (existing.length > 1) {
+    let best = existing[0]!
+    let bestScore = dirFreshness(best)
+    for (const d of existing) {
+      const score = dirFreshness(d)
+      if (score > bestScore) {
+        best = d
+        bestScore = score
+      }
+    }
+    dir = best
+  }
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+  cachedDir = dir
   return dir
 }
 
-/** Stessa cartella di auth-users.json / libro-paga.json. */
+/** Stessa cartella di auth-users.json / libro-paga.json. Una sola per processo, la più recente. */
 export function getDataDir(): string {
   return resolveDataDir()
 }
@@ -31,12 +68,16 @@ export function readJson<T>(filename: string, fallback: T): T {
     const primaryDir = resolveDataDir()
     const primaryPath = path.join(primaryDir, filename)
     if (!fs.existsSync(primaryPath)) {
-      // Migrazione soft: se il file esiste in un altro candidato, copialo e usalo.
+      let bestAlt: { path: string; score: number } | undefined
       for (const dir of dataDirCandidates()) {
         if (dir === primaryDir) continue
         const altPath = path.join(dir, filename)
-        if (!fs.existsSync(altPath)) continue
-        const rawAlt = fs.readFileSync(altPath, "utf8")
+        const score = mtimeMs(altPath)
+        if (!score) continue
+        if (!bestAlt || score > bestAlt.score) bestAlt = { path: altPath, score }
+      }
+      if (bestAlt) {
+        const rawAlt = fs.readFileSync(bestAlt.path, "utf8")
         fs.writeFileSync(primaryPath, rawAlt, "utf8")
         return JSON.parse(rawAlt) as T
       }
