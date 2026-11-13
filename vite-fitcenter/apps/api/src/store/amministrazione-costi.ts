@@ -1453,19 +1453,17 @@ export const ammCostiStore = {
     }
     const inserite = byKey.size
     const sostituite = prevMese.length
-    d.collaboratoriAudit = [
-      {
-        id: randomUUID(),
-        at,
-        user: chi || "sconosciuto",
-        nominativo: "Import Excel",
-        mese: mesiFile.join(", "),
-        da: sostituite,
-        a: inserite,
-        azione: "importo",
-      },
-      ...d.collaboratoriAudit,
-    ].slice(0, 400)
+    const audit: AmmCollabAudit = {
+      id: randomUUID(),
+      at,
+      user: chi || "sconosciuto",
+      nominativo: "Import Excel",
+      mese: mesiFile.join(", "),
+      da: sostituite,
+      a: inserite,
+      azione: "importo",
+    }
+    d.collaboratoriAudit = [audit, ...d.collaboratoriAudit].slice(0, 400)
     save(d)
     this.collapseCollaboratoriDuplicati()
     return { inserite, sostituite, nPersone: persone.size, rimosse: Math.max(0, sostituite - inserite) }
