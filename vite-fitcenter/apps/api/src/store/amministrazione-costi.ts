@@ -412,29 +412,20 @@ function nowIso(): string {
   return new Date().toISOString()
 }
 
-/** Vince la modifica a mano, a meno che un import Excel successivo non l’abbia sostituita. */
+/**
+ * Una cifra per persona/mese. Un nuovo import Excel cancella il mese intero, quindi
+ * se restano doppioni la modifica a mano è quella vera (l’Excel vecchio non torna).
+ */
 export function scegliRigaCollaboratoreMese<T extends { totale?: number; origine?: string; updatedAt?: string }>(
   cands: T[]
 ): T | undefined {
   if (!cands.length) return undefined
   const positivi = cands.filter((c) => (Number(c.totale) || 0) > 0.004)
   const pool = (positivi.length ? positivi : cands).slice()
-  const time = (c: T) => String(c.updatedAt ?? "")
-  pool.sort((a, b) => time(b).localeCompare(time(a)))
   const manuals = pool.filter((c) => c.origine === "manuale")
-  if (manuals.length) {
-    const manual = manuals[0]!
-    const excelNewer = pool.find(
-      (c) =>
-        (c.origine === "excel" || c.origine === "riepilogo") &&
-        time(c) &&
-        time(manual) &&
-        time(c) > time(manual)
-    )
-    if (excelNewer) return excelNewer
-    return manual
-  }
-  return pool[0]
+  const use = (manuals.length ? manuals : pool).slice()
+  use.sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
+  return use[0]
 }
 
 export function pdfDir(): string {
@@ -1366,9 +1357,8 @@ export const ammCostiStore = {
     return prev
   },
   /**
-   * Import Excel: gli importi si memorizzano. Il file non si rilegge più.
-   * I mesi del file sostituiscono quelli già in FitCenter (anche se non vuoti).
-   * Chi non c’è nel file esce da quel mese. Un nuovo caricamento li rimpiazza.
+   * Carichi l’Excel: quel mese viene sostituito per intero e memorizzato.
+   * Il file non si rilegge più. Poi modifiche e aggiunte restano finché non ricarichi.
    */
   importCollaboratoriReport(
     anno: number,
@@ -1397,62 +1387,53 @@ export const ammCostiStore = {
     for (const c of d.collaboratori) {
       const nk = normalizzaNominativo(c.nominativo)
       if (nk && !nomeMap.has(nk)) nomeMap.set(nk, c)
-      if (c.mese.startsWith(prefix)) quoteMap.set(nk || c.nominativo.trim().toLowerCase(), c.quote)
+      if (c.mese.startsWith(prefix) && nk) quoteMap.set(nk, c.quote)
     }
+    const prevMese = d.collaboratori.filter((c) => mesiFile.includes(c.mese))
+    d.collaboratori = d.collaboratori.filter((c) => !mesiFile.includes(c.mese))
     const persone = new Set<string>()
-    const keptIds = new Set<string>()
-    let inserite = 0
-    let sostituite = 0
+    const byKey = new Map<string, AmmCollaboratore>()
+    const at = nowIso()
+    const chi = user.trim() || undefined
     for (const raw of righe) {
       const nomeFile = String(raw.nominativo ?? "").trim()
       const mese = String(raw.mese ?? "").slice(0, 7)
       const totale = Number(String(raw.totale ?? "").replace(",", "."))
-      if (!nomeFile || !/^\d{4}-\d{2}$/.test(mese) || !mese.startsWith(prefix)) continue
+      if (!nomeFile || !/^\d{4}-\d{2}$/.test(mese) || !mesiFile.includes(mese)) continue
       if (!Number.isFinite(totale) || totale <= 0) continue
       const hit = trovaPerNominativo(nomeMap, nomeFile)
       const nominativo = hit?.nominativo?.trim() || nomeFile
-      const key = normalizzaNominativo(nominativo)
-      persone.add(key)
+      const keyNome = normalizzaNominativo(nominativo)
+      persone.add(keyNome)
       const tipo: AmmCollabTipo =
         raw.tipo === "gestionale" || hit?.tipo === "gestionale" ? "gestionale" : "sportivo"
-      const sameAll = load().collaboratori.filter(
-        (c) =>
-          c.mese === mese &&
-          (stessoNominativo(c.nominativo, nominativo) || c.nominativo.trim().toLowerCase() === nominativo.toLowerCase())
-      )
-      const same = sameAll[0]
-      if (same) sostituite += 1
-      const saved = this.upsertCollaboratore({
-        id: same?.id,
+      const quoteRaw =
+        quoteMap.get(keyNome) ??
+        trovaPerNominativo(quoteMap, nomeFile) ??
+        [{ repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 }]
+      const quote = normalizeQuoteList(quoteRaw)
+      const rowKey = `${keyNome}|${mese}`
+      const prevNew = byKey.get(rowKey)
+      byKey.set(rowKey, {
+        id: prevNew?.id ?? randomUUID(),
         nominativo,
         mese,
-        totale,
+        descrizione: "",
+        totale: Math.round(totale * 100) / 100,
         tipo,
+        quote: quoteValide(quote)
+          ? quote
+          : [{ repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 }],
         origine: "excel",
-        modificatoDa: user.trim() || undefined,
-        quote:
-          same?.quote ??
-          quoteMap.get(key) ??
-          trovaPerNominativo(quoteMap, nomeFile) ??
-          [
-            { repartoId: tipo === "gestionale" ? "amministrazione-uffici" : "personale-condiviso", percentuale: 100 },
-          ],
+        modificatoDa: chi,
+        createdAt: prevNew?.createdAt ?? at,
+        updatedAt: at,
       })
-      if (key) nomeMap.set(key, saved)
-      keptIds.add(saved.id)
-      inserite += 1
     }
-    const d2 = load()
-    let rimosse = 0
-    d2.collaboratori = d2.collaboratori.filter((c) => {
-      if (!mesiFile.includes(c.mese)) return true
-      if (keptIds.has(c.id)) return true
-      rimosse += 1
-      return false
-    })
+    d.collaboratori.push(...byKey.values())
     if (opts?.aggiornaRimanenze !== false) {
-      const rimKeep = d2.collaboratoriRimanenze.filter((r) => r.anno !== anno)
-      const rimNew: typeof d2.collaboratoriRimanenze = []
+      const rimKeep = d.collaboratoriRimanenze.filter((r) => r.anno !== anno)
+      const rimNew: typeof d.collaboratoriRimanenze = []
       for (const raw of rimanenze) {
         const nomeFile = String(raw.nominativo ?? "").trim()
         const importo = Math.round((Number(raw.importo) || 0) * 100) / 100
@@ -1464,25 +1445,29 @@ export const ammCostiStore = {
           nominativo,
           anno,
           importo,
-          updatedAt: nowIso(),
-          modificatoDa: user.trim() || undefined,
+          updatedAt: at,
+          modificatoDa: chi,
         })
       }
-      d2.collaboratoriRimanenze = [...rimKeep, ...rimNew]
+      d.collaboratoriRimanenze = [...rimKeep, ...rimNew]
     }
-    const audit: AmmCollabAudit = {
-      id: randomUUID(),
-      at: nowIso(),
-      user: user.trim() || "sconosciuto",
-      nominativo: "Import Excel",
-      mese: mesiFile.join(", "),
-      da: sostituite,
-      a: inserite,
-      azione: "importo",
-    }
-    d2.collaboratoriAudit = [audit, ...d2.collaboratoriAudit].slice(0, 400)
-    save(d2)
-    const extraDup = this.collapseCollaboratoriDuplicati()
-    return { inserite, sostituite, nPersone: persone.size, rimosse: rimosse + extraDup }
+    const inserite = byKey.size
+    const sostituite = prevMese.length
+    d.collaboratoriAudit = [
+      {
+        id: randomUUID(),
+        at,
+        user: chi || "sconosciuto",
+        nominativo: "Import Excel",
+        mese: mesiFile.join(", "),
+        da: sostituite,
+        a: inserite,
+        azione: "importo",
+      },
+      ...d.collaboratoriAudit,
+    ].slice(0, 400)
+    save(d)
+    this.collapseCollaboratoriDuplicati()
+    return { inserite, sostituite, nPersone: persone.size, rimosse: Math.max(0, sostituite - inserite) }
   },
 }
