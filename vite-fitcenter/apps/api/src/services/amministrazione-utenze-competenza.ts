@@ -14,6 +14,9 @@ const ENERGIA_MENO_UNO = [
 /** Acqua: spesso un periodo di più mesi. */
 const PUBBLIACQUA = ["publiacqua", "pubbliacqua"]
 
+/** Energia piscina: competenza dalle date in fattura, altrimenti giugno–luglio. */
+const TRASTEEL = ["trasteel energy", "trasteel"]
+
 const MESI_IT: Record<string, string> = {
   GENNAIO: "01",
   GEN: "01",
@@ -83,31 +86,80 @@ function normalized(text: string): string {
     .trim()
 }
 
-function parsePeriodoMesi(text: string): string[] | null {
-  const t = normalized(text)
-  if (!t) return null
+function ymFromDmy(day: string, month: string, year: string): string | null {
+  const mm = Number(month)
+  const y = Number(year)
+  if (!Number.isFinite(mm) || mm < 1 || mm > 12 || !Number.isFinite(y)) return null
+  return `${y}-${pad2(mm)}`
+}
 
+function collectDateYms(t: string): string[] {
   const dates: string[] = []
   const dateRe = /\b(\d{1,2})\s+(\d{1,2})\s+(20\d{2})\b/g
   let dm: RegExpExecArray | null
   while ((dm = dateRe.exec(t))) {
-    const month = Number(dm[2])
-    if (month >= 1 && month <= 12) dates.push(`${dm[3]}-${pad2(month)}`)
+    const ym = ymFromDmy(dm[1] ?? "", dm[2] ?? "", dm[3] ?? "")
+    if (ym) dates.push(ym)
   }
-  if (dates.length >= 2) return monthsInclusive(dates[0]!, dates[dates.length - 1]!)
-
-  const named: string[] = []
+  const isoRe = /\b(20\d{2})\s+(\d{1,2})\s+(\d{1,2})\b/g
+  let im: RegExpExecArray | null
+  while ((im = isoRe.exec(t))) {
+    const ym = ymFromDmy(im[3] ?? "", im[2] ?? "", im[1] ?? "")
+    if (ym) dates.push(ym)
+  }
   const names = Object.keys(MESI_IT).sort((a, b) => b.length - a.length)
   const nameRe = new RegExp(`\\b(${names.join("|")})\\s+(20\\d{2})\\b`, "g")
   let nm: RegExpExecArray | null
   while ((nm = nameRe.exec(t))) {
     const mm = MESI_IT[nm[1] ?? ""]
-    if (mm) named.push(`${nm[2]}-${mm}`)
+    if (mm) dates.push(`${nm[2]}-${mm}`)
   }
-  if (named.length >= 2) return monthsInclusive(named[0]!, named[named.length - 1]!)
-  if (named.length === 1) return [named[0]!]
-  if (dates.length === 1) return [dates[0]!]
+  return dates
+}
+
+function parsePeriodoMesi(text: string, invoiceYm?: string): string[] | null {
+  const t = normalized(text)
+  if (!t) return null
+
+  const dalAl = t.match(
+    /\bDAL\s+(\d{1,2})\s+(\d{1,2})\s+(20\d{2})\s+(?:AL|A)\s+(\d{1,2})\s+(\d{1,2})\s+(20\d{2})\b/
+  )
+  if (dalAl) {
+    const a = ymFromDmy(dalAl[1] ?? "", dalAl[2] ?? "", dalAl[3] ?? "")
+    const b = ymFromDmy(dalAl[4] ?? "", dalAl[5] ?? "", dalAl[6] ?? "")
+    if (a && b) return monthsInclusive(a, b)
+  }
+
+  const names = Object.keys(MESI_IT).sort((a, b) => b.length - a.length)
+  const namedRange = t.match(
+    new RegExp(`\\bDAL\\s+(${names.join("|")})(?:\\s+(20\\d{2}))?\\s+(?:AL|A)\\s+(${names.join("|")})\\s+(20\\d{2})\\b`)
+  )
+  if (namedRange) {
+    const y2 = namedRange[4] ?? ""
+    const y1 = namedRange[2] || y2
+    const a = MESI_IT[namedRange[1] ?? ""]
+    const b = MESI_IT[namedRange[3] ?? ""]
+    if (a && b && y1 && y2) return monthsInclusive(`${y1}-${a}`, `${y2}-${b}`)
+  }
+
+  const dates = collectDateYms(t)
+  const unique = [...new Set(dates)]
+  const withoutInvoice = invoiceYm ? unique.filter((d) => d !== invoiceYm) : unique
+  const use = withoutInvoice.length >= 1 ? withoutInvoice : unique
+  if (use.length >= 2) {
+    const span = monthsInclusive(use[0]!, use[use.length - 1]!)
+    if (span.length <= 6) return span
+    return monthsInclusive(use[0]!, use[1]!)
+  }
+  if (use.length === 1) return [use[0]!]
   return null
+}
+
+function fallbackTrasteel(invoiceYm: string): string[] {
+  const y = Number(invoiceYm.slice(0, 4))
+  const m = Number(invoiceYm.slice(5, 7))
+  const year = Number.isFinite(m) && m <= 5 ? y - 1 : y
+  return [`${year}-06`, `${year}-07`]
 }
 
 function splitImporto(totale: number, mesi: string[]): CompetenzaQuota[] {
@@ -132,6 +184,10 @@ export function isPubbliacqua(fornitore: string): boolean {
   return fornitoreMatch(fornitore, PUBBLIACQUA)
 }
 
+export function isTrasteelEnergy(fornitore: string): boolean {
+  return fornitoreMatch(fornitore, TRASTEEL)
+}
+
 export function ripartoCompetenza(s: {
   fornitore: string
   dataDocumento: string
@@ -146,9 +202,17 @@ export function ripartoCompetenza(s: {
     return [{ mese: shiftYm(invoiceYm, -1), importo: s.totale }]
   }
 
+  const testoPeriodo = `${s.descrizione ?? ""} ${s.numeroDocumento ?? ""}`
+
   if (isPubbliacqua(s.fornitore)) {
-    const parsed = parsePeriodoMesi(`${s.descrizione ?? ""} ${s.numeroDocumento ?? ""}`)
+    const parsed = parsePeriodoMesi(testoPeriodo, invoiceYm)
     const mesi = parsed?.length ? parsed : [shiftYm(invoiceYm, -2), shiftYm(invoiceYm, -1)]
+    return splitImporto(s.totale, mesi)
+  }
+
+  if (isTrasteelEnergy(s.fornitore)) {
+    const parsed = parsePeriodoMesi(testoPeriodo, invoiceYm)
+    const mesi = parsed?.length ? parsed : fallbackTrasteel(invoiceYm)
     return splitImporto(s.totale, mesi)
   }
 
@@ -159,20 +223,33 @@ export function mesiCompetenza(s: {
   fornitore: string
   dataDocumento: string
   descrizione?: string
+  numeroDocumento?: string
   totale: number
 }): string[] {
   return ripartoCompetenza(s).map((p) => p.mese)
 }
 
 export function spesaNelMese(
-  s: { fornitore: string; dataDocumento: string; descrizione?: string; totale: number },
+  s: {
+    fornitore: string
+    dataDocumento: string
+    descrizione?: string
+    numeroDocumento?: string
+    totale: number
+  },
   mese: string
 ): boolean {
   return mesiCompetenza(s).includes(mese)
 }
 
 export function spesaNellAnno(
-  s: { fornitore: string; dataDocumento: string; descrizione?: string; totale: number },
+  s: {
+    fornitore: string
+    dataDocumento: string
+    descrizione?: string
+    numeroDocumento?: string
+    totale: number
+  },
   anno: string
 ): boolean {
   return mesiCompetenza(s).some((m) => m.startsWith(anno))

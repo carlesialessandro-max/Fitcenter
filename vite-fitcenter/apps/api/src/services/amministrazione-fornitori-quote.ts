@@ -29,6 +29,7 @@ export const FORNITORI_QUOTE_SEED: AmmFornitoreQuoteSeed[] = [
   },
   { match: ["tres energia", "tresenergia"], label: "Tres Energia", quote: q("utenze-generali") },
   { match: ["sima energia", "simaenergia"], label: "Sima energia", quote: q("utenze-generali") },
+  { match: ["trasteel energy", "trasteel"], label: "Trasteel Energy", quote: q("utenze-generali") },
   { match: ["publiacqua", "pubbliacqua"], label: "Publiacqua", quote: q("utenze-generali") },
   { match: ["technogym"], label: "Technogym", quote: q("palestra-sala-pesi") },
   { match: ["de lage landen", "delage landen", "delagelanden"], label: "De Lage Landen", quote: q("palestra-sala-pesi") },

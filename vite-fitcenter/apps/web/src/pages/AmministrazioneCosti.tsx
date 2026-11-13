@@ -1436,7 +1436,8 @@ function RegistroTab() {
         (apertura piscina esterna) 75% piscina esterna / 25% coperta. Si ricalcola anche sulle fatture già scaricate.
         Utenze: Italpower, Tip energia, TIP POWEReGAS, Tres Energia e Sima energia vanno nel mese prima della fattura
         (giugno → maggio). Publiacqua, se in descrizione c’è il periodo, spezza l’importo su quei mesi; altrimenti sui
-        due mesi precedenti la fattura.
+        due mesi precedenti la fattura. Trasteel Energy: se in fattura ci sono le date di competenza, spezza su quei
+        mesi; altrimenti metà giugno e metà luglio.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">
