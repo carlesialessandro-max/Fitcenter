@@ -8,6 +8,7 @@
 #
 # Consigliato: imposta FITCENTER_BACKUP_DIR in apps/api/.env (vale per pnpm run backup:data e --list):
 #   FITCENTER_BACKUP_DIR=\\ls2\condivisione\FitCenterBackup
+# Copia anche su MEGA: MEGA_EMAIL e MEGA_PASSWORD nello stesso .env.
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

@@ -11,11 +11,15 @@
  *   FITCENTER_BACKUP_DIR   cartella destinazione backup (default: ../backups accanto a data/)
  *   FITCENTER_BACKUP_KEEP  giorni da tenere (default: 3). I più vecchi si cancellano dopo ogni backup.
  *   FITCENTER_BACKUP_INCLUDE_ENV=1  copia anche apps/api/.env nel backup (consigliato, fuori da git)
+ *   MEGA_EMAIL / MEGA_PASSWORD  se valorizzati, dopo il backup locale carica anche su mega.nz
+ *   MEGA_BACKUP_FOLDER          cartella su MEGA (default: FitCenter-backup)
+ *   MEGA_SECOND_FACTOR          codice 2FA, solo se l’account MEGA lo richiede
  */
 import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import dotenv from "dotenv"
+import { Storage } from "megajs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiRoot = path.resolve(__dirname, "..")
@@ -110,7 +114,70 @@ function copyTree(srcDir, destDir, skipNames = new Set()) {
   return copied
 }
 
-function runBackup() {
+function megaEnabled() {
+  return Boolean(process.env.MEGA_EMAIL?.trim() && process.env.MEGA_PASSWORD?.trim())
+}
+
+async function megaEnsureDir(parent, name) {
+  const hit = (parent.children ?? []).find((c) => c.directory && c.name === name)
+  if (hit) return hit
+  return parent.mkdir(name)
+}
+
+async function megaUploadDir(megaFolder, localDir) {
+  for (const entry of fs.readdirSync(localDir, { withFileTypes: true })) {
+    const local = path.join(localDir, entry.name)
+    if (entry.isDirectory()) {
+      const sub = await megaEnsureDir(megaFolder, entry.name)
+      await megaUploadDir(sub, local)
+      continue
+    }
+    if (!entry.isFile()) continue
+    const size = fs.statSync(local).size
+    await megaFolder.upload({ name: entry.name, size }, fs.createReadStream(local)).complete
+  }
+}
+
+async function megaPrune(megaRoot, days) {
+  const cutoff = new Date()
+  cutoff.setHours(0, 0, 0, 0)
+  cutoff.setDate(cutoff.getDate() - (days - 1))
+  const cutoffStr = ymdOf(cutoff)
+  for (const child of megaRoot.children ?? []) {
+    if (!child.directory) continue
+    if (!String(child.name ?? "").startsWith("fitcenter-data-")) continue
+    const day = backupDayLabel(child.name)
+    if (day && day >= cutoffStr) continue
+    await child.delete(true)
+    console.log(`Rimosso da MEGA: ${child.name}`)
+  }
+}
+
+async function uploadBackupToMega(localDest, keep) {
+  const email = process.env.MEGA_EMAIL.trim()
+  const password = process.env.MEGA_PASSWORD
+  const folderName = process.env.MEGA_BACKUP_FOLDER?.trim() || "FitCenter-backup"
+  const secondFactorCode = process.env.MEGA_SECOND_FACTOR?.trim() || undefined
+  const storage = await new Storage({
+    email,
+    password,
+    secondFactorCode,
+    userAgent: "FitCenterBackup/1.0",
+    keepalive: false,
+  }).ready
+  try {
+    const megaRoot = await megaEnsureDir(storage.root, folderName)
+    const remoteName = path.basename(localDest)
+    const remoteFolder = await megaEnsureDir(megaRoot, remoteName)
+    await megaUploadDir(remoteFolder, localDest)
+    await megaPrune(megaRoot, keep)
+    console.log(`  MEGA:     /${folderName}/${remoteName}`)
+  } finally {
+    storage.close?.()
+  }
+}
+
+async function runBackup() {
   const dataDir = resolveDataDir()
   const backupRoot = resolveBackupRoot(dataDir)
   const keep = keepDays()
@@ -160,6 +227,18 @@ function runBackup() {
   console.log(`  Destino:  ${dest}`)
   console.log(`  File:     ${files.length}`)
   console.log(`  Conservati gli ultimi ${keep} giorni in ${backupRoot}`)
+
+  if (!megaEnabled()) {
+    console.log("  MEGA:     non configurato (imposta MEGA_EMAIL e MEGA_PASSWORD in apps/api/.env)")
+    return
+  }
+  try {
+    await uploadBackupToMega(dest, keep)
+  } catch (e) {
+    console.error("Backup locale OK, caricamento MEGA fallito:")
+    console.error(e instanceof Error ? e.message : String(e))
+    process.exit(1)
+  }
 }
 
 function runRestore(restorePath, yes) {
@@ -269,30 +348,34 @@ function runPruneOnly() {
 }
 
 const args = process.argv.slice(2)
-if (args.includes("--list")) {
-  runList()
-  process.exit(0)
-}
 
-if (args.includes("--restore-yesterday")) {
-  runRestoreYesterday(args.includes("--yes"))
-  process.exit(0)
-}
-
-if (args.includes("--prune")) {
-  runPruneOnly()
-  process.exit(0)
-}
-
-const restoreIdx = args.indexOf("--restore")
-if (restoreIdx >= 0) {
-  const restorePath = args[restoreIdx + 1]
-  if (!restorePath) {
-    console.error("Uso: node scripts/backup-fitcenter-data.mjs --restore PERCORSO_BACKUP --yes")
-    process.exit(1)
+async function main() {
+  if (args.includes("--list")) {
+    runList()
+    return
   }
-  runRestore(restorePath, args.includes("--yes"))
-  process.exit(0)
+  if (args.includes("--restore-yesterday")) {
+    runRestoreYesterday(args.includes("--yes"))
+    return
+  }
+  if (args.includes("--prune")) {
+    runPruneOnly()
+    return
+  }
+  const restoreIdx = args.indexOf("--restore")
+  if (restoreIdx >= 0) {
+    const restorePath = args[restoreIdx + 1]
+    if (!restorePath) {
+      console.error("Uso: node scripts/backup-fitcenter-data.mjs --restore PERCORSO_BACKUP --yes")
+      process.exit(1)
+    }
+    runRestore(restorePath, args.includes("--yes"))
+    return
+  }
+  await runBackup()
 }
 
-runBackup()
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : String(e))
+  process.exit(1)
+})
