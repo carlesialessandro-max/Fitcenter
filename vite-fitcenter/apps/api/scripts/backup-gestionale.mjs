@@ -10,7 +10,7 @@
  * Variabili in apps/api/.env:
  *   GESTIONALE_BACKUP_SRC   cartella dove SQL scrive i .bak (es. C:\Backup\SQL)
  *   GESTIONALE_BACKUP_DIR   destinazione NAS (es. \\nas\...\backup gestionale)
- *   GESTIONALE_BACKUP_KEEP  giorni da tenere (default: FITCENTER_BACKUP_KEEP o 3)
+ *   GESTIONALE_BACKUP_KEEP  giorni da tenere (default: 2; i .bak sono grandi)
  *   MEGA_EMAIL / MEGA_PASSWORD  stessi di FitCenter: dopo la copia NAS carica su mega.nz
  *   MEGA_GESTIONALE_FOLDER  cartella su MEGA (default: Gestionale-backup)
  */
@@ -47,10 +47,7 @@ function resolveUncOrPath(raw) {
 }
 
 function keepDays() {
-  return Math.max(
-    1,
-    Number(process.env.GESTIONALE_BACKUP_KEEP ?? process.env.FITCENTER_BACKUP_KEEP ?? 3) || 3
-  )
+  return Math.max(1, Number(process.env.GESTIONALE_BACKUP_KEEP ?? 2) || 2)
 }
 
 function resolveSrc() {
