@@ -19,6 +19,7 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import dotenv from "dotenv"
+import { megaEnabled, uploadDatedFolderToMega } from "./lib/backup-mega.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiRoot = path.resolve(__dirname, "..")
@@ -113,86 +114,6 @@ function copyTree(srcDir, destDir, skipNames = new Set()) {
   return copied
 }
 
-function megaEnabled() {
-  return Boolean(process.env.MEGA_EMAIL?.trim() && process.env.MEGA_PASSWORD?.trim())
-}
-
-async function megaEnsureDir(parent, name) {
-  const hit = (parent.children ?? []).find((c) => c.directory && c.name === name)
-  if (hit) return hit
-  return parent.mkdir(name)
-}
-
-async function megaUploadDir(megaFolder, localDir) {
-  for (const entry of fs.readdirSync(localDir, { withFileTypes: true })) {
-    const local = path.join(localDir, entry.name)
-    if (entry.isDirectory()) {
-      const sub = await megaEnsureDir(megaFolder, entry.name)
-      await megaUploadDir(sub, local)
-      continue
-    }
-    if (!entry.isFile()) continue
-    const size = fs.statSync(local).size
-    await megaFolder.upload({ name: entry.name, size }, fs.createReadStream(local)).complete
-  }
-}
-
-async function megaPrune(megaRoot, days) {
-  const cutoff = new Date()
-  cutoff.setHours(0, 0, 0, 0)
-  cutoff.setDate(cutoff.getDate() - (days - 1))
-  const cutoffStr = ymdOf(cutoff)
-  for (const child of megaRoot.children ?? []) {
-    if (!child.directory) continue
-    if (!String(child.name ?? "").startsWith("fitcenter-data-")) continue
-    const day = backupDayLabel(child.name)
-    if (day && day >= cutoffStr) continue
-    await child.delete(true)
-    console.log(`Rimosso da MEGA: ${child.name}`)
-  }
-}
-
-async function uploadBackupToMega(localDest, keep) {
-  let Storage
-  try {
-    ;({ Storage } = await import("megajs"))
-  } catch {
-    throw new Error("Manca il pacchetto megajs. Dalla cartella apps/api esegui: pnpm install")
-  }
-  const email = process.env.MEGA_EMAIL.trim()
-  const password = process.env.MEGA_PASSWORD
-  const folderName = process.env.MEGA_BACKUP_FOLDER?.trim() || "FitCenter-backup"
-  const secondFactorCode = process.env.MEGA_SECOND_FACTOR?.trim() || undefined
-  const storage = await Promise.race([
-    new Storage({
-      email,
-      password,
-      secondFactorCode,
-      userAgent: "FitCenterBackup/1.0",
-      keepalive: false,
-    }).ready,
-    new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Timeout login MEGA (60s). Controlla email, password e 2FA.")), 60_000)
-    }),
-  ])
-  try {
-    const megaRoot = await megaEnsureDir(storage.root, folderName)
-    const remoteName = path.basename(localDest)
-    const remoteFolder = await megaEnsureDir(megaRoot, remoteName)
-    await megaUploadDir(remoteFolder, localDest)
-    if (typeof storage.reload === "function") await storage.reload()
-    const megaRootFresh = await megaEnsureDir(storage.root, folderName)
-    await megaPrune(megaRootFresh, keep)
-    const kept = (megaRootFresh.children ?? []).filter(
-      (c) => c.directory && String(c.name ?? "").startsWith("fitcenter-data-")
-    ).length
-    console.log(`  MEGA:     /${folderName}/${remoteName}`)
-    console.log(`  MEGA:     conservati gli ultimi ${keep} giorni (${kept} backup)`
-  } finally {
-    storage.close?.()
-  }
-}
-
 async function runBackup() {
   const dataDir = resolveDataDir()
   const backupRoot = resolveBackupRoot(dataDir)
@@ -250,7 +171,12 @@ async function runBackup() {
   }
   console.log("  MEGA:     caricamento in corso (il backup sul NAS è già salvato)…")
   try {
-    await uploadBackupToMega(dest, keep)
+    await uploadDatedFolderToMega({
+      localDest: dest,
+      keep,
+      megaFolder: process.env.MEGA_BACKUP_FOLDER?.trim() || "FitCenter-backup",
+      namePrefix: "fitcenter-data-",
+    })
   } catch (e) {
     console.error("Backup locale/NAS OK, caricamento MEGA fallito:")
     console.error(e instanceof Error ? e.message : String(e))

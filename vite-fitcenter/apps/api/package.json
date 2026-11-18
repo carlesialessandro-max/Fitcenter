@@ -24,6 +24,9 @@
     "backup:data:prune": "node scripts/backup-fitcenter-data.mjs --prune",
     "backup:data:restore": "node scripts/backup-fitcenter-data.mjs --restore",
     "backup:data:restore-yesterday": "node scripts/backup-fitcenter-data.mjs --restore-yesterday --yes",
+    "backup:gestionale": "node scripts/backup-gestionale.mjs",
+    "backup:gestionale:list": "node scripts/backup-gestionale.mjs --list",
+    "backup:gestionale:prune": "node scripts/backup-gestionale.mjs --prune",
     "lpaga:repair-ruoli": "tsx scripts/repair-lpaga-ruoli-from-deleghe.ts"
   },
   "dependencies": {
