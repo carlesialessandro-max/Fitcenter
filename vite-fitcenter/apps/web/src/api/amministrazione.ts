@@ -352,11 +352,6 @@ export const amministrazioneApi = {
       `/amministrazione/collaboratori/elimina`,
       body
     ),
-  eliminaCollaboratoreNominativo: (body: { nominativo: string; anno: number }) =>
-    api.post<{ ok: boolean; rimosse: number; nominativo: string; anno: number }>(
-      `/amministrazione/collaboratori/elimina`,
-      body
-    ),
   setRimanenzeCollaboratore: (body: { nominativo: string; anno: number; importo: number }) =>
     api.post<{ row: { nominativo: string; anno: number; importo: number } | null }>(
       `/amministrazione/collaboratori/rimanenze`,
