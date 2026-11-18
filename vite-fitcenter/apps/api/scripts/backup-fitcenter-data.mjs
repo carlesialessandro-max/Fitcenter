@@ -163,13 +163,18 @@ async function uploadBackupToMega(localDest, keep) {
   const password = process.env.MEGA_PASSWORD
   const folderName = process.env.MEGA_BACKUP_FOLDER?.trim() || "FitCenter-backup"
   const secondFactorCode = process.env.MEGA_SECOND_FACTOR?.trim() || undefined
-  const storage = await new Storage({
-    email,
-    password,
-    secondFactorCode,
-    userAgent: "FitCenterBackup/1.0",
-    keepalive: false,
-  }).ready
+  const storage = await Promise.race([
+    new Storage({
+      email,
+      password,
+      secondFactorCode,
+      userAgent: "FitCenterBackup/1.0",
+      keepalive: false,
+    }).ready,
+    new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Timeout login MEGA (60s). Controlla email, password e 2FA.")), 60_000)
+    }),
+  ])
   try {
     const megaRoot = await megaEnsureDir(storage.root, folderName)
     const remoteName = path.basename(localDest)
@@ -237,10 +242,11 @@ async function runBackup() {
     console.log("  MEGA:     non configurato (imposta MEGA_EMAIL e MEGA_PASSWORD in apps/api/.env)")
     return
   }
+  console.log("  MEGA:     caricamento in corso (il backup sul NAS è già salvato)…")
   try {
     await uploadBackupToMega(dest, keep)
   } catch (e) {
-    console.error("Backup locale OK, caricamento MEGA fallito:")
+    console.error("Backup locale/NAS OK, caricamento MEGA fallito:")
     console.error(e instanceof Error ? e.message : String(e))
     process.exit(1)
   }
