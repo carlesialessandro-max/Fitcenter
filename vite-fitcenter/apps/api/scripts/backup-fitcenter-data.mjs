@@ -19,7 +19,6 @@ import fs from "fs"
 import path from "path"
 import { fileURLToPath } from "url"
 import dotenv from "dotenv"
-import { Storage } from "megajs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const apiRoot = path.resolve(__dirname, "..")
@@ -154,6 +153,12 @@ async function megaPrune(megaRoot, days) {
 }
 
 async function uploadBackupToMega(localDest, keep) {
+  let Storage
+  try {
+    ;({ Storage } = await import("megajs"))
+  } catch {
+    throw new Error("Manca il pacchetto megajs. Dalla cartella apps/api esegui: pnpm install")
+  }
   const email = process.env.MEGA_EMAIL.trim()
   const password = process.env.MEGA_PASSWORD
   const folderName = process.env.MEGA_BACKUP_FOLDER?.trim() || "FitCenter-backup"
