@@ -704,6 +704,17 @@ export const ammCostiStore = {
     if (!Number.isFinite(ficId) || ficId <= 0) return undefined
     return load().spese.find((s) => s.ficId === ficId)
   },
+  findByDocumento(fornitore: string, numeroDocumento: string, dataDocumento: string): AmmSpesa | undefined {
+    const f = fornitore.trim().toLowerCase()
+    const n = numeroDocumento.trim().toLowerCase()
+    if (!n) return undefined
+    return load().spese.find(
+      (s) =>
+        s.fornitore.trim().toLowerCase() === f &&
+        s.dataDocumento === dataDocumento &&
+        s.numeroDocumento.trim().toLowerCase() === n
+    )
+  },
   findDuplicate(fornitore: string, numeroDocumento: string, dataDocumento: string, totale: number): AmmSpesa | undefined {
     const f = fornitore.trim().toLowerCase()
     const n = numeroDocumento.trim().toLowerCase()

@@ -1305,6 +1305,7 @@ function RegistroTab() {
     onSuccess: (r) => {
       setImportMsg(
         `Fatture in Cloud: ${r.lette ?? 0} lette, ${r.inserite} nuove` +
+          (r.aggiornate ? `, ${r.aggiornate} aggiornate al totale documento` : "") +
           (r.saltate ? `, ${r.saltate} già presenti` : "") +
           (r.errori.length ? `, ${r.errori.length} errori` : "") +
           "."
@@ -1437,7 +1438,9 @@ function RegistroTab() {
         Utenze: Italpower, Tip energia, TIP POWEReGAS, Tres Energia e Sima energia vanno nel mese prima della fattura
         (giugno → maggio). Publiacqua, se in descrizione c’è il periodo, spezza l’importo su quei mesi; altrimenti sui
         due mesi precedenti la fattura. Trasteel Energy: se in fattura ci sono le date di competenza, spezza su quei
-        mesi; altrimenti metà giugno e metà luglio.
+        mesi; altrimenti metà giugno e metà luglio. Professionisti con ritenuta d’acconto: in costo va il totale
+        documento (imponibile + IVA), non l’importo in scadenza: la ritenuta la versiamo noi allo Stato, quindi è
+        comunque un costo. Al prossimo scarico da Fatture in Cloud gli importi già presenti vengono riallineati.
       </p>
       {ficOpen && (
         <div className="space-y-2 rounded-2xl border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-zinc-300">

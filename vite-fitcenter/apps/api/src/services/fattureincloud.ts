@@ -288,6 +288,38 @@ function positiveMoney(n: unknown): number {
   return Number.isFinite(v) ? Math.abs(v) : 0
 }
 
+function roundMoney(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function nearMoney(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.05
+}
+
+/**
+ * Totale documento (imponibile + IVA), non l'importo in scadenza dopo ritenuta d'acconto.
+ * La ritenuta la versiamo noi allo Stato per conto del professionista: è comunque un costo.
+ */
+export function totaleDocumentoRicevuto(o: FicJson): number {
+  const net = positiveMoney(o.amount_net)
+  const vat = positiveMoney(o.amount_vat)
+  const gross = positiveMoney(o.amount_gross)
+  const rit =
+    positiveMoney(o.amount_withholding_tax) + positiveMoney(o.amount_other_withholding_tax)
+  const netVat = roundMoney(net + vat)
+
+  if (rit > 0.009) {
+    const scadenza = roundMoney(netVat - rit)
+    if (netVat > 0.009 && (gross <= 0.009 || nearMoney(gross, scadenza) || nearMoney(gross, netVat) || netVat >= gross)) {
+      return netVat
+    }
+    if (gross > 0.009) return roundMoney(gross + rit)
+  }
+
+  if (netVat > 0.009 && (gross <= 0.009 || netVat >= gross)) return netVat
+  return gross || netVat
+}
+
 function mapIssuedDoc(raw: unknown): FicIssuedDoc | null {
   if (!raw || typeof raw !== "object") return null
   const o = raw as FicJson
@@ -327,7 +359,7 @@ function mapDoc(raw: unknown): FicDoc | null {
   const o = raw as FicJson
   const id = Number(o.id)
   if (!Number.isFinite(id) || id <= 0) return null
-  const amount = Number(o.amount_gross ?? o.amount_net ?? 0)
+  const amount = totaleDocumentoRicevuto(o)
   if (!Number.isFinite(amount) || amount <= 0) return null
   const dataDocumento = String(o.date ?? "").slice(0, 10)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataDocumento)) return null

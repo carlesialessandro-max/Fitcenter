@@ -1831,10 +1831,36 @@ export async function postFicSync(req: Request, res: Response) {
     if (!ids.has(repartoId)) return res.status(400).json({ message: "Reparto predefinito non valido" })
     let inserite = 0
     let saltate = 0
+    let aggiornate = 0
     const errori: { riga: number; message: string }[] = []
     docs.forEach((doc, i) => {
       try {
-        if (ammCostiStore.findByFicId(doc.id) || ammCostiStore.findDuplicate(doc.fornitore, doc.numeroDocumento, doc.dataDocumento, doc.totale)) {
+        const byFic = ammCostiStore.findByFicId(doc.id)
+        const byKey = ammCostiStore.findByDocumento(doc.fornitore, doc.numeroDocumento, doc.dataDocumento)
+        const existing = byFic ?? (byKey?.origine === "fattureincloud" ? byKey : undefined)
+        if (existing) {
+          if (Math.abs(existing.totale - doc.totale) > 0.009) {
+            ammCostiStore.upsertSpesa({
+              id: existing.id,
+              fornitore: existing.fornitore,
+              numeroDocumento: existing.numeroDocumento || doc.numeroDocumento,
+              dataDocumento: existing.dataDocumento,
+              descrizione: existing.descrizione || doc.descrizione,
+              totale: doc.totale,
+              tipoCosto: existing.tipoCosto,
+              quote: existing.quote,
+              origine: "fattureincloud",
+              ficId: doc.id,
+              quoteEccezione: existing.quoteEccezione === true,
+              rememberQuote: existing.quoteEccezione === true ? false : undefined,
+            })
+            aggiornate += 1
+          } else {
+            saltate += 1
+          }
+          return
+        }
+        if (ammCostiStore.findDuplicate(doc.fornitore, doc.numeroDocumento, doc.dataDocumento, doc.totale)) {
           saltate += 1
           return
         }
@@ -1859,6 +1885,7 @@ export async function postFicSync(req: Request, res: Response) {
     res.json({
       inserite,
       saltate,
+      aggiornate,
       errori,
       lette: docs.length,
       companyName: (ficStore.get() ?? cfg).companyName,
