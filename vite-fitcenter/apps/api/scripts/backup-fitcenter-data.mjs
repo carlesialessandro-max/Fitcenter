@@ -180,8 +180,14 @@ async function uploadBackupToMega(localDest, keep) {
     const remoteName = path.basename(localDest)
     const remoteFolder = await megaEnsureDir(megaRoot, remoteName)
     await megaUploadDir(remoteFolder, localDest)
-    await megaPrune(megaRoot, keep)
+    if (typeof storage.reload === "function") await storage.reload()
+    const megaRootFresh = await megaEnsureDir(storage.root, folderName)
+    await megaPrune(megaRootFresh, keep)
+    const kept = (megaRootFresh.children ?? []).filter(
+      (c) => c.directory && String(c.name ?? "").startsWith("fitcenter-data-")
+    ).length
     console.log(`  MEGA:     /${folderName}/${remoteName}`)
+    console.log(`  MEGA:     conservati gli ultimi ${keep} giorni (${kept} backup)`
   } finally {
     storage.close?.()
   }
