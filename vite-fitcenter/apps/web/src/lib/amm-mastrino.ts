@@ -11,6 +11,9 @@ export type AmmMastrinoPreview = {
   ferieResidue?: number
   ferieGodute?: number
   permessiResidue?: number
+  ferieResidue?: number
+  ferieGodute?: number
+  permessiResidue?: number
   errore?: string
   riga: number
 }
@@ -28,12 +31,12 @@ const COLS: Record<string, string[]> = {
   nominativo: ["nominativo", "dipendente", "cognome nome", "anagrafica", "nome", "soggetto"],
   mese: ["mese", "competenza", "periodo", "mese competenza"],
   data: ["data", "data documento", "data registrazione"],
-  descrizione: ["descrizione", "causale", "voce", "conto", "note"],
-  totale: ["importo", "lordo", "costo azienda", "dare", "retribuzione", "totale", "stipendio"],
-  reparto: ["reparto", "centro di costo", "cdc", "macro"],
   ferieResidue: ["ferie residue", "residuo ferie"],
   ferieGodute: ["ferie godute", "godute"],
   permessiResidue: ["permessi residue", "residuo permessi"],
+  descrizione: ["descrizione", "causale", "voce", "conto", "note"],
+  totale: ["importo", "lordo", "costo azienda", "dare", "retribuzione", "totale", "stipendio"],
+  reparto: ["reparto", "centro di costo", "cdc", "macro"],
 }
 
 function findCol(keys: string[], aliases: string[]): string | undefined {
@@ -94,9 +97,6 @@ function matchReparto(reparti: AmmReparto[], raw: string): AmmReparto | undefine
     attivi.find((r) => r.id === raw.trim() || r.codice === n.replace(/\s/g, "-")) ??
     attivi.find((r) => normKey(r.nome) === n) ??
     attivi.find((r) => normKey(r.nome).includes(n) || n.includes(normKey(r.nome)))
-  )
-}
-
 export const AMM_MASTRINO_HEADERS = [
   "Mese",
   "Nominativo",
@@ -113,12 +113,19 @@ export function downloadAmmMastrinoTemplate() {
     AMM_MASTRINO_HEADERS,
     ["2026-10", "Rossi Maria", 2450, "Amministrazione e uffici", "Busta paga ottobre", 12.5, 4],
     ["2026-10", "Bianchi Luca", 1800, "Pulizie", "Busta paga ottobre", 8, 2],
+    AMM_MASTRINO_HEADERS,
+    ["2026-10", "Rossi Maria", 2450, "Amministrazione e uffici", "Busta paga ottobre"],
+    ["2026-10", "Bianchi Luca", 1800, "Pulizie", "Busta paga ottobre"],
   ])
   XLSX.utils.book_append_sheet(wb, ws, "Buste paga")
   XLSX.writeFile(wb, "modello-mastrino-stipendi.xlsx")
 }
 
-export function parseAmmMastrino(file: ArrayBuffer, reparti: AmmReparto[]): AmmMastrinoPreview[] {
+export function parseAmmMastrino(
+  file: ArrayBuffer,
+  reparti: AmmReparto[],
+  opts?: { requireTotale?: boolean },
+): AmmMastrinoPreview[] {
   const wb = XLSX.read(file, { type: "array", cellDates: true })
   const sheet = wb.Sheets[wb.SheetNames[0] ?? ""]
   if (!sheet) return []
@@ -129,12 +136,12 @@ export function parseAmmMastrino(file: ArrayBuffer, reparti: AmmReparto[]): AmmM
     nominativo: findCol(keys, COLS.nominativo),
     mese: findCol(keys, COLS.mese),
     data: findCol(keys, COLS.data),
-    descrizione: findCol(keys, COLS.descrizione),
-    totale: findCol(keys, COLS.totale),
-    reparto: findCol(keys, COLS.reparto),
     ferieResidue: findCol(keys, COLS.ferieResidue),
     ferieGodute: findCol(keys, COLS.ferieGodute),
     permessiResidue: findCol(keys, COLS.permessiResidue),
+    descrizione: findCol(keys, COLS.descrizione),
+    totale: findCol(keys, COLS.totale),
+    reparto: findCol(keys, COLS.reparto),
   }
   const fallback = reparti.find((r) => r.id === "amministrazione-uffici") ?? reparti.find((r) => r.attivo)
   const out: AmmMastrinoPreview[] = []
@@ -144,24 +151,30 @@ export function parseAmmMastrino(file: ArrayBuffer, reparti: AmmReparto[]): AmmM
     const mese = parseMese(meseRaw)
     const descrizione = cell(row, col.descrizione)
     const totale = parseImporto(cell(row, col.totale))
+    const ferieResidue = parseImporto(cell(row, col.ferieResidue)) ?? undefined
+    const ferieGodute = parseImporto(cell(row, col.ferieGodute)) ?? undefined
+    const permessiResidue = parseImporto(cell(row, col.permessiResidue)) ?? undefined
     const repartoRaw = cell(row, col.reparto)
     const hit = matchReparto(reparti, repartoRaw) ?? fallback
     const riga = i + 2
-    if (!nominativo && totale == null && !mese) return
+    if (!nominativo && totale == null && ferieResidue == null && !mese) return
     let errore: string | undefined
     if (!nominativo) errore = "Nominativo mancante"
-    else if (totale == null) errore = "Importo mancante"
+    else if (opts?.requireTotale === false) {
+      if (ferieResidue == null) errore = "Residuo ferie mancante"
+      else if (!mese) errore = "Mese non valido (AAAA-MM o GG/MM/AAAA)"
+    } else if (totale == null) errore = "Importo mancante"
     else if (!mese) errore = "Mese non valido (AAAA-MM o GG/MM/AAAA)"
     else if (!hit) errore = "Reparto non riconosciuto"
     out.push({
       nominativo,
       mese,
+      ferieResidue,
+      ferieGodute,
+      permessiResidue,
       descrizione: descrizione || "Busta paga",
       totale: totale ?? 0,
       quote: hit ? [{ repartoId: hit.id, percentuale: 100 }] : [],
-      ferieResidue: parseImporto(cell(row, col.ferieResidue)) ?? undefined,
-      ferieGodute: parseImporto(cell(row, col.ferieGodute)) ?? undefined,
-      permessiResidue: parseImporto(cell(row, col.permessiResidue)) ?? undefined,
       errore,
       riga,
     })

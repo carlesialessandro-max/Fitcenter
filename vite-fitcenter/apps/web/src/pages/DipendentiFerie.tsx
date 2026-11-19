@@ -5,10 +5,9 @@ import {
   type AmmFerieDaFile,
   type AmmFerieGiorno,
   type AmmFeriePersona,
-  type AmmStipendiPdfRiga,
 } from "@/api/amministrazione"
 import { readBustePagaPdf } from "@/lib/amm-import-buste-pdf"
-import { parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
+import { parseAmmMastrino } from "@/lib/amm-mastrino"
 
 const btnAmber = "rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
 const btnGhost = "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
@@ -34,10 +33,6 @@ function gg(n: number | null | undefined) {
   return n.toLocaleString("it-IT", { maximumFractionDigits: 2 })
 }
 
-function eur(n: number): string {
-  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
-}
-
 export function DipendentiFerieTab() {
   const qc = useQueryClient()
   const oggi = new Date()
@@ -51,9 +46,7 @@ export function DipendentiFerieTab() {
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
   const [pdfBusy, setPdfBusy] = useState(false)
-  const [bustePdfPreview, setBustePdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
-  const [feriePdfPreview, setFeriePdfPreview] = useState<AmmFerieDaFile[]>([])
-  const [mastrinoPreview, setMastrinoPreview] = useState<AmmMastrinoPreview[] | null>(null)
+  const [feriePreview, setFeriePreview] = useState<AmmFerieDaFile[] | null>(null)
 
   const data = useQuery({
     queryKey: ["amm-ferie", anno],
@@ -82,40 +75,13 @@ export function DipendentiFerieTab() {
     },
     onError: (e: Error) => setError(e.message),
   })
-  const importConsuntivoMut = useMutation({
-    mutationFn: (riga: AmmStipendiPdfRiga) => amministrazioneApi.importBustaConsuntivo(riga, feriePdfPreview),
+  const importFerieMut = useMutation({
+    mutationFn: (ferie: AmmFerieDaFile[]) => amministrazioneApi.importFerie(meseImport, ferie),
     onSuccess: (r) => {
-      setBustePdfPreview(null)
-      setFeriePdfPreview([])
-      setMsg(
-        `Buste paga importate: ${eur(r.busta.totale)}` +
-          (r.busta.dettaglioDipendenti?.length
-            ? ` · ${r.busta.dettaglioDipendenti.length} nominativi`
-            : "") +
-          (r.ferie ? ` · ferie aggiornate per ${r.ferie} nominativi` : "") +
-          ".",
-      )
+      setFeriePreview(null)
+      setMsg(`Ferie aggiornate per ${r.inserite} dipendenti.`)
       setError("")
       void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
-      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
-      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
-    },
-    onError: (e: Error) => setError(e.message),
-  })
-  const importMastrinoMut = useMutation({
-    mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
-    onSuccess: (r) => {
-      setMastrinoPreview(null)
-      setMsg(
-        `Importate ${r.inserite} buste` +
-          (r.saltate ? `, ${r.saltate} già presenti` : "") +
-          (r.errori.length ? `, ${r.errori.length} errori` : "") +
-          ".",
-      )
-      setError("")
-      void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
-      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
-      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -124,27 +90,17 @@ export function DipendentiFerieTab() {
     if (!file) return
     setError("")
     setMsg("")
-    setMastrinoPreview(null)
+    setFeriePreview(null)
     setPdfBusy(true)
     try {
       const parsed = await readBustePagaPdf(file, meseImport, setMsg)
-      if (parsed.dipendenti.length === 1) {
-        setBustePdfPreview(parsed.dipendenti)
-        setFeriePdfPreview(parsed.ferie)
-        setMsg("")
-        return
+      if (!parsed.ferie.length) {
+        throw new Error(
+          "Nel PDF non ci sono residui ferie. Serve il prospetto ferie o le buste con il riquadro ferie/permessi, non il totale stipendio.",
+        )
       }
-      if (parsed.ferie.length) {
-        const r = await amministrazioneApi.importFerie(meseImport, parsed.ferie)
-        setBustePdfPreview(null)
-        setFeriePdfPreview([])
-        setMsg(`Ferie aggiornate per ${r.inserite} dipendenti dal PDF.`)
-        void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
-        return
-      }
-      throw new Error(
-        'Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo” oppure un prospetto ferie.',
-      )
+      setFeriePreview(parsed.ferie)
+      setMsg("")
     } catch (e) {
       setError((e as Error).message || "PDF non leggibile")
     } finally {
@@ -156,18 +112,29 @@ export function DipendentiFerieTab() {
     if (!file) return
     setError("")
     setMsg("")
-    setBustePdfPreview(null)
-    setFeriePdfPreview([])
+    setFeriePreview(null)
     try {
       const buf = await file.arrayBuffer()
-      setMastrinoPreview(parseAmmMastrino(buf, attivi))
+      const rows = parseAmmMastrino(buf, attivi, { requireTotale: false })
+      const ferie: AmmFerieDaFile[] = rows
+        .filter((p) => !p.errore && p.ferieResidue != null)
+        .map((p) => ({
+          nominativo: p.nominativo,
+          mese: p.mese,
+          ferieResidue: p.ferieResidue!,
+          ferieGodute: p.ferieGodute,
+          permessiResidue: p.permessiResidue,
+        }))
+      if (!ferie.length) {
+        throw new Error("Nel mastrino non ci sono colonne di residuo ferie.")
+      }
+      setFeriePreview(ferie)
     } catch (e) {
       setError((e as Error).message || "Excel non leggibile")
     }
   }
 
   const nGiorni = giorniNelMese(anno, mese)
-  const okMastrino = (mastrinoPreview ?? []).filter((p) => !p.errore)
   const prefix = `${anno}-${pad2(mese)}`
   const persone = useMemo(() => {
     const t = q.trim().toLocaleLowerCase("it")
@@ -192,8 +159,8 @@ export function DipendentiFerieTab() {
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm text-zinc-500">
-        Importa qui le buste paga (PDF consuntivo o mastrino): arrivano i nominativi e, se ci sono, i residui ferie e
-        permessi. Poi segni i giorni di assenza, che si scalano dal residuo della busta.
+        Dal PDF delle buste o dal mastrino importa solo i residui ferie e permessi, senza calcolare lo stipendio. Poi
+        segni i giorni di assenza, che si scalano da quel residuo.
       </p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {msg && <p className="text-sm text-emerald-400">{msg}</p>}
@@ -244,76 +211,34 @@ export function DipendentiFerieTab() {
             }}
           />
         </label>
-        <p className="text-xs text-zinc-500">I PDF scansiti si leggono con OCR nel browser.</p>
+        <p className="text-xs text-zinc-500">Si leggono solo ferie e permessi, non gli importi.</p>
       </div>
-      {bustePdfPreview && (
+      {feriePreview && (
         <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-zinc-400">
-              Totale consuntivo: {eur(bustePdfPreview[0]?.totale ?? 0)}
-              {bustePdfPreview[0]?.dettaglioDipendenti?.length
-                ? ` · ${bustePdfPreview[0].dettaglioDipendenti.length} dipendenti`
-                : " · questo PDF non contiene il dettaglio nominativo"}
-              {feriePdfPreview.length ? ` · residui ferie per ${feriePdfPreview.length} nominativi` : ""}
-            </p>
+            <p className="text-xs text-zinc-400">Residui ferie per {feriePreview.length} nominativi</p>
             <div className="flex gap-2">
-              <button
-                type="button"
-                className={btnGhost}
-                onClick={() => {
-                  setBustePdfPreview(null)
-                  setFeriePdfPreview([])
-                }}
-              >
+              <button type="button" className={btnGhost} onClick={() => setFeriePreview(null)}>
                 Annulla
               </button>
               <button
                 type="button"
                 className={btnAmber}
-                disabled={importConsuntivoMut.isPending}
-                onClick={() => {
-                  const riga = bustePdfPreview[0]
-                  if (riga) importConsuntivoMut.mutate(riga)
-                }}
+                disabled={importFerieMut.isPending}
+                onClick={() => importFerieMut.mutate(feriePreview)}
               >
-                {importConsuntivoMut.isPending ? "Caricamento…" : "Importa buste"}
+                {importFerieMut.isPending ? "Caricamento…" : "Importa ferie"}
               </button>
             </div>
           </div>
-          <div className="max-h-48 overflow-auto text-xs">
-            {bustePdfPreview[0]?.dettaglioDipendenti?.map((dipendente, index) => (
-              <p key={`${dipendente.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
-                <span>{dipendente.nominativo}</span>
-                <span>{eur(dipendente.totale)}</span>
-              </p>
-            ))}
-          </div>
-        </div>
-      )}
-      {mastrinoPreview && (
-        <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-zinc-400">
-              Anteprima mastrino: {okMastrino.length} valide, {mastrinoPreview.length - okMastrino.length} con errori
-            </p>
-            <div className="flex gap-2">
-              <button type="button" className={btnGhost} onClick={() => setMastrinoPreview(null)}>
-                Annulla
-              </button>
-              <button
-                type="button"
-                className={btnAmber}
-                disabled={!okMastrino.length || importMastrinoMut.isPending}
-                onClick={() => importMastrinoMut.mutate(okMastrino)}
-              >
-                {importMastrinoMut.isPending ? "Caricamento…" : `Importa ${okMastrino.length}`}
-              </button>
-            </div>
-          </div>
-          <div className="max-h-48 overflow-auto text-xs">
-            {mastrinoPreview.map((p) => (
-              <p key={p.riga} className={p.errore ? "text-red-300" : "text-zinc-300"}>
-                r.{p.riga} {p.nominativo || "—"} {p.mese} {p.totale ? eur(p.totale) : "—"} {p.errore ?? ""}
+          <div className="max-h-64 overflow-auto text-xs">
+            {feriePreview.map((p, index) => (
+              <p key={`${p.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
+                <span>{p.nominativo}</span>
+                <span className="tabular-nums text-zinc-400">
+                  ferie {gg(p.ferieResidue)}
+                  {p.permessiResidue != null ? ` · permessi ${gg(p.permessiResidue)}` : ""}
+                </span>
               </p>
             ))}
           </div>
@@ -367,7 +292,7 @@ export function DipendentiFerieTab() {
 
       {!data.data?.dipendenti.length && !data.isLoading && (
         <p className="text-sm text-zinc-500">
-          Nessun dipendente. Usa Importa buste paga (PDF consuntivo) o Importa mastrino qui sopra.
+          Nessun dipendente. Importa il PDF buste o il mastrino: servono i residui ferie, non il totale stipendio.
         </p>
       )}
 
