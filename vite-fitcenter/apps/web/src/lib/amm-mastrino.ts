@@ -11,9 +11,6 @@ export type AmmMastrinoPreview = {
   ferieResidue?: number
   ferieGodute?: number
   permessiResidue?: number
-  ferieResidue?: number
-  ferieGodute?: number
-  permessiResidue?: number
   errore?: string
   riga: number
 }
@@ -31,12 +28,12 @@ const COLS: Record<string, string[]> = {
   nominativo: ["nominativo", "dipendente", "cognome nome", "anagrafica", "nome", "soggetto"],
   mese: ["mese", "competenza", "periodo", "mese competenza"],
   data: ["data", "data documento", "data registrazione"],
-  ferieResidue: ["ferie residue", "residuo ferie"],
-  ferieGodute: ["ferie godute", "godute"],
-  permessiResidue: ["permessi residue", "residuo permessi"],
   descrizione: ["descrizione", "causale", "voce", "conto", "note"],
   totale: ["importo", "lordo", "costo azienda", "dare", "retribuzione", "totale", "stipendio"],
   reparto: ["reparto", "centro di costo", "cdc", "macro"],
+  ferieResidue: ["ferie residue", "residuo ferie"],
+  ferieGodute: ["ferie godute", "godute"],
+  permessiResidue: ["permessi residue", "residuo permessi"],
 }
 
 function findCol(keys: string[], aliases: string[]): string | undefined {
@@ -97,6 +94,9 @@ function matchReparto(reparti: AmmReparto[], raw: string): AmmReparto | undefine
     attivi.find((r) => r.id === raw.trim() || r.codice === n.replace(/\s/g, "-")) ??
     attivi.find((r) => normKey(r.nome) === n) ??
     attivi.find((r) => normKey(r.nome).includes(n) || n.includes(normKey(r.nome)))
+  )
+}
+
 export const AMM_MASTRINO_HEADERS = [
   "Mese",
   "Nominativo",
@@ -113,9 +113,6 @@ export function downloadAmmMastrinoTemplate() {
     AMM_MASTRINO_HEADERS,
     ["2026-10", "Rossi Maria", 2450, "Amministrazione e uffici", "Busta paga ottobre", 12.5, 4],
     ["2026-10", "Bianchi Luca", 1800, "Pulizie", "Busta paga ottobre", 8, 2],
-    AMM_MASTRINO_HEADERS,
-    ["2026-10", "Rossi Maria", 2450, "Amministrazione e uffici", "Busta paga ottobre"],
-    ["2026-10", "Bianchi Luca", 1800, "Pulizie", "Busta paga ottobre"],
   ])
   XLSX.utils.book_append_sheet(wb, ws, "Buste paga")
   XLSX.writeFile(wb, "modello-mastrino-stipendi.xlsx")
@@ -136,12 +133,12 @@ export function parseAmmMastrino(
     nominativo: findCol(keys, COLS.nominativo),
     mese: findCol(keys, COLS.mese),
     data: findCol(keys, COLS.data),
-    ferieResidue: findCol(keys, COLS.ferieResidue),
-    ferieGodute: findCol(keys, COLS.ferieGodute),
-    permessiResidue: findCol(keys, COLS.permessiResidue),
     descrizione: findCol(keys, COLS.descrizione),
     totale: findCol(keys, COLS.totale),
     reparto: findCol(keys, COLS.reparto),
+    ferieResidue: findCol(keys, COLS.ferieResidue),
+    ferieGodute: findCol(keys, COLS.ferieGodute),
+    permessiResidue: findCol(keys, COLS.permessiResidue),
   }
   const fallback = reparti.find((r) => r.id === "amministrazione-uffici") ?? reparti.find((r) => r.attivo)
   const out: AmmMastrinoPreview[] = []
@@ -169,12 +166,12 @@ export function parseAmmMastrino(
     out.push({
       nominativo,
       mese,
-      ferieResidue,
-      ferieGodute,
-      permessiResidue,
       descrizione: descrizione || "Busta paga",
       totale: totale ?? 0,
       quote: hit ? [{ repartoId: hit.id, percentuale: 100 }] : [],
+      ferieResidue,
+      ferieGodute,
+      permessiResidue,
       errore,
       riga,
     })
