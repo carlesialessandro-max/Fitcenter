@@ -457,8 +457,9 @@ export function Utenti() {
                 </div>
               </div>
               <p className="mb-3 text-xs text-zinc-500">
-                Togli la spunta per nascondere una voce dal menu. Se il ruolo è amministratore, Incassi e Andamento
-                restano i totali di tutto il centro.
+                Togli la spunta per nascondere una voce dal menu. Un admin con sottoinsieme vede in barra tutte le
+                pagine spuntate (non solo il calendario aperto). Incassi e Andamento, se visibili, sono i totali di
+                tutto il centro.
                 {form.role === "calendari"
                   ? " Questo ruolo può modificare gli orari. Bagnini, reception, corsi e istruttore vedono i calendari in sola lettura. Per un solo calendario lascia spuntata solo quella pagina."
                   : ""}

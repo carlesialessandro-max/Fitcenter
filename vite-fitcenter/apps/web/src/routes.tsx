@@ -48,8 +48,9 @@ import { MieFeriePage } from "@/pages/DipendentiFerie"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
+  if (role === "admin") return <AdminMenu />
   if (user?.pages?.length) {
-    if (user.pages.includes("/")) return role === "admin" ? <AdminMenu /> : <Dashboard />
+    if (user.pages.includes("/")) return <Dashboard />
     return <Navigate to={user.pages[0] ?? "/"} replace />
   }
   if (leadFilter === "bambini" || role === "crm") return <Navigate to="/crm" replace />
@@ -60,7 +61,6 @@ function DashboardOrRedirect() {
   if (role === "bagnini") return <Navigate to="/piscina" replace />
   if (role === "danza") return <Navigate to="/danza" replace />
   if (role === "calendari") return <Navigate to="/calendario" replace />
-  if (role === "admin") return <AdminMenu />
   return <Dashboard />
 }
 

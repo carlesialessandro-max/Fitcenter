@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Link } from "react-router-dom"
 import { useAuth } from "@/contexts/AuthContext"
-import { ADMIN_MENU_GROUPS } from "@/lib/admin-menu"
+import { ADMIN_MENU_GROUPS, adminCustomAllowPages } from "@/lib/admin-menu"
 
 function norm(s: string): string {
   return s
@@ -17,7 +17,7 @@ export function AdminMenu() {
   const custom = (user?.pages?.length ?? 0) > 0
   const allow = useMemo(() => {
     if (!custom) return null
-    return new Set(["/", "/dashboard", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/dipendenti", "/amministrazione/reparti", ...(user?.pages ?? [])])
+    return new Set(adminCustomAllowPages(user?.pages))
   }, [custom, user?.pages])
 
   const groups = useMemo(() => {

@@ -103,6 +103,11 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
   },
 ]
 
+/** Home Menu più le pagine spuntate: niente dashboard/amministrazione forzate. */
+export function adminCustomAllowPages(pages?: string[] | null): string[] {
+  return [...new Set(["/", ...(pages ?? [])])]
+}
+
 /** Sezione del menu admin che contiene la pagina corrente (match più specifico). */
 export function adminMenuGroupForPath(pathname: string): AdminMenuGroup | null {
   const path = pathname.replace(/\/+$/, "") || "/"

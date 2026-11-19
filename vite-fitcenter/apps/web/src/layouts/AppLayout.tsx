@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext"
 import { BrandLogo } from "@/components/BrandLogo"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { PwaInstallHint } from "@/components/PwaInstallHint"
-import { adminMenuGroupForPath } from "@/lib/admin-menu"
+import { ADMIN_MENU_GROUPS, adminCustomAllowPages, adminMenuGroupForPath } from "@/lib/admin-menu"
 import { canVedereReportCollaboratori } from "@/lib/report-collaboratori-access"
 
 type NavItem = { to: string; label: string; children?: NavItem[]; group?: boolean; groupKey?: string }
@@ -186,6 +186,20 @@ function navAdminForPath(pathname: string): NavItem[] {
   ]
 }
 
+/** Admin con pagine personalizzate: in barra tutte le sezioni spuntate, non solo il gruppo corrente. */
+function navAdminAll(): NavItem[] {
+  return [
+    { to: "/", label: "Menu" },
+    ...ADMIN_MENU_GROUPS.map((g) => ({
+      to: `__admin_${g.title}__`,
+      label: g.title,
+      group: true,
+      groupKey: `admin-${g.title}`,
+      children: g.items.map((i) => ({ to: i.to, label: i.label })),
+    })),
+  ]
+}
+
 const navCalendari: NavItem[] = [
   navFerie,
   {
@@ -316,7 +330,9 @@ export function AppLayout() {
       : role === "crm"
         ? navCrm
       : role === "admin"
-        ? navAdminForPath(location.pathname)
+        ? customPages
+          ? navAdminAll()
+          : navAdminForPath(location.pathname)
         : role === "calendari"
           ? navCalendari
         : role === "corsi"
@@ -334,10 +350,7 @@ export function AppLayout() {
                     : role === "danza"
                       ? navDanza
               : navOperatore
-  const pagesForNav =
-    customPages && role === "admin"
-      ? [...new Set(["/", "/dashboard", "/amministrazione", "/amministrazione/spese", "/amministrazione/stipendi", "/amministrazione/dipendenti", "/amministrazione/reparti", ...(user!.pages ?? [])])]
-      : user?.pages
+  const pagesForNav = customPages && role === "admin" ? adminCustomAllowPages(user!.pages) : user?.pages
   const navBase: NavItem[] = customPages ? filterNavByPages(roleNav, pagesForNav!) : roleNav
   const navRestricted: NavItem[] =
     role !== "admin" && user?.vedeTotaliCentro !== true ? excludeNavPath(navBase, "/incassi") : navBase
