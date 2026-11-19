@@ -10,9 +10,11 @@ import {
   type AmmQuota,
   type AmmReparto,
   type AmmSpesa,
+  type AmmFerieDaFile,
   type AmmStipendiPdfRiga,
   type AmmTipoCosto,
 } from "@/api/amministrazione"
+import { DipendentiFerieTab } from "@/pages/DipendentiFerie"
 import { extractPdfText, extractPdfTextWithOcr } from "@/lib/pdf-fattura-text"
 import { defaultRepartoMattonai, parseMattonaiPdf } from "@/lib/mattonai-stipendi"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
@@ -162,7 +164,7 @@ function origineLabel(o: AmmSpesa["origine"]): string {
   return "Manuale"
 }
 
-type Tab = "dashboard" | "spese" | "stipendi" | "reparti"
+type Tab = "dashboard" | "spese" | "stipendi" | "dipendenti" | "reparti"
 type Imputazione = "sotto" | "macro"
 
 export function AmministrazioneCosti() {
@@ -181,15 +183,18 @@ export function AmministrazioneCosti() {
   }
   const tab: Tab = loc.pathname.includes("/reparti")
     ? "reparti"
-    : loc.pathname.includes("/stipendi")
-      ? "stipendi"
-      : loc.pathname.includes("/spese")
-        ? "spese"
-        : "dashboard"
+    : loc.pathname.includes("/dipendenti")
+      ? "dipendenti"
+      : loc.pathname.includes("/stipendi")
+        ? "stipendi"
+        : loc.pathname.includes("/spese")
+          ? "spese"
+          : "dashboard"
   const tabs: { id: Tab; to: string; label: string }[] = [
     { id: "dashboard", to: "/amministrazione", label: "Risultato per reparto" },
     { id: "spese", to: "/amministrazione/spese", label: "Registro spese" },
     { id: "stipendi", to: "/amministrazione/stipendi", label: "Stipendi" },
+    { id: "dipendenti", to: "/amministrazione/dipendenti", label: "Dipendenti / ferie" },
     { id: "reparti", to: "/amministrazione/reparti", label: "Reparti e centri di costo" },
   ]
   return (
@@ -218,6 +223,8 @@ export function AmministrazioneCosti() {
         <RegistroTab />
       ) : tab === "stipendi" ? (
         <StipendiTab />
+      ) : tab === "dipendenti" ? (
+        <DipendentiFerieTab />
       ) : (
         <RepartiTab />
       )}
@@ -1868,6 +1875,7 @@ function StipendiTab() {
   const [preview, setPreview] = useState<AmmMastrinoPreview[] | null>(null)
   const [collabPreview, setCollabPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
   const [bustePdfPreview, setBustePdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
+  const [feriePdfPreview, setFeriePdfPreview] = useState<AmmFerieDaFile[]>([])
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [nominativo, setNominativo] = useState("")
@@ -2010,23 +2018,27 @@ function StipendiTab() {
       )
       void qc.invalidateQueries({ queryKey: ["amm-buste"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+      void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
     },
     onError: (e: Error) => setError(e.message),
   })
   const importConsuntivoMut = useMutation({
-    mutationFn: (riga: AmmStipendiPdfRiga) => amministrazioneApi.importBustaConsuntivo(riga),
+    mutationFn: (riga: AmmStipendiPdfRiga) => amministrazioneApi.importBustaConsuntivo(riga, feriePdfPreview),
     onSuccess: (r) => {
       setBustePdfPreview(null)
+      setFeriePdfPreview([])
       setImportMsg(
         `Consuntivo importato: ${eur(r.busta.totale)}` +
           (r.busta.dettaglioDipendenti?.length
             ? ` con dettaglio di ${r.busta.dettaglioDipendenti.length} dipendenti`
             : "") +
+          (r.ferie ? `; ferie aggiornate per ${r.ferie} nominativi` : "") +
           (r.sostituite ? `; sostituite ${r.sostituite} vecchie righe PDF` : "") +
           ".",
       )
       void qc.invalidateQueries({ queryKey: ["amm-buste"] })
       void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+      void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
     },
     onError: (e: Error) => setError(e.message),
   })
@@ -2071,13 +2083,26 @@ function StipendiTab() {
         return
       }
       const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
-      if (parsed.dipendenti.length !== 1) {
-        throw new Error("Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo”.")
+      const ferie = parsed.ferie ?? []
+      if (parsed.dipendenti.length === 1) {
+        setImportMsg("")
+        setBustePdfPreview(parsed.dipendenti)
+        setFeriePdfPreview(ferie)
+        setCollabPreview(null)
+        setPreview(null)
+        return
       }
-      setImportMsg("")
-      setBustePdfPreview(parsed.dipendenti)
-      setCollabPreview(null)
-      setPreview(null)
+      if (ferie.length) {
+        const r = await amministrazioneApi.importFerie(mese, ferie)
+        setImportMsg(`Ferie aggiornate per ${r.inserite} dipendenti dal PDF.`)
+        setBustePdfPreview(null)
+        setFeriePdfPreview([])
+        setCollabPreview(null)
+        setPreview(null)
+        void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
+        return
+      }
+      throw new Error("Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo” oppure un prospetto ferie.")
     } catch (e) {
       setError((e as Error).message || "PDF non leggibile")
     }
@@ -2411,6 +2436,7 @@ function StipendiTab() {
               Per vedere i nominativi, carica il PDF completo con tutte le buste: il totale aziendale resta quello del
               consuntivo e i costi individuali sono salvati come dettaglio, senza sommarli una seconda volta. Il PDF del
               solo consuntivo importa invece il totale senza nominativi. I PDF scansiti vengono letti con OCR nel browser.
+              Se nel file ci sono ferie/permessi (prospetto o colonne nel mastrino), i residui vanno in Dipendenti / ferie.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

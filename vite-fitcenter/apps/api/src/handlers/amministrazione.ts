@@ -33,6 +33,8 @@ import {
   type MacroCommerciale,
 } from "../services/amministrazione-ricavi.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
+import { parseFeriePdf } from "../services/amministrazione-ferie-pdf.js"
+import { ferieStore, type FerieTipo } from "../store/dipendenti-ferie.js"
 import {
   labelCompetenza,
   ripartoCompetenza,
@@ -430,6 +432,26 @@ export function postAmmBusteImport(req: Request, res: Response) {
         }
         ammCostiStore.upsertBusta(bustaFromBody({ ...raw, origine: raw.origine === "pdf" ? "pdf" : "mastrino" }))
         inserite += 1
+        const rawFerie = String(raw.ferieResidue ?? "").trim()
+        const ferieResidue = Number(rawFerie.replace(",", "."))
+        if (nominativo && rawFerie && Number.isFinite(ferieResidue) && /^\d{4}-\d{2}$/.test(mese)) {
+          const opt = (key: string) => {
+            const s = String(raw[key] ?? "").trim()
+            if (!s) return undefined
+            const n = Number(s.replace(",", "."))
+            return Number.isFinite(n) ? n : undefined
+          }
+          ferieStore.upsertSaldi([
+            {
+              nominativo,
+              mese,
+              ferieResidue,
+              ferieGodute: opt("ferieGodute"),
+              permessiResidue: opt("permessiResidue"),
+              fonte: "mastrino",
+            },
+          ])
+        }
       } catch (e) {
         errori.push({ riga, message: (e as Error)?.message ?? "Riga non valida" })
       }
@@ -453,7 +475,10 @@ export function postAmmBusteConsuntivoImport(req: Request, res: Response) {
     const { busta, sostituite } = ammCostiStore.replacePdfBusteMese(
       bustaFromBody({ ...riga, origine: "pdf" }),
     )
-    res.json({ inserite: 1, saltate: 0, sostituite, errori: [], busta })
+    const mese = String(riga.mese ?? busta.mese).slice(0, 7)
+    const ferie = ferieBodyRows(req.body?.ferie, mese, "pdf")
+    if (ferie.length) ferieStore.upsertSaldi(ferie)
+    res.json({ inserite: 1, saltate: 0, sostituite, errori: [], busta, ferie: ferie.length })
   } catch (e) {
     fail(res, e)
   }
@@ -578,13 +603,52 @@ export function deleteAmmCollaboratoreRimborso(req: Request, res: Response) {
   }
 }
 
+function ferieBodyRows(
+  raw: unknown,
+  mese: string,
+  fonte: "pdf" | "mastrino",
+): Parameters<typeof ferieStore.upsertSaldi>[0] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return []
+    const row = item as Record<string, unknown>
+    const nominativo = String(row.nominativo ?? "").trim()
+    const ym = String(row.mese ?? mese).slice(0, 7)
+    if (!nominativo || !/^\d{4}-\d{2}$/.test(ym)) return []
+    const ferieResidue = Number(String(row.ferieResidue ?? "").replace(",", "."))
+    if (!Number.isFinite(ferieResidue)) return []
+    const opt = (key: string) => {
+      if (row[key] == null || row[key] === "") return undefined
+      const n = Number(String(row[key]).replace(",", "."))
+      return Number.isFinite(n) ? n : undefined
+    }
+    return [
+      {
+        nominativo,
+        mese: ym,
+        ferieResidue,
+        ferieGodute: opt("ferieGodute"),
+        ferieMaturate: opt("ferieMaturate"),
+        permessiResidue: opt("permessiResidue"),
+        fonte,
+      },
+    ]
+  })
+}
+
 export function postAmmStipendiPdf(req: Request, res: Response) {
   try {
     const text = String(req.body?.text ?? "")
     const filename = String(req.body?.filename ?? "")
     const mese = String(req.body?.mese ?? "").slice(0, 7)
     if (text.trim().length < 20) return res.status(400).json({ message: "Testo PDF insufficiente" })
-    const parsed = parseStipendiPdf(text, filename, mese)
+    const ferie = parseFeriePdf(text).map((row) => ({ ...row, mese }))
+    let parsed: ReturnType<typeof parseStipendiPdf> = []
+    try {
+      parsed = parseStipendiPdf(text, filename, mese)
+    } catch (e) {
+      if (!ferie.length) throw e
+    }
     const sportivi = parsed.filter((r) => r.tipo === "sportivo")
     const gestionali = parsed.filter((r) => r.tipo === "gestionale")
     const dipendenti = parsed.filter((r) => r.tipo === "dipendente")
@@ -597,6 +661,7 @@ export function postAmmStipendiPdf(req: Request, res: Response) {
       sportivi: withQuote.filter((r) => r.tipo === "sportivo"),
       gestionali: withQuote.filter((r) => r.tipo === "gestionale"),
       dipendenti: withQuote.filter((r) => r.tipo === "dipendente"),
+      ferie,
       totSportivi: Math.round(sportivi.reduce((s, r) => s + r.totale, 0) * 100) / 100,
       totGestionali: Math.round(gestionali.reduce((s, r) => s + r.totale, 0) * 100) / 100,
       totDipendenti: Math.round(dipendenti.reduce((s, r) => s + r.totale, 0) * 100) / 100,
@@ -1890,6 +1955,106 @@ export async function postFicSync(req: Request, res: Response) {
       lette: docs.length,
       companyName: (ficStore.get() ?? cfg).companyName,
     })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+function lastDayOfMonth(ym: string): string {
+  const [y, m] = ym.split("-").map(Number)
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate()
+  return `${ym}-${String(last).padStart(2, "0")}`
+}
+
+export function getAmmDipendentiFerie(req: Request, res: Response) {
+  try {
+    const anno = Number(req.query.anno) || new Date().getFullYear()
+    const nomi = new Map<string, string>()
+    const addNome = (raw: string) => {
+      const n = raw.trim()
+      if (!n || /^dipendenti fissi/i.test(n)) return
+      const hit = [...nomi.keys()].find((k) => stessoNominativo(k, n))
+      if (!hit) nomi.set(n, n)
+    }
+    for (const b of ammCostiStore.listBuste()) {
+      if (b.dettaglioDipendenti?.length) {
+        for (const d of b.dettaglioDipendenti) addNome(d.nominativo)
+      } else addNome(b.nominativo)
+    }
+    for (const s of ferieStore.listSaldi()) addNome(s.nominativo)
+    for (const g of ferieStore.listGiorni(anno)) addNome(g.nominativo)
+    const saldi = ferieStore.listSaldi()
+    const giorni = ferieStore.listGiorni(anno)
+    const dipendenti = [...nomi.values()]
+      .sort((a, b) => a.localeCompare(b, "it"))
+      .map((nominativo) => {
+        const saldo = saldi
+          .filter((s) => stessoNominativo(s.nominativo, nominativo))
+          .sort((a, b) => b.mese.localeCompare(a.mese))[0]
+        const miei = giorni.filter((g) => stessoNominativo(g.nominativo, nominativo))
+        const dopoBusta = saldo ? lastDayOfMonth(saldo.mese) : `${anno - 1}-12-31`
+        const usateDopo = miei.filter((g) => g.tipo === "ferie" && g.data > dopoBusta).length
+        const permessiDopo = miei.filter((g) => g.tipo === "permessi" && g.data > dopoBusta).length
+        const ferieResidue = saldo?.ferieResidue ?? null
+        const permessiResidue = saldo?.permessiResidue ?? null
+        return {
+          nominativo,
+          saldo,
+          ferieResidue,
+          permessiResidue,
+          ferieUsateDopoBusta: usateDopo,
+          permessiUsatiDopoBusta: permessiDopo,
+          ferieDisponibili: ferieResidue == null ? null : Math.round((ferieResidue - usateDopo) * 100) / 100,
+          permessiDisponibili: permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo) * 100) / 100,
+        }
+      })
+    res.json({ anno, dipendenti, giorni })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmFerieImport(req: Request, res: Response) {
+  try {
+    const mese = String(req.body?.mese ?? "").slice(0, 7)
+    const ferie = ferieBodyRows(req.body?.ferie, mese, "pdf")
+    if (!ferie.length) return res.status(400).json({ message: "Nessun residuo ferie nel file" })
+    const salvati = ferieStore.upsertSaldi(ferie)
+    res.json({ inserite: salvati.length, mese })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmFerieGiorno(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const data = String(req.body?.data ?? "").slice(0, 10)
+    const tipo: FerieTipo = req.body?.tipo === "permessi" ? "permessi" : "ferie"
+    const r = ferieStore.toggleGiorno(nominativo, data, tipo)
+    res.json(r)
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function postAmmFeriePeriodo(req: Request, res: Response) {
+  try {
+    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const dal = String(req.body?.dal ?? "").slice(0, 10)
+    const al = String(req.body?.al ?? "").slice(0, 10)
+    const tipo: FerieTipo = req.body?.tipo === "permessi" ? "permessi" : "ferie"
+    const giorni = ferieStore.addPeriodo(nominativo, dal, al, tipo)
+    res.json({ inserite: giorni.length, giorni })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function deleteAmmFerieGiorno(req: Request, res: Response) {
+  try {
+    ferieStore.deleteGiorno(String(req.params.id ?? "").trim())
+    res.json({ ok: true })
   } catch (e) {
     fail(res, e)
   }

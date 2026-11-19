@@ -34,6 +34,11 @@ import {
   putAmmBusta,
   putAmmReparto,
   putAmmSpesa,
+  getAmmDipendentiFerie,
+  postAmmFerieImport,
+  postAmmFerieGiorno,
+  postAmmFeriePeriodo,
+  deleteAmmFerieGiorno,
 } from "../handlers/amministrazione.js"
 
 const upload = multer({
@@ -49,8 +54,8 @@ export const amministrazioneRouter = Router()
 amministrazioneRouter.use(requireAuth)
 
 amministrazioneRouter.get("/collaboratori/report", requireAdminOrAlberto, getAmmCollaboratoriReport)
-amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, postAmmCollaboratoreImporto)
 amministrazioneRouter.post("/collaboratori/elimina", requireAdminOrAlberto, postAmmCollaboratoreElimina)
+amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, postAmmCollaboratoreImporto)
 amministrazioneRouter.post("/collaboratori/rimanenze", requireAdminOrAlberto, postAmmCollaboratoreRimanenze)
 amministrazioneRouter.post("/collaboratori/report/import", requireAdminOrAlberto, postAmmCollaboratoriReportImport)
 
@@ -67,6 +72,11 @@ amministrazioneRouter.post("/collaboratori/rimborsi", postAmmCollaboratoreRimbor
 amministrazioneRouter.delete("/collaboratori/rimborsi/:id", deleteAmmCollaboratoreRimborso)
 amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
 amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
+amministrazioneRouter.get("/dipendenti/ferie", getAmmDipendentiFerie)
+amministrazioneRouter.post("/dipendenti/ferie/import", postAmmFerieImport)
+amministrazioneRouter.post("/dipendenti/ferie/giorno", postAmmFerieGiorno)
+amministrazioneRouter.post("/dipendenti/ferie/periodo", postAmmFeriePeriodo)
+amministrazioneRouter.delete("/dipendenti/ferie/:id", deleteAmmFerieGiorno)
 amministrazioneRouter.get("/buste", getAmmBuste)
 amministrazioneRouter.post("/buste/consuntivo/import", postAmmBusteConsuntivoImport)
 amministrazioneRouter.post("/buste/import", postAmmBusteImport)

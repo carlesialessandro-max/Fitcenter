@@ -165,6 +165,41 @@ export type AmmStipendiPdfRiga = {
   dettaglioDipendenti?: { nominativo: string; totale: number }[]
 }
 
+export type AmmFerieDaFile = {
+  nominativo: string
+  mese?: string
+  ferieResidue: number
+  ferieGodute?: number
+  ferieMaturate?: number
+  permessiResidue?: number
+}
+
+export type AmmFerieGiorno = {
+  id: string
+  nominativo: string
+  data: string
+  tipo: "ferie" | "permessi"
+}
+
+export type AmmFeriePersona = {
+  nominativo: string
+  saldo?: {
+    nominativo: string
+    mese: string
+    ferieResidue: number
+    ferieGodute?: number
+    ferieMaturate?: number
+    permessiResidue?: number
+    fonte: "pdf" | "mastrino"
+  }
+  ferieResidue: number | null
+  permessiResidue: number | null
+  ferieUsateDopoBusta: number
+  permessiUsatiDopoBusta: number
+  ferieDisponibili: number | null
+  permessiDisponibili: number | null
+}
+
 export type AmmOcrParsed = {
   fornitore: string
   numeroDocumento: string
@@ -320,18 +355,32 @@ export const amministrazioneApi = {
       : api.post<{ busta: AmmBusta }>("/amministrazione/buste", body),
   deleteBusta: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/buste/${encodeURIComponent(id)}`),
   importBuste: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/buste/import", { righe }),
-  importBustaConsuntivo: (riga: AmmStipendiPdfRiga) =>
-    api.post<AmmImportEsito & { busta: AmmBusta }>("/amministrazione/buste/consuntivo/import", { riga }),
+  importBustaConsuntivo: (riga: AmmStipendiPdfRiga, ferie?: AmmFerieDaFile[]) =>
+    api.post<AmmImportEsito & { busta: AmmBusta; ferie?: number }>("/amministrazione/buste/consuntivo/import", {
+      riga,
+      ferie,
+    }),
   parseStipendiPdf: (text: string, filename: string, mese: string) =>
     api.post<{
       mese: string
       sportivi: AmmStipendiPdfRiga[]
       gestionali: AmmStipendiPdfRiga[]
       dipendenti: AmmStipendiPdfRiga[]
+      ferie?: AmmFerieDaFile[]
       totSportivi: number
       totGestionali: number
       totDipendenti: number
     }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
+  dipendentiFerie: (anno: number) =>
+    api.get<{ anno: number; dipendenti: AmmFeriePersona[]; giorni: AmmFerieGiorno[] }>(
+      `/amministrazione/dipendenti/ferie?anno=${encodeURIComponent(String(anno))}`,
+    ),
+  importFerie: (mese: string, ferie: AmmFerieDaFile[]) =>
+    api.post<{ inserite: number; mese: string }>("/amministrazione/dipendenti/ferie/import", { mese, ferie }),
+  toggleFerieGiorno: (body: { nominativo: string; data: string; tipo: "ferie" | "permessi" }) =>
+    api.post<{ giorno: AmmFerieGiorno | null; removed: boolean }>("/amministrazione/dipendenti/ferie/giorno", body),
+  addFeriePeriodo: (body: { nominativo: string; dal: string; al: string; tipo: "ferie" | "permessi" }) =>
+    api.post<{ inserite: number; giorni: AmmFerieGiorno[] }>("/amministrazione/dipendenti/ferie/periodo", body),
   importCollaboratori: (righe: unknown[]) => api.post<AmmImportEsito>("/amministrazione/collaboratori/import", { righe }),
   deleteCollaboratore: (id: string) => api.delete<{ ok: boolean }>(`/amministrazione/collaboratori/${encodeURIComponent(id)}`),
   setCentroCostoCollaboratore: (nominativo: string, repartoId: string) =>

@@ -97,6 +97,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/amministrazione", label: "Risultato per reparto" },
       { to: "/amministrazione/spese", label: "Registro spese" },
       { to: "/amministrazione/stipendi", label: "Stipendi" },
+      { to: "/amministrazione/dipendenti", label: "Dipendenti / ferie" },
       { to: "/amministrazione/reparti", label: "Reparti e centri di costo" },
     ],
   },

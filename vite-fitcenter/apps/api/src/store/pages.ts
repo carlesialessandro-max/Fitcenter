@@ -53,6 +53,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/amministrazione", label: "Dashboard costi", group: "Amministrazione" },
   { path: "/amministrazione/spese", label: "Registro spese", group: "Amministrazione" },
   { path: "/amministrazione/stipendi", label: "Stipendi", group: "Amministrazione" },
+  { path: "/amministrazione/dipendenti", label: "Dipendenti / ferie", group: "Amministrazione" },
   { path: "/amministrazione/reparti", label: "Reparti e centri di costo", group: "Amministrazione" },
 ]
 
