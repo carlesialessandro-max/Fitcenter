@@ -3,6 +3,8 @@ import { Link, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import * as XLSX from "xlsx"
 import { dataApi } from "@/api/data"
+import { AttiviInviaMessaggio } from "@/components/AttiviInviaMessaggio"
+import { AttiviInviiLog } from "@/components/AttiviInviiLog"
 import { useAuth } from "@/contexts/AuthContext"
 import type { AttiviContatto, AttiviProdotto } from "@/types/gestionale"
 
@@ -188,6 +190,7 @@ export function ScadutiEx() {
   const [contattoFiltro, setContattoFiltro] = useState<ContattoFiltro>("tutti")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [applied, setApplied] = useState<FiltriCaricati | null>(null)
+  const [logOpen, setLogOpen] = useState(false)
 
   const catalogQ = useQuery({
     queryKey: ["abbonamenti-scaduti-catalogo", asOf],
@@ -646,6 +649,25 @@ export function ScadutiEx() {
               <button type="button" className="text-sm text-zinc-400 hover:underline" onClick={() => setSelected(new Set())}>
                 Nessuno
               </button>
+              {applied ? (
+                <AttiviInviaMessaggio
+                  asOf={applied.asOf}
+                  elenco="scaduti"
+                  destinatari={selectedRows}
+                  filtriScaduti={applied}
+                />
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setLogOpen((v) => !v)}
+                className={`rounded-lg border px-3 py-1.5 text-sm ${
+                  logOpen
+                    ? "border-amber-500 bg-amber-500/20 text-amber-100"
+                    : "border-zinc-600 text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                {logOpen ? "Chiudi log invii" : "Log invii"}
+              </button>
               <button
                 type="button"
                 disabled={!selectedRows.length}
@@ -709,6 +731,7 @@ export function ScadutiEx() {
               </tbody>
             </table>
           </div>
+          {logOpen ? <AttiviInviiLog /> : null}
         </>
       )}
     </div>

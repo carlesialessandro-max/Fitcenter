@@ -129,10 +129,13 @@ export const dataApi = {
   },
   postAbbonamentiAttiviInvia: (body: {
     asOf?: string
+    elenco?: "attivi" | "scaduti"
     segmento?: "tutti" | "adulti" | "bambini"
     sesso?: "M" | "F"
     categorie?: string[]
+    gruppi?: string[]
     piani?: string[]
+    q?: string
     clienteIds?: string[]
     channel: "email" | "sms"
     subject?: string

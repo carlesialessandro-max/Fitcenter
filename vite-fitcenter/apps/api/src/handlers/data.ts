@@ -2151,6 +2151,9 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       text?: string
       confirm?: boolean
       consulente?: string
+      elenco?: string
+      gruppi?: string[] | string
+      q?: string
       immagine?: { filename?: string; contentType?: string; dataBase64?: string }
       /** Se valorizzato: invia solo a questo indirizzo, nessuno degli abbonati. */
       testTo?: string
@@ -2274,13 +2277,26 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     const asOfRaw = String(body.asOf ?? "").trim()
     const fakeReq = { query: { asOf: asOfRaw } } as unknown as Request
     const { date } = parseAsOf(fakeReq)
-    const consulenteQ = String(body.consulente ?? "").trim()
-    const idConsultant = consulenteQ ? await resolveConsultantId(consulenteQ) : undefined
-    const loaded = await loadAttiviContatti(date, idConsultant)
-    const all = loaded.rows
-    const categorie = parseCategorieParam(body.categorie)
+    const elenco = String(body.elenco ?? "attivi").trim().toLowerCase() === "scaduti" ? "scaduti" : "attivi"
+    const categorie = parseCategorieParam(elenco === "scaduti" ? (body.gruppi ?? body.categorie) : body.categorie)
     const piani = parseCategorieParam(body.piani)
-    let rows = filterAttiviContatti(all, { segmento: body.segmento, categorie, piani, sesso: body.sesso })
+    const qFiltro = String(body.q ?? "").trim()
+    let rows
+    if (elenco === "scaduti") {
+      const loaded = await loadScadutiContatti(date, {
+        segmento: body.segmento,
+        sesso: body.sesso,
+        q: qFiltro,
+        gruppi: categorie,
+        piani,
+      })
+      rows = loaded.rows
+    } else {
+      const consulenteQ = String(body.consulente ?? "").trim()
+      const idConsultant = consulenteQ ? await resolveConsultantId(consulenteQ) : undefined
+      const loaded = await loadAttiviContatti(date, idConsultant)
+      rows = filterAttiviContatti(loaded.rows, { segmento: body.segmento, categorie, piani, sesso: body.sesso })
+    }
     const ids = Array.isArray(body.clienteIds)
       ? body.clienteIds.map((x) => String(x).trim()).filter(Boolean)
       : []
@@ -2292,9 +2308,9 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
     if (rows.length === 0) {
       return res.status(400).json({ message: "Nessun destinatario con i filtri scelti" })
     }
-    if (rows.length > 800) {
+    if (rows.length > 4000) {
       return res.status(400).json({
-        message: `Troppi destinatari (${rows.length}). Restringi i filtri (max 800).`,
+        message: `Troppi destinatari (${rows.length}). Restringi i filtri (max 4000 per richiesta).`,
       })
     }
 

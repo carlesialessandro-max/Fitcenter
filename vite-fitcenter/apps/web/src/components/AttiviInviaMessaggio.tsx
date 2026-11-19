@@ -10,7 +10,20 @@ type Channel = "email" | "sms"
 type Props = {
   asOf: string
   consulente?: string
+  elenco?: "attivi" | "scaduti"
+  /** Se passato, usa questi nominativi (lista già caricata) e non ricarica gli attivi. */
+  destinatari?: AttiviContatto[]
+  filtriScaduti?: {
+    segmento: SegmentoFiltro
+    sesso: SessoFiltro
+    q: string
+    gruppi: string[]
+    piani: string[]
+  }
 }
+
+const MAX_DEST = 4000
+const SEND_BATCH = 400
 
 type Leaf = {
   key: string
@@ -83,7 +96,7 @@ function prodottoMatchQ(p: AttiviProdotto, q: string): boolean {
   return false
 }
 
-export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
+export function AttiviInviaMessaggio({ asOf, consulente, elenco = "attivi", destinatari, filtriScaduti }: Props) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [segmento, setSegmento] = useState<SegmentoFiltro>("tutti")
@@ -120,14 +133,15 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     return () => URL.revokeObjectURL(url)
   }, [imageFile])
 
+  const listaFissa = destinatari != null
   const { data, isLoading, error } = useQuery({
     queryKey: ["abbonamenti-attivi-contatti", asOf, consulente ?? ""],
     queryFn: () => dataApi.getAbbonamentiAttiviContatti({ asOf, consulente }),
-    enabled: open,
+    enabled: open && !listaFissa,
     staleTime: 60_000,
   })
 
-  const allRows = data?.rows ?? []
+  const allRows = listaFissa ? destinatari : (data?.rows ?? [])
   const ql = q.trim().toLowerCase()
 
   const bySegmento = useMemo(() => {
@@ -198,6 +212,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
   }, [prodottiSelect])
 
   const rows = useMemo(() => {
+    if (listaFissa) return allRows
     return bySegmento.filter((c) => {
       const prods = prodottiDi(c)
       const haFiltroTipo = Boolean(gruppo || pianiSel.size)
@@ -215,7 +230,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
       }
       return false
     })
-  }, [bySegmento, ql, gruppo, pianiSel])
+  }, [listaFissa, allRows, bySegmento, ql, gruppo, pianiSel])
 
   const rowKey = `${segmento}|${sessoFiltro}|${gruppo}|${[...pianiSel].sort().join(",")}|${ql}|${rows.length}|${rows[0]?.clienteId ?? ""}`
   useEffect(() => {
@@ -235,19 +250,47 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
 
   const sendM = useMutation({
     mutationFn: async () => {
-      return dataApi.postAbbonamentiAttiviInvia({
+      const ids = Array.from(selected)
+      const immagine = await buildImmagine()
+      const base = {
         asOf,
-        consulente: consulente || undefined,
-        segmento,
-        sesso: sessoFiltro === "tutti" ? undefined : sessoFiltro,
-        piani: pianiSel.size ? Array.from(pianiSel) : undefined,
-        clienteIds: Array.from(selected),
+        elenco,
+        consulente: elenco === "attivi" ? consulente || undefined : undefined,
+        segmento: elenco === "scaduti" ? filtriScaduti?.segmento ?? segmento : segmento,
+        sesso:
+          elenco === "scaduti"
+            ? filtriScaduti?.sesso && filtriScaduti.sesso !== "tutti"
+              ? filtriScaduti.sesso
+              : undefined
+            : sessoFiltro === "tutti"
+              ? undefined
+              : sessoFiltro,
+        piani: elenco === "scaduti" ? filtriScaduti?.piani : pianiSel.size ? Array.from(pianiSel) : undefined,
+        gruppi: elenco === "scaduti" ? filtriScaduti?.gruppi : undefined,
+        q: elenco === "scaduti" ? filtriScaduti?.q || undefined : undefined,
         channel,
         subject: channel === "email" ? subject.trim() : undefined,
         text: text.trim(),
-        confirm: true,
-        immagine: await buildImmagine(),
-      })
+        confirm: true as const,
+        immagine,
+      }
+      let sent = 0
+      let failed = 0
+      let skipped = 0
+      const errors: string[] = []
+      for (let i = 0; i < ids.length; i += SEND_BATCH) {
+        const res = await dataApi.postAbbonamentiAttiviInvia({
+          ...base,
+          clienteIds: ids.slice(i, i + SEND_BATCH),
+        })
+        sent += res.sent
+        failed += res.failed
+        skipped += res.skipped
+        for (const e of res.errors ?? []) {
+          if (errors.length < 8) errors.push(e)
+        }
+      }
+      return { ok: failed === 0, channel, destinatari: ids.length, sent, failed, skipped, errors }
     },
     onSuccess: (res) => {
       const skipped = res.skipped ? `, ${res.skipped} senza contatto (nel log)` : ""
@@ -323,7 +366,7 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     (channel !== "email" || subject.trim().length > 0) &&
     !imageErr &&
     reachable.length > 0 &&
-    reachable.length <= 800 &&
+    reachable.length <= MAX_DEST &&
     !sendM.isPending &&
     !testM.isPending
 
@@ -343,8 +386,9 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
     <>
       <button
         type="button"
+        disabled={listaFissa && rows.length === 0}
         onClick={() => setOpen(true)}
-        className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400"
+        className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
       >
         Invia email / SMS
       </button>
@@ -364,12 +408,12 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
             <div className="flex items-start justify-between gap-3 border-b border-zinc-800 px-4 py-3">
               <div>
                 <h2 id="attivi-invia-title" className="text-base font-semibold text-zinc-100">
-                  Messaggio agli abbonati attivi
+                  {elenco === "scaduti" ? "Messaggio agli scaduti / ex" : "Messaggio agli abbonati attivi"}
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-500">
-                  Come in gestionale: scegli il gruppo (Rossi, Pacchetti ingressi, Nuoto libero…) poi uno o più prodotti.
-                  «h2o» filtra solo SMILE H2O; i pacchetti si selezionano dall&apos;elenco, non arrivano da quella ricerca.
-                  Puoi filtrare maschi/femmine. Staff esclusi.
+                  {elenco === "scaduti"
+                    ? "Stesso invio degli attivi: email in BCC a gruppi di 40. Chi è senza email viene saltato. L’invio a migliaia di indirizzi può richiedere alcuni minuti."
+                    : "Come in gestionale: scegli il gruppo (Rossi, Pacchetti ingressi, Nuoto libero…) poi uno o più prodotti. «h2o» filtra solo SMILE H2O; i pacchetti si selezionano dall'elenco, non arrivano da quella ricerca. Puoi filtrare maschi/femmine. Staff esclusi."}
                 </p>
               </div>
               <button type="button" onClick={close} className="rounded px-2 py-1 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">
@@ -378,6 +422,13 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+              {listaFissa ? (
+                <p className="mb-4 text-sm text-zinc-300">
+                  {rows.length} spuntati dalla lista · {conEmail} con email · {conTel} con cellulare
+                </p>
+              ) : null}
+              {!listaFissa ? (
+              <>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Età</span>
                 {(
@@ -571,6 +622,8 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
                   </tbody>
                 </table>
               </div>
+              </>
+              ) : null}
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -725,15 +778,23 @@ export function AttiviInviaMessaggio({ asOf, consulente }: Props) {
               {selectedRows.length > reachable.length && (
                 <p className="mt-2 text-xs text-amber-300/90">
                   Esclusi (niente {channel === "email" ? "email" : "telefono"} in anagrafica):{" "}
-                  {selectedRows
-                    .filter((r) => (channel === "email" ? !r.email : !r.telefono))
-                    .map((r) => r.nome)
-                    .join(", ")}
+                  {(() => {
+                    const missing = selectedRows.filter((r) => (channel === "email" ? !r.email : !r.telefono))
+                    const shown = missing.slice(0, 12).map((r) => r.nome)
+                    return shown.join(", ") + (missing.length > 12 ? ` e altri ${missing.length - 12}` : "")
+                  })()}
                 </p>
               )}
-              {reachable.length > 800 && (
-                <p className="mt-2 text-sm text-red-400">Troppi destinatari ({reachable.length}). Max 800: restringi i filtri.</p>
+              {reachable.length > MAX_DEST && (
+                <p className="mt-2 text-sm text-red-400">
+                  Troppi destinatari ({reachable.length}). Max {MAX_DEST}: restringi i filtri.
+                </p>
               )}
+              {reachable.length > SEND_BATCH && reachable.length <= MAX_DEST ? (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Invio a lotti da {SEND_BATCH} (BCC da 40 come sugli attivi). Non chiudere la pagina finché non finisce.
+                </p>
+              ) : null}
               {sendM.isError && <p className="mt-2 text-sm text-red-400">{(sendM.error as Error).message}</p>}
               {resultMsg && <p className="mt-2 text-sm text-emerald-400">{resultMsg}</p>}
               <div className="mt-3 flex justify-end gap-2">
