@@ -1976,6 +1976,43 @@ function nominativoDaUtente(req: Request): string {
   return String(u?.consulenteNome || u?.nome || "").trim()
 }
 
+function personaFerieDi(
+  nominativo: string,
+  anno: number,
+  saldi: ReturnType<typeof ferieStore.listSaldi>,
+  giorni: ReturnType<typeof ferieStore.listGiorni>,
+  hideProiezione: boolean,
+) {
+  const saldo = saldi
+    .filter((s) => stessoNominativo(s.nominativo, nominativo))
+    .sort((a, b) => b.mese.localeCompare(a.mese))[0]
+  const miei = giorni.filter((g) => stessoNominativo(g.nominativo, nominativo))
+  const dopoBusta = saldo ? lastDayOfMonth(saldo.mese) : `${anno - 1}-12-31`
+  const usateDopo = miei.filter((g) => g.tipo === "ferie" && g.data > dopoBusta).length
+  const permessiDopo = miei.filter((g) => g.tipo === "permessi" && g.data > dopoBusta).length
+  const ferieResidue = saldo?.ferieResidue ?? null
+  const permessiResidue = saldo?.permessiResidue ?? null
+  const oreGiorno = saldo?.unita === "gg" ? 1 : 8
+  return {
+    nominativo: saldo?.nominativo ?? nominativo,
+    saldo,
+    ferieAnnoPrec: saldo?.ferieAnnoPrec ?? null,
+    ferieMaturate: saldo?.ferieMaturate ?? null,
+    ferieGodute: saldo?.ferieGodute ?? null,
+    ferieProiezione: hideProiezione ? null : (saldo?.ferieProiezione ?? null),
+    ferieResidue,
+    permessiResidue,
+    permessiAnnoPrec: saldo?.permessiAnnoPrec ?? null,
+    permessiProiezione: hideProiezione ? null : (saldo?.permessiProiezione ?? null),
+    unita: saldo?.unita ?? null,
+    ferieUsateDopoBusta: usateDopo,
+    permessiUsatiDopoBusta: permessiDopo,
+    ferieDisponibili: ferieResidue == null ? null : Math.round((ferieResidue - usateDopo * oreGiorno) * 100) / 100,
+    permessiDisponibili:
+      permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo * oreGiorno) * 100) / 100,
+  }
+}
+
 function assertFerieNominativo(req: Request, requested: string): string {
   if (req.user?.role === "admin") {
     const n = requested.trim()
@@ -2021,38 +2058,28 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
     const dipendenti = [...nomi.values()]
       .sort((a, b) => a.localeCompare(b, "it"))
       .filter((nominativo) => !selfNome || stessoNominativo(nominativo, selfNome))
-      .map((nominativo) => {
-        const saldo = saldi
-          .filter((s) => stessoNominativo(s.nominativo, nominativo))
-          .sort((a, b) => b.mese.localeCompare(a.mese))[0]
-        const miei = giorni.filter((g) => stessoNominativo(g.nominativo, nominativo))
-        const dopoBusta = saldo ? lastDayOfMonth(saldo.mese) : `${anno - 1}-12-31`
-        const usateDopo = miei.filter((g) => g.tipo === "ferie" && g.data > dopoBusta).length
-        const permessiDopo = miei.filter((g) => g.tipo === "permessi" && g.data > dopoBusta).length
-        const ferieResidue = saldo?.ferieResidue ?? null
-        const permessiResidue = saldo?.permessiResidue ?? null
-        const oreGiorno = saldo?.unita === "gg" ? 1 : 8
-        return {
-          nominativo,
-          saldo,
-          ferieAnnoPrec: saldo?.ferieAnnoPrec ?? null,
-          ferieMaturate: saldo?.ferieMaturate ?? null,
-          ferieGodute: saldo?.ferieGodute ?? null,
-          ferieProiezione: selfNome ? null : (saldo?.ferieProiezione ?? null),
-          ferieResidue,
-          permessiResidue,
-          permessiAnnoPrec: saldo?.permessiAnnoPrec ?? null,
-          permessiProiezione: saldo?.permessiProiezione ?? null,
-          unita: saldo?.unita ?? null,
-          ferieUsateDopoBusta: usateDopo,
-          permessiUsatiDopoBusta: permessiDopo,
-          ferieDisponibili:
-            ferieResidue == null ? null : Math.round((ferieResidue - usateDopo * oreGiorno) * 100) / 100,
-          permessiDisponibili:
-            permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo * oreGiorno) * 100) / 100,
-        }
-      })
+      .map((nominativo) => personaFerieDi(nominativo, anno, saldi, giorni, Boolean(selfNome)))
     const giorniOut = selfNome ? giorni.filter((g) => stessoNominativo(g.nominativo, selfNome)) : giorni
+    res.json({ anno, dipendenti, giorni: giorniOut })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+export function getAmmMieFerie(req: Request, res: Response) {
+  try {
+    const mine = nominativoDaUtente(req)
+    if (!mine) return res.status(403).json({ message: "Utente senza nominativo" })
+    const anno = Number(req.query.anno) || new Date().getFullYear()
+    ferieStore.pruneNonPersone()
+    const saldi = ferieStore.listSaldi()
+    const giorni = ferieStore.listGiorni(anno)
+    const known = [...saldi.map((s) => s.nominativo), ...giorni.map((g) => g.nominativo)]
+    const match = known.find((n) => stessoNominativo(n, mine))
+    const nominativo = match || mine
+    const dipendenti = [personaFerieDi(nominativo, anno, saldi, giorni, true)]
+    dipendenti[0] = { ...dipendenti[0]!, nominativo: mine }
+    const giorniOut = giorni.filter((g) => stessoNominativo(g.nominativo, nominativo))
     res.json({ anno, dipendenti, giorni: giorniOut })
   } catch (e) {
     fail(res, e)

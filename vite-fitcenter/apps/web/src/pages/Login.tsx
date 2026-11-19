@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { useNavigate, Link } from "react-router-dom"
+import { useQueryClient } from "@tanstack/react-query"
 import { useAuth } from "@/contexts/AuthContext"
 import { authApi, type LoginResponse } from "@/api/auth"
 import { BrandLogo } from "@/components/BrandLogo"
@@ -8,6 +9,7 @@ import { ThemeToggle } from "@/components/ThemeToggle"
 
 export function Login() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { applySession } = useAuth()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
@@ -33,6 +35,7 @@ export function Login() {
       }
       const ok = res as LoginResponse
       applySession(ok.token, ok.user)
+      queryClient.clear()
       navigate("/", { replace: true })
     } catch (err) {
       setError((err as Error).message ?? "Accesso non riuscito")
@@ -48,6 +51,7 @@ export function Login() {
     try {
       const res = await authApi.loginOtp(otpUsername, otpCode)
       applySession(res.token, res.user)
+      queryClient.clear()
       navigate("/", { replace: true })
     } catch (err) {
       setError((err as Error).message ?? "Codice non valido")

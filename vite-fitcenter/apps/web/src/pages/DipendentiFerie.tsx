@@ -177,13 +177,13 @@ function CalendarioModal({
   )
 }
 
-function useFerieAnno(anno: number) {
+function useFerieAnno(anno: number, scope: "admin" | "me" = "admin") {
   const qc = useQueryClient()
   const [error, setError] = useState("")
   const [msg, setMsg] = useState("")
   const data = useQuery({
-    queryKey: ["amm-ferie", anno],
-    queryFn: () => amministrazioneApi.dipendentiFerie(anno),
+    queryKey: ["amm-ferie", scope, anno],
+    queryFn: () => (scope === "me" ? amministrazioneApi.mieFerie(anno) : amministrazioneApi.dipendentiFerie(anno)),
   })
   const toggleMut = useMutation({
     mutationFn: (body: { nominativo: string; data: string; tipo: "ferie" | "permessi" }) =>
@@ -454,13 +454,17 @@ export function MieFeriePage() {
   const oggi = new Date()
   const [anno, setAnno] = useState(oggi.getFullYear())
   const [cal, setCal] = useState<"ferie" | "permessi" | null>(null)
-  const { data, error, msg, toggleMut, periodoMut, giorniByNome } = useFerieAnno(anno)
+  const { data, error, msg, toggleMut, periodoMut } = useFerieAnno(anno, "me")
   const nominativo = (user?.consulenteNome || user?.nome || "").trim()
-  const persona: AmmFeriePersona | undefined = data.data?.dipendenti[0]
-  const giorni = giorniByNome.get((persona?.nominativo ?? nominativo).toLowerCase()) ?? []
+  const persona: AmmFeriePersona | undefined = (data.data?.dipendenti ?? []).find(
+    (p) => p.nominativo.trim().toLocaleLowerCase("it") === nominativo.toLocaleLowerCase("it"),
+  )
+  const giorni = (data.data?.giorni ?? []).filter(
+    (g) => g.nominativo.trim().toLocaleLowerCase("it") === nominativo.toLocaleLowerCase("it"),
+  )
   const ferieSegnate = giorni.filter((g) => g.tipo === "ferie")
   const permessiSegnati = giorni.filter((g) => g.tipo === "permessi")
-  const nome = persona?.nominativo || nominativo
+  const nome = nominativo
   const ferieDaFare = oreToGiorni(persona?.ferieDisponibili, persona?.unita)
   const permessiDaFare = oreToGiorni(persona?.permessiDisponibili ?? persona?.permessiResidue, persona?.unita)
 
