@@ -6,7 +6,8 @@
 # In apps/api/.env:
 #   GESTIONALE_BACKUP_SRC=C:\percorso\dei\bak
 #   GESTIONALE_BACKUP_DIR=\\ls220d3b7\share\societa\CONDIVISA\ALESSANDRO\backup gestionale
-#   GESTIONALE_BACKUP_KEEP=2
+#   GESTIONALE_BACKUP_KEEP=2          # ultimi 2 file .bak
+#   GESTIONALE_BACKUP_FOLDERS=1       # una sola cartella su NAS/MEGA
 #   MEGA_EMAIL / MEGA_PASSWORD (stessi di FitCenter)
 #   MEGA_GESTIONALE_FOLDER=Gestionale-backup
 #
@@ -17,7 +18,8 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ApiRoot = Split-Path -Parent $ScriptDir
 Set-Location $ApiRoot
 
-$env:GESTIONALE_BACKUP_KEEP = if ($env:GESTIONALE_BACKUP_KEEP) { $env:GESTIONALE_BACKUP_KEEP } else { "2" }
+if (-not $env:GESTIONALE_BACKUP_KEEP) { $env:GESTIONALE_BACKUP_KEEP = "2" }
+if (-not $env:GESTIONALE_BACKUP_FOLDERS) { $env:GESTIONALE_BACKUP_FOLDERS = "1" }
 
 node "$ScriptDir\backup-gestionale.mjs"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

@@ -53,9 +53,21 @@ async function megaPrune(megaRoot, days, prefix) {
   }
 }
 
+async function megaPruneKeepNewest(megaRoot, keepFolders, prefix) {
+  const dirs = (megaRoot.children ?? [])
+    .filter((c) => c.directory && String(c.name ?? "").startsWith(prefix))
+    .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")))
+  const drop = dirs.slice(0, Math.max(0, dirs.length - keepFolders))
+  for (const child of drop) {
+    await child.delete(true)
+    console.log(`Rimosso da MEGA: ${child.name}`)
+  }
+}
+
 export async function uploadDatedFolderToMega({
   localDest,
   keep,
+  keepFolders,
   megaFolder,
   namePrefix,
   userAgent = "FitCenterBackup/1.0",
@@ -89,12 +101,20 @@ export async function uploadDatedFolderToMega({
     await megaUploadDir(remoteFolder, localDest)
     if (typeof storage.reload === "function") await storage.reload()
     const megaRootFresh = await megaEnsureDir(storage.root, folderName)
-    await megaPrune(megaRootFresh, keep, namePrefix)
+    if (keepFolders != null) {
+      await megaPruneKeepNewest(megaRootFresh, keepFolders, namePrefix)
+    } else {
+      await megaPrune(megaRootFresh, keep, namePrefix)
+    }
     const kept = (megaRootFresh.children ?? []).filter(
       (c) => c.directory && String(c.name ?? "").startsWith(namePrefix)
     ).length
     console.log(`  MEGA:     /${folderName}/${remoteName}`)
-    console.log(`  MEGA:     conservati gli ultimi ${keep} giorni (${kept} backup)`)
+    if (keepFolders != null) {
+      console.log(`  MEGA:     conservate le ultime ${keepFolders} copie (${kept} cartelle)`)
+    } else {
+      console.log(`  MEGA:     conservati gli ultimi ${keep} giorni (${kept} backup)`)
+    }
   } finally {
     storage.close?.()
   }

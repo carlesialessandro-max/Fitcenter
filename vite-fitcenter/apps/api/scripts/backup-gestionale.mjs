@@ -10,7 +10,8 @@
  * Variabili in apps/api/.env:
  *   GESTIONALE_BACKUP_SRC   cartella dove SQL scrive i .bak (es. C:\Backup\SQL)
  *   GESTIONALE_BACKUP_DIR   destinazione NAS (es. \\nas\...\backup gestionale)
- *   GESTIONALE_BACKUP_KEEP  giorni da tenere (default: 2; i .bak sono grandi)
+ *   GESTIONALE_BACKUP_KEEP  ultimi N file .bak da copiare (default: 2)
+ *   GESTIONALE_BACKUP_FOLDERS  cartelle datate da tenere su NAS/MEGA (default: 1)
  *   MEGA_EMAIL / MEGA_PASSWORD  stessi di FitCenter: dopo la copia NAS carica su mega.nz
  *   MEGA_GESTIONALE_FOLDER  cartella su MEGA (default: Gestionale-backup)
  */
@@ -30,10 +31,6 @@ function pad2(n) {
   return String(n).padStart(2, "0")
 }
 
-function ymdOf(d) {
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
-}
-
 function timestampLabel() {
   const d = new Date()
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`
@@ -46,8 +43,12 @@ function resolveUncOrPath(raw) {
   return path.resolve(s)
 }
 
-function keepDays() {
+function keepFiles() {
   return Math.max(1, Number(process.env.GESTIONALE_BACKUP_KEEP ?? 2) || 2)
+}
+
+function keepFolders() {
+  return Math.max(1, Number(process.env.GESTIONALE_BACKUP_FOLDERS ?? 1) || 1)
 }
 
 function resolveSrc() {
@@ -77,23 +78,10 @@ function listBackupDirs(backupRoot) {
     .sort()
 }
 
-function backupDayLabel(dirPath) {
-  const m = /^gestionale-(\d{4}-\d{2}-\d{2})_/.exec(path.basename(dirPath))
-  return m?.[1] ?? null
-}
-
-function cutoffStr(days) {
-  const cutoff = new Date()
-  cutoff.setHours(0, 0, 0, 0)
-  cutoff.setDate(cutoff.getDate() - (days - 1))
-  return ymdOf(cutoff)
-}
-
-function pruneOldBackups(backupRoot, days) {
-  const cut = cutoffStr(days)
-  for (const dir of listBackupDirs(backupRoot)) {
-    const day = backupDayLabel(dir)
-    if (day && day >= cut) continue
+function pruneOldBackups(backupRoot, folders) {
+  const dirs = listBackupDirs(backupRoot)
+  const drop = dirs.slice(0, Math.max(0, dirs.length - folders))
+  for (const dir of drop) {
     fs.rmSync(dir, { recursive: true, force: true })
     console.log(`Rimosso backup vecchio: ${dir}`)
   }
@@ -133,15 +121,15 @@ function collectBakFiles(srcDir) {
     })
     .filter((f) => f.isFile)
     .sort((a, b) => b.mtimeMs - a.mtimeMs)
-  const recentMs = Date.now() - 48 * 60 * 60 * 1000
-  const recent = files.filter((f) => f.mtimeMs >= recentMs)
-  return recent.length ? recent : files.slice(0, 1)
+  const maxFiles = keepFiles()
+  return files.slice(0, maxFiles)
 }
 
 async function runBackup() {
   const src = resolveSrc()
   const backupRoot = resolveDest()
-  const keep = keepDays()
+  const filesToKeep = keepFiles()
+  const folders = keepFolders()
   const dest = path.join(backupRoot, `${PREFIX}${timestampLabel()}`)
 
   if (!fs.existsSync(src)) {
@@ -182,14 +170,14 @@ async function runBackup() {
     "utf8"
   )
 
-  pruneOldBackups(backupRoot, keep)
-  pruneLooseBak(backupRoot, keep)
+  pruneOldBackups(backupRoot, folders)
+  pruneLooseBak(backupRoot, 2)
 
   console.log("Backup gestionale completato.")
   console.log(`  Origine:  ${src}`)
   console.log(`  Destino:  ${dest}`)
   console.log(`  File:     ${copied.join(", ")}`)
-  console.log(`  Conservati gli ultimi ${keep} giorni in ${backupRoot}`)
+  console.log(`  Conservati gli ultimi ${filesToKeep} .bak in ${folders} cartella/e (${backupRoot})`)
 
   if (!megaEnabled()) {
     console.log("  MEGA:     non configurato (imposta MEGA_EMAIL e MEGA_PASSWORD in apps/api/.env)")
@@ -199,7 +187,8 @@ async function runBackup() {
   try {
     await uploadDatedFolderToMega({
       localDest: dest,
-      keep,
+      keep: folders,
+      keepFolders: folders,
       megaFolder: process.env.MEGA_GESTIONALE_FOLDER?.trim() || "Gestionale-backup",
       namePrefix: PREFIX,
       userAgent: "FitCenterGestionaleBackup/1.0",
@@ -231,10 +220,10 @@ function runList() {
 
 function runPruneOnly() {
   const backupRoot = resolveDest()
-  const keep = keepDays()
-  pruneOldBackups(backupRoot, keep)
-  pruneLooseBak(backupRoot, keep)
-  console.log(`Pulizia backup in: ${backupRoot} (ultimi ${keep} giorni)`)
+  const folders = keepFolders()
+  pruneOldBackups(backupRoot, folders)
+  pruneLooseBak(backupRoot, 2)
+  console.log(`Pulizia backup in: ${backupRoot} (ultime ${folders} cartelle)`)
 }
 
 const args = process.argv.slice(2)
