@@ -23,8 +23,11 @@ const navLezioniPrivateGroup: NavItem = {
   ],
 }
 
+const navFerie: NavItem = { to: "/ferie", label: "Ferie" }
+
 const navOperatore: NavItem[] = [
     { to: "/", label: "Dashboard", children: [{ to: "/referral", label: "Referral" }] },
+    navFerie,
     { to: "/firme", label: "Firme" },
     { to: "/firma-cassa", label: "Firma Cassa" },
     { to: "/scontrini", label: "Scontrini" },
@@ -43,6 +46,7 @@ const navOperatore: NavItem[] = [
   ] as const
 
 const navCorsi: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -56,6 +60,7 @@ const navCorsi: NavItem[] = [
   { to: "/corsi", label: "Corsi", children: [{ to: "/corsi/presenze", label: "Presenze" }, { to: "/corsi/nuoto-libero", label: "Nuoto libero" }, { to: "/corsi/assenze", label: "Assenze (mese)" }] },
 ] as const
 const navIstruttore: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -70,6 +75,7 @@ const navIstruttore: NavItem[] = [
   navLezioniPrivateGroup,
 ] as const
 const navCampus: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -84,6 +90,7 @@ const navCampus: NavItem[] = [
 ] as const
 // Reception: firma da cassa, calendario e mappa piscina.
 const navFirme: NavItem[] = [
+  navFerie,
   { to: "/firme", label: "Firme" },
   {
     to: "/firma-cassa",
@@ -98,6 +105,7 @@ const navFirme: NavItem[] = [
   navLezioniPrivateGroup,
 ] as const
 const navScuolaNuoto: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -120,6 +128,7 @@ const navScuolaNuoto: NavItem[] = [
   navLezioniPrivateGroup,
 ] as const
 const navBagnini: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -134,6 +143,7 @@ const navBagnini: NavItem[] = [
   { to: "/corsi/nuoto-libero", label: "Nuoto libero" },
 ] as const
 const navDanza: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Piano operativo",
@@ -144,6 +154,7 @@ const navDanza: NavItem[] = [
   { to: "/danza", label: "Danza" },
 ] as const
 const navCrm: NavItem[] = [
+  navFerie,
   { to: "/crm", label: "CRM Vendita" },
   { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
 ]
@@ -176,6 +187,7 @@ function navAdminForPath(pathname: string): NavItem[] {
 }
 
 const navCalendari: NavItem[] = [
+  navFerie,
   {
     to: "__piano_group__",
     label: "Calendari",
@@ -283,18 +295,21 @@ export function AppLayout() {
     location.pathname !== "/calendario/piscina" &&
     location.pathname !== "/calendario/personale" &&
     location.pathname !== "/calendario/istruttori" &&
-    location.pathname !== "/corsi/nuoto-libero"
+    location.pathname !== "/corsi/nuoto-libero" &&
+    location.pathname !== "/ferie"
   const mustRedirectCrm =
     !customPages &&
     role === "crm" &&
     location.pathname !== "/crm" &&
     !location.pathname.startsWith("/crm/lead/") &&
     location.pathname !== "/crm/whatsapp-log" &&
-    location.pathname !== "/crm/nuovo"
+    location.pathname !== "/crm/nuovo" &&
+    location.pathname !== "/ferie"
   const mustRedirectCalendari =
     !customPages &&
     role === "calendari" &&
-    !location.pathname.startsWith("/calendario")
+    !location.pathname.startsWith("/calendario") &&
+    location.pathname !== "/ferie"
   const roleNav: NavItem[] =
     leadFilter === "bambini"
       ? navCrmBambini

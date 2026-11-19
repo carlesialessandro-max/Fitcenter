@@ -1971,9 +1971,32 @@ function lastDayOfMonth(ym: string): string {
   return `${ym}-${String(last).padStart(2, "0")}`
 }
 
+function nominativoDaUtente(req: Request): string {
+  const u = req.user
+  return String(u?.consulenteNome || u?.nome || "").trim()
+}
+
+function assertFerieNominativo(req: Request, requested: string): string {
+  if (req.user?.role === "admin") {
+    const n = requested.trim()
+    if (!n) throw Object.assign(new Error("Nominativo mancante"), { status: 400 })
+    return n
+  }
+  const mine = nominativoDaUtente(req)
+  if (!mine) throw Object.assign(new Error("Utente senza nominativo"), { status: 403 })
+  if (requested.trim() && !stessoNominativo(requested, mine)) {
+    throw Object.assign(new Error("Puoi inserire solo le tue ferie e i tuoi permessi"), { status: 403 })
+  }
+  return mine
+}
+
 export function getAmmDipendentiFerie(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno) || new Date().getFullYear()
+    const selfNome = req.user?.role === "admin" ? "" : nominativoDaUtente(req)
+    if (req.user?.role !== "admin" && !selfNome) {
+      return res.status(403).json({ message: "Utente senza nominativo" })
+    }
     const nomi = new Map<string, string>()
     ferieStore.pruneNonPersone()
     const addNome = (raw: string) => {
@@ -1991,8 +2014,13 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
     for (const g of ferieStore.listGiorni(anno)) addNome(g.nominativo)
     const saldi = ferieStore.listSaldi()
     const giorni = ferieStore.listGiorni(anno)
+    if (selfNome) {
+      const hit = [...nomi.keys()].find((k) => stessoNominativo(k, selfNome))
+      if (!hit) nomi.set(selfNome, selfNome)
+    }
     const dipendenti = [...nomi.values()]
       .sort((a, b) => a.localeCompare(b, "it"))
+      .filter((nominativo) => !selfNome || stessoNominativo(nominativo, selfNome))
       .map((nominativo) => {
         const saldo = saldi
           .filter((s) => stessoNominativo(s.nominativo, nominativo))
@@ -2010,7 +2038,7 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
           ferieAnnoPrec: saldo?.ferieAnnoPrec ?? null,
           ferieMaturate: saldo?.ferieMaturate ?? null,
           ferieGodute: saldo?.ferieGodute ?? null,
-          ferieProiezione: saldo?.ferieProiezione ?? null,
+          ferieProiezione: selfNome ? null : (saldo?.ferieProiezione ?? null),
           ferieResidue,
           permessiResidue,
           permessiAnnoPrec: saldo?.permessiAnnoPrec ?? null,
@@ -2024,7 +2052,8 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
             permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo * oreGiorno) * 100) / 100,
         }
       })
-    res.json({ anno, dipendenti, giorni })
+    const giorniOut = selfNome ? giorni.filter((g) => stessoNominativo(g.nominativo, selfNome)) : giorni
+    res.json({ anno, dipendenti, giorni: giorniOut })
   } catch (e) {
     fail(res, e)
   }
@@ -2044,7 +2073,7 @@ export function postAmmFerieImport(req: Request, res: Response) {
 
 export function postAmmFerieGiorno(req: Request, res: Response) {
   try {
-    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const nominativo = assertFerieNominativo(req, String(req.body?.nominativo ?? "").trim())
     const data = String(req.body?.data ?? "").slice(0, 10)
     const tipo: FerieTipo = req.body?.tipo === "permessi" ? "permessi" : "ferie"
     const r = ferieStore.toggleGiorno(nominativo, data, tipo)
@@ -2056,7 +2085,7 @@ export function postAmmFerieGiorno(req: Request, res: Response) {
 
 export function postAmmFeriePeriodo(req: Request, res: Response) {
   try {
-    const nominativo = String(req.body?.nominativo ?? "").trim()
+    const nominativo = assertFerieNominativo(req, String(req.body?.nominativo ?? "").trim())
     const dal = String(req.body?.dal ?? "").slice(0, 10)
     const al = String(req.body?.al ?? "").slice(0, 10)
     const tipo: FerieTipo = req.body?.tipo === "permessi" ? "permessi" : "ferie"

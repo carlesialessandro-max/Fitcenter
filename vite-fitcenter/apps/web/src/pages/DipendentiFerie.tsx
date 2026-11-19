@@ -4,7 +4,9 @@ import {
   amministrazioneApi,
   type AmmFerieDaFile,
   type AmmFerieGiorno,
+  type AmmFeriePersona,
 } from "@/api/amministrazione"
+import { useAuth } from "@/contexts/AuthContext"
 import { readBustePagaPdf } from "@/lib/amm-import-buste-pdf"
 import { parseAmmMastrino } from "@/lib/amm-mastrino"
 
@@ -83,7 +85,7 @@ function CalendarioModal({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 className="text-base font-semibold text-zinc-100">{nominativo}</h3>
-            <p className="text-xs text-zinc-500">Segna i giorni di ferie o permessi da fare.</p>
+            <p className="text-xs text-zinc-500">Segna i giorni di ferie o permessi durante l’anno.</p>
           </div>
           <button type="button" className={btnGhost} onClick={onClose}>
             Chiudi
@@ -144,7 +146,7 @@ function CalendarioModal({
         </div>
         <div className="mt-3 rounded-lg border border-zinc-800 bg-zinc-900/50 p-2 text-xs text-zinc-400">
           <p className="mb-1 font-medium text-zinc-300">
-            {kind === "ferie" ? "Ferie" : "Permessi"} usufruiti: {segnati.length} gg
+            {kind === "ferie" ? "Ferie" : "Permessi"} segnati: {segnati.length} gg
           </p>
           {segnati.length ? (
             <p>{segnati.map((g) => formatGiorno(g.data)).join(", ")}</p>
@@ -175,26 +177,14 @@ function CalendarioModal({
   )
 }
 
-export function DipendentiFerieTab() {
+function useFerieAnno(anno: number) {
   const qc = useQueryClient()
-  const oggi = new Date()
-  const [anno, setAnno] = useState(oggi.getFullYear())
-  const [meseImportNum, setMeseImportNum] = useState(oggi.getMonth() + 1)
-  const [q, setQ] = useState("")
-  const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
-  const [pdfBusy, setPdfBusy] = useState(false)
-  const [feriePreview, setFeriePreview] = useState<AmmFerieDaFile[] | null>(null)
-  const [cal, setCal] = useState<{ nominativo: string; tipo: "ferie" | "permessi" } | null>(null)
-
+  const [msg, setMsg] = useState("")
   const data = useQuery({
     queryKey: ["amm-ferie", anno],
     queryFn: () => amministrazioneApi.dipendentiFerie(anno),
   })
-  const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
-  const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
-  const meseImport = `${anno}-${pad2(meseImportNum)}`
-
   const toggleMut = useMutation({
     mutationFn: (body: { nominativo: string; data: string; tipo: "ferie" | "permessi" }) =>
       amministrazioneApi.toggleFerieGiorno(body),
@@ -214,6 +204,31 @@ export function DipendentiFerieTab() {
     },
     onError: (e: Error) => setError(e.message),
   })
+  const giorniByNome = useMemo(() => {
+    const map = new Map<string, AmmFerieGiorno[]>()
+    for (const g of data.data?.giorni ?? []) {
+      const list = map.get(g.nominativo.toLowerCase()) ?? []
+      list.push(g)
+      map.set(g.nominativo.toLowerCase(), list)
+    }
+    return map
+  }, [data.data?.giorni])
+  return { data, error, setError, msg, setMsg, toggleMut, periodoMut, giorniByNome }
+}
+
+export function DipendentiFerieTab() {
+  const qc = useQueryClient()
+  const oggi = new Date()
+  const [anno, setAnno] = useState(oggi.getFullYear())
+  const [meseImportNum, setMeseImportNum] = useState(oggi.getMonth() + 1)
+  const [q, setQ] = useState("")
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [feriePreview, setFeriePreview] = useState<AmmFerieDaFile[] | null>(null)
+  const { data, error, setError, msg, setMsg, giorniByNome } = useFerieAnno(anno)
+  const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
+  const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
+  const meseImport = `${anno}-${pad2(meseImportNum)}`
+
   const importFerieMut = useMutation({
     mutationFn: (ferie: AmmFerieDaFile[]) => amministrazioneApi.importFerie(meseImport, ferie),
     onSuccess: (r) => {
@@ -278,21 +293,11 @@ export function DipendentiFerieTab() {
     return (data.data?.dipendenti ?? []).filter((p) => !t || p.nominativo.toLocaleLowerCase("it").includes(t))
   }, [data.data?.dipendenti, q])
 
-  const giorniByNome = useMemo(() => {
-    const map = new Map<string, AmmFerieGiorno[]>()
-    for (const g of data.data?.giorni ?? []) {
-      const list = map.get(g.nominativo.toLowerCase()) ?? []
-      list.push(g)
-      map.set(g.nominativo.toLowerCase(), list)
-    }
-    return map
-  }, [data.data?.giorni])
-
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm text-zinc-500">
-        Dalla busta: anno precedente, maturato, goduto, residuo in ore e giorni (residuo / 8), più la previsione al 31
-        dicembre. Ferie e permessi da fare si aggiungono dal calendario.
+        Dalla busta: anno precedente, maturato, goduto, residuo in ore e giorni (residuo / 8). Si vedono le ferie
+        usufruite e da fare; l’inserimento lo fa il dipendente dal proprio login.
       </p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {msg && <p className="text-sm text-emerald-400">{msg}</p>}
@@ -373,8 +378,7 @@ export function DipendentiFerieTab() {
                 <span className="tabular-nums text-zinc-400">
                   prec. {gg(p.ferieAnnoPrec)} · mat. {gg(p.ferieMaturate)} · god. {gg(p.ferieGodute)} · res.{" "}
                   {gg(p.ferieResidue)}
-                  {p.unita === "h" ? " h" : ""} · {gg(oreToGiorni(p.ferieResidue, p.unita))} gg · 31/12{" "}
-                  {gg(p.ferieProiezione)}
+                  {p.unita === "h" ? " h" : ""} · {gg(oreToGiorni(p.ferieResidue, p.unita))} gg
                 </span>
               </p>
             ))}
@@ -383,56 +387,31 @@ export function DipendentiFerieTab() {
       )}
 
       {!data.data?.dipendenti.length && !data.isLoading && (
-        <p className="text-sm text-zinc-500">
-          Nessun dipendente. Importa il PDF buste: arrivano anno prec., maturato, goduto, residuo e previsione 31/12.
-        </p>
+        <p className="text-sm text-zinc-500">Nessun dipendente. Importa il PDF buste per i residui ferie.</p>
       )}
 
       <div className="overflow-x-auto rounded-xl border border-zinc-800">
         <table className="min-w-full border-collapse text-xs">
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-400">
-              <th rowSpan={2} className="sticky left-0 z-10 bg-zinc-900 px-2 py-2 text-left font-medium">
-                Nominativo
-              </th>
-              <th colSpan={6} className="border-l border-zinc-800 px-2 py-1 text-center font-medium">
-                Busta
-              </th>
-              <th colSpan={3} className="border-l border-zinc-800 bg-amber-500/15 px-2 py-1 text-center font-semibold text-amber-200">
-                Ferie
-              </th>
-              <th colSpan={3} className="border-l border-zinc-800 bg-sky-500/15 px-2 py-1 text-center font-semibold text-sky-200">
-                Permessi
-              </th>
-            </tr>
-            <tr className="bg-zinc-900/80 text-[11px] text-zinc-500">
-              <th className="border-l border-zinc-800 px-2 py-2 text-right font-medium">Anno prec.</th>
+              <th className="sticky left-0 z-10 bg-zinc-900 px-2 py-2 text-left font-medium">Nominativo</th>
+              <th className="px-2 py-2 text-right font-medium">Anno prec.</th>
               <th className="px-2 py-2 text-right font-medium">Maturato</th>
               <th className="px-2 py-2 text-right font-medium">Goduto</th>
               <th className="px-2 py-2 text-right font-medium">Residuo</th>
               <th className="px-2 py-2 text-right font-medium">Giorni</th>
-              <th className="px-2 py-2 text-right font-medium">Prev. 31/12</th>
-              <th className="border-l border-zinc-800 bg-amber-500/10 px-2 py-2 text-right font-medium">Usufruite</th>
-              <th className="bg-amber-500/10 px-2 py-2 text-right font-medium">Da fare</th>
-              <th className="bg-amber-500/10 px-2 py-2 text-center font-medium" />
-              <th className="border-l border-zinc-800 bg-sky-500/10 px-2 py-2 text-right font-medium">Usufruiti</th>
-              <th className="bg-sky-500/10 px-2 py-2 text-right font-medium">Da fare</th>
-              <th className="bg-sky-500/10 px-2 py-2 text-center font-medium" />
+              <th className="px-2 py-2 text-right font-medium">Usufruite</th>
+              <th className="px-2 py-2 text-right font-medium">Da fare</th>
             </tr>
           </thead>
           <tbody>
             {persone.map((p) => {
-              const giorni = giorniByNome.get(p.nominativo.toLowerCase()) ?? []
-              const ferieSegnate = giorni.filter((g) => g.tipo === "ferie")
-              const permessiSegnati = giorni.filter((g) => g.tipo === "permessi")
+              const ferieSegnate = (giorniByNome.get(p.nominativo.toLowerCase()) ?? []).filter((g) => g.tipo === "ferie")
               const ferieDaFare = oreToGiorni(p.ferieDisponibili, p.unita)
-              const permessiDaFare = oreToGiorni(p.permessiDisponibili ?? p.permessiResidue, p.unita)
               return (
                 <tr key={p.nominativo} className="border-t border-zinc-800">
                   <td className="sticky left-0 z-10 bg-zinc-950 px-2 py-1 font-medium text-zinc-100">{p.nominativo}</td>
-                  <td className="border-l border-zinc-800 px-2 py-1 text-right tabular-nums text-zinc-400">
-                    {gg(p.ferieAnnoPrec)}
-                  </td>
+                  <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieAnnoPrec)}</td>
                   <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieMaturate)}</td>
                   <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieGodute)}</td>
                   <td className="px-2 py-1 text-right tabular-nums text-zinc-200">
@@ -443,14 +422,8 @@ export function DipendentiFerieTab() {
                   <td className="px-2 py-1 text-right tabular-nums text-zinc-100">
                     {gg(oreToGiorni(p.ferieResidue, p.unita))}
                   </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-amber-200">
-                    {gg(p.ferieProiezione)}
-                    {p.ferieProiezione != null && p.unita === "h" ? (
-                      <span className="ml-0.5 text-[10px] text-zinc-600">h</span>
-                    ) : null}
-                  </td>
                   <td
-                    className="border-l border-zinc-800 px-2 py-1 text-right tabular-nums text-zinc-200"
+                    className="px-2 py-1 text-right tabular-nums text-zinc-200"
                     title={ferieSegnate.map((g) => formatGiorno(g.data)).join(", ") || undefined}
                   >
                     {ferieSegnate.length ? `${ferieSegnate.length} gg` : "—"}
@@ -462,31 +435,6 @@ export function DipendentiFerieTab() {
                   >
                     {gg(ferieDaFare)}
                   </td>
-                  <td className="px-2 py-1 text-center">
-                    <button
-                      type="button"
-                      className="rounded bg-amber-500/80 px-1.5 py-0.5 text-[10px] text-zinc-950"
-                      onClick={() => setCal({ nominativo: p.nominativo, tipo: "ferie" })}
-                    >
-                      Aggiungi
-                    </button>
-                  </td>
-                  <td
-                    className="border-l border-zinc-800 px-2 py-1 text-right tabular-nums text-zinc-200"
-                    title={permessiSegnati.map((g) => formatGiorno(g.data)).join(", ") || undefined}
-                  >
-                    {permessiSegnati.length ? `${permessiSegnati.length} gg` : "—"}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-100">{gg(permessiDaFare)}</td>
-                  <td className="px-2 py-1 text-center">
-                    <button
-                      type="button"
-                      className="rounded bg-sky-500/80 px-1.5 py-0.5 text-[10px] text-zinc-950"
-                      onClick={() => setCal({ nominativo: p.nominativo, tipo: "permessi" })}
-                    >
-                      Aggiungi
-                    </button>
-                  </td>
                 </tr>
               )
             })}
@@ -494,23 +442,137 @@ export function DipendentiFerieTab() {
         </table>
       </div>
       <p className="text-xs text-zinc-500">
-        Anno prec./Maturato/Goduto/Residuo e Prev. 31/12 sono le ore della busta. Giorni = residuo / 8. Usufruite =
-        giorni segnati sul calendario. Da fare = residuo meno quei giorni. Passa il mouse su Usufruite per vedere le
-        date.
+        Anno prec./Maturato/Goduto/Residuo sono le ore della busta. Giorni = residuo / 8. Usufruite = giorni segnati dal
+        dipendente. Da fare = residuo meno quei giorni.
       </p>
-      {cal && (
+    </div>
+  )
+}
+
+export function MieFeriePage() {
+  const { user } = useAuth()
+  const oggi = new Date()
+  const [anno, setAnno] = useState(oggi.getFullYear())
+  const [cal, setCal] = useState<"ferie" | "permessi" | null>(null)
+  const { data, error, msg, toggleMut, periodoMut, giorniByNome } = useFerieAnno(anno)
+  const nominativo = (user?.consulenteNome || user?.nome || "").trim()
+  const persona: AmmFeriePersona | undefined = data.data?.dipendenti[0]
+  const giorni = giorniByNome.get((persona?.nominativo ?? nominativo).toLowerCase()) ?? []
+  const ferieSegnate = giorni.filter((g) => g.tipo === "ferie")
+  const permessiSegnati = giorni.filter((g) => g.tipo === "permessi")
+  const nome = persona?.nominativo || nominativo
+  const ferieDaFare = oreToGiorni(persona?.ferieDisponibili, persona?.unita)
+  const permessiDaFare = oreToGiorni(persona?.permessiDisponibili ?? persona?.permessiResidue, persona?.unita)
+
+  return (
+    <div className="p-4 sm:p-6">
+      <h1 className="text-2xl font-semibold text-zinc-100">Le mie ferie</h1>
+      <p className="mt-1 text-sm text-zinc-500">
+        Vedi solo il tuo nominativo. Puoi inserire ferie e permessi durante l’anno.
+      </p>
+      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+      {msg && <p className="mt-3 text-sm text-emerald-400">{msg}</p>}
+      {!nominativo && (
+        <p className="mt-4 text-sm text-red-400">Il tuo utente non ha un nominativo. Chiedi all’amministrazione.</p>
+      )}
+      <div className="mt-4 flex flex-wrap items-end gap-3">
+        <label className="grid gap-1 text-xs text-zinc-500">
+          Anno
+          <input
+            type="number"
+            className={inputCls}
+            value={anno}
+            onChange={(e) => setAnno(Number(e.target.value) || anno)}
+          />
+        </label>
+      </div>
+      {nome ? (
+        <div className="mt-4 space-y-4">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <p className="text-lg font-semibold text-zinc-100">{nome}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+              <div>
+                <dt className="text-xs text-zinc-500">Anno prec.</dt>
+                <dd className="tabular-nums text-zinc-200">{gg(persona?.ferieAnnoPrec)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Maturato</dt>
+                <dd className="tabular-nums text-zinc-200">{gg(persona?.ferieMaturate)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Goduto</dt>
+                <dd className="tabular-nums text-zinc-200">{gg(persona?.ferieGodute)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Residuo</dt>
+                <dd className="tabular-nums text-zinc-200">
+                  {gg(persona?.ferieResidue)}
+                  {persona?.unita === "h" ? <span className="ml-0.5 text-[10px] text-zinc-600">h</span> : null}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-zinc-500">Giorni</dt>
+                <dd className="tabular-nums text-zinc-100">{gg(oreToGiorni(persona?.ferieResidue, persona?.unita))}</dd>
+              </div>
+            </dl>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="font-semibold text-amber-200">Ferie</h2>
+                <button type="button" className={btnAmber} onClick={() => setCal("ferie")}>
+                  Aggiungi
+                </button>
+              </div>
+              <p className="mt-3 text-sm text-zinc-300">
+                Usufruite: <span className="tabular-nums font-medium">{ferieSegnate.length} gg</span>
+              </p>
+              <p className="text-sm text-zinc-300">
+                Da fare: <span className="tabular-nums font-medium">{gg(ferieDaFare)}</span>
+              </p>
+              <p className="mt-2 text-xs text-zinc-500">
+                {ferieSegnate.length ? ferieSegnate.map((g) => formatGiorno(g.data)).join(", ") : "Nessun giorno segnato."}
+              </p>
+            </div>
+            <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <h2 className="font-semibold text-sky-200">Permessi</h2>
+                <button
+                  type="button"
+                  className="rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-sky-400"
+                  onClick={() => setCal("permessi")}
+                >
+                  Aggiungi
+                </button>
+              </div>
+              <p className="mt-3 text-sm text-zinc-300">
+                Usufruiti: <span className="tabular-nums font-medium">{permessiSegnati.length} gg</span>
+              </p>
+              <p className="text-sm text-zinc-300">
+                Da fare: <span className="tabular-nums font-medium">{gg(permessiDaFare)}</span>
+              </p>
+              <p className="mt-2 text-xs text-zinc-500">
+                {permessiSegnati.length
+                  ? permessiSegnati.map((g) => formatGiorno(g.data)).join(", ")
+                  : "Nessun giorno segnato."}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {cal && nome ? (
         <CalendarioModal
-          key={`${cal.nominativo}-${cal.tipo}`}
-          nominativo={cal.nominativo}
+          key={cal}
+          nominativo={nome}
           anno={anno}
-          tipo={cal.tipo}
-          giorni={giorniByNome.get(cal.nominativo.toLowerCase()) ?? []}
+          tipo={cal}
+          giorni={giorni}
           pending={toggleMut.isPending || periodoMut.isPending}
           onClose={() => setCal(null)}
-          onToggle={(data, tipo) => toggleMut.mutate({ nominativo: cal.nominativo, data, tipo })}
-          onPeriodo={(dal, al, tipo) => periodoMut.mutate({ nominativo: cal.nominativo, dal, al, tipo })}
+          onToggle={(data, tipo) => toggleMut.mutate({ nominativo: nome, data, tipo })}
+          onPeriodo={(dal, al, tipo) => periodoMut.mutate({ nominativo: nome, dal, al, tipo })}
         />
-      )}
+      ) : null}
     </div>
   )
 }

@@ -44,6 +44,7 @@ import { LibroPaga } from "@/pages/LibroPaga"
 import { LibroPagaAccesso } from "@/pages/LibroPagaAccesso"
 import { AdminMenu } from "@/pages/AdminMenu"
 import { AmministrazioneCosti } from "@/pages/AmministrazioneCosti"
+import { MieFeriePage } from "@/pages/DipendentiFerie"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
@@ -137,6 +138,7 @@ export const router = createBrowserRouter([
       { path: "convalide-consulenti", element: <ConvalideConsulenti /> },
       { path: "utenti", element: <Utenti /> },
       { path: "libro-paga", element: <LibroPaga /> },
+      { path: "ferie", element: <MieFeriePage /> },
       { path: "amministrazione", element: <AmministrazioneCosti /> },
       { path: "amministrazione/spese", element: <AmministrazioneCosti /> },
       { path: "amministrazione/stipendi", element: <AmministrazioneCosti /> },

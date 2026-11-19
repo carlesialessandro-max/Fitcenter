@@ -55,6 +55,7 @@ export const PAGE_CATALOG: PageDef[] = [
   { path: "/amministrazione/stipendi", label: "Stipendi", group: "Amministrazione" },
   { path: "/amministrazione/dipendenti", label: "Dipendenti / ferie", group: "Amministrazione" },
   { path: "/amministrazione/reparti", label: "Reparti e centri di costo", group: "Amministrazione" },
+  { path: "/ferie", label: "Ferie", group: "Altri" },
 ]
 
 const CATALOG_PATHS = new Set(PAGE_CATALOG.map((p) => p.path))
@@ -73,6 +74,7 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
   admin: [...ALL_PAGE_PATHS],
   operatore: [
     "/",
+    "/ferie",
     "/referral",
     "/firme",
     "/firma-cassa",
@@ -91,6 +93,7 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
     ...LP,
   ],
   corsi: [
+    "/ferie",
     "/calendario/corsi",
     "/calendario/personale",
     "/corsi",
@@ -98,10 +101,11 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
     "/corsi/nuoto-libero",
     "/corsi/assenze",
   ],
-  istruttore: ["/calendario/corsi", "/calendario/personale", "/corsi", "/corsi/presenze", ...LP],
-  campus: ["/calendario/campus", "/calendario/personale", "/campus"],
-  firme: ["/firme", "/firma-cassa", "/scontrini", "/campus", "/calendario/reception", "/piscina", ...LP],
+  istruttore: ["/ferie", "/calendario/corsi", "/calendario/personale", "/corsi", "/corsi/presenze", ...LP],
+  campus: ["/ferie", "/calendario/campus", "/calendario/personale", "/campus"],
+  firme: ["/ferie", "/firme", "/firma-cassa", "/scontrini", "/campus", "/calendario/reception", "/piscina", ...LP],
   scuola_nuoto: [
+    "/ferie",
     "/calendario/scuola-nuoto",
     "/calendario/personale",
     "/scuola-nuoto",
@@ -110,10 +114,11 @@ export const ROLE_DEFAULT_PAGES: Record<Role, string[]> = {
     "/andamento-vendite-bambini",
     ...LP,
   ],
-  bagnini: ["/calendario/piscina", "/calendario/personale", "/piscina", "/corsi/nuoto-libero"],
-  danza: ["/calendario/personale", "/danza"],
-  crm: ["/crm", "/crm/whatsapp-log"],
+  bagnini: ["/ferie", "/calendario/piscina", "/calendario/personale", "/piscina", "/corsi/nuoto-libero"],
+  danza: ["/ferie", "/calendario/personale", "/danza"],
+  crm: ["/ferie", "/crm", "/crm/whatsapp-log"],
   calendari: [
+    "/ferie",
     "/calendario",
     "/calendario/corsi",
     "/calendario/personale",
@@ -150,6 +155,9 @@ export function sanitizePages(pages: unknown, role: Role): string[] | undefined 
 /** Aggiunge pagine obbligatorie per ruolo se mancano (es. reception con elenco personalizzato). */
 export function mergeRolePageGaps(role: Role, pages: string[]): string[] {
   const out = [...pages]
+  if (!out.includes("/ferie") && (ROLE_DEFAULT_PAGES[role] ?? []).includes("/ferie")) {
+    out.push("/ferie")
+  }
   if (role === "firme" && !out.includes("/firme")) {
     const i = out.indexOf("/firma-cassa")
     if (i >= 0) out.splice(i + 1, 0, "/firme")

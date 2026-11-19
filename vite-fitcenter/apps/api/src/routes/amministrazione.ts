@@ -59,6 +59,10 @@ amministrazioneRouter.post("/collaboratori/importo", requireAdminOrAlberto, post
 amministrazioneRouter.post("/collaboratori/rimanenze", requireAdminOrAlberto, postAmmCollaboratoreRimanenze)
 amministrazioneRouter.post("/collaboratori/report/import", requireAdminOrAlberto, postAmmCollaboratoriReportImport)
 
+amministrazioneRouter.get("/dipendenti/ferie", getAmmDipendentiFerie)
+amministrazioneRouter.post("/dipendenti/ferie/giorno", postAmmFerieGiorno)
+amministrazioneRouter.post("/dipendenti/ferie/periodo", postAmmFeriePeriodo)
+
 amministrazioneRouter.use(requireAdmin)
 
 amministrazioneRouter.get("/dashboard", getAmmDashboard)
@@ -72,10 +76,7 @@ amministrazioneRouter.post("/collaboratori/rimborsi", postAmmCollaboratoreRimbor
 amministrazioneRouter.delete("/collaboratori/rimborsi/:id", deleteAmmCollaboratoreRimborso)
 amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
 amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
-amministrazioneRouter.get("/dipendenti/ferie", getAmmDipendentiFerie)
 amministrazioneRouter.post("/dipendenti/ferie/import", postAmmFerieImport)
-amministrazioneRouter.post("/dipendenti/ferie/giorno", postAmmFerieGiorno)
-amministrazioneRouter.post("/dipendenti/ferie/periodo", postAmmFeriePeriodo)
 amministrazioneRouter.delete("/dipendenti/ferie/:id", deleteAmmFerieGiorno)
 amministrazioneRouter.get("/buste", getAmmBuste)
 amministrazioneRouter.post("/buste/consuntivo/import", postAmmBusteConsuntivoImport)
