@@ -93,7 +93,7 @@ export function DipendentiFerieTab() {
     setFeriePreview(null)
     setPdfBusy(true)
     try {
-      const parsed = await readBustePagaPdf(file, meseImport, setMsg)
+      const parsed = await readBustePagaPdf(file, meseImport, setMsg, { ferie: true })
       if (!parsed.ferie.length) {
         throw new Error(
           "Nel PDF non ci sono residui ferie. Serve il prospetto ferie o le buste con il riquadro ferie/permessi, non il totale stipendio.",

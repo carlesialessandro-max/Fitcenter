@@ -61,7 +61,7 @@ export async function extractPdfTextWithOcr(
   file: File,
   maxPages = 5,
   onProgress?: (progress: number) => void,
-  options?: { rotateForConsuntivo?: boolean },
+  options?: { rotateForConsuntivo?: boolean; allPages?: boolean },
 ): Promise<string> {
   const pdfjsLib = await import("pdfjs-dist")
   if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
@@ -69,11 +69,12 @@ export async function extractPdfTextWithOcr(
   }
   const buf = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise
-  const firstPageCount = Math.min(2, maxPages)
-  const lastPageCount = Math.max(0, maxPages - firstPageCount)
+  const limit = options?.allPages ? pdf.numPages : maxPages
+  const firstPageCount = Math.min(2, limit)
+  const lastPageCount = Math.max(0, limit - firstPageCount)
   const pageNumbers =
-    pdf.numPages <= maxPages
-      ? Array.from({ length: pdf.numPages }, (_, i) => i + 1)
+    pdf.numPages <= limit || options?.allPages
+      ? Array.from({ length: Math.min(pdf.numPages, limit) }, (_, i) => i + 1)
       : [
           ...Array.from({ length: firstPageCount }, (_, i) => i + 1),
           ...Array.from({ length: lastPageCount }, (_, i) => pdf.numPages - lastPageCount + i + 1),

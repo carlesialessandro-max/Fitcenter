@@ -102,6 +102,36 @@ const STOP = new Set([
   "arl",
   "srl",
   "spa",
+  "comune",
+  "comunali",
+  "addizionali",
+  "addizionale",
+  "regionale",
+  "regionali",
+  "nascita",
+  "residenza",
+  "assunzione",
+  "mensilita",
+  "foglio",
+  "ditta",
+  "oneri",
+  "detrazioni",
+  "detrazione",
+  "coniuge",
+  "figli",
+  "lavoro",
+  "ulteriore",
+  "bonus",
+  "fless",
+  "cassa",
+  "risparmio",
+  "impiegata",
+  "ritenute",
+  "arrotondamento",
+  "imposta",
+  "prospetto",
+  "cartello",
+  "cartella",
 ])
 
 const PARTICLES = /^(de|del|della|dello|dei|degli|di|da|van|von|la|lo|le|mc|mac|san|santa)$/i
@@ -248,40 +278,48 @@ function parseTabellaFerie(text: string): FerieDaFile[] {
 }
 
 function splitCedolini(text: string): string[] {
-  const parts = text.split(/(?=---\s*PAGE\s+\d+\s*---)|(?=\bCEDOLINO\b)|(?=\bNETTO BUSTA\b)|(?=\bCOGNOME E NOME\b)/i)
-  return parts.map((p) => p.trim()).filter((p) => p.length > 40)
+  const parts = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i).map((p) => p.trim()).filter((p) => p.length > 40)
+  return parts.length ? parts : [text]
 }
 
 function findCedolinoNominativo(lines: string[]): string {
-  const head = lines.slice(0, 55)
-  for (const line of head) {
-    const labeled =
-      /(?:cognome\s*e\s*nome|cognome\s*nome|nominativo|dipendente)\s*[:.]?\s*(.+)$/i.exec(line) ??
-      /matr(?:icola)?\.?\s*\d+\s+(.+)$/i.exec(line)
-    if (!labeled) continue
-    const n = titleName(
-      labeled[1]!
-        .replace(/\b(qualifica|livello|ccnl|mansione|data|nato|codice|cf|c\.f\.).*$/i, "")
-        .replace(/\s+\d[\d.,]*$/g, "")
-        .trim(),
-    )
-    if (isNominativoPersona(n)) return n
-  }
-  for (const line of head) {
-    const m = /^([A-ZÀÈÉÌÒÙ']{2,}(?:\s+[A-ZÀÈÉÌÒÙ']{1,}){1,4})\s*$/.exec(line)
+  const dateName = /\b([A-ZÀÈÉÌÒÙ']{2,}(?:\s+[A-ZÀÈÉÌÒÙ']{1,}){1,3})\s+\d{2}\/\d{2}\/\d{2,4}\b/
+  for (const line of lines) {
+    const m = dateName.exec(line)
     if (!m) continue
     const n = titleName(m[1]!)
     if (isNominativoPersona(n)) return n
   }
+  const blob = lines.join(" ")
+  const cf = /\b[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]\b/.exec(blob)
+  if (cf?.index != null) {
+    const before = blob.slice(Math.max(0, cf.index - 90), cf.index)
+    const m =
+      /([A-ZÀÈÉÌÒÙ']{2,}(?:\s+[A-ZÀÈÉÌÒÙ']{1,}){1,3})\s+\d{2}\/\d{2}\/\d{2,4}\s*$/.exec(before) ??
+      /([A-ZÀÈÉÌÒÙ']{2,}(?:\s+[A-ZÀÈÉÌÒÙ']{1,}){1,3})\s*$/.exec(before.trim())
+    if (m) {
+      const n = titleName(m[1]!)
+      if (isNominativoPersona(n)) return n
+    }
+  }
   return ""
 }
 
-function saldoFromFerieRow(lines: string[], idx: number, kind: "ferie" | "permessi"): Omit<FerieDaFile, "nominativo"> | null {
+function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
+  const idx = lines.findIndex((line) => label.test(line.trim()))
   if (idx < 0) return null
-  const blob = lines.slice(idx, idx + 3).join(" ")
-  const hours = /\bh\b|\bore\b/i.test(blob)
-  const amts = amountsOn(blob).filter((n) => Number.isFinite(n))
-  if (!amts.length) return null
+  for (const line of lines.slice(idx, idx + 3)) {
+    const t = line.trim()
+    if (/^(r\.?o\.?l\.?|ex\s*fest|fless|banca ore)\b/i.test(t) && !label.test(t)) break
+    const amts = amountsOn(t).filter((n) => Number.isFinite(n))
+    if (amts.length >= 4 && /\bh\b/i.test(t)) return amts
+  }
+  return null
+}
+
+function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<FerieDaFile, "nominativo"> | null {
+  if (!amts?.length) return null
+  const hours = true
   const residIdx = amts.length >= 4 ? 3 : amts.length - 1
   const residuo = asDays(amts[residIdx]!, hours)
   const maturato = amts.length >= 2 ? asDays(amts[1]!, hours) : undefined
@@ -302,11 +340,9 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
     const lines = page.split(/\r?\n/).map((l) => l.replace(/\t/g, " ").replace(/[ ]+/g, " ").trim()).filter(Boolean)
     const nominativo = findCedolinoNominativo(lines)
     if (!nominativo) continue
-    const ferieIdx = lines.findIndex((line) => /^ferie\b/i.test(line.trim()) && !isCedolinoFerieHeader(line))
-    const ferie = saldoFromFerieRow(lines, ferieIdx, "ferie")
+    const ferie = saldoDaOre(hoursAfterLabel(lines, /^ferie\b/i), "ferie")
     if (!ferie) continue
-    const permessiIdx = lines.findIndex((line) => /^permess/i.test(line.trim()))
-    const permessi = saldoFromFerieRow(lines, permessiIdx, "permessi")
+    const permessi = saldoDaOre(hoursAfterLabel(lines, /^permess/i), "permessi")
     const key = nominativo.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
