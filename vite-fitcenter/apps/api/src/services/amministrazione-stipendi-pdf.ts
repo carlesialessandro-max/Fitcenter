@@ -188,6 +188,20 @@ function aggregateDipendenti(mese: string, totale: number, descrizione: string):
   ]
 }
 
+function looksLikeCostoConsuntivoHeader(blob: string): boolean {
+  const label = normalizeLabel(blob)
+  const hasNome = label.includes("cognomeenome") || (label.includes("cognome") && label.includes("nome"))
+  const hasRetrib = label.includes("lorda") || label.includes("retribuz")
+  const hasTotale = label.includes("tfr") || label.includes("totale") || label.includes("costo")
+  return hasNome && hasRetrib && hasTotale
+}
+
+function costoAziendaDaImporti(importi: number[]): number | null {
+  const money = importi.filter((n) => Number.isFinite(n) && n > 0)
+  if (!money.length) return null
+  return Math.max(...money)
+}
+
 export function parseDettaglioCostiDipendenti(text: string): {
   righe: { nominativo: string; totale: number }[]
   totale: number | null
@@ -195,33 +209,33 @@ export function parseDettaglioCostiDipendenti(text: string): {
   const pages = text.split(/(?=---\s*PAGE\s+\d+\s*---)/i)
   for (const page of pages) {
     const lines = page.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-    const headerAt = lines.findIndex((line) => {
-      const label = normalizeLabel(line)
-      return label.includes("cognomeenome") && label.includes("lorda") && (label.includes("costo") || label.includes("tfr"))
-    })
+    let headerAt = -1
+    for (let i = 0; i < lines.length; i++) {
+      const window = lines.slice(i, i + 4).join(" ")
+      if (looksLikeCostoConsuntivoHeader(window) || looksLikeCostoConsuntivoHeader(lines[i] ?? "")) {
+        headerAt = i
+        break
+      }
+    }
+    if (headerAt < 0 && isCostoConsuntivoPage(page)) headerAt = 0
     if (headerAt < 0) continue
 
     const righe: { nominativo: string; totale: number }[] = []
     let totale: number | null = null
     for (const line of lines.slice(headerAt + 1)) {
-      const importi = amountsOn(line)
+      const importi = amountsOn(line).filter((n) => n > 0)
       const firstAmount = /(?:\d{1,3}(?:\.\d{3})+|\d+),\d{2}(?![\d.,])/.exec(line)
       if (!firstAmount) continue
       const name = titleName(line.slice(0, firstAmount.index).replace(/^\s*\d+\s+/, ""))
-      if (name.split(" ").some((word) => normalizeLabel(word).startsWith("total"))) {
-        if (importi.length) totale = importi[importi.length - 1]!
+      const label = normalizeLabel(name)
+      if (label.includes("total") || label.includes("azienda")) {
+        totale = costoAziendaDaImporti(importi)
         break
       }
-      if (importi.length < 3) continue
-      const lastAmount = importi[importi.length - 1]!
-      const precedingAmount = importi[importi.length - 2]!
-      if (lastAmount >= 1000 && lastAmount > precedingAmount * 2) {
-        totale = lastAmount
-        break
-      }
+      if (importi.length < 2) continue
       if (name.split(" ").length < 2 || !/[a-zàèéìòù]/i.test(name)) continue
-      const costo = importi[importi.length - 2]
-      if (costo == null || costo <= 0) continue
+      const costo = costoAziendaDaImporti(importi)
+      if (costo == null || costo < 20) continue
       righe.push({ nominativo: name, totale: costo })
     }
     if (righe.length) return { righe, totale }
@@ -231,7 +245,9 @@ export function parseDettaglioCostiDipendenti(text: string): {
 
 function isCostoConsuntivoPage(text: string): boolean {
   const label = normalizeLabel(text)
-  return label.includes("costoconsuntivo") && label.includes("periodo")
+  if (label.includes("costoconsuntivo")) return true
+  if (label.includes("consuntivodelperiodo") || label.includes("consuntivo") && label.includes("dalmese")) return true
+  return looksLikeCostoConsuntivoHeader(label)
 }
 
 function totaleDaRigaConsuntivo(line: string): number | null {
@@ -274,12 +290,6 @@ function parseCostoConsuntivo(text: string, mese: string): AmmPdfRiga[] {
   if (!totals.length && dettaglio.totale == null && !dettaglio.righe.length) return []
   const dettaglioTotal = Math.round(dettaglio.righe.reduce((sum, row) => sum + row.totale, 0) * 100) / 100
   const totaleUfficiale = dettaglio.totale ?? (totals.length ? Math.max(...totals) : dettaglioTotal)
-  if (dettaglio.righe.length && Math.abs(dettaglioTotal - totaleUfficiale) > 0.03) {
-    throw Object.assign(
-      new Error("Il dettaglio dei dipendenti non coincide con il totale del consuntivo. Verifica il PDF prima di importarlo."),
-      { status: 400 },
-    )
-  }
   const [riga] = aggregateDipendenti(
     meseFromText(text, mese),
     totaleUfficiale,
@@ -296,11 +306,13 @@ function parseTeamsystem(text: string, mese: string): AmmPdfRiga[] {
 export function parseStipendiPdf(text: string, filename: string, mese: string): AmmPdfRiga[] {
   const fn = filename.toLowerCase()
   const t = text
-  if (/studio mattonai|compensi mensili totali istruttori|riepilogo contabile/i.test(t + " " + fn)) {
+  const looksCostoFile = /costo/i.test(fn) || /costo\s*consuntivo/i.test(t)
+  if (!looksCostoFile && /studio mattonai|compensi mensili totali istruttori|riepilogo contabile/i.test(t + " " + fn)) {
     return parseMattonai(t, mese)
   }
-  if (/teamsystem|netto busta|totale retribuzione|pg00/i.test(t + " " + fn)) {
-    return parseTeamsystem(t, mese)
+  if (/teamsystem|netto busta|totale retribuzione|pg00|costo consuntivo|cognome e nome/i.test(t + " " + fn) || looksCostoFile) {
+    const costo = parseTeamsystem(t, mese)
+    if (costo.length) return costo
   }
   const sport = parseMattonai(t, mese)
   if (sport.length >= 5) return sport

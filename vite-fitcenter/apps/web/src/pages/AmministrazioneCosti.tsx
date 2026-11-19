@@ -2061,13 +2061,13 @@ function StipendiTab() {
     setError("")
     setImportMsg("")
     try {
-      const isCostSummary = file.name.toLowerCase().includes("costo dipendenti")
+      const looksCosto = /costo/i.test(file.name)
       let text = await extractPdfText(file, kind === "buste" ? 250 : 80)
-      if (kind === "buste" && (!text.trim() || isCostSummary)) {
+      if (kind === "buste" && (!text.trim() || looksCosto || text.trim().length < 120)) {
         setImportMsg("PDF scansito: OCR locale in corso…")
         const ocrText = await extractPdfTextWithOcr(file, 5, (progress) => {
           setImportMsg(`Lettura OCR del riepilogo: ${Math.round(progress * 100)}%`)
-        }, { rotateForConsuntivo: isCostSummary })
+        }, { rotateForConsuntivo: true })
         if (ocrText.trim()) text = ocrText
       }
       if (kind === "sportivi") {

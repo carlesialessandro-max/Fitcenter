@@ -98,7 +98,10 @@ export async function extractPdfTextWithOcr(
       await page.render({ canvas, canvasContext: context, viewport }).promise
       let pageText = (await worker.recognize(canvas)).data.text.trim()
       let pageLabel = pageText.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]/g, "")
-      const isConsuntivoPage = (label: string) => label.includes("costoconsuntivo") && label.includes("periodo")
+      const isConsuntivoPage = (label: string) =>
+        label.includes("costoconsuntivo") ||
+        (label.includes("consuntivo") && (label.includes("periodo") || label.includes("dalmese"))) ||
+        (label.includes("cognome") && label.includes("nome") && (label.includes("tfr") || label.includes("retribuz")))
       if (options?.rotateForConsuntivo && !isConsuntivoPage(pageLabel)) {
         for (const angle of [90, 180, 270]) {
           const rotatedCanvas = document.createElement("canvas")
