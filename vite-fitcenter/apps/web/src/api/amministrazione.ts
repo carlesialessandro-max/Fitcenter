@@ -418,9 +418,13 @@ export const amministrazioneApi = {
       esiti: { nominativo: string; dest: string | null; esito: "sent" | "failed" | "skipped"; nota?: string }[]
     }>("/amministrazione/dipendenti/ferie/messaggio", body),
   mieFerie: (anno: number) =>
-    api.get<{ anno: number; dipendenti: AmmFeriePersona[]; giorni: AmmFerieGiorno[] }>(
-      `/amministrazione/dipendenti/ferie/me?anno=${encodeURIComponent(String(anno))}`,
-    ),
+    api.get<{
+      anno: number
+      dipendenti: AmmFeriePersona[]
+      giorni: AmmFerieGiorno[]
+      canEmail?: boolean
+      canSms?: boolean
+    }>(`/amministrazione/dipendenti/ferie/me?anno=${encodeURIComponent(String(anno))}`),
   importFerie: (mese: string, ferie: AmmFerieDaFile[]) =>
     api.post<{ inserite: number; mese: string }>("/amministrazione/dipendenti/ferie/import", { mese, ferie }),
   toggleFerieGiorno: (body: { nominativo: string; data: string; tipo: "ferie" | "permessi" }) =>
