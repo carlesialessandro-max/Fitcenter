@@ -15,6 +15,8 @@ export type FerieSaldo = {
   ferieProiezione?: number
   permessiResidue?: number
   permessiAnnoPrec?: number
+  permessiMaturate?: number
+  permessiGodute?: number
   permessiProiezione?: number
   unita?: "h" | "gg"
   fonte: "pdf" | "mastrino"
@@ -83,6 +85,8 @@ export const ferieStore = {
         ferieProiezione: row.ferieProiezione != null ? Math.round(Number(row.ferieProiezione) * 100) / 100 : undefined,
         permessiResidue: row.permessiResidue != null ? Math.round(Number(row.permessiResidue) * 100) / 100 : undefined,
         permessiAnnoPrec: row.permessiAnnoPrec != null ? Math.round(Number(row.permessiAnnoPrec) * 100) / 100 : undefined,
+        permessiMaturate: row.permessiMaturate != null ? Math.round(Number(row.permessiMaturate) * 100) / 100 : undefined,
+        permessiGodute: row.permessiGodute != null ? Math.round(Number(row.permessiGodute) * 100) / 100 : undefined,
         permessiProiezione: row.permessiProiezione != null ? Math.round(Number(row.permessiProiezione) * 100) / 100 : undefined,
         unita: row.unita === "gg" ? "gg" : row.unita === "h" ? "h" : undefined,
         fonte: row.fonte === "mastrino" ? "mastrino" : "pdf",

@@ -7,6 +7,8 @@ export type FerieDaFile = {
   ferieProiezione?: number
   permessiResidue?: number
   permessiAnnoPrec?: number
+  permessiMaturate?: number
+  permessiGodute?: number
   permessiProiezione?: number
   unita?: "h" | "gg"
 }
@@ -312,16 +314,23 @@ function findCedolinoNominativo(lines: string[]): string {
   return ""
 }
 
+const VOCE_ORE = /^(ferie|permess|r\.?o\.?l\.?|ex\s*fest|fless|banca\s*ore)\b/i
+
 function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
   const idx = lines.findIndex((line) => label.test(line.trim()))
   if (idx < 0) return null
   for (const line of lines.slice(idx, idx + 3)) {
     const t = line.trim()
-    if (/^(r\.?o\.?l\.?|ex\s*fest|fless|banca ore)\b/i.test(t) && !label.test(t)) break
+    if (VOCE_ORE.test(t) && !label.test(t)) break
     const amts = amountsOn(t).filter((n) => Number.isFinite(n))
     if (amts.length >= 4) return amts
   }
   return null
+}
+
+function addOre(a?: number, b?: number): number | undefined {
+  if (a == null && b == null) return undefined
+  return Math.round(((a ?? 0) + (b ?? 0)) * 100) / 100
 }
 
 function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<FerieDaFile, "nominativo"> | null {
@@ -333,6 +342,8 @@ function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<Fer
     return {
       ferieResidue: 0,
       permessiAnnoPrec: amts[0],
+      permessiMaturate: amts.length >= 2 ? amts[1] : undefined,
+      permessiGodute: amts.length >= 3 ? amts[2] : undefined,
       permessiResidue: residuo,
       permessiProiezione: proiezione,
       unita: "h",
@@ -348,6 +359,27 @@ function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<Fer
   }
 }
 
+/** In busta i «permessi» sono Permessi + ROL + ex festività + flessibilità + banca ore. */
+function sommaPermessiBusta(lines: string[]): Omit<FerieDaFile, "nominativo"> | null {
+  const voci = [
+    saldoDaOre(hoursAfterLabel(lines, /^permess/i), "permessi"),
+    saldoDaOre(hoursAfterLabel(lines, /^r\.?o\.?l\.?/i), "permessi"),
+    saldoDaOre(hoursAfterLabel(lines, /^ex\s*fest/i), "permessi"),
+    saldoDaOre(hoursAfterLabel(lines, /^fless/i), "permessi"),
+    saldoDaOre(hoursAfterLabel(lines, /^banca\s*ore/i), "permessi"),
+  ].filter((v): v is Omit<FerieDaFile, "nominativo"> => Boolean(v))
+  if (!voci.length) return null
+  return voci.reduce((acc, v) => ({
+    ferieResidue: 0,
+    permessiAnnoPrec: addOre(acc.permessiAnnoPrec, v.permessiAnnoPrec),
+    permessiMaturate: addOre(acc.permessiMaturate, v.permessiMaturate),
+    permessiGodute: addOre(acc.permessiGodute, v.permessiGodute),
+    permessiResidue: addOre(acc.permessiResidue, v.permessiResidue),
+    permessiProiezione: addOre(acc.permessiProiezione, v.permessiProiezione),
+    unita: "h" as const,
+  }))
+}
+
 function parseCedoliniFerie(text: string): FerieDaFile[] {
   const pages = splitCedolini(text)
   const out: FerieDaFile[] = []
@@ -358,7 +390,7 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
     if (!nominativo) continue
     const ferie = saldoDaOre(hoursAfterLabel(lines, /^ferie\b/i), "ferie")
     if (!ferie) continue
-    const permessi = saldoDaOre(hoursAfterLabel(lines, /^permess/i), "permessi")
+    const permessi = sommaPermessiBusta(lines)
     const key = nominativo.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
@@ -371,6 +403,8 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
       ferieProiezione: ferie.ferieProiezione,
       permessiResidue: permessi?.permessiResidue,
       permessiAnnoPrec: permessi?.permessiAnnoPrec,
+      permessiMaturate: permessi?.permessiMaturate,
+      permessiGodute: permessi?.permessiGodute,
       permessiProiezione: permessi?.permessiProiezione,
       unita: "h",
     })

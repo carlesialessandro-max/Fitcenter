@@ -40,6 +40,22 @@ function oreToGiorni(n: number | null | undefined, unita: "h" | "gg" | null | un
   return Math.round((n / 8) * 100) / 100
 }
 
+function sumNum(rows: AmmFeriePersona[], pick: (p: AmmFeriePersona) => number | null | undefined) {
+  let n = 0
+  let any = false
+  for (const p of rows) {
+    const v = pick(p)
+    if (v == null) continue
+    any = true
+    n += v
+  }
+  return any ? Math.round(n * 100) / 100 : null
+}
+
+function meseBustaDefault(oggi = new Date()) {
+  return oggi.getMonth() === 0 ? 12 : oggi.getMonth()
+}
+
 function isoDay(anno: number, mese: number, giorno: number) {
   return `${anno}-${pad2(mese)}-${pad2(giorno)}`
 }
@@ -216,11 +232,122 @@ function useFerieAnno(anno: number, scope: "admin" | "me" = "admin") {
   return { data, error, setError, msg, setMsg, toggleMut, periodoMut, giorniByNome }
 }
 
+function OreBustaTable({
+  titolo,
+  persone,
+  giorniByNome,
+  tipo,
+}: {
+  titolo: string
+  persone: AmmFeriePersona[]
+  giorniByNome: Map<string, AmmFerieGiorno[]>
+  tipo: "ferie" | "permessi"
+}) {
+  const isFerie = tipo === "ferie"
+  const tot = {
+    prec: sumNum(persone, (p) => (isFerie ? p.ferieAnnoPrec : p.permessiAnnoPrec)),
+    mat: sumNum(persone, (p) => (isFerie ? p.ferieMaturate : p.permessiMaturate)),
+    god: sumNum(persone, (p) => (isFerie ? p.ferieGodute : p.permessiGodute)),
+    res: sumNum(persone, (p) => (isFerie ? p.ferieResidue : p.permessiResidue)),
+    pro: sumNum(persone, (p) => (isFerie ? p.ferieProiezione : p.permessiProiezione)),
+  }
+  const totGiorni = sumNum(persone, (p) => oreToGiorni(isFerie ? p.ferieResidue : p.permessiResidue, p.unita))
+  return (
+    <div className="overflow-x-auto rounded-xl border border-zinc-800">
+      <p className="border-b border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-300">
+        {titolo}
+      </p>
+      <table className="min-w-full border-collapse text-xs">
+        <thead>
+          <tr className="bg-zinc-900/80 text-zinc-400">
+            <th className="sticky left-0 z-10 bg-zinc-900 px-2 py-2 text-left font-medium">Nominativo</th>
+            <th className="px-2 py-2 text-right font-medium">Arretrate</th>
+            <th className="px-2 py-2 text-right font-medium">Maturate</th>
+            <th className="px-2 py-2 text-right font-medium">Godute</th>
+            <th className="px-2 py-2 text-right font-medium">Residuo</th>
+            <th className="px-2 py-2 text-right font-medium">Proiez. 31/12</th>
+            <th className="px-2 py-2 text-right font-medium">Giorni</th>
+            {isFerie ? (
+              <>
+                <th className="px-2 py-2 text-right font-medium">Usufruite</th>
+                <th className="px-2 py-2 text-right font-medium">Da fare</th>
+              </>
+            ) : (
+              <>
+                <th className="px-2 py-2 text-right font-medium">Usufruiti</th>
+                <th className="px-2 py-2 text-right font-medium">Da fare</th>
+              </>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {persone.map((p) => {
+            const segnati = (giorniByNome.get(p.nominativo.toLowerCase()) ?? []).filter((g) => g.tipo === tipo)
+            const residue = isFerie ? p.ferieResidue : p.permessiResidue
+            const daFare = oreToGiorni(isFerie ? p.ferieDisponibili : p.permessiDisponibili, p.unita)
+            return (
+              <tr key={`${tipo}-${p.nominativo}`} className="border-t border-zinc-800">
+                <td className="sticky left-0 z-10 bg-zinc-950 px-2 py-1 font-medium text-zinc-100">{p.nominativo}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">
+                  {gg(isFerie ? p.ferieAnnoPrec : p.permessiAnnoPrec)}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">
+                  {gg(isFerie ? p.ferieMaturate : p.permessiMaturate)}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">
+                  {gg(isFerie ? p.ferieGodute : p.permessiGodute)}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-200">
+                  {gg(residue)}
+                  {p.unita === "h" ? <span className="ml-0.5 text-[10px] text-zinc-600">h</span> : null}
+                  {p.saldo?.mese ? <span className="ml-1 text-[10px] text-zinc-600">{p.saldo.mese}</span> : null}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-amber-200">
+                  {gg(isFerie ? p.ferieProiezione : p.permessiProiezione)}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-100">{gg(oreToGiorni(residue, p.unita))}</td>
+                <td
+                  className="px-2 py-1 text-right tabular-nums text-zinc-200"
+                  title={segnati.map((g) => formatGiorno(g.data)).join(", ") || undefined}
+                >
+                  {segnati.length ? `${segnati.length} gg` : "—"}
+                </td>
+                <td
+                  className={`px-2 py-1 text-right tabular-nums ${
+                    daFare != null && daFare < 0 ? "text-red-400" : "text-zinc-100"
+                  }`}
+                >
+                  {gg(daFare)}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+        {persone.length ? (
+          <tfoot>
+            <tr className="border-t border-zinc-700 bg-zinc-900/80 font-medium text-zinc-100">
+              <td className="sticky left-0 z-10 bg-zinc-900 px-2 py-1.5">Totale</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{gg(tot.prec)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{gg(tot.mat)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{gg(tot.god)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{gg(tot.res)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums text-amber-200">{gg(tot.pro)}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">{gg(totGiorni)}</td>
+              <td className="px-2 py-1.5" />
+              <td className="px-2 py-1.5" />
+            </tr>
+          </tfoot>
+        ) : null}
+      </table>
+    </div>
+  )
+}
+
 export function DipendentiFerieTab() {
   const qc = useQueryClient()
   const oggi = new Date()
   const [anno, setAnno] = useState(oggi.getFullYear())
-  const [meseImportNum, setMeseImportNum] = useState(oggi.getMonth() + 1)
+  const [meseImportNum, setMeseImportNum] = useState(() => meseBustaDefault(oggi))
   const [q, setQ] = useState("")
   const [pdfBusy, setPdfBusy] = useState(false)
   const [feriePreview, setFeriePreview] = useState<AmmFerieDaFile[] | null>(null)
@@ -296,8 +423,9 @@ export function DipendentiFerieTab() {
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm text-zinc-500">
-        Dalla busta: anno precedente, maturato, goduto, residuo in ore e giorni (residuo / 8). Si vedono le ferie
-        usufruite e da fare; l’inserimento lo fa il dipendente dal proprio login.
+        Totali dalla busta (anche se il cedolino è a ottobre): Residuo = alla data della busta, Proiezione = al 31/12.
+        I permessi sono la somma di Permessi + ROL + ex festività + flessibilità + banca ore. L’inserimento dei giorni
+        lo fa il dipendente dal proprio login.
       </p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {msg && <p className="text-sm text-emerald-400">{msg}</p>}
@@ -356,7 +484,7 @@ export function DipendentiFerieTab() {
       {feriePreview && (
         <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-zinc-400">Residui ferie per {feriePreview.length} nominativi</p>
+            <p className="text-xs text-zinc-400">Ferie e permessi da busta per {feriePreview.length} nominativi</p>
             <div className="flex gap-2">
               <button type="button" className={btnGhost} onClick={() => setFeriePreview(null)}>
                 Annulla
@@ -367,7 +495,7 @@ export function DipendentiFerieTab() {
                 disabled={importFerieMut.isPending}
                 onClick={() => importFerieMut.mutate(feriePreview)}
               >
-                {importFerieMut.isPending ? "Caricamento…" : "Importa ferie"}
+                {importFerieMut.isPending ? "Caricamento…" : "Importa buste"}
               </button>
             </div>
           </div>
@@ -376,9 +504,11 @@ export function DipendentiFerieTab() {
               <p key={`${p.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
                 <span>{p.nominativo}</span>
                 <span className="tabular-nums text-zinc-400">
-                  prec. {gg(p.ferieAnnoPrec)} · mat. {gg(p.ferieMaturate)} · god. {gg(p.ferieGodute)} · res.{" "}
-                  {gg(p.ferieResidue)}
-                  {p.unita === "h" ? " h" : ""} · {gg(oreToGiorni(p.ferieResidue, p.unita))} gg
+                  ferie res. {gg(p.ferieResidue)}
+                  {p.ferieProiezione != null ? ` · 31/12 ${gg(p.ferieProiezione)}` : ""}
+                  {p.permessiResidue != null ? ` · perm. ${gg(p.permessiResidue)}` : ""}
+                  {p.permessiProiezione != null ? ` · perm. 31/12 ${gg(p.permessiProiezione)}` : ""}
+                  {p.unita === "h" ? " h" : ""}
                 </span>
               </p>
             ))}
@@ -390,60 +520,21 @@ export function DipendentiFerieTab() {
         <p className="text-sm text-zinc-500">Nessun dipendente. Importa il PDF buste per i residui ferie.</p>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-zinc-800">
-        <table className="min-w-full border-collapse text-xs">
-          <thead>
-            <tr className="bg-zinc-900/80 text-zinc-400">
-              <th className="sticky left-0 z-10 bg-zinc-900 px-2 py-2 text-left font-medium">Nominativo</th>
-              <th className="px-2 py-2 text-right font-medium">Anno prec.</th>
-              <th className="px-2 py-2 text-right font-medium">Maturato</th>
-              <th className="px-2 py-2 text-right font-medium">Goduto</th>
-              <th className="px-2 py-2 text-right font-medium">Residuo</th>
-              <th className="px-2 py-2 text-right font-medium">Giorni</th>
-              <th className="px-2 py-2 text-right font-medium">Usufruite</th>
-              <th className="px-2 py-2 text-right font-medium">Da fare</th>
-            </tr>
-          </thead>
-          <tbody>
-            {persone.map((p) => {
-              const ferieSegnate = (giorniByNome.get(p.nominativo.toLowerCase()) ?? []).filter((g) => g.tipo === "ferie")
-              const ferieDaFare = oreToGiorni(p.ferieDisponibili, p.unita)
-              return (
-                <tr key={p.nominativo} className="border-t border-zinc-800">
-                  <td className="sticky left-0 z-10 bg-zinc-950 px-2 py-1 font-medium text-zinc-100">{p.nominativo}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieAnnoPrec)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieMaturate)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieGodute)}</td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-200">
-                    {gg(p.ferieResidue)}
-                    {p.unita === "h" ? <span className="ml-0.5 text-[10px] text-zinc-600">h</span> : null}
-                    {p.saldo?.mese ? <span className="ml-1 text-[10px] text-zinc-600">{p.saldo.mese}</span> : null}
-                  </td>
-                  <td className="px-2 py-1 text-right tabular-nums text-zinc-100">
-                    {gg(oreToGiorni(p.ferieResidue, p.unita))}
-                  </td>
-                  <td
-                    className="px-2 py-1 text-right tabular-nums text-zinc-200"
-                    title={ferieSegnate.map((g) => formatGiorno(g.data)).join(", ") || undefined}
-                  >
-                    {ferieSegnate.length ? `${ferieSegnate.length} gg` : "—"}
-                  </td>
-                  <td
-                    className={`px-2 py-1 text-right tabular-nums ${
-                      ferieDaFare != null && ferieDaFare < 0 ? "text-red-400" : "text-zinc-100"
-                    }`}
-                  >
-                    {gg(ferieDaFare)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+      <OreBustaTable
+        titolo="Ferie"
+        persone={persone}
+        giorniByNome={giorniByNome}
+        tipo="ferie"
+      />
+      <OreBustaTable
+        titolo="Permessi (ROL, ex festività, flessibilità, banca ore)"
+        persone={persone}
+        giorniByNome={giorniByNome}
+        tipo="permessi"
+      />
       <p className="text-xs text-zinc-500">
-        Anno prec./Maturato/Goduto/Residuo sono le ore della busta. Giorni = residuo / 8. Usufruite = giorni segnati dal
-        dipendente. Da fare = residuo meno quei giorni.
+        Ore dalla busta. Residuo = alla data del cedolino (es. 31/10). Proiezione = al 31/12. Giorni = residuo / 8.
+        Usufruite = giorni segnati dal dipendente dopo quella busta. Da fare = residuo meno quei giorni.
       </p>
     </div>
   )
@@ -519,6 +610,26 @@ export function MieFeriePage() {
                 <dd className="tabular-nums text-zinc-100">{gg(oreToGiorni(persona?.ferieResidue, persona?.unita))}</dd>
               </div>
             </dl>
+            {persona?.permessiResidue != null || persona?.permessiAnnoPrec != null ? (
+              <dl className="mt-3 grid grid-cols-2 gap-2 border-t border-zinc-800 pt-3 text-sm sm:grid-cols-4">
+                <div>
+                  <dt className="text-xs text-zinc-500">Permessi arretrati</dt>
+                  <dd className="tabular-nums text-zinc-200">{gg(persona?.permessiAnnoPrec)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-zinc-500">Permessi maturati</dt>
+                  <dd className="tabular-nums text-zinc-200">{gg(persona?.permessiMaturate)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-zinc-500">Permessi goduti</dt>
+                  <dd className="tabular-nums text-zinc-200">{gg(persona?.permessiGodute)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-zinc-500">Permessi residuo</dt>
+                  <dd className="tabular-nums text-zinc-200">{gg(persona?.permessiResidue)}</dd>
+                </div>
+              </dl>
+            ) : null}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
