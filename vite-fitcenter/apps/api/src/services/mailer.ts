@@ -14,6 +14,7 @@ type SendMailInput = {
   subject: string
   text: string
   html?: string
+  headers?: Record<string, string>
   attachments?: SendMailAttachment[]
 }
 
@@ -92,6 +93,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
       subject: input.subject,
       text: input.text,
       ...(input.html ? { html: input.html } : {}),
+      ...(input.headers ? { headers: input.headers } : {}),
       attachments: input.attachments,
     })
     const accepted = addrs((info as { accepted?: unknown }).accepted)

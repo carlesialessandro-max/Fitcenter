@@ -48,9 +48,16 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [q, setQ] = useState("")
   const [soloProblemi, setSoloProblemi] = useState(false)
+  const [blEmail, setBlEmail] = useState("")
+  const [blNote, setBlNote] = useState("")
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["abbonamenti-attivi-invii"],
     queryFn: () => dataApi.getAbbonamentiAttiviInvii(80),
+    staleTime: 10_000,
+  })
+  const blacklistQ = useQuery({
+    queryKey: ["mail-blacklist"],
+    queryFn: () => dataApi.getMailBlacklist(),
     staleTime: 10_000,
   })
 
@@ -68,6 +75,22 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
       setOpenId(null)
       setQ("")
       void queryClient.invalidateQueries({ queryKey: ["abbonamenti-attivi-invii"] })
+    },
+  })
+
+  const addBl = useMutation({
+    mutationFn: (body: { email: string; note?: string; source?: "admin" | "reply" }) => dataApi.postMailBlacklist(body),
+    onSuccess: () => {
+      setBlEmail("")
+      setBlNote("")
+      void queryClient.invalidateQueries({ queryKey: ["mail-blacklist"] })
+    },
+  })
+
+  const delBl = useMutation({
+    mutationFn: (email: string) => dataApi.deleteMailBlacklist(email),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["mail-blacklist"] })
     },
   })
 
@@ -89,7 +112,9 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   }, [invii, ql, soloProblemi])
 
   const selected = invii.find((x) => x.id === openId) ?? null
-  const busy = delOne.isPending || delAll.isPending
+  const busy = delOne.isPending || delAll.isPending || addBl.isPending || delBl.isPending
+  const blacklist = blacklistQ.data?.rows ?? []
+  const blackSet = useMemo(() => new Set(blacklist.map((r) => r.email.toLowerCase())), [blacklist])
 
   function confirmDeleteOne(id: string, label: string) {
     if (!window.confirm(`Eliminare questo invio dal log?\n${label}`)) return
@@ -99,6 +124,17 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   function confirmDeleteAll() {
     if (!window.confirm("Svuotare tutto il log invii? Non si può recuperare.")) return
     delAll.mutate()
+  }
+
+  function addToBlacklist(email: string, source: "admin" | "reply" = "admin", note?: string) {
+    const dest = email.trim()
+    if (!dest) return
+    if (!window.confirm(`Mettere in blacklist ${dest}?\nNon riceverà più le mail di Attivi / Scaduti.`)) return
+    addBl.mutate({
+      email: dest,
+      source,
+      note: note ?? (source === "reply" ? "Ha risposto Annulla iscrizione" : blNote.trim() || undefined),
+    })
   }
 
   return (
@@ -158,10 +194,99 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
             Solo problemi (non inviati / rifiutati)
           </label>
         </div>
-        {delOne.isError || delAll.isError ? (
+        {delOne.isError || delAll.isError || addBl.isError || delBl.isError ? (
           <p className="mt-2 text-xs text-red-300">
-            {(delOne.error as Error | undefined)?.message ?? (delAll.error as Error | undefined)?.message}
+            {(delOne.error as Error | undefined)?.message ??
+              (delAll.error as Error | undefined)?.message ??
+              (addBl.error as Error | undefined)?.message ??
+              (delBl.error as Error | undefined)?.message}
           </p>
+        ) : null}
+      </div>
+
+      <div className="border-b border-zinc-800 px-4 py-3">
+        <h3 className="text-sm font-semibold text-zinc-100">Blacklist — Annulla iscrizione</h3>
+        <p className="mt-1 text-xs text-zinc-500">
+          Chi clicca Annulla iscrizione in calce alla mail entra qui da solo. Se risponde alla mail, aggiungi l&apos;indirizzo a
+          mano. I prossimi invii Attivi / Scaduti lo saltano.
+        </p>
+        <form
+          className="mt-3 flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            addToBlacklist(blEmail, "reply", blNote.trim() || "Ha risposto Annulla iscrizione")
+          }}
+        >
+          <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-zinc-500">
+            Email (risposta / manuale)
+            <input
+              type="email"
+              value={blEmail}
+              onChange={(e) => setBlEmail(e.target.value)}
+              placeholder="cliente@email.it"
+              className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+              required
+            />
+          </label>
+          <label className="flex min-w-[180px] flex-1 flex-col gap-1 text-xs text-zinc-500">
+            Nota
+            <input
+              value={blNote}
+              onChange={(e) => setBlNote(e.target.value)}
+              placeholder="Ha risposto annulla iscrizione"
+              className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={busy || !blEmail.trim()}
+            className="rounded-lg bg-zinc-100 px-3 py-2 text-sm font-medium text-zinc-950 disabled:opacity-40"
+          >
+            {addBl.isPending ? "Aggiungo…" : "Metti in blacklist"}
+          </button>
+        </form>
+        {blacklistQ.isLoading ? <p className="mt-2 text-xs text-zinc-500">Caricamento blacklist…</p> : null}
+        {blacklist.length ? (
+          <div className="mt-3 max-h-48 overflow-auto rounded-md border border-zinc-800">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 bg-zinc-900 text-zinc-500">
+                <tr>
+                  <th className="px-2 py-1.5 font-medium">Email</th>
+                  <th className="px-2 py-1.5 font-medium">Quando</th>
+                  <th className="px-2 py-1.5 font-medium">Origine</th>
+                  <th className="px-2 py-1.5 font-medium">Nota</th>
+                  <th className="px-2 py-1.5 font-medium" />
+                </tr>
+              </thead>
+              <tbody>
+                {blacklist.map((r) => (
+                  <tr key={r.email} className="border-t border-zinc-800/70">
+                    <td className="px-2 py-1.5 text-zinc-100">{r.email}</td>
+                    <td className="whitespace-nowrap px-2 py-1.5 text-zinc-400">{fmtAt(r.at)}</td>
+                    <td className="px-2 py-1.5 text-zinc-400">
+                      {r.source === "link" ? "Link in calce" : r.source === "reply" ? "Risposta" : r.user || "Admin"}
+                    </td>
+                    <td className="px-2 py-1.5 text-zinc-500">{r.note ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (!window.confirm(`Togliere ${r.email} dalla blacklist? Potrà di nuovo ricevere le mail.`)) return
+                          delBl.mutate(r.email)
+                        }}
+                        className="text-amber-400 hover:underline disabled:opacity-40"
+                      >
+                        Riabilita
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : !blacklistQ.isLoading ? (
+          <p className="mt-2 text-xs text-zinc-500">Nessuno in blacklist.</p>
         ) : null}
       </div>
 
@@ -193,7 +318,18 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                   <tr key={`${h.invio.id}-${h.nome}-${i}`} className="border-t border-zinc-800/70">
                     <td className="whitespace-nowrap px-2 py-1.5 text-xs text-zinc-400">{fmtAt(h.invio.at)}</td>
                     <td className="px-2 py-1.5 text-zinc-100">{h.nome}</td>
-                    <td className="px-2 py-1.5 text-xs text-zinc-400">{h.dest ?? "—"}</td>
+                    <td className="px-2 py-1.5 text-xs text-zinc-400">
+                      {h.dest ?? "—"}
+                      {h.dest && !blackSet.has(h.dest.toLowerCase()) ? (
+                        <button
+                          type="button"
+                          className="ml-2 text-[11px] text-zinc-500 hover:text-amber-400 hover:underline"
+                          onClick={() => addToBlacklist(h.dest!, "admin")}
+                        >
+                          Blacklist
+                        </button>
+                      ) : null}
+                    </td>
                     <td className={`px-2 py-1.5 text-xs ${esitoClass(h.esito)}`}>{esitoLabel(h.esito)}</td>
                     <td className="max-w-[240px] px-2 py-1.5 text-xs text-zinc-400">{h.nota ?? "—"}</td>
                     <td className="max-w-[220px] truncate px-2 py-1.5 text-xs text-zinc-500">
@@ -297,7 +433,18 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                           ).map((r) => (
                             <tr key={`${r.clienteId}-${r.dest ?? "x"}`} className="border-t border-zinc-800/70">
                               <td className="px-3 py-1.5 text-zinc-100">{r.nome}</td>
-                              <td className="px-3 py-1.5 text-zinc-400">{r.dest ?? "—"}</td>
+                              <td className="px-3 py-1.5 text-zinc-400">
+                                {r.dest ?? "—"}
+                                {r.dest && !blackSet.has(r.dest.toLowerCase()) ? (
+                                  <button
+                                    type="button"
+                                    className="ml-2 text-[11px] text-zinc-500 hover:text-amber-400 hover:underline"
+                                    onClick={() => addToBlacklist(r.dest!, "admin")}
+                                  >
+                                    Blacklist
+                                  </button>
+                                ) : null}
+                              </td>
                               <td className={`px-3 py-1.5 ${esitoClass(r.esito)}`}>{esitoLabel(r.esito)}</td>
                               <td className="px-3 py-1.5 text-zinc-400">{r.nota ?? "—"}</td>
                             </tr>

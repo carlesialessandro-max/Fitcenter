@@ -721,7 +721,7 @@ export function AttiviInviaMessaggio({ asOf, consulente, elenco = "attivi", dest
               <p className="mt-1 text-[11px] text-zinc-500">
                 {channel === "sms"
                   ? `${text.length}/1000 caratteri · SMSHosting (un SMS per cellulare; non compare in «Campagne»)`
-                  : "Email in BCC: in Gmail non vedi gli altri. Chi è stato avvertito lo trovi in Log invii."}
+                  : "Email in BCC: in Gmail non vedi gli altri. In fondo c’è copyright e Annulla iscrizione. Chi è in blacklist viene saltato (Log invii)."}
               </p>
             </div>
 

@@ -30,6 +30,7 @@ import { piscinaRouter } from "./routes/piscina.js"
 import { whatsappRouter } from "./routes/whatsapp.js"
 import { whatsappWebhookReceive, whatsappWebhookVerify } from "./handlers/whatsapp.js"
 import { startStaffAnagraficaSync } from "./services/libro-paga-hr.js"
+import { postMailUnsubscribePublic } from "./handlers/mailBlacklist.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = process.env.PORT ?? 3001
@@ -94,6 +95,12 @@ const whatsappWebhookLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
 })
+const mailUnsubLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+})
 
 // Firma: inviamo immagini base64 (dataURL) -> aumenta limite JSON.
 const JSON_LIMIT = process.env.API_JSON_LIMIT?.trim() || "15mb"
@@ -139,6 +146,7 @@ app.use("/api/piscina", piscinaRouter)
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true })
 })
+app.post("/api/mail-unsubscribe", mailUnsubLimiter, postMailUnsubscribePublic)
 
 // Servi il frontend (build in apps/web/dist) se la cartella esiste
 const publicDir = findPublicDir()

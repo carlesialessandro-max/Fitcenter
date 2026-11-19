@@ -45,6 +45,7 @@ import { LibroPagaAccesso } from "@/pages/LibroPagaAccesso"
 import { AdminMenu } from "@/pages/AdminMenu"
 import { AmministrazioneCosti } from "@/pages/AmministrazioneCosti"
 import { MieFeriePage } from "@/pages/DipendentiFerie"
+import { Disiscrizione } from "@/pages/Disiscrizione"
 
 function DashboardOrRedirect() {
   const { leadFilter, role, user } = useAuth()
@@ -83,6 +84,10 @@ export const router = createBrowserRouter([
   {
     path: "/informativa",
     element: <InformativaPrivacy />,
+  },
+  {
+    path: "/disiscrizione",
+    element: <Disiscrizione />,
   },
   {
     path: "/lpaga",

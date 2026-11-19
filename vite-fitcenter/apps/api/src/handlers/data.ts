@@ -32,6 +32,8 @@ import type {
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
 import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
+import { mailBlacklistStore } from "../store/mail-blacklist.js"
+import { ATTIVI_IMAGE_CID, campagneMailBody } from "../lib/mail-campagne.js"
 import { markRinnovato } from "../lib/mark-rinnovato.js"
 import { inferSessoDaNome } from "../services/lp-istruttore-sesso.js"
 
@@ -2067,25 +2069,8 @@ function sleepMs(ms: number) {
   return new Promise((r) => setTimeout(r, ms))
 }
 
-const ATTIVI_IMAGE_CID = "attivi-locandina"
 const ATTIVI_IMAGE_MAX = 8 * 1024 * 1024
 const ATTIVI_IMAGE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"])
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-}
-
-function attiviEmailHtml(text: string, withImage: boolean): string {
-  const body = escapeHtml(text).replace(/\r\n|\r|\n/g, "<br>")
-  const img = withImage
-    ? `<p style="margin:0 0 20px;"><img src="cid:${ATTIVI_IMAGE_CID}" alt="Locandina" style="max-width:560px;width:100%;height:auto;border-radius:8px;" /></p>`
-    : ""
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#111;">${img}${body}</div>`
-}
 
 function safeImageName(raw: string, ext: string): string {
   const base = raw.replace(/\\/g, "/").split("/").pop() ?? `locandina${ext}`
@@ -2195,13 +2180,15 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       if (!emailOk.test(testTo)) {
         return res.status(400).json({ message: "Email di prova non valida" })
       }
+      const campaign = campagneMailBody(req, text, Boolean(locandina))
       const out = await sendMail({
         to: testTo,
         subject,
-        text,
+        text: campaign.text,
+        html: campaign.html,
+        headers: campaign.headers,
         ...(locandina
           ? {
-              html: attiviEmailHtml(text, true),
               attachments: [
                 {
                   filename: locandina.filename,
@@ -2350,14 +2337,51 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
           continue
         }
         const k = e.toLowerCase()
+        if (mailBlacklistStore.has(k)) {
+          mark(r, "skipped", e, "Blacklist: ha annullato l'iscrizione")
+          continue
+        }
         const list = byEmail.get(k) ?? []
         list.push(r)
         byEmail.set(k, list)
       }
       const emails = Array.from(byEmail.keys())
       if (emails.length === 0) {
+        if (skipped > 0) {
+          const actorSkip = getScopedUser(req)
+          const userSkip = String(actorSkip.username ?? actorSkip.nome ?? "").trim() || "admin"
+          try {
+            attiviInviiStore.append({
+              user: userSkip,
+              channel,
+              subject,
+              text,
+              imageName: locandina?.filename,
+              segmento: String(body.segmento ?? "").trim() || undefined,
+              piani: piani.length ? piani : undefined,
+              destinatari: rows.length,
+              sent: 0,
+              failed: 0,
+              skipped,
+              errors: [],
+              recipients,
+            })
+          } catch (e) {
+            console.error("[ATTIVI-MSG] log non salvato:", (e as Error)?.message ?? e)
+          }
+          return res.json({
+            ok: true,
+            channel,
+            destinatari: rows.length,
+            sent: 0,
+            failed: 0,
+            skipped,
+            errors: [] as string[],
+          })
+        }
         return res.status(400).json({ message: "Nessuna email valida nei destinatari selezionati" })
       }
+      const campaign = campagneMailBody(req, text, Boolean(locandina))
       const chunkSize = 40
       for (let i = 0; i < emails.length; i += chunkSize) {
         const chunk = emails.slice(i, i + chunkSize)
@@ -2367,10 +2391,11 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
           to,
           bcc,
           subject,
-          text,
+          text: campaign.text,
+          html: campaign.html,
+          headers: campaign.headers,
           ...(locandina
             ? {
-                html: attiviEmailHtml(text, true),
                 attachments: [
                   {
                     filename: locandina.filename,

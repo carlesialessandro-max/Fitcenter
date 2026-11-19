@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { getRicevuteUtenti, postInviaScontrino } from "../handlers/scontrini.js"
 import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, getAbbonamentiScadutiCatalogo, getAbbonamentiScadutiContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, deleteAbbonamentiAttiviInvio, deleteAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
+import { getMailBlacklist, postMailBlacklist, deleteMailBlacklist } from "../handlers/mailBlacklist.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
   deleteCalendarioInstructor,
@@ -80,6 +81,9 @@ dataRouter.post("/abbonamenti-attivi-invia", requireAdmin, postAbbonamentiAttivi
 dataRouter.get("/abbonamenti-attivi-invii", requireAdmin, getAbbonamentiAttiviInvii)
 dataRouter.delete("/abbonamenti-attivi-invii/:id", requireAdmin, deleteAbbonamentiAttiviInvio)
 dataRouter.delete("/abbonamenti-attivi-invii", requireAdmin, deleteAbbonamentiAttiviInvii)
+dataRouter.get("/mail-blacklist", requireAdmin, getMailBlacklist)
+dataRouter.post("/mail-blacklist", requireAdmin, postMailBlacklist)
+dataRouter.delete("/mail-blacklist", requireAdmin, deleteMailBlacklist)
 dataRouter.get("/danza/attivi-oggi", requireAdminOrDanza, getDanzaAttiviOggi)
 dataRouter.get("/referral-presentati", getReferralPresentati)
 dataRouter.get("/budget", requireAdmin, getBudget)

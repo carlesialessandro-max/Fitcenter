@@ -151,6 +151,17 @@ export const dataApi = {
     api.delete<{ ok: boolean }>(`/data/abbonamenti-attivi-invii/${encodeURIComponent(id)}`),
   deleteAbbonamentiAttiviInvii: () =>
     api.delete<{ ok: boolean; removed: number }>("/data/abbonamenti-attivi-invii"),
+  getMailBlacklist: () =>
+    api.get<{ rows: { email: string; at: string; source: string; note?: string; user?: string }[] }>(
+      "/data/mail-blacklist",
+    ),
+  postMailBlacklist: (body: { email: string; note?: string; source?: "admin" | "reply" }) =>
+    api.post<{ ok: boolean; row: { email: string; at: string; source: string; note?: string; user?: string } }>(
+      "/data/mail-blacklist",
+      body,
+    ),
+  deleteMailBlacklist: (email: string) =>
+    api.delete<{ ok: boolean; email: string }>(`/data/mail-blacklist?email=${encodeURIComponent(email)}`),
   getScuolaNuotoRinnovi: (dataFine: string) =>
     api.get<ScuolaNuotoRinnoviResponse>(`/data/scuola-nuoto-rinnovi?dataFine=${encodeURIComponent(dataFine)}`),
   postScuolaNuotoRinnoviInvia: (body: {
