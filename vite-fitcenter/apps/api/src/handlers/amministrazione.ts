@@ -33,7 +33,7 @@ import {
   type MacroCommerciale,
 } from "../services/amministrazione-ricavi.js"
 import { defaultRepartoFor, parseStipendiPdf } from "../services/amministrazione-stipendi-pdf.js"
-import { parseFeriePdf } from "../services/amministrazione-ferie-pdf.js"
+import { isNominativoPersona, parseFeriePdf } from "../services/amministrazione-ferie-pdf.js"
 import { ferieStore, type FerieTipo } from "../store/dipendenti-ferie.js"
 import {
   labelCompetenza,
@@ -614,7 +614,7 @@ function ferieBodyRows(
     const row = item as Record<string, unknown>
     const nominativo = String(row.nominativo ?? "").trim()
     const ym = String(row.mese ?? mese).slice(0, 7)
-    if (!nominativo || !/^\d{4}-\d{2}$/.test(ym)) return []
+    if (!nominativo || !isNominativoPersona(nominativo) || !/^\d{4}-\d{2}$/.test(ym)) return []
     const ferieResidue = Number(String(row.ferieResidue ?? "").replace(",", "."))
     if (!Number.isFinite(ferieResidue)) return []
     const opt = (key: string) => {
@@ -1970,9 +1970,10 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const nomi = new Map<string, string>()
+    ferieStore.pruneNonPersone()
     const addNome = (raw: string) => {
       const n = raw.trim()
-      if (!n || /^dipendenti fissi/i.test(n)) return
+      if (!n || /^dipendenti fissi/i.test(n) || !isNominativoPersona(n)) return
       const hit = [...nomi.keys()].find((k) => stessoNominativo(k, n))
       if (!hit) nomi.set(n, n)
     }
@@ -2019,7 +2020,7 @@ export function postAmmFerieImport(req: Request, res: Response) {
     const mese = String(req.body?.mese ?? "").slice(0, 7)
     const ferie = ferieBodyRows(req.body?.ferie, mese, "pdf")
     if (!ferie.length) return res.status(400).json({ message: "Nessun residuo ferie nel file" })
-    const salvati = ferieStore.upsertSaldi(ferie)
+    const salvati = ferieStore.replaceFonteSaldi("pdf", ferie)
     res.json({ inserite: salvati.length, mese })
   } catch (e) {
     fail(res, e)

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto"
 import { readJson, writeJson } from "./persist.js"
 import { stessoNominativo } from "../lib/nominativo-match.js"
+import { isNominativoPersona } from "../services/amministrazione-ferie-pdf.js"
 
 export type FerieTipo = "ferie" | "permessi"
 
@@ -84,6 +85,20 @@ export const ferieStore = {
     }
     save(d)
     return out
+  },
+  replaceFonteSaldi(fonte: FerieSaldo["fonte"], rows: Omit<FerieSaldo, "updatedAt">[]): FerieSaldo[] {
+    const d = load()
+    d.saldi = d.saldi.filter((s) => s.fonte !== fonte)
+    save(d)
+    return ferieStore.upsertSaldi(rows)
+  },
+  pruneNonPersone(): void {
+    const d = load()
+    const next = d.saldi.filter((s) => isNominativoPersona(s.nominativo))
+    if (next.length !== d.saldi.length) {
+      d.saldi = next
+      save(d)
+    }
   },
   toggleGiorno(nominativo: string, data: string, tipo: FerieTipo): { giorno: FerieGiorno | null; removed: boolean } {
     const nome = nominativo.trim()
