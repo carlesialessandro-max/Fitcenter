@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { amministrazioneApi, type AmmFerieGiorno, type AmmFeriePersona } from "@/api/amministrazione"
+import {
+  amministrazioneApi,
+  type AmmFerieDaFile,
+  type AmmFerieGiorno,
+  type AmmFeriePersona,
+  type AmmStipendiPdfRiga,
+} from "@/api/amministrazione"
+import { readBustePagaPdf } from "@/lib/amm-import-buste-pdf"
+import { parseAmmMastrino, type AmmMastrinoPreview } from "@/lib/amm-mastrino"
 
 const btnAmber = "rounded-md bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-50"
 const btnGhost = "rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
@@ -26,6 +34,10 @@ function gg(n: number | null | undefined) {
   return n.toLocaleString("it-IT", { maximumFractionDigits: 2 })
 }
 
+function eur(n: number): string {
+  return new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n || 0))
+}
+
 export function DipendentiFerieTab() {
   const qc = useQueryClient()
   const oggi = new Date()
@@ -38,11 +50,18 @@ export function DipendentiFerieTab() {
   const [q, setQ] = useState("")
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
+  const [pdfBusy, setPdfBusy] = useState(false)
+  const [bustePdfPreview, setBustePdfPreview] = useState<AmmStipendiPdfRiga[] | null>(null)
+  const [feriePdfPreview, setFeriePdfPreview] = useState<AmmFerieDaFile[]>([])
+  const [mastrinoPreview, setMastrinoPreview] = useState<AmmMastrinoPreview[] | null>(null)
 
   const data = useQuery({
     queryKey: ["amm-ferie", anno],
     queryFn: () => amministrazioneApi.dipendentiFerie(anno),
   })
+  const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
+  const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
+  const meseImport = `${anno}-${pad2(mese)}`
 
   const toggleMut = useMutation({
     mutationFn: (body: { nominativo: string; data: string; tipo: "ferie" | "permessi" }) =>
@@ -63,8 +82,92 @@ export function DipendentiFerieTab() {
     },
     onError: (e: Error) => setError(e.message),
   })
+  const importConsuntivoMut = useMutation({
+    mutationFn: (riga: AmmStipendiPdfRiga) => amministrazioneApi.importBustaConsuntivo(riga, feriePdfPreview),
+    onSuccess: (r) => {
+      setBustePdfPreview(null)
+      setFeriePdfPreview([])
+      setMsg(
+        `Buste paga importate: ${eur(r.busta.totale)}` +
+          (r.busta.dettaglioDipendenti?.length
+            ? ` · ${r.busta.dettaglioDipendenti.length} nominativi`
+            : "") +
+          (r.ferie ? ` · ferie aggiornate per ${r.ferie} nominativi` : "") +
+          ".",
+      )
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+  const importMastrinoMut = useMutation({
+    mutationFn: (righe: AmmMastrinoPreview[]) => amministrazioneApi.importBuste(righe),
+    onSuccess: (r) => {
+      setMastrinoPreview(null)
+      setMsg(
+        `Importate ${r.inserite} buste` +
+          (r.saltate ? `, ${r.saltate} già presenti` : "") +
+          (r.errori.length ? `, ${r.errori.length} errori` : "") +
+          ".",
+      )
+      setError("")
+      void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
+      void qc.invalidateQueries({ queryKey: ["amm-buste"] })
+      void qc.invalidateQueries({ queryKey: ["amm-dash"] })
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  async function onBustePdf(file: File | null) {
+    if (!file) return
+    setError("")
+    setMsg("")
+    setMastrinoPreview(null)
+    setPdfBusy(true)
+    try {
+      const parsed = await readBustePagaPdf(file, meseImport, setMsg)
+      if (parsed.dipendenti.length === 1) {
+        setBustePdfPreview(parsed.dipendenti)
+        setFeriePdfPreview(parsed.ferie)
+        setMsg("")
+        return
+      }
+      if (parsed.ferie.length) {
+        const r = await amministrazioneApi.importFerie(meseImport, parsed.ferie)
+        setBustePdfPreview(null)
+        setFeriePdfPreview([])
+        setMsg(`Ferie aggiornate per ${r.inserite} dipendenti dal PDF.`)
+        void qc.invalidateQueries({ queryKey: ["amm-ferie"] })
+        return
+      }
+      throw new Error(
+        'Nel PDF non è stato trovato un totale consuntivo unico. Carica il riepilogo “Costo consuntivo del periodo” oppure un prospetto ferie.',
+      )
+    } catch (e) {
+      setError((e as Error).message || "PDF non leggibile")
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
+  async function onMastrino(file: File | null) {
+    if (!file) return
+    setError("")
+    setMsg("")
+    setBustePdfPreview(null)
+    setFeriePdfPreview([])
+    try {
+      const buf = await file.arrayBuffer()
+      setMastrinoPreview(parseAmmMastrino(buf, attivi))
+    } catch (e) {
+      setError((e as Error).message || "Excel non leggibile")
+    }
+  }
 
   const nGiorni = giorniNelMese(anno, mese)
+  const okMastrino = (mastrinoPreview ?? []).filter((p) => !p.errore)
   const prefix = `${anno}-${pad2(mese)}`
   const persone = useMemo(() => {
     const t = q.trim().toLocaleLowerCase("it")
@@ -89,12 +192,12 @@ export function DipendentiFerieTab() {
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm text-zinc-500">
-        I residui ferie e permessi arrivano dal file importato in <span className="text-zinc-300">Stipendi</span>{" "}
-        (PDF paghe o mastrino). Qui segni i giorni di assenza: si scalano dal residuo della busta.
+        Importa qui le buste paga (PDF consuntivo o mastrino): arrivano i nominativi e, se ci sono, i residui ferie e
+        permessi. Poi segni i giorni di assenza, che si scalano dal residuo della busta.
       </p>
       {error && <p className="text-sm text-red-400">{error}</p>}
       {msg && <p className="text-sm text-emerald-400">{msg}</p>}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
         <label className="grid gap-1 text-xs text-zinc-500">
           Anno
           <input
@@ -114,6 +217,109 @@ export function DipendentiFerieTab() {
             ))}
           </select>
         </label>
+        <label className={`${btnAmber} cursor-pointer ${pdfBusy ? "opacity-50" : ""}`}>
+          {pdfBusy ? "Lettura PDF…" : "Importa buste paga"}
+          <input
+            type="file"
+            accept=".pdf"
+            className="hidden"
+            disabled={pdfBusy}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null
+              e.target.value = ""
+              void onBustePdf(f)
+            }}
+          />
+        </label>
+        <label className={`${btnGhost} cursor-pointer`}>
+          Importa mastrino
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null
+              e.target.value = ""
+              void onMastrino(f)
+            }}
+          />
+        </label>
+        <p className="text-xs text-zinc-500">I PDF scansiti si leggono con OCR nel browser.</p>
+      </div>
+      {bustePdfPreview && (
+        <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-zinc-400">
+              Totale consuntivo: {eur(bustePdfPreview[0]?.totale ?? 0)}
+              {bustePdfPreview[0]?.dettaglioDipendenti?.length
+                ? ` · ${bustePdfPreview[0].dettaglioDipendenti.length} dipendenti`
+                : " · questo PDF non contiene il dettaglio nominativo"}
+              {feriePdfPreview.length ? ` · residui ferie per ${feriePdfPreview.length} nominativi` : ""}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => {
+                  setBustePdfPreview(null)
+                  setFeriePdfPreview([])
+                }}
+              >
+                Annulla
+              </button>
+              <button
+                type="button"
+                className={btnAmber}
+                disabled={importConsuntivoMut.isPending}
+                onClick={() => {
+                  const riga = bustePdfPreview[0]
+                  if (riga) importConsuntivoMut.mutate(riga)
+                }}
+              >
+                {importConsuntivoMut.isPending ? "Caricamento…" : "Importa buste"}
+              </button>
+            </div>
+          </div>
+          <div className="max-h-48 overflow-auto text-xs">
+            {bustePdfPreview[0]?.dettaglioDipendenti?.map((dipendente, index) => (
+              <p key={`${dipendente.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
+                <span>{dipendente.nominativo}</span>
+                <span>{eur(dipendente.totale)}</span>
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+      {mastrinoPreview && (
+        <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-zinc-400">
+              Anteprima mastrino: {okMastrino.length} valide, {mastrinoPreview.length - okMastrino.length} con errori
+            </p>
+            <div className="flex gap-2">
+              <button type="button" className={btnGhost} onClick={() => setMastrinoPreview(null)}>
+                Annulla
+              </button>
+              <button
+                type="button"
+                className={btnAmber}
+                disabled={!okMastrino.length || importMastrinoMut.isPending}
+                onClick={() => importMastrinoMut.mutate(okMastrino)}
+              >
+                {importMastrinoMut.isPending ? "Caricamento…" : `Importa ${okMastrino.length}`}
+              </button>
+            </div>
+          </div>
+          <div className="max-h-48 overflow-auto text-xs">
+            {mastrinoPreview.map((p) => (
+              <p key={p.riga} className={p.errore ? "text-red-300" : "text-zinc-300"}>
+                r.{p.riga} {p.nominativo || "—"} {p.mese} {p.totale ? eur(p.totale) : "—"} {p.errore ?? ""}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="flex flex-wrap items-end gap-3">
         <label className="grid gap-1 text-xs text-zinc-500">
           Cerca
           <input className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nominativo" />
@@ -161,8 +367,7 @@ export function DipendentiFerieTab() {
 
       {!data.data?.dipendenti.length && !data.isLoading && (
         <p className="text-sm text-zinc-500">
-          Nessun dipendente. Importa il PDF paghe o il mastrino in Stipendi: i nominativi e i residui ferie arrivano da
-          lì.
+          Nessun dipendente. Usa Importa buste paga (PDF consuntivo) o Importa mastrino qui sopra.
         </p>
       )}
 

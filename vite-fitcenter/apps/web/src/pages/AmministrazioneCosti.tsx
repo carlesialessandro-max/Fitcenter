@@ -15,7 +15,8 @@ import {
   type AmmTipoCosto,
 } from "@/api/amministrazione"
 import { DipendentiFerieTab } from "@/pages/DipendentiFerie"
-import { extractPdfText, extractPdfTextWithOcr } from "@/lib/pdf-fattura-text"
+import { extractPdfText } from "@/lib/pdf-fattura-text"
+import { readBustePagaPdf } from "@/lib/amm-import-buste-pdf"
 import { defaultRepartoMattonai, parseMattonaiPdf } from "@/lib/mattonai-stipendi"
 import { downloadAmmExcelTemplate, parseAmmExcel, type AmmExcelPreview } from "@/lib/amm-excel"
 import { macroSplitLabel, macroSplitTargets, normalizeMacroSplitQuote } from "@/lib/amm-macro-split"
@@ -2061,16 +2062,8 @@ function StipendiTab() {
     setError("")
     setImportMsg("")
     try {
-      const looksCosto = /costo/i.test(file.name)
-      let text = await extractPdfText(file, kind === "buste" ? 250 : 80)
-      if (kind === "buste" && (!text.trim() || looksCosto || text.trim().length < 120)) {
-        setImportMsg("PDF scansito: OCR locale in corso…")
-        const ocrText = await extractPdfTextWithOcr(file, 5, (progress) => {
-          setImportMsg(`Lettura OCR del riepilogo: ${Math.round(progress * 100)}%`)
-        }, { rotateForConsuntivo: true })
-        if (ocrText.trim()) text = ocrText
-      }
       if (kind === "sportivi") {
+        const text = await extractPdfText(file, 80)
         const parsed = parseMattonaiPdf(text, mese)
         const righe: AmmStipendiPdfRiga[] = parsed.map((r) => ({
           ...r,
@@ -2082,8 +2075,8 @@ function StipendiTab() {
         setPreview(null)
         return
       }
-      const parsed = await amministrazioneApi.parseStipendiPdf(text, file.name, mese)
-      const ferie = parsed.ferie ?? []
+      const parsed = await readBustePagaPdf(file, mese, setImportMsg)
+      const ferie = parsed.ferie
       if (parsed.dipendenti.length === 1) {
         setImportMsg("")
         setBustePdfPreview(parsed.dipendenti)
