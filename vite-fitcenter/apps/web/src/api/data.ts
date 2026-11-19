@@ -160,6 +160,11 @@ export const dataApi = {
       "/data/mail-blacklist",
       body,
     ),
+  importMailBlacklist: (body: { text?: string; fromMailbox?: boolean; fromLog?: boolean }) =>
+    api.post<{ ok: boolean; added: number; skipped: number; found: number; messages?: number; emails: string[] }>(
+      "/data/mail-blacklist/import",
+      body,
+    ),
   deleteMailBlacklist: (email: string) =>
     api.delete<{ ok: boolean; email: string }>(`/data/mail-blacklist?email=${encodeURIComponent(email)}`),
   getScuolaNuotoRinnovi: (dataFine: string) =>

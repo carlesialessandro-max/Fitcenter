@@ -3,7 +3,7 @@ import { readJson, writeJson } from "./persist.js"
 const FILE = "mail-blacklist.json"
 const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-export type MailBlacklistSource = "link" | "admin" | "reply"
+export type MailBlacklistSource = "link" | "admin" | "reply" | "bounce"
 
 export type MailBlacklistEntry = {
   email: string
@@ -64,6 +64,35 @@ export const mailBlacklistStore = {
     data.rows.unshift(row)
     save(data)
     return row
+  },
+
+  addMany(
+    emails: string[],
+    input: { source: MailBlacklistSource; note?: string; user?: string },
+  ): { added: number; skipped: number; emails: string[] } {
+    const data = load()
+    const have = new Set(data.rows.map((r) => r.email))
+    const added: string[] = []
+    let skipped = 0
+    const at = new Date().toISOString()
+    const note = String(input.note ?? "").trim() || undefined
+    const user = String(input.user ?? "").trim() || undefined
+    for (const raw of emails) {
+      const email = normalizeMailAddr(raw)
+      if (!email || !EMAIL_OK.test(email)) {
+        skipped += 1
+        continue
+      }
+      if (have.has(email)) {
+        skipped += 1
+        continue
+      }
+      have.add(email)
+      data.rows.unshift({ email, at, source: input.source, note, user })
+      added.push(email)
+    }
+    if (added.length) save(data)
+    return { added: added.length, skipped, emails: added }
   },
 
   remove(email: string): boolean {

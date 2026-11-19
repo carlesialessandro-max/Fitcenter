@@ -50,6 +50,8 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   const [soloProblemi, setSoloProblemi] = useState(false)
   const [blEmail, setBlEmail] = useState("")
   const [blNote, setBlNote] = useState("")
+  const [bounceText, setBounceText] = useState("")
+  const [importMsg, setImportMsg] = useState("")
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["abbonamenti-attivi-invii"],
     queryFn: () => dataApi.getAbbonamentiAttiviInvii(80),
@@ -94,6 +96,20 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
     },
   })
 
+  const importBl = useMutation({
+    mutationFn: (body: { text?: string; fromMailbox?: boolean; fromLog?: boolean }) =>
+      dataApi.importMailBlacklist(body),
+    onSuccess: (r) => {
+      setBounceText("")
+      setImportMsg(
+        `Blacklist: ${r.added} nuovi${r.skipped ? `, ${r.skipped} già presenti` : ""}${
+          r.messages ? ` da ${r.messages} bounce in casella` : ""
+        }.`,
+      )
+      void queryClient.invalidateQueries({ queryKey: ["mail-blacklist"] })
+    },
+  })
+
   const invii = data?.invii ?? []
   const ql = q.trim().toLowerCase()
   const hits = useMemo((): Hit[] => {
@@ -112,7 +128,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
   }, [invii, ql, soloProblemi])
 
   const selected = invii.find((x) => x.id === openId) ?? null
-  const busy = delOne.isPending || delAll.isPending || addBl.isPending || delBl.isPending
+  const busy = delOne.isPending || delAll.isPending || addBl.isPending || delBl.isPending || importBl.isPending
   const blacklist = blacklistQ.data?.rows ?? []
   const blackSet = useMemo(() => new Set(blacklist.map((r) => r.email.toLowerCase())), [blacklist])
 
@@ -207,9 +223,66 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
       <div className="border-b border-zinc-800 px-4 py-3">
         <h3 className="text-sm font-semibold text-zinc-100">Blacklist — Annulla iscrizione</h3>
         <p className="mt-1 text-xs text-zinc-500">
-          Chi clicca Annulla iscrizione in calce alla mail entra qui da solo. Se risponde alla mail, aggiungi l&apos;indirizzo a
-          mano. I prossimi invii Attivi / Scaduti lo saltano.
+          Chi clicca Annulla iscrizione in calce alla mail entra qui da solo. Le bounce (casella inesistente, errore 550)
+          si importano dalla casella info@ o incollando il testo del respingimento. I prossimi invii le saltano.
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  "Leggere le bounce dalla casella info@h2sport.it (ultimi 21 giorni) e metterle in blacklist?",
+                )
+              )
+                return
+              setImportMsg("")
+              importBl.mutate({ fromMailbox: true })
+            }}
+            className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-40"
+          >
+            {importBl.isPending ? "Importo…" : "Importa bounce dalla casella"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => {
+              if (!window.confirm("Mettere in blacklist tutte le email che il log marca come NON inviate (rifiuto SMTP)?"))
+                return
+              setImportMsg("")
+              importBl.mutate({ fromLog: true })
+            }}
+            className="rounded-md border border-zinc-600 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+          >
+            Blacklist dai NON inviati del log
+          </button>
+        </div>
+        {importMsg ? <p className="mt-2 text-xs text-emerald-400">{importMsg}</p> : null}
+        {importBl.error ? (
+          <p className="mt-2 text-xs text-red-400">{(importBl.error as Error).message}</p>
+        ) : null}
+        <label className="mt-3 flex flex-col gap-1 text-xs text-zinc-500">
+          Oppure incolla qui il testo delle bounce (anche tante insieme)
+          <textarea
+            value={bounceText}
+            onChange={(e) => setBounceText(e.target.value)}
+            rows={4}
+            placeholder="pacini.le@gmail.com … 550 5.1.1 does not exist"
+            className="rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy || !bounceText.trim()}
+          onClick={() => {
+            setImportMsg("")
+            importBl.mutate({ text: bounceText })
+          }}
+          className="mt-2 rounded-md border border-zinc-600 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+        >
+          Importa dal testo
+        </button>
         <form
           className="mt-3 flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
@@ -264,7 +337,13 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
                     <td className="px-2 py-1.5 text-zinc-100">{r.email}</td>
                     <td className="whitespace-nowrap px-2 py-1.5 text-zinc-400">{fmtAt(r.at)}</td>
                     <td className="px-2 py-1.5 text-zinc-400">
-                      {r.source === "link" ? "Link in calce" : r.source === "reply" ? "Risposta" : r.user || "Admin"}
+                      {r.source === "link"
+                        ? "Link in calce"
+                        : r.source === "reply"
+                          ? "Risposta"
+                          : r.source === "bounce"
+                            ? "Bounce"
+                            : r.user || "Admin"}
                     </td>
                     <td className="px-2 py-1.5 text-zinc-500">{r.note ?? "—"}</td>
                     <td className="px-2 py-1.5 text-right">
