@@ -1,9 +1,11 @@
 export type FerieDaFile = {
   nominativo: string
   ferieResidue: number
+  ferieAnnoPrec?: number
   ferieGodute?: number
   ferieMaturate?: number
   permessiResidue?: number
+  unita?: "h" | "gg"
 }
 
 const STOP = new Set([
@@ -319,16 +321,15 @@ function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
 
 function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<FerieDaFile, "nominativo"> | null {
   if (!amts?.length) return null
-  const hours = true
   const residIdx = amts.length >= 4 ? 3 : amts.length - 1
-  const residuo = asDays(amts[residIdx]!, hours)
-  const maturato = amts.length >= 2 ? asDays(amts[1]!, hours) : undefined
-  const goduto = amts.length >= 3 ? asDays(amts[2]!, hours) : undefined
-  if (kind === "permessi") return { ferieResidue: 0, permessiResidue: residuo }
+  const residuo = amts[residIdx]!
+  if (kind === "permessi") return { ferieResidue: 0, permessiResidue: residuo, unita: "h" }
   return {
+    ferieAnnoPrec: amts[0],
+    ferieMaturate: amts.length >= 2 ? amts[1] : undefined,
+    ferieGodute: amts.length >= 3 ? amts[2] : undefined,
     ferieResidue: residuo,
-    ferieGodute: goduto,
-    ferieMaturate: maturato,
+    unita: "h",
   }
 }
 
@@ -348,10 +349,12 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
     seen.add(key)
     out.push({
       nominativo,
+      ferieAnnoPrec: ferie.ferieAnnoPrec,
       ferieResidue: ferie.ferieResidue,
       ferieGodute: ferie.ferieGodute,
       ferieMaturate: ferie.ferieMaturate,
       permessiResidue: permessi?.permessiResidue,
+      unita: "h",
     })
   }
   return out

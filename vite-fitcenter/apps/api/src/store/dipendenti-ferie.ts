@@ -9,9 +9,11 @@ export type FerieSaldo = {
   nominativo: string
   mese: string
   ferieResidue: number
+  ferieAnnoPrec?: number
   ferieGodute?: number
   ferieMaturate?: number
   permessiResidue?: number
+  unita?: "h" | "gg"
   fonte: "pdf" | "mastrino"
   updatedAt: string
 }
@@ -72,9 +74,11 @@ export const ferieStore = {
         nominativo,
         mese,
         ferieResidue: Math.round(Number(row.ferieResidue || 0) * 100) / 100,
+        ferieAnnoPrec: row.ferieAnnoPrec != null ? Math.round(Number(row.ferieAnnoPrec) * 100) / 100 : undefined,
         ferieGodute: row.ferieGodute != null ? Math.round(Number(row.ferieGodute) * 100) / 100 : undefined,
         ferieMaturate: row.ferieMaturate != null ? Math.round(Number(row.ferieMaturate) * 100) / 100 : undefined,
         permessiResidue: row.permessiResidue != null ? Math.round(Number(row.permessiResidue) * 100) / 100 : undefined,
+        unita: row.unita === "gg" ? "gg" : row.unita === "h" ? "h" : undefined,
         fonte: row.fonte === "mastrino" ? "mastrino" : "pdf",
         updatedAt: nowIso(),
       }

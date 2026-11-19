@@ -33,6 +33,12 @@ function gg(n: number | null | undefined) {
   return n.toLocaleString("it-IT", { maximumFractionDigits: 2 })
 }
 
+function oreToGiorni(n: number | null | undefined, unita: "h" | "gg" | null | undefined) {
+  if (n == null) return null
+  if (unita === "gg") return n
+  return Math.round((n / 8) * 100) / 100
+}
+
 export function DipendentiFerieTab() {
   const qc = useQueryClient()
   const oggi = new Date()
@@ -236,8 +242,9 @@ export function DipendentiFerieTab() {
               <p key={`${p.nominativo}-${index}`} className="flex justify-between gap-4 text-zinc-300">
                 <span>{p.nominativo}</span>
                 <span className="tabular-nums text-zinc-400">
-                  ferie {gg(p.ferieResidue)}
-                  {p.permessiResidue != null ? ` · permessi ${gg(p.permessiResidue)}` : ""}
+                  prec. {gg(p.ferieAnnoPrec)} · mat. {gg(p.ferieMaturate)} · god. {gg(p.ferieGodute)} · res.{" "}
+                  {gg(p.ferieResidue)}
+                  {p.unita === "h" ? " h" : ""} · {gg(oreToGiorni(p.ferieResidue, p.unita))} gg
                 </span>
               </p>
             ))}
@@ -301,7 +308,11 @@ export function DipendentiFerieTab() {
           <thead>
             <tr className="bg-zinc-900/80 text-zinc-400">
               <th className="sticky left-0 z-10 bg-zinc-900 px-2 py-2 text-left font-medium">Nominativo</th>
-              <th className="px-2 py-2 text-right font-medium">Residuo busta</th>
+              <th className="px-2 py-2 text-right font-medium">Anno prec.</th>
+              <th className="px-2 py-2 text-right font-medium">Maturato</th>
+              <th className="px-2 py-2 text-right font-medium">Goduto</th>
+              <th className="px-2 py-2 text-right font-medium">Residuo</th>
+              <th className="px-2 py-2 text-right font-medium">Giorni</th>
               <th className="px-2 py-2 text-right font-medium">Disp.</th>
               {Array.from({ length: nGiorni }, (_, i) => {
                 const d = i + 1
@@ -321,16 +332,23 @@ export function DipendentiFerieTab() {
             {persone.map((p) => (
               <tr key={p.nominativo} className="border-t border-zinc-800">
                 <td className="sticky left-0 z-10 bg-zinc-950 px-2 py-1 font-medium text-zinc-100">{p.nominativo}</td>
-                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieAnnoPrec)}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieMaturate)}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-400">{gg(p.ferieGodute)}</td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-200">
                   {gg(p.ferieResidue)}
+                  {p.unita === "h" ? <span className="ml-0.5 text-[10px] text-zinc-600">h</span> : null}
                   {p.saldo?.mese ? <span className="ml-1 text-[10px] text-zinc-600">{p.saldo.mese}</span> : null}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums text-zinc-100">
+                  {gg(oreToGiorni(p.ferieResidue, p.unita))}
                 </td>
                 <td
                   className={`px-2 py-1 text-right tabular-nums ${
                     p.ferieDisponibili != null && p.ferieDisponibili < 0 ? "text-red-400" : "text-zinc-200"
                   }`}
                 >
-                  {gg(p.ferieDisponibili)}
+                  {gg(oreToGiorni(p.ferieDisponibili, p.unita))}
                 </td>
                 {Array.from({ length: nGiorni }, (_, i) => {
                   const d = i + 1
@@ -365,8 +383,8 @@ export function DipendentiFerieTab() {
       </div>
       <p className="text-xs text-zinc-500">
         <span className="mr-2 inline-block h-3 w-3 rounded-sm bg-amber-500/80" /> Ferie
-        <span className="ml-3 mr-2 inline-block h-3 w-3 rounded-sm bg-sky-500/70" /> Permessi. Residuo busta = ultimo
-        import PDF/mastrino; Disponibili = residuo meno i giorni segnati dopo quel mese.
+        <span className="ml-3 mr-2 inline-block h-3 w-3 rounded-sm bg-sky-500/70" /> Permessi. Anno prec./Maturato/Goduto/Residuo
+        sono le ore della busta. Giorni = residuo / 8. Disp. = giorni rimanenti dopo i giorni F segnati.
       </p>
     </div>
   )

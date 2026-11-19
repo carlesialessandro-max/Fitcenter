@@ -627,9 +627,11 @@ function ferieBodyRows(
         nominativo,
         mese: ym,
         ferieResidue,
+        ferieAnnoPrec: opt("ferieAnnoPrec"),
         ferieGodute: opt("ferieGodute"),
         ferieMaturate: opt("ferieMaturate"),
         permessiResidue: opt("permessiResidue"),
+        unita: row.unita === "gg" ? "gg" : row.unita === "h" ? "h" : undefined,
         fonte,
       },
     ]
@@ -1998,15 +2000,22 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
         const permessiDopo = miei.filter((g) => g.tipo === "permessi" && g.data > dopoBusta).length
         const ferieResidue = saldo?.ferieResidue ?? null
         const permessiResidue = saldo?.permessiResidue ?? null
+        const oreGiorno = saldo?.unita === "gg" ? 1 : 8
         return {
           nominativo,
           saldo,
+          ferieAnnoPrec: saldo?.ferieAnnoPrec ?? null,
+          ferieMaturate: saldo?.ferieMaturate ?? null,
+          ferieGodute: saldo?.ferieGodute ?? null,
           ferieResidue,
           permessiResidue,
+          unita: saldo?.unita ?? null,
           ferieUsateDopoBusta: usateDopo,
           permessiUsatiDopoBusta: permessiDopo,
-          ferieDisponibili: ferieResidue == null ? null : Math.round((ferieResidue - usateDopo) * 100) / 100,
-          permessiDisponibili: permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo) * 100) / 100,
+          ferieDisponibili:
+            ferieResidue == null ? null : Math.round((ferieResidue - usateDopo * oreGiorno) * 100) / 100,
+          permessiDisponibili:
+            permessiResidue == null ? null : Math.round((permessiResidue - permessiDopo * oreGiorno) * 100) / 100,
         }
       })
     res.json({ anno, dipendenti, giorni })

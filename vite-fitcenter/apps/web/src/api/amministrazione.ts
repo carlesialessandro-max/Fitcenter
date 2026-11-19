@@ -169,9 +169,11 @@ export type AmmFerieDaFile = {
   nominativo: string
   mese?: string
   ferieResidue: number
+  ferieAnnoPrec?: number
   ferieGodute?: number
   ferieMaturate?: number
   permessiResidue?: number
+  unita?: "h" | "gg"
 }
 
 export type AmmFerieGiorno = {
@@ -187,13 +189,19 @@ export type AmmFeriePersona = {
     nominativo: string
     mese: string
     ferieResidue: number
+    ferieAnnoPrec?: number
     ferieGodute?: number
     ferieMaturate?: number
     permessiResidue?: number
+    unita?: "h" | "gg"
     fonte: "pdf" | "mastrino"
   }
+  ferieAnnoPrec: number | null
+  ferieMaturate: number | null
+  ferieGodute: number | null
   ferieResidue: number | null
   permessiResidue: number | null
+  unita: "h" | "gg" | null
   ferieUsateDopoBusta: number
   permessiUsatiDopoBusta: number
   ferieDisponibili: number | null
