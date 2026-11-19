@@ -40,6 +40,21 @@ function oreToGiorni(n: number | null | undefined, unita: "h" | "gg" | null | un
   return Math.round((n / 8) * 100) / 100
 }
 
+const ECCEDENZA_FERIE_GG = 5
+const ECCEDENZA_PERMESSI_GG = 2
+
+function eccedenzaGiorni(p: AmmFeriePersona, tipo: "ferie" | "permessi") {
+  const proiez = tipo === "ferie" ? p.ferieProiezione : p.permessiProiezione
+  const disp = tipo === "ferie" ? p.ferieDisponibili : p.permessiDisponibili
+  return oreToGiorni(proiez ?? disp, p.unita)
+}
+
+function haEccedenza(p: AmmFeriePersona, tipo: "ferie" | "permessi") {
+  const ecc = eccedenzaGiorni(p, tipo)
+  if (ecc == null) return false
+  return ecc >= (tipo === "ferie" ? ECCEDENZA_FERIE_GG : ECCEDENZA_PERMESSI_GG)
+}
+
 function sumNum(rows: AmmFeriePersona[], pick: (p: AmmFeriePersona) => number | null | undefined) {
   let n = 0
   let any = false
@@ -252,6 +267,7 @@ function OreBustaTable({
     pro: sumNum(persone, (p) => (isFerie ? p.ferieProiezione : p.permessiProiezione)),
   }
   const totGiorni = sumNum(persone, (p) => oreToGiorni(isFerie ? p.ferieResidue : p.permessiResidue, p.unita))
+  const totEcc = sumNum(persone, (p) => eccedenzaGiorni(p, tipo))
   return (
     <div className="overflow-x-auto rounded-xl border border-zinc-800">
       <p className="border-b border-zinc-800 bg-zinc-900/60 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-zinc-300">
@@ -278,6 +294,7 @@ function OreBustaTable({
                 <th className="px-2 py-2 text-right font-medium">Da fare</th>
               </>
             )}
+            <th className="px-2 py-2 text-right font-medium">Eccedenza</th>
           </tr>
         </thead>
         <tbody>
@@ -285,8 +302,13 @@ function OreBustaTable({
             const segnati = (giorniByNome.get(p.nominativo.toLowerCase()) ?? []).filter((g) => g.tipo === tipo)
             const residue = isFerie ? p.ferieResidue : p.permessiResidue
             const daFare = oreToGiorni(isFerie ? p.ferieDisponibili : p.permessiDisponibili, p.unita)
+            const ecc = eccedenzaGiorni(p, tipo)
+            const flagged = haEccedenza(p, tipo)
             return (
-              <tr key={`${tipo}-${p.nominativo}`} className="border-t border-zinc-800">
+              <tr
+                key={`${tipo}-${p.nominativo}`}
+                className={`border-t border-zinc-800 ${flagged ? "bg-amber-500/10" : ""}`}
+              >
                 <td className="sticky left-0 z-10 bg-zinc-950 px-2 py-1 font-medium text-zinc-100">{p.nominativo}</td>
                 <td className="px-2 py-1 text-right tabular-nums text-zinc-400">
                   {gg(isFerie ? p.ferieAnnoPrec : p.permessiAnnoPrec)}
@@ -299,8 +321,12 @@ function OreBustaTable({
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums text-zinc-200">
                   {gg(residue)}
-                  {p.unita === "h" ? <span className="ml-0.5 text-[10px] text-zinc-600">h</span> : null}
-                  {p.saldo?.mese ? <span className="ml-1 text-[10px] text-zinc-600">{p.saldo.mese}</span> : null}
+                  {residue != null && p.unita === "h" ? (
+                    <span className="ml-0.5 text-[10px] text-zinc-600">h</span>
+                  ) : null}
+                  {residue != null && p.saldo?.mese ? (
+                    <span className="ml-1 text-[10px] text-zinc-600">{p.saldo.mese}</span>
+                  ) : null}
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums text-amber-200">
                   {gg(isFerie ? p.ferieProiezione : p.permessiProiezione)}
@@ -319,6 +345,18 @@ function OreBustaTable({
                 >
                   {gg(daFare)}
                 </td>
+                <td
+                  className={`px-2 py-1 text-right tabular-nums ${
+                    flagged ? "font-medium text-amber-200" : "text-zinc-400"
+                  }`}
+                  title={
+                    flagged
+                      ? "Residuo alto al 31/12: ferie o permessi ancora da usufruire"
+                      : "Giorni previsti ancora da fare al 31/12"
+                  }
+                >
+                  {gg(ecc)}
+                </td>
               </tr>
             )
           })}
@@ -335,6 +373,7 @@ function OreBustaTable({
               <td className="px-2 py-1.5 text-right tabular-nums">{gg(totGiorni)}</td>
               <td className="px-2 py-1.5" />
               <td className="px-2 py-1.5" />
+              <td className="px-2 py-1.5 text-right tabular-nums text-amber-200">{gg(totEcc)}</td>
             </tr>
           </tfoot>
         ) : null}
@@ -351,6 +390,13 @@ export function DipendentiFerieTab() {
   const [q, setQ] = useState("")
   const [pdfBusy, setPdfBusy] = useState(false)
   const [feriePreview, setFeriePreview] = useState<AmmFerieDaFile[] | null>(null)
+  const [soloEccedenze, setSoloEccedenze] = useState(false)
+  const [compose, setCompose] = useState<"email" | "sms" | null>(null)
+  const [picked, setPicked] = useState<string[]>([])
+  const [subject, setSubject] = useState("Ferie e permessi da usufruire entro il 31/12")
+  const [body, setBody] = useState(
+    "Ciao {nome}, ti ricordiamo di programmare ferie e permessi residui entro il 31/12: {ferie} giorni di ferie e {permessi} giorni di permessi. Grazie, Aqua Sport.",
+  )
   const { data, error, setError, msg, setMsg, giorniByNome } = useFerieAnno(anno)
   const meta = useQuery({ queryKey: ["amm-meta"], queryFn: amministrazioneApi.meta })
   const attivi = (meta.data?.reparti ?? []).filter((r) => r.attivo)
@@ -415,10 +461,41 @@ export function DipendentiFerieTab() {
     }
   }
 
+  const daSegnalare = useMemo(() => {
+    return (data.data?.dipendenti ?? []).filter((p) => haEccedenza(p, "ferie") || haEccedenza(p, "permessi"))
+  }, [data.data?.dipendenti])
+
   const persone = useMemo(() => {
     const t = q.trim().toLocaleLowerCase("it")
-    return (data.data?.dipendenti ?? []).filter((p) => !t || p.nominativo.toLocaleLowerCase("it").includes(t))
-  }, [data.data?.dipendenti, q])
+    return (data.data?.dipendenti ?? []).filter((p) => {
+      if (t && !p.nominativo.toLocaleLowerCase("it").includes(t)) return false
+      if (!soloEccedenze) return true
+      return haEccedenza(p, "ferie") || haEccedenza(p, "permessi")
+    })
+  }, [data.data?.dipendenti, q, soloEccedenze])
+
+  const inviaMsgMut = useMutation({
+    mutationFn: (channel: "email" | "sms") =>
+      amministrazioneApi.inviaFerieMessaggio({
+        anno,
+        channel,
+        nominativi: picked,
+        subject: channel === "email" ? subject.trim() : undefined,
+        text: body.trim(),
+      }),
+    onSuccess: (r) => {
+      setMsg(`Inviati ${r.sent}. Non partiti ${r.failed}. Saltati ${r.skipped} (senza email/cellulare).`)
+      setError("")
+      setCompose(null)
+    },
+    onError: (e: Error) => setError(e.message),
+  })
+
+  function apriCompose(channel: "email" | "sms") {
+    setPicked(daSegnalare.map((p) => p.nominativo))
+    setCompose(channel)
+    setError("")
+  }
 
   return (
     <div className="mt-4 space-y-4">
@@ -480,7 +557,108 @@ export function DipendentiFerieTab() {
           Cerca
           <input className={inputCls} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nominativo" />
         </label>
+        <label className="flex items-center gap-2 pb-2 text-xs text-zinc-400">
+          <input
+            type="checkbox"
+            checked={soloEccedenze}
+            onChange={(e) => setSoloEccedenze(e.target.checked)}
+          />
+          Solo eccedenze
+        </label>
       </div>
+      {daSegnalare.length ? (
+        <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-amber-100">
+              {daSegnalare.length} dipendenti con eccedenza al 31/12 (almeno {ECCEDENZA_FERIE_GG} gg ferie o{" "}
+              {ECCEDENZA_PERMESSI_GG} gg permessi ancora da usufruire).
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={btnGhost} onClick={() => apriCompose("email")}>
+                Scrivi email
+              </button>
+              <button type="button" className={btnAmber} onClick={() => apriCompose("sms")}>
+                Scrivi SMS
+              </button>
+            </div>
+          </div>
+          {compose ? (
+            <div className="space-y-2 rounded-lg border border-zinc-800 bg-zinc-950/60 p-3">
+              <p className="text-xs text-zinc-400">
+                {compose === "sms" ? "SMS" : "Email"} · segna chi deve riceverlo. Placeholders: {"{nome}"} {"{ferie}"}{" "}
+                {"{permessi}"} (giorni al 31/12). Contatti da Libro paga / anagrafica.
+              </p>
+              <div className="max-h-40 overflow-auto text-xs">
+                {daSegnalare.map((p) => {
+                  const dest = compose === "email" ? p.email : p.telefono
+                  const on = picked.includes(p.nominativo)
+                  return (
+                    <label key={p.nominativo} className="flex items-center justify-between gap-3 py-0.5 text-zinc-300">
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={(e) =>
+                            setPicked((cur) =>
+                              e.target.checked ? [...cur, p.nominativo] : cur.filter((n) => n !== p.nominativo),
+                            )
+                          }
+                        />
+                        {p.nominativo}
+                      </span>
+                      <span className={dest ? "text-zinc-500" : "text-red-400"}>
+                        {dest || (compose === "email" ? "no email" : "no cell")}
+                      </span>
+                    </label>
+                  )
+                })}
+              </div>
+              {compose === "email" ? (
+                <input
+                  className={inputCls}
+                  value={subject}
+                  onChange={(e) => setSubject(e.target.value)}
+                  placeholder="Oggetto email"
+                />
+              ) : null}
+              <textarea
+                className={`${inputCls} min-h-[90px] w-full`}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                maxLength={compose === "sms" ? 1000 : 20000}
+                rows={compose === "sms" ? 4 : 5}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] text-zinc-500">
+                  {compose === "sms"
+                    ? `${body.length}/1000 · SMSHosting`
+                    : `${picked.length} selezionati · SMTP h2sport`}
+                  {compose === "email" && data.data?.canEmail === false ? " · email non configurata" : ""}
+                  {compose === "sms" && data.data?.canSms === false ? " · SMS non configurato" : ""}
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" className={btnGhost} onClick={() => setCompose(null)}>
+                    Annulla
+                  </button>
+                  <button
+                    type="button"
+                    className={btnAmber}
+                    disabled={
+                      inviaMsgMut.isPending ||
+                      !picked.length ||
+                      !body.trim() ||
+                      (compose === "email" && !subject.trim())
+                    }
+                    onClick={() => inviaMsgMut.mutate(compose)}
+                  >
+                    {inviaMsgMut.isPending ? "Invio…" : `Invia ${compose === "sms" ? "SMS" : "email"}`}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {feriePreview && (
         <div className="space-y-2 rounded-xl border border-zinc-800 bg-zinc-900/40 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -534,7 +712,8 @@ export function DipendentiFerieTab() {
       />
       <p className="text-xs text-zinc-500">
         Ore dalla busta. Residuo = alla data del cedolino (es. 31/10). Proiezione = al 31/12. Giorni = residuo / 8.
-        Usufruite = giorni segnati dal dipendente dopo quella busta. Da fare = residuo meno quei giorni.
+        Usufruite = giorni segnati dal dipendente dopo quella busta. Da fare = residuo meno quei giorni. Eccedenza =
+        giorni ancora previsti al 31/12: in evidenza se non risultano usufruiti nell’anno.
       </p>
     </div>
   )

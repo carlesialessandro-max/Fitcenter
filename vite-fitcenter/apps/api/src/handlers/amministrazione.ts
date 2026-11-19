@@ -42,6 +42,10 @@ import {
   spesaNelMese,
 } from "../services/amministrazione-utenze-competenza.js"
 import { dominioLivello, listLivelli, listPersonale, nominativo } from "../store/libro-paga-db.js"
+import { getStaffAnagrafica } from "../services/libro-paga-hr.js"
+import { authStore } from "../store/auth.js"
+import { isSmtpConfigured, sendMail } from "../services/mailer.js"
+import { isSmsConfigured, normalizeItPhone, sendSms } from "../services/sms.js"
 import { FIC_DEFAULT_REPARTO, ficStore } from "../store/fattureincloud.js"
 import {
   classificaFatturaEmessa,
@@ -2031,7 +2035,54 @@ function assertFerieNominativo(req: Request, requested: string): string {
   return mine
 }
 
-export function getAmmDipendentiFerie(req: Request, res: Response) {
+type ContattoFerie = { email?: string; telefono?: string }
+
+function emailOk(raw: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim())
+}
+
+async function loadContattiDipendenti(): Promise<Map<string, ContattoFerie>> {
+  const out = new Map<string, ContattoFerie>()
+  const put = (nome: string, email?: string, tel?: string) => {
+    const key = normalizzaNominativo(nome)
+    if (!key) return
+    const prev = out.get(key) ?? {}
+    const e = String(email ?? "").trim()
+    const t = String(tel ?? "").trim()
+    out.set(key, {
+      email: prev.email || (emailOk(e) ? e : undefined),
+      telefono: prev.telefono || (normalizeItPhone(t) ? t : undefined),
+    })
+  }
+  try {
+    for (const p of await listPersonale()) {
+      put(nominativo(p), p.email || p.gestionale?.email, p.gestionale?.cellulare || p.gestionale?.telefono)
+    }
+  } catch {
+    /* anagrafica LP opzionale */
+  }
+  try {
+    for (const h of await getStaffAnagrafica()) {
+      put(`${h.cognome} ${h.nome}`.trim(), h.email, h.cellulare || h.telefono)
+    }
+  } catch {
+    /* anagrafica gestionale opzionale */
+  }
+  try {
+    for (const u of authStore.listUsers()) {
+      put(u.consulenteNome || u.nome, u.email)
+    }
+  } catch {
+    /* utenti app opzionali */
+  }
+  return out
+}
+
+function contattoDi(map: Map<string, ContattoFerie>, nome: string): ContattoFerie {
+  return trovaPerNominativo(map, nome) ?? {}
+}
+
+export async function getAmmDipendentiFerie(req: Request, res: Response) {
   try {
     const anno = Number(req.query.anno) || new Date().getFullYear()
     const selfNome = req.user?.role === "admin" ? "" : nominativoDaUtente(req)
@@ -2059,12 +2110,26 @@ export function getAmmDipendentiFerie(req: Request, res: Response) {
       const hit = [...nomi.keys()].find((k) => stessoNominativo(k, selfNome))
       if (!hit) nomi.set(selfNome, selfNome)
     }
+    const contatti = selfNome ? new Map<string, ContattoFerie>() : await loadContattiDipendenti()
     const dipendenti = [...nomi.values()]
       .sort((a, b) => a.localeCompare(b, "it"))
-      .filter((nominativo) => !selfNome || stessoNominativo(nominativo, selfNome))
-      .map((nominativo) => personaFerieDi(nominativo, anno, saldi, giorni, Boolean(selfNome)))
+      .filter((nome) => !selfNome || stessoNominativo(nome, selfNome))
+      .map((nome) => {
+        const c = contattoDi(contatti, nome)
+        return {
+          ...personaFerieDi(nome, anno, saldi, giorni, Boolean(selfNome)),
+          email: c.email ?? null,
+          telefono: c.telefono ?? null,
+        }
+      })
     const giorniOut = selfNome ? giorni.filter((g) => stessoNominativo(g.nominativo, selfNome)) : giorni
-    res.json({ anno, dipendenti, giorni: giorniOut })
+    res.json({
+      anno,
+      dipendenti,
+      giorni: giorniOut,
+      canEmail: isSmtpConfigured(),
+      canSms: isSmsConfigured(),
+    })
   } catch (e) {
     fail(res, e)
   }
@@ -2131,6 +2196,105 @@ export function deleteAmmFerieGiorno(req: Request, res: Response) {
   try {
     ferieStore.deleteGiorno(String(req.params.id ?? "").trim())
     res.json({ ok: true })
+  } catch (e) {
+    fail(res, e)
+  }
+}
+
+function fillFerieMessaggio(
+  tpl: string,
+  p: { nominativo: string; ferieGg: number | null; permessiGg: number | null },
+) {
+  const fmt = (n: number | null) => (n == null ? "—" : n.toLocaleString("it-IT", { maximumFractionDigits: 2 }))
+  return tpl
+    .replaceAll("{nome}", p.nominativo)
+    .replaceAll("{ferie}", fmt(p.ferieGg))
+    .replaceAll("{permessi}", fmt(p.permessiGg))
+}
+
+function sleepMs(ms: number) {
+  return new Promise((r) => setTimeout(r, ms))
+}
+
+export async function postAmmFerieMessaggio(req: Request, res: Response) {
+  try {
+    const channel = req.body?.channel === "sms" ? "sms" : "email"
+    const subject = String(req.body?.subject ?? "").trim()
+    const textTpl = String(req.body?.text ?? "").trim()
+    const nominativi = Array.isArray(req.body?.nominativi)
+      ? (req.body.nominativi as unknown[]).map((n) => String(n ?? "").trim()).filter(Boolean)
+      : []
+    if (!textTpl) return res.status(400).json({ message: "Testo mancante" })
+    if (channel === "email" && !subject) return res.status(400).json({ message: "Oggetto mancante" })
+    if (!nominativi.length) return res.status(400).json({ message: "Nessun destinatario" })
+    if (nominativi.length > 40) return res.status(400).json({ message: "Massimo 40 destinatari" })
+    if (channel === "email" && !isSmtpConfigured()) {
+      return res.status(503).json({ message: "Invio email non configurato" })
+    }
+    if (channel === "sms" && !isSmsConfigured()) {
+      return res.status(503).json({ message: "Invio SMS non configurato" })
+    }
+
+    const anno = Number(req.body?.anno) || new Date().getFullYear()
+    const saldi = ferieStore.listSaldi()
+    const giorni = ferieStore.listGiorni(anno)
+    const contatti = await loadContattiDipendenti()
+    const oreToGg = (n: number | null, unita: "h" | "gg" | null) => {
+      if (n == null) return null
+      if (unita === "gg") return n
+      return Math.round((n / 8) * 100) / 100
+    }
+
+    let sent = 0
+    let failed = 0
+    let skipped = 0
+    const esiti: { nominativo: string; dest: string | null; esito: "sent" | "failed" | "skipped"; nota?: string }[] = []
+
+    for (const nome of nominativi) {
+      const persona = personaFerieDi(nome, anno, saldi, giorni, false)
+      const c = contattoDi(contatti, persona.nominativo)
+      const body = fillFerieMessaggio(textTpl, {
+        nominativo: persona.nominativo,
+        ferieGg: oreToGg(persona.ferieProiezione ?? persona.ferieDisponibili, persona.unita),
+        permessiGg: oreToGg(persona.permessiProiezione ?? persona.permessiDisponibili, persona.unita),
+      })
+      if (channel === "email") {
+        const to = (c.email ?? "").trim()
+        if (!emailOk(to)) {
+          skipped += 1
+          esiti.push({ nominativo: persona.nominativo, dest: to || null, esito: "skipped", nota: "Email mancante" })
+          continue
+        }
+        const out = await sendMail({ to, subject, text: body })
+        if (out.sent) {
+          sent += 1
+          esiti.push({ nominativo: persona.nominativo, dest: to, esito: "sent" })
+        } else {
+          failed += 1
+          esiti.push({ nominativo: persona.nominativo, dest: to, esito: "failed", nota: out.detail })
+        }
+        await sleepMs(80)
+      } else {
+        const raw = (c.telefono ?? "").trim()
+        const to = normalizeItPhone(raw)
+        if (!to) {
+          skipped += 1
+          esiti.push({ nominativo: persona.nominativo, dest: raw || null, esito: "skipped", nota: "Cellulare mancante" })
+          continue
+        }
+        const out = await sendSms({ to, text: body })
+        if (out.sent) {
+          sent += 1
+          esiti.push({ nominativo: persona.nominativo, dest: to, esito: "sent" })
+        } else {
+          failed += 1
+          esiti.push({ nominativo: persona.nominativo, dest: to, esito: "failed", nota: out.detail })
+        }
+        await sleepMs(80)
+      }
+    }
+
+    res.json({ sent, failed, skipped, esiti })
   } catch (e) {
     fail(res, e)
   }

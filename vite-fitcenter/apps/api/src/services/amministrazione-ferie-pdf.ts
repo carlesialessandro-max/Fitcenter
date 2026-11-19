@@ -314,18 +314,86 @@ function findCedolinoNominativo(lines: string[]): string {
   return ""
 }
 
-const VOCE_ORE = /^(ferie|permess|r\.?o\.?l\.?|ex\s*fest|fless|banca\s*ore)\b/i
+type VoceOre = "ferie" | "permessi" | "rol" | "exfest" | "fless" | "bancaore"
 
-function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
-  const idx = lines.findIndex((line) => label.test(line.trim()))
-  if (idx < 0) return null
-  for (const line of lines.slice(idx, idx + 3)) {
-    const t = line.trim()
-    if (VOCE_ORE.test(t) && !label.test(t)) break
-    const amts = amountsOn(t).filter((n) => Number.isFinite(n))
-    if (amts.length >= 4) return amts
-  }
+function amountsOre(line: string): number[] {
+  const amts = amountsOn(line).filter((n) => Number.isFinite(n))
+  const ore = amts.slice(0, 5)
+  if (ore.length < 4) return []
+  if (ore.filter((n) => Math.abs(n) > 500).length >= 2) return []
+  return amts
+}
+
+function voceOreDi(line: string): VoceOre | null {
+  const t = line.trim()
+  if (/^ferie\b/i.test(t)) return "ferie"
+  if (/^permess/i.test(t)) return "permessi"
+  if (/^r\s*\.?\s*o\s*\.?\s*l/i.test(t)) return "rol"
+  if (/^ex\s*fest/i.test(t)) return "exfest"
+  if (/^fless/i.test(t)) return "fless"
+  if (/^banca\s*ore\b/i.test(t)) return "bancaore"
   return null
+}
+
+/**
+ * Riquadro TeamSystem: FERIE / PERMESSI / R.O.L. / EX FEST / FLESS / BANCA ORE.
+ * Le ore (`h 68,96 …`) stanno spesso sulla riga sotto l’etichetta, non su PERMESSI.
+ */
+function parseRiquadroOre(lines: string[]): Partial<Record<VoceOre, number[]>> {
+  const out: Partial<Record<VoceOre, number[]>> = {}
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (voceOreDi(lines[i]!) !== "ferie") continue
+    const win = lines.slice(i, Math.min(lines.length, i + 20))
+    if (win.some((l) => amountsOre(l).length >= 4)) start = i
+  }
+  if (start < 0) return out
+  let pending: VoceOre | null = null
+  for (const line of lines.slice(start, start + 20)) {
+    const t = line.trim()
+    if (!t) continue
+    const key = voceOreDi(t)
+    const amts = amountsOre(t)
+    if (key) {
+      pending = key
+      if (amts.length >= 4) {
+        out[key] = amts
+        pending = null
+      }
+      continue
+    }
+    if (pending && amts.length >= 4) {
+      out[pending] = amts
+      pending = null
+    }
+  }
+  return out
+}
+
+/** TeamSystem: etichetta su una riga, ore (`h 68,96 …`) su quella dopo. Prende l’ultimo blocco valido della pagina. */
+function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
+  let found: number[] | null = null
+  for (let i = 0; i < lines.length; i++) {
+    const t0 = lines[i]!.trim()
+    if (!label.test(t0)) continue
+    const same = amountsOre(t0)
+    if (same.length >= 4) {
+      found = same
+      continue
+    }
+    for (let j = i + 1; j < Math.min(lines.length, i + 6); j++) {
+      const t = lines[j]!.trim()
+      if (!t) continue
+      const other = voceOreDi(t)
+      if (other && !label.test(t) && amountsOre(t).length < 4) break
+      const amts = amountsOre(t)
+      if (amts.length >= 4) {
+        found = amts
+        break
+      }
+    }
+  }
+  return found
 }
 
 function addOre(a?: number, b?: number): number | undefined {
@@ -360,13 +428,17 @@ function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<Fer
 }
 
 /** In busta i «permessi» sono Permessi + ROL + ex festività + flessibilità + banca ore. */
-function sommaPermessiBusta(lines: string[]): Omit<FerieDaFile, "nominativo"> | null {
+function sommaPermessiBusta(
+  lines: string[],
+  box?: Partial<Record<VoceOre, number[]>>,
+): Omit<FerieDaFile, "nominativo"> | null {
+  const riquadro = box ?? parseRiquadroOre(lines)
   const voci = [
-    saldoDaOre(hoursAfterLabel(lines, /^permess/i), "permessi"),
-    saldoDaOre(hoursAfterLabel(lines, /^r\.?o\.?l\.?/i), "permessi"),
-    saldoDaOre(hoursAfterLabel(lines, /^ex\s*fest/i), "permessi"),
-    saldoDaOre(hoursAfterLabel(lines, /^fless/i), "permessi"),
-    saldoDaOre(hoursAfterLabel(lines, /^banca\s*ore/i), "permessi"),
+    saldoDaOre(riquadro.permessi ?? hoursAfterLabel(lines, /^permess/i), "permessi"),
+    saldoDaOre(riquadro.rol ?? hoursAfterLabel(lines, /^r\s*\.?\s*o\s*\.?\s*l/i), "permessi"),
+    saldoDaOre(riquadro.exfest ?? hoursAfterLabel(lines, /^ex\s*fest/i), "permessi"),
+    saldoDaOre(riquadro.fless ?? hoursAfterLabel(lines, /^fless/i), "permessi"),
+    saldoDaOre(riquadro.bancaore ?? hoursAfterLabel(lines, /^banca\s*ore/i), "permessi"),
   ].filter((v): v is Omit<FerieDaFile, "nominativo"> => Boolean(v))
   if (!voci.length) return null
   return voci.reduce((acc, v) => ({
@@ -388,9 +460,10 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
     const lines = page.split(/\r?\n/).map((l) => l.replace(/\t/g, " ").replace(/[ ]+/g, " ").trim()).filter(Boolean)
     const nominativo = findCedolinoNominativo(lines)
     if (!nominativo) continue
-    const ferie = saldoDaOre(hoursAfterLabel(lines, /^ferie\b/i), "ferie")
+    const box = parseRiquadroOre(lines)
+    const ferie = saldoDaOre(box.ferie ?? hoursAfterLabel(lines, /^ferie\b/i), "ferie")
     if (!ferie) continue
-    const permessi = sommaPermessiBusta(lines)
+    const permessi = sommaPermessiBusta(lines, box)
     const key = nominativo.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)

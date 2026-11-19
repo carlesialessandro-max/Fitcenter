@@ -39,6 +39,7 @@ import {
   postAmmFerieImport,
   postAmmFerieGiorno,
   postAmmFeriePeriodo,
+  postAmmFerieMessaggio,
   deleteAmmFerieGiorno,
 } from "../handlers/amministrazione.js"
 
@@ -79,6 +80,7 @@ amministrazioneRouter.delete("/collaboratori/:id", deleteAmmCollaboratore)
 amministrazioneRouter.post("/stipendi/pdf", postAmmStipendiPdf)
 amministrazioneRouter.get("/dipendenti/ferie", getAmmDipendentiFerie)
 amministrazioneRouter.post("/dipendenti/ferie/import", postAmmFerieImport)
+amministrazioneRouter.post("/dipendenti/ferie/messaggio", postAmmFerieMessaggio)
 amministrazioneRouter.delete("/dipendenti/ferie/:id", deleteAmmFerieGiorno)
 amministrazioneRouter.get("/buste", getAmmBuste)
 amministrazioneRouter.post("/buste/consuntivo/import", postAmmBusteConsuntivoImport)

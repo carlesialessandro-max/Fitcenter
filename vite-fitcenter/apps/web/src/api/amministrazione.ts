@@ -221,6 +221,8 @@ export type AmmFeriePersona = {
   permessiUsatiDopoBusta: number
   ferieDisponibili: number | null
   permessiDisponibili: number | null
+  email?: string | null
+  telefono?: string | null
 }
 
 export type AmmOcrParsed = {
@@ -395,9 +397,26 @@ export const amministrazioneApi = {
       totDipendenti: number
     }>("/amministrazione/stipendi/pdf", { text, filename, mese }),
   dipendentiFerie: (anno: number) =>
-    api.get<{ anno: number; dipendenti: AmmFeriePersona[]; giorni: AmmFerieGiorno[] }>(
-      `/amministrazione/dipendenti/ferie?anno=${encodeURIComponent(String(anno))}`,
-    ),
+    api.get<{
+      anno: number
+      dipendenti: AmmFeriePersona[]
+      giorni: AmmFerieGiorno[]
+      canEmail?: boolean
+      canSms?: boolean
+    }>(`/amministrazione/dipendenti/ferie?anno=${encodeURIComponent(String(anno))}`),
+  inviaFerieMessaggio: (body: {
+    anno: number
+    channel: "email" | "sms"
+    nominativi: string[]
+    subject?: string
+    text: string
+  }) =>
+    api.post<{
+      sent: number
+      failed: number
+      skipped: number
+      esiti: { nominativo: string; dest: string | null; esito: "sent" | "failed" | "skipped"; nota?: string }[]
+    }>("/amministrazione/dipendenti/ferie/messaggio", body),
   mieFerie: (anno: number) =>
     api.get<{ anno: number; dipendenti: AmmFeriePersona[]; giorni: AmmFerieGiorno[] }>(
       `/amministrazione/dipendenti/ferie/me?anno=${encodeURIComponent(String(anno))}`,
