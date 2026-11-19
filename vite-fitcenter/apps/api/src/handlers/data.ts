@@ -2082,9 +2082,9 @@ function escapeHtml(s: string): string {
 function attiviEmailHtml(text: string, withImage: boolean): string {
   const body = escapeHtml(text).replace(/\r\n|\r|\n/g, "<br>")
   const img = withImage
-    ? `<p style="margin:20px 0 0;"><img src="cid:${ATTIVI_IMAGE_CID}" alt="Locandina" style="max-width:560px;width:100%;height:auto;border-radius:8px;" /></p>`
+    ? `<p style="margin:0 0 20px;"><img src="cid:${ATTIVI_IMAGE_CID}" alt="Locandina" style="max-width:560px;width:100%;height:auto;border-radius:8px;" /></p>`
     : ""
-  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#111;">${body}${img}</div>`
+  return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#111;">${img}${body}</div>`
 }
 
 function safeImageName(raw: string, ext: string): string {

@@ -656,14 +656,6 @@ export function AttiviInviaMessaggio({ asOf, consulente, elenco = "attivi", dest
                   className="mt-3 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
                 />
               )}
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={channel === "sms" ? "Testo SMS…" : "Testo email…"}
-                rows={channel === "sms" ? 4 : 6}
-                maxLength={channel === "sms" ? 1000 : 20000}
-                className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
-              />
               {channel === "email" ? (
                 <div className="mt-2">
                   <input
@@ -683,8 +675,7 @@ export function AttiviInviaMessaggio({ asOf, consulente, elenco = "attivi", dest
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm text-zinc-100">{imageFile.name}</p>
                         <p className="mt-0.5 text-[11px] text-zinc-500">
-                          {(imageFile.size / 1024).toFixed(0)} KB · nell&apos;email compare sotto il testo, in
-                          miniatura
+                          {(imageFile.size / 1024).toFixed(0)} KB · nell&apos;email compare sopra il testo
                         </p>
                         <div className="mt-2 flex flex-wrap gap-3">
                           <button
@@ -712,13 +703,21 @@ export function AttiviInviaMessaggio({ asOf, consulente, elenco = "attivi", dest
                     >
                       Allega locandina (JPG, PNG…)
                       <span className="mt-0.5 block text-[11px] text-zinc-600">
-                        Compare nell&apos;email sotto il testo, in miniatura. Max 8 MB.
+                        Compare nell&apos;email sopra il testo. Max 8 MB.
                       </span>
                     </button>
                   )}
                   {imageErr ? <p className="mt-1 text-xs text-red-400">{imageErr}</p> : null}
                 </div>
               ) : null}
+              <textarea
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={channel === "sms" ? "Testo SMS…" : "Testo email…"}
+                rows={channel === "sms" ? 4 : 6}
+                maxLength={channel === "sms" ? 1000 : 20000}
+                className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600"
+              />
               <p className="mt-1 text-[11px] text-zinc-500">
                 {channel === "sms"
                   ? `${text.length}/1000 caratteri · SMSHosting (un SMS per cellulare; non compare in «Campagne»)`
