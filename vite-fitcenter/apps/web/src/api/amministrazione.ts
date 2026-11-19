@@ -172,7 +172,10 @@ export type AmmFerieDaFile = {
   ferieAnnoPrec?: number
   ferieGodute?: number
   ferieMaturate?: number
+  ferieProiezione?: number
   permessiResidue?: number
+  permessiAnnoPrec?: number
+  permessiProiezione?: number
   unita?: "h" | "gg"
 }
 
@@ -192,15 +195,21 @@ export type AmmFeriePersona = {
     ferieAnnoPrec?: number
     ferieGodute?: number
     ferieMaturate?: number
+    ferieProiezione?: number
     permessiResidue?: number
+    permessiAnnoPrec?: number
+    permessiProiezione?: number
     unita?: "h" | "gg"
     fonte: "pdf" | "mastrino"
   }
   ferieAnnoPrec: number | null
   ferieMaturate: number | null
   ferieGodute: number | null
+  ferieProiezione: number | null
   ferieResidue: number | null
   permessiResidue: number | null
+  permessiAnnoPrec: number | null
+  permessiProiezione: number | null
   unita: "h" | "gg" | null
   ferieUsateDopoBusta: number
   permessiUsatiDopoBusta: number

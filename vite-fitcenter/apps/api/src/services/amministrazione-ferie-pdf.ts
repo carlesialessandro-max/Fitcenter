@@ -4,7 +4,10 @@ export type FerieDaFile = {
   ferieAnnoPrec?: number
   ferieGodute?: number
   ferieMaturate?: number
+  ferieProiezione?: number
   permessiResidue?: number
+  permessiAnnoPrec?: number
+  permessiProiezione?: number
   unita?: "h" | "gg"
 }
 
@@ -237,9 +240,11 @@ function saldoFromAmounts(amts: number[], headerNorm: string, hours: boolean): O
   const ferieMaturate = nums[1]
   const permessiResidue = nums.length >= 8 ? nums[7] : undefined
   return {
+    ferieAnnoPrec: nums[0],
     ferieResidue,
     ferieGodute,
     ferieMaturate,
+    ferieProiezione: nums.length >= 5 ? nums[4] : undefined,
     permessiResidue,
   }
 }
@@ -314,7 +319,7 @@ function hoursAfterLabel(lines: string[], label: RegExp): number[] | null {
     const t = line.trim()
     if (/^(r\.?o\.?l\.?|ex\s*fest|fless|banca ore)\b/i.test(t) && !label.test(t)) break
     const amts = amountsOn(t).filter((n) => Number.isFinite(n))
-    if (amts.length >= 4 && /\bh\b/i.test(t)) return amts
+    if (amts.length >= 4) return amts
   }
   return null
 }
@@ -323,12 +328,22 @@ function saldoDaOre(amts: number[] | null, kind: "ferie" | "permessi"): Omit<Fer
   if (!amts?.length) return null
   const residIdx = amts.length >= 4 ? 3 : amts.length - 1
   const residuo = amts[residIdx]!
-  if (kind === "permessi") return { ferieResidue: 0, permessiResidue: residuo, unita: "h" }
+  const proiezione = amts.length >= 5 ? amts[4] : undefined
+  if (kind === "permessi") {
+    return {
+      ferieResidue: 0,
+      permessiAnnoPrec: amts[0],
+      permessiResidue: residuo,
+      permessiProiezione: proiezione,
+      unita: "h",
+    }
+  }
   return {
     ferieAnnoPrec: amts[0],
     ferieMaturate: amts.length >= 2 ? amts[1] : undefined,
     ferieGodute: amts.length >= 3 ? amts[2] : undefined,
     ferieResidue: residuo,
+    ferieProiezione: proiezione,
     unita: "h",
   }
 }
@@ -353,7 +368,10 @@ function parseCedoliniFerie(text: string): FerieDaFile[] {
       ferieResidue: ferie.ferieResidue,
       ferieGodute: ferie.ferieGodute,
       ferieMaturate: ferie.ferieMaturate,
+      ferieProiezione: ferie.ferieProiezione,
       permessiResidue: permessi?.permessiResidue,
+      permessiAnnoPrec: permessi?.permessiAnnoPrec,
+      permessiProiezione: permessi?.permessiProiezione,
       unita: "h",
     })
   }
