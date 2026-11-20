@@ -10,6 +10,14 @@ function imapQuote(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
+function folderRank(name: string): number {
+  const n = name.toLowerCase().replace(/^inbox[./]/, "")
+  if (/trash|deleted|eliminat|cestino/.test(n)) return 0
+  if (n === "inbox" || name.toLowerCase() === "inbox") return 1
+  if (/junk|spam|indesiderat|bulk/.test(n)) return 2
+  return -1
+}
+
 function imapMonth(d: Date): string {
   return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]!
 }
@@ -154,6 +162,22 @@ class ImapClient {
     await this.cmd(`SELECT ${imapQuote(name)}`)
   }
 
+  async listFolders(): Promise<string[]> {
+    const res = await this.cmd(`LIST ${imapQuote("")} ${imapQuote("*")}`)
+    const names: string[] = []
+    for (const line of res.split(/\r?\n/)) {
+      const m = line.match(/^\* LIST \(([^)]*)\) "([^"]*)" (.+)$/)
+      if (!m) continue
+      if (/\\Noselect/i.test(m[1] ?? "")) continue
+      let name = (m[3] ?? "").trim()
+      if (name.startsWith('"') && name.endsWith('"')) {
+        name = name.slice(1, -1).replace(/\\"/g, '"')
+      }
+      if (name) names.push(name)
+    }
+    return names
+  }
+
   async uidSearch(criteria: string): Promise<number[]> {
     const res = await this.cmd(`UID SEARCH ${criteria}`)
     const line = res.split(/\r?\n/).find((l) => l.startsWith("* SEARCH")) ?? ""
@@ -210,7 +234,7 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
   const pass = env("SMTP_PASS")
   if (!host || !user || !pass) throw Object.assign(new Error("Casella mail non configurata"), { status: 503 })
 
-  const deadline = Date.now() + 18_000
+  const deadline = Date.now() + 28_000
   const client = new ImapClient()
   const emails = new Set<string>()
   let messages = 0
@@ -222,11 +246,40 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
     await client.connect(host, 993)
     await client.login(user, pass)
     const since = sinceToken(daysBack)
-    const folders = ["INBOX", "Junk", "Spam", "INBOX.Junk", "INBOX.Spam"]
+    const fallback = [
+      "Trash",
+      "INBOX.Trash",
+      "Deleted",
+      "Deleted Items",
+      "Deleted Messages",
+      "Posta eliminata",
+      "INBOX.Posta eliminata",
+      "Cestino",
+      "INBOX",
+      "Junk",
+      "Spam",
+      "INBOX.Junk",
+      "INBOX.Spam",
+    ]
+    let folders = fallback
+    try {
+      const listed = await client.listFolders()
+      const picked = listed.filter((n) => folderRank(n) >= 0)
+      if (picked.length) {
+        folders = [...new Set([...picked, ...fallback])].sort((a, b) => {
+          const ra = folderRank(a)
+          const rb = folderRank(b)
+          return (ra < 0 ? 9 : ra) - (rb < 0 ? 9 : rb)
+        })
+      }
+    } catch {
+      /* nomi fissi */
+    }
     const searches = [
       `SINCE ${since} FROM ${imapQuote("MAILER-DAEMON")}`,
       `SINCE ${since} FROM ${imapQuote("postmaster")}`,
       `SINCE ${since} FROM ${imapQuote("Mail Delivery")}`,
+      `SINCE ${since} FROM ${imapQuote("Mail Delivery System")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Undelivered")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Mail delivery failed")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Delivery Status")}`,
@@ -253,7 +306,7 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
         }
       }
       scanned += uids.size
-      const list = [...uids].sort((a, b) => a - b).slice(-40)
+      const list = [...uids].sort((a, b) => a - b).slice(-150)
       candidates += list.length
       for (const uid of list) {
         if (timeLeft() < 1_500) break
@@ -272,6 +325,6 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
   } finally {
     client.end()
   }
-  console.log("[IMAP-BOUNCE]", { scanned, candidates, found: emails.size, messages, ms: 18_000 - timeLeft() })
+  console.log("[IMAP-BOUNCE]", { scanned, candidates, found: emails.size, messages, ms: 28_000 - timeLeft() })
   return { emails: [...emails].sort(), messages, scanned, candidates }
 }

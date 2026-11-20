@@ -225,10 +225,10 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
         <p className="mt-1 text-xs text-zinc-500">
           Chi clicca Annulla iscrizione entra da solo. In blacklist vanno solo le caselle inesistenti, non gli indirizzi
           validi. <span className="text-zinc-400">Bounce</span>: Gmail/Libero hanno accettato e poi rimandato «questa
-          casella non esiste» (550) — usa il bottone giallo. <span className="text-zinc-400">NON inviati</span>: il nostro
-          server non ha consegnato; può essere casella morta oppure un intoppo (server lento, casella piena). Il bottone
-          del log prende solo le caselle inesistenti; gli indirizzi validi restano fuori. I prossimi invii saltano chi è
-          in lista.
+          casella non esiste» (550) — usa il bottone giallo (legge anche Posta eliminata e spam, così il desk può
+          svuotare INBOX). <span className="text-zinc-400">NON inviati</span>: il nostro server non ha consegnato; può
+          essere casella morta oppure un intoppo. Il bottone del log prende solo le caselle inesistenti. I prossimi
+          invii saltano chi è in lista.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -237,7 +237,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
             onClick={() => {
               if (
                 !window.confirm(
-                  "Leggere le bounce dalla casella info@h2sport.it (ultimi 21 giorni) e mettere in blacklist solo le caselle inesistenti?",
+                  "Leggere le bounce da info@h2sport.it (INBOX, spam e Posta eliminata, ultimi 21 giorni) e mettere in blacklist solo le caselle inesistenti?",
                 )
               )
                 return
