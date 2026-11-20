@@ -34,6 +34,7 @@ import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
 import { mailBlacklistStore } from "../store/mail-blacklist.js"
 import { ATTIVI_IMAGE_CID, campagneMailBody } from "../lib/mail-campagne.js"
+import { classifySmtpDest } from "../lib/mail-bounce.js"
 import { markRinnovato } from "../lib/mark-rinnovato.js"
 import { inferSessoDaNome } from "../services/lp-istruttore-sesso.js"
 
@@ -2312,6 +2313,10 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       return (m?.[1] ?? t).trim()
     }
 
+    const actor = getScopedUser(req)
+    const userLabel = String(actor.username ?? actor.nome ?? "").trim() || "admin"
+    const autoBlacklist = new Set<string>()
+
     const mark = (
       r: (typeof rows)[number],
       esito: AttiviInvioRecipient["esito"],
@@ -2348,11 +2353,9 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       const emails = Array.from(byEmail.keys())
       if (emails.length === 0) {
         if (skipped > 0) {
-          const actorSkip = getScopedUser(req)
-          const userSkip = String(actorSkip.username ?? actorSkip.nome ?? "").trim() || "admin"
           try {
             attiviInviiStore.append({
-              user: userSkip,
+              user: userLabel,
               channel,
               subject,
               text,
@@ -2407,25 +2410,14 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
               }
             : {}),
         })
-        const rejected = new Set((out.rejected ?? []).map(normAddr))
-        if (!out.sent && rejected.size === 0) {
-          if (out.detail && errors.length < 8) errors.push(out.detail)
-          for (const em of chunk) {
-            for (const r of byEmail.get(em) ?? []) {
-              mark(r, "failed", r.email, out.detail ?? "SMTP non ha accettato l'invio")
-            }
-          }
-        } else {
-          if (rejected.size && out.detail && errors.length < 8) errors.push(out.detail)
-          for (const em of chunk) {
-            const refused = rejected.has(normAddr(em))
-            for (const r of byEmail.get(em) ?? []) {
-              if (refused) {
-                mark(r, "failed", r.email, "SMTP ha rifiutato l'indirizzo")
-              } else {
-                mark(r, "sent", r.email, "Server mail ha accettato")
-              }
-            }
+        if (out.detail && errors.length < 8 && (!out.sent || (out.rejected?.length ?? 0) > 0)) {
+          errors.push(out.detail)
+        }
+        for (const em of chunk) {
+          const cls = classifySmtpDest(em, out, normAddr)
+          if (cls.blacklist) autoBlacklist.add(normAddr(em))
+          for (const r of byEmail.get(em) ?? []) {
+            mark(r, cls.esito, r.email, cls.nota)
           }
         }
         if (i + chunkSize < emails.length) await sleepMs(120)
@@ -2466,8 +2458,17 @@ export async function postAbbonamentiAttiviInvia(req: Request, res: Response) {
       }
     }
 
-    const actor = getScopedUser(req)
-    const userLabel = String(actor.username ?? actor.nome ?? "").trim() || "admin"
+    if (autoBlacklist.size) {
+      try {
+        mailBlacklistStore.addMany([...autoBlacklist], {
+          source: "bounce",
+          note: "Casella inesistente (rifiuto SMTP all'invio)",
+          user: userLabel,
+        })
+      } catch (e) {
+        console.error("[ATTIVI-MSG] blacklist auto non salvata:", (e as Error)?.message ?? e)
+      }
+    }
     try {
       attiviInviiStore.append({
         user: userLabel,

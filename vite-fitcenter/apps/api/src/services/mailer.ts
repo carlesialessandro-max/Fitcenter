@@ -113,15 +113,31 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
       detail: rejected.length ? `Rifiutate: ${rejected.join(", ")}` : undefined,
     }
   } catch (e) {
-    const msg = (e as Error)?.message ?? String(e)
-    const stack = (e as Error)?.stack
+    const err = e as Error & {
+      rejected?: unknown
+      accepted?: unknown
+      response?: string
+      responseCode?: number
+      rejectedErrors?: Array<{ rejected?: unknown; response?: string; responseCode?: number }>
+    }
+    const rejected = new Set(addrs(err.rejected))
+    const accepted = addrs(err.accepted)
+    for (const re of err.rejectedErrors ?? []) {
+      if (typeof re.rejected === "string" && re.rejected.trim()) rejected.add(re.rejected.trim())
+      else for (const a of addrs(re.rejected)) rejected.add(a)
+    }
+    const detail = [err.message, err.response, err.responseCode != null ? String(err.responseCode) : ""]
+      .map((x) => String(x ?? "").trim())
+      .filter(Boolean)
+      .join(" · ")
     console.log("[SIGNATURE][MAIL-ERROR]", {
       to: input.to,
       subject: input.subject,
-      error: msg,
-      stack,
+      error: err.message ?? String(e),
+      rejected: [...rejected].slice(0, 8),
+      stack: err.stack,
     })
-    return { sent: false, detail: msg }
+    return { sent: false, accepted, rejected: [...rejected], detail: detail || err.message || String(e) }
   }
 }
 

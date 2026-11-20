@@ -1,7 +1,7 @@
 import type { Request, Response } from "express"
 import { getScopedUser } from "../middleware/auth.js"
 import { mailBlacklistStore, isMailAddrOk, normalizeMailAddr } from "../store/mail-blacklist.js"
-import { extractBounceEmails } from "../lib/mail-bounce.js"
+import { extractBounceEmails, isInvalidMailboxFromLogNote } from "../lib/mail-bounce.js"
 import { fetchMailboxBounceEmails, isImapConfigured } from "../services/mail-imap-bounces.js"
 import { attiviInviiStore } from "../store/attivi-invii.js"
 
@@ -70,7 +70,9 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
       for (const invio of attiviInviiStore.list(80)) {
         if (invio.channel !== "email") continue
         for (const r of invio.recipients ?? []) {
-          if (r.esito === "failed" && r.dest) collected.add(normalizeMailAddr(r.dest))
+          if (r.esito !== "failed" || !r.dest) continue
+          if (!isInvalidMailboxFromLogNote(r.nota)) continue
+          collected.add(normalizeMailAddr(r.dest))
         }
       }
     }
@@ -83,7 +85,9 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
       return res.status(400).json({
         message: body.fromMailbox
           ? "Nessuna bounce trovata in casella (ultimi 21 giorni)."
-          : "Nessun indirizzo da mettere in blacklist.",
+          : body.fromLog
+            ? "Nessuna casella inesistente nel log. I NON inviati per errore del server restano fuori dalla blacklist."
+            : "Nessun indirizzo da mettere in blacklist.",
         added: 0,
         skipped: 0,
         emails: [],
@@ -93,7 +97,9 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
 
     const out = mailBlacklistStore.addMany([...collected], {
       source: "bounce",
-      note: "Bounce: casella inesistente / server ha rifiutato",
+      note: body.fromLog && !body.fromMailbox && !String(body.text ?? "").trim()
+        ? "Casella inesistente dal log invii"
+        : "Bounce: casella inesistente",
       user,
     })
     return res.json({ ok: true, ...out, found: collected.size, messages })

@@ -13,6 +13,8 @@ import {
 import { sendMail, isSmtpConfigured } from "../services/mailer.js"
 import { sendSms, isSmsConfigured, isSmsSandboxMode } from "../services/sms.js"
 import { attiviInviiStore, type AttiviInvioRecipient } from "../store/attivi-invii.js"
+import { classifySmtpDest } from "../lib/mail-bounce.js"
+import { mailBlacklistStore } from "../store/mail-blacklist.js"
 export type RinnovoCorsoRow = {
   clienteId: string
   abbonamentoId: string
@@ -199,6 +201,7 @@ export async function postScuolaNuotoRinnoviInvia(req: Request, res: Response) {
       else if (esito === "failed") failed++
       else skipped++
     }
+    const autoBlacklist = new Set<string>()
 
     if (channel === "email") {
       const byEmail = new Map<string, ContattoInvio[]>()
@@ -209,6 +212,10 @@ export async function postScuolaNuotoRinnoviInvia(req: Request, res: Response) {
           continue
         }
         const k = e.toLowerCase()
+        if (mailBlacklistStore.has(k)) {
+          mark(r, "skipped", e, "Blacklist: ha annullato l'iscrizione")
+          continue
+        }
         const list = byEmail.get(k) ?? []
         list.push(r)
         byEmail.set(k, list)
@@ -221,11 +228,11 @@ export async function postScuolaNuotoRinnoviInvia(req: Request, res: Response) {
         const to = chunk[0]!
         const bcc = chunk.length > 1 ? chunk.slice(1).join(", ") : undefined
         const out = await sendMail({ to, bcc, subject, text })
-        const rejected = new Set((out.rejected ?? []).map(normAddr))
         for (const em of chunk) {
-          const refused = rejected.has(normAddr(em))
+          const cls = classifySmtpDest(em, out, normAddr)
+          if (cls.blacklist) autoBlacklist.add(normAddr(em))
           for (const r of byEmail.get(em) ?? []) {
-            mark(r, refused || !out.sent ? "failed" : "sent", r.email, out.detail)
+            mark(r, cls.esito, r.email, cls.nota)
           }
         }
         if (i + chunkSize < emails.length) await sleepMs(120)
@@ -256,6 +263,17 @@ export async function postScuolaNuotoRinnoviInvia(req: Request, res: Response) {
 
     const actor = getScopedUser(req)
     const userLabel = String(actor.username ?? actor.nome ?? "").trim() || "user"
+    if (autoBlacklist.size) {
+      try {
+        mailBlacklistStore.addMany([...autoBlacklist], {
+          source: "bounce",
+          note: "Casella inesistente (rifiuto SMTP all'invio)",
+          user: userLabel,
+        })
+      } catch {
+        /* blacklist opzionale */
+      }
+    }
     try {
       attiviInviiStore.append({
         user: userLabel,

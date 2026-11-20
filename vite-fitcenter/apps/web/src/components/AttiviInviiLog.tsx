@@ -223,8 +223,12 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
       <div className="border-b border-zinc-800 px-4 py-3">
         <h3 className="text-sm font-semibold text-zinc-100">Blacklist — Annulla iscrizione</h3>
         <p className="mt-1 text-xs text-zinc-500">
-          Chi clicca Annulla iscrizione in calce alla mail entra qui da solo. Le bounce (casella inesistente, errore 550)
-          si importano dalla casella info@ o incollando il testo del respingimento. I prossimi invii le saltano.
+          Chi clicca Annulla iscrizione entra da solo. In blacklist vanno solo le caselle inesistenti, non gli indirizzi
+          validi. <span className="text-zinc-400">Bounce</span>: Gmail/Libero hanno accettato e poi rimandato «questa
+          casella non esiste» (550) — usa il bottone giallo. <span className="text-zinc-400">NON inviati</span>: il nostro
+          server non ha consegnato; può essere casella morta oppure un intoppo (server lento, casella piena). Il bottone
+          del log prende solo le caselle inesistenti; gli indirizzi validi restano fuori. I prossimi invii saltano chi è
+          in lista.
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
@@ -233,7 +237,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
             onClick={() => {
               if (
                 !window.confirm(
-                  "Leggere le bounce dalla casella info@h2sport.it (ultimi 21 giorni) e metterle in blacklist?",
+                  "Leggere le bounce dalla casella info@h2sport.it (ultimi 21 giorni) e mettere in blacklist solo le caselle inesistenti?",
                 )
               )
                 return
@@ -248,14 +252,18 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
             type="button"
             disabled={busy}
             onClick={() => {
-              if (!window.confirm("Mettere in blacklist tutte le email che il log marca come NON inviate (rifiuto SMTP)?"))
+              if (
+                !window.confirm(
+                  "Mettere in blacklist solo le caselle inesistenti del log (550 / rifiuto indirizzo)? Gli indirizzi validi NON inviati per errore del server restano fuori.",
+                )
+              )
                 return
               setImportMsg("")
               importBl.mutate({ fromLog: true })
             }}
             className="rounded-md border border-zinc-600 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
           >
-            Blacklist dai NON inviati del log
+            Blacklist solo caselle inesistenti dal log
           </button>
         </div>
         {importMsg ? <p className="mt-2 text-xs text-emerald-400">{importMsg}</p> : null}
