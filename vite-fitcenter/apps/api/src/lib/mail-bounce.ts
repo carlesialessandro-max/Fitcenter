@@ -1,7 +1,7 @@
 const EMAIL_ONLY = /^[a-z0-9._%+\-]+@[a-z0-9.-]+\.[a-z]{2,}$/i
 /** Solo casella inesistente / indirizzo morto — non casella piena, greylist, timeout. */
 const PERMANENT_BOUNCE_HINT =
-  /550\s*5\.1\.|status:\s*5\.1\.|[;\s]5\.1\.[0-3](?:\D|$)|does not exist|user unknown|nosuchuser|indirizzo inesistente|account that you tried to reach does not exist|unknown user|invalid recipient|no such user|mailbox does not exist|user not found|unknown mailbox|recipient not found/i
+  /550\s*5\.1\.|550\s*5\.4\.1|status:\s*5\.1\.|[;\s]5\.1\.[0-3](?:\D|$)|does not exist|user unknown|nosuchuser|indirizzo inesistente|account that you tried to reach does not exist|unknown user|invalid recipient|no such user|mailbox does not exist|user not found|unknown mailbox|recipient not found|recipient address rejected|destinatario (?:è )?sconosciuto|destinatario inesistente|casella inesistente|utente sconosciuto|indirizzo (?:e-?mail )?(?:inesistente|non valido)|l['']indirizzo[^\n]{0,60}non esiste/i
 const TEMPORARY_FAIL_HINT =
   /mailbox full|over quota|insufficient storage|try again|greylist|temporar|deferred|timeout|econnrefused|etimedout|4\.2\.2|5\.2\.2/i
 const FAIL_HINT = PERMANENT_BOUNCE_HINT
@@ -28,6 +28,28 @@ function keepAddr(email: string): boolean {
 function add(out: Set<string>, raw: string) {
   const e = normalizeBounceEmail(raw)
   if (keepAddr(e)) out.add(e)
+}
+
+function decodeQuotedPrintable(s: string): string {
+  const body = s.replace(/=\r?\n/g, "")
+  return body.replace(/=([0-9A-Fa-f]{2})/g, (_, h: string) => String.fromCharCode(Number.parseInt(h, 16)))
+}
+
+/** Rende visibili DSN in quoted-printable / base64, altrimenti Final-Recipient resta nascosto. */
+export function decodeMimeText(raw: string): string {
+  const src = String(raw ?? "")
+  if (!src.trim()) return ""
+  const chunks = [src, decodeQuotedPrintable(src)]
+  const re = /Content-Transfer-Encoding:\s*base64\b[\s\S]*?\r?\n\r?\n([A-Za-z0-9+/=\s]{40,})/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(src))) {
+    try {
+      chunks.push(Buffer.from(String(m[1]).replace(/\s+/g, ""), "base64").toString("utf8"))
+    } catch {
+      /* parte non decodificabile */
+    }
+  }
+  return chunks.join("\n")
 }
 
 export function isPermanentBounceText(text: string): boolean {
@@ -87,7 +109,7 @@ export function classifySmtpDest(
 
 /** Estrae solo i destinatari respinti (550 / casella inesistente), non il To della campagna. */
 export function extractBounceEmails(text: string): string[] {
-  const src = String(text ?? "")
+  const src = decodeMimeText(String(text ?? ""))
   if (!src.trim()) return []
   if (TEMPORARY_FAIL_HINT.test(src) && !isPermanentBounceText(src)) return []
   const out = new Set<string>()

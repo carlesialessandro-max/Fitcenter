@@ -56,6 +56,8 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
     const user = String(actor.username ?? actor.nome ?? "").trim() || "admin"
     const collected = new Set<string>()
     let messages = 0
+    let scanned = 0
+    let candidates = 0
 
     if (body.fromMailbox) {
       if (!isImapConfigured()) {
@@ -63,6 +65,8 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
       }
       const fetched = await fetchMailboxBounceEmails(21)
       messages = fetched.messages
+      scanned = fetched.scanned
+      candidates = fetched.candidates
       for (const e of fetched.emails) collected.add(e)
     }
 
@@ -82,9 +86,15 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
     }
 
     if (!collected.size) {
+      const mailboxMsg =
+        candidates > 0
+          ? `Trovati ${candidates} avvisi di mancato recapito, ma nessuna casella inesistente (550). Casella piena o ritardi non vanno in blacklist.`
+          : scanned > 0
+            ? `Nessun messaggio bounce in casella (ultimi 21 giorni, ${scanned} mail lette). Gmail spesso accetta e rimanda dopo: riprova più tardi o incolla qui sotto il testo del respingimento.`
+            : "Nessun messaggio bounce in casella (ultimi 21 giorni). Gmail spesso accetta e rimanda dopo: riprova più tardi o incolla qui sotto il testo del respingimento."
       return res.status(400).json({
         message: body.fromMailbox
-          ? "Nessuna bounce trovata in casella (ultimi 21 giorni)."
+          ? mailboxMsg
           : body.fromLog
             ? "Nessuna casella inesistente nel log. I NON inviati per errore del server restano fuori dalla blacklist."
             : "Nessun indirizzo da mettere in blacklist.",
@@ -92,6 +102,8 @@ export async function postMailBlacklistImport(req: Request, res: Response) {
         skipped: 0,
         emails: [],
         messages,
+        scanned,
+        candidates,
       })
     }
 

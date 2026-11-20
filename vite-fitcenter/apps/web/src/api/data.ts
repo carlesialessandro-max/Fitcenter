@@ -161,7 +161,16 @@ export const dataApi = {
       body,
     ),
   importMailBlacklist: (body: { text?: string; fromMailbox?: boolean; fromLog?: boolean }) =>
-    api.post<{ ok: boolean; added: number; skipped: number; found: number; messages?: number; emails: string[] }>(
+    api.post<{
+      ok: boolean
+      added: number
+      skipped: number
+      found: number
+      messages?: number
+      scanned?: number
+      candidates?: number
+      emails: string[]
+    }>(
       "/data/mail-blacklist/import",
       body,
     ),

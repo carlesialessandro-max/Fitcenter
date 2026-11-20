@@ -10,6 +10,30 @@ function imapQuote(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
+function extractImapLiteral(res: string, marker: RegExp): string | null {
+  const m = marker.exec(res)
+  if (!m || m.index == null) return null
+  const n = Number(m[1])
+  if (!Number.isFinite(n) || n < 0) return null
+  let start = m.index + m[0].length
+  if (res.startsWith("\r\n", start)) start += 2
+  else if (res.startsWith("\n", start)) start += 1
+  return res.slice(start, start + n)
+}
+
+const BOUNCE_HEADER_HINT =
+  /mailer-daemon|postmaster|mail[- ]delivery|mailer daemon|undeliver|delivery failed|delivery status|returned mail|failure notice|non recapitat|mancato recapito|impossibile recapitare|undeliverable|diagnostica|bounce|multipart\/report|delivery-status|final-recipient|dsn /i
+
+function looksLikeBounceHeader(header: string): boolean {
+  return BOUNCE_HEADER_HINT.test(header)
+}
+
+function bounceFolder(name: string): boolean {
+  const n = name.replace(/^INBOX[./]/i, "")
+  if (/^inbox$/i.test(n) || /^inbox$/i.test(name)) return true
+  return /^(junk|spam|bulk|bounce|unwanted|posta indesiderata)$/i.test(n)
+}
+
 function imapMonth(d: Date): string {
   return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]!
 }
@@ -132,7 +156,27 @@ class ImapClient {
   }
 
   async selectInbox() {
-    await this.cmd("SELECT INBOX")
+    await this.select("INBOX")
+  }
+
+  async select(name: string) {
+    await this.cmd(`SELECT ${imapQuote(name)}`)
+  }
+
+  async listFolders(): Promise<string[]> {
+    const res = await this.cmd(`LIST ${imapQuote("")} ${imapQuote("*")}`)
+    const names: string[] = []
+    for (const line of res.split(/\r?\n/)) {
+      const m = line.match(/^\* LIST \(([^)]*)\) "([^"]*)" (.+)$/)
+      if (!m) continue
+      if (/\\Noselect/i.test(m[1] ?? "")) continue
+      let name = (m[3] ?? "").trim()
+      if (name.startsWith('"') && name.endsWith('"')) {
+        name = name.slice(1, -1).replace(/\\"/g, '"')
+      }
+      if (name) names.push(name)
+    }
+    return names
   }
 
   async uidSearch(criteria: string): Promise<number[]> {
@@ -148,15 +192,23 @@ class ImapClient {
 
   async uidFetchPeek(uid: number): Promise<string> {
     const res = await this.cmd(`UID FETCH ${uid} BODY.PEEK[]`)
-    const m = /BODY\[\]\s*\{(\d+)\}/i.exec(res)
-    if (!m || m.index == null) return res
-    const n = Number(m[1])
-    const header = m[0]
-    const start = res.indexOf(header) + header.length
-    let body = res.slice(start)
-    if (body.startsWith("\r\n")) body = body.slice(2)
-    else if (body.startsWith("\n")) body = body.slice(1)
-    return body.slice(0, n)
+    return extractImapLiteral(res, /BODY\[\]\s*\{(\d+)\}/i) ?? extractImapLiteral(res, /RFC822\s*\{(\d+)\}/i) ?? res
+  }
+
+  async uidFetchHeaders(uids: number[]): Promise<Map<number, string>> {
+    const out = new Map<number, string>()
+    if (!uids.length) return out
+    const res = await this.cmd(
+      `UID FETCH ${uids.join(",")} (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT CONTENT-TYPE)])`,
+    )
+    const blocks = res.split(/\r?\n\* /)
+    for (const block of blocks) {
+      const uidM = /\bUID (\d+)\b/i.exec(block)
+      if (!uidM) continue
+      const header = extractImapLiteral(block, /BODY\[HEADER\.FIELDS[^\]]+\]\s*\{(\d+)\}/i)
+      out.set(Number(uidM[1]), header ?? block)
+    }
+    return out
   }
 
   end() {
@@ -174,8 +226,15 @@ export function isImapConfigured(): boolean {
   return Boolean(env("SMTP_HOST") && env("SMTP_USER") && env("SMTP_PASS"))
 }
 
-export async function fetchMailboxBounceEmails(daysBack = 14): Promise<{ emails: string[]; messages: number }> {
-  const host = env("SMTP_HOST")
+export type MailboxBounceScan = {
+  emails: string[]
+  messages: number
+  scanned: number
+  candidates: number
+}
+
+export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBounceScan> {
+  const host = env("IMAP_HOST") ?? env("SMTP_HOST")
   const user = env("SMTP_USER")
   const pass = env("SMTP_PASS")
   if (!host || !user || !pass) throw Object.assign(new Error("Casella mail non configurata"), { status: 503 })
@@ -183,43 +242,88 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<{ emails:
   const client = new ImapClient()
   const emails = new Set<string>()
   let messages = 0
+  let scanned = 0
+  let candidates = 0
   try {
     await client.connect(host, 993)
     await client.login(user, pass)
-    await client.selectInbox()
     const since = sinceToken(daysBack)
+    let folders = ["INBOX"]
+    try {
+      const listed = await client.listFolders()
+      const extra = listed.filter(bounceFolder)
+      folders = [...new Set(["INBOX", ...extra])]
+    } catch {
+      /* solo INBOX */
+    }
+
     const searches = [
       `SINCE ${since} FROM ${imapQuote("MAILER-DAEMON")}`,
+      `SINCE ${since} FROM ${imapQuote("mailer-daemon")}`,
+      `SINCE ${since} FROM ${imapQuote("postmaster")}`,
       `SINCE ${since} FROM ${imapQuote("Mail Delivery")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Mail delivery failed")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Undelivered")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("undeliverable")}`,
       `SINCE ${since} SUBJECT ${imapQuote("diagnostica")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Returned mail")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Delivery Status")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("failure notice")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("Non recapitat")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("mancato recapito")}`,
+      `SINCE ${since} HEADER ${imapQuote("Content-Type")} ${imapQuote("multipart/report")}`,
     ]
-    const uids = new Set<number>()
-    for (const q of searches) {
+
+    for (const folder of folders) {
       try {
-        for (const id of await client.uidSearch(q)) uids.add(id)
+        await client.select(folder)
       } catch {
-        /* criterio non supportato */
+        continue
       }
-    }
-    const list = [...uids].sort((a, b) => a - b).slice(-400)
-    for (const uid of list) {
+      const uids = new Set<number>()
+      for (const q of searches) {
+        try {
+          for (const id of await client.uidSearch(q)) uids.add(id)
+        } catch {
+          /* criterio non supportato */
+        }
+      }
       try {
-        const body = await client.uidFetchPeek(uid)
-        const found = extractBounceEmails(body)
-        if (found.length) {
-          messages += 1
-          for (const e of found) emails.add(e)
+        const recent = (await client.uidSearch(`SINCE ${since}`)).sort((a, b) => a - b).slice(-800)
+        scanned += recent.length
+        for (let i = 0; i < recent.length; i += 25) {
+          const chunk = recent.slice(i, i + 25)
+          try {
+            const headers = await client.uidFetchHeaders(chunk)
+            for (const [uid, header] of headers) {
+              if (looksLikeBounceHeader(header)) uids.add(uid)
+            }
+          } catch {
+            /* batch header saltato */
+          }
         }
       } catch {
-        /* messaggio saltato */
+        /* SEARCH SINCE non disponibile */
+      }
+
+      const list = [...uids].sort((a, b) => a - b).slice(-400)
+      candidates += list.length
+      for (const uid of list) {
+        try {
+          const body = await client.uidFetchPeek(uid)
+          const found = extractBounceEmails(body)
+          if (found.length) {
+            messages += 1
+            for (const e of found) emails.add(e)
+          }
+        } catch {
+          /* messaggio saltato */
+        }
       }
     }
   } finally {
     client.end()
   }
-  return { emails: [...emails].sort(), messages }
+  console.log("[IMAP-BOUNCE]", { scanned, candidates, found: emails.size, messages })
+  return { emails: [...emails].sort(), messages, scanned, candidates }
 }
