@@ -246,7 +246,7 @@ export function AttiviInviiLog({ onClose }: { onClose?: () => void }) {
             }}
             className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-medium text-zinc-950 hover:bg-amber-400 disabled:opacity-40"
           >
-            {importBl.isPending ? "Importo…" : "Importa bounce dalla casella"}
+            {importBl.isPending ? "Cerco bounce…" : "Importa bounce dalla casella"}
           </button>
           <button
             type="button"

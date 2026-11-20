@@ -10,30 +10,6 @@ function imapQuote(s: string): string {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`
 }
 
-function extractImapLiteral(res: string, marker: RegExp): string | null {
-  const m = marker.exec(res)
-  if (!m || m.index == null) return null
-  const n = Number(m[1])
-  if (!Number.isFinite(n) || n < 0) return null
-  let start = m.index + m[0].length
-  if (res.startsWith("\r\n", start)) start += 2
-  else if (res.startsWith("\n", start)) start += 1
-  return res.slice(start, start + n)
-}
-
-const BOUNCE_HEADER_HINT =
-  /mailer-daemon|postmaster|mail[- ]delivery|mailer daemon|undeliver|delivery failed|delivery status|returned mail|failure notice|non recapitat|mancato recapito|impossibile recapitare|undeliverable|diagnostica|bounce|multipart\/report|delivery-status|final-recipient|dsn /i
-
-function looksLikeBounceHeader(header: string): boolean {
-  return BOUNCE_HEADER_HINT.test(header)
-}
-
-function bounceFolder(name: string): boolean {
-  const n = name.replace(/^INBOX[./]/i, "")
-  if (/^inbox$/i.test(n) || /^inbox$/i.test(name)) return true
-  return /^(junk|spam|bulk|bounce|unwanted|posta indesiderata)$/i.test(n)
-}
-
 function imapMonth(d: Date): string {
   return ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()]!
 }
@@ -91,23 +67,26 @@ class ImapClient {
     await this.readGreeting()
   }
 
-  private async waitData(timeoutMs: number) {
-    if (this.buf.length) return
-    await new Promise<void>((resolve, reject) => {
-      const t = setTimeout(() => reject(new Error("Timeout IMAP")), timeoutMs)
-      this.wait = () => {
-        clearTimeout(t)
-        this.wait = null
-        resolve()
-      }
-    })
-  }
-
   private async readGreeting() {
     const started = Date.now()
     while (!this.buf.includes(Buffer.from("\n"))) {
-      if (Date.now() - started > 20_000) throw new Error("Timeout greeting IMAP")
-      await this.waitData(20_000)
+      if (Date.now() - started > 12_000) throw new Error("Timeout greeting IMAP")
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => {
+          this.wait = null
+          reject(new Error("Timeout greeting IMAP"))
+        }, 12_000)
+        this.wait = () => {
+          clearTimeout(t)
+          this.wait = null
+          resolve()
+        }
+        if (this.buf.includes(Buffer.from("\n"))) {
+          clearTimeout(t)
+          this.wait = null
+          resolve()
+        }
+      })
     }
     const idx = this.buf.indexOf(Buffer.from("\n"))
     this.buf = this.buf.slice(idx + 1)
@@ -118,15 +97,31 @@ class ImapClient {
     return `A${this.tagN}`
   }
 
-  async cmd(line: string): Promise<string> {
+  async cmd(line: string, timeoutMs = 12_000): Promise<string> {
     const tag = this.nextTag()
     const sock = this.sock
     if (!sock) throw new Error("IMAP non connesso")
     sock.write(`${tag} ${line}\r\n`)
     const started = Date.now()
     while (!taggedComplete(this.buf, tag)) {
-      if (Date.now() - started > 45_000) throw new Error("Timeout IMAP")
-      await this.waitData(45_000)
+      const left = timeoutMs - (Date.now() - started)
+      if (left <= 0) throw new Error("Timeout IMAP")
+      await new Promise<void>((resolve, reject) => {
+        const t = setTimeout(() => {
+          this.wait = null
+          reject(new Error("Timeout IMAP"))
+        }, left)
+        this.wait = () => {
+          clearTimeout(t)
+          this.wait = null
+          resolve()
+        }
+        if (taggedComplete(this.buf, tag)) {
+          clearTimeout(t)
+          this.wait = null
+          resolve()
+        }
+      })
     }
     const text = this.buf.toString("utf8")
     this.buf = Buffer.alloc(0)
@@ -155,28 +150,8 @@ class ImapClient {
     throw new Error(last)
   }
 
-  async selectInbox() {
-    await this.select("INBOX")
-  }
-
   async select(name: string) {
     await this.cmd(`SELECT ${imapQuote(name)}`)
-  }
-
-  async listFolders(): Promise<string[]> {
-    const res = await this.cmd(`LIST ${imapQuote("")} ${imapQuote("*")}`)
-    const names: string[] = []
-    for (const line of res.split(/\r?\n/)) {
-      const m = line.match(/^\* LIST \(([^)]*)\) "([^"]*)" (.+)$/)
-      if (!m) continue
-      if (/\\Noselect/i.test(m[1] ?? "")) continue
-      let name = (m[3] ?? "").trim()
-      if (name.startsWith('"') && name.endsWith('"')) {
-        name = name.slice(1, -1).replace(/\\"/g, '"')
-      }
-      if (name) names.push(name)
-    }
-    return names
   }
 
   async uidSearch(criteria: string): Promise<number[]> {
@@ -190,25 +165,21 @@ class ImapClient {
       .filter((n) => Number.isFinite(n) && n > 0)
   }
 
-  async uidFetchPeek(uid: number): Promise<string> {
-    const res = await this.cmd(`UID FETCH ${uid} BODY.PEEK[]`)
-    return extractImapLiteral(res, /BODY\[\]\s*\{(\d+)\}/i) ?? extractImapLiteral(res, /RFC822\s*\{(\d+)\}/i) ?? res
-  }
-
-  async uidFetchHeaders(uids: number[]): Promise<Map<number, string>> {
-    const out = new Map<number, string>()
-    if (!uids.length) return out
+  /** Solo header + prime 2 parti DSN, senza l'allegato originale della campagna. */
+  async uidFetchDsn(uid: number): Promise<string> {
     const res = await this.cmd(
-      `UID FETCH ${uids.join(",")} (UID BODY.PEEK[HEADER.FIELDS (FROM SUBJECT CONTENT-TYPE)])`,
+      `UID FETCH ${uid} (BODY.PEEK[HEADER] BODY.PEEK[1] BODY.PEEK[2])`,
+      10_000,
     )
-    const blocks = res.split(/\r?\n\* /)
-    for (const block of blocks) {
-      const uidM = /\bUID (\d+)\b/i.exec(block)
-      if (!uidM) continue
-      const header = extractImapLiteral(block, /BODY\[HEADER\.FIELDS[^\]]+\]\s*\{(\d+)\}/i)
-      out.set(Number(uidM[1]), header ?? block)
+    const parts: string[] = []
+    const re = /\{(\d+)\}\r?\n/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(res))) {
+      const n = Number(m[1])
+      if (!Number.isFinite(n) || n <= 0 || n > 200_000) continue
+      parts.push(res.slice(m.index + m[0].length, m.index + m[0].length + n))
     }
-    return out
+    return parts.join("\n") || res.slice(0, 80_000)
   }
 
   end() {
@@ -239,42 +210,34 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
   const pass = env("SMTP_PASS")
   if (!host || !user || !pass) throw Object.assign(new Error("Casella mail non configurata"), { status: 503 })
 
+  const deadline = Date.now() + 18_000
   const client = new ImapClient()
   const emails = new Set<string>()
   let messages = 0
   let scanned = 0
   let candidates = 0
+  const timeLeft = () => deadline - Date.now()
+
   try {
     await client.connect(host, 993)
     await client.login(user, pass)
     const since = sinceToken(daysBack)
-    let folders = ["INBOX"]
-    try {
-      const listed = await client.listFolders()
-      const extra = listed.filter(bounceFolder)
-      folders = [...new Set(["INBOX", ...extra])]
-    } catch {
-      /* solo INBOX */
-    }
-
+    const folders = ["INBOX", "Junk", "Spam", "INBOX.Junk", "INBOX.Spam"]
     const searches = [
       `SINCE ${since} FROM ${imapQuote("MAILER-DAEMON")}`,
-      `SINCE ${since} FROM ${imapQuote("mailer-daemon")}`,
       `SINCE ${since} FROM ${imapQuote("postmaster")}`,
       `SINCE ${since} FROM ${imapQuote("Mail Delivery")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("Mail delivery failed")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Undelivered")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("undeliverable")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("diagnostica")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("Returned mail")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("Mail delivery failed")}`,
       `SINCE ${since} SUBJECT ${imapQuote("Delivery Status")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("failure notice")}`,
-      `SINCE ${since} SUBJECT ${imapQuote("Non recapitat")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("diagnostica")}`,
+      `SINCE ${since} SUBJECT ${imapQuote("undeliverable")}`,
       `SINCE ${since} SUBJECT ${imapQuote("mancato recapito")}`,
       `SINCE ${since} HEADER ${imapQuote("Content-Type")} ${imapQuote("multipart/report")}`,
     ]
 
     for (const folder of folders) {
+      if (timeLeft() < 3_000) break
       try {
         await client.select(folder)
       } catch {
@@ -282,35 +245,20 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
       }
       const uids = new Set<number>()
       for (const q of searches) {
+        if (timeLeft() < 2_000) break
         try {
           for (const id of await client.uidSearch(q)) uids.add(id)
         } catch {
           /* criterio non supportato */
         }
       }
-      try {
-        const recent = (await client.uidSearch(`SINCE ${since}`)).sort((a, b) => a - b).slice(-800)
-        scanned += recent.length
-        for (let i = 0; i < recent.length; i += 25) {
-          const chunk = recent.slice(i, i + 25)
-          try {
-            const headers = await client.uidFetchHeaders(chunk)
-            for (const [uid, header] of headers) {
-              if (looksLikeBounceHeader(header)) uids.add(uid)
-            }
-          } catch {
-            /* batch header saltato */
-          }
-        }
-      } catch {
-        /* SEARCH SINCE non disponibile */
-      }
-
-      const list = [...uids].sort((a, b) => a - b).slice(-400)
+      scanned += uids.size
+      const list = [...uids].sort((a, b) => a - b).slice(-40)
       candidates += list.length
       for (const uid of list) {
+        if (timeLeft() < 1_500) break
         try {
-          const body = await client.uidFetchPeek(uid)
+          const body = await client.uidFetchDsn(uid)
           const found = extractBounceEmails(body)
           if (found.length) {
             messages += 1
@@ -324,6 +272,6 @@ export async function fetchMailboxBounceEmails(daysBack = 14): Promise<MailboxBo
   } finally {
     client.end()
   }
-  console.log("[IMAP-BOUNCE]", { scanned, candidates, found: emails.size, messages })
+  console.log("[IMAP-BOUNCE]", { scanned, candidates, found: emails.size, messages, ms: 18_000 - timeLeft() })
   return { emails: [...emails].sort(), messages, scanned, candidates }
 }
