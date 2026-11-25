@@ -936,6 +936,20 @@ export function listCalendarioPerAssegnazione(): {
   return { instructors: db.instructors, events }
 }
 
+function eachIsoDay(fromIso: string, toIso: string): string[] {
+  const from = parseIsoLocal(fromIso)
+  const to = parseIsoLocal(toIso)
+  if (!from || !to || to < from) return [fromIso]
+  const out: string[] = []
+  const d = new Date(from)
+  while (d <= to) {
+    out.push(isoYmdFromDate(d))
+    d.setDate(d.getDate() + 1)
+    if (out.length > 31) break
+  }
+  return out
+}
+
 export async function getCalendarioPianoOperativo(req: Request, res: Response) {
   const u = req.user!
   if (u.role !== "admin" && u.role !== "calendari") return res.status(403).json({ message: "Permessi insufficienti" })
@@ -945,22 +959,36 @@ export async function getCalendarioPianoOperativo(req: Request, res: Response) {
   if (!date) return res.status(400).json({ message: "Data non valida (YYYY-MM-DD)" })
 
   const dateIso = isoYmdFromDate(date)
+  const fromRaw = String(req.query.from ?? "").trim()
+  const toRaw = String(req.query.to ?? "").trim()
+  const fromIso = fromRaw && isIsoDate(fromRaw) ? fromRaw : dateIso
+  const toIso = toRaw && isIsoDate(toRaw) ? toRaw : dateIso
+  const days = eachIsoDay(fromIso, toIso)
+
   const db = readCalendarioDb()
   const reparti: { comparto: CalendarioComparto; label: string; events: (CalendarioMergedEvent & { staffDisplay: string })[] }[] =
     []
   for (const comparto of PIANO_OPERATIVO_COMPARTI) {
-    const merged = await eventsForComparto(comparto, db, { from: dateIso, to: dateIso })
-    const events = eventsMatchingCalendarDay(merged, date)
-      .map((e) => ({
-        ...e,
-        staffDisplay: displayStaff(e, db.instructors),
-      }))
-      .sort(
-        (a, b) =>
-          shiftRangeStartForSort(a).localeCompare(shiftRangeStartForSort(b)) ||
-          a.title.localeCompare(b.title) ||
-          a.staffDisplay.localeCompare(b.staffDisplay, "it")
-      )
+    const merged = await eventsForComparto(comparto, db, { from: fromIso, to: toIso })
+    const events: (CalendarioMergedEvent & { staffDisplay: string })[] = []
+    for (const iso of days) {
+      const day = parseIsoLocal(iso)
+      if (!day) continue
+      for (const e of eventsMatchingCalendarDay(merged, day)) {
+        events.push({
+          ...e,
+          dateIso: iso,
+          staffDisplay: displayStaff(e, db.instructors),
+        })
+      }
+    }
+    events.sort(
+      (a, b) =>
+        String(a.dateIso ?? "").localeCompare(String(b.dateIso ?? "")) ||
+        shiftRangeStartForSort(a).localeCompare(shiftRangeStartForSort(b)) ||
+        a.title.localeCompare(b.title) ||
+        a.staffDisplay.localeCompare(b.staffDisplay, "it")
+    )
     reparti.push({
       comparto,
       label: COMPARTO_LABELS[comparto],
@@ -968,7 +996,7 @@ export async function getCalendarioPianoOperativo(req: Request, res: Response) {
     })
   }
 
-  res.json({ dateIso, reparti, instructors: db.instructors })
+  res.json({ dateIso, fromIso, toIso, reparti, instructors: db.instructors })
 }
 
 export async function getCalendarioComparto(req: Request, res: Response) {

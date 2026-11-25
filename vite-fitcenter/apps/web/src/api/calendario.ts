@@ -37,6 +37,8 @@ export type PianoOperativoRepartoDto = {
 
 export type PianoOperativoResponse = {
   dateIso: string
+  fromIso?: string
+  toIso?: string
   reparti: PianoOperativoRepartoDto[]
   instructors: CalendarioIstruttore[]
 }
@@ -88,8 +90,12 @@ export type PatchCalendarioSlotBody = {
 }
 
 export const calendarioApi = {
-  getPianoOperativo: (dateIso: string) =>
-    api.get<PianoOperativoResponse>(`/data/calendario/piano-operativo?date=${encodeURIComponent(dateIso)}`),
+  getPianoOperativo: (dateIso: string, range?: { from: string; to: string }) => {
+    const q = new URLSearchParams({ date: dateIso })
+    if (range?.from) q.set("from", range.from)
+    if (range?.to) q.set("to", range.to)
+    return api.get<PianoOperativoResponse>(`/data/calendario/piano-operativo?${q}`)
+  },
   getComparto: (comparto: CalendarioComparto, range?: { from: string; to: string }) => {
     const q = new URLSearchParams()
     if (range?.from) q.set("from", range.from)
