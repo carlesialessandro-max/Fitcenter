@@ -254,18 +254,10 @@ function ShiftBlock({
   const { start, end } = eventTimeRange(e)
   const dur = formatShiftDurationLabel(start, end)
   const gestionale = isScuolaNuotoLesson(e)
-  const bianco = isTurnoBianco(e)
-  const staffName = staffLaneLabel(e)
-  const label = gestionale
-    ? lessonShortTitle(e)
-    : bianco
-      ? staffName.toLowerCase() === "bianco"
-        ? TURNO_BIANCO_ACTIVITY
-        : `${TURNO_BIANCO_ACTIVITY} · ${staffName}`
-      : staffName
+  const label = gestionale ? lessonShortTitle(e) : staffLaneLabel(e)
   const tip = gestionale
     ? `${e.title}${e.staffDisplay && e.staffDisplay !== "—" ? ` · ${e.staffDisplay}` : ""}`
-    : `${bianco ? `${TURNO_BIANCO_ACTIVITY} · ` : ""}${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
+    : `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
   return (
     <button
       type="button"
@@ -584,7 +576,7 @@ function EventPill({
       )}
       title={canEdit ? "Clic per modificare istruttore e note" : "Sola lettura"}
     >
-      {showShiftLine ? (
+      {showShiftLine || bianco ? (
         <>
           <span className={cn("font-semibold", ink)}>{shiftPillLine(e)}</span>
           <span className={cn("block truncate", muted)}>
