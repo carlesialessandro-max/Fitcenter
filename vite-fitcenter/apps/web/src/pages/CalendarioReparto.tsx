@@ -31,8 +31,14 @@ import {
   eventTimeRange,
   formatHm,
   formatShiftDurationLabel,
+  isTurnoBianco,
+  isTurnoBiancoActivity,
   normalizeHmInput,
   shiftEventInHour,
+  TURNO_BIANCO_ACTIVITY,
+  TURNO_BIANCO_DEFAULT_END,
+  TURNO_BIANCO_DEFAULT_START,
+  TURNO_BIANCO_STAFF,
 } from "@/lib/reception-shift"
 import { dedupeShiftEvents, shiftRevisionKeys } from "@/lib/shift-dedupe"
 import { computeWeekHoursByStaff, formatHoursDecimal, formatHoursShort } from "@/lib/calendario-turnazioni"
@@ -196,7 +202,7 @@ type ShiftGrid = {
 function buildShiftGrid(startMin: number, endMin: number, slotPx: number): ShiftGrid {
   const slotMin = SHIFT_SLOT_MINUTES
   const start = Math.max(5 * 60, Math.floor(startMin / slotMin) * slotMin)
-  const end = Math.min(23 * 60, Math.max(start + slotMin, Math.ceil(endMin / slotMin) * slotMin))
+  const end = Math.min(24 * 60, Math.max(start + slotMin, Math.ceil(endMin / slotMin) * slotMin))
   const slots: number[] = []
   for (let m = start; m <= end; m += slotMin) slots.push(m)
   return { startMin: start, slotMin, slotPx, slots, height: slots.length * slotPx }
@@ -248,10 +254,18 @@ function ShiftBlock({
   const { start, end } = eventTimeRange(e)
   const dur = formatShiftDurationLabel(start, end)
   const gestionale = isScuolaNuotoLesson(e)
-  const label = gestionale ? lessonShortTitle(e) : staffLaneLabel(e)
+  const bianco = isTurnoBianco(e)
+  const staffName = staffLaneLabel(e)
+  const label = gestionale
+    ? lessonShortTitle(e)
+    : bianco
+      ? staffName.toLowerCase() === "bianco"
+        ? TURNO_BIANCO_ACTIVITY
+        : `${TURNO_BIANCO_ACTIVITY} · ${staffName}`
+      : staffName
   const tip = gestionale
     ? `${e.title}${e.staffDisplay && e.staffDisplay !== "—" ? ` · ${e.staffDisplay}` : ""}`
-    : `${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
+    : `${bianco ? `${TURNO_BIANCO_ACTIVITY} · ` : ""}${start}–${end}${dur ? ` · ${dur}` : ""} · ${e.staffDisplay}`
   return (
     <button
       type="button"
@@ -446,6 +460,7 @@ function DropdownNav({ label, links }: { label: string; links: { to: string; lab
 }
 
 function pillColClass(e: CalEvent, colorByStaff?: boolean): string {
+  if (isTurnoBianco(e)) return "border-zinc-300/80 bg-zinc-100 text-zinc-900"
   if (colorByStaff) {
     const key = staffColorKey(e)
     if (key !== "unknown") return staffPillClasses(key)
@@ -491,6 +506,9 @@ function EventPill({
   slotEdge?: "start" | "middle" | "end" | "only"
 }) {
   const col = pillColClass(e, colorByStaff)
+  const bianco = isTurnoBianco(e)
+  const ink = bianco ? "text-zinc-900" : "text-zinc-200"
+  const muted = bianco ? "text-zinc-600" : "text-zinc-300"
   if (slotFill) {
     const tip = `${shiftPillLine(e)} · ${staffLabel}`
     const showName = slotEdge === "start" || slotEdge === "only" || slotEdge == null
@@ -533,8 +551,8 @@ function EventPill({
         )}
         title={canEdit ? "Clic per modificare" : "Sola lettura"}
       >
-        <span className="block truncate font-semibold text-zinc-200">{shiftPillLine(e)}</span>
-        <span className="block truncate text-zinc-300">{isScuolaNuotoLesson(e) ? lessonShortTitle(e) : staffLabel}</span>
+        <span className={cn("block truncate font-semibold", ink)}>{shiftPillLine(e)}</span>
+        <span className={cn("block truncate", muted)}>{isScuolaNuotoLesson(e) ? lessonShortTitle(e) : staffLabel}</span>
       </button>
     )
   }
@@ -568,15 +586,15 @@ function EventPill({
     >
       {showShiftLine ? (
         <>
-          <span className="font-semibold text-zinc-200">{shiftPillLine(e)}</span>
-          <span className="block truncate text-zinc-300">
+          <span className={cn("font-semibold", ink)}>{shiftPillLine(e)}</span>
+          <span className={cn("block truncate", muted)}>
             · {isScuolaNuotoLesson(e) ? lessonShortTitle(e) : staffLabel}
           </span>
         </>
       ) : (
         <>
-          <span className="font-semibold text-zinc-200">{e.start}</span> {e.title}
-          <span className="block truncate text-zinc-300">· {staffLabel}</span>
+          <span className={cn("font-semibold", ink)}>{e.start}</span> {e.title}
+          <span className={cn("block truncate", muted)}>· {staffLabel}</span>
         </>
       )}
       {note ? <span className="mt-0.5 block truncate text-[9px] text-amber-200/90">{note}</span> : null}
@@ -608,7 +626,8 @@ function compartoDisplayLabel(comparto: CalendarioComparto): string {
   return CALENDARIO_SEGMENTI.find((x) => x.api === comparto)?.label ?? comparto
 }
 
-function createSlotModalTitle(comparto: CreateSlotComparto): string {
+function createSlotModalTitle(comparto: CreateSlotComparto, preset?: "bianco" | null): string {
+  if (preset === "bianco") return "Turno bianco"
   if (comparto === "scuola_nuoto") return "Nuova lezione"
   if (comparto === "corsi") return "Nuovo corso"
   return `Nuovo turno · ${compartoDisplayLabel(comparto)}`
@@ -952,7 +971,7 @@ function EditEventModal({
               </label>
             ) : null}
             <label className="block text-xs font-medium text-zinc-400 sm:col-span-2">
-              {scheduleMode === "corsi" ? "Titolo corso" : "Attività (es. Sportello, Copertura, Turno sala)"}
+              {scheduleMode === "corsi" ? "Titolo corso" : "Attività (es. Sportello, Copertura, Turno bianco)"}
               <input
                 value={isShiftRangeMode ? activity : title}
                 onChange={(ev) => (isShiftRangeMode ? setActivity(ev.target.value) : setTitle(ev.target.value))}
@@ -1097,6 +1116,7 @@ function CreateSlotModal({
   comparto,
   instructors,
   calendarDate,
+  preset,
   onClose,
   onCreated,
 }: {
@@ -1104,11 +1124,13 @@ function CreateSlotModal({
   instructors: CalendarioIstruttore[]
   /** Giorno di calendario per cui creare lo slot (solo quel giorno/settimana). */
   calendarDate: Date
+  preset?: "bianco" | null
   onClose: () => void
   onCreated: () => void
 }) {
   const isCorsiLike = comparto === "corsi" || comparto === "scuola_nuoto"
   const isShiftRange = !isCorsiLike
+  const isBianco = preset === "bianco"
   const [slotDateIso, setSlotDateIso] = useState(() => isoYmd(calendarDate))
   const [dow, setDow] = useState(() => calendarDate.getDay())
 
@@ -1118,15 +1140,17 @@ function CreateSlotModal({
     setSlotDateIso(iso)
     setDow(d.getDay())
   }
-  const [start, setStart] = useState(isShiftRange ? "08:00" : "09:00")
-  const [end, setEnd] = useState(isShiftRange ? "14:00" : "10:00")
-  const [activity, setActivity] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(comparto))
+  const [start, setStart] = useState(isBianco ? TURNO_BIANCO_DEFAULT_START : isShiftRange ? "08:00" : "09:00")
+  const [end, setEnd] = useState(isBianco ? TURNO_BIANCO_DEFAULT_END : isShiftRange ? "14:00" : "10:00")
+  const [activity, setActivity] = useState(
+    isCorsiLike ? "" : isBianco ? TURNO_BIANCO_ACTIVITY : defaultActivityForShiftComparto(comparto)
+  )
   const [title, setTitle] = useState(isCorsiLike ? "" : defaultActivityForShiftComparto(comparto))
   const [zona, setZona] = useState<string>(
     comparto === "scuola_nuoto" ? "scuola_nuoto" : isCorsiLike ? "terra" : defaultZonaForShiftComparto(comparto)
   )
   const [istruttoreId, setIstruttoreId] = useState("")
-  const [staffText, setStaffText] = useState("")
+  const [staffText, setStaffText] = useState(isBianco ? TURNO_BIANCO_STAFF : "")
   const [note, setNote] = useState("")
   const [busy, setBusy] = useState(false)
 
@@ -1134,14 +1158,22 @@ function CreateSlotModal({
     ev.preventDefault()
     const startHm = normalizeHmInput(start)
     const endHm = normalizeHmInput(end)
+    const activityOut = isBianco && !activity.trim() ? TURNO_BIANCO_ACTIVITY : activity
     const tit = isShiftRange
-      ? buildShiftTitle(activity, startHm, endHm)
+      ? buildShiftTitle(activityOut, startHm, endHm)
       : (title.trim() || (isCorsiLike ? "" : "Copertura")).trim()
     if (!tit) {
       alert(isShiftRange ? "Controlla orari e attività" : "Titolo obbligatorio")
       return
     }
-    if (!istruttoreId.trim() && !staffText.trim()) {
+    const namedStaff = staffText.trim()
+    const staffIsBianco = namedStaff.toLowerCase() === TURNO_BIANCO_STAFF.toLowerCase()
+    const staffOut = istruttoreId.trim()
+      ? staffIsBianco
+        ? ""
+        : namedStaff
+      : namedStaff || (isBianco || isTurnoBiancoActivity(activityOut) ? TURNO_BIANCO_STAFF : "")
+    if (!istruttoreId.trim() && !staffOut) {
       alert("Scegli un istruttore dall'anagrafica oppure inserisci il nome in calendario")
       return
     }
@@ -1164,7 +1196,7 @@ function CreateSlotModal({
         title: tit,
         zona: zonaOut,
         istruttoreId: istruttoreId || null,
-        staffOverride: staffText.trim() || null,
+        staffOverride: staffOut || null,
         note: note.trim() || null,
       })
       onCreated()
@@ -1183,13 +1215,15 @@ function CreateSlotModal({
         onSubmit={submit}
         className="relative z-10 w-full max-w-md space-y-3 rounded-2xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
       >
-        <h2 className="text-base font-semibold text-zinc-100">{createSlotModalTitle(comparto)}</h2>
+        <h2 className="text-base font-semibold text-zinc-100">{createSlotModalTitle(comparto, preset)}</h2>
         <p className="text-xs text-zinc-500">
-          {comparto === "scuola_nuoto"
-            ? "Lezione extra oltre al gestionale (si ripete ogni settimana nel giorno scelto)."
-            : isCorsiLike
-              ? "Corso settimanale sul planning (stesso giorno ogni settimana)."
-              : "Turno salvato sul server solo per la data scelta (non si ripete nelle altre settimane)."}
+          {isBianco
+            ? "Copertura extra fuori orario, solo per questo giorno. Lascia «Bianco» se ancora da assegnare, oppure scegli chi copre."
+            : comparto === "scuola_nuoto"
+              ? "Lezione extra oltre al gestionale (si ripete ogni settimana nel giorno scelto)."
+              : isCorsiLike
+                ? "Corso settimanale sul planning (stesso giorno ogni settimana)."
+                : "Turno salvato sul server solo per la data scelta (non si ripete nelle altre settimane)."}
         </p>
         <SlotDayPicker valueIso={slotDateIso} onChange={setSlotDayFromIso} />
         {isCorsiLike ? (
@@ -1207,7 +1241,7 @@ function CreateSlotModal({
                   onChange={(ev) => {
                     const v = ev.target.value
                     setStart(v)
-                    if (!end || end <= v) setEnd(addHoursToHm(v, 6))
+                    if (!end || end <= v) setEnd(addHoursToHm(v, isBianco ? 2 : 6))
                   }}
                   className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
                   placeholder="08:00"
@@ -1269,7 +1303,7 @@ function CreateSlotModal({
           </label>
         ) : (
           <label className="block text-xs font-medium text-zinc-400">
-            Attività (es. Sportello, Copertura, Turno sala)
+            Attività (es. Sportello, Copertura, Turno bianco)
             <input value={activity} onChange={(ev) => setActivity(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
           </label>
         )}
@@ -1279,7 +1313,12 @@ function CreateSlotModal({
         </label>
         <label className="block text-xs font-medium text-zinc-400">
           Nome in calendario (se senza anagrafica)
-          <input value={staffText} onChange={(ev) => setStaffText(ev.target.value)} className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100" />
+          <input
+            value={staffText}
+            onChange={(ev) => setStaffText(ev.target.value)}
+            className="mt-1 w-full rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            placeholder={isBianco ? "Bianco (da assegnare)" : undefined}
+          />
         </label>
         <label className="block text-xs font-medium text-zinc-400">
           Note
@@ -1444,6 +1483,7 @@ export function CalendarioRepartoPage() {
   const [editEvent, setEditEvent] = useState<CalEvent | null>(null)
   const [editCalendarDate, setEditCalendarDate] = useState<string | null>(null)
   const [createSlotComparto, setCreateSlotComparto] = useState<null | CreateSlotComparto>(null)
+  const [createSlotPreset, setCreateSlotPreset] = useState<null | "bianco">(null)
   const [duplicaOpen, setDuplicaOpen] = useState(false)
   const [turnazioniOpen, setTurnazioniOpen] = useState(false)
   const [inviaTurniOpen, setInviaTurniOpen] = useState(false)
@@ -1520,7 +1560,7 @@ export function CalendarioRepartoPage() {
       }
     ) => {
       if (!apiComparto || !canWrite) return
-      const staffTrim = p.staffText.trim()
+      const staffTrim = p.staffText.trim() || (isTurnoBianco({ title: p.title }) ? TURNO_BIANCO_STAFF : "")
       const noteTrim = p.note.trim()
       try {
         const dateIso = e.seasonal
@@ -1615,7 +1655,7 @@ export function CalendarioRepartoPage() {
   }, [cursor])
   const dayOnly = useMemo(() => startOfDay(cursor), [cursor])
   const slotAnchorDate = useMemo(() => (view === "day" ? dayOnly : startOfDay(cursor)), [view, dayOnly, cursor])
-  const hours = useMemo(() => Array.from({ length: 17 }, (_, i) => i + 6), []) // 06:00–22:00
+  const hours = useMemo(() => Array.from({ length: 19 }, (_, i) => i + 5), []) // 05:00–23:00
   const weekFitWidth = apiComparto === "piscina" || apiComparto === "scuola_nuoto"
   const cells = view === "month" ? monthMatrix(cursor) : []
   const weekShiftGrid = useMemo(() => {
@@ -1692,7 +1732,9 @@ export function CalendarioRepartoPage() {
               ) : apiComparto === "reception" ? (
                 <>
                   Orario desk da Excel. Puoi aggiungere o modificare un turno{" "}
-                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>.
+                  <strong className="font-medium text-zinc-400">solo per quel giorno</strong>. Con{" "}
+                  <strong className="font-medium text-zinc-300">Turno bianco</strong> copri fasce fuori orario
+                  (mattina presto o dopo chiusura), anche senza assegnare ancora una persona.
                 </>
               ) : apiComparto === "sala_fitness" ? (
                 <>
@@ -1859,25 +1901,40 @@ export function CalendarioRepartoPage() {
               </button>
             ) : null}
             {scheduleMode !== "none" && canWrite ? (
-              <button
-                type="button"
-                onClick={() =>
-                  setCreateSlotComparto(
-                    apiComparto === "corsi" || apiComparto === "scuola_nuoto" ? apiComparto : scheduleMode
-                  )
-                }
-                className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
-              >
-                {scheduleMode === "corsi"
-                  ? apiComparto === "scuola_nuoto"
-                    ? "Aggiungi lezione"
-                    : "Aggiungi corso"
-                  : scheduleMode === "sala_fitness"
-                    ? "Aggiungi turno sala"
-                    : scheduleMode === "piscina"
-                      ? "Aggiungi turno"
-                      : "Aggiungi slot"}
-              </button>
+              <>
+                {apiComparto === "reception" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateSlotPreset("bianco")
+                      setCreateSlotComparto("reception")
+                    }}
+                    className="rounded-lg border border-zinc-300/80 bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-white"
+                  >
+                    Turno bianco
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCreateSlotPreset(null)
+                    setCreateSlotComparto(
+                      apiComparto === "corsi" || apiComparto === "scuola_nuoto" ? apiComparto : scheduleMode
+                    )
+                  }}
+                  className="rounded-lg border border-zinc-600 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+                >
+                  {scheduleMode === "corsi"
+                    ? apiComparto === "scuola_nuoto"
+                      ? "Aggiungi lezione"
+                      : "Aggiungi corso"
+                    : scheduleMode === "sala_fitness"
+                      ? "Aggiungi turno sala"
+                      : scheduleMode === "piscina"
+                        ? "Aggiungi turno"
+                        : "Aggiungi slot"}
+                </button>
+              </>
             ) : null}
           </div>
         </div>
@@ -1912,7 +1969,11 @@ export function CalendarioRepartoPage() {
             comparto={createSlotComparto}
             instructors={instructors}
             calendarDate={slotAnchorDate}
-            onClose={() => setCreateSlotComparto(null)}
+            preset={createSlotPreset}
+            onClose={() => {
+              setCreateSlotComparto(null)
+              setCreateSlotPreset(null)
+            }}
             onCreated={() => void reload()}
           />
         ) : null}

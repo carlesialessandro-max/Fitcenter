@@ -24,6 +24,7 @@ const STAFF_FIXED_CLASSES: Record<string, string> = {
   tommaso: "border-sky-400/80 bg-sky-400/35 text-sky-50",
   alba: "border-blue-800/90 bg-blue-950/80 text-blue-100",
   ale: "border-lime-400/80 bg-lime-400/30 text-lime-50",
+  "name:bianco": "border-zinc-300/80 bg-zinc-100 text-zinc-900",
 }
 
 const PISCINA_ZONES = new Set(["invernale", "interna", "esterna", "piscina"])

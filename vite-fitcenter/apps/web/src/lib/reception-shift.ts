@@ -7,11 +7,14 @@ export function parseHm(hm: string): number | null {
   if (!m) return null
   const h = Number(m[1])
   const min = Number(m[2])
-  if (!Number.isFinite(h) || h > 23 || !Number.isFinite(min) || min > 59) return null
+  if (!Number.isFinite(h) || !Number.isFinite(min) || min > 59) return null
+  if (h === 24 && min === 0) return 24 * 60
+  if (h > 23) return null
   return h * 60 + min
 }
 
 export function formatHm(total: number): string {
+  if (total === 24 * 60) return "24:00"
   const t = ((total % (24 * 60)) + 24 * 60) % (24 * 60)
   const h = Math.floor(t / 60)
   const m = t % 60
@@ -27,7 +30,9 @@ const RANGE_RE = /(\d{1,2})[:.](\d{2})\s*[–\-−—]\s*(\d{1,2})[:.](\d{2})/g
 function padRangeHm(h: string, min: string): string | null {
   const hh = Number(h)
   const mm = Number(min)
-  if (!Number.isFinite(hh) || hh > 23 || !Number.isFinite(mm) || mm > 59) return null
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || mm > 59) return null
+  if (hh === 24 && mm === 0) return "24:00"
+  if (hh > 23) return null
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`
 }
 
@@ -42,7 +47,12 @@ export function parseRangeFromTitle(title: string): { start: string; end: string
     if (!start || !end) continue
     const sm = parseHm(start)
     const em = parseHm(end)
-    if (sm == null || em == null || em <= sm) continue
+    if (sm == null || em == null) continue
+    if (em === 0 && sm > 0) {
+      last = { start, end: "24:00" }
+      continue
+    }
+    if (em <= sm) continue
     last = { start, end }
   }
   if (last) return last
@@ -57,13 +67,21 @@ export function parseRangeFromTitle(title: string): { start: string; end: string
   const end = times[1]!
   const sm = parseHm(start)
   const em = parseHm(end)
-  if (sm == null || em == null || em <= sm) return null
+  if (sm == null || em == null) return null
+  if (em === 0 && sm > 0) return { start, end: "24:00" }
+  if (em <= sm) return null
   return { start, end }
+}
+
+function overnightEndMin(sm: number | null, em: number | null): number | null {
+  if (em == null) return null
+  if (em === 0 && sm != null && sm > 0) return 24 * 60
+  return em
 }
 
 export function formatShiftDurationLabel(start: string, end: string): string {
   const sm = parseHm(start)
-  const em = parseHm(end)
+  const em = overnightEndMin(sm, parseHm(end))
   if (sm == null || em == null || em <= sm) return ""
   const d = em - sm
   const h = Math.floor(d / 60)
@@ -91,6 +109,7 @@ export function eventRangeMin(e: { title: string; start: string }): { sm: number
   const sm = parseHm(start)
   const em = parseHm(end)
   if (sm == null) return { sm: 8 * 60, em: 8 * 60 + 30 }
+  if (em != null && em === 0 && sm > 0) return { sm, em: 24 * 60 }
   if (em == null || em <= sm) return { sm, em: sm + 30 }
   return { sm, em }
 }
@@ -125,7 +144,7 @@ export function eventTimeRange(e: { title: string; start: string }): { start: st
 export function buildReceptionTitle(activity: string, start: string, end: string): string {
   const label = String(activity ?? "").trim() || "Sportello"
   const sm = parseHm(start)
-  const em = parseHm(end)
+  const em = overnightEndMin(sm, parseHm(end))
   const s = formatHm(sm ?? 8 * 60)
   const e = formatHm(em != null && sm != null && em > sm ? em : (sm ?? 8 * 60) + 30)
   return `${label} · ${s}–${e}`
@@ -134,6 +153,29 @@ export function buildReceptionTitle(activity: string, start: string, end: string
 /** Fascia oraria (reception, bagnini, sala fitness). */
 export function buildShiftTitle(activity: string, start: string, end: string): string {
   return buildReceptionTitle(activity, start, end)
+}
+
+export const TURNO_BIANCO_ACTIVITY = "Turno bianco"
+export const TURNO_BIANCO_STAFF = "Bianco"
+export const TURNO_BIANCO_DEFAULT_START = "20:00"
+export const TURNO_BIANCO_DEFAULT_END = "22:00"
+
+export function isTurnoBiancoActivity(activity: string | null | undefined): boolean {
+  return String(activity ?? "")
+    .trim()
+    .toLowerCase() === "turno bianco"
+}
+
+/** Copertura extra fuori orario, anche ancora da assegnare. */
+export function isTurnoBianco(e: {
+  title?: string | null
+  staff?: string | null
+  staffOverride?: string | null
+}): boolean {
+  const title = String(e.title ?? "")
+  const activity = title.includes("·") ? title.split("·")[0]!.trim() : title.trim()
+  if (isTurnoBiancoActivity(activity)) return true
+  return String(e.staffOverride ?? "").trim().toLowerCase() === "bianco"
 }
 
 /** Slot visibile nella riga oraria h (0–23). */
