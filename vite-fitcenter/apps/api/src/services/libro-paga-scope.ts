@@ -227,6 +227,7 @@ function famigliaEffettiva(livelli: LpagaLivello[], id: string): string {
  * Se gli ambiti assegnati sono corsi/sala/ecc., toglie le altre famiglie
  * (es. responsabile corsi fitness+acqua non vede agonismo/scuola nuoto).
  * Chi ha solo il reparto radice (Piscina, Palestra) continua a vedere tutto.
+ * I figli di una cartella assegnata restano (es. Squadra Agonistica sotto Scuola Nuoto).
  */
 export function filtraAlberoPerFamigliaAssegnata(
   livelli: LpagaLivello[],
@@ -238,15 +239,36 @@ export function filtraAlberoPerFamigliaAssegnata(
   const strette = [...allowed].filter((f) => FAMIGLIE_STRETTE.has(f))
   if (!strette.length) return tree
   const allow = new Set(strette)
-  const rootSet = new Set(roots)
+  const rootSet = new Set(roots.map((x) => x.trim()).filter(Boolean))
+  const keepDesc = new Set<string>()
+  for (const r of rootSet) {
+    const l = livelli.find((x) => x.id === r)
+    if (!l || isRepartoRoot(l)) continue
+    for (const x of livelloSottoAlbero(livelli, r)) keepDesc.add(x)
+  }
   const out = new Set<string>()
   for (const id of tree) {
-    if (rootSet.has(id)) {
+    if (rootSet.has(id) || keepDesc.has(id)) {
       out.add(id)
       continue
     }
     const f = famigliaEffettiva(livelli, id)
     if (!FAMIGLIE_STRETTE.has(f) || allow.has(f)) out.add(id)
+  }
+  return out
+}
+
+/** Mansioni da istruttore: visibili/inseribili anche se di un altro ramo. */
+function unisciMansioniIstruttore(
+  viewer: Pick<LpagaPersonale, "livelloId" | "livelloIds">,
+  livelli: LpagaLivello[],
+  tree: Set<string>
+): Set<string> {
+  const out = new Set(tree)
+  for (const id of personaleMansioniIds(viewer)) {
+    const l = livelli.find((x) => x.id === id)
+    if (!l || l.attivo === false) continue
+    for (const x of livelloSottoAlbero(livelli, id)) out.add(x)
   }
   return out
 }
@@ -302,7 +324,7 @@ export function alberoCoordinatore(
     }
     for (const x of livelloSottoAlbero(livelli, id)) out.add(x)
   }
-  return filtraAlberoPerFamigliaAssegnata(livelli, out, roots)
+  return unisciMansioniIstruttore(viewer, livelli, filtraAlberoPerFamigliaAssegnata(livelli, out, roots))
 }
 
 /** Albero mansioni del viewer (responsabile/coordinatore) o del reparto scelto (admin). */
@@ -316,8 +338,8 @@ export function resolveLivelloTree(
   }
   if (viewer.ruolo === "manager") {
     const roots = personaleVisibilitaIds(viewer)
-    if (!roots.length) return new Set()
-    return alberoDaRootsAssegnati(livelli, roots)
+    const vis = roots.length ? alberoDaRootsAssegnati(livelli, roots) : new Set<string>()
+    return unisciMansioniIstruttore(viewer, livelli, vis)
   }
   if (viewer.ruolo === "admin" && repartoId) {
     return livelloSottoAlbero(livelli, repartoId)
@@ -446,8 +468,8 @@ export function alberoAssegnabileAnagrafica(
   if (viewer.ruolo === "admin") return new Set(attivi.map((l) => l.id))
   if (viewer.ruolo === "coordinator") return alberoCoordinatore(viewer, livelli)
   const roots = personaleVisibilitaIds(viewer)
-  if (!roots.length) return new Set()
-  return alberoDaRootsAssegnati(livelli, roots)
+  if (!roots.length) return unisciMansioniIstruttore(viewer, livelli, new Set())
+  return unisciMansioniIstruttore(viewer, livelli, alberoDaRootsAssegnati(livelli, roots))
 }
 
 /** Nodi (reparti e mansioni) in cui il viewer può creare/modificare anagrafiche. */
