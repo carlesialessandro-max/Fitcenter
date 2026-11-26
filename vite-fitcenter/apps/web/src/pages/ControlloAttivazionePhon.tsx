@@ -69,7 +69,9 @@ export function ControlloAttivazionePhon() {
         <>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-              <p className="text-sm text-zinc-400">Clienti con almeno {data.soglia} inserimenti</p>
+              <p className="text-sm text-zinc-400">
+                Clienti con almeno {data.soglia} {data.soglia === 1 ? "inserimento" : "inserimenti"}
+              </p>
               <p className="mt-1 text-2xl font-semibold text-amber-300">{data.totaleClienti}</p>
             </div>
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">

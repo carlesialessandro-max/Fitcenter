@@ -3318,35 +3318,23 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
     >()
 
     for (const row of rows) {
-      const categorie = [
-        row.AbbonamentiCategorieDescrizione,
-        row.CategoriaAbbonamentoDescrizione,
-        row.AbbonamentiCategoriaDescrizione,
-        row.MacroCategoriaAbbonamentoDescrizione,
-        row.DescrizioneCategoria,
-        row.NomeCategoria,
-        row.CategoriaDescrizione,
-      ]
-        .map(normalize)
-        .filter(Boolean)
-      const abbonamenti = [
-        row.AbbonamentiDescrizione,
-        row.AbbonamentoDescrizione,
-        row.DescrizioneAbbonamento,
-        row.NomeAbbonamento,
-        row.Abbonamento,
-        row.abbonamento,
-        row.PianoNome,
-        row.Piano,
-        row.piano,
-        row.Descrizione,
-        row.descrizione,
-      ]
-        .map(normalize)
-        .filter(Boolean)
+      const nomeAbbonamento = normalize(
+        row.AbbonamentoDescrizione ??
+          row.AbbonamentiDescrizione ??
+          row.DescrizioneAbbonamento ??
+          row.NomeAbbonamento ??
+          row.Abbonamento ??
+          row.abbonamento ??
+          row.PianoNome ??
+          row.Piano ??
+          row.piano
+      )
+      const durataAbbonamento = normalize(
+        row.AbbonamentoDurataDescrizione ?? row.AbbonamentiDurataDescrizione ?? row.DurataDescrizione
+      )
       const isAttivazionePhon =
-        categorie.some((value) => /\bATTIVAZIONE PHON(E)?\b/.test(value)) ||
-        abbonamenti.some((value) => /\bPHON(E)? ATTIVAZIONE 1 VOLTA\b/.test(value))
+        nomeAbbonamento === "ATTIVAZIONE PHON" &&
+        /\bPHON ATTIVAZIONE 1 VOLTA\b/.test(durataAbbonamento)
       if (!isAttivazionePhon) continue
 
       const abbonamento = rowToAbbonamento(row)
