@@ -17,6 +17,7 @@ import {
   cacheGetAllowExpired,
   cacheSet,
   getBudgetDepSig,
+  getDepSig,
   baseAsOfDateKey,
   isTodayCacheAsOf,
 } from "../services/persistent-cache.js"
@@ -4780,6 +4781,9 @@ export async function postOraLavorata(req: Request, res: Response) {
       return res.status(400).json({ message: "oraFine deve essere successiva a oraInizio" })
     }
     const created = oreLavorateStore.create({ consulenteNome: nome, giorno, oraInizio, oraFine })
+    const p = parseIsoDatePartsCalendar(giorno)
+    if (p) convalidazioniStore.set(nome, p.year, p.month, p.day, true)
+    await bumpMetaVersion("convalidazioni")
     res.status(201).json(created)
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -4798,6 +4802,14 @@ export async function deleteOraLavorata(req: Request, res: Response) {
       return res.status(403).json({ message: "Puoi eliminare solo le tue ore" })
     }
     oreLavorateStore.delete(id)
+    const p = parseIsoDatePartsCalendar(row.giorno)
+    if (p) {
+      const restano = oreLavorateStore
+        .list({ consulenteNome: row.consulenteNome })
+        .some((r) => r.giorno === row.giorno)
+      if (!restano) convalidazioniStore.set(row.consulenteNome, p.year, p.month, p.day, false)
+    }
+    await bumpMetaVersion("convalidazioni")
     res.status(204).send()
   } catch (e) {
     res.status(500).json({ message: (e as Error).message })
@@ -5056,29 +5068,22 @@ function oreDiff(oraInizio: string, oraFine: string): number {
   return Math.max(0, mins / 60)
 }
 
-function convalidatiInRange(consulenteNome: string, fromIso: string, toIso: string): { count: number; lista: string } {
-  const fa = parseIsoDatePartsCalendar(fromIso)
-  const ta = parseIsoDatePartsCalendar(toIso)
-  if (!fa || !ta) return { count: 0, lista: "—" }
-  const giorni: string[] = []
-  const cur = new Date(fa.year, fa.month - 1, fa.day)
-  const end = new Date(ta.year, ta.month - 1, ta.day)
-  while (cur <= end) {
-    const y = cur.getFullYear()
-    const m = cur.getMonth() + 1
-    const d = cur.getDate()
-    if (convalidazioniStore.get(consulenteNome, y, m, d)) {
-      giorni.push(`${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`)
-    }
-    cur.setDate(cur.getDate() + 1)
-  }
-  return { count: giorni.length, lista: giorni.length ? giorni.join(", ") : "—" }
+function fmtGiornoIt(iso: string): string {
+  const p = parseIsoDatePartsCalendar(iso)
+  if (!p) return iso
+  return `${String(p.day).padStart(2, "0")}/${String(p.month).padStart(2, "0")}`
 }
 
-function isGiornoConvalidato(consulenteNome: string, giornoIso: string): boolean {
-  const p = parseIsoDatePartsCalendar(giornoIso)
-  if (!p) return false
-  return convalidazioniStore.get(consulenteNome, p.year, p.month, p.day)
+/** Giorni con almeno una fascia in Convalide ore lavorate (fonte del riepilogo). */
+function giorniDaOreLavorate(oreRows: { giorno: string }[]): { count: number; lista: string } {
+  const seen = new Set<string>()
+  const giorni: string[] = []
+  for (const r of oreRows.slice().sort((a, b) => a.giorno.localeCompare(b.giorno))) {
+    if (!r.giorno || seen.has(r.giorno)) continue
+    seen.add(r.giorno)
+    giorni.push(fmtGiornoIt(r.giorno))
+  }
+  return { count: giorni.length, lista: giorni.length ? giorni.join(", ") : "—" }
 }
 
 /** Report per consulenti: vendite + telefonate + ore lavorate con % ore (ore/attese) su settimana/mese/anno. */
@@ -5139,9 +5144,9 @@ export async function getReportConsulenti(req: Request, res: Response) {
     // Cache persistente (admin): utile per report storici e per precompute one-shot.
     // asOfKey: usiamo "toIso" perché identifica il punto temporale del report.
     const scope = cacheScope(req)
-    const depSig = await getBudgetDepSig()
+    const depSig = await getDepSig()
     const consulentiKey = labelsFiltered.join("|")
-    const cacheKeyParams = { v: 3, from: fromIso, to: toIso, consulenti: consulentiKey || null }
+    const cacheKeyParams = { v: 4, from: fromIso, to: toIso, consulenti: consulentiKey || null }
     const cached = await cacheGet<any>({
       name: "data.report-consulenti",
       scope,
@@ -5323,7 +5328,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         .filter((r) => r.giorno >= fromIso && r.giorno <= toIso)
       const oreLavorate = oreRows.reduce((s, r) => s + oreDiff(r.oraInizio, r.oraFine), 0)
       const percentualeOre = oreAttese > 0 ? Math.round((oreLavorate / oreAttese) * 1000) / 10 : 0
-      const { count: giorniConvalidati, lista: giorniConvalidatiLista } = convalidatiInRange(consulenteNome, fromIso, toIso)
+      const { count: giorniConvalidati, lista: giorniConvalidatiLista } = giorniDaOreLavorate(oreRows)
       const dettaglioOreLavorate: ReportOreDettaglio[] = oreRows
         .slice()
         .sort((a, b) => a.giorno.localeCompare(b.giorno) || a.oraInizio.localeCompare(b.oraInizio))
@@ -5332,7 +5337,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
           oraInizio: r.oraInizio,
           oraFine: r.oraFine,
           ore: Math.round(oreDiff(r.oraInizio, r.oraFine) * 10) / 10,
-          convalidato: isGiornoConvalidato(consulenteNome, r.giorno),
+          convalidato: true,
         }))
       const percentualeBudget = budget > 0 ? Math.round((vendite / budget) * 1000) / 10 : 0
 
@@ -5467,9 +5472,10 @@ export async function getReportConsulenti(req: Request, res: Response) {
     const scost = Math.round((sumV - sumB) * 100) / 100
     const pctB = sumB > 0 ? Math.round((sumV / sumB) * 1000) / 10 : 0
     const oreAtteseRiga = rows.length > 0 ? rows[0].oreAttese : 0
+    const oreAtteseTotale = oreAtteseRiga * rows.length
     const pctOre =
-      rows.length > 0 && oreAtteseRiga > 0
-        ? Math.round((sumOre / (oreAtteseRiga * rows.length)) * 1000) / 10
+      rows.length > 0 && oreAtteseTotale > 0
+        ? Math.round((sumOre / oreAtteseTotale) * 1000) / 10
         : 0
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate")
@@ -5496,7 +5502,7 @@ export async function getReportConsulenti(req: Request, res: Response) {
         totaleEuroClientiNuovi: Math.round(sumEuroNuovi * 100) / 100,
         totaleEuroRinnovi: Math.round(sumEuroRin * 100) / 100,
         oreLavorate: Math.round(sumOre * 10) / 10,
-        oreAttese: oreAtteseRiga,
+        oreAttese: oreAtteseTotale,
         percentualeOre: pctOre,
         giorniConvalidati: sumConvalidati,
       },
