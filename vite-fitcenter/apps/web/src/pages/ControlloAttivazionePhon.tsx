@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Navigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import jsPDF from "jspdf"
@@ -20,7 +20,7 @@ function scaricaListaPdf(data: {
     clienteNome: string
     tipologia: string
     numeroAttivazioni: number
-    attivazioni: { abbonamento: string; dataInizio: string; dataFine: string }[]
+    attivazioni: { abbonamento: string; dataInizio: string; dataFine: string; tipologia: string }[]
   }[]
 }) {
   const oggi = new Date()
@@ -70,6 +70,9 @@ function scaricaListaPdf(data: {
 export function ControlloAttivazionePhon() {
   const { role } = useAuth()
   const [sogliaInput, setSogliaInput] = useState("1")
+  const [tipologieSelezionate, setTipologieSelezionate] = useState<Set<"Adulto" | "Bambino">>(
+    () => new Set(["Adulto", "Bambino"])
+  )
   const soglia = Math.max(1, Number(sogliaInput) || 1)
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["controllo-attivazione-phon", soglia],
@@ -77,6 +80,36 @@ export function ControlloAttivazionePhon() {
     enabled: role === "admin",
     retry: false,
   })
+  const clientiFiltrati = useMemo(
+    () =>
+      (data?.clienti ?? [])
+        .map((cliente) => {
+          const attivazioni = cliente.attivazioni.filter((attivazione) =>
+            tipologieSelezionate.has(attivazione.tipologia as "Adulto" | "Bambino")
+          )
+          return {
+            ...cliente,
+            tipologia: [...new Set(attivazioni.map((attivazione) => attivazione.tipologia))].join(" / "),
+            numeroAttivazioni: attivazioni.length,
+            attivazioni,
+          }
+        })
+        .filter((cliente) => cliente.numeroAttivazioni >= soglia)
+        .sort((a, b) => b.numeroAttivazioni - a.numeroAttivazioni || a.clienteNome.localeCompare(b.clienteNome)),
+    [data?.clienti, soglia, tipologieSelezionate]
+  )
+  const datiFiltrati = useMemo(
+    () =>
+      data
+        ? {
+            ...data,
+            totaleClienti: clientiFiltrati.length,
+            totaleAttivazioni: clientiFiltrati.reduce((totale, cliente) => totale + cliente.numeroAttivazioni, 0),
+            clienti: clientiFiltrati,
+          }
+        : undefined,
+    [data, clientiFiltrati]
+  )
 
   if (role !== "admin") return <Navigate to="/" replace />
 
@@ -92,8 +125,8 @@ export function ControlloAttivazionePhon() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => data && scaricaListaPdf(data)}
-            disabled={!data || isLoading}
+            onClick={() => datiFiltrati && scaricaListaPdf(datiFiltrati)}
+            disabled={!datiFiltrati || isLoading || clientiFiltrati.length === 0}
             className="rounded-lg border border-amber-700/70 px-3 py-2 text-sm text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
           >
             Scarica lista PDF
@@ -123,6 +156,25 @@ export function ControlloAttivazionePhon() {
           className="w-24 rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-100"
         />
         <span className="text-sm text-zinc-300">inserimenti del servizio</span>
+        <span className="mx-1 hidden h-6 border-l border-zinc-700 sm:block" />
+        {(["Adulto", "Bambino"] as const).map((tipologia) => (
+          <label key={tipologia} className="flex items-center gap-2 text-sm text-zinc-300">
+            <input
+              type="checkbox"
+              checked={tipologieSelezionate.has(tipologia)}
+              onChange={(event) =>
+                setTipologieSelezionate((current) => {
+                  const next = new Set(current)
+                  if (event.target.checked) next.add(tipologia)
+                  else next.delete(tipologia)
+                  return next
+                })
+              }
+              className="accent-amber-500"
+            />
+            {tipologia === "Adulto" ? "Adulti" : "Bambini"}
+          </label>
+        ))}
       </div>
 
       {isLoading && <p className="mt-6 text-sm text-zinc-400">Caricamento abbonamenti…</p>}
@@ -137,19 +189,19 @@ export function ControlloAttivazionePhon() {
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
               <p className="text-sm text-zinc-400">
-                Clienti con almeno {data.soglia} {data.soglia === 1 ? "inserimento" : "inserimenti"}
+                Clienti selezionati con almeno {data.soglia} {data.soglia === 1 ? "inserimento" : "inserimenti"}
               </p>
-              <p className="mt-1 text-2xl font-semibold text-amber-300">{data.totaleClienti}</p>
+              <p className="mt-1 text-2xl font-semibold text-amber-300">{datiFiltrati?.totaleClienti ?? 0}</p>
             </div>
             <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
               <p className="text-sm text-zinc-400">Inserimenti trovati in elenco</p>
-              <p className="mt-1 text-2xl font-semibold text-zinc-100">{data.totaleAttivazioni}</p>
+              <p className="mt-1 text-2xl font-semibold text-zinc-100">{datiFiltrati?.totaleAttivazioni ?? 0}</p>
             </div>
           </div>
 
-          {data.clienti.length === 0 ? (
+          {clientiFiltrati.length === 0 ? (
             <p className="mt-6 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 text-sm text-zinc-400">
-              Nessun cliente raggiunge questa soglia.
+              Nessun cliente corrisponde alla tipologia e alla soglia selezionate.
             </p>
           ) : (
             <div className="mt-5 overflow-x-auto rounded-xl border border-zinc-800">
@@ -163,7 +215,7 @@ export function ControlloAttivazionePhon() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-800 bg-zinc-950/40">
-                  {data.clienti.map((cliente) => (
+                  {clientiFiltrati.map((cliente) => (
                     <tr key={cliente.clienteId} className="align-top">
                       <td className="whitespace-nowrap px-4 py-3 font-medium text-zinc-100">
                         {cliente.clienteNome}

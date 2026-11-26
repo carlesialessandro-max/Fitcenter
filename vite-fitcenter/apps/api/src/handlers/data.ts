@@ -3313,7 +3313,13 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
         clienteId: string
         clienteNome: string
         tipologie: Set<string>
-        attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
+        attivazioni: {
+          id: string
+          abbonamento: string
+          dataInizio: string
+          dataFine: string
+          tipologia: string
+        }[]
         ids: Set<string>
       }
     >()
@@ -3364,12 +3370,15 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       if (tipoCliente) cliente.tipologie.add(tipoCliente)
       if (cliente.ids.has(abbonamento.id)) continue
       cliente.ids.add(abbonamento.id)
-      cliente.attivazioni.push({
-        id: abbonamento.id,
-        abbonamento: abbonamento.pianoNome,
-        dataInizio: abbonamento.dataInizio,
-        dataFine: abbonamento.dataFine,
-      })
+      if (tipoCliente) {
+        cliente.attivazioni.push({
+          id: abbonamento.id,
+          abbonamento: abbonamento.pianoNome,
+          dataInizio: abbonamento.dataInizio,
+          dataFine: abbonamento.dataFine,
+          tipologia: tipoCliente,
+        })
+      }
       clients.set(abbonamento.clienteId, cliente)
     }
 

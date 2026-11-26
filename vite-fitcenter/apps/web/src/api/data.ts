@@ -75,7 +75,13 @@ export type AttivazionePhonCliente = {
   clienteNome: string
   tipologia: string
   numeroAttivazioni: number
-  attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
+  attivazioni: {
+    id: string
+    abbonamento: string
+    dataInizio: string
+    dataFine: string
+    tipologia: string
+  }[]
 }
 
 export const dataApi = {
