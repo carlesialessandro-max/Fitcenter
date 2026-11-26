@@ -12,8 +12,8 @@ function formatData(value: string): string {
 
 export function ControlloAttivazionePhon() {
   const { role } = useAuth()
-  const [sogliaInput, setSogliaInput] = useState("2")
-  const soglia = Math.max(2, Number(sogliaInput) || 2)
+  const [sogliaInput, setSogliaInput] = useState("1")
+  const soglia = Math.max(1, Number(sogliaInput) || 1)
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["controllo-attivazione-phon", soglia],
     queryFn: () => dataApi.getControlloAttivazionePhon(soglia),
@@ -29,7 +29,7 @@ export function ControlloAttivazionePhon() {
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Controllo attivazioni Phone</h1>
           <p className="mt-1 text-sm text-zinc-400">
-            Clienti con più inserimenti dell&apos;abbonamento Attivazione Phon nello storico gestionale.
+            Clienti con abbonamenti Attivazione Phon validi oggi. Il conteggio considera solo le attivazioni con data odierna compresa tra inizio e fine.
           </p>
         </div>
         <button
@@ -49,7 +49,7 @@ export function ControlloAttivazionePhon() {
         <input
           id="soglia-attivazioni"
           type="number"
-          min={2}
+          min={1}
           step={1}
           value={sogliaInput}
           onChange={(event) => setSogliaInput(event.target.value)}

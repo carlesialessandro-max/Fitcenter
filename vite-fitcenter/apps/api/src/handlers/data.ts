@@ -3287,9 +3287,9 @@ export async function getAbbonamenti(req: Request, res: Response) {
 /** Admin: clienti con più inserimenti dell'abbonamento Attivazione Phon. */
 export async function getControlloAttivazionePhon(req: Request, res: Response) {
   const sogliaRaw = req.query.soglia
-  const soglia = sogliaRaw == null ? 2 : Number(sogliaRaw)
-  if (!Number.isSafeInteger(soglia) || soglia < 2) {
-    return res.status(400).json({ message: "La soglia deve essere un numero intero pari o superiore a 2" })
+  const soglia = sogliaRaw == null ? 1 : Number(sogliaRaw)
+  if (!Number.isSafeInteger(soglia) || soglia < 1) {
+    return res.status(400).json({ message: "La soglia deve essere un numero intero pari o superiore a 1" })
   }
   if (!gestionaleSql.isGestionaleConfigured()) {
     return res.status(503).json({ message: "Gestionale non configurato" })
@@ -3302,6 +3302,8 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       .replace(/\p{M}/gu, "")
       .replace(/[^A-Z0-9]+/g, " ")
       .trim()
+  const oggi = toDateParts(new Date())
+  const oggiKey = `${oggi.year}-${pad2(oggi.month)}-${pad2(oggi.day)}`
 
   try {
     const rows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
@@ -3348,6 +3350,9 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       if (!isAttivazionePhon) continue
 
       const abbonamento = rowToAbbonamento(row)
+      const inizioKey = abbonamentoGiornoKey(abbonamento.dataInizio)
+      const fineKey = abbonamentoGiornoKey(abbonamento.dataFine)
+      if (!inizioKey || !fineKey || oggiKey < inizioKey || oggiKey > fineKey) continue
       if (!abbonamento.clienteId) continue
       const cliente = clients.get(abbonamento.clienteId) ?? {
         clienteId: abbonamento.clienteId,
