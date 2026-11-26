@@ -1,6 +1,6 @@
 import { Router } from "express"
 import { getRicevuteUtenti, postInviaScontrino } from "../handlers/scontrini.js"
-import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, getAbbonamentiScadutiCatalogo, getAbbonamentiScadutiContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, deleteAbbonamentiAttiviInvio, deleteAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
+import { getDashboard, getDettaglioMese, getDettaglioAnno, getVenditeStorico, getVenditeMovimentiCategoriaDurata, getVenditeCross, getTotaliAnni, getClienti, getAbbonamenti, getControlloAttivazionePhon, getAbbonamentiAttiviAnalisi, getAbbonamentiAttiviContatti, getAbbonamentiScadutiCatalogo, getAbbonamentiScadutiContatti, postAbbonamentiAttiviInvia, getAbbonamentiAttiviInvii, deleteAbbonamentiAttiviInvio, deleteAbbonamentiAttiviInvii, getBudget, setBudget, getLeadsFromGestionale, assignLeadToMe, getSqlStatus, getDebugConsulenti, getAbbonamentiFollowUp, updateAbbonamentiFollowUp, getCrmAppuntamenti, getCrmAppuntamentiOperatore, getCrmAppuntamentiCliente, getConvalidazioni, getConvalidazioniAdminAll, setConvalidazione, getOreLavorate, postOraLavorata, deleteOraLavorata, getReportConsulenti, getCassaMovimentiUtenti, getDanzaAttiviOggi, getReferralPresentati } from "../handlers/data.js"
 import { getMailBlacklist, postMailBlacklist, postMailBlacklistImport, deleteMailBlacklist } from "../handlers/mailBlacklist.js"
 import { getCampus, importCampusPlanningExcel, patchCampusCliente, patchCampusWeekNote } from "../handlers/campus.js"
 import {
@@ -70,6 +70,7 @@ dataRouter.get("/dettaglio-mese", getDettaglioMese)
 dataRouter.get("/dettaglio-anno", requireAdmin, getDettaglioAnno)
 dataRouter.get("/clienti", getClienti)
 dataRouter.get("/abbonamenti", getAbbonamenti)
+dataRouter.get("/controllo-attivazione-phon", requireAdmin, getControlloAttivazionePhon)
 dataRouter.get("/scuola-nuoto-rinnovi/meta", requireScuolaNuotoRinnovi, getScuolaNuotoRinnoviMeta)
 dataRouter.get("/scuola-nuoto-rinnovi", requireScuolaNuotoRinnovi, getScuolaNuotoRinnovi)
 dataRouter.post("/scuola-nuoto-rinnovi-invia", requireScuolaNuotoRinnovi, postScuolaNuotoRinnoviInvia)

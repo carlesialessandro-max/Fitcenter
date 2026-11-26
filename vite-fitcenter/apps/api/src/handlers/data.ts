@@ -3284,6 +3284,110 @@ export async function getAbbonamenti(req: Request, res: Response) {
   }
 }
 
+/** Admin: clienti con più inserimenti dell'abbonamento Attivazione Phon. */
+export async function getControlloAttivazionePhon(req: Request, res: Response) {
+  const sogliaRaw = req.query.soglia
+  const soglia = sogliaRaw == null ? 2 : Number(sogliaRaw)
+  if (!Number.isSafeInteger(soglia) || soglia < 2) {
+    return res.status(400).json({ message: "La soglia deve essere un numero intero pari o superiore a 2" })
+  }
+  if (!gestionaleSql.isGestionaleConfigured()) {
+    return res.status(503).json({ message: "Gestionale non configurato" })
+  }
+
+  const normalize = (value: unknown) =>
+    String(value ?? "")
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/[^A-Z0-9]+/g, " ")
+      .trim()
+
+  try {
+    const rows = await gestionaleSql.queryAbbonamenti(undefined, { leftJoinVenditore: true })
+    const clients = new Map<
+      string,
+      {
+        clienteId: string
+        clienteNome: string
+        attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
+        ids: Set<string>
+      }
+    >()
+
+    for (const row of rows) {
+      const categorie = [
+        row.AbbonamentiCategorieDescrizione,
+        row.CategoriaAbbonamentoDescrizione,
+        row.AbbonamentiCategoriaDescrizione,
+        row.MacroCategoriaAbbonamentoDescrizione,
+        row.DescrizioneCategoria,
+        row.NomeCategoria,
+        row.CategoriaDescrizione,
+      ]
+        .map(normalize)
+        .filter(Boolean)
+      const abbonamenti = [
+        row.AbbonamentiDescrizione,
+        row.AbbonamentoDescrizione,
+        row.DescrizioneAbbonamento,
+        row.NomeAbbonamento,
+        row.Abbonamento,
+        row.abbonamento,
+        row.PianoNome,
+        row.Piano,
+        row.piano,
+        row.Descrizione,
+        row.descrizione,
+      ]
+        .map(normalize)
+        .filter(Boolean)
+      const isAttivazionePhon =
+        categorie.some((value) => /\bATTIVAZIONE PHON(E)?\b/.test(value)) ||
+        abbonamenti.some((value) => /\bPHON(E)? ATTIVAZIONE 1 VOLTA\b/.test(value))
+      if (!isAttivazionePhon) continue
+
+      const abbonamento = rowToAbbonamento(row)
+      if (!abbonamento.clienteId) continue
+      const cliente = clients.get(abbonamento.clienteId) ?? {
+        clienteId: abbonamento.clienteId,
+        clienteNome: abbonamento.clienteNome,
+        attivazioni: [],
+        ids: new Set<string>(),
+      }
+      if (cliente.ids.has(abbonamento.id)) continue
+      cliente.ids.add(abbonamento.id)
+      cliente.attivazioni.push({
+        id: abbonamento.id,
+        abbonamento: abbonamento.pianoNome,
+        dataInizio: abbonamento.dataInizio,
+        dataFine: abbonamento.dataFine,
+      })
+      clients.set(abbonamento.clienteId, cliente)
+    }
+
+    const clienti = [...clients.values()]
+      .filter((cliente) => cliente.attivazioni.length >= soglia)
+      .map((cliente) => ({
+        clienteId: cliente.clienteId,
+        clienteNome: cliente.clienteNome,
+        numeroAttivazioni: cliente.attivazioni.length,
+        attivazioni: cliente.attivazioni.sort((a, b) => b.dataInizio.localeCompare(a.dataInizio)),
+      }))
+      .sort((a, b) => b.numeroAttivazioni - a.numeroAttivazioni || a.clienteNome.localeCompare(b.clienteNome))
+
+    return res.json({
+      soglia,
+      totaleClienti: clienti.length,
+      totaleAttivazioni: clienti.reduce((totale, cliente) => totale + cliente.numeroAttivazioni, 0),
+      clienti,
+    })
+  } catch (e) {
+    console.error("[controllo-attivazione-phon]", e)
+    return res.status(500).json({ message: (e as Error).message })
+  }
+}
+
 /** Budget: suddiviso per le 3 consulenti per mese; il totale mese = budget generale. */
 export async function getBudget(req: Request, res: Response) {
   try {

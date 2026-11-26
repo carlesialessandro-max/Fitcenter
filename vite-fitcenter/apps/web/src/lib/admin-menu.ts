@@ -17,6 +17,7 @@ export const ADMIN_MENU_GROUPS: AdminMenuGroup[] = [
       { to: "/crm/whatsapp-log", label: "Log WhatsApp" },
       { to: "/telefonate", label: "Telefonate" },
       { to: "/abbonamenti", label: "Abbonamenti in scadenza" },
+      { to: "/controllo-attivazione-phon", label: "Controllo attivazioni Phone" },
       { to: "/andamento-vendite", label: "Andamento vendite" },
       { to: "/andamento-vendite-bambini", label: "Andamento vendite bambini" },
       { to: "/vendite-cross", label: "Cross" },

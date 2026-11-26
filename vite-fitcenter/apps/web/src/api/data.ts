@@ -70,6 +70,13 @@ function campusDateRangeQuery(): string {
   return `?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
 }
 
+export type AttivazionePhonCliente = {
+  clienteId: string
+  clienteNome: string
+  numeroAttivazioni: number
+  attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
+}
+
 export const dataApi = {
   getDashboard: (consulente?: string, asOf?: string) => {
     const params = new URLSearchParams()
@@ -191,6 +198,13 @@ export const dataApi = {
     if (inScadenza != null) url += (url.includes("?") ? "&" : "?") + "inScadenza=" + inScadenza
     return api.get<Abbonamento[]>(url)
   },
+  getControlloAttivazionePhon: (soglia: number) =>
+    api.get<{
+      soglia: number
+      totaleClienti: number
+      totaleAttivazioni: number
+      clienti: AttivazionePhonCliente[]
+    }>(`/data/controllo-attivazione-phon?soglia=${encodeURIComponent(soglia)}`),
   getReferralPresentati: (opts?: {
     year?: number
     month?: number
