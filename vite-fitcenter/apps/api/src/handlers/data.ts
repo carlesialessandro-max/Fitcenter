@@ -3312,6 +3312,7 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       {
         clienteId: string
         clienteNome: string
+        tipologie: Set<string>
         attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
         ids: Set<string>
       }
@@ -3345,9 +3346,22 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       const cliente = clients.get(abbonamento.clienteId) ?? {
         clienteId: abbonamento.clienteId,
         clienteNome: abbonamento.clienteNome,
+        tipologie: new Set<string>(),
         attivazioni: [],
         ids: new Set<string>(),
       }
+      const categoriaCliente = normalize(row.CategoriaDescrizione)
+      const tipoCliente =
+        categoriaCliente === "CLIENTE"
+          ? "Adulto"
+          : categoriaCliente === "KIDS"
+            ? "Bambino"
+            : categoriaCliente === "STAFF"
+              ? "Staff"
+              : categoriaCliente === "DANZA"
+                ? "Danza"
+                : ""
+      if (tipoCliente) cliente.tipologie.add(tipoCliente)
       if (cliente.ids.has(abbonamento.id)) continue
       cliente.ids.add(abbonamento.id)
       cliente.attivazioni.push({
@@ -3364,6 +3378,7 @@ export async function getControlloAttivazionePhon(req: Request, res: Response) {
       .map((cliente) => ({
         clienteId: cliente.clienteId,
         clienteNome: cliente.clienteNome,
+        tipologia: [...cliente.tipologie].sort((a, b) => a.localeCompare(b, "it")).join(" / ") || "Non indicato",
         numeroAttivazioni: cliente.attivazioni.length,
         attivazioni: cliente.attivazioni.sort((a, b) => b.dataInizio.localeCompare(a.dataInizio)),
       }))

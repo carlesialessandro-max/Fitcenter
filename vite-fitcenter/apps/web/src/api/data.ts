@@ -73,6 +73,7 @@ function campusDateRangeQuery(): string {
 export type AttivazionePhonCliente = {
   clienteId: string
   clienteNome: string
+  tipologia: string
   numeroAttivazioni: number
   attivazioni: { id: string; abbonamento: string; dataInizio: string; dataFine: string }[]
 }

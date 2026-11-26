@@ -18,6 +18,7 @@ function scaricaListaPdf(data: {
   totaleAttivazioni: number
   clienti: {
     clienteNome: string
+    tipologia: string
     numeroAttivazioni: number
     attivazioni: { abbonamento: string; dataInizio: string; dataFine: string }[]
   }[]
@@ -39,9 +40,10 @@ function scaricaListaPdf(data: {
 
   autoTable(doc, {
     startY: 35,
-    head: [["Cliente", "N. attivazioni", "Dettaglio abbonamenti"]],
+    head: [["Cliente", "Tipologia", "N. attivazioni", "Dettaglio abbonamenti"]],
     body: data.clienti.map((cliente) => [
       cliente.clienteNome,
+      cliente.tipologia,
       String(cliente.numeroAttivazioni),
       cliente.attivazioni
         .map(
@@ -52,7 +54,12 @@ function scaricaListaPdf(data: {
     ]),
     styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
     headStyles: { fillColor: [39, 39, 42] },
-    columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 25 }, 2: { cellWidth: "auto" } },
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 25 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: "auto" },
+    },
     rowPageBreak: "avoid",
     margin: { left: 14, right: 14 },
   })
@@ -150,6 +157,7 @@ export function ControlloAttivazionePhon() {
                 <thead className="bg-zinc-900 text-zinc-400">
                   <tr>
                     <th scope="col" className="px-4 py-3 font-medium">Cliente</th>
+                    <th scope="col" className="px-4 py-3 font-medium">Tipologia</th>
                     <th scope="col" className="px-4 py-3 font-medium">Inserimenti</th>
                     <th scope="col" className="px-4 py-3 font-medium">Dettaglio abbonamenti</th>
                   </tr>
@@ -160,6 +168,7 @@ export function ControlloAttivazionePhon() {
                       <td className="whitespace-nowrap px-4 py-3 font-medium text-zinc-100">
                         {cliente.clienteNome}
                       </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-zinc-300">{cliente.tipologia}</td>
                       <td className="px-4 py-3">
                         <span className="inline-flex min-w-8 justify-center rounded-full bg-amber-500/15 px-2 py-1 font-semibold text-amber-200">
                           {cliente.numeroAttivazioni}
