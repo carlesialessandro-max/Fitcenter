@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Navigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 import { dataApi } from "@/api/data"
 import { useAuth } from "@/contexts/AuthContext"
 
@@ -8,6 +10,54 @@ function formatData(value: string): string {
   if (!value) return "—"
   const parsed = new Date(`${value.slice(0, 10)}T12:00:00`)
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString("it-IT")
+}
+
+function scaricaListaPdf(data: {
+  soglia: number
+  totaleClienti: number
+  totaleAttivazioni: number
+  clienti: {
+    clienteNome: string
+    numeroAttivazioni: number
+    attivazioni: { abbonamento: string; dataInizio: string; dataFine: string }[]
+  }[]
+}) {
+  const oggi = new Date()
+  const dataOggi = oggi.toLocaleDateString("it-IT")
+  const dataFile = `${oggi.getFullYear()}-${String(oggi.getMonth() + 1).padStart(2, "0")}-${String(oggi.getDate()).padStart(2, "0")}`
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+
+  doc.setFontSize(16)
+  doc.text("Controllo attivazioni Phone", 14, 16)
+  doc.setFontSize(10)
+  doc.text(`Abbonamenti validi al ${dataOggi} · almeno ${data.soglia} inserimento/i`, 14, 23)
+  doc.text(
+    `Clienti: ${data.totaleClienti} · Attivazioni: ${data.totaleAttivazioni}`,
+    14,
+    29
+  )
+
+  autoTable(doc, {
+    startY: 35,
+    head: [["Cliente", "N. attivazioni", "Dettaglio abbonamenti"]],
+    body: data.clienti.map((cliente) => [
+      cliente.clienteNome,
+      String(cliente.numeroAttivazioni),
+      cliente.attivazioni
+        .map(
+          (attivazione) =>
+            `${attivazione.abbonamento} · dal ${formatData(attivazione.dataInizio)} al ${formatData(attivazione.dataFine)}`
+        )
+        .join("\n"),
+    ]),
+    styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: [39, 39, 42] },
+    columnStyles: { 0: { cellWidth: 48 }, 1: { cellWidth: 25 }, 2: { cellWidth: "auto" } },
+    rowPageBreak: "avoid",
+    margin: { left: 14, right: 14 },
+  })
+
+  doc.save(`controllo-attivazioni-phone-${dataFile}.pdf`)
 }
 
 export function ControlloAttivazionePhon() {
@@ -32,14 +82,24 @@ export function ControlloAttivazionePhon() {
             Clienti con abbonamenti Attivazione Phon validi oggi. Il conteggio considera solo le attivazioni con data odierna compresa tra inizio e fine.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-          className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
-        >
-          Aggiorna
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => data && scaricaListaPdf(data)}
+            disabled={!data || isLoading}
+            className="rounded-lg border border-amber-700/70 px-3 py-2 text-sm text-amber-200 hover:bg-amber-950/40 disabled:opacity-50"
+          >
+            Scarica lista PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            className="rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+          >
+            Aggiorna
+          </button>
+        </div>
       </div>
 
       <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
